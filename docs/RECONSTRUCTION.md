@@ -51,6 +51,7 @@ ctest --preset correctness-asan -j 8       # 57/57 — SEE THE WARNING BELOW
 ctest --preset correctness-ubsan -j 8      # 57/57 — SEE THE WARNING BELOW
 node scripts/check-canonical-ast-fixtures.mjs   # 28 kinds, 47 fields, 6 cases
 bash scripts/audit-public-surface.sh
+node scripts/check-plan-graph.mjs                # 22 steps, 42 edges, acyclic
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
 node scripts/check-upstream-parity.mjs     # 795/795 vs cmark-gfm 0.29.0.gfm.13
@@ -759,41 +760,226 @@ Five defects (D12–D16) were found *while* proving the other eleven. D12 and D1
 go to Step 5, D14 to Step 9a, D15 to Step 3, D16 to Step 14 — each to the step
 that was already going to touch that code, so none of them lengthens Stage 0a.
 
-### 4.1 The revised port list
+### 4.1 The requirement list
 
-| # | Step | Diff. | Size | Depends on |
+**The difficulty grading is gone, and so is the legend above §4.0.** `[CP]`/`[CX]`/`[HW]` answered *"how hard is this hunk to move"*, and under §4.9 nothing is moved. Each row below states what must be **true of the engine** when the step is done, and what must already be **true** before it starts — not what must be merged. Sizes are rough new C, net where deletion dominates; gate and binding lines are counted separately in the notes.
+
+Seven defects that this restatement found by measurement are numbered **D18–D24** and listed in §4.1.7. Each has an owner step in the table. They belong in §2 and are recorded here only because the rows reference them.
+
+| # | What must be TRUE when it is done | New C | Depends on — facts, not merges |
+|---|---|---|---|
+| ✅ **0** | The engine is byte-identical to `580d10c` except `core/main.c`, which carries `--profile`. | — | — |
+| ✅ **1** | Every oracle that can judge a behaviour change exists in the tree and has been re-pinned against the **baseline** binary. | ~1,400 script | 0 |
+| **0a** | The seventeen §2 defects are fixed, or pinned by a named gate with a named owner, on an engine nothing else has touched. **§4.2 stands unchanged** — it was derived on this tree, not ported. | 39 + ~180 gate | The two position oracles took their first reading on the *unfixed* tree (0a.1). |
+| **2** | Every C source the build compiles is a `clang-format` fixpoint, and the config makes **braces mandatory on every `if`/`else`/`for`/`while`/`do` body**. `scripts/format-c.sh --check` is the gate. | 0 new · 1 config line · 2,393 diff lines | 0a has landed and each defect commit re-pinned its own `file:line` citations (R13). No other work is in flight in `packages/markdown-core/` (R17). |
+| **3a** | The engine has **one allocator model**: `markdown_core_mem`, supplied per parser, defaulting to `calloc`. There is no process-global scratch allocator, no `core/arena.c`, and no re-parse retry in `table.c`. The Release CLI allocates and frees exactly as the library does, so `#if DEBUG` in `core/main.c` collapses to one path. | 0 new · **−140** | `extensions-conflicts.txt` exists (0a.5) and re-proves D8 after the retry path it patched is deleted (R14). `node scripts/audit-source-lists.mjs` **runs** (it throws at HEAD). |
+| **3** | An extension is a `static const` descriptor in a fixed compile-time table. It is not registered, not looked up by name, and carries no mutable state. A parser records *which* extensions are on as a bitmask and **cannot express an order** — the order is the table's, and `table` is last. A descriptor declares **three** byte sets (terminates-text, dispatch, flanking-transparent), not one list. A delimiter names its **rule**, not a byte. Node types and node-flag bits are compile-time constants. There is no process-global mutable state anywhere in the extension path. | **+500 / −535** | D1, D2 fixed (0a.4) so the descriptor author transcribes a correct source. D8 fixed (0a.5). The tree is a format fixpoint (2). One allocator (3a). The source-list audit runs. |
+| **3b** | `markdown_core_node_append_child` / `_prepend_child` / `_insert_before` / `_insert_after` / `_set_type` refuse any link that would make a node its own ancestor — **always**. `markdown_core_enable_safety_checks` does not exist. | ~25 | None beyond "the tree builds". See **Q13**: this may be a §2 defect, not a refactor by-product. |
+| **15A** | **One** machine-readable AST contract lives in `docs/` (normative) and **one** audit checks all six projection surfaces against it — C header, C dump, Kotlin bridge + decoder + model, ES bridge + export list + decoder + model, Swift model + dumper, and the canonical-AST manifest — and it is **green**. | 0 C · ~500 JSON+script | Nothing under `docs/deprecated/` is normative *and* no executable policy file still points there. |
+| **5** | The iterator's event contract is **total** (every node gets `ENTER` and `EXIT`; `S_is_leaf` is gone). Its mutation rule names *nodes*, not events: only the node whose `EXIT` is current may be freed. A subtree operation stays inside its subtree. **No zero-length `Text` node exists in a finished tree, and no node carries `0:0..0:0` as a stand-in for "no bytes".** A merged run's scope is the union of what it merged, line **and** column. One function computes a position from a byte range. | ~200 | D3 and D7 fixed (0a.6) so merged positions are merged from correct operands. D10's replacement node carries a start line (0a.2). |
+| **6** | **Deliverable #2.** Attaching `formula` is the *only* gate — the two delimiter options do not exist. Five inline forms, four block forms, and one padding rule: one leading and one trailing space-or-line-ending is stripped from an inline formula's body when the body is not all whitespace. | ~60 · deletions across 18 files | 3. D1 fixed (0a.4), else one oracle row stays red and must be named as 0a.4's. |
+| **7** | **Deliverable #1.** The directive grammar of micromark-extension-directive 4.0.0 and mdast-util-directive 3.1.0, applied to **code points**: name rules, one/two/three-colon forms, `#`/`.` shorthand, `class` accumulation, last-value-wins elsewhere, and **degradation** — a malformed label or attribute block leaves the directive standing and the punctuation as prose. `DirectiveLabel` is a visible node whose scope spans its brackets. A container's closing fence **closes it and every block open inside it** (D21). A directive that consumes a span containing a line ending leaves the subject's position honest (D22). Attributes are an ordered key/value sequence; the JSON round-trip is deleted. | ~530 written · **+150 net** | 3. 15A (this is the first step that changes the node inventory). 0a.6's newline-adjust mechanism is live, or Step 7 lands it (D22). |
+| **10** | For any block node with a content buffer and any byte offset within it, the engine can name the **source line and column** of that byte. Every node synthesized from a content offset carries a position that is a place: the split-off table lead, its inline children, the recovered header row and cells, and any paragraph whose front was consumed (D18). The lead keeps its authored spelling. | ~110 | **Nothing.** Every mechanism exists at the baseline; both consumers run while the marks would be live. |
+| **9a** | A footnote definition is a block node at the byte where its `[` was written, in the container it was written in, and it **stays there**. No pass runs after the parse that moves, reorders, drops or re-parents any node. Every definition the author wrote is in the tree. The reference map never owns a node. A reference carries **the label the author wrote**; numbering is derived, not stored. A `[…]` is a footnote call only if it opens with a **raw** `^` and the document defines that label; otherwise the brackets take the ordinary unmatched-`[` path and nothing frees children core already built. | **+90 / −290** | 0a.2's D10 fix, so a reference's label is sliced from the parser's own buffer. |
+| **11a** | A parse produces, beside the tree, a **concrete record set** in which every block-level byte of the normalized source is owned by exactly one node, in exactly one of three roles (`MARKER`, `CONTENT`, `DISCARDED`). Three laws hold over every corpus: **L1** the regions on a line tile it exactly; **L2** every region lies inside its owner's scope and descendants lie inside their ancestor's `CONTENT`; **L3** concatenating the regions in order reproduces the normalized source byte for byte. The document **retains** that normalized source and its line index. A region may be *refined* — split, never moved, never deleted — which is how extensions capture without breaking L1. | ~600 + ~350 gate | 0a (an L3 gate written over the unfixed engine would encode D10/D11's loss as expected). 5 (no node without source bytes). 10 (the content-to-source marks 11a retains — **Q22**). |
+| **8** | **The inline position model.** An inline node's position is a *projection* of the byte range it covers, not a counter each handler maintains: one `seek` primitive, one newline index, offsets stored on the node, and one constructor for a delimiter run. `adjust_subj_node_newlines`, `count_newlines`, `subj->column_offset`, `subj->block_offset` and the three hand-written `make_delimiter_text` copies cease to exist. Subsumes D3, D7, D12 and D19/D20/D23 by construction. | **+330 / −245** | 3 (rules exist). 6, 7 (the grammars are settled, so the extensions are rewritten once). 11a (the retained `CONTENT` records are what make the projection exact on continuation lines). |
+| **9b** | One reference model for both kinds. A link reference definition is a **node** at the byte where its `[` was written. Five kinds carry an **association**: `label` as authored, `identifier` as the match key, neither derivable from the other. A reference holds **no destination** — resolution is the consumer's, and is derivable as "group by identifier, first in document order". The map holds no resource, so D9's expansion budget has nothing to charge and is deleted. The dump and the facade speak one vocabulary (`label=`, not `id=`). | **+450 / −180** C | 9a (the tree is source-ordered and the winner is derivable from it). 10 (a harvested definition needs a source position and the surviving paragraph needs rebasing). 15A. |
+| **11b** | Every byte of every block's `CONTENT` region is owned by exactly one inline node or by the block itself, and inline records are expressed in **source** coordinates, not content coordinates. Delimiter runs, brackets, escapes, entities, destinations, titles and smart-punctuation substitutions are all `MARKER`; the text between is `CONTENT`. | ~500 + ~200 gate | 11a. 8 (a position is a projection of a range, so the lift has one answer, not two). |
+| **11c** | A reference definition and a footnote definition own their source bytes, so the block partition is total for real documents. A definition that lost a duplicate-label contest keeps its bytes. | ~150 | 9b (a node exists to own them). 11a (refinement exists and cannot move a boundary). |
+| **12** | The public surface presents **one parse under two total views** — `document.semantic` (policy applied, may omit bytes) and `document.concrete` (the normalized source, its line index, and every node's regions; omits nothing) — and states the law that binds them: every byte is in exactly one region and every region has exactly one owner, so the pair is complete. The concrete view survives being copied into value types and the handle being freed. | ~400 | 6, 7 (the surface is not renamed twice). 11b, and 11c for definition-bearing documents. 15A. |
+| **13** | **Deliverable #3.** A parse produces an ordered list of diagnostics — `(severity, code, scope, message)` — and one law governs them: **a lost diagnostic is not a lost parse.** For every input and option set the semantic tree and the concrete records are byte-identical with diagnostics on and off; if the buffer cannot be allocated the parse still returns a complete document with a truncation marker. Its converse is equally normative: **a parse failure is not a diagnostic** — `markdown_core_error` means there is no document, and it carries no scope. | ~430 + ~150 gate | 7 (its 51 oracle examples are the enumeration of degradation cases). 12 (a scope is resolvable without a node handle). |
+| **14** | `null` means "the source did not write this"; `""` means "the source wrote it and it was empty". The distinction is **structural**: an optional field cannot be assigned a value that does not state whether it is present, so a write site that does not say so **does not compile**. No transformation and **no read** collapses it. The facade folds nothing. | ~150 C + bindings | 9b (the optional field set is complete). 12 (the accessors are the target accessors). 15A. |
+| **15C** | The 3.0 release obligations: one contract, all seventeen defects closed or carried with a registered gate, both deliverables measured against the 96 whitelisted examples with every staleness recorded, every §4.8 gate green and non-vacuous, release plumbing pointing at live paths, and `check-release-version.mjs` passing with no `--skip-*`. | ~150 + notes | 12, 13, 14. |
+
+**15B is not a step. It is a standing rule**, and it belongs in §0 beside the other three:
+
+> **4. A change to the node inventory, to a field's name, type, nullability or category, to an enum's members, or to the dump grammar lands its contract edit, all six projections, the manifest's coverage requirements and the regenerated `.ast` goldens in the same commit as the engine change.** No commit may leave `audit-ast-projections.mjs` red.
+
+**Totals.** ≈ **4,560 lines of new C**, against the old port list's ≈ 7,600 — the requirement list is roughly three thousand lines smaller than the port list, and §4.1.2 says where every one of those lines went. Add ~1,400 lines of new gate script and ~2,000 lines of binding work **distributed across Steps 7, 9b, 12, 13 and 14**, not batched at the end (§4.1.4).
+
+**`VERSION`.** The line "`VERSION` moves to 1.0.4 at the close of Stage 0a" is now in question and is tracked as **Q27**: measured, at `VERSION=1.0.4` the ordering assertion in `check-release-version.mjs` is **unsatisfiable**, because the tag `v2.0.0` exists and the script requires every existing tag to be strictly less than `VERSION` when `v$VERSION` is absent. The honest options are to leave `VERSION` at `1.0.3` with an `Unreleased` heading in `CHANGELOG.md`, or to go to `3.0.0` early and accept that the release-notes file must exist from that commit. Do not adopt a version whose only job is honesty and whose effect is to make a gate permanently unreachable.
+
+---
+
+### 4.1.2 What is deleted, and why
+
+Six things. Each existed because a commit existed, or because a constraint existed that the owner has since removed.
+
+**1. The `[CP]`/`[CX]`/`[HW]` column, and the legend at the head of §4.** §4.9 already voided the grading; the legend outlived the table it introduced. Delete both.
+
+**2. The struck `~~4~~` row.** Its content is Stage 0a. A struck row is a note about how the plan changed, and §4.0 already carries that note in prose. Delete the row.
+
+**3. Step 4h — "the extension attach order".** Q9 decides the order and Step 3 makes an order **unexpressible by a caller**. A row with no size, no gate and no deliverable is a reminder, and reminders belong in the step that acts on them. Delete the row; Step 3's requirement carries it.
+
+**4. Step 8 as a decision fork.** See §4.1.3. The number is reused for the requirement that survives the fork, deliberately, so that §4.5's instruction to *"re-run and re-read those four gates by name at Steps 3, 8 and 11"* stays true: the new Step 8 rewrites exactly the flanking-adjacent code those four gates guard.
+
+**5. "Step 8 carries four syntax fixes" (§4.4, §4.7).** A port artifact. Under Q8 the only admissible source of a syntax requirement is `specs/oracles/`, and every syntax requirement in those six files belongs to Step 6 or Step 7. The two hardest arbitration cases in the directive oracle — `:note[See [plain] text.]` and `[Go :badge[beta]](/roadmap)` — **already produce the oracle's structure at HEAD**, measured. The delimiter machinery is not what is wrong with the directive grammar. Amend §4.4's sentence about which steps regenerate `spec.txt` accordingly.
+
+**6. Step 15 as a single step at the end**, and **Step 12's "ABI break window"**. The window is gone by Q10 (§4.1.4). Step 15 is deleted as a trailing step and replaced by 15A (early, before the first surface-changing step), 15B (a standing rule) and 15C (release). The argument is empirical and is already sitting in the tree: `audit-ast-projections.mjs` reports **16 Swift-only failures and zero Kotlin or ES failures** — that is not, as §0 records, "a kind/field table the baseline engine does not have"; it is **one binding a full era behind the other two**, and the gate that says so is parked with the owner "Step 15". *Deferring the bindings is how the drift happened.* There is no longer a batching argument to weigh against that: the surface breaks at Step 7 (attribute type, `DirectiveLabel` as a 29th kind), at 9b (three kinds, `label`+`identifier`, `id=`→`label=`), at 12 and at 13 regardless, and §4.4's own duplicate-golden argument applies verbatim one level up — a batch at the end regenerates six `.ast` files, four `TreeDumper`s and the coverage manifest for the second time.
+
+**Considered for deletion and surviving conditionally: Step 2.** Measured at HEAD: `sh scripts/format-c.sh --check` **exits 0**, and `.clang-format` contains no `InsertBraces` line. The tree is already a fixpoint of the current config, so the step as written — *"run `clang-format`"* — is a **no-op**, and the 1,296 lines §4.3 attributes to it are an observation about a historical commit, not a requirement. Its only possible content is adopting one invariant: **braces on every conditional body**. That invariant is worth having here for one reason that survives the closed history — Stage 0a and Steps 3–14 consist very largely of adding a statement to, or removing one from, an existing conditional body (§2's own defect list: *"adds one line inside the successful rewind"*, *"plus four lines in `blocks.c:625`"*, *"an 8-line sweep before `blocks.c:675`"*), and in a braceless body "add one line" and "change the control flow" are the same edit and look identical in review. **If the owner declines the rule (Q11), Step 2 is deleted outright, because there is nothing else in it.**
+
+**Nothing else is deleted.** Every remaining row is a live requirement measured on this tree; none of them exists because a commit exists.
+
+---
+
+### 4.1.3 Step 8 answered: the inline phase needs a position model, not a delimiter engine
+
+**The verdict: no. A unified delimiter engine as a distinct ~1,100-line component is not warranted, and the fork is not a fork.** The step splits cleanly in two, and the two halves belong in different places.
+
+**Half one is a *declaration* problem, and it belongs in Step 3's descriptors.** One `llist` — `special_inline_chars` — is read by five consumers with five different meanings: `markdown_core_manage_extensions_special_characters` folds it into two byte tables; `try_extensions` uses it for cursor dispatch; `get_extension_for_special_char` uses it for **delimiter-tag ownership**; `find_extension_opener_for_special_char` and `bracket_takes_close_bracket` use it for `]` arbitration; `handle_backslash` uses it to disable a core optimisation. That is D1's and D2's root, and 0a.4 fixes the symptom by deleting three calls while the shape that produced them survives. Four facts make the split non-optional, all verified at HEAD:
+
+- `core/inlines.c:780` calls `extension->insert_inline_from_delim(...)` with **no NULL check**, on an owner derived from a *byte* by first-registration order. `autolink` registers bytes and supplies no such hook. It is one `push_delimiter` call away from a NULL dispatch.
+- `openers_bottom` is declared `bufsize_t openers_bottom[3][128]` and indexed `openers_bottom[closer->length % 3][closer->delim_char]` with `delim_char` an `unsigned char` that the **public** `markdown_core_inline_parser_push_delimiter` accepts unconstrained. `openers_bottom[2][200]` is offset 456 into a 384-element array. Dense rule ids size the array correctly by construction.
+- The sentinel delimiter tags (`FORMULA_DELIM_*` = 1..4, `DIRECTIVE_LABEL_DELIM` = 8) are ordinary file bytes. Only NUL is replaced by the feed. §2 already says *"they can appear in user text"*; deleting them from `skip_chars` at 0a.4 stops the flanking corruption and leaves them in `special_chars`, where a literal `0x01` still splits text runs and still dispatches. **Only removing the concept closes it.**
+- Owner lookup is an O(extensions × bytes) linked-list walk executed once per closer in `process_emphasis`. A rule pointer on the delimiter makes it one load.
+
+**Half two is not about delimiters at all. It is a position model**, and that is what the new Step 8 is. Measured at HEAD, none of these are in §2's sixteen: `a~~` under `--profile gfm` yields `Text scope=1:1..1:0` on a three-byte input; the unmatched-backtick literal is placed one column right; a link with a multi-line label or title takes its start line from the **closing** bracket and contains a child that starts before it; and an extension that consumes a span containing a line ending cannot report it, which displaces every later node in the paragraph — that one **blocks Step 7's own oracle** (`:note[label]{title="one\ntwo"} tail` must be `Directive 1:1..2:5`; HEAD says `1:1..1:29`, a column that does not exist on line 1). Baseline reading over the three fixture files at `--profile gfm-extended`: **78 of 1,928 inline nodes carry a position that is not a place.** 0a.1(a)'s planned oracle reads 13, over inline `Code` and `html_inline` only. The class is six times larger than the oracle scheduled to watch it.
+
+**What the fork would have cost, and bought.** A `core/delimiters.{c,h}` hosting the rule table, the stack and the matcher is ~450–600 lines, not 1,100 — the 1,100 measured a hunk, and hunks are no longer moved. The real cost is not lines: the delimiter stack lives on the `subject`, and so do `pos`, `input`, `line`, `refmap`, `last_bracket` and the flanking tables. Moving the stack out means exposing `subject` to a new module or duplicating its state — **"a second unit" is the precise shape of the failure §1 records six times.** What it buys is separate testability and a place to hide the public `delimiter` struct, and both are available later, for free, once a rule table exists.
+
+**One thing is decided here and must be stated as an invariant, because it is the property that would have been traded away for configurability nobody asked for:** the engine keeps **one delimiter stack, one matcher, first-closer-wins**. Every interleaving the three extensions admit was tested — `$a *b* c$`, `*a $b* c$`, `$a *b$ c*`, `~~a $b~~ c$`, `$a [b$ c](/u)`, `*a [b* c](/u) d*`, `a~~b~~c~~d~~e`, `$a$b$c$`, `$$a$$b$$` — and every result is well-formed and non-crossing; all three extensions already re-check their own opener/closer compatibility inside `insert_inline_from_delim`. A single stack scanned once is what buys non-crossing output for free, and it is exactly the property the previous streaming program destroyed when it introduced a second unit. **A later step may not add a second stack.**
+
+**Consequence for the CST.** 11b's stated dependency on Step 8 was the "one-funnel" property — one path through which every inline node is born. That funnel **already exists**: `make_literal` and `make_simple` are the two makers and every extension goes through `markdown_core_inline_parser_get_column`. What does not exist is a correct extent for emphasis, which `S_insert_emph` builds *after the fact* by re-parenting, and which is one function holding the two numbers it needs in local variables. So 11b's dependency on 8 survives, but for a different and smaller reason — **a position must be a projection of a range, or the lift has two answers** — and R2's experiment is still worth running with its subject changed to that question.
+
+---
+
+### 4.1.4 The dependency graph, and the check
+
+The previous table carried a 9b↔11 cycle through several revisions because the arrows were read one row at a time. They are now stated once, machine-checkable, and checked.
+
+```
+0  →  1  →  0a  →  2   ─┐
+                  →  3a ─┴→ 3 ─┬→ 6 ─┐
+                  →  3b         ├→ 7 ─┼→ 8 → 11b ─┐
+                  →  5  ─┐      └──────┘   ↑      ├→ 12 → 13 ─┐
+                  →  10 ─┼→ 11a ─────────┘  │      │        →  15C
+                  →  9a ─┼→ 9b ──→ 11c ─────┘      └→ 14 ────┘
+     1 → 15A ─────┴──────┘
+```
+
+Edge list (`step: [what must already be true]`):
+
+```
+0:[]            1:[0]           0a:[1]          2:[0a]        3a:[0a]
+3:[0a,2,3a]     3b:[0a]         15A:[1]         5:[0a]        6:[3]
+7:[3,15A]       10:[0a]         9a:[0a]         11a:[0a,5,10] 8:[3,6,7,11a]
+9b:[9a,10,15A]  11b:[11a,8]     11c:[9b,11a]    12:[6,7,11b,11c,15A]
+13:[7,12]       14:[9b,12,15A]  15C:[12,13,14]
+```
+
+**The check is executable, and it reads the edge list above rather than a copy
+of it:** `node scripts/check-plan-graph.mjs`. It resolves every named dependency
+to a real step and runs a white/grey/black depth-first walk that reports the
+grey-on-grey *path* if one exists, rather than merely announcing that a cycle
+does. Run on the list above: **22 steps, 42 edges, acyclic.** It is in §0's gate
+list, so an arrow that moves without the graph being re-checked fails. The critical chain is `0 → 1 → 0a → 3a → 3 → 7 → 8 → 11b → 12 → 13 → 15C`, depth 10, and it runs through Step 8 — which is a second reason not to let Step 8 be a 1,100-line fork.
+
+A valid linear order, verified against the edge list rather than asserted:
+
+```
+0  1  0a  2  3a  3  3b  15A  5  6  7  10  9a  11a  8  9b  11b  11c  12  13  14  15C
+```
+
+**Four arrows changed, and each is a claim that can be falsified:**
+
+| Was | Now | Why |
+|---|---|---|
+| `9b → 11a` | **struck** | No claim in 9b needs a concrete record. Every byte it stores is available at parse time; the record is 11c's job, and 11c depends on 9b. This is the arrow that made the graph look cyclic. |
+| `10 → 9b, 11a` | `10 → nothing` | Every mechanism Step 10 needs exists at the baseline, and both its consumers run while the marks are live. 10 is a *prerequisite* of 9b, not a consequence: a harvested definition node has no position without it, and the paragraph it came from cannot be rebased. |
+| `11b → 8` | kept, re-argued | Not the funnel (which already exists) — the projection. See §4.1.3. |
+| `3 → 2` | kept, plus `3 → 3a` | The arena removal deletes the code path holding D8's fix, so it goes first and discharges R14 there, and Step 3's table work then runs against one code path instead of two. |
+
+---
+
+### 4.1.5 What changes because the target is 3.0
+
+Q10 removes a constraint the plan was shaped around. Four things move and three risks shrink or die.
+
+**The ABI window is gone as a *goal*, and survives as a *method*.** R4 read "six independent ABI breaks, unbatched" as a risk to be mitigated by batching them into one release. There is no release to batch into. What survives of R4 is one afternoon's discipline — *write the target public header first, as one diff against the baseline's 232 lines* — which is now good practice rather than a gate. Step 12 is retitled **"The two views"** and loses its second half.
+
+**R16 disappears entirely.** It said "Stage 0a moves parse output before Step 12's ABI window", and it exists only if 1.0.4 is a release. It is not. What is left of it is not a risk but a question — whether `VERSION` should move at all, given that the release-version gate is unsatisfiable at 1.0.4 — and that is **Q27**.
+
+**R11 stops being a risk and becomes a build-time assert.** Option-struct layout across three bindings was a hazard because a break was expensive. With the surface free, the bridge asserts are the mechanism, and they fail loudly at build time in the same commit that changes the struct (15B).
+
+**The option surface shrinks, and every deletion is an application of one rule — attachment is the only gate.** `MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS` and `_LATEX_FORMULA_DELIMITERS` (Step 6), `MARKDOWN_CORE_OPT_DIRECTIVE` (Step 7), `markdown_core_enable_safety_checks` (3b), `markdown_core_register_plugin` and the whole runtime-registration surface (3), `markdown_core_get_arena_mem_allocator` and the arena entry points (3a), `markdown_core_parser_feed_reentrant` (11a, **Q28**), and `markdown_core_error_get_scope` (12 — `has_scope` is never set to `true` anywhere, so the function is unconditionally dead). The public `delimiter` struct, annotated *"Exposed raw for now"* since 1.0, is hidden behind accessors (3).
+
+**The facade changes deliberately, in five named places**, each in the step that owns it: `markdown_core_document_root` → `_semantic` plus `_concrete` (12); `markdown_core_node_footnote_id` deleted in favour of `label` + `identifier` on five kinds (9b); the directive label-hiding accessors deleted and `DirectiveLabel` made visible (7); directive attributes retyped from a JSON `String?` to a key/value sequence (7); optional strings given an explicit presence bit instead of a NULL sentinel (14). The dump renames `id=` → `label=` (Q5, 9b).
+
+**The bindings follow per commit, not in one batch.** ~2,000 lines distributed across Steps 7, 9b, 12, 13 and 14 — four times the old estimate of ~500, because "the bindings" is six lockstep surfaces and not three model directories. That figure is itself the argument against batching: 2,000 lines of mechanical cross-language edit in one commit is unreviewable.
+
+**The release gates are off the critical path until 3.0, and there are seven of them, not three.** Two are era skew from Step 0's wholesale `scripts/` restore (`audit:ci` wants 40-hex Action SHA pins that `.github/` predates; `audit:source-lists` **throws** on a missing `packages/swift-markdown-core/Package.release.swift`), one is two minutes of formatting on restored files (`format:es:check`, three real files), one is a second unexpected legacy tag (`pre-format-baseline`, which §0 does not name beside `codex-doc-pass-backup`), one is the ordering assertion of Q27, one is the release-notes path — hard-coded to `docs/deprecated/releases/$(cat VERSION).md` in five places, so publishing 3.0 would publish from the archive — and one is `audit:ast-projections`, which **is not era skew at all** but the live Swift drift of §4.1.2. That closes §0's fifth known-red row.
+
+---
+
+### 4.1.6 What the design now owes — ledger entries Q11 onward
+
+Restating a port as a requirement exposes the decisions the port had already made for us. Each is recorded here so it is tracked rather than rediscovered mid-step. They belong in §9's table; recommendations are the restatement's, not the owner's.
+
+| id | Question | Forced by | Recommendation |
+|---|---|---|---|
+| **Q11** | Does the repository adopt `InsertBraces: true`? | 2 | **Yes** — it is the whole content of Step 2 (measured: `format-c.sh --check` is already green). Footprint 2,393 diff lines across 36 files, 561 of them in `core/` + `extensions/`. **If no, delete Step 2.** Land the neutrality gate with it: normalized-disassembly equality, measured 29/29 objects identical. |
+| **Q12** | Is the arena deleted, or made parser-owned? | 3a | **Delete.** Measured: ~7% CLI-only parse win, **+10–16% peak RSS**, `abort()` on allocation failure inside a library with a careful sticky-OOM discipline, total sanitizer blindness on the binary the parity oracles drive, and a demonstrated **480-byte leak in a parser that never asked for it** (a global `A != NULL` makes an unrelated default-allocator parse take `table.c`'s retry branch). Parser-owned is impossible without a document-owned lifetime model this engine does not have. Output-neutral: 7,251 comparisons, 0 differences. |
+| **Q13** | Is the cycle check unconditional — and is it a defect or a refactor by-product? | 3b | **Unconditional**, and *"the shipped library makes `b->parent == b` on request while the test that denies it flips a flag nothing else flips"* reads exactly like D1–D16. Measured cost: unmeasurable on four workloads, 10.7% on one already-pathological path the engine takes 36 seconds to parse. **The owner may re-file it into Stage 0a; that is the only change to 0a this restatement would ask for besides Q25.** |
+| **Q14** | One knob per extension, or two? | 3, 6, 7 | **One.** Attachment is the language. Delete `MARKDOWN_CORE_OPT_DIRECTIVE` and both formula delimiter options; keep formula's `dollar`/`latex` **sub-grammar** selection only if a use is stated, and today none is. |
+| **Q15** | What is the **inline** dispatch precedence? | 3 | Q9 settles the *block* order (`table` last) and says nothing about inlines — `table` has no inline hooks at all. `autolink` and `directive` both claim `':'`, and first-non-NULL wins today. **Recommend: table order is also inline order, `autolink` before `directive`** (a bare `:` far more often begins a URL), stated in the commit and pinned by a fixture. |
+| **Q16** | Are extension node types and node-flag bits re-assigned as fixed constants? | 3 | **Yes**, in a fixed enum decoupled from the table order. They are internal — the shipped export map is 32 read-only facade symbols — and conflating "attach order" with "type numbering" is precisely what makes today's globals order-dependent. |
+| **Q17** | Is an inline node's position a projection of a stored byte range? | 8 | **Yes**, and store the pair — two `bufsize_t` on the inline node. This is what makes D12 *unexpressible* rather than fixed, and it is the concession that makes 11b cheap. |
+| **Q18** | Which inline-math padding rule? | 6 | **micromark-extension-math's**: strip one leading and one trailing space-or-line-ending, interior untouched. Not CommonMark's code-span rule, which also converts interior line endings. No oracle example separates them; three independent reasons do (the oracle's own prose cites micromark; the mdast gate compares `Formula.literal` against remark on every corpus input; a formula body is handed to KaTeX). **And it applies to the `\(…\)` / `\[…\]` forms too** — no oracle row covers that; pin it with two new ones. |
+| **Q19** | Are directive attributes sorted in the model, or only in the dump? | 7 | **Sorted in the model.** After class-accumulation and last-value-wins the list *is* a map; source order is meaningful only inside `class`'s accumulated value, which is already a string. Two orders is how a third order appears in a binding. |
+| **Q20** | Are character references decoded in directive attribute values? | 7 | **Decode** (one call to the existing `houdini_unescape_html_f`), pin `:n{a=&amp;}` → `a="&"`. If declined, it must be a *registered* divergence in `deltas.json`, not silence. |
+| **Q21** | Does a reference definition box itself, or only its resource? | 9b | **Only its resource.** Measured on this machine: `chunk` 16, `association` 32, `definition` 64, `reference` 40, widest existing union arm (`markdown_core_code`) **40**. `{association; resource *}` is 32+8 = **40** — the union does not grow, the association stays inline and uniformly readable for all five kinds, and the label can never be lost to a failed box allocation. |
+| **Q22** | Does the content-to-source map have **one** owner? | 8, 10, 11a | **Yes, and this is the sharpest thing the restatement found.** Three steps independently proposed a mechanism for one fact: Step 10's per-line parse-time marks, Step 8's newline index, and 11a's `CONTENT` regions. **Recommend: 10 produces it, 11a retains it, 8 projects through it, 11b tiles it.** Three implementations of one fact is the disease this plan names in five other places. |
+| **Q23** | Does the document retain the normalized source? | 11a | **Yes** — one append-once buffer, 1× the input, plus 4 bytes per line of index. §6's verdict ("nothing replaces the substrate") is true of the *rope* and silently assumed the bytes survive; they do not (`parser->curline` is cleared per line, `linebuf` freed at finish, `source` borrowed). The alternative is re-implementing the normalizer — including `markdown_core_utf8proc_check`'s replacement policy — byte-identically in Swift, Kotlin and JS. **This is a §6 amendment, not just a Step 11a decision.** |
+| **Q24** | Is the concrete view opt-in? | 12 | **A parse option defaulting to `true`.** Cost is ~2.5–3× input resident. The gate that makes it safe: the semantic dump must be **byte-identical** with the option on and off, over every corpus. An option that changes the parse is a second engine. |
+| **Q25** | Do D16's two site fixes move into 0a.7? | 14 | **Owner call, because Stage 0a is otherwise closed.** Measured: 58 golden rows carry `title=""`; 18 are D6's; the remaining **~40 are D16's** `chunk_clone` path, and under the current schedule they are regenerated by nine steps with the reviewer's only available answer being "unchanged, therefore fine". Moving them is ~6 lines and resolves D5's stated tension in the commit that already has the defect statement in hand. If it does not move, Step 14 moves 40 rows; if it does, Step 14 moves **zero**, which is the right shape for a step whose deliverable is an invariant. |
+| **Q26** | Do `Link.destination`, `Image.source`, `ReferenceDefinition.destination` stay optional? | 14 | **No — required.** Q7 already rules a definition's destination required; §5.1 rules that a reference carries none. Once 9b splits `LinkReference` out of `Link`, an inline link's destination has no reachable null except allocation loss, which Q7 answers with the failure bit. |
+| **Q27** | Does `VERSION` move to 1.0.4 at all? | 15C | **No.** Measured: the ordering assertion in `check-release-version.mjs` passes at `3.0.0` and **fails at `1.0.4`**, because `v2.0.0` exists and the script requires every tag to be strictly less than `VERSION`. `3.0.0-dev` fails the `stableSemver` assert. Leave `VERSION` at `1.0.3` and record the state in `CHANGELOG.md` under `Unreleased`, or go to `3.0.0` early. |
+| **Q28** | Is `markdown_core_parser_feed_reentrant` deleted? | 11a | **Yes.** Zero in-tree callers, and it re-enters line processing with bytes that are in no source line — unrepresentable under L1. Keeping an entry point whose only purpose is to inject bytes no position can name, in the step that establishes that every byte has a position, is carrying a contradiction forward for no consumer. |
+| **Q29** | Does `mode` survive on `Code`, `CodeBlock`, `Directive`, `DirectiveBlock`? | 15A | **No** — delete it from those four, keep it on `Formula`/`FormulaBlock` where it is genuinely variable. Both decoders prove the point: Kotlin and ES hard-code the constant and one of them then *asserts* the constant it just synthesized, and the Kotlin wire format does not transmit it. A field whose value is implied by its type is ceremony four surfaces must keep in step. |
+| **Q30** | Do the bindings spell child edges typed (`content`, `items`, `label`, `header`, `rows`, `cells`) or flat (`children`)? | 15A | **Typed.** Kotlin and ES already do; Swift's flat `children` is what forces `labelCount: Int?`, forces `Table.init` to filter rows by `isHeader` and `preconditionFailure` if the count is not one, and forces `children: [any Markup] = []` onto eleven leaf kinds. Two of three bindings and the contract already assume it. |
+
+---
+
+### 4.1.7 Seven defects the restatement found — §2 additions, D18–D24
+
+Recorded here because §2's own rule is that a defect the plan does not name is a defect the plan re-derives later at full price. D17 is taken (the version macro, fixed at 0a.0). None of these changes Stage 0a; each goes to the step that was already going to touch that code.
+
+| # | Defect | Severity | Witness | Owner |
 |---|---|---|---|---|
-| ✅ 0 | Reset the engine to the 1.0 baseline | [CP] | — | — |
-| ✅ 1 | **Restore the oracles before touching engine code** | [CP] | ~1,400 script lines | 0 |
-| **0a** | **Fix the defects on the untouched baseline** — §4.2 | [HW] | **~39 C + ~180 gate** | 1 |
-| 2 | Formatter config, applied once — **run `clang-format`, do not replay the patch** | [CP] | mechanical | 0a |
-| 3 | Static extension descriptors, no process-global state; **decides D15** | [HW] | ~600 | 2 |
-| 3a | **Split out of 3:** the arena removal and the unconditional cycle check, as named behaviour changes with their own oracle run | [HW] | ~150 | 3 |
-| ~~4~~ | ~~Behaviour fixes that need no new architecture~~ | — | **emptied into 0a** | — |
-| 4h | The extension attach order — **decide it, do not inherit it** (folded into 3) | — | — | 3 |
-| 5 | Iterator contract, and the use-after-free it fixes; **carries D13 then D12** | [CP] | ~120 + ~10 | 2 |
-| 6 | Formula — *deliverable #2* | [HW] | ~200 | 3 |
-| 7 | Directive grammar conformance — *deliverable #1* | [HW] | ~330 | 3 |
-| 8 | **Decision fork:** the unified delimiter engine — **Q8** | [HW] | ~1,100 | 3, 6, 7 |
-| 9a | **One reference model, part 1: the anchor and the retention** — definition retention, the definition anchor rule, **D9's budget deletion**, **D14**. Registration order is NOT here: 0a.2 owns it. | [HW] | ~350 | 0a |
-| 9b | **One reference model, part 2: the node model** — `Association`, `identifier`, `LinkReference`/`ImageReference`/`ReferenceDefinition`, the deletions of §5.3 | [HW] | +1,330 / −450 | 9a, **11a** |
-| 10 | Position defects that need line marks — **now the table split lead only** | [CP] | ~60 | 9b, 11a |
-| 11a | CST: record storage, the region partition, block capture | [CP] | ~900 | **none** |
-| 11b | CST: inline capture | [HW] | ~800 | 8, 11a |
-| 11c | CST: reference-definition records | [HW] | ~450 | 9b, 11a |
-| 12 | CST facade, and the ABI break window | [HW] | ~400 | 6, 7, 11b |
-| 13 | Diagnostics — *deliverable #3* | [HW] | ~250 + ~130 | 7, 12 |
-| 14 | The null/empty rule made structural; **carries D16** | [CP] | ~40 | 12 |
-| 15 | Bindings, specs, docs | [HW] | ~500 | 12–14 |
+| **D18** | A paragraph whose leading reference definitions were consumed keeps the **definition's** start position, so every inline child reports the definition's line. | wrong-position | `[a]: /1\ntext here` → `Text scope=1:1..1:9`; truth `2:1..2:9`. Upstream has it identically (`cmark-gfm --sourcepos` agrees), so upstream cannot be the oracle. Invisible to every gate: containment holds, not a sentinel, not negative, not line-zero. | **10** |
+| **D19** | `handle_close_bracket` takes a link's `start_line` from the **closing** bracket and never adjusts for newlines, so a link with a multi-line label or title has a wrong line *and* contains a child that starts before it. | wrong-position | `[a](/u "t⏎t2") tail` → `Link 1:1..1:14`, `Text 1:15..1:19`; truth `1:1..2:6`, `2:7..2:11`. `core/inlines.c:1411`. | **8** |
+| **D20** | `strikethrough`'s `match` sets `start_column` and never `end_column`, so the calloc'd `0` survives consolidation whenever the run ends the paragraph. | wrong-position | `a~~` under `--profile gfm` → `Text scope=1:1..1:0`. Three bytes, the default GFM profile, and every parity oracle blind because none compares positions. | **8** |
+| **D21** | **A container directive's closing fence does not close it.** `directive_block_matches` marks `closed` and consumes the fence but returns 1, so the container and every block open inside it stay open; the next non-blank line is taken as a lazy paragraph continuation, pulled into the container, and recorded on the wrong line. | **content-attribution loss** | `:::note⏎body⏎:::⏎after` → one `Paragraph 2:1..4:5` whose third child is `Text scope=3:1..3:5 literal="after"`. Inside a block quote it moves `after` into the quote. A blank line after the fence hides it. The formula block is unaffected (it is a leaf with no open children). | **7** |
+| **D22** | An extension that consumes an inline span containing a line ending cannot report it: `markdown_core_inline_parser_set_offset` does not advance the subject's line counter, so **every later node in the paragraph is displaced**. | wrong-position | The oracle case `:note[label]{title="one⏎two"} tail` requires `Directive 1:1..2:5`; HEAD says `1:1..1:29` and `Text 1:30..1:34` — columns that do not exist on line 1. **Blocks Step 7 outright.** | **7** lands the primitive; **8** owns the model |
+| **D23** | `S_insert_emph` gives an emphasis node the start column of the **whole** delimiter run: it shortens `opener_inl->as.literal.len` from the end (`inlines.c:843`) and then assigns `emph->start_column = opener_inl->start_column` (`inlines.c:875`), while `handle_delim` had spanned the entire run. | wrong-position + overlap | On `***a**` the leftover `Text` and the `Strong` both claim the run's first byte — two nodes, one byte. Correct value: `opener_inl->start_column + opener_num_chars`. **11a's L1 gate detects it mechanically.** | **8**, gated by **11b** |
+| **D24** | `tasklist` decides `checked` by searching the **whole line**: `strstr((char *)input, "[x]") \|\| strstr((char *)input, "[X]")` (`extensions/tasklist.c:88`), while `scan_tasklist` matched only at `parser->first_nonspace`. | wrong-output | `- [ ] see [x] below` reports `checked=true`. May be the same thing as the pending upstream delta `tasklist-checked-marker` — check before re-deriving. | **3** (the descriptor rewrite touches it) |
 
-Three structural changes to the old table, each argued below: **Step 4 no longer
-exists** (its content is Stage 0a, which is not a step but a stage, because it
-precedes the port); **Step 9 splits at the CST line** (9a needs no concrete
-record and was proved to work at the baseline; only 9b needs Step 11a); and
-**Step 3 sheds its two unnamed behaviour changes into 3a.**
+Two further findings that are not new defects but change what an existing item means. **The content→source column map is wrong whenever a continuation line's stripped prefix differs from the block's first line** — `make_literal` uses a per-node constant `block_offset`, so `"> foo\n*bar*\n"` reports the emphasis at column 3 (truth 1) and `"> foo\n>bar *baz*\n"` at column 7 (truth 6). That is the **general case of which D7 is one instance**, and Q22's single map is what closes it. And **there are three producers of zero-length `Text` nodes, not one**: D13 names `autolink`'s `postprocess_text`, but `markdown_core_node_unput` (core, `inlines.c:1925`) empties a literal and leaves the node spliced in, and consolidation merges runs of empties into an empty. Corpus footprint, measured: `Text scope=0:0..0:0 literal=""` on **36 golden rows**, and **16 rows carry a negative range**, 12 of them ending at column 0 — including `tests/fixtures/extensions.txt:804`, which pins `Text scope=59:1..59:0` as *expected*. Step 5 owns all three.
 
-`VERSION` moves to **1.0.4** at the close of Stage 0a — the first commit range
-that moves behaviour — and not before.
+---
+
+### 4.1.8 Where the whitelisted oracles are stale
+
+`specs/oracles/README.md` states the rule: *where an example's expected output disagrees with what this engine should produce, this engine is right and the example is stale — say so in the commit.* These are the places, collected once so each is a deliberate divergence rather than a surprise mid-step. Measured by running all 96 examples through the HEAD engine: **43 of 43 formula examples and 2 of 53 directive examples already reproduce exactly**; of the 49 directive examples that move, 18 are spelling-only, 29 are grammar or position, and 2 are D1's.
+
+| Where | What it says | What this engine will do | Why |
+|---|---|---|---|
+| `extensions-directive-option-gates.txt` — prose | *"These examples attach the directive extension without enabling its parser option."* | Keep both inputs and both expected blocks; **rewrite the prose**. | **Vacuous as wired**: the ctest entry passes no `--option`, the examples carry no tags, and `spec_runner` starts from `ts_ast_options_none()` — so the extension is **not attached at all**. The oracle cannot distinguish "attached, option off" from "not attached", which is exactly the gap D1 lived in for eleven releases. Under Q14 there is only one knob; do not build a second to satisfy a comment. |
+| `extensions-directive.txt` — prose above `:shortcut{#identifier}` | *"HTML-style `#id` and `.class` shortcuts are outside this extension's generic key-value grammar and remain ordinary Markdown text."* | Implement the shorthand; **delete the sentence**. | It contradicts its own expected output, which shows both recognized. The expected block is authoritative; the sentence is a leftover from the fixture the oracle was extracted from. |
+| `extensions-directive.txt` — prose above `:ordinary[label]{…}` | *"`id` and `class` are ordinary keys. Like every repeated key, their last value wins while their first source position is retained."* | Implement `class` accumulation and last-value-wins for everything else; **delete both clauses**. | Stale on both halves. The expected output shows `class="red green blue"` — `class` is the one key that does *not* take the last value — and "first source position is retained" describes a per-attribute position that no dump field and no proposed accessor exposes. Do not build an API to justify a sentence. |
+| `extensions-formula-github.txt` — `foo$_bar_` · `extensions-directive.txt` — `foo:_bar_`, `a}_b_` | (expected output correct) | Green before Steps 6 and 7 start. | **Not stale — misattributed.** These are **D1's and D2's** rows, closed at 0a.4 by deleting three lines. Steps 6 and 7 must not claim them; if either lands before 0a.4, the row is listed as known-red naming 0a.4. |
+| `extensions-formula-github.txt` — prose | frames the dollar and fenced forms as *"a surface recognized by the `formula` extension"* | Add one sentence: **attachment is the only gate**. | Cosmetic, but under Q14 the two delimiter options cease to exist and the prose currently implies otherwise. |
+| `extensions-formula-option-gates.txt` — title and framing | written against two option knobs | Retitle to *"the formula extension is not attached"*; the five expected blocks stand **unchanged** (measured byte-identical with no options). | Same one-knob correction. Note that `extensions-formula-conflicts.txt` is *not* affected and `extensions-formula-github.txt`'s attached-but-inert case is genuinely distinct — do not collapse them. |
+| All six files — positions | positions reflect fixes scheduled separately | Derive positions from this engine at each step; the oracle's positions are a **cross-check**, not a golden. | The README says so, and two specific classes prove it: the directive's `Directive 1:1..2:5` needs **D22**, and `DirectiveLabel scope` spanning brackets inclusive needs the label node to be visible — the baseline's hidden label spans the content only and its empty form is a *negative* range. |
+| `extensions-directive.txt` — the 18 spelling-only rows (`attributes=[…]`, `DirectiveLabel`) | new dump vocabulary | **Adopt them verbatim.** | **Not stale.** They are the surface change, and `scripts/lib/mdast-oracle.mjs` already sorts remark's attributes and compares the rendered bracket form — the gate was written against that exact spelling before this branch existed. |
+| `extensions-directive.txt` — the `:a-[]` / `:-a[]` / `:_a[]` prose | records that an earlier version of the example was wrong and how it was found | **Keep verbatim.** | It is the only place where the leading-`-`/`_` rule's provenance is written down, and the rule reverses baseline behaviour (which produces directives named `-a` and `_a`). |
+
+**One oracle-adjacent gate must move with Step 6 and is easy to miss:** `scripts/check-mdast-parity.mjs`'s self-test canary currently asserts `literal=" mid "` — the *unpadded* answer — with a comment naming Step 6 as the flip. An oracle whose canary asserts the defect is an oracle that has been told to expect it. Step 6 flips the assertion, moves `github-backtick-math-padding` and `inline-display-math-across-lines` from `pendingExpectedDivergences` back into `expectedDivergences`, and **deletes** the two `baselineBacklog` entries that close by leaving the mdast corpus — the gate fails loudly on a backlog entry that stops diverging.
+
+---
+
+Scratch artifacts (outside the repository): `/private/tmp/claude-501/-Users-donz-Repos-GitHub-markdown-core/19b6648c-2779-4f7c-bddf-acfaf7c2be6b/scratchpad/dag.mjs` and `dag2.mjs` — the acyclicity check and the linear-order verifier of §4.1.4, runnable with `node`. Repository unmodified; `git status` clean.
 
 ### 4.2 Stage 0a — the defect stage
 
