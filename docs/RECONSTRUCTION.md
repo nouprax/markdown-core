@@ -89,7 +89,7 @@ spec_commonmark      green
 upstream parity      795/795 inputs agree with cmark-gfm 0.29.0.gfm.13
 mdast parity          46/46 accounted for; 10/10 registered divergences reproduce
 fuzz-parity          300/300 generated inputs agree (seed 1, 1213 fragments)
-scope-sanity         206 unresolved rows, only-shrink ratchet holding
+scope-sanity         207 unresolved rows, only-shrink ratchet holding
 ```
 
 **795/795 against upstream is not a coincidence.** At 1.0 this engine had not
@@ -161,6 +161,21 @@ revisions, diagnostics, concrete records, the delimiter engine,
    paths. `table.c:325..457`
 9. The reference expansion budget makes whether a reference resolves depend on
    how many resolved before it. `blocks.c:802-805`, `map.c:307-309`
+10. **An undefined footnote call LOSES SOURCE BYTES**, in the default profile,
+    because footnotes are on by default (`core/main.c:133`). Thirteen bytes in,
+    nine characters out:
+
+    ```
+    $ printf 'x[^a\nb] tail\n' | markdown-core --profile gfm
+    Paragraph scope=1:1..2:7 children=1
+      Text    scope=1:1..1:7 literal="x[^] tail"
+    ```
+
+    The `a`, the newline and the `b` are in no node. The child also fails to
+    span its parent. Cause: the underflow guard at `inlines.c:1352-1356` on the
+    raw column-arithmetic slice the `noMatch:` path takes. The same path emits
+    impossible positions — `[^~~x~~] tail` yields `Text scope=0:0..0:13`, line
+    zero with column thirteen. Closed by Step 9 (see §5.7).
 
 ---
 
@@ -401,6 +416,47 @@ and removes none.** Gate G6 proves it.
 | `[^a]:` unreferenced | unlinked and freed | kept unconditionally | kept |
 | `[^a]` payload | **label destroyed**, overwritten with the decimal index | `{type, identifier, label}` | label only, as written |
 | duplicate label | first wins; the losing footnote is **freed** | first wins for matching; **both nodes remain** | both remain |
+
+### 5.7 D2 is settled: the interior of a failed footnote call is reparsed
+
+Not as a preference for remark, and not by analogy. The construct that fails
+here is **an unmatched `[`**, which CommonMark specifies normatively: all three
+failure branches of *look for link or image* remove the delimiter-stack entry
+and return a literal `]`, and **none of them touches the interior**. Failure is
+defined as *not re-parenting*. The interior nodes exist because core inline
+parsing already built them, under CommonMark's rules, before any footnote code
+ran.
+
+So the question is not "what may an extension do when its construct fails" but
+"may an extension reach backwards and free nodes core already built, for a
+construct that turned out not to exist." Nothing authorizes that: **GitHub's GFM
+spec never uses the word footnote**, and `micromark-extension-gfm-footnote`'s
+own README says it matches github.com "except for its bugs". There is no
+specification of any kind for this case — both behaviours are implementations.
+
+cmark-gfm is alone here, and alone against *itself*: remove `-e footnotes` and
+`x[^*y*] tail` gives `x[^<em>y</em>] tail`. Same bytes, same core parser, two
+answers depending on whether an extension is loaded.
+
+| | undefined `[*y*]` | undefined `[^*y*]` |
+|---|---|---|
+| CommonMark | `[` + parsed interior + `]` | out of scope |
+| cmark-gfm | `[` + parsed interior + `]` | **one flat literal, children freed** |
+| remark | `[` + parsed interior + `]` | `x[^` + parsed interior + `] tail` |
+| this engine, 1.0 | `[` + parsed interior + `]` | one flat literal |
+
+**And the flattening is not merely less structured — it is lossy.** See defect
+10. That is what decides it: a mechanism that drops source bytes and writes
+impossible positions is not a behaviour to preserve.
+
+Recognition moves to the **opening** bracket, gated on the document's definition
+set, which is why this makes the engine smaller: the failure path then costs
+nothing and the success path destroys nothing. The current flattening needs a
+defending mechanism — record tombstoning — whose only purpose is to keep the
+flattening consistent.
+
+The definition side is untouched: a label is never inline content, so
+`[^*y*]: b` still has the label `*y*`.
 
 ### 5.6 What the oracles cannot see
 

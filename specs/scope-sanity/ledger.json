@@ -5,31 +5,38 @@
     "budget": {
         "packages/markdown-core/tests/fixtures/extensions-directive.txt": {
             "sentinel": 6,
-            "negative": 0
+            "negative": 0,
+            "partial": 0
         },
         "packages/markdown-core/tests/fixtures/extensions-formula-option-gates.txt": {
             "sentinel": 2,
-            "negative": 0
+            "negative": 0,
+            "partial": 0
         },
         "packages/markdown-core/tests/fixtures/extensions.txt": {
             "sentinel": 36,
-            "negative": 10
+            "negative": 10,
+            "partial": 1
         },
         "packages/markdown-core/tests/fixtures/regression.txt": {
             "sentinel": 17,
-            "negative": 0
+            "negative": 0,
+            "partial": 0
         },
         "packages/markdown-core/tests/fixtures/smart_punct.txt": {
             "sentinel": 17,
-            "negative": 0
+            "negative": 0,
+            "partial": 0
         },
         "packages/markdown-core/tests/fixtures/spec.txt": {
             "sentinel": 110,
-            "negative": 6
+            "negative": 6,
+            "partial": 0
         },
         "specs/canonical-ast/inlines.ast": {
             "sentinel": 2,
-            "negative": 0
+            "negative": 0,
+            "partial": 0
         }
     }
 }

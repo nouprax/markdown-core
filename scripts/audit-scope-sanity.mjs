@@ -92,6 +92,7 @@ for (const [dir, entry] of sources) {
     const text = await readFile(path.join(root, relative), "utf8");
     let sentinel = 0;
     let negative = 0;
+    let partial = 0;
     for (const line of dumpLines(text, relative.endsWith(".txt"))) {
         const scope = line.match(scopePattern);
         if (scope === null) continue;
@@ -99,12 +100,20 @@ for (const [dir, entry] of sources) {
         const [startLine, startColumn, endLine, endColumn] = scope.slice(1).map(Number);
         if (startLine === 0 && startColumn === 0 && endLine === 0 && endColumn === 0) sentinel += 1;
         else if (endLine < startLine || (endLine === startLine && endColumn < startColumn)) negative += 1;
+        // A THIRD CLASS THIS GATE USED TO MISS. Line zero with a NON-zero column
+        // — `scope=0:0..0:13` — is neither of the two above: not all four
+        // coordinates are zero, and the end is after the start, so both tests
+        // pass it as an ordinary position. There is no line zero. It is written
+        // when a node is calloc'd and its start is never assigned while its end
+        // is, which is what a synthesized replacement node does.
+        else if (startLine === 0 || endLine === 0) partial += 1;
     }
-    if (sentinel > 0 || negative > 0) measured[relative] = { sentinel, negative };
+    if (sentinel > 0 || negative > 0 || partial > 0) measured[relative] = { sentinel, negative, partial };
 }
 
 const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
-const total = (counts) => Object.values(counts).reduce((sum, entry) => sum + entry.sentinel + entry.negative, 0);
+const total = (counts) =>
+    Object.values(counts).reduce((sum, entry) => sum + entry.sentinel + entry.negative + (entry.partial ?? 0), 0);
 
 if (update) {
     ledger.budget = measured;
