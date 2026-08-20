@@ -9,6 +9,80 @@ again has landed, and only by a deliberate commit that says so.
 
 ---
 
+## 0. How to continue
+
+Everything needed to pick this up cold is here. Nothing about the state of the
+work lives outside this file.
+
+**The work is on branch `reconstruct-from-1.0`.** `main` is untouched and still
+carries the abandoned streaming program; do not build on it. The branch
+`streaming-every-partition` holds that program's last 21 commits and is kept
+only as a record.
+
+### The state
+
+| | |
+|---|---|
+| Branch | `reconstruct-from-1.0` |
+| Landed | Steps 0 and 1, and §4.0's re-ordering |
+| Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
+| `VERSION` | `1.0.3`, and it moves to `1.0.4` at the CLOSE of Stage 0a — the first commit range that moves behaviour |
+| Next action | **Stage 0a**, §4.2, beginning with 0a.1 |
+
+`--profile` is a named option set for the CLI, added because the restored parity
+harness invokes it and the baseline had no such flag: `gfm` turns this
+repository's own two extensions off so a parity run compares one language,
+`gfm-extended` turns them on with the formula delimiters enabled. No existing
+invocation parses differently, and the extension attach ORDER is deliberately
+untouched — reordering `table` is a behaviour change that belongs to Step 3.
+
+### Every gate, and how to run it
+
+```
+cmake --preset default && cmake --build --preset default --parallel
+
+ctest --preset correctness -j 8            # 65/65
+ctest --preset correctness-asan -j 8       # 57/57
+ctest --preset correctness-ubsan -j 8      # 57/57
+node scripts/check-upstream-parity.mjs     # 795/795 vs cmark-gfm 0.29.0.gfm.13
+node scripts/check-mdast-parity.mjs        # 46/46, backlog 23/23 still diverging
+node scripts/audit-scope-sanity.mjs        # 207 rows, only-shrink holds
+node scripts/fuzz-parity.mjs --cases 300   # 300/300
+```
+
+The upstream oracle needs a built cmark-gfm:
+`scripts/init-environment.sh --install upstream-cmark`.
+
+`timeout` is not on the macOS PATH; guard long runs with a background job and a
+`kill`.
+
+### The three standing rules
+
+1. **No commit may leave `spec_commonmark` failing.** It is the cheapest oracle
+   in this repository, and the previous attempt failed precisely because it
+   broke the one-shot and then had nothing left to measure streaming against.
+2. **The mdast backlog only shrinks, and only on purpose.** Its 23 entries each
+   name the step that closes them; the gate requires each to *still* diverge, so
+   a step that lands without deleting its own entries fails as loudly as a new
+   divergence. Zero of the 23 close in Stage 0a, by design — the backlog
+   measures distance to mdast's *model*, while the defects measure wrongness
+   against the engine's own intent.
+3. **A behaviour change regenerates its goldens in the same commit**, and every
+   moved row is reviewed by hand and named in the commit message.
+
+### What is already decided, and must not be re-opened
+
+- **Q1–Q7** (§9) are settled, with their reasoning in §5.7 and §5.8. Q4 in
+  particular is *both* `label` and `identifier`, on both node kinds, plus an
+  exported fold — and the ecosystem argument that first suggested it was
+  discarded as circular, so it must not be reintroduced as support.
+- **Defects come before the port** (§4.0). Ten of eleven were each proved
+  fixable on the untouched baseline. The old order rested on an untested claim
+  that Step 3 must precede everything.
+- **The CST needs no substrate** (§6).
+
+---
+
 ## 1. What happened, and why this exists
 
 The engine grew a session/incremental layer, then a delta layer, then a
@@ -100,6 +174,17 @@ source and its `.o` both carry the checkout timestamp. With a stale `build/` the
 tree reads **64/65**, `regression_commonmark` fails on example 24, and D10's
 impossible position does not reproduce. Anyone measuring against this pin who
 skips the wipe is measuring a different engine.
+
+**The scope-sanity ledger counts THREE classes, not two.** It was extended on
+2026-08-20 because a third shape was slipping through: **line zero with a
+non-zero column**, such as `scope=0:0..0:13`. It is not a sentinel — not all
+four coordinates are zero — and not a negative range — the end is after the
+start — so both existing tests passed it as an ordinary position. There is no
+line zero. It is written when a node is `calloc`'d and its start is never
+assigned while its end is, which is what a synthesized replacement node does.
+The single corpus row the new class caught is `Text scope=0:0..0:2
+literal="123"`: a footnote **ordinal**, written by the very mechanism Step 9a
+deletes. The ledger went 206 → 207 in the same commit.
 
 **795/795 against upstream is not a coincidence.** At 1.0 this engine had not
 yet diverged from cmark-gfm deliberately; every registered divergence in
