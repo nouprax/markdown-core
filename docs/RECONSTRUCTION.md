@@ -77,14 +77,44 @@ Step 4 first moves behaviour.
 
 ### The pin
 
-Measured on the reset tree, not assumed:
+Measured on the reset tree, not assumed. Steps 0 and 1 have landed, so this is
+the full pin including the restored oracles:
 
 ```
 correctness          65/65    100%
 correctness-asan     57/57    100%
 correctness-ubsan    57/57    100%
 spec_commonmark      green
+
+upstream parity      795/795 inputs agree with cmark-gfm 0.29.0.gfm.13
+mdast parity          46/46 accounted for; 10/10 registered divergences reproduce
+fuzz-parity          300/300 generated inputs agree (seed 1, 1213 fragments)
+scope-sanity         206 unresolved rows, only-shrink ratchet holding
 ```
+
+**795/795 against upstream is not a coincidence.** At 1.0 this engine had not
+yet diverged from cmark-gfm deliberately; every registered divergence in
+`main`'s policy describes a fix made after 1.0. That is why the policies had to
+be re-pinned rather than copied, and it is why the mdast gate — which compares
+against a target the engine has *not* reached — is the one carrying a backlog.
+
+### Stage 0 progress meter
+
+The mdast gate carries a **reconstruction backlog**: inputs where remark is
+right and this engine has not caught up. Every entry names the step that closes
+it, and the gate requires each to *still* diverge — so a step that lands without
+deleting its own entries fails as loudly as a new divergence.
+
+```
+    14  Step 7  — directive grammar conformance
+     6  Step 9  — one reference model
+     2  Step 6  — formula
+     1  Step 10 — the split-off table lead
+    --
+    23  remaining
+```
+
+**When this list is empty, Stage 0 is done.**
 
 ### The standing gate
 
@@ -187,8 +217,8 @@ machinery.
 
 | # | Step | Diff. | Size | Depends on |
 |---|---|---|---|---|
-| 0 | Reset the engine to the 1.0 baseline | [CP] | — | — |
-| 1 | **Restore the oracles before touching engine code** | [CP] | ~1,400 script lines | 0 |
+| ✅ 0 | Reset the engine to the 1.0 baseline | [CP] | — | — |
+| ✅ 1 | **Restore the oracles before touching engine code** | [CP] | ~1,400 script lines | 0 |
 | 2 | Formatter config, applied once | [CP] | mechanical | 0 |
 | 3 | Static extension descriptors, no process-global state | [HW] | ~600 | 0–2 |
 | 4 | Behaviour fixes that need no new architecture | [HW] | ~250 | 3 |
@@ -206,6 +236,16 @@ machinery.
 
 Notes that change the order or the risk:
 
+- **Steps 0 and 1 have landed.** What Step 1 actually cost, recorded because
+  the next person will hit the same thing: main's policies could not be copied.
+  Two corpus fixtures had left with the cross-link/embed feature; three upstream
+  divergences and two mdast divergences describe fixes not yet re-applied and
+  moved to `pendingDeltas` / `pendingExpectedDivergences`, each naming the step
+  that restores it; the mdast self-test canary asserted the padding-stripped
+  literal, which the baseline does not produce, and now asserts `" mid "` until
+  Step 6a flips it back. The CLI also gained `--profile`, which the harness
+  invokes and the baseline lacked — a named option set only, with the extension
+  attach *order* deliberately untouched, since reordering `table` is Step 4h.
 - **Step 1 is non-negotiable and must not be deferred.** The parity oracles
   (`check-upstream-parity.mjs`, `check-mdast-parity.mjs`, `fuzz-parity.mjs`,
   `check-coverage.mjs` and the `specs/*-parity/` directories) arrive at
