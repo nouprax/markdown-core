@@ -416,7 +416,7 @@ D9 cannot, and §4.2 says what pins it in the meantime.
 
    So today it is a contract violation and nothing more — **and it is one
    substrate change away from a real heap overread.** The strbuf invariant is
-   written down nowhere near `inlines.c:492`. Step 11's concrete records, or any
+   written down nowhere near `inlines.c:492`. Step 11a's concrete records, or any
    future chunk that is a slice of a larger buffer, makes it live silently, with
    no gate to notice. That is the argument for fixing it while it costs one
    line.
@@ -519,7 +519,7 @@ D9 cannot, and §4.2 says what pins it in the meantime.
     Nothing here needs the CST or `parser->line_marks`: the label's extent is
     two buffer offsets the function already holds (`opener->position`,
     `initial_pos`), and the opening line is already on `opener->inl_text`,
-    written by `make_literal` at `inlines.c:112`. See §5.7 for the *shape* Step 9
+    written by `make_literal` at `inlines.c:112`. See §5.7 for the *shape* Step 9b
     then gives the failure — which is a different question from keeping the
     bytes.
 11. **A duplicate footnote definition nested inside another deletes a block of
@@ -729,7 +729,7 @@ that was already going to touch that code, so none of them lengthens Stage 0a.
 Three structural changes to the old table, each argued below: **Step 4 no longer
 exists** (its content is Stage 0a, which is not a step but a stage, because it
 precedes the port); **Step 9 splits at the CST line** (9a needs no concrete
-record and was proved to work at the baseline; only 9b needs Step 11); and
+record and was proved to work at the baseline; only 9b needs Step 11a); and
 **Step 3 sheds its two unnamed behaviour changes into 3a.**
 
 `VERSION` moves to **1.0.4** at the close of Stage 0a — the first commit range
@@ -1128,7 +1128,7 @@ entry a long way earlier in wall-clock terms:
     23  remaining
 ```
 
-That single move is the substantive one: **Step 9a has no dependency on Step 11**,
+That single move is the substantive one: **Step 9a has no dependency on the CST at all**,
 which the old table asserted as "9 depends on 11 (hard)". Measured — definition
 retention plus the one-line anchor fix at `blocks.c:1363`
 (`add_child(..., parser->first_nonspace + matched + 1)` →
@@ -1159,7 +1159,7 @@ steps), `deltas` goes 4 → 5, and `applyUpstreamFootnoteModel` gains D11's rule
   moved to `pendingDeltas` / `pendingExpectedDivergences`, each naming the step
   that restores it; the mdast self-test canary asserted the padding-stripped
   literal, which the baseline does not produce, and now asserts `" mid "` until
-  Step 6a flips it back. The CLI also gained `--profile`, which the harness
+  Step 6 flips it back. The CLI also gained `--profile`, which the harness
   invokes and the baseline lacked — a named option set only, with the extension
   attach *order* deliberately untouched.
 - **Step 1 is non-negotiable and must not be deferred.** The parity oracles
@@ -1208,7 +1208,10 @@ steps), `deltas` goes 4 → 5, and `applyUpstreamFootnoteModel` gains D11's rule
 
 ---
 
-## 5. Step 9 — one reference model
+## 5. Steps 9a and 9b — one reference model
+
+*"Step 9" below is the umbrella for both halves. Where a statement belongs to
+one half only, it says 9a or 9b.*
 
 **Step 9 now lands in two parts, and the split is not the old one.** The old
 draft split it by *construct* — a footnote contract and a reference-definition
@@ -1225,7 +1228,7 @@ contract — and that was wrong for the reason below. This split is by
   with only-shrink holding, 39 golden lines moved.
 - **9b — the node model.** `markdown_core_association`, `identifier`,
   `LinkReference` / `ImageReference` / `ReferenceDefinition`, and the ~260 lines
-  of §5.3 deletions. This is the half that needs Step 11.
+  of §5.3 deletions. This is the half that needs Step 11a.
 
 The old table's "**9 depends on 11 (hard)**" is therefore false for every
 data-loss part of Step 9 and for the anchor rule. Do not hold the byte-keeping
@@ -1488,7 +1491,9 @@ re-parse-equivalent**, which no locator can be.
 
 **Cost: the node struct gets smaller.** A reference `{label, identifier, form}` is 40
 bytes — exactly the width of the widest existing payload arm (`code`), so the
-union does not grow. The definition is boxed. Deleting `parent_footnote_def`
+union does not grow. The definition measures 64 and is therefore **boxed**,
+which is the fact that forces §5.2's accessor to be type-dispatched rather than
+a single union read. Deleting `parent_footnote_def`
 removes 8 bytes from *every* node: −800 KB on a 100,000-node document. The key
 bytes are an ownership move, not a new allocation — the parser already
 allocates exactly one per occurrence, and today frees them with the refmap at
@@ -1665,7 +1670,7 @@ tightness is settled in `finalize` before postprocess runs.
 | R7 | **Positions are invisible to every oracle**, and the ported ratchet does **not** close it: `audit-scope-sanity.mjs` classifies only sentinel, negative and line-zero rows, so a well-formed but *wrong* position sails through. It reads 207 before and after both position fixes. | The two oracles of step 0a.1: inline sourcepos vs the pinned `cmark-gfm --to xml --sourcepos` (13 → 1 mismatch over 671 examples), and a parent/child scope-containment invariant, which upstream cannot supply because it has D7 too. | ½ day |
 | R8 | Unclear whether the iterative dump stack or the canonical walk is needed. | Dump a 50,000-deep blockquote; time the binding scope walk. | 2 hours |
 | R9 | 20,459 lines of checked-in re2c output, and **no re2c invocation or version pin** in the build. | Regenerate from the untouched `.re` and diff. | 2 hours |
-| R10 | The CST test debt is the bulk of Step 11 — a 7,067-line runner, half of it streaming. | Extract the 14 non-streaming cases into a standalone runner *at HEAD first*. | 1 day |
+| R10 | The CST test debt is the bulk of Steps 11a–11c — a 7,067-line runner, half of it streaming. | Extract the 14 non-streaming cases into a standalone runner *at HEAD first*. | 1 day |
 | R11 | Option-struct layout across three bindings. | Fold into R4; the bridge asserts fail loudly at build time. | — |
 | R12 | **Four defect fixes have no output signature, so a later refactor can revert them silently.** D2, D4, D7 and D8 are held by assertions and structural properties, not goldens — and a refactor that deletes the assertion passes. | List those four gates by name in the commit that lands them, and re-run and re-read them explicitly at Steps 3, 8 and 11. Cheap, and it is the only thing standing between the fix and its own erasure. | ½ day, thrice |
 | R13 | **§2's `file:line` citations go stale the instant the first defect lands.** D3's four-line deletion alone moves D4 from `inlines.c:492` to `488` — and that exact shift already produced one confident, wrong "the doc is off by four" correction during this analysis. | Cite `function` (`file:line`), and re-pin the remaining citations in each defect commit. The function name is the half that survives. | minutes per commit |
