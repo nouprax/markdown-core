@@ -1,0 +1,312 @@
+{
+    "schemaVersion": 1,
+    "contract": "docs/specs/test-architecture.md",
+    "target": "Every branch of the parser that can change source -> canonical AST output is pinned by a golden assertion.",
+    "requiredMetrics": [
+        "lines",
+        "functions",
+        "branches"
+    ],
+    "rules": [
+        "A measured file with no `unpinned` entry must be fully covered on every required metric.",
+        "An `unpinned` entry is the maximum permitted number of unpinned lines, functions, and branches for that file; unprotected surface may only shrink.",
+        "An intended behaviour change may move which code the pinning corpus reaches, growing an entry without any protection having eroded. That is the one case where an entry may increase: the increase is recorded with its cause in docs/migration/2026-08-01-incremental-canonical-ast-plan.md and reviewed as part of the change that caused it. Growth with no such cause is a regression.",
+        "`unpinned` shrinks by adding corpus inputs that pin behaviour, not by adding tests that merely execute the code. A test that raises coverage without asserting parse output does not pay it down.",
+        "An `exempt` entry removes a file from measurement and is legitimate only when no source input can reach the file at all. Generated code is not exemptible: nobody reviews it, so its behaviour needs pinning more than hand-written code, not less.",
+        "Code that no source input can reach is a defect or dead code to be decided on, never an `unpinned` entry: recording it would promise a test that cannot be written.",
+        "A platform that cannot produce a required metric declares it in `unsupportedMetrics` with a reason; the gate fails if a required metric turns up with no counters at all, and fails again if an unsupported one turns up with data."
+    ],
+    "platforms": {
+        "swift-macos": {
+            "producer": "scripts/coverage-swift-macos.sh",
+            "format": "llvm-cov",
+            "include": [
+                "packages/swift-markdown-core/Sources/"
+            ],
+            "exempt": [],
+            "unsupportedMetrics": [
+                {
+                    "metric": "branches",
+                    "reason": "llvm-cov emits no branch regions for Swift: SwiftPM's coverage instrumentation produces line, function, and region counters only. Line and function coverage carry this platform's gate until the toolchain grows branch support."
+                }
+            ],
+            "minimumMeasuredFiles": 33,
+            "unpinned": {
+                "packages/swift-markdown-core/Sources/MarkdownCore/Document.swift": {
+                    "lines": 13,
+                    "functions": 4
+                },
+                "packages/swift-markdown-core/Sources/MarkdownCore/Markup/Directive.swift": {
+                    "lines": 1,
+                    "functions": 1
+                },
+                "packages/swift-markdown-core/Sources/MarkdownCore/Markup/DirectiveValues.swift": {
+                    "lines": 1,
+                    "functions": 1
+                },
+                "packages/swift-markdown-core/Sources/MarkdownCore/Markup/List.swift": {
+                    "lines": 2,
+                    "functions": 1
+                },
+                "packages/swift-markdown-core/Sources/MarkdownCore/Markup/Markup.swift": {
+                    "lines": 4,
+                    "functions": 1
+                },
+                "packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift": {
+                    "lines": 5,
+                    "functions": 3
+                },
+                "packages/swift-markdown-core/Sources/MarkdownCore/NativeValues.swift": {
+                    "lines": 1,
+                    "functions": 1
+                },
+                "packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupDumper.swift": {
+                    "lines": 1,
+                    "functions": 0
+                }
+            }
+        },
+        "kotlin-jvm": {
+            "producer": "scripts/coverage-kotlin-jvm.sh",
+            "format": "jacoco",
+            "include": [
+                "packages/kotlin-markdown-core/src/"
+            ],
+            "exempt": [],
+            "minimumMeasuredFiles": 40,
+            "unpinned": {
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/BlockQuote.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Code.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/CodeBlock.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/CrossLink.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Diagnostic.kt": {
+                    "lines": 3,
+                    "functions": 3,
+                    "branches": 6
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Directive.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/DirectiveBlock.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/DirectiveLabel.kt": {
+                    "lines": 1,
+                    "functions": 1,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Document.kt": {
+                    "lines": 4,
+                    "functions": 3,
+                    "branches": 2
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Embed.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Emphasis.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Footnote.kt": {
+                    "lines": 4,
+                    "functions": 4,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Formula.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/FormulaBlock.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/HTML.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/HTMLBlock.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Heading.kt": {
+                    "lines": 1,
+                    "functions": 1,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Image.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/LineBreak.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Link.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/List.kt": {
+                    "lines": 4,
+                    "functions": 4,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Markup.kt": {
+                    "lines": 1,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/MarkupID.kt": {
+                    "lines": 3,
+                    "functions": 4,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Paragraph.kt": {
+                    "lines": 1,
+                    "functions": 1,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/SoftBreak.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Strikethrough.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Strong.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Table.kt": {
+                    "lines": 6,
+                    "functions": 6,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Text.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/ThematicBreak.kt": {
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupDumper.kt": {
+                    "lines": 0,
+                    "functions": 2,
+                    "branches": 4
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/wire/WireDecoder.kt": {
+                    "lines": 3,
+                    "functions": 0,
+                    "branches": 12
+                },
+                "packages/kotlin-markdown-core/src/jvmMain/kotlin/com/nouprax/markdown/core/CBridge.jvm.kt": {
+                    "lines": 3,
+                    "functions": 0,
+                    "branches": 2
+                },
+                "packages/kotlin-markdown-core/src/jvmSharedMain/kotlin/com/nouprax/markdown/core/CBridge.jvmShared.kt": {
+                    "lines": 4,
+                    "functions": 1,
+                    "branches": 0
+                }
+            }
+        },
+        "es-node": {
+            "producer": "scripts/coverage-es-node.sh",
+            "format": "lcov",
+            "include": [
+                "packages/es-markdown-core/src/"
+            ],
+            "pathRewrite": [
+                {
+                    "from": "packages/es-markdown-core/dist/",
+                    "to": "packages/es-markdown-core/src/",
+                    "fromSuffix": ".js",
+                    "toSuffix": ".ts",
+                    "reason": "The suites import the emitted module, and tsc maps src/<name>.ts to dist/<name>.js one to one. Type-only constructs emit nothing, so full coverage of the output is full coverage of every executable construct in the reviewed source."
+                }
+            ],
+            "exempt": [],
+            "minimumMeasuredFiles": 11,
+            "unpinned": {
+                "packages/es-markdown-core/src/document.ts": {
+                    "lines": 3,
+                    "functions": 0,
+                    "branches": 2
+                },
+                "packages/es-markdown-core/src/markup-dumper.ts": {
+                    "lines": 0,
+                    "functions": 1,
+                    "branches": 3
+                },
+                "packages/es-markdown-core/src/markup-visitor.ts": {
+                    "lines": 4,
+                    "functions": 1,
+                    "branches": 1
+                },
+                "packages/es-markdown-core/src/markup-walker.ts": {
+                    "lines": 4,
+                    "functions": 1,
+                    "branches": 2
+                },
+                "packages/es-markdown-core/src/parse-error.ts": {
+                    "lines": 4,
+                    "functions": 2,
+                    "branches": 1
+                },
+                "packages/es-markdown-core/src/runtime/c-document.ts": {
+                    "lines": 12,
+                    "functions": 1,
+                    "branches": 8
+                },
+                "packages/es-markdown-core/src/runtime/native.ts": {
+                    "lines": 8,
+                    "functions": 4,
+                    "branches": 3
+                },
+                "packages/es-markdown-core/src/wire/node-decoder.ts": {
+                    "lines": 39,
+                    "functions": 3,
+                    "branches": 24
+                }
+            }
+        }
+    },
+    "purpose": "This gate measures which BINDING code a golden assertion pins. It is not a code-quality score and must never be used to record current behaviour as acceptable. Producers run only the suites that assert parse output, so a covered branch is one a golden assertion would catch changing, and an uncovered branch is behaviour a rewrite can alter silently. The c-host platform is gone: it ratcheted line and branch counts per C file, and those files are the ones a Rust engine replaces, so the ledger could not outlive the rewrite it was meant to protect. What protects the engine across that rewrite is the source-to-AST corpus — spec, pathological, entity, extension-order, equivalence, fuzz, and both parity oracles."
+}

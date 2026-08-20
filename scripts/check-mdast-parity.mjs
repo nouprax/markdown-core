@@ -109,9 +109,19 @@ function compare(input) {
 
 // The oracle must be able to see a difference before its agreement means
 // anything. This is the difference it found when it was built — inline math
-// padding — with the fix reverted by hand on the remark side.
+// padding.
+//
+// RE-PINNED TO THE 1.0 BASELINE, 2026-08-20. The canary asserted the STRIPPED
+// form, `literal="mid"`, because the engine it was written against strips the
+// padding. The reset baseline does not: `strip_inline_math_padding` is Step 6a
+// of the reconstruction and has not been re-applied, so this engine emits
+// `literal=" mid "` and remark emits the stripped form. The canary therefore
+// asserts the unstripped literal, which serves the identical purpose — the
+// comparison can still see this field, and the difference it can see is a real
+// one this engine currently has. Step 6a flips this assertion back to
+// `literal="mid"`, and that flip is part of what proves Step 6a landed.
 const selfTest = compare("text $$ mid $$ text\n");
-if (!selfTest.ours.includes('literal="mid"')) {
+if (!selfTest.ours.includes('literal=" mid "')) {
     process.stderr.write(
         "mdast parity: the self-test input no longer produces the padded-and-stripped form.\n" +
             "The comparison may be projecting away the field it is supposed to check.\n"
@@ -126,6 +136,17 @@ if (!selfTest.ours.includes('literal="mid"')) {
 // looked at since.
 const expected = new Map((policy.expectedDivergences ?? []).map((entry) => [entry.input, entry]));
 const reproduced = new Set();
+
+// THE RECONSTRUCTION BACKLOG, which is not the same thing as a divergence.
+// A registered divergence says "remark is not the authority here". A backlog
+// entry says "remark is right and this engine has not caught up yet", and
+// names the step that closes it. The gate knows about them so it can still
+// fail on a NEW divergence, and it requires each one to STILL diverge: an
+// entry that has quietly started agreeing is a step that landed without
+// deleting its own entry, which is a failure too. When the list is empty,
+// Stage 0 is done.
+const backlog = new Map((policy.baselineBacklog ?? []).map((entry) => [entry.input, entry]));
+const backlogSeen = new Set();
 
 // `--corpus` replaces the policy's corpus for one run; see the note in
 // scripts/check-upstream-parity.mjs.
@@ -146,6 +167,7 @@ for (const testCase of cases) {
     const registered = expected.get(testCase.input);
     if (result.remark !== result.ours) {
         if (registered) reproduced.add(registered.id);
+        else if (backlog.has(testCase.input)) backlogSeen.add(testCase.input);
         else divergent.push({ ...testCase, ...result });
     } else if (registered) {
         divergent.push({
@@ -173,6 +195,17 @@ process.stdout.write(
 process.stdout.write(`  corpus: ${policy.corpus.join(", ")}\n`);
 process.stdout.write(`  registered shape deltas: ${policy.deltas.map((d) => d.id).join(", ")}\n`);
 process.stdout.write(`  registered divergences: ${String(reproduced.size)}/${String(expected.size)} reproduced\n`);
+if (backlog.size) {
+    const byStep = new Map();
+    for (const entry of backlog.values()) byStep.set(entry.closedBy, (byStep.get(entry.closedBy) ?? 0) + 1);
+    process.stdout.write(`  reconstruction backlog: ${String(backlogSeen.size)}/${String(backlog.size)} still diverging\n`);
+    for (const [step, count] of [...byStep].sort()) {
+        process.stdout.write(`      ${String(count).padStart(2)}  ${step}\n`);
+    }
+    for (const [input, entry] of backlog) {
+        if (!backlogSeen.has(input)) divergent.push({ source: policyPath, input, settledBacklog: entry });
+    }
+}
 
 if (unmapped.size) {
     process.stderr.write(
@@ -188,6 +221,13 @@ if (divergent.length) {
         process.stderr.write(`\n  ${entry.source}\n${JSON.stringify(entry.input)}\n`);
         if (entry.failure) {
             process.stderr.write(`    harness error: ${entry.failure}\n`);
+            continue;
+        }
+        if (entry.settledBacklog) {
+            process.stderr.write(
+                `    backlog entry now AGREES with remark. ${entry.settledBacklog.closedBy} has landed;\n` +
+                    "    delete this entry from specs/mdast-parity/deltas.json in that same commit.\n"
+            );
             continue;
         }
         if (entry.unreachable) {

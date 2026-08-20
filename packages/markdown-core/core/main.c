@@ -37,6 +37,7 @@
 void print_usage(void) {
     printf("Usage:   markdown-core [FILE*]\n");
     printf("Options:\n");
+    printf("  --profile PROFILE named option set: default | gfm | gfm-smart | gfm-extended\n");
     printf("  --smart           Use smart punctuation\n");
     printf("  --validate-utf8   Replace UTF-8 invalid sequences with U+FFFD\n");
     printf("  --strip-html-comments Strip HTML comment nodes from the parsed AST\n");
@@ -155,6 +156,8 @@ int main(int argc, char *argv[]) {
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
 
+    bool gfm_profile = false;
+
     files = (int *)calloc(argc, sizeof(*files));
 
     for (i = 1; i < argc; i++) {
@@ -163,6 +166,35 @@ int main(int argc, char *argv[]) {
             printf(" - CommonMark with GitHub Flavored Markdown converter\n(C) 2014-2016 John "
                    "MacFarlane\n");
             goto success;
+        } else if (strcmp(argv[i], "--profile") == 0) {
+            /* A NAMED OPTION SET, so a comparison harness can ask for exactly
+             * one language without knowing which flags spell it. `gfm` is the
+             * subset shared with upstream cmark-gfm — this repository's own
+             * extensions off, so a parity run compares one language and not
+             * two. `gfm-extended` is that plus this repository's own, with the
+             * formula delimiters on because a formula extension with both
+             * delimiter sets off parses no formulas at all.
+             *
+             * Every existing invocation is unaffected: without this flag the
+             * parser is built exactly as before. */
+            if (i + 1 >= argc) {
+                print_usage();
+                goto failure;
+            }
+            i++;
+            if (strcmp(argv[i], "gfm") == 0) {
+                gfm_profile = true;
+                options = MARKDOWN_CORE_OPT_FOOTNOTES;
+            } else if (strcmp(argv[i], "gfm-smart") == 0) {
+                gfm_profile = true;
+                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_SMART;
+            } else if (strcmp(argv[i], "gfm-extended") == 0) {
+                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_DIRECTIVE |
+                          MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS | MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS;
+            } else if (strcmp(argv[i], "default") != 0) {
+                fprintf(stderr, "Unknown profile %s\n", argv[i]);
+                goto failure;
+            }
         } else if (strcmp(argv[i], "--list-extensions") == 0) {
             print_extensions();
             goto success;
@@ -210,8 +242,13 @@ int main(int argc, char *argv[]) {
         goto failure;
 
     if (!attach_syntax_extension(parser, "table") || !attach_syntax_extension(parser, "strikethrough") ||
-        !attach_syntax_extension(parser, "autolink") || !attach_syntax_extension(parser, "tasklist") ||
-        !attach_syntax_extension(parser, "formula") || !attach_syntax_extension(parser, "directive"))
+        !attach_syntax_extension(parser, "autolink") || !attach_syntax_extension(parser, "tasklist"))
+        goto failure;
+
+    /* This repository's own two, off under the gfm profiles so a parity run
+     * against upstream compares the same language. Their attach position is
+     * unchanged for every other invocation. */
+    if (!gfm_profile && (!attach_syntax_extension(parser, "formula") || !attach_syntax_extension(parser, "directive")))
         goto failure;
 
     for (i = 1; i < argc; i++) {
