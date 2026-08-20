@@ -47,15 +47,28 @@ cmake --preset asan    && cmake --build --preset asan    --parallel
 cmake --preset ubsan   && cmake --build --preset ubsan   --parallel
 
 ctest --preset correctness -j 8            # 65/65
-ctest --preset correctness-asan -j 8       # 57/57
-ctest --preset correctness-ubsan -j 8      # 57/57
+ctest --preset correctness-asan -j 8       # 57/57 — SEE THE WARNING BELOW
+ctest --preset correctness-ubsan -j 8      # 57/57 — SEE THE WARNING BELOW
 node scripts/check-canonical-ast-fixtures.mjs   # 28 kinds, 47 fields, 6 cases
 bash scripts/audit-public-surface.sh
+node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
+node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
 node scripts/check-upstream-parity.mjs     # 795/795 vs cmark-gfm 0.29.0.gfm.13
 node scripts/check-mdast-parity.mjs        # 46/46, backlog 23/23 still diverging
 node scripts/audit-scope-sanity.mjs        # 207 rows, only-shrink holds
 node scripts/fuzz-parity.mjs --cases 300   # 300/300
 ```
+
+**A sanitizer preset with no build reports GREEN having run nothing.** With
+`build/asan` absent, `ctest --preset correctness-asan` prints
+`No tests were found!!!` and **exits 0**. Run the configure and build lines above
+first, and treat a sanitizer run that does not report `57/57` as a failure
+however it exited. This is a gate that cannot fail, which is worse than a gate
+that is missing.
+
+**`fuzz-parity` takes `--iterations`, not `--cases`.** An unknown flag is
+silently ignored, so `--cases 5` runs the default 300 and prints `300/300`. Any
+pin recorded with `--cases` measured the default and means nothing.
 
 The upstream oracle needs a built cmark-gfm:
 `scripts/init-environment.sh --install upstream-cmark`.
@@ -67,7 +80,9 @@ mdast backlog and D9's oracle use:
 |---|---|---|
 | `scripts/audit-ast-projections.mjs` | Added at `26045be`; audits a kind/field table the baseline engine does not have. | Step 15 |
 | `scripts/check-generated-scanners.sh` | Added at `8926594`; the baseline build has no re2c invocation or version pin (R9). | R9's experiment, then Step 3 |
-| `node scripts/check-release-version.mjs --skip-swift` | Two independent causes: **D17** below, and an unexpected legacy tag (`codex-doc-pass-backup`) that is repo hygiene, not engine state. | 0a.0, then release |
+| `node scripts/check-release-version.mjs --skip-swift` | **D17 is fixed**; what remains is an unexpected legacy tag (`codex-doc-pass-backup`), which is repo hygiene, not engine state. | release |
+| `node scripts/fuzz-parity.mjs --oracle mdast` | 0/3 — the mdast oracle is red on every generated input, for the same reason the 23-entry backlog exists. CI runs both oracles; only the upstream one was listed. | Stage 0 close |
+| `pnpm audit:ci`, `audit:source-lists`, `audit:ast-projections`, `format:es:check` | Not yet triaged by era (§0's rule). | 0a.0 item 5 |
 
 **`scripts/` IS NOT ONE THING, and Step 0 got this wrong.** It was restored
 from `main` wholesale. That is right for *infrastructure* — CI, environment,
@@ -236,7 +251,10 @@ deleting its own entries fails as loudly as a new divergence.
     23  remaining
 ```
 
-**When this list is empty, Stage 0 is done.**
+**When this list is empty, Steps 6, 7, 9 and 10 have landed — and that is all it
+means.** The backlog is a parity progress meter, NOT Stage 0 acceptance. The last
+step that closes a backlog entry is Step 10; Steps 11–15 close zero. Stage 0 is
+accepted by §4.8's checklist, not by this number reaching zero.
 
 **Stage 0a closes none of them, by design.** The backlog measures distance to
 mdast's *model*; the sixteen defects are wrongness relative to this engine's own
@@ -696,12 +714,14 @@ that was already going to touch that code, so none of them lengthens Stage 0a.
 | 5 | Iterator contract, and the use-after-free it fixes; **carries D13 then D12** | [CP] | ~120 + ~10 | 2 |
 | 6 | Formula — *deliverable #2* | [HW] | ~200 | 3 |
 | 7 | Directive grammar conformance — *deliverable #1* | [HW] | ~330 | 3 |
-| 8 | **Decision fork:** the unified delimiter engine | [HW] | ~1,100 | 3, 7 |
-| 9a | **One reference model, part 1: the anchor, the order and the retention** — registration in document order, definition retention, the definition anchor rule, **D9's budget deletion**, **D14** | [HW] | ~350 | 0a |
-| 9b | **One reference model, part 2: the node model** — `Association`, `identifier`, `LinkReference`/`ImageReference`/`ReferenceDefinition`, the deletions of §5.3 | [HW] | +1,330 / −450 | 9a, 11 |
-| 10 | Position defects that need line marks — **now the table split lead only** | [CP] | ~60 | 9b |
-| 11 | CST: concrete records — *deliverable #3* | [CP]/[HW] | ~2,150 | 11a: none |
-| 12 | CST facade, and the ABI break window | [HW] | ~400 | 6c, 7, 11 |
+| 8 | **Decision fork:** the unified delimiter engine — **Q8** | [HW] | ~1,100 | 3, 6, 7 |
+| 9a | **One reference model, part 1: the anchor and the retention** — definition retention, the definition anchor rule, **D9's budget deletion**, **D14**. Registration order is NOT here: 0a.2 owns it. | [HW] | ~350 | 0a |
+| 9b | **One reference model, part 2: the node model** — `Association`, `identifier`, `LinkReference`/`ImageReference`/`ReferenceDefinition`, the deletions of §5.3 | [HW] | +1,330 / −450 | 9a, **11a** |
+| 10 | Position defects that need line marks — **now the table split lead only** | [CP] | ~60 | 9b, 11a |
+| 11a | CST: record storage, the region partition, block capture | [CP] | ~900 | **none** |
+| 11b | CST: inline capture | [HW] | ~800 | 8, 11a |
+| 11c | CST: reference-definition records | [HW] | ~450 | 9b, 11a |
+| 12 | CST facade, and the ABI break window | [HW] | ~400 | 6, 7, 11b |
 | 13 | Diagnostics — *deliverable #3* | [HW] | ~250 + ~130 | 7, 12 |
 | 14 | The null/empty rule made structural; **carries D16** | [CP] | ~40 | 12 |
 | 15 | Bindings, specs, docs | [HW] | ~500 | 12–14 |
@@ -1008,6 +1028,38 @@ retention, and one **model** delta extension for D11 — prefer extending
 input-keyed entry, because *"upstream keeps the winner, this engine keeps both"*
 is a rule, not a point difference.
 
+### 4.8 Stage 0 acceptance
+
+Stage 0 is **not** accepted by the mdast backlog reaching zero — that happens at
+Step 10 and says nothing about Steps 11–15. It is accepted by all of the
+following, together:
+
+**Deliverables**
+- [ ] Directive grammar conformance (Step 7) — deliverable #1
+- [ ] The formula fix (Step 6) — deliverable #2
+- [ ] CST concrete records (11a, 11b, 11c) and diagnostics (13) — deliverable #3
+- [ ] The reference model (9a, 9b) and the positions that depend on it (10)
+- [ ] The facade and its single ABI break window (12), the null/empty rule (14)
+- [ ] Bindings, specs and docs regenerated (15)
+
+**Defects** — all seventeen of §2 closed, or explicitly carried with a named
+owner step and a registered known-red gate.
+
+**Gates**, all green and none of them vacuous:
+- [ ] `correctness`, `correctness-asan`, `correctness-ubsan` — each having
+      actually run its tests, not merely exited 0 (§0's warning)
+- [ ] `conformance`
+- [ ] upstream parity, and **both** fuzz oracles
+- [ ] mdast parity with an EMPTY backlog
+- [ ] scope-sanity, having only shrunk
+- [ ] `check-canonical-ast-fixtures`, `audit-public-surface`,
+      `audit-ast-projections`, `check-generated-scanners` — the last two are
+      known-red today and must be green or re-owned by close
+- [ ] `pnpm check:contracts`, formatters, linters, repository audits
+- [ ] `check-release-version` — including the legacy-tag condition
+
+**Decisions** — Q8, Q9 and Q10 settled and recorded in §9.
+
 ### 4.5 Per-defect gates
 
 **Every defect fix lands with a test that fails before and passes after.** Where
@@ -1267,10 +1319,39 @@ typedef struct {
 } markdown_core_reference_link;
 ```
 
-This is a mixin, not a union of convenience: the arms share a common initial
-sequence, so C guarantees `node->as.association.label` may be read for a node
-holding *any* of them. One field, one offset, one read, five kinds — and the
-guarantee is in the language, not in a comment.
+**This is NOT a common-initial-sequence trick, and an earlier draft of this
+section claimed it was.** That claim was wrong twice over, and both errors are
+worth recording so neither returns.
+
+*Wrong in law.* C11 6.5.2.3p6 licenses inspecting the common initial part of two
+union members only where corresponding members have **compatible types** for a
+sequence of one or more initial members. `markdown_core_association` begins with
+a `markdown_core_chunk`; `markdown_core_definition` begins with a nested
+`markdown_core_association`. Those are distinct struct types and therefore not
+compatible, so the common initial sequence between those two arms has length
+**zero**. The only licensed pair is `definition` ↔ `reference_link`, which both
+begin with an `association` — and that is not the read the draft wanted.
+
+*Wrong in fact, which settles it.* Measured on this machine: `chunk` 16,
+`association` 32, `definition` **64**, `reference` 40, and the widest arm in
+`node.as` today (`code`) is **40**. So a definition stored INLINE grows the union
+40 → 64, contradicting §5.8's cost argument; and a definition **boxed** — which
+is what §5.8 requires — means `as.association.label` on a definition node would
+read a *pointer* as `chunk.data`. The uniform read is impossible whatever the
+standard says, because the cost decision already forbade it.
+
+**So the accessor is type-dispatched**, and the union arms are free to differ:
+
+```c
+/* Answers for all five reference kinds and refuses every other node type. */
+bool markdown_core_node_association(const markdown_core_node *,
+                                    markdown_core_string_view *label,
+                                    markdown_core_string_view *identifier);
+```
+
+One function, one switch on `node->type`, and no reliance on layout at all. It
+costs a branch that the union trick would have saved, and buys back a guarantee
+that the union trick never actually had.
 
 ### 5.3 What must be deleted to get the anchor rule
 
@@ -1596,14 +1677,25 @@ tightness is settled in `finalize` before postprocess runs.
 
 ---
 
-## 9. Open decisions
+## 9. Decision ledger
 
 **Renamed `Q`, not `D`.** These are open *decisions*; `D1`…`D16` in §2 are
 the baseline *defects*, and one document cannot spell two things the same way.
 
-Each is stated as a question with a recommendation. **Q2 and Q4 are the two
-where the recommendation is genuinely contestable** and should be settled by the
-repository owner before Step 9 is written.
+Every decision this plan depends on, with a status. **Q1–Q7 are SETTLED** — Q2
+and Q4 were the two genuinely contestable ones and were settled on 2026-08-20
+(§5.7, §5.8); this intro used to say they still awaited the owner, twelve lines
+above rows already marked settled, which is how a stale sentence outlives the
+table it introduces.
+
+Three decisions were being carried in prose and risk tables rather than here,
+which is why they kept getting re-argued:
+
+| id | Question | Status | Decided in | Blocks |
+|---|---|---|---|---|
+| **Q8** | Take the unified delimiter engine, or defer it? | **OPEN** | §4.7 recommends taking it after 4–7 | Step 8, and 11c's inline funnel |
+| **Q9** | What is the extension attach order, and is it a decision or an inheritance? (D15) | **OPEN** | nowhere — recommendation missing | Step 3, 0a.5 |
+| **Q10** | Does 1.0.4 ship, or is it an internal marker? (R16) | **OPEN — and the most urgent**; §8 says decide *before 0a.2*, while §0's next action is 0a.1 | nowhere | 0a.2 onward, and the release gates |
 
 | ID | Question | Recommendation |
 |---|---|---|
