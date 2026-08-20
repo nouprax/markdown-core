@@ -160,7 +160,7 @@ if (result.failures.length) {
     }
     process.stderr.write(
         "\nA file reaches this gate at 100% or it does not land. Unpinned surface is recorded in\n" +
-            "specs/coverage/policy.json and may only shrink; see docs/specs/test-architecture.md.\n"
+            "specs/coverage/policy.json and may only shrink; see docs/deprecated/specs/test-architecture.md.\n"
     );
     process.exit(1);
 }

@@ -2,7 +2,7 @@
 # Local iOS Simulator test entry point. The destination is discovered (or a
 # temporary simulator is created) by scripts/prepare-swift-ios-simulator.sh;
 # hard-coding a device model or a moving runtime alias is banned by
-# docs/specs/test-architecture.md and scripts/audit-ci-policy.sh.
+# docs/deprecated/specs/test-architecture.md and scripts/audit-ci-policy.sh.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

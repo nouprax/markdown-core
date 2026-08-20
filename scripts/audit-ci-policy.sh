@@ -354,8 +354,8 @@ grep -Fq 'name: release-central-deployment' "$release"
 search 'gh run download "\$SOURCE_RUN_ID" --name release-central-deployment' "$release"
 grep -Fq 'test "$bound_tag" = "$RELEASE_TAG"' "$release"
 grep -Fq 'test "$bound_version" = "$(cat VERSION)"' "$release"
-grep -Fq 'test -s "docs/releases/$(cat VERSION).md"' "$release"
-grep -Fq -- '--notes-file "docs/releases/$(cat VERSION).md"' "$release"
+grep -Fq 'test -s "docs/deprecated/releases/$(cat VERSION).md"' "$release"
+grep -Fq -- '--notes-file "docs/deprecated/releases/$(cat VERSION).md"' "$release"
 if search -- '--generate-notes' "$release"; then
     echo "formal release workflow must use curated release notes" >&2
     exit 1

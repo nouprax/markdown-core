@@ -17,9 +17,9 @@ import process from "node:process";
 //
 // THE SUBJECT SURVIVES; THE CURE THIS FILE NAMED DOES NOT. It used to say
 // "neither survives M3: an extent is (identity, length) and expresses length
-// zero natively", and cited docs/reviews/2026-08-05-m3-endstate-poc.md as the
+// zero natively", and cited docs/deprecated/reviews/2026-08-05-m3-endstate-poc.md as the
 // elimination path. That design was reverted on 2026-08-07 — see
-// docs/reviews/2026-08-07-requirement-audit.md — and no extent sequence is
+// docs/deprecated/reviews/2026-08-07-requirement-audit.md — and no extent sequence is
 // coming to fix this.
 //
 // What is still true is why the ratchet exists: a source position is the
@@ -29,7 +29,7 @@ import process from "node:process";
 // line zero; `end < start` means "empty" and is spelled as though it ran
 // backwards. Neither needs a different way of storing bytes to fix — it needs
 // a dump spelling that can say "no position" and "empty" without borrowing a
-// coordinate, which is a canonical-dump question (docs/specs/canonical-ast-dump.md).
+// coordinate, which is a canonical-dump question (docs/deprecated/specs/canonical-ast-dump.md).
 //
 // Until it has one this audit is a ratchet: the counts may shrink and may
 // never grow, exactly as specs/coverage/policy.json holds the unpinned

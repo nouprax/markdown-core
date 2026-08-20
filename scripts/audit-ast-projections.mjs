@@ -2,7 +2,7 @@
 /**
  * AST-projection audit.
  *
- * `docs/specs/canonical-ast.md` carries one table — kind, fields in
+ * `docs/deprecated/specs/canonical-ast.md` carries one table — kind, fields in
  * canonical order, invariants — and that table is the AST definition. Four
  * platforms then declare the same definition again in their own language,
  * because a Swift `Heading` cannot be produced by a C function and neither
@@ -32,7 +32,7 @@ const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 /** The kind -> fields table of the canonical AST contract. */
 function definition() {
-    const lines = fs.readFileSync(path.join(root, "docs/specs/canonical-ast.md"), "utf8").split("\n");
+    const lines = fs.readFileSync(path.join(root, "docs/deprecated/specs/canonical-ast.md"), "utf8").split("\n");
     const header = lines.findIndex((line) => line.startsWith("| Kind | Fields in canonical order"));
     if (header < 0) {
         throw new Error("canonical-ast.md: the kind/fields table is gone or renamed");
