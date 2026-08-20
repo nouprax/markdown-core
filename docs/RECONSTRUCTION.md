@@ -1028,37 +1028,68 @@ retention, and one **model** delta extension for D11 — prefer extending
 input-keyed entry, because *"upstream keeps the winner, this engine keeps both"*
 is a rule, not a point difference.
 
-### 4.9 No code is taken from existing commits
+### 4.9 The history is closed, except for six test oracles
 
 **Owner ruling, 2026-08-20:** *"If your plan is to borrow code or cherry pick
 something from current main, you are BS me. You should ignore any existing
-commit except the formula and directive syntax fix."*
+commit except the formula and directive syntax fix."* Tightened the same day:
+*"forbid any main commit read except the whitelisted commit for formula/directive
+syntax fix. The whitelist should also be specified to test oracles only, that
+tells us what the issue need to fixed is."*
 
-This retires the port list's central device. The `[CP]` / `[CX]` / `[HW]`
-grading answered "how hard is it to move this hunk", and that question is no
-longer asked. **Every step is designed and written fresh against a stated
-requirement.** The two exceptions are the two named deliverables — the formula
-fix and the directive syntax fix — where the existing work may be taken.
+**The rule, in full.**
 
-An existing commit may still be *read*, for one purpose only: to learn what a
-construct is supposed to do, or that a defect exists. It may not be a source of
-code, and no step may be justified by "this is what commit X did". A step is
-justified by what the engine must be true of, and nothing else.
+> No commit in this repository's history after `580d10c` may be read — not its
+> diff, not its code, not its message — with one exception, whitelisted below by
+> **path and commit**. The whitelist admits **test oracles only**: fixture files,
+> whose expected output states what correct behaviour is. Implementation is not
+> whitelisted anywhere, at any commit, for any reason.
 
-What this changes, concretely:
+**Why oracles and not code.** A fixture says *what the engine must do*; an
+implementation says *one way somebody did it*. Taking the first is taking a
+requirement, which is the thing we lack. Taking the second is inheriting a
+design — including its defects, which is exactly how eleven of them survived
+into 1.0.3 and how the streaming program accumulated the rest. An oracle also
+stays honest in a way a patch cannot: it was written to describe behaviour, not
+to make a particular implementation pass.
 
-- Every step's text must state a **requirement** rather than a source commit.
-  Where it currently reads "the portable half of `e95aa17`" it must read what
-  the extension model has to guarantee, and the design follows from that.
-- **Step 8 is no longer a question about porting a delimiter engine.** It
-  becomes: does the inline phase need a delimiter engine of its own design, and
-  what must it guarantee? Q8's original framing — take it, defer it, or measure
-  first — was a question about someone else's code and is void.
-- The defect fixes in Stage 0a are unaffected: they were derived and measured on
-  this tree, not lifted. Where §4.2 cites a later commit it is citing evidence
-  that a defect is real, not a patch to apply.
-- **Step 1 stands.** The parity oracles are a test harness, not engine code, and
-  §0's era rule already governs which version of each belongs here.
+**The whitelist.** These six paths, at these five commits, and nothing else:
+
+| Path | Whitelisted at | Carries |
+|---|---|---|
+| `tests/fixtures/extensions-directive.txt` | `8926594`, `752768a`, `3d8d329`, `26045be` | the directive grammar: names, attribute forms, the `#`/`.` shorthand, class accumulation, malformed-attribute degradation |
+| `tests/fixtures/extensions-directive-option-gates.txt` | — *(identical at baseline; nothing to read)* | — |
+| `tests/fixtures/extensions-formula-github.txt` | `8926594`, `a22f04f`, `3d8d329` | the dollar forms, and the inline-math padding rule |
+| `tests/fixtures/extensions-formula-latex.txt` | `a22f04f` | the `\(` and `\[` forms |
+| `tests/fixtures/extensions-formula-option-gates.txt` | `a22f04f` | which delimiter sets each option admits |
+| `tests/fixtures/extensions-formula-conflicts.txt` | — *(identical at baseline; nothing to read)* | — |
+
+All paths are under `packages/markdown-core/`.
+
+**What the whitelist does NOT admit**, stated because each is a tempting
+half-step: the engine hunks in those same five commits; their commit messages;
+their review discussion; any other fixture; the goldens of any non-whitelisted
+fixture; and `specs/canonical-ast/*.ast`, which is a projection of an engine we
+are not rebuilding from.
+
+**Provenance citations confer no permission.** §2 cites commits as evidence that
+a defect is real — *"still present in upstream 0.29.0.gfm.13"*, *"fixed in
+7c5025d"*. Those are historical annotations recording how a defect was found.
+They are not an invitation to open the commit, and a step may not be justified by
+"this is what commit X did". A step is justified by what the engine must be true
+of, and nothing else.
+
+**What is already in the tree stands.** Steps 0 and 1 landed under the earlier
+ruling and are closed: the parity harness, the specs and the operational layer
+are here and are not re-litigated. The prohibition governs everything from here
+forward.
+
+**Consequences for the plan.** The `[CP]` / `[CX]` / `[HW]` grading is void — it
+answered "how hard is this hunk to move", and hunks are no longer moved. Every
+step is designed and written fresh against a stated requirement, and §4.1 lists
+requirements rather than sources. Step 8 in particular is no longer "port the
+delimiter engine or defer it"; it is the open question of what the inline phase
+must guarantee and whether meeting those guarantees needs an engine at all.
 
 ### 4.10 The release from this base is 3.0
 
