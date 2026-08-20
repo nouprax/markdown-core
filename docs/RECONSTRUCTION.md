@@ -1028,6 +1028,56 @@ retention, and one **model** delta extension for D11 — prefer extending
 input-keyed entry, because *"upstream keeps the winner, this engine keeps both"*
 is a rule, not a point difference.
 
+### 4.9 No code is taken from existing commits
+
+**Owner ruling, 2026-08-20:** *"If your plan is to borrow code or cherry pick
+something from current main, you are BS me. You should ignore any existing
+commit except the formula and directive syntax fix."*
+
+This retires the port list's central device. The `[CP]` / `[CX]` / `[HW]`
+grading answered "how hard is it to move this hunk", and that question is no
+longer asked. **Every step is designed and written fresh against a stated
+requirement.** The two exceptions are the two named deliverables — the formula
+fix and the directive syntax fix — where the existing work may be taken.
+
+An existing commit may still be *read*, for one purpose only: to learn what a
+construct is supposed to do, or that a defect exists. It may not be a source of
+code, and no step may be justified by "this is what commit X did". A step is
+justified by what the engine must be true of, and nothing else.
+
+What this changes, concretely:
+
+- Every step's text must state a **requirement** rather than a source commit.
+  Where it currently reads "the portable half of `e95aa17`" it must read what
+  the extension model has to guarantee, and the design follows from that.
+- **Step 8 is no longer a question about porting a delimiter engine.** It
+  becomes: does the inline phase need a delimiter engine of its own design, and
+  what must it guarantee? Q8's original framing — take it, defer it, or measure
+  first — was a question about someone else's code and is void.
+- The defect fixes in Stage 0a are unaffected: they were derived and measured on
+  this tree, not lifted. Where §4.2 cites a later commit it is citing evidence
+  that a defect is real, not a patch to apply.
+- **Step 1 stands.** The parity oracles are a test harness, not engine code, and
+  §0's era rule already governs which version of each belongs here.
+
+### 4.10 The release from this base is 3.0
+
+**Owner ruling, 2026-08-20.** There is no 1.0.4 release. The version moves to
+1.0.4 as an internal alignment marker so the numeric macro and the version
+string stay honest with each other, and it carries no release obligation.
+
+Two consequences worth stating, because the plan was written assuming otherwise:
+
+- **The ABI break window is not a constraint.** R4 and Step 12 were built around
+  batching six public breaks into one release so consumers broke once. Shipping
+  3.0 from this base means the surface is free to change as the design requires,
+  and the discipline that remains is only that it changes *deliberately* and
+  the bindings follow. Step 12 keeps the "write the target header first" method
+  and loses the "one window" urgency.
+- **The release gates are off the critical path** until 3.0. `check-release-version`'s
+  legacy-tag condition, the release notes and the README examples are a
+  3.0 obligation, not a Stage 0a one.
+
 ### 4.8 Stage 0 acceptance
 
 Stage 0 is **not** accepted by the mdast backlog reaching zero — that happens at
@@ -1698,9 +1748,9 @@ which is why they kept getting re-argued:
 
 | id | Question | Status | Decided in | Blocks |
 |---|---|---|---|---|
-| **Q8** | Take the unified delimiter engine, or defer it? | **OPEN** | §4.7 recommends taking it after 4–7 | Step 8, and 11c's inline funnel |
-| **Q9** | What is the extension attach order, and is it a decision or an inheritance? (D15) | **OPEN** | nowhere — recommendation missing | Step 3, 0a.5 |
-| **Q10** | Does 1.0.4 ship, or is it an internal marker? (R16) | **OPEN — and the most urgent**; §8 says decide *before 0a.2*, while §0's next action is 0a.1 | nowhere | 0a.2 onward, and the release gates |
+| **Q8** | May the reconstruction take code from existing commits? | **SETTLED 2026-08-20 — NO.** See §4.9. Ignore every existing commit except the formula fix and the directive syntax fix. Everything else is designed and written fresh. | owner | the entire port list |
+| **Q9** | What is the extension attach order? (D15) | **SETTLED 2026-08-20 — table LAST, with a test.** A decided order, not an inheritance: a table's row opener matches any line inside an open table, so every narrower claim attaches first. D15's CLI/facade disagreement is fixed in the same step. | owner | Step 3, 0a.5 |
+| **Q10** | Does 1.0.4 ship? | **SETTLED 2026-08-20 — NO.** The release from this base is **3.0**. 1.0.4 is an internal alignment marker only, carrying no release obligation. | owner | see §4.10 |
 
 | ID | Question | Recommendation |
 |---|---|---|
