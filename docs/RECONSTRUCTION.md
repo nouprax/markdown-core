@@ -615,23 +615,83 @@ Nothing else. The port list is §4.1.
 
 ### Stage 1 — Make the parser pausable at line boundaries
 
-A major refactor whose goal is a property of the **parser's state machine**, not
-of the tree: every piece of state the parser carries is explicit and preserved,
-so the data flow can be paused at a breakpoint **after each line**, a snapshot
-taken as the current output, and then continued.
+**Why this stage exists, stated first because it is not a milestone for its own
+sake.** Line-by-line append is the forcing function for the constitution: *the
+parser must preserve every piece of state that incremental parsing requires.*
+Choosing the line as the unit is what makes that demand systematic — it is small
+enough that no state can hide, and it admits no partial-line special cases to
+hide behind. The deliverable is line-by-line append; the *point* is a parser
+whose state is complete, explicit and resumable. A Stage 1 that shipped
+line-by-line append without that analysis would have missed the whole
+instruction.
 
-Deliverable: **line-by-line append.**
+A major refactor, therefore, whose goal is a property of the **parser's state
+machine**, not of the tree: every piece of state the parser carries is explicit
+and preserved, so the data flow can be paused at a breakpoint after each line, a
+snapshot taken as the current output, and then continued.
 
-The decisive property, and the one missed last time: **at a line boundary there
-is no held partial line at all.** Stage 1 therefore has *zero* partial-line
-complexity. Every problem that wrecked the previous attempt — running a held
-line into a copy, un-running it, the delimiter engine seeing a second unit, an
-inline scan straddling a boundary — does not exist in Stage 1.
+**At a line boundary there is no held partial line at all.** Stage 1 therefore
+has *zero* partial-line complexity. Every problem that wrecked the previous
+attempt — running a held line into a copy, un-running it, the delimiter engine
+seeing a second unit, an inline scan straddling a boundary — does not exist here.
+That is why the line comes first and the partial line comes second.
 
-Its oracle is exact and cheap:
+#### Acceptance — two criteria, both hard
+
+**1. Correctness, measured against the external oracles.** The hard line is
+agreement with the implementations that define the language — cmark-gfm for the
+CommonMark and GFM surface, remark/mdast for the model — not agreement with this
+repository's own goldens. A golden can be regenerated into agreement with a
+defect; an external oracle cannot.
 
 > For every partition of the input **on line boundaries**, the resulting tree
-> must equal a one-shot parse of the same bytes.
+> must equal a one-shot parse of the same bytes — and that one-shot parse must
+> itself still satisfy every parity gate.
+
+**2. Performance: the cost of a document is the sum of the cost of its lines.**
+
+> For a document of *l* lines, **T(document) = Σᵢ T(line i)**.
+
+Equivalently, and this is the form that makes it testable: **the cost of
+appending line *i* does not depend on *i*.** Feeding the ten-thousandth line
+costs what feeding the first line costs, modulo that line's own length. There is
+no term proportional to the document so far, to the tree so far, or to the number
+of lines already fed.
+
+This is the original instruction, restated for the line: *for any partition with
+Σ chunks = L, Σ o(chunk) ≈ o(L)*.
+
+**What this rules out, and why criterion 2 is not optional.** Criterion 1 alone
+is satisfied by cloning the tree and finishing it after every line — structurally
+equal on every partition, and O(l²) overall. That is not a hypothetical: it is
+the shape the previous program spent months inside. Criterion 1 says the answer
+is right; criterion 2 says the parser is actually incremental rather than
+re-deriving the answer each time. **Neither alone is Stage 1.**
+
+#### The gate
+
+A per-line timing series over documents of growing size, asserting that the
+per-line cost is flat in *i* — not that the total is "fast", which any constant
+factor can fake. The series is the artifact: a fitted slope indistinguishable
+from zero passes, and any positive slope in *i* fails and names the state being
+re-derived. Total wall time against a one-shot of the same bytes is reported
+alongside as a sanity check, but the slope is the gate.
+
+#### What Stage 1 owes before it starts
+
+The systematic analysis is the first deliverable, not a preliminary: **an
+inventory of every piece of parser state**, each classified as carried across a
+line boundary, derived on demand, or genuinely per-line and discardable. Anything
+that cannot be classified is the finding. That inventory is what tells Stage 0's
+refactors what they must preserve — which is why Step 3's driver is stated as
+*a paused parser is a plain struct* rather than as tidiness.
+
+Six things the API must also settle, and they are design decisions rather than
+discoveries: the public append and snapshot surface; who owns a snapshot and how
+long it stays valid once more lines are fed; whether equality is required after
+every prefix or only at the end; failure and OOM behaviour mid-stream; whether
+the bindings participate in Stage 1 or only after it; and the allocation bound
+that accompanies the time bound.
 
 ### Stage 2 — The incomplete trailing line
 
