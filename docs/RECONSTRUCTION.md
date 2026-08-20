@@ -354,18 +354,22 @@ Association. The relation is extension, not alternation.
  *
  * `label` is the bytes between the delimiters exactly as written: escapes and
  * character references unresolved, whitespace uncollapsed, case unfolded.
- * `key` is the match key: full Unicode case fold, trim, collapse internal
- * whitespace — and for a footnote it KEEPS its leading `^`, so that a link
- * definition and a footnote definition of the same name cannot collide in a
- * consumer's single map.
+ * `identifier` is the match key: full Unicode case fold, trim, collapse
+ * internal whitespace — and for a footnote it KEEPS its leading `^`, so that a
+ * link definition and a footnote definition of the same name cannot collide in
+ * a consumer's single map. That caret is a correction to mdast, which
+ * separates the two namespaces only by node type and so cannot survive being
+ * flattened onto a wire.
  *
- * NORMATIVE: `key` is compared with memcmp over its bytes. It is never case
- * mapped, never NFC/NFD normalized, never re-encoded, and never used as a key
- * in a language map whose `==` has an opinion about Unicode. Bindings expose
- * it as an opaque byte-hashable, not as a string. */
+ * NORMATIVE: `identifier` is compared with memcmp over its bytes. It is never
+ * case mapped, never NFC/NFD normalized, never re-encoded, and never used as a
+ * key in a language map whose `==` has an opinion about Unicode — Swift's
+ * `String ==` is canonical equivalence, which would collapse the NFC and NFD
+ * spellings of `[café]` that this parser deliberately keeps apart. Bindings
+ * expose it as an opaque byte-hashable, not as a string. */
 typedef struct {
     markdown_core_chunk label;
-    markdown_core_chunk key;
+    markdown_core_chunk identifier;
 } markdown_core_association;
 
 /* A link reference definition: Association + mdast's Resource. A leaf; its
@@ -484,7 +488,7 @@ flattening consistent.
 The definition side is untouched: a label is never inline content, so
 `[^*y*]: b` still has the label `*y*`.
 
-### 5.8 D4 is settled: both kinds carry the match key
+### 5.8 D4 is settled: both kinds carry `identifier` beside `label`
 
 Derived, not inherited. The ecosystem argument that first suggested this was
 circular — `identifier` is mdast's only required field, so of course every
@@ -508,7 +512,7 @@ map, then throws the reference's away at lookup time.
 `markdown_core_node_footnote_id` returns, for a *reference*, the winning
 DEFINITION's raw literal — so `[^FOO]` with `[^foo]:` reports `id="foo"` and the
 author's spelling is unrecoverable. Verified. The question was never whether a
-reference carries an identifier; it is which one. `label` + `key` replaces both
+reference carries an identifier; it is which one. `label` + `identifier` replaces both
 that and the 8-byte-per-node `parent_footnote_def` back-pointer.
 
 **The relation could be an edge, and must not be.** A pointer does not survive
@@ -522,7 +526,7 @@ retargets to the merged document's first-wins winner, which is exactly what
 re-parsing the concatenation produces. **The key makes resolution late-bound and
 re-parse-equivalent**, which no locator can be.
 
-**Cost: the node struct gets smaller.** A reference `{label, key, form}` is 40
+**Cost: the node struct gets smaller.** A reference `{label, identifier, form}` is 40
 bytes — exactly the width of the widest existing payload arm (`code`), so the
 union does not grow. The definition is boxed. Deleting `parent_footnote_def`
 removes 8 bytes from *every* node: −800 KB on a 100,000-node document. The key
@@ -530,7 +534,7 @@ bytes are an ownership move, not a new allocation — the parser already
 allocates exactly one per occurrence, and today frees them with the refmap at
 teardown while the document keeps only `root`.
 
-**Against mdast, checked afterwards:** convergent on the key, on keeping the
+**Against mdast, checked afterwards:** convergent on `identifier`, on keeping the
 label, on the form discriminator, and on the reference holding no destination.
 Divergent in three places, and mdast is wrong in one of them: **`label` must not
 be optional.** A consumer written against an optional label writes
@@ -542,8 +546,16 @@ code-unit equality, so byte-faithful; Swift's `String ==` is canonical
 equivalence, which collapses the NFC and NFD spellings of `[café]` that this
 parser deliberately keeps apart. Hence the normative memcmp rule above.
 
+**On the name.** The field is `identifier`, matching mdast's vocabulary,
+because this tree's stated target is mdast's model and a shared concept should
+carry a shared name. The semantics here are *stricter* than mdast's in two ways
+that the shared name must not be allowed to hide, so both are normative in the
+declaration above: comparison is `memcmp` over bytes rather than string
+equality, and a footnote's identifier keeps its `^`.
+
 **The falsifier, and it has already fired once.** The case against an edge rests
-on the winner being derivable as "group by key, first in document order". Today
+on the winner being derivable as "group by identifier, first in document
+order". Today
 it is not: registration is on the iterator's `EXIT` event, so close order beats
 document order (defect 11). **Step 9 must move registration to document order**,
 and the gate is: for every reference in the corpus, the definition selected by
