@@ -298,14 +298,59 @@ Absent at baseline: sessions, incremental, delta, the source rope, node ids and
 revisions, diagnostics, concrete records, the delimiter engine,
 `ReferenceDefinition` nodes, `parser->line_marks` — **and every parity oracle.**
 
-### Sixteen defects live in the baseline
+### Twenty-five defects live in the baseline
 
 The first eleven were found by reading. **All eleven have since been built,
 gated and reverted** on isolated worktrees at `8e76a94` — every claim below
 about a line count, a moved golden row or a green suite is a measurement, not
-an estimate. Doing that found five more (D12–D16), which are recorded here
-rather than in a side file, because a defect the plan does not name is a defect
-the plan will re-derive later at full price.
+an estimate. Doing that found five more (D12–D16). D17 was found reconciling
+the gates and is fixed at 0a.0. D18–D24 were found restating the port list as
+requirements, and D25 while inventorying parser state for Stage 1.
+
+**All twenty-five are recorded here**, because a defect the plan does not name
+is a defect the plan will re-derive later at full price — and because a list
+split across three sections is a list nobody reads.
+
+#### The index — every defect, its owner, and how it was confirmed
+
+D18–D25 were each reproduced independently before being scheduled, on the tree
+at HEAD, with the witness shown. The three marked **[verified here]** are the
+ones whose witness is stated in this section rather than in the row.
+
+| # | What is wrong | Severity | Owner | Confirmed |
+|---|---|---|---|---|
+| D1 | extensions fold `$ : }` and bytes `0x01`–`0x08` into `skip_chars`, killing CommonMark flanking | wrong-output | 0a.4 | built & reverted |
+| D2 | `'}'` registered special, never consumed | wrong-output | 0a.4 | built & reverted |
+| D3 | `adjust_subj_node_newlines` behind an option nothing sets | wrong-position | 0a.6 | built & reverted |
+| D4 | `skip_chars[peek_at(...)]` read before the bounds test | latent | 0a.3 | built & reverted |
+| D5 | title-rewind path writes the scanned chunk into the refmap | wrong-output | 0a.7 | built & reverted |
+| D6 | `make_autolink` writes `title = ""` where nothing was written | wrong-output | 0a.7 | built & reverted |
+| D7 | `make_autolink` omits `column_offset + block_offset` | wrong-position | 0a.6 | built & reverted |
+| D8 | `try_opening_table_header` returns the parent on eleven non-opening paths | wrong-output | 0a.5 | built & reverted |
+| D9 | reference resolution is order-dependent | wrong-output | **9a only** | 200 refs → 99 resolve, 101 do not |
+| D10 | an undefined footnote call **loses source bytes** | data-loss | 0a.2 | `x[^a⏎b] tail` → `"x[^] tail"` |
+| D11 | a nested duplicate definition **deletes a paragraph** | data-loss | 0a.2 | `"OUTER opens first"` in no node |
+| D12 | `consolidate_text_nodes` drops `end_line` | wrong-position | 5 | built & reverted |
+| D13 | autolink's `len==0` sentinel leaves a zero-length `Text` | wrong-output | 5 | built & reverted |
+| D14 | the `"[^"` prefix rebuilt over decoded bytes | wrong-output | 9a | built & reverted |
+| D15 | the CLI and the facade attach extensions in different orders | wrong-output | 3 | built & reverted |
+| D16 | two more null/empty sites | wrong-output | 14 | built & reverted |
+| D17 | shipped v1.0.3 declares `MARKDOWN_CORE_VERSION` = **1.0.0** | wrong-output | **fixed at 0a.0** | header vs `VERSION` |
+| D18 | a paragraph whose leading definitions were consumed keeps the **definition's** line | wrong-position | 10 | `[a]: /1⏎text here` → `Text 1:1..1:9`, a column that does not exist on line 1 **[verified here]** |
+| D19 | a link takes `start_line` from the **closing** bracket | wrong-position | 8 | `[a](/u "t⏎t2") tail` → `Link 1:1..1:14`, `Text 1:15..1:19` — both on a 9-character line **[verified here]** |
+| D20 | strikethrough never sets `end_column` | wrong-position | 8 | `a~~` → `Text scope=1:1..1:0` |
+| D21 | **a container directive's closing fence does not close it** | **content-attribution loss** | 7 | `:::note⏎body⏎:::⏎after` → `after` is pulled *inside* the block **and** reported at line 3 while it is on line 4 **[verified here]** |
+| D22 | an extension consuming a span with a line ending cannot report it | wrong-position | 7 lands, 8 owns | `Directive 1:1..1:29` on a 28-character line; blocks Step 7's oracle |
+| D23 | `S_insert_emph` takes the **whole** run's start column | wrong-position + overlap | 8, gated by 11b | `***a**` → `Text "*"` claims columns 1–3 and `Strong` also starts at 1: two nodes, one byte |
+| D24 | `tasklist` decides `checked` by `strstr` over the whole line | wrong-output | 3 | `- [ ] see [x] below` → `checked=true` |
+| D25 | a `FootnoteReference` label can be a **dangling pointer**, read on every lookup | **use-after-free** | 0a.2 | ASan: `heap-use-after-free`, READ of size 1 in `markdown_core_map_lookup (map.c:279)`, freed by `handle_close_bracket (inlines.c:1384)` |
+
+**D25 also exposes a gate blind spot, and it is the reason the defect survived.**
+The CLI allocates through the arena, and so does the `asan` preset, so the
+repository's own sanitizer gate **cannot observe a use-after-free in
+node-owned memory at all**. Reproducing it required a probe built against the
+default allocator. Q12 deletes the arena; until it does, the sanitizer gate is
+weaker than its name suggests, and 0a.3 should say so.
 
 **Citations are `function` (`file:line`) pinned to `8e76a94`.** The function
 name is the durable half: a landed fix shifts every line below it — deleting
@@ -922,6 +967,14 @@ Q10 removes a constraint the plan was shaped around. Four things move and three 
 ---
 
 ### 4.1.6 What the design now owes — ledger entries Q11 onward
+
+**Status, for all of these: PROPOSED.** They were produced by restating the port
+list as requirements, which exposed decisions the borrowed code had been making
+silently. Each carries a recommendation, and a recommendation is not a decision.
+They are listed in §9 with their statuses, and the four that are genuinely the
+owner's — **Q14, Q24, Q25, Q26** — are called out there. The rest are
+engineering calls that stand unless contradicted, and they become SETTLED when
+the step that consumes them lands with the recommendation carried out.
 
 Restating a port as a requirement exposes the decisions the port had already made for us. Each is recorded here so it is tracked rather than rediscovered mid-step. They belong in §9's table; recommendations are the restatement's, not the owner's.
 
@@ -2036,6 +2089,11 @@ which is why they kept getting re-argued:
 |---|---|---|---|---|
 | **Q8** | May the reconstruction take code from existing commits? | **SETTLED 2026-08-20 — NO.** See §4.9. Ignore every existing commit except the formula fix and the directive syntax fix. Everything else is designed and written fresh. | owner | the entire port list |
 | **Q9** | What is the extension attach order? (D15) | **SETTLED 2026-08-20 — table LAST, with a test.** A decided order, not an inheritance: a table's row opener matches any line inside an open table, so every narrower claim attaches first. D15's CLI/facade disagreement is fixed in the same step. | owner | Step 3, 0a.5 |
+| **Q11–Q29** | Nineteen decisions the requirement restatement exposed | **PROPOSED**, each with a recommendation in §4.1.6 | §4.1.6 | their owning steps |
+| ↳ **Q14** | One knob per extension, or two? Attachment as the language, deleting the option surface. | **PROPOSED — owner's call.** It deletes public options; 3.0 permits it. | §4.1.6 | 3, 6, 7 |
+| ↳ **Q24** | Is the concrete view opt-in? Recommended: a parse option defaulting true, ~2% cost. | **PROPOSED — owner's call.** A default-on cost every caller pays. | §4.1.6 | 12 |
+| ↳ **Q25** | Do D16's two site fixes move into 0a.7? | **PROPOSED — owner's call**, and §4.1.6 says so: Stage 0a is otherwise complete. | §4.1.6 | 14, 0a.7 |
+| ↳ **Q26** | Do `Link.destination`, `Image.source`, `ReferenceDefinition.destination` stay optional? | **PROPOSED — owner's call.** Q7 already made the definition's required; this is whether the other two follow. | §4.1.6 | 9b, 14 |
 | **Q10** | Does 1.0.4 ship? | **SETTLED 2026-08-20 — NO.** The release from this base is **3.0**. 1.0.4 is an internal alignment marker only, carrying no release obligation. | owner | see §4.10 |
 
 | ID | Question | Recommendation |
