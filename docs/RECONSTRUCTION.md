@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.12b |
+| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.13 |
 | Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Stage 0a**, §4.2, at **0a.13** — 0a.0 through 0a.12b have landed. **0a.15 (D28, D29) also exists**; see §4.2.3 |
+| Next action | **Stage 0a**, §4.2, at **0a.14** — 0a.0 through 0a.13 have landed. **0a.15 (D28, D29) also exists**; see §4.2.3 |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -64,7 +64,7 @@ node scripts/audit-scope-sanity.mjs        # 52 rows, only-shrink holds
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
 # fails here rather than in review.
 node scripts/audit-inline-sourcepos.mjs    # 0 rows registered, 68 scanned
-node scripts/audit-scope-containment.mjs   # 59 rows registered, 3961 scanned
+node scripts/audit-scope-containment.mjs   # 45 rows registered, 3961 scanned
 node scripts/audit-position-places.mjs     # 113 rows registered, 4083 scanned
 
 # D9's pin. REGISTERED RED and it fails if a row STOPS reproducing, because
@@ -388,7 +388,7 @@ ones whose witness is stated in this section rather than in the row.
 | D20 | strikethrough never sets `end_column` | wrong-position | **fixed at 0a.12** | `a~~` → `Text scope=1:1..1:0` |
 | D21 | **a container directive's closing fence does not close it** | **content-attribution loss** | 7 | `:::note⏎body⏎:::⏎after` → `after` is pulled *inside* the block **and** reported at line 3 while it is on line 4 **[verified here]** |
 | D22 | an extension consuming a span with a line ending cannot report it | wrong-position | 7 lands, 8 owns | `Directive 1:1..1:29` on a 28-character line; blocks Step 7's oracle |
-| D23 | `S_insert_emph` takes the **whole** run's start column | wrong-position + overlap | 8, gated by 11b | `***a**` → `Text "*"` claims columns 1–3 and `Strong` also starts at 1: two nodes, one byte |
+| D23 | `S_insert_emph` takes the **whole** run's start column | wrong-position + overlap | **fixed at 0a.13** | `***a**` → `Text "*"` claims columns 1–3 and `Strong` also starts at 1: two nodes, one byte |
 | D24 | `tasklist` decides `checked` by `strstr` over the whole line | wrong-output | **fixed at 0a.11** | `- [ ] see [x] below` → `checked=true` |
 | D25 | a `FootnoteReference` label can be a **dangling pointer**, read on every lookup | **use-after-free** | 0a.2 | ASan: `heap-use-after-free`, READ of size 1 in `markdown_core_map_lookup (map.c:279)`, freed by `handle_close_bracket (inlines.c:1384)` |
 | D27 | `parser->linebuf.oom` written at six sites and read at none | silent truncation (allocation failure only) | 3a, with A1 | §4.13.11, measured: 244 input bytes become 102 with `parser->oom == 0` |
@@ -1216,7 +1216,7 @@ Two of the fourteen *looked* like dependencies in §2 and were not. **D12 "block
 | **D20** | **LANDED 0a.12.** Fixable at the baseline | One line. 3 rows in `extensions.txt` (568, 582, 584), each a negative range becoming a real one; ledger 207 → 204 via `--update`, the gate's sanctioned path. The `extensions_gfm` red was the **golden** being wrong | **0a.12** |
 | **D21** | **FIXABLE-AT-BASELINE** | +54/−14 across three files, including one new extension-API constant. **Two smaller candidates were built and discarded**: returning 0 on the fence line does not fix it (`check_open_blocks` does not close unmatched blocks — the lazy branch still fires, because `parser->blank` is false), and advancing past the line end to make it read as blank silently changes list tightness. Full-corpus differential — every example in all ten fixture files × two profiles, 11,180 dump lines — moved **exactly two lines**, both in the golden that pinned the defect, plus one row in `specs/canonical-ast/structure.ast` that the task's gate list does not cover. **External confirmation:** mdast parity goes 46/46 → **48/48 with the backlog unchanged at 23** — remark, driven by the normative grammar Step 7 will port, produces the same tree as the fixed engine. 4,000 directed random documents through the ASan build, 0 failures | **0a.10** |
 | **D22** | **FIXABLE-AT-BASELINE**, and it does **not** need Step 7 | Make the primitive honest (`markdown_core_inline_parser_set_offset` advances the subject's line counter over a consumed span) and let directive's two sites read the end back from the subject instead of computing `start_column + len - 1`. Result is exactly the oracle: `Directive 1:1..2:5`, `Text 2:6..2:10`, agreeing byte-for-byte with a softbreak control at the same indent under two newlines, CRLF, block quote and list item. `set_offset`'s other three callers are unaffected. **Zero existing golden rows — the defect is completely unpinned**, which is the finding; the pin was added and proved to bite | **0a.10** |
-| **D23** | **FIXABLE-AT-BASELINE**, and take the complete cut | §2's named one-liner (`emph->start_column += opener_num_chars`) gives the right `Strong` and **leaves the defect's other half open**: the leftover `Text "*"` still claims columns 1–3, so the two nodes still overlap, and the mirror case `**a***` is untouched. 31 rows. The complete cut is 4 more lines in the same function — the opener keeps its leading bytes, the closer its trailing ones — and every case becomes byte-exact and non-overlapping: `*****a*****` → `Emphasis 1:1..1:11 > Strong 1:2..1:10 > Strong 1:4..1:8`. **57 rows** (spec 45, regression 11, extensions 1). Taking the one-liner buys a second golden churn later | **0a.13** |
+| **D23** | **LANDED 0a.13.** Fixable at the baseline, and the complete cut | §2's named one-liner (`emph->start_column += opener_num_chars`) gives the right `Strong` and **leaves the defect's other half open**: the leftover `Text "*"` still claims columns 1–3, so the two nodes still overlap, and the mirror case `**a***` is untouched. 31 rows. The complete cut is 4 more lines in the same function — the opener keeps its leading bytes, the closer its trailing ones — and every case becomes byte-exact and non-overlapping: `*****a*****` → `Emphasis 1:1..1:11 > Strong 1:2..1:10 > Strong 1:4..1:8`. **57 rows** (spec 45, regression 11, extensions 1). Taking the one-liner buys a second golden churn later | **0a.13** |
 | **D24** | **LANDED 0a.11.** Fixable at the baseline | +7/−1. The re2c rule is `("[ ]"\|"[x]"\|"[X]")spacechar+`, so a non-zero `matched` guarantees `matched >= 4` and the read at `first_nonspace + 1` is in range. **Zero existing golden rows.** It is confirmed to be the pending upstream delta `tasklist-checked-marker` — and activating it **cannot be done by editing JSON alone**: `check-upstream-parity.mjs` keys `expectedDivergences` by input and fails any entry not reachable in the corpus, and the registered input `- [ ] call me [x] later` was in no fixture at all | **0a.11** |
 | **D25** | **FIXABLE-AT-BASELINE**, and it is **one hunk with D10's byte half** | Reproduced three ways; the ASan stack is §11.4's witness byte for byte, and `map.c:279` / `inlines.c:1384` still resolve exactly. The fix is one expression — the length was never the bug, the **base pointer** was: the old code borrowed *the following node's* literal, the fix borrows `subj->input + opener->position + 1`, and on one line the arithmetic is provably identical when the node after `[` borrows `subj->input` at `opener->position`, which is exactly what a decoded entity breaks. **Zero golden rows on the fix alone**, so its fixture is mandatory, not optional evidence | **0a.2** |
 
@@ -1319,7 +1319,7 @@ Three rows move — two in `extensions-directive.txt` example 16 (the inner `:::
 
 **0a.12b — D26, the break-node class. LANDED; §4.2.19 records it, and Q40 is taken.** Measured at 0a.12 and given its own sub-step there. §4.2.5 said it "belongs at 0a.12"; putting it to the test says otherwise, and the reason is not its size. See §4.2.5 for the corrected numbers and §4.2.18 for the measurement. In short: assigning a break its honest position moves **153** rows out of `scope-sanity`'s sentinel class and **138** of them into `audit-position-places.mjs`'s `off-column` class, because a line ending is at column *len+1* and `lineLengths()` excludes it — so by that oracle's definition **a soft break has no position that is a place.** The alternative spelling (the last byte of its own line) was measured too: **3** places rows and **138** *containment* rows, because the break then overlaps the text it follows. Both readings are this programme's own, taken independently and agreeing to the row. That makes D26 a **ruling about what a position is**, not a repair — and §4.2.3's own 0a.0 item 5 says a defect commit must not smuggle a divergence decision. It also forces deleting the declared `scope.zero` coverage state from `specs/canonical-ast/manifest.json` and its validator from `check-canonical-ast-fixtures.mjs`, because the only two witnesses of that state in the canonical corpus are the two rows the fix clears — a public-contract edit. **0a.12b owes: the ruling (call it Q40 — is a line ending a place?), the two-site fix (`handle_newline` AND `handle_backslash`; a one-site fix leaves four LineBreak sentinels standing), the contract edit, and 151 fixture rows plus 2 `.ast` rows plus 3 hand-written C assertions in `tests/api/main.c`.** It lands after 0a.12 rather than before it, which costs exactly one row — spec example 185's `SoftBreak` — regenerated twice.
 
-**0a.13 — D23, the overlap class.** The complete cut, four lines beyond §2's one-liner. 57 rows, hand-checked against the source columns before regenerating; CommonMark 426 (`foo******bar*********baz`) becomes `Strong 4..18 > 6..16 > 8..14` with the tail `Text` at `1:19`, against the golden's `4..21 / 6..21 / 8..21 / Text 1:13`. It lands after 0a.12 and separately from it because 57 rows is the largest single regeneration in the stage and it deserves its own review. It does **not** interact with 0a.14: `S_insert_emph` already frees a delimiter node whose literal is spent (`if (opener_num_chars == 0) markdown_core_node_free(opener_inl)`), so the emphasis path creates no empty `Text` for D13 to clean up.
+**0a.13 — D23, the overlap class. LANDED; §4.2.20 records it.** The complete cut, four lines beyond §2's one-liner. 57 rows, hand-checked against the source columns before regenerating; CommonMark 426 (`foo******bar*********baz`) becomes `Strong 4..18 > 6..16 > 8..14` with the tail `Text` at `1:19`, against the golden's `4..21 / 6..21 / 8..21 / Text 1:13`. It lands after 0a.12 and separately from it because 57 rows is the largest single regeneration in the stage and it deserves its own review. It does **not** interact with 0a.14: `S_insert_emph` already frees a delimiter node whose literal is spent (`if (opener_num_chars == 0) markdown_core_node_free(opener_inl)`), so the emphasis path creates no empty `Text` for D13 to clean up.
 
 **0a.14 — D12 and D13, the empty-`Text` class, last.** It is last because it *removes* rows, and how many it removes depends on which empties exist — which 0a.12 and 0a.13 both affect. Option B, 24 lines: consolidation drops a `TEXT` node that owns no bytes and takes a merged run's end only from an operand that owns bytes (the `len > 0` guard is what makes the D12 line safe, since an empty operand may still be absorbed by a merge); autolink's `postprocess_text` stops leaving an empty prefix or an empty tail. Producer (3) — consolidation merging a run of empties into an empty — becomes unreachable by construction.
 
@@ -2466,6 +2466,80 @@ mdast **54/54**, backlog **24/24** · fuzz-parity **300/300** · scope-sanity
 **52** · position oracles **0 / 59 / 113** · reference-order 2 rows, still red ·
 canonical-ast 28/47/6 · public surface · attach order · plan graph 22/45 ·
 topology · format-c · format-cmake.
+
+---
+
+#### 4.2.20 0a.13 landed: 57 rows, all of them a strict shrink, and the one-liner measured
+
+**What is in the engine.** Four assignments in `S_insert_emph`, and the rule
+behind them is one sentence: **the emphasis takes the delimiters adjacent to its
+content, so the leftovers are the opener's LEADING bytes and the closer's
+TRAILING ones.**
+
+```
+emph->start_column   = opener_inl->start_column + opener_num_chars
+emph->end_column     = closer_inl->end_column   - closer_num_chars
+opener_inl->end_column   = opener_inl->start_column + opener_num_chars - 1   (if it survives)
+closer_inl->start_column = closer_inl->end_column   - closer_num_chars + 1   (if it survives)
+```
+
+**The two `if it survives` guards are not decoration.** A leftover with zero
+bytes is freed four statements later, and writing its end unconditionally would
+put a reversed range in the tree for the length of those four statements — true
+only by reading ahead, which is not a property worth relying on. `correctness`
+reads 67/67 across adding the guards, so they cost nothing and remove a fact a
+reader would otherwise have to reconstruct.
+
+##### 57 rows, and the classification is mechanical
+
+`spec.txt` **45**, `regression.txt` **11**, `extensions.txt` **1** — exactly what
+§4.2.1 predicted, file for file. Every moved row was checked by a script rather
+than by eye, and the property it checks is the one the fix claims: **the new span
+is strictly inside the old one.** 57 of 57. No row grows, none changes kind, none
+moves line, and no row is merely re-spelled.
+
+Two hand-checked against the source columns, both byte-exact and
+non-overlapping:
+
+- CommonMark 426, `foo******bar*********baz` → `Strong 1:4..1:18 > 1:6..1:16 >
+  1:8..1:14` with the tail `Text` at `1:19..1:24`, against the golden's
+  `4..21 / 6..21 / 8..21` and `Text 1:13`. That is §4.2.3's prediction to the
+  column.
+- `regression.txt`'s issue #177, `a***b* c*` → `Text "a*" 1:1..1:2`,
+  `Emphasis 1:3..1:9 > Emphasis 1:4..1:6`, `Text "b" 1:5`, `Text " c" 1:7..1:8`.
+  Nine characters, five nodes, no byte claimed twice.
+
+##### The one-liner, measured rather than argued
+
+§2 names a one-line fix — `emph->start_column += opener_num_chars` — and §4.2.1
+says taking it "buys a second golden churn later". That is now a number.
+**Reverting the complete cut down to the one-liner leaves SEVEN of the fourteen
+sibling overlaps standing**, because the leftover `Text` still spans the whole
+run: `***a**` reports `Text 1:1..1:3` beside `Strong 1:2..1:6`, and the two
+still claim two of the same bytes. `correctness` is red either way, so the
+goldens alone cannot tell the two cuts apart — only the containment oracle can.
+
+##### Mutant kills
+
+| mutant | `correctness` | `containment` | others |
+|---|---|---|---|
+| full revert | red — `spec_commonmark`, `regression_commonmark`, `extensions_gfm` | **14 APPEARED** | places, sanity, inline-sourcepos, both parity gates all blind |
+| §2's one-liner only | red — the same three | **7 APPEARED** | same |
+
+The containment ledger goes **59 → 45**, and the fourteen it loses are the cause
+the sibling half of that oracle was built for — §4.2.7's *"the only statement
+that catches it is that two nodes claim one byte"*, doing exactly that.
+
+##### Gates after
+
+`correctness` **67/67** · `correctness-asan` **58/58** · `correctness-ubsan`
+**58/58** · `conformance` **2/2** · upstream parity **817/817** with **7/7** ·
+mdast **54/54**, backlog **24/24** · fuzz-parity **300/300** · scope-sanity
+**52** · position oracles **0 / 45 / 113** · reference-order 2 rows, still red ·
+canonical-ast 28/47/6 · public surface · attach order · plan graph 22/45 ·
+topology · format-c · format-cmake. Neither `places` nor `scope-sanity` moved,
+which is right: an overlap is not a not-a-place, and that is the whole reason
+0a.1 built three oracles instead of one.
 
 ---
 

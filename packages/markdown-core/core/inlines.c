@@ -909,10 +909,23 @@ static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *clo
     }
     markdown_core_node_insert_after(opener_inl, emph);
 
+    // The emphasis takes the delimiters ADJACENT TO ITS CONTENT -- the opener's
+    // trailing `use_delims` and the closer's leading ones -- so what is left over
+    // is the opener's LEADING bytes and the closer's TRAILING ones. Taking the
+    // whole run's start and end gave two nodes one byte: `***a**` reported a
+    // leftover Text spanning columns 1..3 and a Strong also starting at 1.
     emph->start_line = opener_inl->start_line;
     emph->end_line = closer_inl->end_line;
-    emph->start_column = opener_inl->start_column;
-    emph->end_column = closer_inl->end_column;
+    emph->start_column = opener_inl->start_column + (int)opener_num_chars;
+    emph->end_column = closer_inl->end_column - (int)closer_num_chars;
+    // and a leftover that SURVIVES owns only the bytes it still carries. A
+    // leftover with none is freed below, and writing its end first would put a
+    // reversed range in the tree for the length of two statements -- true only
+    // by reading ahead, which is not a property worth relying on.
+    if (opener_num_chars > 0)
+        opener_inl->end_column = opener_inl->start_column + (int)opener_num_chars - 1;
+    if (closer_num_chars > 0)
+        closer_inl->start_column = closer_inl->end_column - (int)closer_num_chars + 1;
 
     // if opener has 0 characters, remove it and its associated inline
     if (opener_num_chars == 0) {

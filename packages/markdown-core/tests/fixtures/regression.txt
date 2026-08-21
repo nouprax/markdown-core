@@ -85,9 +85,9 @@ a***b* c*
 .
 Document scope=1:1..1:9 children=1
 └── Paragraph scope=1:1..1:9 children=2
-    ├── Text scope=1:1..1:4 literal="a*" children=0
-    └── Emphasis scope=1:2..1:9 children=2
-        ├── Emphasis scope=1:2..1:6 children=1
+    ├── Text scope=1:1..1:2 literal="a*" children=0
+    └── Emphasis scope=1:3..1:9 children=2
+        ├── Emphasis scope=1:4..1:6 children=1
         │   └── Text scope=1:5..1:5 literal="b" children=0
         └── Text scope=1:7..1:8 literal=" c" children=0
 ````````````````````````````````
@@ -148,13 +148,13 @@ Document scope=1:1..15:10 children=4
 │   ├── LineBreak scope=1:19..1:19 children=0
 │   ├── Strikethrough scope=2:1..2:16 children=1
 │   │   └── Emphasis scope=2:3..2:14 children=1
-│   │       └── Strong scope=2:3..2:14 children=1
+│   │       └── Strong scope=2:4..2:13 children=1
 │   │           └── Code scope=2:7..2:10 mode=embedded literal="this" children=0
 │   ├── Text scope=2:17..2:18 literal="" children=0
 │   ├── LineBreak scope=2:19..2:19 children=0
 │   └── Strikethrough scope=3:1..3:16 children=1
 │       └── Emphasis scope=3:3..3:14 children=1
-│           └── Strong scope=3:3..3:14 children=1
+│           └── Strong scope=3:4..3:13 children=1
 │               └── Code scope=3:7..3:10 mode=embedded literal="this" children=0
 ├── Paragraph scope=5:1..7:12 children=7
 │   ├── Strong scope=5:1..5:12 children=1
@@ -163,12 +163,12 @@ Document scope=1:1..15:10 children=4
 │   ├── Text scope=5:13..5:14 literal="" children=0
 │   ├── LineBreak scope=5:15..5:15 children=0
 │   ├── Emphasis scope=6:1..6:12 children=1
-│   │   └── Strong scope=6:1..6:12 children=1
+│   │   └── Strong scope=6:2..6:11 children=1
 │   │       └── Code scope=6:5..6:8 mode=embedded literal="this" children=0
 │   ├── Text scope=6:13..6:14 literal="" children=0
 │   ├── LineBreak scope=6:15..6:15 children=0
 │   └── Emphasis scope=7:1..7:12 children=1
-│       └── Strong scope=7:1..7:12 children=1
+│       └── Strong scope=7:2..7:11 children=1
 │           └── Code scope=7:5..7:8 mode=embedded literal="this" children=0
 ├── Paragraph scope=9:1..11:14 children=7
 │   ├── Strikethrough scope=9:1..9:14 children=1
@@ -179,13 +179,13 @@ Document scope=1:1..15:10 children=4
 │   ├── LineBreak scope=9:17..9:17 children=0
 │   ├── Strikethrough scope=10:1..10:14 children=1
 │   │   └── Emphasis scope=10:3..10:12 children=1
-│   │       └── Strong scope=10:3..10:12 children=1
+│   │       └── Strong scope=10:4..10:11 children=1
 │   │           └── Text scope=10:6..10:9 literal="this" children=0
 │   ├── Text scope=10:15..10:16 literal="" children=0
 │   ├── LineBreak scope=10:17..10:17 children=0
 │   └── Strikethrough scope=11:1..11:14 children=1
 │       └── Emphasis scope=11:3..11:12 children=1
-│           └── Strong scope=11:3..11:12 children=1
+│           └── Strong scope=11:4..11:11 children=1
 │               └── Text scope=11:6..11:9 literal="this" children=0
 └── Paragraph scope=13:1..15:10 children=7
     ├── Strong scope=13:1..13:10 children=1
@@ -194,12 +194,12 @@ Document scope=1:1..15:10 children=4
     ├── Text scope=13:11..13:12 literal="" children=0
     ├── LineBreak scope=13:13..13:13 children=0
     ├── Emphasis scope=14:1..14:10 children=1
-    │   └── Strong scope=14:1..14:10 children=1
+    │   └── Strong scope=14:2..14:9 children=1
     │       └── Text scope=14:4..14:7 literal="this" children=0
     ├── Text scope=14:11..14:12 literal="" children=0
     ├── LineBreak scope=14:13..14:13 children=0
     └── Emphasis scope=15:1..15:10 children=1
-        └── Strong scope=15:1..15:10 children=1
+        └── Strong scope=15:2..15:9 children=1
             └── Text scope=15:4..15:7 literal="this" children=0
 ````````````````````````````````
 
