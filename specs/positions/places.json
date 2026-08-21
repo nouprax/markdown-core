@@ -1,0 +1,1860 @@
+{
+    "schemaVersion": 1,
+    "script": "scripts/audit-position-places.mjs",
+    "subject": "Every dumped coordinate over every fixture example: the line must exist in the input and the column must name a byte on it. Byte columns, counted from 1, on lines split the way S_parser_feed splits them.",
+    "purpose": "One hundred and thirty-one rows in nine families, and the families are what matter — the number on its own says nothing about which of them a step is allowed to move.\n\n  58  end-at-line-ending              a block's end names column 0 of a line that exists. A fence left unclosed inside a block quote gives CodeBlock 1:3..3:0. There is no column 0; this is how \"ends at the line ending\" gets spelled when the only vocabulary is a coordinate. Neighbour of H14 (§11.4). No step owns it.\n  19  continuation-line-content-offset  a column taken from the paragraph's CONTENT buffer and printed against a source line whose prefix was stripped. Two spaces, aaa, newline, one space, bbb gives Text 2:3..2:5 on a four-byte line. §4.2's 0a.12 calls this out as the residue it does NOT fix: Q22/Step 10.\n  19  multi-line-span                 a span that crossed a line ending, reported as though it had not — and every node after it in the same paragraph displaced by the same amount. Twelve are the inline Code and HTML rows specs/positions/inline-sourcepos.json registers against upstream; the rest are their displaced neighbours, a backslash hard break, and a link whose destination or title spans a line. 0a.6.\n   9  recovered-table-cell            a cell the table extension synthesized carries L:0..L:0. Requirement 10.\n   9  unmatched-code-span-literal     an unmatched backtick run's literal is placed one column right: `hi`lo` gives Text 1:5..1:8 inside a seven-byte paragraph. §4.1.3 names it and assigns it to Step 8.\n   6  split-off-table-lead            the paragraph a table was split out of, and its inline children, keep positions belonging to neither half. Requirement 10.\n   6  end-column-never-set            an inline node's end column is left at 0. An autolink with a space inside gives Text 1:1..1:0. This is D20's shape; the corpus carries the autolink spelling of it and not yet the strikethrough one.\n   3  consumed-definition-line        a paragraph whose leading reference definitions were consumed keeps the definition's line. D18, 0a.12.\n   2  content-start-past-marker-line  a footnote definition starts at the column after its marker, which does not exist when the marker ends the line: [^footnote]: is twelve bytes and the definition starts at 19:13. NOT NAMED BY ANY DEFECT IN §2; found by this oracle.\n\n`class` is analysis and `closedBy` is measurement: only the multi-line-span rows carry an owner, because specs/positions/inline-sourcepos.json shows upstream reporting exactly those spans as crossing a line, and because un-gating adjust_subj_node_newlines was measured to clear thirteen of these rows and add three. Every other family's owner is left unassigned deliberately — the step that moves the rows proves the attribution by moving them, and this gate's CLEARED list is that proof.\n\nA coordinate on line zero is NOT counted here; scripts/audit-scope-sanity.mjs owns the 0:0..0:0 sentinel and the line-zero-with-a-column shape, and there is no line to measure a column against. A zero COLUMN on a real line is measurable and is counted. Where a row is both — Text 1:1..1:0 is a zero column AND a reversed range — the two ratchets interlock rather than overlap: making the end a real column at or after the start clears both, while zeroing the node clears this one and GROWS the sentinel budget, which fails there.",
+    "corpus": "every example in packages/markdown-core/tests/fixtures/*.txt",
+    "profile": "gfm-extended",
+    "expected": [
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:238",
+            "input": "| a | b | c |\n| --- | --- | ---\n| x\n| a | b\n| 1 | 2 | 3 | 4 | 5 |\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.1",
+                    "kind": "TableCell",
+                    "phase": "block",
+                    "scope": "3:0..3:0",
+                    "start": "zero-column",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "recovered-table-cell"
+                },
+                {
+                    "nodePath": "0.0.1.2",
+                    "kind": "TableCell",
+                    "phase": "block",
+                    "scope": "3:0..3:0",
+                    "start": "zero-column",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "recovered-table-cell"
+                },
+                {
+                    "nodePath": "0.0.2.2",
+                    "kind": "TableCell",
+                    "phase": "block",
+                    "scope": "4:0..4:0",
+                    "start": "zero-column",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "recovered-table-cell"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:278",
+            "input": "| a | b |\n| --- | --- |\n| Escaped pipes are \\|okay\\|. | Like \\| this. |\n| Within `\\|code\\| is okay` too. |\n| _**`c\\|`**_ \\| complex\n| don't **\\_reparse\\_**\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.2.1",
+                    "kind": "TableCell",
+                    "phase": "block",
+                    "scope": "4:0..4:0",
+                    "start": "zero-column",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "recovered-table-cell"
+                },
+                {
+                    "nodePath": "0.0.3.1",
+                    "kind": "TableCell",
+                    "phase": "block",
+                    "scope": "5:0..5:0",
+                    "start": "zero-column",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "recovered-table-cell"
+                },
+                {
+                    "nodePath": "0.0.4.1",
+                    "kind": "TableCell",
+                    "phase": "block",
+                    "scope": "6:0..6:0",
+                    "start": "zero-column",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "recovered-table-cell"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:487",
+            "input": "| a | b |\n| --- | --- |\n|***(a)***|\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.1",
+                    "kind": "TableCell",
+                    "phase": "block",
+                    "scope": "3:0..3:0",
+                    "start": "zero-column",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "recovered-table-cell"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:509",
+            "input": "123\n456\n| a | b |\n| ---| --- |\nd | e\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:0..1:2",
+                    "start": "zero-column",
+                    "end": "place",
+                    "closedBy": "unassigned",
+                    "class": "split-off-table-lead"
+                },
+                {
+                    "nodePath": "0.1.0",
+                    "kind": "TableRow",
+                    "phase": "block",
+                    "scope": "1:1..1:17",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "split-off-table-lead"
+                },
+                {
+                    "nodePath": "0.1.0.0",
+                    "kind": "TableCell",
+                    "phase": "block",
+                    "scope": "1:10..1:12",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "split-off-table-lead"
+                },
+                {
+                    "nodePath": "0.1.0.0.0",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:11..1:11",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "split-off-table-lead"
+                },
+                {
+                    "nodePath": "0.1.0.1",
+                    "kind": "TableCell",
+                    "phase": "block",
+                    "scope": "1:14..1:16",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "split-off-table-lead"
+                },
+                {
+                    "nodePath": "0.1.0.1.0",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:15..1:15",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "split-off-table-lead"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:551",
+            "input": "These are ~not strikethroughs.\n\nNo, they are not~\n\nThis ~is ~ legit~ isn't ~ legit.\n\nThis is not ~~~~~one~~~~~ huge strikethrough.\n\n~one~ ~~two~~ ~~~three~~~\n\nNo ~mismatch~~\n",
+            "findings": [
+                {
+                    "nodePath": "0.1.0",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "3:1..3:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-column-never-set"
+                },
+                {
+                    "nodePath": "0.4.3",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "9:14..9:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-column-never-set"
+                },
+                {
+                    "nodePath": "0.5.0",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "11:1..11:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-column-never-set"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:593",
+            "input": ": http://google.com https://google.com\n\n<http://google.com/å> http://google.com/å\n\nscyther@pokemon.com\n\nscy.the_rbe-edr+ill@pokemon.com\n\nscyther@pokemon.com.\n\nscyther@pokemon.com/\n\nscyther@pokemon.com/beedrill@pokemon.com\n\nmailto:scyther@pokemon.com\n\nThis is a mailto:scyther@pokemon.com\n\nmailto:scyther@pokemon.com.\n\nmmmmailto:scyther@pokemon.com\n\nmailto:scyther@pokemon.com/\n\nmailto:scyther@pokemon.com/message\n\nmailto:scyther@pokemon.com/mailto:beedrill@pokemon.com\n\nxmpp:scyther@pokemon.com\n\nxmpp:scyther@pokemon.com.\n\nxmpp:scyther@pokemon.com/message\n\nxmpp:scyther@pokemon.com/message.\n\nEmail me at:scyther@pokemon.com\n\nwww.github.com www.github.com/á\n\nwww.google.com/a_b\n\nUnderscores not allowed in host name www.xxx.yyy._zzz\n\nUnderscores not allowed in host name www.xxx._yyy.zzz\n\nUnderscores allowed in domain name www._xxx.yyy.zzz\n\n**Autolink and http://inlines**\n\n![http://inline.com/image](http://inline.com/image)\n\na.w@b.c\n\nFull stop outside parens shouldn't be included http://google.com/ok.\n\n(Full stop inside parens shouldn't be included http://google.com/ok.)\n\n\"http://google.com\"\n\n'http://google.com'\n\nhttp://🍄.ga/ http://x🍄.ga/\n",
+            "findings": [
+                {
+                    "nodePath": "0.29.0",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "59:1..59:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-column-never-set"
+                },
+                {
+                    "nodePath": "0.30.0",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "61:1..61:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-column-never-set"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:854",
+            "input": "This is <xmp> not okay, but **this** <strong>is</strong>.\n\n<p>This is <xmp> not okay, but **this** <strong>is</strong>.</p>\n\nNope, I won't have <textarea>.\n\n<p>No <textarea> here either.</p>\n\n<p>This <random /> <thing> is okay</thing> though.</p>\n\nYep, <totally>okay</totally>.\n\n<!-- HTML comments are okay, though. -->\n<!- But we're strict. ->\n<! No nonsense. >\n<!-- Leave multiline comments the heck alone, though, okay?\nEven with {\"x\":\"y\"} or 1 > 2 or whatever. Even **markdown**.\n-->\n<!--- Support everything CommonMark's parser does. -->\n<!---->\n<!--thistoo-->\n",
+            "findings": [
+                {
+                    "nodePath": "0.6",
+                    "kind": "HTMLBlock",
+                    "phase": "block",
+                    "scope": "13:1..12:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:915",
+            "input": "This is some text![^1]. Other text.[^footnote].\n\nHere's a thing[^other-note].\n\nAnd another thing[^codeblock-note].\n\nThis doesn't have a referent[^nope].\n\n\n[^other-note]:       no code block here (spaces are stripped away)\n\n[^codeblock-note]:\n        this is now a code block (8 spaces indentation)\n\n[^1]: Some *bolded* footnote definition.\n\nHi!\n\n[^footnote]:\n    > Blockquotes can be in a footnote.\n\n        as well as code blocks\n\n    or, naturally, simple paragraphs.\n\n[^unused]: This is unused.\n",
+            "findings": [
+                {
+                    "nodePath": "0.5",
+                    "kind": "FootnoteDefinition",
+                    "phase": "block",
+                    "scope": "15:7..16:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.6",
+                    "kind": "FootnoteDefinition",
+                    "phase": "block",
+                    "scope": "19:13..25:0",
+                    "start": "off-column",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "content-start-past-marker-line"
+                },
+                {
+                    "nodePath": "0.6.1",
+                    "kind": "CodeBlock",
+                    "phase": "block",
+                    "scope": "22:9..23:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.7",
+                    "kind": "FootnoteDefinition",
+                    "phase": "block",
+                    "scope": "10:22..11:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.8",
+                    "kind": "FootnoteDefinition",
+                    "phase": "block",
+                    "scope": "12:19..14:0",
+                    "start": "off-column",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "content-start-past-marker-line"
+                },
+                {
+                    "nodePath": "0.8.0",
+                    "kind": "CodeBlock",
+                    "phase": "block",
+                    "scope": "13:9..14:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:1094",
+            "input": "- [x] foo\n  - [ ] bar\n  - [x] baz\n- [ ] bim\n\nShow a regular (non task) list to show that it has the same structure\n- [@] foo\n  - [@] bar\n  - [@] baz\n- [@] bim\n",
+            "findings": [
+                {
+                    "nodePath": "0.0",
+                    "kind": "List",
+                    "phase": "block",
+                    "scope": "1:1..5:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "4:1..5:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:1141",
+            "input": "- [x] foo\n    - [ ] bar\n    - [x] baz\n- [ ] bim\n\nShow a regular (non task) list to show that it has the same structure\n- [@] foo\n    - [@] bar\n    - [@] baz\n- [@] bim\n",
+            "findings": [
+                {
+                    "nodePath": "0.0",
+                    "kind": "List",
+                    "phase": "block",
+                    "scope": "1:1..5:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "4:1..5:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/regression.txt:384",
+            "input": "This is some text. It has a citation.[^citation]\n\n[^another-citation]: My second citation.\n\n[^citation]: This is a long winded parapgraph that also has another citation.[^another-citation]\n",
+            "findings": [
+                {
+                    "nodePath": "0.2",
+                    "kind": "FootnoteDefinition",
+                    "phase": "block",
+                    "scope": "3:22..4:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/regression.txt:406",
+            "input": "This is some text. It has two footnotes references, side-by-side without any spaces,[^footnote1][^footnote2] which are definitely not link references.\n\n[^footnote1]: Hello.\n\n[^footnote2]: Goodbye.\n",
+            "findings": [
+                {
+                    "nodePath": "0.1",
+                    "kind": "FootnoteDefinition",
+                    "phase": "block",
+                    "scope": "3:15..4:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/regression.txt:429",
+            "input": "This is some text. Sometimes the autolinker splits up text into multiple nodes, hoping it will find a hyperlink, so this text has a footnote whose reference label begins with a `w`.[^widely-cited]\n\nIt has another footnote that contains many different characters (the autolinker was also breaking on `_`).[^sphinx-of-black-quartz_judge-my-vow-0123456789]\n\n[^sphinx-of-black-quartz_judge-my-vow-0123456789]: so does this.\n\n[^widely-cited]: this renders properly.\n",
+            "findings": [
+                {
+                    "nodePath": "0.3",
+                    "kind": "FootnoteDefinition",
+                    "phase": "block",
+                    "scope": "5:52..6:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:512",
+            "input": "- `one\n- two`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "2:3..2:7",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "unmatched-code-span-literal"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1112",
+            "input": "Foo *bar*\n=========\n\nFoo *bar*\n---------\n",
+            "findings": [
+                {
+                    "nodePath": "0.0",
+                    "kind": "Heading",
+                    "phase": "block",
+                    "scope": "1:1..3:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1152",
+            "input": "  Foo *bar\nbaz*\t\n====\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "Emphasis",
+                    "phase": "inline",
+                    "scope": "1:7..2:6",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1169",
+            "input": "Foo\n-------------------------\n\nFoo\n=\n",
+            "findings": [
+                {
+                    "nodePath": "0.0",
+                    "kind": "Heading",
+                    "phase": "block",
+                    "scope": "1:1..3:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1187",
+            "input": "   Foo\n---\n\n  Foo\n-----\n\n  Foo\n  ===\n",
+            "findings": [
+                {
+                    "nodePath": "0.0",
+                    "kind": "Heading",
+                    "phase": "block",
+                    "scope": "1:4..3:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.1",
+                    "kind": "Heading",
+                    "phase": "block",
+                    "scope": "4:3..6:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1296",
+            "input": "`Foo\n----\n`\n\n<a title=\"a lot\n---\nof dashes\"/>\n",
+            "findings": [
+                {
+                    "nodePath": "0.1.0",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "3:2..3:2",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "unmatched-code-span-literal"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1332",
+            "input": "> foo\nbar\n===\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "2:3..2:5",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                },
+                {
+                    "nodePath": "0.0.0.4",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "3:3..3:5",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1517",
+            "input": "Foo\nbar\n\n---\n\nbaz\n",
+            "findings": [
+                {
+                    "nodePath": "0.1",
+                    "kind": "ThematicBreak",
+                    "phase": "block",
+                    "scope": "4:1..5:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1747",
+            "input": "\n    \n    foo\n    \n\n",
+            "findings": [
+                {
+                    "nodePath": "0.0",
+                    "kind": "CodeBlock",
+                    "phase": "block",
+                    "scope": "3:5..5:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1841",
+            "input": "``\nfoo\n``\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "phase": "inline",
+                    "scope": "1:3..1:7",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1922",
+            "input": "> ```\n> aaa\n\nbbb\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "CodeBlock",
+                    "phase": "block",
+                    "scope": "1:3..3:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:2715",
+            "input": "<?php\n\n  echo '>';\n\n?>\nokay\n",
+            "findings": [
+                {
+                    "nodePath": "0.0",
+                    "kind": "HTMLBlock",
+                    "phase": "block",
+                    "scope": "1:1..4:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:2930",
+            "input": "<table>\n\n  <tr>\n\n    <td>\n      Hi\n    </td>\n\n  </tr>\n\n</table>\n",
+            "findings": [
+                {
+                    "nodePath": "0.2",
+                    "kind": "CodeBlock",
+                    "phase": "block",
+                    "scope": "5:5..8:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3210",
+            "input": "[\nfoo\n]: /url\nbar\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:1..1:3",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "consumed-definition-line"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3249",
+            "input": "    [foo]: /url \"title\"\n\n[foo]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0",
+                    "kind": "CodeBlock",
+                    "phase": "block",
+                    "scope": "1:5..2:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3327",
+            "input": "[foo]: /url\n===\n[foo]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.2",
+                    "kind": "Link",
+                    "phase": "inline",
+                    "scope": "2:1..2:5",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "consumed-definition-line"
+                },
+                {
+                    "nodePath": "0.0.2.0",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "2:2..2:4",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "consumed-definition-line"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3463",
+            "input": "  aaa\n bbb\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "2:3..2:5",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3496",
+            "input": "   aaa\nbbb\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "2:4..2:6",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3675",
+            "input": "| abc | def |\n| --- | --- |\n| bar | baz |\nbar\n\nbar\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.2.1",
+                    "kind": "TableCell",
+                    "phase": "block",
+                    "scope": "4:0..4:0",
+                    "start": "zero-column",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "recovered-table-cell"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3724",
+            "input": "| abc | def |\n| --- | --- |\n| bar |\n| bar | baz | boo |\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.1",
+                    "kind": "TableCell",
+                    "phase": "block",
+                    "scope": "3:0..3:0",
+                    "start": "zero-column",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "recovered-table-cell"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3851",
+            "input": "   > # Foo\n   > bar\n > baz\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "3:6..3:8",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3882",
+            "input": "> # Foo\n> bar\nbaz\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "3:3..3:5",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3901",
+            "input": "> bar\nbaz\n> foo\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "2:3..2:5",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3997",
+            "input": "> foo\n    - bar\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "2:7..2:11",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4146",
+            "input": "> bar\nbaz\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "2:3..2:5",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4191",
+            "input": "> > > foo\nbar\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "2:7..2:9",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4206",
+            "input": ">>> foo\n> bar\n>>baz\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "2:5..2:7",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                },
+                {
+                    "nodePath": "0.0.0.0.0.4",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "3:5..3:7",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4282",
+            "input": "A paragraph\nwith two lines.\n\n    indented code\n\n> A block quote.\n",
+            "findings": [
+                {
+                    "nodePath": "0.1",
+                    "kind": "CodeBlock",
+                    "phase": "block",
+                    "scope": "4:5..5:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4306",
+            "input": "1.  A paragraph\n    with two lines.\n\n        indented code\n\n    > A block quote.\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.1",
+                    "kind": "CodeBlock",
+                    "phase": "block",
+                    "scope": "4:9..5:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4339",
+            "input": "- one\n\n two\n",
+            "findings": [
+                {
+                    "nodePath": "0.0",
+                    "kind": "List",
+                    "phase": "block",
+                    "scope": "1:1..2:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "1:1..2:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4369",
+            "input": " -    one\n\n     two\n",
+            "findings": [
+                {
+                    "nodePath": "0.0",
+                    "kind": "List",
+                    "phase": "block",
+                    "scope": "1:2..2:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "1:2..2:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4637",
+            "input": "    indented code\n\nparagraph\n\n    more code\n",
+            "findings": [
+                {
+                    "nodePath": "0.0",
+                    "kind": "CodeBlock",
+                    "phase": "block",
+                    "scope": "1:5..2:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4652",
+            "input": "1.     indented code\n\n   paragraph\n\n       more code\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0",
+                    "kind": "CodeBlock",
+                    "phase": "block",
+                    "scope": "1:8..2:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4672",
+            "input": "1.      indented code\n\n   paragraph\n\n       more code\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0",
+                    "kind": "CodeBlock",
+                    "phase": "block",
+                    "scope": "1:8..2:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4710",
+            "input": "-    foo\n\n  bar\n",
+            "findings": [
+                {
+                    "nodePath": "0.0",
+                    "kind": "List",
+                    "phase": "block",
+                    "scope": "1:1..2:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "1:1..2:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4799",
+            "input": "-\n\n  foo\n",
+            "findings": [
+                {
+                    "nodePath": "0.0",
+                    "kind": "List",
+                    "phase": "block",
+                    "scope": "1:1..2:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4908",
+            "input": " 1.  A paragraph\n     with two lines.\n\n         indented code\n\n     > A block quote.\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.1",
+                    "kind": "CodeBlock",
+                    "phase": "block",
+                    "scope": "4:10..5:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4932",
+            "input": "  1.  A paragraph\n      with two lines.\n\n          indented code\n\n      > A block quote.\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.1",
+                    "kind": "CodeBlock",
+                    "phase": "block",
+                    "scope": "4:11..5:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4956",
+            "input": "   1.  A paragraph\n       with two lines.\n\n           indented code\n\n       > A block quote.\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.1",
+                    "kind": "CodeBlock",
+                    "phase": "block",
+                    "scope": "4:12..5:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:5005",
+            "input": "  1.  A paragraph\nwith two lines.\n\n          indented code\n\n      > A block quote.\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "2:7..2:21",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                },
+                {
+                    "nodePath": "0.0.0.1",
+                    "kind": "CodeBlock",
+                    "phase": "block",
+                    "scope": "4:11..5:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:5029",
+            "input": "  1.  A paragraph\n    with two lines.\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "2:11..2:25",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:5045",
+            "input": "> 1. > Blockquote\ncontinued here.\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "2:8..2:22",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:5061",
+            "input": "> 1. > Blockquote\n> continued here.\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "2:8..2:22",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:5658",
+            "input": "- foo\n\n- bar\n\n\n- baz\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "1:1..2:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "3:1..5:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:5710",
+            "input": "- foo\n- bar\n\n<!-- -->\n\n- baz\n- bim\n",
+            "findings": [
+                {
+                    "nodePath": "0.0",
+                    "kind": "List",
+                    "phase": "block",
+                    "scope": "1:1..3:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "2:1..3:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.1",
+                    "kind": "HTMLBlock",
+                    "phase": "block",
+                    "scope": "4:1..3:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:5738",
+            "input": "-   foo\n\n    notcode\n\n-   foo\n\n<!-- -->\n\n    code\n",
+            "findings": [
+                {
+                    "nodePath": "0.0",
+                    "kind": "List",
+                    "phase": "block",
+                    "scope": "1:1..6:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "1:1..4:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "5:1..6:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.1",
+                    "kind": "HTMLBlock",
+                    "phase": "block",
+                    "scope": "7:1..6:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:5804",
+            "input": "1. a\n\n  2. b\n\n   3. c\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "1:1..2:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "3:3..4:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:5828",
+            "input": "- a\n - b\n  - c\n   - d\n    - e\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.3.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "5:10..5:12",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:5857",
+            "input": "1. a\n\n  2. b\n\n    3. c\n",
+            "findings": [
+                {
+                    "nodePath": "0.0",
+                    "kind": "List",
+                    "phase": "block",
+                    "scope": "1:1..4:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "1:1..2:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "3:3..4:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:5879",
+            "input": "- a\n- b\n\n- c\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "2:1..3:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6118",
+            "input": "* foo\n  * bar\n\n  baz\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.1",
+                    "kind": "List",
+                    "phase": "block",
+                    "scope": "2:3..3:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.0.0.1.0",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "2:3..3:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6138",
+            "input": "- a\n  - b\n  - c\n\n- d\n  - e\n  - f\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "1:1..4:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.0.0.1",
+                    "kind": "List",
+                    "phase": "block",
+                    "scope": "2:3..4:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.0.0.1.1",
+                    "kind": "ListItem",
+                    "phase": "block",
+                    "scope": "3:3..4:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6178",
+            "input": "`hi`lo`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:5..1:8",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "unmatched-code-span-literal"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6219",
+            "input": "\\*not emphasized*\n\\<br/> not a tag\n\\[not a link](/foo)\n\\`not code`\n1\\. not a list\n\\* not a list\n\\# not a heading\n\\[foo]: /url \"not a reference\"\n\\&ouml; not a character entity\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.6",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "4:1..4:12",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "continuation-line-content-offset"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6267",
+            "input": "foo\\\nbar\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:6..1:8",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6703",
+            "input": "``\nfoo\nbar  \nbaz\n``\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "phase": "inline",
+                    "scope": "1:3..1:17",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6715",
+            "input": "``\nfoo \n``\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "phase": "inline",
+                    "scope": "1:3..1:8",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6728",
+            "input": "`foo   bar \nbaz`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "phase": "inline",
+                    "scope": "1:2..1:15",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6747",
+            "input": "`foo\\`bar`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:7..1:11",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "unmatched-code-span-literal"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6809",
+            "input": "`<a href=\"`\">`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:12..1:15",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "unmatched-code-span-literal"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6821",
+            "input": "<a href=\"`\">`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:14..1:14",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "unmatched-code-span-literal"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6833",
+            "input": "`<http://foo.bar.`baz>`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:19..1:24",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "unmatched-code-span-literal"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6845",
+            "input": "<http://foo.bar.`baz>`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:23..1:23",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "unmatched-code-span-literal"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6859",
+            "input": "```foo``\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:4..1:9",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "unassigned",
+                    "class": "unmatched-code-span-literal"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:8926",
+            "input": "[link](<foo\nbar>)\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "HTML",
+                    "phase": "inline",
+                    "scope": "1:8..1:16",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                },
+                {
+                    "nodePath": "0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:17..1:17",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:9191",
+            "input": "[link](   /uri\n  \"title\"  )\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Link",
+                    "phase": "inline",
+                    "scope": "1:1..1:25",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:10567",
+            "input": "<http://foo.bar/baz bim>\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:1..1:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-column-never-set"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:11034",
+            "input": "<a  /><b2\ndata=\"foo\" >\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "HTML",
+                    "phase": "inline",
+                    "scope": "1:7..1:22",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:11047",
+            "input": "<a foo=\"bar\" bam = 'baz <em>\"</em>'\n_boolean zoop:33=zoop:33 />\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "HTML",
+                    "phase": "inline",
+                    "scope": "1:1..1:63",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:11158",
+            "input": "foo <!-- this is a --\ncomment - with hyphens -->\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "HTML",
+                    "phase": "inline",
+                    "scope": "1:5..1:48",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:11303",
+            "input": "foo\\\nbaz\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:6..1:8",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:11343",
+            "input": "foo\\\n     bar\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:6..1:8",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:11371",
+            "input": "*foo\\\nbar*\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Emphasis",
+                    "phase": "inline",
+                    "scope": "1:1..1:10",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                },
+                {
+                    "nodePath": "0.0.0.2",
+                    "kind": "Text",
+                    "phase": "inline",
+                    "scope": "1:7..1:9",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:11386",
+            "input": "`code  \nspan`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "phase": "inline",
+                    "scope": "1:2..1:12",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:11396",
+            "input": "`code\\\nspan`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "phase": "inline",
+                    "scope": "1:2..1:11",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:11408",
+            "input": "<a href=\"foo  \nbar\">\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "HTML",
+                    "phase": "inline",
+                    "scope": "1:1..1:20",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:11418",
+            "input": "<a href=\"foo\\\nbar\">\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "HTML",
+                    "phase": "inline",
+                    "scope": "1:1..1:19",
+                    "start": "place",
+                    "end": "off-column",
+                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines",
+                    "class": "multi-line-span"
+                }
+            ]
+        }
+    ]
+}

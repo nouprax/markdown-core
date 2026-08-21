@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, and §4.0's re-ordering |
+| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 and 0a.1 |
 | Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
 | `VERSION` | `1.0.3`, and it moves to `1.0.4` at the CLOSE of Stage 0a — the first commit range that moves behaviour |
-| Next action | **Stage 0a**, §4.2, beginning with 0a.1 |
+| Next action | **Stage 0a**, §4.2, at **0a.2** — 0a.0 and 0a.1 have landed |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -51,14 +51,26 @@ ctest --preset correctness-asan -j 8       # 57/57 — SEE THE WARNING BELOW
 ctest --preset correctness-ubsan -j 8      # 57/57 — SEE THE WARNING BELOW
 node scripts/check-canonical-ast-fixtures.mjs   # 28 kinds, 47 fields, 6 cases
 bash scripts/audit-public-surface.sh
-node scripts/check-plan-graph.mjs                # 22 steps, 42 edges, acyclic
+node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
 node scripts/check-upstream-parity.mjs     # 795/795 vs cmark-gfm 0.29.0.gfm.13
 node scripts/check-mdast-parity.mjs        # 46/46, backlog 23/23 still diverging
 node scripts/audit-scope-sanity.mjs        # 207 rows, only-shrink holds
-node scripts/fuzz-parity.mjs --cases 300   # 300/300
+
+# The three position oracles, landed at 0a.1 (§4.2.7). Each fails on a row
+# APPEARING and on a row CLEARING, so a fix that moves one without recording it
+# fails here rather than in review.
+node scripts/audit-inline-sourcepos.mjs    # 12 rows registered, 68 scanned
+node scripts/audit-scope-containment.mjs   # 58 rows registered, 3555 scanned
+node scripts/audit-position-places.mjs     # 131 rows registered, 3814 scanned
 ```
+
+**`22 steps, 42 edges` was stale**, and it is the second number in this table to
+have drifted from what the command prints. `check-plan-graph.mjs` reads its edge
+list out of *this file*, so the count moves whenever a section adds an arrow;
+§4.13 added three. Anyone reconciling the gates should print the number rather
+than trust the row — that is how D17 was found.
 
 **A sanitizer preset with no build reports GREEN having run nothing.** With
 `build/asan` absent, `ctest --preset correctness-asan` prints
@@ -1143,7 +1155,7 @@ Ordered by four rules, in this precedence: **(1)** an oracle's first reading is 
 
 **0a.0 — reconcile the gates before touching the engine.** No engine change except D17. Four items, all verified; the first three stand as written (repoint `specs/`, restore the two era-skewed checkers, D17's one-line version macro, register the known-reds with their owner steps). **A fifth item is added by the ruling:** take Q31 and Q32 *here*, before any commit needs them, so that no defect commit smuggles a divergence decision. Record both in §9 with the measurement already in hand.
 
-**0a.1 — the oracles that must exist before any position is touched.** There are now **three**, because the ruling brought two whole classes of position defect into the stage that the original two oracles cannot see.
+**0a.1 — the oracles that must exist before any position is touched. LANDED; the readings are in §4.2.7, and three of the numbers below were wrong.** There are **three**, because the ruling brought two whole classes of position defect into the stage that the original two oracles cannot see.
 
 - **(a) Inline sourcepos vs upstream** — unchanged. Every inline `code` and `html_inline` position from the pinned `cmark-gfm --to xml --sourcepos` against our dump over all 671 `spec.txt` examples. **Baseline reading: 13.** After D3: 1 (spec example 200, the pre-existing content-offset-as-column class).
 - **(b) Scope containment, extended to siblings.** For every node, `parent.start ≤ child.start` and `child.end ≤ parent.end` — **and no two siblings overlap**. The sibling half is new and it is what makes D23 falsifiable: D23's defect is `Text "*"` and `Strong` both claiming column 1, which is not a containment violation at all. It cannot be an upstream comparison; upstream has D7, D18, D19 and D23 too.
@@ -1284,6 +1296,104 @@ That is the ruling working as intended: the discipline of proving each defect fi
 *The blessed-golden half — and this is where 252 is a much stronger number than 32.* §4.4's corollary is that a golden regenerated while a defect is live **blesses** the defect, because the reviewer's only available answer is "unchanged from before, therefore fine". The stage now unpins **five** goldens that currently assert a defect as expected output — `regression.txt:474` (`Text scope=0:0..0:0 literal="[^~~is~~1]"`), `extensions.txt:804`/`:809` (`59:1..59:0`), `extensions-directive.txt` example 16 (an inner fence ending at the outer fence's line), `tests/api/main.c:1076` and `:1166` — plus a sixth, `specs/canonical-ast/structure.ast`, which no defect statement predicted and which only the `conformance` preset catches. Each of those flips from defending the defect to killing it. **A corpus that asserts six wrong answers is not a corpus that got 32 rows more expensive to regenerate; it is a corpus that cannot be used to review anything until it is corrected.**
 
 *The counterweight, stated honestly.* 252 rows is a lot of hand review, and the standing gate requires every moved row to be reviewed and named. That is why the stage is fifteen commits and not one: the largest single regeneration is 106 rows (0a.14) and the next is 58 (0a.7) and 57 (0a.13), each in a commit whose subject is the defect and whose reviewer has §2's statement in hand. The alternative is not "fewer rows"; it is the same rows, spread across eight steps, with no statement in hand at any of them.
+
+#### 4.2.7 0a.1 landed: what the three oracles read, and where §4.2.3 was wrong
+
+`scripts/audit-inline-sourcepos.mjs`, `scripts/audit-scope-containment.mjs` and
+`scripts/audit-position-places.mjs`, one ledger each under `specs/positions/`,
+~330 lines of Node, no new dependency, no engine change. All three run in CI in
+the job that already builds both parsers.
+
+**The readings, taken on the unfixed tree.**
+
+| Oracle | Registered | Scanned | §4.2.3 predicted |
+|---|---|---|---|
+| (a) inline sourcepos vs upstream | **12** | 68 inline `Code`/`HTML` over 669 `spec.txt` examples | 13 |
+| (b) containment + sibling overlap | **58** | 3,555 parent/child and sibling relations | — |
+| (c) a position is a place | **131** | 3,814 scopes, 178 deferred to the scope-sanity ratchet | 78 of 1,928 |
+
+**They are ratchets on a SET, not a budget.** Each records the exact rows that
+are wrong, keyed by the input and the node's index path from the document, and
+fails on a row appearing *and* on a row clearing. A count cannot distinguish a
+fix that cleared twelve rows from one that cleared twelve and introduced one,
+and that is not hypothetical — see the D3 measurement below. `--update` is taken
+in the commit that moves the behaviour, whose message names the rows.
+
+**Three corrections to §4.2.3.**
+
+1. **(a) reads 12, not 13.** Every one of the twelve is the same shape: our side
+   reports a span that crossed a line ending as though it had not, the start
+   always agrees, and the end names a column on the start line. Spec example 200
+   — the `content-offset-as-column` residue §4.2.3 predicts as the survivor — is
+   **not among them**; it currently agrees with upstream. So the sequence is not
+   13 → 1. It is measured below.
+2. **(c) reads 131 over the whole fixture corpus, not 78 over three files.** The
+   difference is definitional and the definitions are now written down rather
+   than implied: columns are **bytes**, lines are split the way `S_parser_feed`
+   splits them (`regression.txt` carries a CRLF), the corpus is every example in
+   every `packages/markdown-core/tests/fixtures/*.txt` at `--profile
+   gfm-extended`, and **a coordinate on line zero is not counted here** because
+   `audit-scope-sanity.mjs` owns it. Restricted to inline nodes the reading is
+   **59 of 2,242**, which is the number §4.2.3's sentence was reaching for; the
+   gate prints that split on every run.
+3. **§4.2.3 says (c) watches D20 and lists it as untouched by "the
+   sentinel/negative/line-zero ratchet".** D20's symptom `Text scope=1:1..1:0` is
+   *both* a zero column and a reversed range, so the two ratchets do overlap on
+   it — and the overlap is load-bearing rather than redundant. They **interlock**:
+   giving the end a real column at or after the start clears both, while zeroing
+   the node clears (c) and *grows* the sentinel budget, which fails there. Say
+   the two things separately and neither fix can hide behind the other.
+
+**Nine families, and the census is in `specs/positions/places.json`'s `purpose`.**
+58 rows are a block's end naming column 0 of a line that exists (H14's
+neighbour, §11.4; **no step owns it**); 19 are the content-offset-as-column class
+on a continuation line (Q22/Step 10); 19 are a span that crossed a line ending;
+9 are the synthesized table cell at `L:0..L:0` and 6 more the split-off table
+lead (requirement 10); 9 are the unmatched-backtick literal placed one column
+right (§4.1.3, Step 8); 6 are an inline end column left at 0 (D20's shape); 3
+are D18's consumed-definition line.
+
+**Two rows name a class no defect in §2 names.** A footnote definition starts at
+the column *after* its marker, which does not exist when the marker ends the
+line: `[^footnote]:` is twelve bytes and the definition is reported at `19:13`.
+It is the same idea as the end-column-zero class — a coordinate used to mean
+"just after" rather than "at" — and the same shape turns up again the moment D3
+lands (below). It is recorded here rather than minted as a defect number,
+because the cure is one decision about what a zero-width position is spelled as,
+and that decision belongs with the end-column-zero class, not beside it.
+
+**Falsifiability was proved by two throwaway experiments, applied to the
+baseline, measured, and reverted — and both are pre-measurements the steps that
+own them should not have to repeat.**
+
+- **D3 (0a.6), un-gating `adjust_subj_node_newlines` alone, no `block_offset`
+  amendment:** (a) goes **12 → 0**, not 12 → 1. (c) goes **131 → 121**: thirteen
+  rows clear and **three appear**, all three the same shape — ``` `` ```
+  followed by a newline gives `Code scope=1:3..3:0`, whose *start* is one past
+  the end of a two-byte line and whose *end* is upstream's own column zero. (b)
+  moves by **nothing**, which corroborates §4.5's claim that containment cannot
+  see D3. `spec_commonmark` fails, as §2 item 3 predicts.
+- **D23 (0a.13), correcting `S_insert_emph`'s four columns:** (b) goes **58 →
+  44** — exactly the fourteen rows the ledger attributes to D23, none appearing —
+  while (a) and (c) move by **nothing**. The three oracles are independent in
+  practice and not only by argument.
+
+**`class` is analysis; `closedBy` is measurement.** Only the rows with a measured
+owner carry one. Every other family's owner is deliberately `unassigned`: the
+step that moves the rows proves the attribution *by moving them*, and the gate's
+`CLEARED` list is that proof. That is cheaper and more honest than 131 hand
+guesses, and it is the same discipline §4.2.1 applied to the fourteen.
+
+**One thing 0a.1 did not fix, named so it is not re-derived.** The mdast
+backlog's `corpus.md:69` entry still says `Step 9b` while §2's progress meter
+and §4.6 both say `Step 9a`; the gate prints `6 Step 9b` where §2 prints `5` and
+`1`. The total is 23 either way, so no rule is broken — but §2's table and
+`specs/mdast-parity/deltas.json` disagree about one row's owner, and §4.6 says
+which is right. It is a one-field edit and it belongs to whichever commit next
+touches that file. Related: `audit-scope-sanity.mjs` is in §0's gate list and is
+**not in CI**, which the three new oracles now are.
+
+---
 
 ---
 

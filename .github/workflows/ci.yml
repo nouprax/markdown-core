@@ -1329,6 +1329,17 @@ jobs:
               run: pnpm check:upstream-parity
             - name: Compare against the remark ecosystem
               run: pnpm check:mdast-parity
+            # The position oracles. They live here because one of the three
+            # needs the pinned upstream parser this job already builds, and
+            # because all three are ratchets over registered rows: they fail on
+            # a row appearing AND on a row clearing, so a fix that moves one
+            # without recording it fails in CI rather than in review.
+            - name: Check inline positions against upstream cmark-gfm
+              run: pnpm audit:inline-sourcepos
+            - name: Check scope containment and sibling overlap
+              run: pnpm audit:scope-containment
+            - name: Check that every position is a place
+              run: pnpm audit:position-places
             # Bounded and seeded, so a CI failure replays locally with the seed
             # it prints. The mdast oracle is deliberately not fuzzed here yet:
             # it still reports divergences of mixed root cause that have not

@@ -9,9 +9,12 @@
     },
     "scripts": {
         "audit:ci": "scripts/audit-ci-policy.sh",
+        "audit:inline-sourcepos": "node scripts/audit-inline-sourcepos.mjs",
         "audit:packages": "scripts/audit-package-contents.sh",
+        "audit:position-places": "node scripts/audit-position-places.mjs",
         "audit:repository": "scripts/audit-repository.sh",
         "audit:repository:clean": "scripts/audit-repository.sh --clean",
+        "audit:scope-containment": "node scripts/audit-scope-containment.mjs",
         "audit:scope-sanity": "node scripts/audit-scope-sanity.mjs",
         "audit:surface": "scripts/audit-public-surface.sh",
         "audit:tests": "scripts/audit-test-topology.sh",
