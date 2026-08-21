@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.9 |
+| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.10 |
 | Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Stage 0a**, §4.2, at **0a.10** — 0a.0 through 0a.9 have landed |
+| Next action | **Stage 0a**, §4.2, at **0a.11** — 0a.0 through 0a.10 have landed |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -55,8 +55,8 @@ node scripts/audit-extension-special-chars.mjs   # 4 extensions, 5 sentinels
 node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
-node scripts/check-upstream-parity.mjs     # 810/810 vs cmark-gfm 0.29.0.gfm.13, 6/6 divergences
-node scripts/check-mdast-parity.mjs        # 51/51, backlog 23/23 still diverging
+node scripts/check-upstream-parity.mjs     # 813/813 vs cmark-gfm 0.29.0.gfm.13, 6/6 divergences
+node scripts/check-mdast-parity.mjs        # 54/54, backlog 24/24 still diverging
 node scripts/audit-scope-sanity.mjs        # 207 rows, only-shrink holds
 
 # The three position oracles, landed at 0a.1 (§4.2.7). Each fails on a row
@@ -274,14 +274,20 @@ it, and the gate requires each to *still* diverge — so a step that lands witho
 deleting its own entries fails as loudly as a new divergence.
 
 ```
-    14  Step 7   — directive grammar conformance
-     5  Step 9b  — the reference node model
-     1  Step 9a  — definition retention
+    15  Step 7   — directive grammar conformance
+     6  Step 9b  — the reference node model
      2  Step 6   — formula
      1  Step 10  — the split-off table lead
     --
-    23  remaining
+    24  remaining
 ```
+
+**This started at 23 and the one growth is recorded.** 0a.10 added D22's pin to
+`extensions-directive.txt`, which is also mdast corpus, and the input diverges
+for the PRE-EXISTING attributes-JSON and label-shape gap — not for anything D22
+introduces. §4.2.3 authorised it in advance. The `Step 9a — definition
+retention` row this list used to carry was never in the data: the entry it names
+is registered under `Step 9b`, and §4.6 says which is right.
 
 **When this list is empty, Steps 6, 7, 9 and 10 have landed — and that is all it
 means.** The backlog is a parity progress meter, NOT Stage 0 acceptance. The last
@@ -1255,7 +1261,7 @@ The mdast note must also be amended in this commit: `specs/mdast-parity/corpus.m
 
 **0a.9 — D14, the footnote-call recognition rule. LANDED; §4.2.15 records it.** One condition at `inlines.c:1321`, testing the **raw** source byte with the bounds test before the subscript (D4's lesson). It lands after 0a.2 because it amends the entry condition of the branch whose slice 0a.2 rewrites, and the pair must be re-measured composed. Zero golden rows; the gate is three regression examples (escaped, entity-spelled, and a spelling with a matching definition present) plus the 432-case matrix reduced to a fixture. **This discharges half of Step 9a's raw-`^` clause** — the "opens with a raw `^`" half. The other half, "and the document defines that label", stays 9a's, because it is a model question about what a failed call becomes (§5.7, Q2).
 
-**0a.10 — D21 and D22, the directive pair.** D21 adds one constant to the extension API:
+**0a.10 — D21 and D22, the directive pair. LANDED; §4.2.16 records it.** D21 adds one constant to the extension API:
 
 > `MARKDOWN_CORE_BLOCK_CLOSED` — returned by a `markdown_core_match_block_func` when the input is the container's own closing line. The parser closes the container and every block still open inside it, ends the container at this line, and stops processing the line.
 
@@ -1987,6 +1993,81 @@ for deferring the whole thing: **no escaped or entity-spelled call resolved at
 the baseline either**, across all 144 matrix cases with a matching definition.
 The narrowing removed broken behaviour only, so §2's *"a policy move, not a
 repair"* does not survive, exactly as §4.2.4 says.
+
+---
+
+#### 4.2.16 0a.10 landed: a closing fence closes the block, and three sites not two
+
+**D21 — one constant, one extracted helper, one threaded out-param.**
+`MARKDOWN_CORE_BLOCK_CLOSED` is public extension API; `S_set_end_to_current_line`
+is lifted out of `finalize`'s middle branch byte-identically, so the document, a
+closed fenced code block and a setext heading go on saying what they said and an
+extension container can now say it too. `parse_extension_block` gained a
+`should_continue` out-param exactly as `parse_code_block_prefix` already had one,
+and on `CLOSED` it closes every block still open inside the container, then the
+container, then positions it at the fence's line.
+
+The whole defect was that `directive_block_matches` marked `closed`, consumed
+the fence, and **returned 1**. The container stayed open, so the next non-blank
+line arrived as a lazy paragraph continuation:
+
+```
+:::note      before:  DirectiveBlock 1:1..4:5 > Paragraph 2:1..4:5
+body                    Text "body", SoftBreak, Text "after" at 3:1
+:::          after:   DirectiveBlock 1:1..3:3 > Paragraph 2:1..2:4
+after                 Paragraph 4:1..4:5 > Text "after"
+```
+
+**D22 — three sites, and §4.2.3 says two.** The primitive is right as described:
+`markdown_core_inline_parser_set_offset` now counts the newlines it moves over
+and updates `line` and `column_offset` in the same frame `handle_newline` and
+`adjust_subj_node_newlines` use. Only forward moves count, because autolink
+rewinds through the same call and a rewind is inside the current line by
+construction.
+
+What the doc undercounts is directive's side. `make_name_only_directive` and the
+attributes branch are the two obvious sites, and fixing only those left
+`Directive 1:1..1:29` unchanged. **The labelled form takes its end from a third**:
+`make_delimiter_text`, which builds the `]{...}` closer — and a label closer
+carries its attributes in that literal, so `]{title="one⏎two"}` is a *delimiter*
+that spans a line ending. `insert_label_directive` then takes the whole
+directive's end from that node. With all three reading their end back after the
+consume, the result is exactly §2's oracle: `Directive 1:1..2:5`,
+`Text 2:6..2:10`.
+
+**Three golden rows moved and §4.2.3 named two of them.** Both predicted rows are
+`extensions-directive.txt` example 16, where the inner `:::spoiler` ended at the
+**outer** `::::` fence's line — the golden was wrong. The third is
+`extensions-conflicts.txt` example 2, which did not exist when §4.2.3 was
+written: it is 0a.5's own fixture, and its inner paragraph ran to the fence line
+for the same reason. The `specs/canonical-ast/structure.ast` row §4.2.3 predicted
+also moved, `Paragraph 8:1..9:3` → `8:1..8:4`, and only the `conformance` preset
+catches it.
+
+**D22 was completely unpinned**, which §4.1's verdict calls the finding: zero
+existing golden rows move for it. Three new examples now pin the pair — the
+fence case, the fence case inside a block quote, and the line-crossing attribute
+— and the mutant proves they bite.
+
+**Mutant kills.** Returning 1 instead of `CLOSED` reddens **four** examples
+across two fixtures and **both** conformance tests. Making `set_offset` stop
+counting newlines reddens exactly the new D22 pin — one example, which is what
+"completely unpinned" means once a pin exists.
+
+**Backlog 23 → 24, authorised in advance and named.** `extensions-directive.txt`
+is mdast corpus, so D22's pin is compared against remark, and it diverges for
+the **pre-existing** attributes-JSON and label-shape gap: this engine emits
+attributes as a JSON string and has no visible `DirectiveLabel` node. D22 is what
+makes the input's *positions* right, and positions are not what that gate
+compares. The entry says so and names Step 7.
+
+**One claim in §4.2.3 is stale and is corrected here.** It says the lifetime
+invariant — that `container` survives its own `finalize` because an
+extension-minted type is never `PARAGRAPH` — cannot be policed by ASan *"the CLI
+is the arena path"*. **0a.3 already retired that**: the fixture runner allocates
+through malloc, so `correctness-asan` runs the whole directive corpus over this
+path. The invariant is asserted in the code as well, which is belt and braces
+rather than the only mechanism.
 
 ---
 

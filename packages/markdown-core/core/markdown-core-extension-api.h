@@ -202,8 +202,23 @@ typedef delimiter *(*markdown_core_inline_from_delim_func)(markdown_core_syntax_
                                                            markdown_core_inline_parser *inline_parser,
                                                            delimiter *opener, delimiter *closer);
 
+/** Returned by a 'markdown_core_match_block_func' when 'input' is the
+ *  container's own closing line.
+ *
+ *  The parser closes the container and every block still open inside it, ends
+ *  the container at THIS line, and stops processing the line. Returning 1 and
+ *  consuming the fence is not enough: the container stays open, and the next
+ *  non-blank line is taken as a lazy paragraph continuation and pulled inside
+ *  it, on the wrong line.
+ *
+ *  0 and 1 keep their meanings, so an extension that never returns this is
+ *  unaffected.
+ */
+#define MARKDOWN_CORE_BLOCK_CLOSED 2
+
 /** Should return 'true' if 'input' can be contained in 'container',
- *  'false' otherwise.
+ *  'false' otherwise, or MARKDOWN_CORE_BLOCK_CLOSED if 'input' is the
+ *  container's own closing line.
  */
 typedef int (*markdown_core_match_block_func)(markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                                               unsigned char *input, int len, markdown_core_node *container);

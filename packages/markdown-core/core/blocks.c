@@ -236,6 +236,21 @@ void markdown_core_parser_free(markdown_core_parser *parser) {
 
 static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_node *b);
 
+/* "This block ends on the line being processed", lifted out of `finalize` so
+ * that the extension close path can say the same thing. The three kinds that
+ * take it there — the document, a closed fenced code block, a setext heading —
+ * are the ones whose last line IS the line in hand; every other block ended on
+ * the line before. An extension container closing on its own fence is a fourth,
+ * and `finalize` cannot know that from the type alone. */
+static void S_set_end_to_current_line(markdown_core_parser *parser, markdown_core_node *b) {
+    b->end_line = parser->line_number;
+    b->end_column = parser->curline.size;
+    if (b->end_column && parser->curline.ptr[b->end_column - 1] == '\n')
+        b->end_column -= 1;
+    if (b->end_column && parser->curline.ptr[b->end_column - 1] == '\r')
+        b->end_column -= 1;
+}
+
 // Returns true if line has only space characters, else false.
 static bool is_blank(markdown_core_strbuf *s, bufsize_t offset) {
     while (offset < s->size) {
@@ -372,12 +387,7 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
     } else if (S_type(b) == MARKDOWN_CORE_NODE_DOCUMENT ||
                (S_type(b) == MARKDOWN_CORE_NODE_CODE_BLOCK && b->as.code.fenced) ||
                (S_type(b) == MARKDOWN_CORE_NODE_HEADING && b->as.heading.setext)) {
-        b->end_line = parser->line_number;
-        b->end_column = parser->curline.size;
-        if (b->end_column && parser->curline.ptr[b->end_column - 1] == '\n')
-            b->end_column -= 1;
-        if (b->end_column && parser->curline.ptr[b->end_column - 1] == '\r')
-            b->end_column -= 1;
+        S_set_end_to_current_line(parser, b);
     } else {
         b->end_line = parser->line_number - 1;
         b->end_column = parser->last_line_length;
@@ -1192,15 +1202,37 @@ static bool parse_html_block_prefix(markdown_core_parser *parser, markdown_core_
 }
 
 static bool parse_extension_block(markdown_core_parser *parser, markdown_core_node *container,
-                                  markdown_core_chunk *input) {
-    bool res = false;
+                                  markdown_core_chunk *input, bool *should_continue) {
+    int matched;
 
-    if (container->extension->last_block_matches) {
-        if (container->extension->last_block_matches(container->extension, parser, input->data, input->len, container))
-            res = true;
+    if (!container->extension->last_block_matches)
+        return false;
+
+    matched =
+        container->extension->last_block_matches(container->extension, parser, input->data, input->len, container);
+    if (matched != MARKDOWN_CORE_BLOCK_CLOSED)
+        return matched != 0;
+
+    /* The container's own closing line. Everything still open inside it ended
+     * on the line before, and the container ends here.
+     *
+     * `parser->current` is the deepest open block and `container` is on the
+     * path from the root to it, so walking up through `finalize` reaches it.
+     * `finalize` frees a node only in its PARAGRAPH case and returns the
+     * parent either way, so the loop is safe across a paragraph that was
+     * nothing but reference definitions. */
+    *should_continue = false;
+    while (parser->current != container) {
+        parser->current = finalize(parser, parser->current);
+        assert(parser->current != NULL);
     }
-
-    return res;
+    /* `container` carries an extension-minted type, never PARAGRAPH, so it
+     * survives its own finalize and can still be positioned. That is the one
+     * lifetime invariant this path rests on. */
+    assert(S_type(container) != MARKDOWN_CORE_NODE_PARAGRAPH);
+    parser->current = finalize(parser, container);
+    S_set_end_to_current_line(parser, container);
+    return false;
 }
 
 /**
@@ -1225,7 +1257,7 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
         S_find_first_nonspace(parser, input);
 
         if (container->extension) {
-            if (!parse_extension_block(parser, container, input))
+            if (!parse_extension_block(parser, container, input, &should_continue))
                 goto done;
             continue;
         }

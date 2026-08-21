@@ -261,6 +261,12 @@
             "input": "Display \\\\[x+y\\\\] and \\[a+b\\].\n",
             "source": "packages/markdown-core/tests/fixtures/extensions-formula-github.txt:122",
             "closedBy": "Step 6 \u2014 formula"
+        },
+        {
+            "input": ":note[label]{title=\"one\ntwo\"} tail\n",
+            "source": "packages/markdown-core/tests/fixtures/extensions-directive.txt:333",
+            "closedBy": "Step 7 \u2014 directive grammar conformance",
+            "note": "Added at 0a.10 with D22's pin. The divergence is the PRE-EXISTING attributes-JSON and label-shape gap \u2014 this engine emits attributes as a JSON string and has no visible DirectiveLabel node \u2014 and not anything D22 introduces. D22 is what makes the input's POSITIONS right, and positions are not what this gate compares."
         }
     ],
     "baselineBacklogNote": "Pinned against the untouched 1.0 baseline (580d10c) on 2026-08-20. These are the inputs where this engine does not yet agree with remark, and every one is attributable to a reconstruction step that has not landed. They are NOT deliberate divergences: each is a gap the reconstruction closes. The gate treats them as known so it can still catch a NEW divergence, and each step must delete its own entries \u2014 an entry that stops diverging while still listed here fails the gate, exactly as a registered divergence does. When this list is empty, Stage 0 is done.",

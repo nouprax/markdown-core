@@ -1952,7 +1952,43 @@ void markdown_core_inline_parser_advance_offset(markdown_core_inline_parser *par
 
 int markdown_core_inline_parser_get_offset(markdown_core_inline_parser *parser) { return parser->pos; }
 
-void markdown_core_inline_parser_set_offset(markdown_core_inline_parser *parser, int offset) { parser->pos = offset; }
+// Moving the cursor over a consumed span must move the line counter with it.
+//
+// This used to be an assignment and nothing else, so an extension that consumed
+// a span containing a line ending left `line` and `column_offset` where they
+// were: its own node reported a column on the START line, and every later node
+// in the same paragraph was displaced by the same amount. It is the same defect
+// `adjust_subj_node_newlines` fixes for the core's own spans; the only
+// difference is that an extension names a destination offset where the core
+// names a match length.
+//
+// Only forward moves count newlines. `autolink` rewinds through here, and a
+// rewind is inside the current line by construction — it re-reads bytes the
+// cursor has already passed on this line.
+void markdown_core_inline_parser_set_offset(markdown_core_inline_parser *parser, int offset) {
+    if (offset > parser->pos) {
+        bufsize_t limit = (bufsize_t)offset < parser->input.len ? (bufsize_t)offset : parser->input.len;
+        bufsize_t at;
+        int newlines = 0;
+        int since_newline = 0;
+        for (at = parser->pos; at < limit; at++) {
+            if (parser->input.data[at] == '\n') {
+                newlines++;
+                since_newline = 0;
+            } else {
+                since_newline++;
+            }
+        }
+        if (newlines) {
+            parser->line += newlines;
+            /* The same frame handle_newline and adjust_subj_node_newlines use:
+             * the negated offset of the first byte of the line the cursor now
+             * stands on. */
+            parser->column_offset = -offset + since_newline;
+        }
+    }
+    parser->pos = offset;
+}
 
 int markdown_core_inline_parser_get_column(markdown_core_inline_parser *parser) {
     return parser->pos + 1 + parser->column_offset + parser->block_offset;

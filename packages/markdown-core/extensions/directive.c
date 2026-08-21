@@ -924,8 +924,16 @@ static markdown_core_node *make_name_only_directive(markdown_core_syntax_extensi
 
     node = make_directive_node(extension, parser, name, name_len, start_line, start_column, start_line,
                                start_column + (int)(end_offset - offset) - 1);
-    if (node)
+    if (node) {
+        /* Consume first, then read the end back from the subject. Computing it
+         * from start_column plus a length states the end in the START line's
+         * frame, which is wrong the moment the span crosses a line ending. The
+         * order matters the other way too: every failure above returns NULL
+         * without having moved the cursor. */
         markdown_core_inline_parser_set_offset(inline_parser, (int)end_offset);
+        node->end_line = markdown_core_inline_parser_get_line(inline_parser);
+        node->end_column = markdown_core_inline_parser_get_column(inline_parser) - 1;
+    }
 
     return node;
 }
@@ -939,10 +947,17 @@ static markdown_core_node *make_delimiter_text(markdown_core_parser *parser, mar
         return NULL;
 
     node->as.literal = markdown_core_chunk_dup(chunk, offset, len);
-    node->start_line = node->end_line = markdown_core_inline_parser_get_line(inline_parser);
+    node->start_line = markdown_core_inline_parser_get_line(inline_parser);
     node->start_column = markdown_core_inline_parser_get_column(inline_parser);
-    node->end_column = node->start_column + (int)len - 1;
+    /* THE THIRD SITE, and the one the labelled form depends on: a label closer
+     * carries its `{...}` attributes in this literal, so `]{title="one\ntwo"}`
+     * is a delimiter that spans a line ending. insert_label_directive takes the
+     * whole directive's end from this node, so computing it as start plus a
+     * length put the directive's end on the label's line. Consume, then read
+     * the end back. */
     markdown_core_inline_parser_set_offset(inline_parser, (int)(offset + len));
+    node->end_line = markdown_core_inline_parser_get_line(inline_parser);
+    node->end_column = markdown_core_inline_parser_get_column(inline_parser) - 1;
     return node;
 }
 
@@ -1039,7 +1054,12 @@ static markdown_core_node *match_colon_directive(markdown_core_syntax_extension 
         directive = get_directive(node);
         directive->attributes = attributes;
         directive->has_attributes = 1;
+        /* See make_name_only_directive: an attribute value is the one part of a
+         * directive that can span a line ending, so this is the site the defect
+         * was visible at. */
         markdown_core_inline_parser_set_offset(inline_parser, (int)end);
+        node->end_line = markdown_core_inline_parser_get_line(inline_parser);
+        node->end_column = markdown_core_inline_parser_get_column(inline_parser) - 1;
         return node;
     }
 
@@ -1180,6 +1200,12 @@ static int directive_block_matches(markdown_core_syntax_extension *extension, ma
         directive->consume_line = 1;
         markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser),
                                             false);
+        /* Returning 1 here used to leave the container open. The fence was
+         * consumed, so nothing else on the line was parsed, but the block
+         * stayed open and the next non-blank line arrived as a lazy paragraph
+         * continuation -- pulled inside the container and recorded on the
+         * fence's line rather than its own. */
+        return MARKDOWN_CORE_BLOCK_CLOSED;
     }
 
     return 1;
