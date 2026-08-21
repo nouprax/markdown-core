@@ -711,9 +711,29 @@ fixes the line; the column is Q22's. Both rows move again there.
 [foo]
 .
 Document scope=1:1..4:5 children=2
-├── Paragraph scope=1:1..2:10 children=1
-│   └── Text scope=1:1..1:10 literal="\"title\" ok" children=0
+├── Paragraph scope=2:1..2:10 children=1
+│   └── Text scope=2:1..2:10 literal="\"title\" ok" children=0
 └── Paragraph scope=4:1..4:5 children=1
     └── Link scope=4:1..4:5 destination="/url" title=null children=1
         └── Text scope=4:2..4:4 literal="foo" children=0
+````````````````````````````````
+
+A link begins at its own opening bracket. It used to take its start line from
+the CLOSING bracket, so a link whose label crosses a line ending began after its
+own first child — `Link 2:1..2:6` around a `Text` at `1:2`. That half of D19 has
+no other witness in this repository: reverting it alone leaves `correctness`
+67/67 and all three position oracles green, and only this example plus
+`scripts/audit-scope-containment.mjs`'s sibling/parent rule catches it.
+
+```````````````````````````````` example
+[a
+b](/u) tail
+.
+Document scope=1:1..2:11 children=1
+└── Paragraph scope=1:1..2:11 children=2
+    ├── Link scope=1:1..2:6 destination="/u" title=null children=3
+    │   ├── Text scope=1:2..1:2 literal="a" children=0
+    │   ├── SoftBreak scope=0:0..0:0 children=0
+    │   └── Text scope=2:1..2:1 literal="b" children=0
+    └── Text scope=2:7..2:11 literal=" tail" children=0
 ````````````````````````````````

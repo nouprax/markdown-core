@@ -28,6 +28,12 @@ static markdown_core_node *match(markdown_core_syntax_extension *self, markdown_
         parser->oom = true;
     res->start_line = res->end_line = markdown_core_inline_parser_get_line(inline_parser);
     res->start_column = markdown_core_inline_parser_get_column(inline_parser) - delims;
+    // The run owns `delims` bytes and must say so. Left unset it stayed 0 from
+    // the calloc, so an UNMATCHED run reported an end before its own start --
+    // `a~~` gave Text 1:1..1:0 -- and consolidation then carried that 0 onto the
+    // whole merged run, because it takes the merged end column from the last
+    // operand.
+    res->end_column = res->start_column + delims - 1;
 
     if ((left_flanking || right_flanking) &&
         (delims == 2 || (!(parser->options & MARKDOWN_CORE_OPT_STRIKETHROUGH_DOUBLE_TILDE) && delims == 1))) {

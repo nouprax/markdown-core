@@ -565,7 +565,7 @@ Document scope=1:1..11:14 children=6
 ├── Paragraph scope=1:1..1:30 children=1
 │   └── Text scope=1:1..1:30 literal="These are ~not strikethroughs." children=0
 ├── Paragraph scope=3:1..3:17 children=1
-│   └── Text scope=3:1..3:0 literal="No, they are not~" children=0
+│   └── Text scope=3:1..3:17 literal="No, they are not~" children=0
 ├── Paragraph scope=5:1..5:32 children=3
 │   ├── Text scope=5:1..5:5 literal="This " children=0
 │   ├── Strikethrough scope=5:6..5:17 children=1
@@ -579,9 +579,9 @@ Document scope=1:1..11:14 children=6
 │   ├── Text scope=9:6..9:6 literal=" " children=0
 │   ├── Strikethrough scope=9:7..9:13 children=1
 │   │   └── Text scope=9:9..9:11 literal="two" children=0
-│   └── Text scope=9:14..9:0 literal=" ~~~three~~~" children=0
+│   └── Text scope=9:14..9:25 literal=" ~~~three~~~" children=0
 └── Paragraph scope=11:1..11:14 children=1
-    └── Text scope=11:1..11:0 literal="No ~mismatch~~" children=0
+    └── Text scope=11:1..11:14 literal="No ~mismatch~~" children=0
 ````````````````````````````````
 
 Using 200 tilde since it overflows the internal buffer

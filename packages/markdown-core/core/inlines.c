@@ -958,6 +958,14 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
         advance(subj);
         return make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_dup(&subj->input, subj->pos - 1, 1));
     } else if (!is_eof(subj) && skip_line_end(subj)) {
+        // A backslash hard break CONSUMES a line ending, so the subject has to
+        // be told, exactly as handle_newline tells it. It was not, so every node
+        // after such a break kept the break's own line and a column measured
+        // from the wrong line's start: `foo\` / `bar` reported Text 1:6..1:8 --
+        // three columns that do not exist on a four-character line 1.
+        // cmark-gfm reports the same numbers, so upstream cannot be the oracle.
+        ++subj->line;
+        subj->column_offset = -subj->pos;
         return make_simple_subj(subj, MARKDOWN_CORE_NODE_LINE_BREAK);
     } else {
         return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("\\"));
@@ -1478,9 +1486,24 @@ match:
     }
     inl->as.link.url = url;
     inl->as.link.title = title;
-    inl->start_line = inl->end_line = subj->line;
+    // A link starts at its own '[' and ends at its closing ')' or ']', and the
+    // two need not be on the same line. Taking BOTH from subj->line made a link
+    // start where it ENDED: `[a\nb](/u)` reported Link 2:1..2:6 around a child
+    // Text at 1:2 -- a node that begins after its own first child.
+    inl->start_line = opener->inl_text->start_line;
     inl->start_column = opener->inl_text->start_column;
+    inl->end_line = subj->line;
     inl->end_column = subj->pos + subj->column_offset + subj->block_offset;
+    // And the destination and title are scanned by manual_scan_link_url and
+    // scan_link_title, which move subj->pos without ever passing through
+    // handle_newline -- so a line ending inside `(...)` is invisible to the
+    // subject, and every later node in the paragraph inherits the error.
+    // adjust_subj_node_newlines is the repair inline code and raw HTML already
+    // use; it walks only [initial_pos, subj->pos), which is what the bracket
+    // handler consumed for itself. Counting from the OPENING bracket instead
+    // would count the label's own newlines a second time -- measured,
+    // `[a\nb](/u) tail` then reports line 3 of a two-line document.
+    adjust_subj_node_newlines(subj, inl, (int)(subj->pos - initial_pos), 0);
     markdown_core_node_insert_before(opener->inl_text, inl);
     // Add link text:
     tmp = opener->inl_text->next;

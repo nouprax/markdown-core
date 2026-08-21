@@ -3214,8 +3214,8 @@ foo
 bar
 .
 Document scope=1:1..4:3 children=1
-└── Paragraph scope=1:1..4:3 children=1
-    └── Text scope=1:1..1:3 literal="bar" children=0
+└── Paragraph scope=4:1..4:3 children=1
+    └── Text scope=4:1..4:3 literal="bar" children=0
 ````````````````````````````````
 
 
@@ -3238,8 +3238,8 @@ This is a link reference definition, but it has no title:
 "title" ok
 .
 Document scope=1:1..2:10 children=1
-└── Paragraph scope=1:1..2:10 children=1
-    └── Text scope=1:1..1:10 literal="\"title\" ok" children=0
+└── Paragraph scope=2:1..2:10 children=1
+    └── Text scope=2:1..2:10 literal="\"title\" ok" children=0
 ````````````````````````````````
 
 
@@ -3317,8 +3317,8 @@ bar
 [foo]
 .
 Document scope=1:1..4:5 children=2
-├── Heading scope=1:1..4:5 level=1 children=1
-│   └── Text scope=1:1..1:3 literal="bar" children=0
+├── Heading scope=2:1..4:5 level=1 children=1
+│   └── Text scope=2:1..2:3 literal="bar" children=0
 └── Paragraph scope=4:1..4:5 children=1
     └── Link scope=4:1..4:5 destination="/url" title=null children=1
         └── Text scope=4:2..4:4 literal="foo" children=0
@@ -3330,11 +3330,11 @@ Document scope=1:1..4:5 children=2
 [foo]
 .
 Document scope=1:1..3:5 children=1
-└── Paragraph scope=1:1..3:5 children=3
-    ├── Text scope=1:1..1:3 literal="===" children=0
+└── Paragraph scope=2:1..3:5 children=3
+    ├── Text scope=2:1..2:3 literal="===" children=0
     ├── SoftBreak scope=0:0..0:0 children=0
-    └── Link scope=2:1..2:5 destination="/url" title=null children=1
-        └── Text scope=2:2..2:4 literal="foo" children=0
+    └── Link scope=3:1..3:5 destination="/url" title=null children=1
+        └── Text scope=3:2..3:4 literal="foo" children=0
 ````````````````````````````````
 
 
@@ -6272,7 +6272,7 @@ Document scope=1:1..2:3 children=1
 └── Paragraph scope=1:1..2:3 children=3
     ├── Text scope=1:1..1:3 literal="foo" children=0
     ├── LineBreak scope=0:0..0:0 children=0
-    └── Text scope=1:6..1:8 literal="bar" children=0
+    └── Text scope=2:1..2:3 literal="bar" children=0
 ````````````````````````````````
 
 
@@ -9194,7 +9194,7 @@ the same way in inline links and link reference definitions.)
 .
 Document scope=1:1..2:12 children=1
 └── Paragraph scope=1:1..2:12 children=1
-    └── Link scope=1:1..1:25 destination="/uri" title="title" children=1
+    └── Link scope=1:1..2:10 destination="/uri" title="title" children=1
         └── Text scope=1:2..1:5 literal="link" children=0
 ````````````````````````````````
 
@@ -11308,7 +11308,7 @@ Document scope=1:1..2:3 children=1
 └── Paragraph scope=1:1..2:3 children=3
     ├── Text scope=1:1..1:3 literal="foo" children=0
     ├── LineBreak scope=0:0..0:0 children=0
-    └── Text scope=1:6..1:8 literal="baz" children=0
+    └── Text scope=2:1..2:3 literal="baz" children=0
 ````````````````````````````````
 
 
@@ -11348,7 +11348,7 @@ Document scope=1:1..2:8 children=1
 └── Paragraph scope=1:1..2:8 children=3
     ├── Text scope=1:1..1:3 literal="foo" children=0
     ├── LineBreak scope=0:0..0:0 children=0
-    └── Text scope=1:6..1:8 literal="bar" children=0
+    └── Text scope=2:1..2:3 literal="bar" children=0
 ````````````````````````````````
 
 
@@ -11374,10 +11374,10 @@ bar*
 .
 Document scope=1:1..2:4 children=1
 └── Paragraph scope=1:1..2:4 children=1
-    └── Emphasis scope=1:1..1:10 children=3
+    └── Emphasis scope=1:1..2:4 children=3
         ├── Text scope=1:2..1:4 literal="foo" children=0
         ├── LineBreak scope=0:0..0:0 children=0
-        └── Text scope=1:7..1:9 literal="bar" children=0
+        └── Text scope=2:1..2:3 literal="bar" children=0
 ````````````````````````````````
 
 

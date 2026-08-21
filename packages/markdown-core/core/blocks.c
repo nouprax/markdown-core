@@ -365,7 +365,29 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
         chunk.data += pos;
         chunk.len -= pos;
     }
-    markdown_core_strbuf_drop(node_content, (node_content->size - chunk.len));
+    // The definitions are dropped off the FRONT of the block's content, so what
+    // is left starts further down the source than the block was told it did.
+    // Advance the start line by the line endings in the prefix that goes away:
+    // without this a paragraph whose leading definitions were consumed keeps the
+    // DEFINITION's line, and so does every inline in it, because
+    // markdown_core_parse_inlines seeds the subject's line from b->start_line.
+    //
+    // Counting is sound because markdown_core_parse_reference_inline only
+    // returns after skip_line_end succeeds, so the dropped prefix always ends on
+    // a line boundary.
+    //
+    // start_column is deliberately NOT adjusted. It is right wherever the
+    // remaining first line has the same stripped prefix as the definition's line,
+    // which is every corpus case plus block quotes and list items; where the
+    // prefixes differ the residue is the content-to-source column class that
+    // exists with no reference definition in sight (`a\n  *b* tail` reports
+    // Emphasis 2:1..2:3 where the truth is 2:3..2:5). That is Q22's.
+    bufsize_t dropped = node_content->size - chunk.len;
+    for (bufsize_t i = 0; i < dropped; i++) {
+        if (node_content->ptr[i] == '\n')
+            b->start_line++;
+    }
+    markdown_core_strbuf_drop(node_content, dropped);
     return !is_blank(&b->content, 0);
 }
 
