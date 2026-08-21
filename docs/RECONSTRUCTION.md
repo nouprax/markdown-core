@@ -1593,6 +1593,252 @@ than assumed: its budget is the only thing between a resolved reference and
 destination into the node. It is fixed by deleting the copy, which is 9a's model
 change, and by nothing smaller.
 
+### 4.13 Atomic append — the mechanism, and what it costs
+
+Q34 is settled: `append(chunk:) throws`, and under value semantics that makes the line's work a transaction. §11.8 states the property and then hands this section the bill — *"every allocation-failure point inside a line must either be moved before the first mutation, or be undoable."* Four subsystems were swept independently against the working tree at `c1a7201` with a `markdown_core_mem` that refuses the *k*-th allocation of one line and then serialises what survived: the block phase, the inline phase, the six extensions, and the allocation layer with the late-resolved maps. **Citations below are `file:line` relative to `packages/markdown-core/`, pinned to `c1a7201`, and re-verified against the tree while this section was written** — three citations carried in the sweeps were off (`add_child` is at `core/blocks.c:471-489`, not 1477; `last_block_matches` at `core/blocks.c:1170`, not 1200) and are corrected here.
+
+The headline from the sweeps: of 107 allocation-failure points reachable inside one line of a mixed corpus, **zero leave the parser standing where it stood.** 53 diverge in tree, buffer or map state; the other 54 differ only in sticky poison bits, which nothing in the engine ever clears. The engine's OOM strategy today is the exact inverse of the contract — poison the parser (`core/blocks.c:1586` short-circuits every later line) and destroy the document (`core/blocks.c:1697-1704` frees the root and returns NULL).
+
+---
+
+
+> **Verified independently before this section was accepted**, against the tree
+> at `c1a7201`: `check_open_blocks` does call `finalize` on a closing fence
+> (`core/blocks.c:1127`); `__OPEN` is cleared at `core/blocks.c:366` while the
+> fallible info-line decode sits at `core/blocks.c:410`, well after it;
+> `parser->line_number++` at `core/blocks.c:1624` is the first durable write on
+> the line path; and `finish` on a terminal loss frees the root **and** resets
+> the parser (`core/blocks.c:1699-1701`), so today a lost allocation destroys
+> both the document and the parser that could have retried.
+
+#### 4.13.1 The verdict
+
+**Yes. Append can be made atomic, and the mechanism costs the line — not the document.** Three qualifications, each named rather than assumed.
+
+1. **Atomicity is bought by ordering, not by bookkeeping.** A line's failure becomes free if every fallible operation happens before the first irreversible one. That reordering is possible everywhere in the block phase, and in the one place where it is not — the inline parse of a closing block, whose allocation count is not a function of its length — the work is discardable instead, at a cost proportional to what it built.
+
+2. **Atomic per *line* is free; atomic per *call* needs one added mechanism.** A chunk may contain many lines, and ordering alone leaves a failed multi-line call standing at an interior line boundary. Rolling those lines back needs a copy-on-first-touch record of the nodes the *call* has touched — Θ(open depth + nodes the call created), freed at commit, never a function of the document. It is armed only when the chunk contains more than one line ending. Recorded as **Q37**.
+
+3. **Three classes of operation cannot be undone at any price below O(block), and every one of them is already scheduled for deletion by a step on this list.** They are exactly the operations that destroy source bytes: `strbuf_drop` (`core/blocks.c:353`, `:422`), `chunk_buf_detach` of a block's content (`core/blocks.c:425`, `:430`), and the node frees and retypes at `core/blocks.c:393`, `extensions/table.c:369`, `extensions/formula.c:535`. Steps 8, 9a, 9b, 11a and 11c delete all of them, because a retained normalized source with literals expressed as byte ranges leaves nothing to destroy. **The exception list is non-empty before Stage 0 and empty after it**, which is the strongest thing this analysis found: atomicity is not a new subsystem, it is a property that falls out of work already assigned, provided the steps are told to preserve it.
+
+**What a caller sees when the throw fires.** `document` is unchanged and readable — it is an owned value (Q32), not a view into the parser. The parser behind it stands at the byte offset where the call began; a retry with the same chunk is exact. Nothing is poisoned: the failure is a fact about one call, not a property acquired by a buffer, so a retry after memory is freed elsewhere succeeds. The error names allocation failure and carries no partial tree. **The one failure the contract cannot cover is the one that is not a throw**: `abort()` and stack exhaustion. The engine's only `abort()` is the arena's (§4.13.10), and it is deleted at 3a.
+
+---
+
+#### 4.13.2 The boundary, stated exactly
+
+The whole design is the position of one line in the code, so durable state is defined first. **Durable** is state that survives the call and is observable by the next append or in the document:
+
+| # | Durable state | Where |
+|---|---|---|
+| 1 | Parser scalars carried across lines: `line_number`, `last_line_length`, `total_size`, `linebuf` and its size | `core/blocks.c:869`, `:896-909`, `:1624`, `:1645-1650` |
+| 2 | The tree: links, `__OPEN` / `__LAST_LINE_BLANK` / `__LAST_LINE_CHECKED`, `end_line` / `end_column`, the `as` union, each open block's `content` bytes | `core/blocks.c:366-380`, `:1481-1499`, `:284-297` |
+| 3 | The late-resolved maps: `refmap->refs`, `map->size`, `entry.age`, `map->ref_size` | `core/references.c:52-57`, `core/map.c:307-309` |
+| 4 | The sticky failure bits: `parser->oom`, every `strbuf.oom`, `map->oom` | 92 write sites engine-wide |
+
+Everything else in the parser is per-line scratch, reset unconditionally at `core/blocks.c:1607-1614` — `offset`, `column`, `first_nonspace`, `first_nonspace_column`, `indent`, `blank`, `partially_consumed_tab`, `thematic_break_kill_pos`. It is not part of the transaction.
+
+**Today's first durable write, per path:**
+
+- **On the chunk path, before any line begins:** `parser->total_size += len` (`core/blocks.c:869`) and `markdown_core_strbuf_put(&parser->linebuf, …)` (`core/blocks.c:896`, `:905`, `:907`, `:909`).
+- **On the line path:** `parser->line_number++` (`core/blocks.c:1624`).
+
+Everything above 1624 is already the shape this section argues for: fill the scratch line buffer, test it, and **return before anything durable moves** (`core/blocks.c:1592-1605`). That is the one place in the engine that already gets it right, and it is the template.
+
+There is one violation of the ordering inside the matching phase, and it is the only one: a closing code fence finalizes its block from inside `check_open_blocks` (`core/blocks.c:1125-1127`), which clears `__OPEN`, writes the end position, detaches the content buffer into `as.code.literal` and moves `parser->current` — all before `houdini_unescape_html_f` at `:411` can fail. Measured: refusing that single allocation leaves `CODE l1:1-3:3 closed info=<null> lit="body body body\n"`, and undoing it means re-allocating a buffer for the whole block and re-prepending the info line — O(block). It is fixed by moving `core/blocks.c:405-421` above the `__OPEN` clear at `:366`. **A pure code move makes the entire fenced close infallible.**
+
+**The rule the redesign must establish, and it is checkable rather than aspirational:**
+
+> **No durable write occurs outside `commit`, and `commit` performs no allocation.**
+
+---
+
+#### 4.13.3 The mechanism
+
+Not one of the four candidates, and not a free choice — the shape of each piece of durable state picks its own, and the assignment is forced.
+
+| Durable state | Mechanism | What is recorded | Cost |
+|---|---|---|---|
+| New block nodes the line opens | **stage** — build unlinked, link in `commit` | the staged list | O(containers the line opens) ≤ O(line) |
+| Bytes appended to an open block's content | **hoist** — one `grow` for the exact size | nothing | O(1) |
+| A closing block's inline children | **build-then-attach**, discard on failure | nothing (after 9b) | O(nodes built) = O(block) |
+| Append-only lists: map entries, diagnostics, concrete records | **mark and truncate** | one length per list | O(1) to record |
+| Parser scalars | **commit-phase writes** | ≤ 6 words if a call spans lines | O(1) |
+| Spine flags, end positions, retypes | **commit-phase writes only** | nothing per line; one node copy per call (Q37) | Θ(depth) per call |
+| Node destruction | **defer** — record on a kill list, free at commit | one pointer per victim | O(1) |
+
+**Stage, for the block structure.** `open_new_blocks` (`core/blocks.c:1266-1470`) opens containers one at a time, and each iteration's decision depends on the node the previous iteration created — so a failure on the third of three leaves the first two in the tree. Measured: `> - > y` performs 7 allocations, and refusing the sixth leaves a QUOTE inside a LIST\_ITEM with no PARAGRAPH and the byte `y` nowhere. The fix is to split the loop into **decide** and **build**. Decide is pure: every core opener reads only `input` and the *type and payload* of the containers on the stack, so the loop can run against a small simulated stack of `(type, payload)` entries for the containers it is about to create — at most one entry per byte of the line. Build then allocates every node the plan named, unlinked, and `commit` links them.
+
+Two things block that today and both are on the list. `finalize` lives *inside* `add_child` (`core/blocks.c:477-479`), so opening a block closes an unbounded number of ancestors before it allocates — lifting the close out of the open is a precondition, not an optimisation. And the one allocating decider, `parse_list_marker`'s `markdown_core_list` scratch (`core/blocks.c:718`, `:763`), is `memcpy`'d into the node at `:1418`/`:1427` and freed at `:1428`; it becomes a stack object and the allocation disappears. The footnote-definition arm is already written in the target shape — the label copy is taken at `core/blocks.c:1355`, before `S_advance_offset` and before `add_child`, and the failure path at `:1356-1359` returns with nothing mutated. **That arm is the model; the other seven are the work.**
+
+**Hoist, for the buffers.** Every fallible buffer write in a line has a size known before the first byte moves. `add_line`'s tab expansion is a run of independent `putc` calls (`core/blocks.c:288-293`) followed by the body (`:295`), and a refusal mid-run is a genuinely split write — measured, one space of a two-space expansion committed to a durable content buffer. One `markdown_core_strbuf_grow(&node->content, node->content.size + chars_to_tab + (ch->len - parser->offset))` before the loop makes both infallible; both terms are in hand at `:287`. The same is true of `parser->linebuf`: the required size is `linebuf.size + len`, known at `core/blocks.c:862`.
+
+**Discard, for the inline parse — the one thing that cannot be hoisted.** The inline pass's allocation count is not a function of the block's length. Measured on 40 000 bytes in a single paragraph:
+
+```
+40000 bytes of prose                inline-phase allocations:     10
+40000 bytes of  a*a*a*…                                       90008
+40000 bytes of  [][][]…                                       60029
+40000 bytes of prose wrapped at 80 cols                        1507
+```
+
+Four orders of magnitude for the same byte count. There is no advance bound worth reserving against, and none is needed, because the parse is **discardable in full**: the subject is a stack object (`core/inlines.c:1680`), the block's content is borrowed and never written (`core/inlines.c:1681-1684`), both stacks drain unconditionally before return (`core/inlines.c:1691-1696`), and only four node types ever reach the pass, all of them block leaves with an empty child list beforehand. Measured over every single-failure and sticky-failure point, extensions off and on: **discard-then-reparse differs from the clean tree in 0 cases, the content buffer changes in 0 bytes, the block's own fields change in 0 cases, and 52 of 52 failure sites leak nothing.** The undo is "free the children", O(nodes built), which is the same order as the forward work of the line that closes the block — a quantity §11.5 already exempts and already sums to Θ(bytes) over the document.
+
+Two residues make the discard incomplete today, and both are already being deleted. `markdown_core_map_lookup` charges `map->ref_size += r->size` (`core/map.c:307-309`) on every resolution, so a discard-and-retry double-charges and produces a *different* document — measured, with `max_ref_size = 9` and `[ref] [ref] [ref]`, the clean parse yields three links and the discard-and-retry yields one. Step 9b deletes `ref_size`, `max_ref_size` and `entry.size` outright (D9/H2), and with them the inline phase's undo record becomes empty. The second is `parser->oom`/`refmap->oom`, two bits (§4.13.7, A9).
+
+**Mark and truncate, for the append-only lists.** A reference map is head-prepended (`core/references.c:56-57`), so "pop the *k* entries this line added" is O(1) per entry and needs one integer. The same shape covers Step 13's diagnostics and Step 11a's region records, and it must be stated for both now: **a line that is rolled back rolls back its diagnostics and its concrete records**, or the L1/L3 laws hold over a document whose tree disagrees with them.
+
+---
+
+#### 4.13.4 Why the other three lose on their own
+
+- **Hoist alone loses** on the inline parse, for the measurement above; and on extension hooks, which today return a *node*, not a plan, so the core cannot reserve on their behalf (`core/blocks.c:1448`, `:1736`).
+- **Undo alone loses** because several of today's mutations are not invertible below O(block) at all: `strbuf_drop` memmoves bytes off the front of a buffer (`core/blocks.c:353`, `:422`), `chunk_buf_detach` moves ownership and resets the buffer (`:425`, `:430`), and `markdown_core_node_free(b)` destroys a node outright (`:393`). Undo becomes affordable only *after* those are deleted — so it can be the residue's mechanism, never the primary one.
+- **Stage alone loses** because a line's contribution is not one subtree. It closes ancestors, sets `__LAST_LINE_BLANK` on the whole spine (`core/blocks.c:1497-1501`), appends bytes into an existing buffer, and adds map entries. There is no single pointer write for that. Staging works in exactly the two places where the contribution *is* a subtree: a closing block's inline children, and an extension's opened block.
+
+The combination is therefore forced, and it has one name: **reserve → build aside → commit.** Phase 1 and 2 are fallible and touch nothing durable. Phase 3 is infallible.
+
+---
+
+#### 4.13.5 The chunk, and Q37
+
+`append(chunk:)` takes a string, not a line. With ordering alone, a chunk of *n* lines that fails on line *k* has committed *k−1* lines, and that is not "the parser stands exactly where it stood before the call". Three honest answers, and the owner must pick:
+
+1. **Journal the call** (recommended). Copy a node the first time a call touches it — one generation counter on the node, one compare per touch after the first. The record is Θ(open depth + nodes the call created + open blocks the call appended to), freed at commit, and **not a function of the document**. Because the ordering discipline already makes each line's own failure free, the journal only ever has to reverse *committed* lines, which after §4.13.1's deletions are nothing but link writes, scalar writes, flag writes and deferred frees — all O(1) to invert from a node copy. Arm it only when the chunk contains a second line ending; single-line appends pay nothing.
+2. **Report the boundary.** The throw carries `bytesConsumed` and the caller retries with the tail. Cheapest, but it makes `document` and its parser disagree, so it is not value semantics — it is resumption wearing the word *atomic*.
+3. **Frame at the line in the facade.** Rejected: Q31 settled the surface as `chunk:`.
+
+> **Q37 (proposed).** Is the transaction the line or the call? **Recommendation: the call, by the journal in (1).** The engine provides line-atomicity by ordering; the journal is a thin layer above it, is exercised only by multi-line chunks, and is bounded by the call.
+
+---
+
+#### 4.13.6 What it costs
+
+Measured on this tree, line-at-a-time, all six extensions attached, default allocator:
+
+| Quantity | spec.txt | extensions.txt | regression.txt |
+|---|---|---|---|
+| lines | 11 880 | 1 184 | 502 |
+| block-phase allocations per line — **mean / max** | 0.65 / **8** | 0.20 / **3** | 0.51 / **3** |
+| inline-phase allocations for one block — **max** | **331** | **1 717** | **455** |
+| blocks whose inline demand is ≤ 16 | 2 097 of 2 463 | 122 of 143 | 69 of 80 |
+| one full pass (feed line-by-line + finish + free) | 1.876 ms | 0.078 ms | 0.039 ms |
+
+`sizeof(markdown_core_node)` is **176 bytes**; `sizeof(markdown_core_parser)` is 688.
+
+**Bytes.** The staged plan is bounded by the containers one line opens — at most one per byte, in practice ≤ 8 nodes over 11 880 lines of `spec.txt`, so under 1.7 KB in the worst case observed and zero on 63% of lines. The truncate marks are one integer per append-only list. The journal, if Q37 takes the recommendation, is 176 bytes per node the call touched, and for a depth-3 document that is roughly half a kilobyte per multi-line append, released at commit. **No term is a function of the document, and nothing survives the call** — which is what Q36(a) requires and what its own slope gate will see.
+
+One measured caution: the *byte* volume a line allocates is not bounded by the line — the largest single line in `extensions.txt` moves 45 760 bytes, all of it one geometric growth of an already-large open block's content buffer. That is amortized O(1) per input byte and it is a cost the engine already pays; the reservation must ask for it in one call rather than in a run of `putc`s, which is precisely the hoist above.
+
+**Per-line time.** Two additions, both constant-factor. The decide pass re-walks the line's container prefix that the matcher already walks, so the block phase's per-line constant rises by at most its own matcher share against a baseline of 210-252 ns/line. The commit pass performs exactly the writes the engine performs today. Nothing is re-derived and nothing is re-scanned that was not already scanned, so **the fitted slope in *i* that Stage 1's gate measures does not move** — which is the only statement about time this section is entitled to make before the code exists, and the gate that will check it already exists.
+
+---
+
+#### 4.13.7 What must change in the engine, by step
+
+No new steps. Every requirement below lands on a step that already owns the file it touches.
+
+| id | Requirement | Step |
+|---|---|---|
+| **A1** | The engine has one **failure model** as well as one allocator model: an allocation failure is a fact about a transaction, not a property a buffer acquires. `markdown_core_strbuf.oom` either ceases to exist (a `reserve` becomes the only fallible buffer operation and every write after it is infallible) or gains an explicit clear. Today `markdown_core_strbuf_clear` (`core/buffer.c:78-83`) does not lift it and nothing else does — measured, one refused grow silently swallows every later line into that block **with the allocator working again**. | **3a** |
+| **A2** | No allocation path aborts. Delete `core/arena.c` and the two `markdown_core_arena_push`/`_pop` pairs at `extensions/table.c:342` and `:550`. §4.13.10. | **3a** |
+| **A3** | `parser->oom` stops being one sticky bit meaning four things. A failure is a **returned status**; a terminal "parse lost" state becomes unreachable, because after A1–A2 and the ordering discipline nothing can fail after commit begins. `markdown_core_parser_finish` stops reporting loss by freeing the root (`core/blocks.c:1697-1704`). | **3a**, surfaced by **13** |
+| **A4** | `S_strbuf_grow_by` (`core/buffer.c:34-36`) checks `add` against `INT32_MAX/2 - buf->size` **before** the sum. Today a negative target satisfies `target_size < buf->asize` at `:41` and returns without growing *and without poisoning*, after which `_put` memmoves past the end. Verified by direct call; needs a single put above ~1.07 GiB, which `append(chunk:)` makes reachable at `core/blocks.c:909`. | **3a** |
+| **A5** | Hooks separate **decide** from **mutate**, and a hook reports *declined / opened / failed* as three distinct answers. §4.13.8. | **3** |
+| **A6** | Hook cadence is declared, and a hook that runs at finish is inadmissible under "append returns the document". `autolink`'s `postprocess_text` (`extensions/autolink.c:386`) is Θ(document), destructive and prefix-dependent (H8); mid-loop failure at `:529` leaves the email in the tree **twice**, because the sibling was linked at `:527` before the prefix was shrunk at `:539`. | **3** |
+| **A7** | Node lifetimes serve the transaction: `unlink` is the exact inverse of the link that made it; a staged subtree is freeable while it is in no tree and without an iterator; and **inside a transaction a node destruction is recorded, not performed** — the kill list drains at commit. `markdown_core_node_free(b)` at `core/blocks.c:393` and `markdown_core_node_replace`+`free` at `extensions/formula.c:534-535` are the two sites this rule exists for. | **5** |
+| **A8** | The inline pass is the transaction's discardable phase: it builds into a child list, `commit` attaches it, and the "inlines parsed" marker (H4) is set **in commit, never during**. Literal ownership at emission (already Step 8's) is what makes the discard leave the content buffer untouched. | **8** |
+| **A9** | `markdown_core_parse_inlines` returns a status instead of writing `parser->oom` (`core/inlines.c:1698-1699`), and `try_extensions` (`core/inlines.c:1529-1547`) owns `subj->pos`: snapshot before each `match_inline`, restore on decline, stop the chain on failure. | **8** (contract from **3**) |
+| **A10** | `markdown_core_reference_create` builds the entry complete and links it with one pointer write. Today three allocations run *after* the point of no return and the entry is linked unconditionally (`core/references.c:29-57`): measured, refusing the url leaves a live definition pointing at `""`, refusing the title leaves one with no title, and a dropped definition renumbers `entry.age` for every later one, which is the first-wins tiebreaker at `core/map.c:189`. | **9b** |
+| **A11** | `markdown_core_parse_reference_inline` gains a failure return. It returns `subj.pos` whether or not the definition stored (`core/inlines.c:1772-1776`), and its caller then destroys those source bytes (`core/blocks.c:353`) — measured, all four failure modes leave the paragraph stripped and the map wrong. 9a/11c delete the drop; the status is still owed, because a definition that was lost must not be reported as consumed. | **9b**, bytes by **9a/11c** |
+| **A12** | The line's contribution to the append-only records is marked and truncated: a rolled-back line leaves no diagnostic and no concrete region behind. | **13**, **11a** |
+
+**Two things Stage 0 must not do**, added to §11.7's list. Do not regenerate a golden over a tree produced by a poisoned parser — after A1 the poison is gone, but before it, one refused allocation silently truncates every later line into the same block. And do not let any new code path read `parser->linebuf` without testing its `oom`: it is written at six sites and its `oom` is read at **zero** in the entire engine, which is finding §4.13.11-D27.
+
+---
+
+#### 4.13.8 The extension interface — a requirement for Step 3, now
+
+A hook that both decides and mutates makes atomicity impossible, and Step 3 must be told before the descriptor is written rather than after. Six shape requirements, each with the measurement that produced it.
+
+1. **Three answers, not two.** `markdown_core_open_block_func` returns `markdown_core_node *`, and NULL means both "I declined" and "I ran out of memory" — so every extension smuggles the difference through `parser->oom`, a sticky field that also kills every subsequent line. The descriptor's opener must answer **declined / opened / failed**. The same overload has a live correctness consequence: `try_opening_table_header` returns `parent_container` on all eleven paths including "no table here" (`extensions/table.c:326-457`), and `core/blocks.c:1450` treats any non-NULL as "opened" and breaks the loop — so **directive and formula blocks cannot interrupt a paragraph whenever tables are enabled**, reproduced through the public API with the shipped attach order.
+
+2. **`match` is pure and non-allocating; `build` cannot fail.** `match` receives a **read-only view** of the container — its type, its payload and its content bytes, not a `markdown_core_node *` — and returns a *claim*: node type, start column, bytes consumed, payload size, and any payload the decide pass already computed. `build` receives storage sized by the claim and writes it. This is what lets the core hoist on the extension's behalf, which is impossible today because the hook creates its own node through `markdown_core_parser_add_child` (`core/blocks.c:1736` → `:471`), and that function finalizes an unbounded number of ancestors before it allocates. Measured: `[lab]: /u` then `:::note{a=1}`, refusing allocation 7 — the reference definition is in the map, the paragraph node is **destroyed**, `parser->current` has moved to the document, and **no directive block exists**. No extension can fix that, because it is never told which ancestors will close.
+
+3. **Deciding does not allocate.** `table`'s `matches` builds a whole row speculatively on every line while a table is open and throws it away (`extensions/table.c:545-560`); `directive`'s `scan_parsed_attributes` builds a complete attribute list purely to validate a `]{…}` closer and frees it (`extensions/directive.c:985-994`). Both write `parser->oom` when work whose result was going to be discarded fails — a *discarded trial poisons the document*.
+
+4. **No hook mutates outside its claim.** `autolink` advances the subject and truncates the **previous sibling** before it allocates (`extensions/autolink.c:312-313`, then `:315`; `www_match` at `:241`/`:243`). Measured on `see www.example.com/p end`, refusing allocation 2: the output is `text "see "` + `text " end"` — **17 bytes of user text silently deleted**. With directives also on, the mutated subject is handed to the next extension and a directive node is manufactured from the wreckage. `markdown_core_node_unput` (`core/inlines.c:1925-1934`) is O(1) reversible if `(node, n)` were recorded; nothing records it. Under Step 8's byte-range literals the backward edit should not exist at all.
+
+5. **Two silent-failure primitives are fixed or banned in extension code.** `markdown_core_node_set_string_content` returns `true` unconditionally (`core/node.c:405-408`) and `table` depends on it at `:305`, `:445`, `:506`. `markdown_core_chunk_to_cstr` leaves a **borrowed** pointer on failure (`core/chunk.h:58-76`); `extensions/formula.c:114-125` discards its result and returns 1, which is a live heap-use-after-free (§4.13.11-D28). `extensions/directive.c:183-188` guards it correctly and is the model.
+
+6. **`opaque` payloads join the transaction.** `opaque_alloc`/`opaque_free` must be inverses (H16), and a staged node's payload must be freeable while the node is in no tree. `extensions/formula.c:219-224` sets `oom` and returns NULL **without unlinking the node `:213` already added**; `extensions/directive.c:1137` does the same thing correctly.
+
+Two hooks in the tree already have the target shape and both get it the same way — **allocate everything, then mutate**: `directive`'s `open_directive_block` (`extensions/directive.c:1099-1146`, twelve of thirteen failure points leave the pre-line tree bit-identical and the thirteenth is a genuine benign fallback) and `formula`'s `replace_with_formula_block` (`extensions/formula.c:527-535`). Step 3 should transcribe those two and repair the other four to match.
+
+---
+
+#### 4.13.9 The gate
+
+Three parts. Only the second is expensive, and it is affordable.
+
+**G1 — the commit is infallible, checked structurally.** In the debug build, `commit` runs with the allocator swapped for one that fails the test on any call, and every durable write goes through a primitive that asserts it is inside a commit. One pass over the corpus, no measurable cost, and it kills the entire class rather than sampling it.
+
+**G2 — the Nth-allocation sweep, resume style.** For each line and each *k* in that line's allocation demand: fail the *k*-th allocation of that line, catch the throw, compare the parser's durable state against a digest taken immediately before the line, then clear the injected failure and re-run the line normally and continue. **Because the transaction is the line, a failure at line *i* needs no replay of lines 1…*i−1*** — the same run continues — so the number of passes is the *maximum per-line allocation demand*, not the total allocation count.
+
+The digest is the open spine (O(depth)) plus a fixed set of monotone counters that a rolled-back line must leave untouched: nodes allocated, nodes freed, `refmap` size, each open block's `content.size`, `line_number`, `linebuf.size`, `total_size`, diagnostics length, region-record length. The run ends with a **byte-identical comparison of the finished tree against a clean parse**, which is what catches anything the spine digest cannot see. The resume trick assumes the property it tests, so the digest must be checked *before* resuming — if it ever fails, the gate fails and the resumption never happens.
+
+Measured cost, from this tree's own numbers:
+
+| | passes needed | pass cost | sweep |
+|---|---|---|---|
+| spec.txt | 8 today; ~340 once inlines are charged to the closing line | 1.876 ms | 0.64 s |
+| extensions.txt | 3 today; ~1 720 after | 0.078 ms | 0.13 s |
+| regression.txt | 3 today; ~460 after | 0.039 ms | 0.02 s |
+
+**Under 0.8 s per extension configuration**, and roughly 2.5 s allowing 3× for the digest — a per-commit gate, not a nightly one. For comparison, the naive form that restarts the whole parse for every allocation index in the document costs Σ allocations × pass, which for `spec.txt` alone is 22 469 × 1.876 ms ≈ **42 s**; keep it as the quarterly cross-check that validates the resume form, run on `regression.txt` (0.015 s) every time.
+
+**G3 — the discard oracle.** For every block in the corpus and every *k* in its inline demand, run the inline pass with the *k*-th allocation refused, discard, re-parse cleanly, and assert the tree equals the clean tree and the block's own fields and content bytes are byte-identical. This is the sweep that already produced 0 differences across four modes; it becomes a gate. Where a block's demand exceeds a stated cap (the corpora's maximum today is 1 717, so a cap of 2 048 is exhaustive over the fixtures), the sweep samples with a seed derived from the commit so the union over runs is exhaustive.
+
+**What the gate must also assert, because it is the actual contract:** after a caught throw, the *next* append succeeds and produces the tree a clean parse of the same bytes produces. That is what distinguishes atomicity from a tidy failure, and it is the assertion today's engine fails at every one of the 107 points.
+
+---
+
+#### 4.13.10 The arena
+
+**It cannot survive the contract, at any amount of work, and the reason is not performance.**
+
+`alloc_arena_chunk` calls `abort()` on both of its allocation failures (`core/arena.c:17`, `:21`) — demonstrated, `Abort trap: 6`, status 134. `arena_calloc` (`:58-81`) and `arena_realloc` (`:83-91`) have no NULL return path at all, so under the arena `buf->oom` is never set, `map->oom` is never set, `parser->oom` is never set from an allocation failure, and **there is nothing for `throws` to throw**. An abort is not a throw; it is the one outcome the contract exists to make impossible, and it destroys in the caller's address space the very object the contract promises will still be in scope.
+
+Three independent reasons beyond the abort, each already recorded elsewhere and each pointing the same way. It is **on the per-line path** — `markdown_core_arena_push()` allocates 10 KiB plus a header on every line while a table is open (`extensions/table.c:342`, `:550`), so every one of those lines is an abort site. It is **process-global and unlocked** (`core/arena.c:7-12`), so one parser's pop releases another parser's chunks and it cannot be per-transaction state even in principle. And `arena_free` is a no-op while `arena_realloc` always allocates fresh and copies (`:83-96`), so **a parser held open across appends grows monotonically in the number of lines fed** — a direct violation of Q36(a), invisible to any timing gate.
+
+Deletion is already **Step 3a**'s stated requirement (`0 new · −140`). Q34 changes its status from a simplification to a **correctness precondition**, and it is the fifth independent reason on the record for Q12. One related item travels with it: `assert(!map->prepared)` (`core/references.c:38`, `core/footnotes.c:35`) compiles out under the `default` preset's `-DNDEBUG`, so the second abort-shaped path in the engine does not abort — it silently loses the definition. Neither is a throw. Step 9's map rewrite deletes both asserts by making the interleaving legal.
+
+---
+
+#### 4.13.11 Four defects the sweep found, and what to do with them
+
+Numbered as §2 additions from the next free id. **Two are live outside allocation failure and must go to Stage 0a; two exist only under allocation failure and should be pinned by the §4.13.9 gate rather than separately fixed, because the mechanism deletes them.**
+
+> **D27 (proposed, measured).** `parser->linebuf.oom` is written at six sites (`core/blocks.c:853, 858, 896, 905, 907, 909`) and **read at none**. Measured: feeding a four-line document in 32-byte chunks and refusing the first allocation of chunk 1 turns 244 input bytes into 102, with `parser->oom == 0` and `finish` returning a document — the accumulated prefix is handed to `S_process_line` at `:897` and committed **as if it were a whole line**, and because the poison is sticky the truncation continues for the rest of the stream. The only allocation-failure gate in the tree, `case_oom_sweep` (`tests/runners/fallback_runner.c:624`), feeds its corpus in one call, so `linebuf` is never written during the entire sweep and the gate is structurally blind to the exact buffer `append(chunk:)` makes the normal path. Severity: silent truncation. Fix: test the flag, and hoist the growth to `linebuf.size + len` at `core/blocks.c:862`. **Owner: 3a, with A1.**
+
+> **D28 (proposed, measured).** `extensions/formula.c:114-125` ignores `markdown_core_chunk_to_cstr`'s failure and returns 1, leaving the chunk holding a **borrowed** pointer into a buffer freed on the next line (`:423`). ASan: `heap-use-after-free`, READ of size 5 in `markdown_core_extensions_get_formula_literal` at `formula.c:61`, with `parser->oom == 0`. Same shape at `:550` and `:557`. Severity: memory safety. **Owner: 0a, ahead of Step 6.**
+
+> **D29 (proposed, measured).** `extensions/table.c:297` does not check `markdown_core_node_new_with_mem`, and `:305` then calls `markdown_core_node_set_string_content(NULL, …)`. Reproduced: SIGSEGV on `lead text\nx | y` / `--|--`. Two neighbours travel with it — `:300-303` frees the lead paragraph and returns **without setting `oom`**, and `:309-311` frees a failed insert with `mem->free` instead of `markdown_core_node_free`, leaking its content buffer. Severity: crash. **Owner: 0a, ahead of Step 3.**
+
+> **D30 (proposed, measured).** `markdown_core_reference_create` commits an entry whose url or title was lost (`core/references.c:48-57`), and `resolve_reference_link_definitions` destroys the source bytes either way (`core/blocks.c:353`). Measured on `[gone]: /destination-value "the title"`: refusing allocation 3 yields a live definition with an empty destination; refusing 4 yields one with no title; refusing 1 or 2 drops the definition **and renumbers `entry.age` for every later one**; in all four the paragraph is stripped. `parser->oom` stays 0 in every case — the loss lands on `refmap->oom` and is translated only at `core/blocks.c:1697`, i.e. at finish. **This is the only site in the engine that silently produces a wrong document with the failure bit clear.** Severity: wrong-document under allocation loss. **Do not schedule at 0a**: A10 and A11 delete it, 9a/11c delete the byte-drop, and the §4.13.9 gate pins it in the meantime. Recorded so that §4.12's "all defects before any other task" is not read as requiring a fix the redesign removes.
+
+The §4.12 consequence is worth stating plainly, because it is a scheduling decision and not a technical one: **D28 and D29 are ordinary defects and belong in Stage 0a; D27 and D30 are allocation-failure-only and belong to the steps that delete their mechanisms.** Fixing D30 at the baseline means writing a careful two-phase insert into `core/references.c` that Step 9b then deletes entire.
+
+---
+
+#### 4.13.12 Ledger
+
+| id | Question | Recommendation |
+|---|---|---|
+| **Q37** | Is the append transaction the **line** or the **call**? | **The call.** Line-atomicity comes free from the ordering discipline; call-atomicity adds a copy-on-first-touch node journal, armed only for chunks containing more than one line ending, bounded by Θ(open depth + nodes the call created) and freed at commit. Answer (2) — a throw carrying `bytesConsumed` — is cheaper and is not value semantics. |
+
+And one amendment to **Q34**'s recorded recommendation. §11.8 recommends *"split `oom` into a terminal 'parse lost' bit and a per-call 'snapshot failed' result."* Under this mechanism the terminal bit has nothing left to record: an allocation can only fail before commit, and a failure before commit is exactly the per-call result. **The recommendation collapses to one half — a returned status and no sticky state anywhere** (A1, A3). That is a stronger contract than Q34 asked for, and it is reachable because the operations that made it unreachable are the same ones Steps 8, 9a, 9b, 11a and 11c already delete.
+
 ### 4.10 The release from this base is 3.0
 
 **Owner ruling, 2026-08-20.** There is no 1.0.4 release. The version moves to
