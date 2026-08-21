@@ -575,7 +575,14 @@ static void process_footnotes(markdown_core_parser *parser) {
 
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
-        if (ev_type == MARKDOWN_CORE_EVENT_EXIT && cur->type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION) {
+        /* Registration order is the map's tie-break for a repeated label
+         * (`age`, map.c), so it decides which of two definitions of one label
+         * wins. On EXIT that order is close order, and a definition nested
+         * inside another closes FIRST -- so the inner one won and the outer
+         * one, with everything written in it, was destroyed. ENTER is document
+         * order, which is the order a reader resolves them in and the order
+         * two definitions at the same level already resolved in. */
+        if (ev_type == MARKDOWN_CORE_EVENT_ENTER && cur->type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION) {
             markdown_core_footnote_create(map, cur);
         }
     }
@@ -632,6 +639,14 @@ static void process_footnotes(markdown_core_parser *parser) {
                     text->as.literal = markdown_core_chunk_buf_detach(&buf);
                     if (!text->as.literal.data)
                         parser->oom = true;
+                    /* The replacement stands exactly where the call it replaces
+                     * did. Left at calloc's zeroes it reports line zero, which
+                     * is not a place, and consolidation then merges it with the
+                     * text after it and keeps the zero start. */
+                    text->start_line = cur->start_line;
+                    text->start_column = cur->start_column;
+                    text->end_line = cur->end_line;
+                    text->end_column = cur->end_column;
                     markdown_core_node_insert_after(cur, text);
                     markdown_core_node_free(cur);
                 } else {
@@ -674,6 +689,19 @@ static void process_footnotes(markdown_core_parser *parser) {
             }
             if (map->indexed)
                 parser->mem->free(footnotes);
+        }
+
+        /* The loser of a repeated label is deduped out of the array above and
+         * never reaches emission, so it is still parented where the author
+         * wrote it -- and the map, which frees every node it still names, would
+         * take that content with it. Hand ownership back for anything the tree
+         * still holds. What is left named is what emission unlinked, and
+         * freeing that is what drops an unreferenced definition, which is a
+         * separate decision and not this one's to make. */
+        for (markdown_core_map_entry *ref = map->refs; ref; ref = ref->next) {
+            markdown_core_footnote *retained = (markdown_core_footnote *)ref;
+            if (retained->node && retained->node->parent)
+                retained->node = NULL;
         }
     }
 

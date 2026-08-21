@@ -19,7 +19,7 @@
             "partial": 1
         },
         "packages/markdown-core/tests/fixtures/regression.txt": {
-            "sentinel": 17,
+            "sentinel": 16,
             "negative": 0,
             "partial": 0
         },

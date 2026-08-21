@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 and 0a.1 |
+| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0, 0a.1 and 0a.2 |
 | Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
 | `VERSION` | `1.0.3`, and it moves to `1.0.4` at the CLOSE of Stage 0a — the first commit range that moves behaviour |
-| Next action | **Stage 0a**, §4.2, at **0a.2** — 0a.0 and 0a.1 have landed |
+| Next action | **Stage 0a**, §4.2, at **0a.3** — 0a.0, 0a.1 and 0a.2 have landed |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -54,16 +54,16 @@ bash scripts/audit-public-surface.sh
 node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
-node scripts/check-upstream-parity.mjs     # 795/795 vs cmark-gfm 0.29.0.gfm.13
+node scripts/check-upstream-parity.mjs     # 799/799 vs cmark-gfm 0.29.0.gfm.13, 4/4 divergences
 node scripts/check-mdast-parity.mjs        # 46/46, backlog 23/23 still diverging
-node scripts/audit-scope-sanity.mjs        # 207 rows, only-shrink holds
+node scripts/audit-scope-sanity.mjs        # 206 rows, only-shrink holds
 
 # The three position oracles, landed at 0a.1 (§4.2.7). Each fails on a row
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
 # fails here rather than in review.
 node scripts/audit-inline-sourcepos.mjs    # 12 rows registered, 68 scanned
-node scripts/audit-scope-containment.mjs   # 58 rows registered, 3555 scanned
-node scripts/audit-position-places.mjs     # 131 rows registered, 3814 scanned
+node scripts/audit-scope-containment.mjs   # 58 rows registered, 3570 scanned
+node scripts/audit-position-places.mjs     # 132 rows registered, 3831 scanned
 ```
 
 **`22 steps, 42 edges` was stale**, and it is the second number in this table to
@@ -613,6 +613,12 @@ D9 cannot, and §4.2 says what pins it in the meantime.
     Moving registration to `ENTER` is necessary and **not sufficient**: measured,
     it just changes the victim — `"INNER closes first"` is deleted instead. See
     §5.8 and §4.2 step 0a.2.
+
+    **This statement is about the nested case only, and the defect is wider.**
+    Two definitions of one label at the *same* level lose the second one the
+    same way — `[^dup]: FIRST` / `[^dup]: SECOND` resolves to FIRST and deletes
+    SECOND. Nesting is only where the *resolution* answer also surprises. Both
+    halves are fixed at 0a.2; see §4.2.8.
 12. `markdown_core_consolidate_text_nodes` (`iterator.c:118`) propagates
     `end_column` from the last merged node but never `end_line`, so any merged
     run crossing a line end reports the wrong end line. This is why D10's fixed
@@ -1163,7 +1169,7 @@ Ordered by four rules, in this precedence: **(1)** an oracle's first reading is 
 
 Three oracles, ~200 lines of Node, no new dependency. **Every one of them takes its first reading on the unfixed tree.**
 
-**0a.2 — D10, D11 and D25: the lifetime and data-loss defects, first among the fixes.** D10 is two hunks (the label taken from buffer offsets; `fnref->start_line` from the opener) plus four lines in `blocks.c:625` positioning the `calloc`'d replacement node. D11 is one word — `EXIT` → `ENTER` at `blocks.c:578` — plus the 8-line sweep before `blocks.c:675`; neither hunk alone is enough, measured. **D25 is the same expression as D10's byte half**, and that is why it lands here rather than anywhere else: if D10 lands as written, D25 is fixed *by accident*, which is exactly what §11.4 warned about. Name it, with the `&Hat;` witness and its own fixture.
+**0a.2 — D10, D11 and D25: the lifetime and data-loss defects, first among the fixes. LANDED; §4.2.8 records what it moved.** D10 is two hunks (the label taken from buffer offsets; `fnref->start_line` from the opener) plus four lines in `blocks.c:625` positioning the `calloc`'d replacement node. D11 is one word — `EXIT` → `ENTER` at `blocks.c:578` — plus the 8-line sweep before `blocks.c:675`; neither hunk alone is enough, measured. **D25 is the same expression as D10's byte half**, and that is why it lands here rather than anywhere else: if D10 lands as written, D25 is fixed *by accident*, which is exactly what §11.4 warned about. Name it, with the `&Hat;` witness and its own fixture.
 
 **Correct §4.2's own underflow argument while writing this hunk.** The previous text said the branch is entered only when `input[opener->position]` is the `^`. **That is false, and `&Hat;` is the counterexample** — the branch tests the *decoded* first byte. The sound argument is that the branch requires `literal->len > 1 || next->next`, so the label span is ≥ 2 bytes and the length is ≥ 0. `subj->input` is `parent->content`, freed only in `markdown_core_node_free`, so it outlives `process_footnotes` — the same lifetime every `make_str` literal already relies on.
 
@@ -1392,6 +1398,100 @@ and §4.6 both say `Step 9a`; the gate prints `6 Step 9b` where §2 prints `5` a
 which is right. It is a one-field edit and it belongs to whichever commit next
 touches that file. Related: `audit-scope-sanity.mjs` is in §0's gate list and is
 **not in CI**, which the three new oracles now are.
+
+---
+
+#### 4.2.8 0a.2 landed: three defects, one golden row, and two things nobody predicted
+
+**What is in the engine.** Three hunks, and the shape §4.2.3 specified:
+
+- `core/inlines.c`, `handle_close_bracket`'s footnote branch — the label is a
+  slice of `subj->input` between `opener->position + 1` and `initial_pos - 1`,
+  replacing a slice of the *following node's* literal whose length came from
+  column arithmetic. **That one expression is D10's byte half and D25 entire**,
+  and the underflow guard it replaces is gone rather than corrected: the branch
+  requires a decoded `^` plus either a second decoded byte or a further node,
+  and decoding never lengthens a span, so the source span is at least two bytes
+  wide. The assertion says so under `NDEBUG`.
+- the same branch — `start_line` from the opener and `end_line` from the closing
+  bracket, instead of both from the closing bracket. A call whose label crosses
+  a line ending had a start column on one line and a start line from another.
+- `core/blocks.c`, `process_footnotes` — registration on `ENTER` (D11), four
+  lines positioning the `calloc`'d replacement `Text` from the call it replaces
+  (D10), and the sweep that hands a still-parented definition back to the tree
+  before the map frees everything it names (D11).
+
+**Where the sweep went, and why it is not where §4.2.3 says.** It is *inside*
+`if (map->prepared)`, after the emission loop — not before the teardown. Before
+emission it would NULL the node the emission loop is about to append; outside
+the `prepared` guard it would retain every definition in a document that has no
+footnote references at all, which is **definition retention and belongs to Step
+9a**, not here. Placed where it is, the rule reads exactly as intended: *the map
+frees only what emission removed from the tree.* An unreferenced definition is
+still dropped, and `text\n\n[^unused]: hi\n` still yields one paragraph.
+
+**One golden row moved**, and it is the row §4.5 nominated as the gate:
+`regression.txt` example 24, `Text scope=0:0..0:0` → `1:1..1:10`. That golden
+asserted the defect; unpinning it is the fix. `spec_commonmark` and
+`extensions_gfm` moved nothing.
+
+**Four regression examples and four registered divergences.** The corpus goes
+795 → 799 inputs, `deltas` 4 → 6 (`footnote-call-label-bytes`,
+`footnote-duplicate-definition`) and `expectedDivergences` 0 → 4. Every one is
+a place upstream is worse: it loses `a`, the newline and `b` from `x[^a\nb]
+tail`; it emits an **empty text node** for `x [&Hat;abcdefghij] y`, losing the
+whole paragraph; it manufactures a `]` it never read from `[\^abc] x`; and it
+destroys `OUTER opens first`. `scope-sanity` goes **207 → 206**, the exact
+shrink §4.2.3 predicted.
+
+**Mutant kills, all three proved by reverting and rebuilding.**
+
+- D10/D25's byte half: `correctness-asan` reads **56/57** with
+  `heap-use-after-free`, `READ of size 1` in `markdown_core_map_lookup`
+  (`map.c:279`), freed by `handle_close_bracket` — the §11.4 witness, character
+  for character. The fixture runner allocates through malloc, so the repository's
+  own ASan preset is the gate; §4.2.3's correction to §2 and §11.4 on that point
+  is confirmed.
+- D11 with registration reverted to `EXIT`: `regression_commonmark` red,
+  `OUTER opens first` and `INNER closes first` both present but the wrong one
+  winning.
+- D11 with the sweep removed: `regression_commonmark` red, `INNER closes first`
+  gone. **Neither hunk alone is enough**, exactly as §2 measured.
+- `leaks --atExit` on the nested-duplicate input: `0 leaks for 0 total leaked
+  bytes`, which is the ownership half §4.5 asks for.
+
+**Two things neither §2 nor §4.2 predicted.**
+
+1. **The same-level duplicate changes too, and §2's D11 statement covers only
+   the nested one.** `[^dup]: FIRST` / `[^dup]: SECOND` used to resolve to FIRST
+   and *delete* SECOND; SECOND is now retained. It appears in the tree **before**
+   the winner, because emission moves a resolved definition to the document tail
+   while a retained loser stays where it was written. That ordering is a
+   consequence of the existing `footnote-definition-placement` model and not a
+   new decision; it disappears when Step 9a stops moving definitions.
+2. **0a.2's own fixture is a D12 witness, and §4.2.4 says none existed.**
+   §4.2.4 states D12 "has no witness in 860 fixture examples or 40,000 random
+   inputs" after D13 and D10. It has one now: `x[^a\nb] tail` retains its bytes
+   and the consolidated run reports `1:1..1:7` — column 7 on a four-byte line 1,
+   because `markdown_core_consolidate_text_nodes` takes the merged end *column*
+   from the last operand and leaves the end *line* at the first's. That is one
+   new row in `specs/positions/places.json`, recorded and attributed.
+
+   **And measuring the obvious fix is why the row is worth having.** Adding
+   `cur->end_line = tmp->end_line;` beside the existing `end_column` line does
+   clear it — `1:1..2:7`, correct — **and moves three other rows to LINE ZERO**:
+   `<http://foo.bar/baz bim>` goes `Text 1:1..1:0` → `Text 1:1..0:0`. That is a
+   position oracle shrinking because rows moved into the scope-sanity ratchet's
+   bucket, which is the precise failure §4.2.7's interlock exists to catch, and
+   `audit-scope-sanity.mjs` did **not** catch it because it reads golden text
+   rather than a live parse. **0a.14 owes more than the line**, and it owes a
+   re-reading of both ratchets together.
+
+**Citations re-pinned.** `inlines.c` node-free loop `1384` → `1395`;
+`blocks.c` registration `578` → `586`, replacement node `625` → `646`, the `!ix`
+drop `668` → `683`, teardown `683` → `711`. **D14's `inlines.c:1321` is
+unchanged** — 0a.9 amends the branch condition, which sits above this commit's
+hunk — and `map.c` is untouched, so D9's `map.c:307` stands.
 
 ---
 

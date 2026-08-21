@@ -40,9 +40,48 @@
             "rationale": "A destination copied into a reference appears nowhere in the span that reference covers, so the tree stated a resolution result as though it were source. It also made every definition edit reparse every unit mentioning the label, through reference_payloads_equal and collect_dependents. Stating the destination once, at the definition, is what the incremental contract's source-faithful clause requires and what makes its cost bound reachable.",
             "handling": "The comparison applies upstream's model to this side: definitions are dropped and references are resolved against them. Which destination a reference resolves to is still compared, so resolving to the wrong one, or to none, is still a failure.",
             "evidence": "scripts/lib/upstream-cmark.mjs, applyUpstreamReferenceModel; docs/migration/2026-08-01-incremental-canonical-ast-plan.md, M6"
+        },
+        {
+            "id": "footnote-call-label-bytes",
+            "kind": "deliberate-difference",
+            "summary": "Upstream builds a footnote call's label by slicing the FOLLOWING node's literal to a length computed in columns, and the two coordinate spaces are unrelated: a label crossing a line ending comes out empty and its bytes reach no node, and an entity-spelled caret indexes past the end of an owned decode buffer. Markdown Core slices the source between the two brackets, so the bytes an unresolved call degrades back to are the bytes the author wrote.",
+            "rationale": "No source byte may reach no node. Upstream loses `a`, the newline and `b` from `x[^a\\nb] tail`, and loses the WHOLE paragraph from `x [&Hat;abcdefghij] y` \u2014 it emits an empty text node. It is also a use-after-free: the loop that frees the label's neighbouring nodes runs while the label still points into one of them, and every footnote lookup then reads it.",
+            "handling": "Keyed to three inputs rather than projected: the slice is one expression in one function, not a model this side could apply to a tree, and a normalizer that rewrote labels would blind the gate to every real label difference.",
+            "evidence": "packages/markdown-core/core/inlines.c, handle_close_bracket's noMatch footnote branch. ASan on the entity input, default allocator, before the fix: heap-use-after-free, READ of size 1 in markdown_core_map_lookup.",
+            "pending": "The SPELLING of the two entity/escape inputs is not settled here, only their memory. `[\\^abc] x` degrades to `[^^abc] x` and `x [&Hat;...] y` to `x [^Hat;...] y`, because the branch still opens a call on a caret the source does not spell literally. 0a.9 (D14) makes the branch test the raw source byte, after which neither opens a call at all and both degrade to their own decoded text. These entries stay registered through that change \u2014 upstream still differs \u2014 but their expected spelling moves."
+        },
+        {
+            "id": "footnote-duplicate-definition",
+            "kind": "deliberate-difference",
+            "summary": "When one label is defined twice, upstream resolves to whichever definition CLOSED first and destroys the other, taking everything written inside it. A definition nested inside another closes first, so the outer one and its content vanish. Markdown Core resolves to the definition that OPENED first, and the one that does not win stays in the tree where it was written.",
+            "rationale": "Two independent claims. Resolution order: document order is the order a reader resolves in, and it is already what two definitions at the same level do \u2014 close order only differs when one is nested, which is precisely where upstream's answer surprises. Retention: the loser is text the author wrote, and destroying it deletes content that has nothing to do with the duplicate label \u2014 `OUTER opens first` reached no node at all.",
+            "handling": "Keyed to one input rather than projected: dropping the loser in the normalizer would blind the gate to whether the loser survived, which is half of what this entry claims.",
+            "evidence": "packages/markdown-core/core/blocks.c, process_footnotes: registration on ENTER rather than EXIT, and the sweep that hands a still-parented definition back to the tree before the map frees what it names. cmark-gfm 0.29.0.gfm.13 reproduces both halves.",
+            "scope": "Whether an UNREFERENCED definition is kept is a different question and is not answered here: it is still dropped, and the `footnote-resolution-model` entry above states the model that changes it."
         }
     ],
-    "expectedDivergences": [],
+    "expectedDivergences": [
+        {
+            "id": "footnote-call-label-bytes",
+            "input": "x[^a\nb] tail\n",
+            "note": "The label crosses a line ending. Upstream's column arithmetic underflows and it emits `x[^] tail`; the `a`, the newline and the `b` are in no node."
+        },
+        {
+            "id": "footnote-call-label-bytes",
+            "input": "x [&Hat;abcdefghij] y\n\n[^z]: note\n",
+            "note": "The caret arrives as a character reference, so the node the label was sliced out of holds an OWNED one-byte decode buffer. Upstream reads far past it and then frees it; the ASan witness for the use-after-free is this input. Upstream's own output for it is an empty text node \u2014 the whole paragraph is lost."
+        },
+        {
+            "id": "footnote-call-label-bytes",
+            "input": "[\\^abc] x\n",
+            "note": "An escaped caret. Upstream manufactures a closing bracket it never read \u2014 `[^abc]] x`. Neither side's spelling is right yet; that half is 0a.9's, and see this entry's `pending` note."
+        },
+        {
+            "id": "footnote-duplicate-definition",
+            "input": "Ref [^dup].\n\n[^dup]: OUTER opens first\n\n    [^dup]: INNER closes first\n",
+            "note": "The nested duplicate. Upstream keeps only `INNER closes first`; `OUTER opens first` is in no node."
+        }
+    ],
     "notDeltas": [],
     "corpus": [
         "packages/markdown-core/tests/fixtures/spec.txt",

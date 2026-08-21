@@ -1338,24 +1338,35 @@ noMatch:
             int fnref_end_column = subj->pos + subj->column_offset + subj->block_offset;
             int fnref_start_column = opener->inl_text->start_column;
 
-            // any given node delineates a substring of the line being processed,
-            // with the remainder of the line being pointed to thru its 'literal'
-            // struct member.
-            // here, we copy the literal's pointer, moving it past the '^' character
-            // for a length equal to the size of footnote reference text.
-            // i.e. end_col minus start_col, minus the [ and the ^ characters
+            // The label is a slice of the SOURCE, delimited by two buffer offsets
+            // this function already holds: `opener->position` is the byte after
+            // the '[', and `initial_pos` the byte after the ']'. One byte of
+            // that span is the caret.
             //
-            // this copies the footnote reference string, even if between the
-            // `opener` and the subject's current position there are other nodes
+            // It used to be a slice of the FOLLOWING NODE's literal whose length
+            // came from column arithmetic, and the two coordinate spaces have
+            // nothing to do with each other. A label crossing a line ending came
+            // out empty and its bytes reached no node at all; an entity-spelled
+            // caret indexed past the end of an owned decode buffer and put the
+            // bytes it found there into the document; and the loop below then
+            // freed the very node the slice pointed into, leaving a label that
+            // `markdown_core_map_lookup` reads once per footnote reference.
+            // `subj->input` is the block's own content buffer, released only
+            // with the node, which is the lifetime every literal `make_str`
+            // hands out already relies on.
             //
-            // (first, check for underflows)
-            if ((fnref_start_column + 2) <= fnref_end_column) {
-                fnref->as.literal = markdown_core_chunk_dup(literal, 1, (fnref_end_column - fnref_start_column) - 2);
-            } else {
-                fnref->as.literal = markdown_core_chunk_dup(literal, 1, 0);
-            }
+            // The length cannot underflow: reaching here requires a decoded '^'
+            // and either a second decoded byte or a further node, and decoding
+            // never lengthens a span, so the span is at least two bytes wide.
+            assert(initial_pos - opener->position >= 2);
+            fnref->as.literal =
+                markdown_core_chunk_dup(&subj->input, opener->position + 1, initial_pos - opener->position - 2);
 
-            fnref->start_line = fnref->end_line = subj->line;
+            // The end is where the ']' is and the start is where the '[' was, so
+            // taking both lines from the closing bracket names a column on a
+            // line that need not contain it.
+            fnref->start_line = opener->inl_text->start_line;
+            fnref->end_line = subj->line;
             fnref->start_column = fnref_start_column;
             fnref->end_column = fnref_end_column;
 
