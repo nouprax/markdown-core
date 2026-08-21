@@ -1030,7 +1030,7 @@ Edge list (`step: [what must already be true]`):
 of it:** `node scripts/check-plan-graph.mjs`. It resolves every named dependency
 to a real step and runs a white/grey/black depth-first walk that reports the
 grey-on-grey *path* if one exists, rather than merely announcing that a cycle
-does. Run on the list above: **22 steps, 42 edges, acyclic.** It is in §0's gate
+does. Run on the list above: **22 steps, 45 edges, acyclic** — 42 when this was written; §4.13 added three arrows and §0's copy of the number went stale before anyone re-ran it, which is the argument for the check reading the list rather than a copy. It is in §0's gate
 list, so an arrow that moves without the graph being re-checked fails. The critical chain is `0 → 1 → 0a → 3a → 3 → 7 → 8 → 11b → 12 → 13 → 15C`, depth 10, and it runs through Step 8 — which is a second reason not to let Step 8 be a 1,100-line fork.
 
 A valid linear order, verified against the edge list rather than asserted:
