@@ -136,7 +136,8 @@ const NORMALIZED_DELTAS = new Set([
     "own-extensions",
     "footnote-definition-placement",
     "footnote-resolution-model",
-    "reference-definition-node"
+    "reference-definition-node",
+    "empty-text-node"
 ]);
 for (const delta of policy.deltas) {
     if (!NORMALIZED_DELTAS.has(delta.id) && !(policy.expectedDivergences ?? []).some((e) => e.id === delta.id)) {

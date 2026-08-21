@@ -160,6 +160,18 @@ export function normalize(node, side) {
             children.push(normalized);
         }
     }
+    // `empty-text-node`, Q38. A `Text` that owns no bytes is dropped from BOTH
+    // sides. Upstream emits one wherever its autolink split or its hard-break
+    // stripping leaves a fragment with nothing in it; this repository stopped
+    // emitting them at 0a.14, because a child with no literal and no source is
+    // not a node. Projecting it away rather than registering eleven inputs is
+    // the right shape: it is a MODEL difference -- it appears wherever the
+    // construct does -- and a list of inputs would go stale the moment the
+    // corpus grew. Dropped after the run-joining above, so a merged run that
+    // came out empty goes too.
+    const kept = children.filter((child) => !(child.kind === "Text" && child.fields.literal === ""));
+    children.length = 0;
+    children.push(...kept);
     const fields = {};
     for (const key of COMPARED[node.kind] ?? []) {
         let value = node.fields[key];

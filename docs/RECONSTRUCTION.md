@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.13 |
+| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.14 |
 | Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Stage 0a**, §4.2, at **0a.14** — 0a.0 through 0a.13 have landed. **0a.15 (D28, D29) also exists**; see §4.2.3 |
+| Next action | **Stage 0a**, §4.2, at **0a.15** — D28 and D29, the last two defects in the stage; see §4.2.3 |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -58,14 +58,14 @@ node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
 node scripts/check-upstream-parity.mjs     # 817/817 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
 node scripts/check-mdast-parity.mjs        # 54/54, backlog 24/24 still diverging
-node scripts/audit-scope-sanity.mjs        # 52 rows, only-shrink holds
+node scripts/audit-scope-sanity.mjs        # 14 rows, only-shrink holds
 
 # The three position oracles, landed at 0a.1 (§4.2.7). Each fails on a row
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
 # fails here rather than in review.
 node scripts/audit-inline-sourcepos.mjs    # 0 rows registered, 68 scanned
-node scripts/audit-scope-containment.mjs   # 45 rows registered, 3961 scanned
-node scripts/audit-position-places.mjs     # 113 rows registered, 4083 scanned
+node scripts/audit-scope-containment.mjs   # 45 rows registered, 3941 scanned
+node scripts/audit-position-places.mjs     # 109 rows registered, 4073 scanned
 
 # D9's pin. REGISTERED RED and it fails if a row STOPS reproducing, because
 # deleting the budget clears both rows and costs 204.678x output growth.
@@ -377,8 +377,8 @@ ones whose witness is stated in this section rather than in the row.
 | D9 | reference resolution is order-dependent | wrong-output | **9a only** | 200 refs → 99 resolve, 101 do not |
 | D10 | an undefined footnote call **loses source bytes** | data-loss | 0a.2 | `x[^a⏎b] tail` → `"x[^] tail"` |
 | D11 | a nested duplicate definition **deletes a paragraph** | data-loss | 0a.2 | `"OUTER opens first"` in no node |
-| D12 | `consolidate_text_nodes` drops `end_line` | wrong-position | 5 | built & reverted |
-| D13 | autolink's `len==0` sentinel leaves a zero-length `Text` | wrong-output | 5 | built & reverted |
+| D12 | `consolidate_text_nodes` drops `end_line` | wrong-position | **fixed at 0a.14** | built & reverted |
+| D13 | autolink's `len==0` sentinel leaves a zero-length `Text` | wrong-output | **fixed at 0a.14** | built & reverted |
 | D14 | the `"[^"` prefix rebuilt over decoded bytes | wrong-output | 9a | built & reverted |
 | D15 | the CLI and the facade attach extensions in different orders | wrong-output | **fixed at 0a.11** | built & reverted |
 | D16 | two more null/empty sites | wrong-output | 14 | built & reverted |
@@ -1206,8 +1206,8 @@ Two of the fourteen *looked* like dependencies in §2 and were not. **D12 "block
 
 | # | Verdict | Evidence, measured on the untouched baseline | Lands |
 |---|---|---|---|
-| **D12** | **FIXABLE-AT-BASELINE**, in the same commit as D13 and no other | The one-line fix *alone* turns `extensions.txt:804`/`:809` from `59:1..59:0` into `59:1..0:0` — a strictly worse row that **every gate in the repository passed** at the time this was written: 65/65, 795/795, 46/46, canonical green, ledger 207 unchanged, because `endLine < startLine` keeps it in the same `negative` bucket it left. **That clause expired at 0a.1**: `audit-position-places.mjs` reads a live parse and reports the three rows moving to line zero, re-measured at 0a.2 (§4.2.8). With D13 and D10 landed it has **no witness at all**: 4 hits over the 860-example corpus, every one through an operand with no position; 0 hits over 40,000 random inputs filtered to merges where both operands are positioned. It is a real defect (the assignment is plainly missing) that is unobservable on this engine, and it must not be sold as fixing anything measurable | **0a.14** |
-| **D13** | **FIXABLE-AT-BASELINE**, by removing the node, not by respelling the position | Option A (§2's wording — give the empty fragment an honest empty range) was built in two cuts and **rejected on measurement**: every sentinel row it removes returns as a negative row, because a closed `(line, column)` interval cannot express an empty range; `extensions.txt` negative goes 10 → 36 (narrow) or 38 (wide) and `specs/scope-sanity/ledger.json` forbids growth in either class, so A cannot land without raising the ratchet, which defeats the ratchet. A-narrow also does not clear its own class — producer (2) still emits `0:0..0:0`. Option B is 24 lines across `core/iterator.c` and `extensions/autolink.c`: 106 rows changed, net **−46**, ledger **207 → 169**, and every gate green **after** one registered upstream divergence (Q38) | **0a.14** |
+| **D12** | **LANDED 0a.14**, in the same commit as D13 and no other | The one-line fix *alone* turns `extensions.txt:804`/`:809` from `59:1..59:0` into `59:1..0:0` — a strictly worse row that **every gate in the repository passed** at the time this was written: 65/65, 795/795, 46/46, canonical green, ledger 207 unchanged, because `endLine < startLine` keeps it in the same `negative` bucket it left. **That clause expired at 0a.1**: `audit-position-places.mjs` reads a live parse and reports the three rows moving to line zero, re-measured at 0a.2 (§4.2.8). With D13 and D10 landed it has **no witness at all**: 4 hits over the 860-example corpus, every one through an operand with no position; 0 hits over 40,000 random inputs filtered to merges where both operands are positioned. It is a real defect (the assignment is plainly missing) that is unobservable on this engine, and it must not be sold as fixing anything measurable | **0a.14** |
+| **D13** | **LANDED 0a.14**, by removing the node, not by respelling the position | Option A (§2's wording — give the empty fragment an honest empty range) was built in two cuts and **rejected on measurement**: every sentinel row it removes returns as a negative row, because a closed `(line, column)` interval cannot express an empty range; `extensions.txt` negative goes 10 → 36 (narrow) or 38 (wide) and `specs/scope-sanity/ledger.json` forbids growth in either class, so A cannot land without raising the ratchet, which defeats the ratchet. A-narrow also does not clear its own class — producer (2) still emits `0:0..0:0`. Option B is 24 lines across `core/iterator.c` and `extensions/autolink.c`: 106 rows changed, net **−46**, ledger **207 → 169**, and every gate green **after** one registered upstream divergence (Q38) | **0a.14** |
 | **D14** | **LANDED 0a.9.** Fixable at the baseline | **§2 is wrong twice, and two of this row's own numbers went stale.** Re-measured composed with 0a.2 at §4.2.15: **360** of the 432 move, not 252, and the NUL and invalid-UTF-8 rows are **0** and **0**, not 162 and 90 — 0a.2 removed the heap bytes before this commit ran. The original reading: It reproduces on the untouched tree with no D10 fix: `x[\^a] tail` → `literal="x[^a]] tail"` (backslash lost, `^` invented, `]` doubled) and `x[&#94;a] tail` → `literal="x[^\0\0\0\0\0] tail"`. And the "policy move, not a repair" objection does not survive measurement: at the baseline **no** escaped or entity-spelled call ever resolves, because the column arithmetic makes the lookup key `n]` or `\0\0\0\0\0`, never `n` — verified with `a[\^n]` + `[^n]: note`, which drops the definition before *and* after. The narrowing removes broken behaviour only. 432-case matrix (6 caret spellings × 8 labels × 3 tails × 3 definition contexts): 252 move; the baseline emits **invalid UTF-8 on 90 of them and NUL bytes on 162** — heap bytes materialised into a document. One condition, bounds-tested before the subscript. **Zero golden rows** | **0a.9** |
 | **D15** | **LANDED 0a.11.** Fixable at the baseline | Over all 2,744 ordered triples of 14 significant lines, **414 (15.1%) parse differently through the CLI than through the facade**; after one shared attach path, 0. The 809-input fixture corpus shows 0 CLI-vs-facade differences, which is why no oracle sees it — **and no corpus ever could**, because every fixture runs through the facade and so can see only one of the two orders (§4.2.17, mutant D). **Re-measured at 0a.11 with D8 fixed: the two old orders disagree on 4, not 414; the 414 is a baseline-era reading and was not reproduced, because reproducing it means reverting 0a.5.** `markdown_core_core_extensions_attach(parser, mask)` walking one ordered table with `table` last (Q9), declared **without** `MARKDOWN_CORE_EXPORT` so the export map and `audit-public-surface.sh` are untouched. The CLI's `-e NAME` lever must route through the same bit table or the hole is still open — **at 0a.11 it was deleted instead: no name outside the table can reach the registry, so the by-name path was unreachable code holding a second attach site open.** **Zero golden rows moved; three examples added, and a new structural audit, because the by-construction claim had no gate** | **0a.11** |
 | **D16** | **FIXABLE-AT-BASELINE** | 40 rows — 37 `spec.txt`, 3 `extensions.txt` — cross-checked independently here: the corpus carries **58** `title=""` rows (54 spec + 4 extensions), 18 of them D6's, and 58 − 18 = 40 exactly. **Mechanism correction:** `markdown_core_clean_title` already folds a zero-length title to `CHUNK_EMPTY`, so `inlines.c:1755` is **behaviour-neutral today**; the entire visible defect is `chunk_clone`, which `calloc`s `len+1` unconditionally and turns the refmap's NULL back into `""`. Take both anyway — `chunk_clone` alone leaves 1755 asserting "written and empty" for something never written, which is the exact tension 0a.7 was told not to resolve | **0a.7** |
@@ -1321,7 +1321,7 @@ Three rows move — two in `extensions-directive.txt` example 16 (the inner `:::
 
 **0a.13 — D23, the overlap class. LANDED; §4.2.20 records it.** The complete cut, four lines beyond §2's one-liner. 57 rows, hand-checked against the source columns before regenerating; CommonMark 426 (`foo******bar*********baz`) becomes `Strong 4..18 > 6..16 > 8..14` with the tail `Text` at `1:19`, against the golden's `4..21 / 6..21 / 8..21 / Text 1:13`. It lands after 0a.12 and separately from it because 57 rows is the largest single regeneration in the stage and it deserves its own review. It does **not** interact with 0a.14: `S_insert_emph` already frees a delimiter node whose literal is spent (`if (opener_num_chars == 0) markdown_core_node_free(opener_inl)`), so the emphasis path creates no empty `Text` for D13 to clean up.
 
-**0a.14 — D12 and D13, the empty-`Text` class, last.** It is last because it *removes* rows, and how many it removes depends on which empties exist — which 0a.12 and 0a.13 both affect. Option B, 24 lines: consolidation drops a `TEXT` node that owns no bytes and takes a merged run's end only from an operand that owns bytes (the `len > 0` guard is what makes the D12 line safe, since an empty operand may still be absorbed by a merge); autolink's `postprocess_text` stops leaving an empty prefix or an empty tail. Producer (3) — consolidation merging a run of empties into an empty — becomes unreachable by construction.
+**0a.14 — D12 and D13, the empty-`Text` class. LANDED; §4.2.21 records it, and Q38 is taken.** It is last because it *removes* rows, and how many it removes depends on which empties exist — which 0a.12 and 0a.13 both affect. Option B, 24 lines: consolidation drops a `TEXT` node that owns no bytes and takes a merged run's end only from an operand that owns bytes (the `len > 0` guard is what makes the D12 line safe, since an empty operand may still be absorbed by a merge); autolink's `postprocess_text` stops leaving an empty prefix or an empty tail. Producer (3) — consolidation merging a run of empties into an empty — becomes unreachable by construction.
 
 **106 rows change, 60 are replacements, 46 disappear.** The 46 are cross-checked here against the corpus: exactly 46 `Text … literal="" children=0` rows exist, of which **36 are the `0:0..0:0` sentinel** (30 `extensions.txt`, 6 `spec.txt`) and 10 carry honest positions — the base-language empty a hard break's stripped spaces leave. The other 60 are `children=` counts on `Paragraph`/`Link`/`TableCell`/`Strikethrough`. One hand-written assertion, `tests/api/main.c:1166`, **pins the defect** as expected output, the same shape as D10's; it is updated in this commit. The ledger goes **207 → 169** by `--update`, all shrink.
 
@@ -2540,6 +2540,132 @@ canonical-ast 28/47/6 · public surface · attach order · plan graph 22/45 ·
 topology · format-c · format-cmake. Neither `places` nor `scope-sanity` moved,
 which is right: an overlap is not a not-a-place, and that is the whole reason
 0a.1 built three oracles instead of one.
+
+---
+
+#### 4.2.21 0a.14 landed: a Text that owns no bytes is not a node, and Q38 is a projection
+
+**Option B, both halves, and the halves are not interchangeable.**
+
+- `markdown_core_consolidate_text_nodes` (`core/iterator.c`) takes a merged run's
+  end — **line and column together, which is D12** — only from an operand that
+  owns bytes, and then **drops any `TEXT` node whose literal is empty.** The drop
+  makes the third producer unreachable by construction: a run of empties can no
+  longer merge into an empty, because the operands are gone before the merge.
+- `postprocess_text` (`extensions/autolink.c`) stops creating an empty prefix and
+  an empty tail. **This half is not optional and consolidation cannot cover it**:
+  `markdown_core_consolidate_text_nodes` runs at `core/blocks.c:1751`, *before*
+  every extension postprocess, and autolink's own call to it is the first thing
+  its postprocess does — so every empty the split makes is made after the last
+  consolidation that could have seen it.
+
+##### One line the allocation-failure sweep caught, and it is worth naming
+
+The first cut skipped the buffer detach when the merged buffer came out empty,
+which looks like a tidy way to avoid reporting an honest empty as a loss. It is
+not: a **poisoned** buffer also comes out empty, and skipping the detach then
+dropped a node whose bytes an allocation failure had eaten — silently. The
+`regression_fallback_oom_sweep` gate caught it on the first run, which is the
+gate doing exactly what §4.13.9 built it for. The shipped form detaches
+unconditionally, reports `ok = 0` when the detach returns NULL, and **`continue`s
+past the drop**, so the drop can only ever remove a node that is honestly empty.
+
+##### What moved
+
+**107 rows removed, 61 added, net −46** — against §4.2.3's prediction of "106
+rows change, 60 are replacements, 46 disappear". The 46 is exact; the other two
+are each one higher, and the extra pair is one `Text` position row and its
+container's `children=` count. Mechanically classified:
+
+| | |
+|---|---|
+| removed rows that are `Text … literal="" children=0` | **46** — exactly the population §4.2.3 counted |
+| replacement rows that are a `children=` count | **45** (13 `Link`, 29 `Paragraph`, 1 `Strikethrough`, 2 `TableCell`) |
+| replacement rows that are a `Text` position | **16** |
+
+Plus `specs/canonical-ast/inlines.ast` (one row and its parent's count) and one
+hand-written C assertion. **`tests/api/main.c` pinned the defect** — it asserted
+`Text scope=0:0..0:0 literal=""` as *expected* output for an autolink at column
+one, and a `Paragraph children=2` holding one thing. Unpinning it is the fix,
+the same shape as D10's `regression.txt` example 24 at 0a.2.
+
+**Ten of the 46 carried honest positions, and dropping them is a stated
+consequence rather than an oversight.** They are the base-language empty a hard
+break's stripped spaces leave, and after the drop those two bytes reach no node
+— which is already true of every other markup byte in this model (a code span's
+backticks, a strikethrough's tildes) and is the CST's business, not this
+defect's.
+
+##### The canonical corpus lost a state it can no longer honestly demonstrate
+
+`inlines` declared **`escaping.empty-string`**, and its only witness in that
+case was the `literal=""` this commit removes. The state stays in the global
+requirement — `completeness.ast` still carries `Link title=""`, which is a title
+that *was* written and is empty, honest since 0a.7 — so only the `inlines`
+case's claim is dropped. Adding a witness instead would have meant pinning one
+of the two remaining producers, and both are defects the stage is closing.
+
+##### Q38, and the shape of the answer
+
+Without it the gate reads **806/817 with eleven inputs diverging** — eight
+autolink, three hard-break and shortcut-reference — which is §4.2.3's number
+reproduced. **The answer is a PROJECTION, not eleven `expectedDivergences`
+rows**, and the reason is the same test every other delta is held to: the
+difference appears wherever the construct does, so it is a *model* difference,
+and a list of inputs would go stale the moment the corpus grew. `normalize` in
+`scripts/lib/upstream-cmark.mjs` drops an empty-literal `Text` from **both**
+sides, after the adjacent-run join so that a merged run which came out empty
+goes with it; `empty-text-node` joins `NORMALIZED_DELTAS`; and
+`specs/upstream-parity/deltas.json` gains the entry.
+
+`specs/mdast-parity/deltas.json` carried the same id and its evidence line said
+*"suppressing it here failed `scripts/check-upstream-parity.mjs`, which is how
+this was classified as a shape delta rather than a defect."* That sentence is now
+**history**: the failure was reproduced exactly and then answered. The entry is
+amended to say the delta is upstream-only.
+
+**And the projection costs something, which the commit says out loud.** With
+`empty-text-node` projected away, re-introducing this side's empty node is
+**invisible to upstream parity** — measured: mutant C below leaves it at
+817/817. The goldens are the only gate on it. That is the price of calling it a
+model difference, and it is the same price `own-extensions` and
+`reference-definition-node` already pay.
+
+##### Mutant kills
+
+| mutant | `correctness` | `places` | `scope-sanity` | upstream |
+|---|---|---|---|---|
+| take the end column but not the end LINE (D12 alone) | `regression_commonmark` red | **1 APPEARED** | blind | blind |
+| take the end from **any** operand (drop the `len > 0` guard) | `extensions_gfm` red | 0 | blind | blind |
+| keep the empty `TEXT` (drop the consolidation half) | `spec_commonmark` + `regression_commonmark` red | 0 | blind | **blind, 817/817** |
+| keep autolink's empty prefix and tail | `spec_commonmark` + `extensions_gfm` red | 0 | blind | blind |
+
+Every one of the four is caught, and **three of the four only by the goldens.**
+`audit-scope-sanity.mjs` is blind to all of them for the reason 0a.12 recorded —
+it reads the regenerated fixtures, not the binary.
+
+##### Ledgers
+
+`scope-sanity` **52 → 14**: **one** sentinel, 11 negative, 2 partial. The single
+remaining sentinel is the split-off table lead's paragraph, which
+`try_inserting_table_header_paragraph` creates with all four coordinates zero —
+**Step 10's**, and the row §4.2.5 originally mis-attributed to Step 9a. Over the
+whole stage that ledger has gone **207 → 14**.
+
+`places` **113 → 109**, and **two whole families are now empty**:
+`multi-line-span` (nineteen → seven → one → none) and `end-column-never-set`
+(six → three → none). Both are recorded in the file rather than deleted from it,
+because each was cleared by a **different defect than the one the ledger named**
+— which is the ledger's own `closedBy` discipline reporting on itself.
+
+##### Gates after
+
+`correctness` **67/67** · `correctness-asan` **58/58** · `correctness-ubsan`
+**58/58** · `conformance` **2/2** · upstream parity **817/817** with **7/7** and
+a ninth registered delta · mdast **54/54**, backlog **24/24** · fuzz-parity
+**300/300** · scope-sanity **14** · position oracles **0 / 45 / 109** ·
+reference-order 2 rows, still red · canonical-ast 28/47/6 · public surface ·
+attach order · plan graph 22/45 · topology · format-c · format-cmake.
 
 ---
 
@@ -3821,6 +3947,7 @@ which is why they kept getting re-argued:
 | **Q8** | May the reconstruction take code from existing commits? | **SETTLED 2026-08-20 — NO.** See §4.9. Ignore every existing commit except the formula fix and the directive syntax fix. Everything else is designed and written fresh. | owner | the entire port list |
 | **Q9** | What is the extension attach order? (D15) | **SETTLED 2026-08-20 — table LAST, with a test. IMPLEMENTED 0a.11**, and the ruling is load-bearing: all six inputs whose parse the reorder moves are a line inside an OPEN table that a narrower extension also claims, which D8's fix does not touch. Every other extension's position is measured to be free — moving `directive` changes 0 of 4,000 random `:`/URL documents (§4.2.17). A decided order, not an inheritance: a table's row opener matches any line inside an open table, so every narrower claim attaches first. D15's CLI/facade disagreement is fixed in the same step. | owner | Step 3, 0a.5, **0a.11** |
 | **Q40** | Is a line ending a place? (D26) | **PROPOSED, taken at 0a.12b — YES, and only for a node that IS one.** A line of L bytes has L+1 boundaries and the last is where the line ending lives, so a `SoftBreak` or `LineBreak` at column L+1 is a place. The GENERAL form was measured before it was rejected: admitting L+1 for every kind would have excused **twelve** rows already in `specs/positions/places.json` — eleven `Text` and one `Emphasis` — that are wrong for other reasons. The narrow form excuses none of them, because no break node was ever registered there. `scripts/audit-position-places.mjs` carries the rule and says so. | 0a.12b | Step 5, which owns the dump spelling that would make the question moot |
+| **Q38** | Does removing the empty `Text` node get registered against upstream, and how? | **TAKEN at 0a.14 — as a PROJECTION, not as inputs.** Without it `check-upstream-parity.mjs` reads 806/817 with eleven inputs diverging (eight autolink, three hard-break and shortcut-reference), which is §4.2.3's number reproduced. The difference appears wherever the construct does, so it is a model difference and a list of inputs would go stale as the corpus grew: `normalize` drops an empty-literal `Text` from BOTH sides, `empty-text-node` joins `NORMALIZED_DELTAS`, and both delta files carry the entry. **The cost is stated rather than hidden**: with it projected, re-introducing this side's empty node is invisible to upstream parity — measured — and the goldens are the only gate. | 0a.14 | — |
 | **Q11–Q29** | Nineteen decisions the requirement restatement exposed | **PROPOSED** unless listed below, each with a recommendation in §4.1.6 | §4.1.6 | their owning steps |
 | **Q14** | The option surface | **SETTLED 2026-08-20 — DELETE ALL OF IT.** See §4.11. | owner | 3, 6, 7, 12, 15 |
 | **Q24** | Is the concrete view opt-in? | **SETTLED 2026-08-20 — NO. It is not optional; it is part of the model.** Diagnostics on directive attributes have nowhere to point without it. | owner | 12, 13 |

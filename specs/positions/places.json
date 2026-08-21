@@ -2,7 +2,7 @@
     "schemaVersion": 1,
     "script": "scripts/audit-position-places.mjs",
     "subject": "Every dumped coordinate over every fixture example: the line must exist in the input and the column must name a byte on it. Byte columns, counted from 1, on lines split the way S_parser_feed splits them.",
-    "purpose": "One hundred and ten rows in seven families, and the families are what matter \u2014 the number on its own says nothing about which of them a step is allowed to move. It was 131 before 0a.6, which cleared thirteen and added three, and 122 before 0a.12, which cleared twelve and added none.\n\n  61  end-at-line-ending              a coordinate names column 0 of a line that exists. There is no column 0; this is how \"ends at the line ending\" gets spelled when the only vocabulary is a coordinate. FIFTY-EIGHT are a block's end, H14's neighbour (\u00a711.4). THE OTHER THREE ARE NEW AND ARE 0a.6's: un-gating adjust_subj_node_newlines made a code span that opens with a line ending report `1:3..3:0`, whose start is one past the end of a two-byte line and whose end is column zero \u2014 and both halves are exactly what cmark-gfm reports, which is why specs/positions/inline-sourcepos.json reads zero over them. Agreeing with an authority that is itself wrong is not a defect this stage introduced; it is the same class, made visible. No step owns it.\n  19  continuation-line-content-offset  a column taken from the paragraph's CONTENT buffer and printed against a source line whose prefix was stripped. Two spaces, aaa, newline, one space, bbb gives Text 2:3..2:5 on a four-byte line. \u00a74.2's 0a.12 calls this out as the residue it does NOT fix: Q22/Step 10.\n   9  recovered-table-cell            a cell the table extension synthesized carries L:0..L:0. Requirement 10.\n   9  unmatched-code-span-literal     an unmatched backtick run's literal is placed one column right: `hi`lo` gives Text 1:5..1:8 inside a seven-byte paragraph. \u00a74.1.3 names it and assigns it to Step 8.\n   1  multi-line-span                 a span that crossed a line ending, reported as though it had not, and every node after it in the same paragraph displaced by the same amount. WAS NINETEEN, then seven. 0a.6 cleared the twelve that were inline Code and HTML; 0a.12 cleared the remaining six, and the attribution the six carried was WRONG: they said `0a.6 \u2014 D3, un-gating adjust_subj_node_newlines`, and un-gating that helper could never have reached them, because neither `handle_close_bracket` nor `handle_backslash` calls it. One was D19's link; five were D32's backslash hard break, which consumed a line ending without telling the subject. The one row left is D12's, in the 0a.2 footnote fixture, and 0a.14 owns it.\n   6  split-off-table-lead            the paragraph a table was split out of, and its inline children, keep positions belonging to neither half. Requirement 10.\n   3  end-column-never-set            an inline node's end column is left at 0. An autolink with a space inside gives Text 1:1..1:0. WAS SIX, and the claim that \"the corpus carries the autolink spelling of it and not yet the strikethrough one\" was wrong in both halves: exactly THREE of the six were the strikethrough delimiter run, and 0a.12's one line in strikethrough.c cleared them. The three that remain are autolink's, and they are not an unassigned end column at all \u2014 `postprocess_text` splits a text node into a zero-length prefix, `set_sourcepos_from_range` early-returns on len == 0 having already zeroed the node, and consolidation copies that zero onto its neighbour. That is D13's mechanism and 0a.14 owns it.\n\n   2  content-start-past-marker-line  a footnote definition starts at the column after its marker, which does not exist when the marker ends the line: [^footnote]: is twelve bytes and the definition starts at 19:13. NOT NAMED BY ANY DEFECT IN \u00a72; found by this oracle.\n\nThirty-eight of the 110 are inline, out of 2,308 inline nodes; the gate prints that split on every run.\n\n`class` is analysis and `closedBy` is measurement. Two families carry a measured owner: the three end-at-line-ending rows 0a.6 created, and the one multi-line-span row 0a.14 owns. The consumed-definition-line family is GONE \u2014 0a.12 cleared all three, which is the attribution proved by moving them. Every other family's owner is deliberately unassigned \u2014 the step that moves the rows proves the attribution by moving them, and this gate's CLEARED list is that proof.\n\nA coordinate on line zero is NOT counted here; scripts/audit-scope-sanity.mjs owns the 0:0..0:0 sentinel and the line-zero-with-a-column shape, and there is no line to measure a column against. A zero COLUMN on a real line is measurable and is counted. Where a row is both \u2014 Text 1:1..1:0 is a zero column AND a reversed range \u2014 the two ratchets interlock rather than overlap: making the end a real column at or after the start clears both, while zeroing the node clears this one and GROWS the sentinel budget, which fails there.\n\nWHAT THIS ORACLE STILL CANNOT SEE, named at 0a.6 so it is not re-derived: a scope that is a place and is still wrong. `a <b`, newline, `c> d` gives HTML scope=1:3..2:1 for a literal whose last byte is at 2:2, so the closing byte belongs to no node \u2014 and 2:1 is a perfectly good place. Containment sees a gap, not an overlap, and upstream reports the same numbers. It is pinned as a golden row in regression.txt with prose above it, and it belongs to Step 8.",
+    "purpose": "One hundred and nine rows in six families, and the families are what matter \u2014 the number on its own says nothing about which of them a step is allowed to move. It was 131 before 0a.6, which cleared thirteen and added three, and 122 before 0a.12, which cleared twelve and added none.\n\n  61  end-at-line-ending              a coordinate names column 0 of a line that exists. There is no column 0; this is how \"ends at the line ending\" gets spelled when the only vocabulary is a coordinate. FIFTY-EIGHT are a block's end, H14's neighbour (\u00a711.4). THE OTHER THREE ARE NEW AND ARE 0a.6's: un-gating adjust_subj_node_newlines made a code span that opens with a line ending report `1:3..3:0`, whose start is one past the end of a two-byte line and whose end is column zero \u2014 and both halves are exactly what cmark-gfm reports, which is why specs/positions/inline-sourcepos.json reads zero over them. Agreeing with an authority that is itself wrong is not a defect this stage introduced; it is the same class, made visible. No step owns it.\n  19  continuation-line-content-offset  a column taken from the paragraph's CONTENT buffer and printed against a source line whose prefix was stripped. Two spaces, aaa, newline, one space, bbb gives Text 2:3..2:5 on a four-byte line. \u00a74.2's 0a.12 calls this out as the residue it does NOT fix: Q22/Step 10.\n   9  recovered-table-cell            a cell the table extension synthesized carries L:0..L:0. Requirement 10.\n   9  unmatched-code-span-literal     an unmatched backtick run's literal is placed one column right: `hi`lo` gives Text 1:5..1:8 inside a seven-byte paragraph. \u00a74.1.3 names it and assigns it to Step 8.\n  --  multi-line-span AND end-column-never-set ARE BOTH GONE, and they are recorded here rather than deleted because each was cleared by a DIFFERENT defect than the one the ledger named. multi-line-span was nineteen, then seven, then one, then none: 0a.6 cleared the twelve that were inline Code and HTML; 0a.12 cleared the six that survived, and the attribution those six carried was WRONG -- they said `0a.6 - D3, un-gating adjust_subj_node_newlines`, which could never have reached them, because neither `handle_close_bracket` nor `handle_backslash` calls that helper (one was D19's link, five were D32's backslash hard break); 0a.14 cleared the last, which was D12's, by taking a merged run's end LINE and column together. end-column-never-set was six: exactly three were the strikethrough delimiter run, cleared by 0a.12's one line -- against this file's own claim that \"the corpus carries the autolink spelling of it and not yet the strikethrough one\", which was wrong in both halves -- and the other three were autolink's zero-length split fragments, cleared at 0a.14 by not creating them.\n   6  split-off-table-lead            the paragraph a table was split out of, and its inline children, keep positions belonging to neither half. Requirement 10.\n\n   2  content-start-past-marker-line  a footnote definition starts at the column after its marker, which does not exist when the marker ends the line: [^footnote]: is twelve bytes and the definition starts at 19:13. NOT NAMED BY ANY DEFECT IN \u00a72; found by this oracle.\n\nThirty-seven of the 109 are inline, out of 2,275 inline nodes; the gate prints that split on every run.\n\n`class` is analysis and `closedBy` is measurement. Two families carry a measured owner: the three end-at-line-ending rows 0a.6 created, and the one multi-line-span row 0a.14 owns. The consumed-definition-line family is GONE \u2014 0a.12 cleared all three, which is the attribution proved by moving them. Every other family's owner is deliberately unassigned \u2014 the step that moves the rows proves the attribution by moving them, and this gate's CLEARED list is that proof.\n\nA coordinate on line zero is NOT counted here; scripts/audit-scope-sanity.mjs owns the 0:0..0:0 sentinel and the line-zero-with-a-column shape, and there is no line to measure a column against. A zero COLUMN on a real line is measurable and is counted. Where a row is both \u2014 Text 1:1..1:0 is a zero column AND a reversed range \u2014 the two ratchets interlock rather than overlap: making the end a real column at or after the start clears both, while zeroing the node clears this one and GROWS the sentinel budget, which fails there.\n\nWHAT THIS ORACLE STILL CANNOT SEE, named at 0a.6 so it is not re-derived: a scope that is a place and is still wrong. `a <b`, newline, `c> d` gives HTML scope=1:3..2:1 for a literal whose last byte is at 2:2, so the closing byte belongs to no node \u2014 and 2:1 is a perfectly good place. Containment sees a gap, not an overlap, and upstream reports the same numbers. It is pinned as a golden row in regression.txt with prose above it, and it belongs to Step 8.",
     "corpus": "every example in packages/markdown-core/tests/fixtures/*.txt",
     "profile": "gfm-extended",
     "expected": [
@@ -161,33 +161,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/extensions.txt:593",
-            "input": ": http://google.com https://google.com\n\n<http://google.com/\u00e5> http://google.com/\u00e5\n\nscyther@pokemon.com\n\nscy.the_rbe-edr+ill@pokemon.com\n\nscyther@pokemon.com.\n\nscyther@pokemon.com/\n\nscyther@pokemon.com/beedrill@pokemon.com\n\nmailto:scyther@pokemon.com\n\nThis is a mailto:scyther@pokemon.com\n\nmailto:scyther@pokemon.com.\n\nmmmmailto:scyther@pokemon.com\n\nmailto:scyther@pokemon.com/\n\nmailto:scyther@pokemon.com/message\n\nmailto:scyther@pokemon.com/mailto:beedrill@pokemon.com\n\nxmpp:scyther@pokemon.com\n\nxmpp:scyther@pokemon.com.\n\nxmpp:scyther@pokemon.com/message\n\nxmpp:scyther@pokemon.com/message.\n\nEmail me at:scyther@pokemon.com\n\nwww.github.com www.github.com/\u00e1\n\nwww.google.com/a_b\n\nUnderscores not allowed in host name www.xxx.yyy._zzz\n\nUnderscores not allowed in host name www.xxx._yyy.zzz\n\nUnderscores allowed in domain name www._xxx.yyy.zzz\n\n**Autolink and http://inlines**\n\n![http://inline.com/image](http://inline.com/image)\n\na.w@b.c\n\nFull stop outside parens shouldn't be included http://google.com/ok.\n\n(Full stop inside parens shouldn't be included http://google.com/ok.)\n\n\"http://google.com\"\n\n'http://google.com'\n\nhttp://\ud83c\udf44.ga/ http://x\ud83c\udf44.ga/\n",
-            "findings": [
-                {
-                    "nodePath": "0.29.0",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "59:1..59:0",
-                    "start": "place",
-                    "end": "zero-column",
-                    "class": "end-column-never-set",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.30.0",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "61:1..61:0",
-                    "start": "place",
-                    "end": "zero-column",
-                    "class": "end-column-never-set",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/extensions.txt:854",
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:827",
             "input": "This is <xmp> not okay, but **this** <strong>is</strong>.\n\n<p>This is <xmp> not okay, but **this** <strong>is</strong>.</p>\n\nNope, I won't have <textarea>.\n\n<p>No <textarea> here either.</p>\n\n<p>This <random /> <thing> is okay</thing> though.</p>\n\nYep, <totally>okay</totally>.\n\n<!-- HTML comments are okay, though. -->\n<!- But we're strict. ->\n<! No nonsense. >\n<!-- Leave multiline comments the heck alone, though, okay?\nEven with {\"x\":\"y\"} or 1 > 2 or whatever. Even **markdown**.\n-->\n<!--- Support everything CommonMark's parser does. -->\n<!---->\n<!--thistoo-->\n",
             "findings": [
                 {
@@ -203,7 +177,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/extensions.txt:915",
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:888",
             "input": "This is some text![^1]. Other text.[^footnote].\n\nHere's a thing[^other-note].\n\nAnd another thing[^codeblock-note].\n\nThis doesn't have a referent[^nope].\n\n\n[^other-note]:       no code block here (spaces are stripped away)\n\n[^codeblock-note]:\n        this is now a code block (8 spaces indentation)\n\n[^1]: Some *bolded* footnote definition.\n\nHi!\n\n[^footnote]:\n    > Blockquotes can be in a footnote.\n\n        as well as code blocks\n\n    or, naturally, simple paragraphs.\n\n[^unused]: This is unused.\n",
             "findings": [
                 {
@@ -269,7 +243,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/extensions.txt:1094",
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:1064",
             "input": "- [x] foo\n  - [ ] bar\n  - [x] baz\n- [ ] bim\n\nShow a regular (non task) list to show that it has the same structure\n- [@] foo\n  - [@] bar\n  - [@] baz\n- [@] bim\n",
             "findings": [
                 {
@@ -295,7 +269,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/extensions.txt:1141",
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:1111",
             "input": "- [x] foo\n    - [ ] bar\n    - [x] baz\n- [ ] bim\n\nShow a regular (non task) list to show that it has the same structure\n- [@] foo\n    - [@] bar\n    - [@] baz\n- [@] bim\n",
             "findings": [
                 {
@@ -321,7 +295,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/regression.txt:385",
+            "source": "packages/markdown-core/tests/fixtures/regression.txt:377",
             "input": "This is some text. It has a citation.[^citation]\n\n[^another-citation]: My second citation.\n\n[^citation]: This is a long winded parapgraph that also has another citation.[^another-citation]\n",
             "findings": [
                 {
@@ -337,7 +311,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/regression.txt:407",
+            "source": "packages/markdown-core/tests/fixtures/regression.txt:399",
             "input": "This is some text. It has two footnotes references, side-by-side without any spaces,[^footnote1][^footnote2] which are definitely not link references.\n\n[^footnote1]: Hello.\n\n[^footnote2]: Goodbye.\n",
             "findings": [
                 {
@@ -353,7 +327,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/regression.txt:430",
+            "source": "packages/markdown-core/tests/fixtures/regression.txt:422",
             "input": "This is some text. Sometimes the autolinker splits up text into multiple nodes, hoping it will find a hyperlink, so this text has a footnote whose reference label begins with a `w`.[^widely-cited]\n\nIt has another footnote that contains many different characters (the autolinker was also breaking on `_`).[^sphinx-of-black-quartz_judge-my-vow-0123456789]\n\n[^sphinx-of-black-quartz_judge-my-vow-0123456789]: so does this.\n\n[^widely-cited]: this renders properly.\n",
             "findings": [
                 {
@@ -365,22 +339,6 @@
                     "end": "zero-column",
                     "class": "end-at-line-ending",
                     "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/regression.txt:507",
-            "input": "x[^a\nb] tail\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "1:1..1:7",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "multi-line-span",
-                    "closedBy": "0a.14 - D12; measured: propagating end_line through consolidate_text_nodes gives 1:1..2:7. The NAIVE one-line form of that fix moves three other rows to LINE ZERO instead of fixing them, so 0a.14 owes more than the line."
                 }
             ]
         },
@@ -511,8 +469,8 @@
                     "scope": "2:6..2:6",
                     "start": "off-column",
                     "end": "off-column",
-                    "closedBy": "Q22 / Step 10 \u2014 the content-to-source column map. The break is at its line's true ending; the SIBLING it follows is the one that is wrong, and that sibling is already registered in this ledger under continuation-line-content-offset. Registered at 0a.12b, when D26 gave breaks a position and made a second symptom of one defect visible.",
-                    "class": "continuation-line-content-offset"
+                    "class": "continuation-line-content-offset",
+                    "closedBy": "Q22 / Step 10 \u2014 the content-to-source column map. The break is at its line's true ending; the SIBLING it follows is the one that is wrong, and that sibling is already registered in this ledger under continuation-line-content-offset. Registered at 0a.12b, when D26 gave breaks a position and made a second symptom of one defect visible."
                 },
                 {
                     "nodePath": "0.0.0.4",
@@ -755,8 +713,8 @@
                     "scope": "2:6..2:6",
                     "start": "off-column",
                     "end": "off-column",
-                    "closedBy": "Q22 / Step 10 \u2014 the content-to-source column map. The break is at its line's true ending; the SIBLING it follows is the one that is wrong, and that sibling is already registered in this ledger under continuation-line-content-offset. Registered at 0a.12b, when D26 gave breaks a position and made a second symptom of one defect visible.",
-                    "class": "continuation-line-content-offset"
+                    "class": "continuation-line-content-offset",
+                    "closedBy": "Q22 / Step 10 \u2014 the content-to-source column map. The break is at its line's true ending; the SIBLING it follows is the one that is wrong, and that sibling is already registered in this ledger under continuation-line-content-offset. Registered at 0a.12b, when D26 gave breaks a position and made a second symptom of one defect visible."
                 }
             ]
         },
@@ -829,8 +787,8 @@
                     "scope": "2:8..2:8",
                     "start": "off-column",
                     "end": "off-column",
-                    "closedBy": "Q22 / Step 10 \u2014 the content-to-source column map. The break is at its line's true ending; the SIBLING it follows is the one that is wrong, and that sibling is already registered in this ledger under continuation-line-content-offset. Registered at 0a.12b, when D26 gave breaks a position and made a second symptom of one defect visible.",
-                    "class": "continuation-line-content-offset"
+                    "class": "continuation-line-content-offset",
+                    "closedBy": "Q22 / Step 10 \u2014 the content-to-source column map. The break is at its line's true ending; the SIBLING it follows is the one that is wrong, and that sibling is already registered in this ledger under continuation-line-content-offset. Registered at 0a.12b, when D26 gave breaks a position and made a second symptom of one defect visible."
                 },
                 {
                     "nodePath": "0.0.0.0.0.4",
@@ -1560,22 +1518,6 @@
                     "start": "place",
                     "end": "off-column",
                     "class": "unmatched-code-span-literal",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:10567",
-            "input": "<http://foo.bar/baz bim>\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "1:1..1:0",
-                    "start": "place",
-                    "end": "zero-column",
-                    "class": "end-column-never-set",
                     "closedBy": "unassigned"
                 }
             ]

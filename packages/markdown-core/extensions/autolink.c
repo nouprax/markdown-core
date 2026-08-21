@@ -544,10 +544,32 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         set_sourcepos_from_range(text, source_start_line, source_start_column, &detached_chunk, prefix_start,
                                  prefix_len);
 
+        // A link at the very start of the run leaves a prefix with no bytes.
+        // `set_sourcepos_from_range` has already zeroed all four coordinates and
+        // then returned early on `len == 0`, so what would stay in the tree is a
+        // node with no literal and no position -- and consolidation cannot clean
+        // it up, because it runs BEFORE every extension postprocess. So it goes
+        // here, where it is made. `markdown_core_node_free` unlinks first, and
+        // `link_node` is already spliced in after this node, so the list stays
+        // whole.
+        if (prefix_len == 0) {
+            markdown_core_node_free(text);
+        }
+
         text = post;
         start += offset + max_rewind + link_end;
         remaining -= offset + max_rewind + link_end;
         offset = 0;
+    }
+
+    // The same for the tail: a link that ends the run leaves it with no bytes.
+    // Only ever reached when the split ran at least once -- `postprocess`
+    // consolidates before it iterates, and consolidation now drops an empty
+    // `TEXT`, so the node this function is handed always owned bytes on entry.
+    if (text->as.literal.len == 0) {
+        markdown_core_node_free(text);
+        markdown_core_chunk_free(parser->mem, &detached_chunk);
+        return;
     }
 
     // Convert the reference to allocated memory.

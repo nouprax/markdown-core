@@ -81,6 +81,18 @@
             "handling": "Keyed to one input rather than projected: upstream's substring search is a bug in one function, not a model this side could apply to a tree. Erasing `checked` in the normalizer would blind the gate to every real checked-state difference. REGISTERED at 0a.11, which is where the fix landed. The `pendingStep` this entry used to carry said Step 4c, a step number that stopped existing when the plan was re-ordered; the defect schedule owns it as D24.",
             "evidence": "docs/reviews/2026-07-28-first-principles-review.md, finding I76, fixed in 7c5025d. Still present in upstream 0.29.0.gfm.13.",
             "landed": "0a.11, together with D15. Activating it needed a CORPUS ADDITION and not a JSON edit: check-upstream-parity.mjs keys expectedDivergences by input and fails any entry the corpus never reaches, and `- [ ] call me [x] later` was in no fixture at all. The example is now the last one in extensions.txt."
+        },
+        {
+            "id": "empty-text-node",
+            "kind": "deliberate-difference",
+            "summary": "Upstream emits a `Text` node with no literal wherever a split leaves a fragment with nothing in it -- an autolink at column one, an autolink ending the run, and the spaces a hard break strips. Markdown Core emits no such node: a child with no literal and no source is not a node, and a parent that reports it as a child is lying about its own arity.",
+            "example": "http://example.com  (an autolink at column one), and CommonMark example 564",
+            "upstream": "Paragraph children=2, the first a Text literal=\"\"",
+            "ours": "Paragraph children=1",
+            "rationale": "Two independent claims. The node carries no bytes, so it has nothing to render and no source to point at -- the only position it can hold is borrowed or zeroed, and 36 of the 46 in this repository's own corpus held 0:0..0:0. And it makes a container's child count wrong, which is the one field a consumer cannot recover by looking harder. remark has never had the node; mdast is the second authority.",
+            "handling": "PROJECTED, not keyed to inputs: it appears wherever the construct does, so a list of inputs would go stale the moment the corpus grew. `normalize` in scripts/lib/upstream-cmark.mjs drops an empty-literal `Text` from BOTH sides, after the adjacent-run join, so a merged run that came out empty goes with it.",
+            "evidence": "packages/markdown-core/core/iterator.c, markdown_core_consolidate_text_nodes; packages/markdown-core/extensions/autolink.c, postprocess_text. Without the projection the gate reads 806/817 with eleven inputs diverging -- eight autolink, three hard-break and shortcut-reference.",
+            "landed": "0a.14, and this entry IS Q38. The question was owed by that sub-step and the answer is the projection rather than eleven `expectedDivergences` rows. specs/mdast-parity/deltas.json carries the same id and its note is amended in the same commit, because the sentence that classified this as a shape delta rather than a defect became history here."
         }
     ],
     "expectedDivergences": [

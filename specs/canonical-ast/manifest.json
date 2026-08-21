@@ -283,7 +283,6 @@
                     "scope.positive",
                     "children.empty",
                     "children.populated",
-                    "escaping.empty-string",
                     "escaping.json"
                 ],
                 "orders": ["document.source-order", "inline.source-order"]

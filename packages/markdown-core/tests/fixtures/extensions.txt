@@ -669,97 +669,73 @@ Document scope=1:1..63:32 children=32
 │   ├── Text scope=3:23..3:23 literal=" " children=0
 │   └── Link scope=3:24..3:43 destination="http://google.com/å" title=null children=1
 │       └── Text scope=3:24..3:43 literal="http://google.com/å" children=0
-├── Paragraph scope=5:1..5:19 children=3
-│   ├── Text scope=0:0..0:0 literal="" children=0
-│   ├── Link scope=5:1..5:19 destination="mailto:scyther@pokemon.com" title=null children=1
-│   │   └── Text scope=5:1..5:19 literal="scyther@pokemon.com" children=0
-│   └── Text scope=0:0..0:0 literal="" children=0
-├── Paragraph scope=7:1..7:31 children=3
-│   ├── Text scope=0:0..0:0 literal="" children=0
-│   ├── Link scope=7:1..7:31 destination="mailto:scy.the_rbe-edr+ill@pokemon.com" title=null children=1
-│   │   └── Text scope=7:1..7:31 literal="scy.the_rbe-edr+ill@pokemon.com" children=0
-│   └── Text scope=0:0..0:0 literal="" children=0
-├── Paragraph scope=9:1..9:20 children=3
-│   ├── Text scope=0:0..0:0 literal="" children=0
+├── Paragraph scope=5:1..5:19 children=1
+│   └── Link scope=5:1..5:19 destination="mailto:scyther@pokemon.com" title=null children=1
+│       └── Text scope=5:1..5:19 literal="scyther@pokemon.com" children=0
+├── Paragraph scope=7:1..7:31 children=1
+│   └── Link scope=7:1..7:31 destination="mailto:scy.the_rbe-edr+ill@pokemon.com" title=null children=1
+│       └── Text scope=7:1..7:31 literal="scy.the_rbe-edr+ill@pokemon.com" children=0
+├── Paragraph scope=9:1..9:20 children=2
 │   ├── Link scope=9:1..9:19 destination="mailto:scyther@pokemon.com" title=null children=1
 │   │   └── Text scope=9:1..9:19 literal="scyther@pokemon.com" children=0
 │   └── Text scope=9:20..9:20 literal="." children=0
-├── Paragraph scope=11:1..11:20 children=3
-│   ├── Text scope=0:0..0:0 literal="" children=0
+├── Paragraph scope=11:1..11:20 children=2
 │   ├── Link scope=11:1..11:19 destination="mailto:scyther@pokemon.com" title=null children=1
 │   │   └── Text scope=11:1..11:19 literal="scyther@pokemon.com" children=0
 │   └── Text scope=11:20..11:20 literal="/" children=0
-├── Paragraph scope=13:1..13:40 children=5
-│   ├── Text scope=0:0..0:0 literal="" children=0
+├── Paragraph scope=13:1..13:40 children=3
 │   ├── Link scope=13:1..13:19 destination="mailto:scyther@pokemon.com" title=null children=1
 │   │   └── Text scope=13:1..13:19 literal="scyther@pokemon.com" children=0
 │   ├── Text scope=13:20..13:20 literal="/" children=0
-│   ├── Link scope=13:21..13:40 destination="mailto:beedrill@pokemon.com" title=null children=1
-│   │   └── Text scope=13:21..13:40 literal="beedrill@pokemon.com" children=0
-│   └── Text scope=0:0..0:0 literal="" children=0
-├── Paragraph scope=15:1..15:26 children=3
-│   ├── Text scope=0:0..0:0 literal="" children=0
-│   ├── Link scope=15:1..15:26 destination="mailto:scyther@pokemon.com" title=null children=1
-│   │   └── Text scope=15:1..15:26 literal="mailto:scyther@pokemon.com" children=0
-│   └── Text scope=0:0..0:0 literal="" children=0
-├── Paragraph scope=17:1..17:36 children=3
+│   └── Link scope=13:21..13:40 destination="mailto:beedrill@pokemon.com" title=null children=1
+│       └── Text scope=13:21..13:40 literal="beedrill@pokemon.com" children=0
+├── Paragraph scope=15:1..15:26 children=1
+│   └── Link scope=15:1..15:26 destination="mailto:scyther@pokemon.com" title=null children=1
+│       └── Text scope=15:1..15:26 literal="mailto:scyther@pokemon.com" children=0
+├── Paragraph scope=17:1..17:36 children=2
 │   ├── Text scope=17:1..17:10 literal="This is a " children=0
-│   ├── Link scope=17:11..17:36 destination="mailto:scyther@pokemon.com" title=null children=1
-│   │   └── Text scope=17:11..17:36 literal="mailto:scyther@pokemon.com" children=0
-│   └── Text scope=0:0..0:0 literal="" children=0
-├── Paragraph scope=19:1..19:27 children=3
-│   ├── Text scope=0:0..0:0 literal="" children=0
+│   └── Link scope=17:11..17:36 destination="mailto:scyther@pokemon.com" title=null children=1
+│       └── Text scope=17:11..17:36 literal="mailto:scyther@pokemon.com" children=0
+├── Paragraph scope=19:1..19:27 children=2
 │   ├── Link scope=19:1..19:26 destination="mailto:scyther@pokemon.com" title=null children=1
 │   │   └── Text scope=19:1..19:26 literal="mailto:scyther@pokemon.com" children=0
 │   └── Text scope=19:27..19:27 literal="." children=0
-├── Paragraph scope=21:1..21:29 children=3
+├── Paragraph scope=21:1..21:29 children=2
 │   ├── Text scope=21:1..21:10 literal="mmmmailto:" children=0
-│   ├── Link scope=21:11..21:29 destination="mailto:scyther@pokemon.com" title=null children=1
-│   │   └── Text scope=21:11..21:29 literal="scyther@pokemon.com" children=0
-│   └── Text scope=0:0..0:0 literal="" children=0
-├── Paragraph scope=23:1..23:27 children=3
-│   ├── Text scope=0:0..0:0 literal="" children=0
+│   └── Link scope=21:11..21:29 destination="mailto:scyther@pokemon.com" title=null children=1
+│       └── Text scope=21:11..21:29 literal="scyther@pokemon.com" children=0
+├── Paragraph scope=23:1..23:27 children=2
 │   ├── Link scope=23:1..23:26 destination="mailto:scyther@pokemon.com" title=null children=1
 │   │   └── Text scope=23:1..23:26 literal="mailto:scyther@pokemon.com" children=0
 │   └── Text scope=23:27..23:27 literal="/" children=0
-├── Paragraph scope=25:1..25:34 children=3
-│   ├── Text scope=0:0..0:0 literal="" children=0
+├── Paragraph scope=25:1..25:34 children=2
 │   ├── Link scope=25:1..25:26 destination="mailto:scyther@pokemon.com" title=null children=1
 │   │   └── Text scope=25:1..25:26 literal="mailto:scyther@pokemon.com" children=0
 │   └── Text scope=25:27..25:34 literal="/message" children=0
-├── Paragraph scope=27:1..27:54 children=5
-│   ├── Text scope=0:0..0:0 literal="" children=0
+├── Paragraph scope=27:1..27:54 children=3
 │   ├── Link scope=27:1..27:26 destination="mailto:scyther@pokemon.com" title=null children=1
 │   │   └── Text scope=27:1..27:26 literal="mailto:scyther@pokemon.com" children=0
 │   ├── Text scope=27:27..27:27 literal="/" children=0
-│   ├── Link scope=27:28..27:54 destination="mailto:beedrill@pokemon.com" title=null children=1
-│   │   └── Text scope=27:28..27:54 literal="mailto:beedrill@pokemon.com" children=0
-│   └── Text scope=0:0..0:0 literal="" children=0
-├── Paragraph scope=29:1..29:24 children=3
-│   ├── Text scope=0:0..0:0 literal="" children=0
-│   ├── Link scope=29:1..29:24 destination="xmpp:scyther@pokemon.com" title=null children=1
-│   │   └── Text scope=29:1..29:24 literal="xmpp:scyther@pokemon.com" children=0
-│   └── Text scope=0:0..0:0 literal="" children=0
-├── Paragraph scope=31:1..31:25 children=3
-│   ├── Text scope=0:0..0:0 literal="" children=0
+│   └── Link scope=27:28..27:54 destination="mailto:beedrill@pokemon.com" title=null children=1
+│       └── Text scope=27:28..27:54 literal="mailto:beedrill@pokemon.com" children=0
+├── Paragraph scope=29:1..29:24 children=1
+│   └── Link scope=29:1..29:24 destination="xmpp:scyther@pokemon.com" title=null children=1
+│       └── Text scope=29:1..29:24 literal="xmpp:scyther@pokemon.com" children=0
+├── Paragraph scope=31:1..31:25 children=2
 │   ├── Link scope=31:1..31:24 destination="xmpp:scyther@pokemon.com" title=null children=1
 │   │   └── Text scope=31:1..31:24 literal="xmpp:scyther@pokemon.com" children=0
 │   └── Text scope=31:25..31:25 literal="." children=0
-├── Paragraph scope=33:1..33:32 children=3
-│   ├── Text scope=0:0..0:0 literal="" children=0
-│   ├── Link scope=33:1..33:32 destination="xmpp:scyther@pokemon.com/message" title=null children=1
-│   │   └── Text scope=33:1..33:32 literal="xmpp:scyther@pokemon.com/message" children=0
-│   └── Text scope=0:0..0:0 literal="" children=0
-├── Paragraph scope=35:1..35:33 children=3
-│   ├── Text scope=0:0..0:0 literal="" children=0
+├── Paragraph scope=33:1..33:32 children=1
+│   └── Link scope=33:1..33:32 destination="xmpp:scyther@pokemon.com/message" title=null children=1
+│       └── Text scope=33:1..33:32 literal="xmpp:scyther@pokemon.com/message" children=0
+├── Paragraph scope=35:1..35:33 children=2
 │   ├── Link scope=35:1..35:32 destination="xmpp:scyther@pokemon.com/message" title=null children=1
 │   │   └── Text scope=35:1..35:32 literal="xmpp:scyther@pokemon.com/message" children=0
 │   └── Text scope=35:33..35:33 literal="." children=0
-├── Paragraph scope=37:1..37:31 children=3
+├── Paragraph scope=37:1..37:31 children=2
 │   ├── Text scope=37:1..37:12 literal="Email me at:" children=0
-│   ├── Link scope=37:13..37:31 destination="mailto:scyther@pokemon.com" title=null children=1
-│   │   └── Text scope=37:13..37:31 literal="scyther@pokemon.com" children=0
-│   └── Text scope=0:0..0:0 literal="" children=0
+│   └── Link scope=37:13..37:31 destination="mailto:scyther@pokemon.com" title=null children=1
+│       └── Text scope=37:13..37:31 literal="scyther@pokemon.com" children=0
 ├── Paragraph scope=39:1..39:32 children=3
 │   ├── Link scope=39:1..39:14 destination="http://www.github.com" title=null children=1
 │   │   └── Text scope=39:1..39:14 literal="www.github.com" children=0
@@ -785,11 +761,9 @@ Document scope=1:1..63:32 children=32
 ├── Paragraph scope=51:1..51:51 children=1
 │   └── Image scope=51:1..51:51 source="http://inline.com/image" title=null children=1
 │       └── Text scope=51:3..51:25 literal="http://inline.com/image" children=0
-├── Paragraph scope=53:1..53:7 children=3
-│   ├── Text scope=0:0..0:0 literal="" children=0
-│   ├── Link scope=53:1..53:7 destination="mailto:a.w@b.c" title=null children=1
-│   │   └── Text scope=53:1..53:7 literal="a.w@b.c" children=0
-│   └── Text scope=0:0..0:0 literal="" children=0
+├── Paragraph scope=53:1..53:7 children=1
+│   └── Link scope=53:1..53:7 destination="mailto:a.w@b.c" title=null children=1
+│       └── Text scope=53:1..53:7 literal="a.w@b.c" children=0
 ├── Paragraph scope=55:1..55:68 children=3
 │   ├── Text scope=55:1..55:47 literal="Full stop outside parens shouldn't be included " children=0
 │   ├── Link scope=55:48..55:67 destination="http://google.com/ok" title=null children=1
@@ -801,17 +775,16 @@ Document scope=1:1..63:32 children=32
 │   │   └── Text scope=57:48..57:67 literal="http://google.com/ok" children=0
 │   └── Text scope=57:68..57:69 literal=".)" children=0
 ├── Paragraph scope=59:1..59:19 children=3
-│   ├── Text scope=59:1..59:0 literal="\"" children=0
+│   ├── Text scope=59:1..59:1 literal="\"" children=0
 │   ├── Link scope=59:2..59:18 destination="http://google.com" title=null children=1
 │   │   └── Text scope=59:2..59:18 literal="http://google.com" children=0
 │   └── Text scope=59:19..59:19 literal="\"" children=0
 ├── Paragraph scope=61:1..61:19 children=3
-│   ├── Text scope=61:1..61:0 literal="'" children=0
+│   ├── Text scope=61:1..61:1 literal="'" children=0
 │   ├── Link scope=61:2..61:18 destination="http://google.com" title=null children=1
 │   │   └── Text scope=61:2..61:18 literal="http://google.com" children=0
 │   └── Text scope=61:19..61:19 literal="'" children=0
-└── Paragraph scope=63:1..63:32 children=4
-    ├── Text scope=0:0..0:0 literal="" children=0
+└── Paragraph scope=63:1..63:32 children=3
     ├── Link scope=63:1..63:15 destination="http://🍄.ga/" title=null children=1
     │   └── Text scope=63:1..63:15 literal="http://🍄.ga/" children=0
     ├── Text scope=63:16..63:16 literal=" " children=0
@@ -1034,8 +1007,7 @@ Document scope=1:1..3:21 children=2
 │       └── Link scope=1:3..1:16 destination="http://www.google.com" title=null children=1
 │           └── Text scope=1:3..1:16 literal="www.google.com" children=0
 └── Paragraph scope=3:1..3:21 children=1
-    └── Strikethrough scope=3:1..3:21 children=2
-        ├── Text scope=0:0..0:0 literal="" children=0
+    └── Strikethrough scope=3:1..3:21 children=1
         └── Link scope=3:3..3:19 destination="http://google.com" title=null children=1
             └── Text scope=3:3..3:19 literal="http://google.com" children=0
 ````````````````````````````````
@@ -1055,15 +1027,13 @@ Document scope=1:1..3:58 children=1
     │   └── TableCell scope=1:6..1:8 children=1
     │       └── Text scope=1:7..1:7 literal="b" children=0
     └── TableRow scope=3:1..3:58 isHeader=false children=2
-        ├── TableCell scope=3:2..3:36 children=4
-        │   ├── Text scope=0:0..0:0 literal="" children=0
+        ├── TableCell scope=3:2..3:36 children=3
         │   ├── Link scope=3:3..3:20 destination="https://github.com" title=null children=1
         │   │   └── Text scope=3:3..3:20 literal="https://github.com" children=0
         │   ├── Text scope=3:21..3:21 literal=" " children=0
         │   └── Link scope=3:22..3:35 destination="http://www.github.com" title=null children=1
         │       └── Text scope=3:22..3:35 literal="www.github.com" children=0
-        └── TableCell scope=3:38..3:57 children=2
-            ├── Text scope=0:0..0:0 literal="" children=0
+        └── TableCell scope=3:38..3:57 children=1
             └── Link scope=3:39..3:56 destination="http://pokemon.com" title=null children=1
                 └── Text scope=3:39..3:56 literal="http://pokemon.com" children=0
 ````````````````````````````````

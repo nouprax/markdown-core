@@ -1204,10 +1204,15 @@ static void autolink_source_pos(test_batch_runner *runner) {
                      "    │   └── Text scope=1:5..1:22 literal=\"http://example.com\" children=0\n"
                      "    └── Text scope=1:23..1:23 literal=\".\" children=0\n",
                      "scheme autolink scopes are as expected");
+    /* An autolink at column one leaves NO prefix. This assertion used to pin the
+     * defect -- it asserted a `Text scope=0:0..0:0 literal=""` as expected
+     * output, a child with no bytes and no position, and a paragraph that said
+     * it had two children when it had one thing in it. 0a.14 removes the node;
+     * unpinning the assertion is the fix, the same shape as D10's
+     * `regression.txt` example 24 at 0a.2. */
     test_facade_dump(runner, "http://example.com\n", 1,
                      "Document scope=1:1..1:18 children=1\n"
-                     "└── Paragraph scope=1:1..1:18 children=2\n"
-                     "    ├── Text scope=0:0..0:0 literal=\"\" children=0\n"
+                     "└── Paragraph scope=1:1..1:18 children=1\n"
                      "    └── Link scope=1:1..1:18 destination=\"http://example.com\" title=null "
                      "children=1\n"
                      "        └── Text scope=1:1..1:18 literal=\"http://example.com\" children=0\n",
