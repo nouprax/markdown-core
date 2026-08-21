@@ -661,6 +661,38 @@ Nothing else. The port list is §4.1.
 
 ### Stage 1 — Make the parser pausable at line boundaries
 
+#### The flow, stated before anything else
+
+> **When line N+1 arrives, lines 1…N have already been processed. If the
+> parser's state has been preserved completely, handling line N+1 requires no
+> re-processing of those N lines whatsoever — the flow simply continues.**
+
+That is the whole of it, and everything in this stage is measured against it.
+Any design that re-walks, re-derives, re-parses or re-copies work proportional
+to the document already fed is off-model, however correct its output. The
+performance criterion T(document) = Σᵢ T(line i) is not an additional
+requirement layered on top; **it is what "the flow continues" means when you
+time it.**
+
+Two things follow, and both are measured rather than hoped:
+
+- **The block phase already does this.** Per-line feed cost is flat in *i* (252
+  → 210 ns by decile over 20,000 lines) and line-at-a-time agrees with one-call
+  on 13,566 line-boundary prefixes. Nothing about lines 1…N is touched when line
+  N+1 arrives. The flow is already continuous; the state is already preserved.
+- **`finish` is the only thing that breaks it**, and not because reading is
+  inherently expensive. It is because the engine **defers work it could have
+  done when the work first became possible.** A block's inlines can be parsed
+  the moment that block closes; deferring every block's inlines to the end is
+  what turns a per-block cost into a whole-tree pass. Measured: 4.48 / 12.22 /
+  31.53 ms at 5k / 20k / 80k lines, dead linear.
+
+So the refactor this stage names is not "make the close incremental". It is
+**do each block's work in the line that closes it.** Then nothing is ever
+re-processed, by construction rather than by optimisation, and what remains at
+the end is only the open spine — O(depth), which is not a function of the
+document.
+
 **Why this stage exists, stated first because it is not a milestone for its own
 sake.** Line-by-line append is the forcing function for the constitution: *the
 parser must preserve every piece of state that incremental parsing requires.*
@@ -2501,16 +2533,48 @@ Recorded as ledger entries **Q31–Q36**, continuing §9's numbering. Recommenda
 
 | id | Question | Recommendation |
 |---|---|---|
-| **Q31** | What is the public append and snapshot surface? | **Keep `markdown_core_parser_feed` byte-oriented and unchanged; add exactly one call, `markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *)`; leave `finish` as the terminator.** |
+| **Q31** | What is the public append surface? | **SETTLED by the owner, 2026-08-20:** `Document(markdown:)` and `document.append(chunk:) -> Document`. There is no separate snapshot call — **append returns the readable document.** The C surface serves that shape; it does not define it. |
 | **Q32** | Who owns a snapshot, and how long does it stay valid once more lines are fed? | **The caller owns it; it is a fully independent tree that aliases no parser memory and stays valid forever.** |
 | **Q33** | Is equality required after every prefix, or only at the end? | **After every prefix.** Keep partition-invariance as a regression gate. |
 | **Q34** | What is failure and OOM behaviour mid-stream? | **Split `oom` into a terminal "parse lost" bit and a per-call "snapshot failed" result, and expose a query for the former.** |
 | **Q35** | Do the bindings participate in Stage 1? | **No — C only** — with one shape constraint that applies now. |
 | **Q36** | What allocation bound accompanies the time bound? | **Two bounds, and the resident one gets its own slope gate.** |
 
-**Q31 — the surface.** `markdown_core_parser_feed` already splits on line ends internally (`core/blocks.c:862-930`) and already satisfies partition-invariance; making the public call line-oriented would buy nothing and would hand callers a framing problem the engine already solves. The line is Stage 1's *internal* unit. Add one call, returning an owned tree; a caller that has fed half a line gets a snapshot of the lines completed so far, and Stage 2 is what lifts that restriction. Do **not** overload `finish`: it must stay the one-way terminator, because everything downstream of `finalize_document` is one-way (H6, H8, H10) and because a caller needs to be able to say "this stream is over" distinctly from "show me what you have". Finish should also stop being a reset (H1) — a finished parser reports finished, and reuse is `parser_free` + `parser_new`.
+**Q31 — the surface, settled.** The owner's shape is
+`let document = Document(markdown: String)` and
+`let updated = document.append(chunk: String)`. Append *is* the read; there is
+no second call. What follows is the inventory's reasoning about the C surface
+beneath it, which stands except where it proposed a separate `snapshot()` —
+that proposal is superseded.
 
-**Q32 — ownership and validity.** A snapshot must be an **independent, fully-owned tree**, freed by the caller with `markdown_core_node_free`. The alternative — a borrowed view over live parser memory — is not merely risky, it is unimplementable: every inline literal borrows a block's `content` buffer that five mechanisms move (H5), table retypes and re-parents an open paragraph mid-line (`extensions/table.c:369-378,447`), formula's promotion frees the paragraph node it replaces (`extensions/formula.c:534-536`), and autolink edits a previously emitted sibling backwards (`extensions/autolink.c:313`). **No node pointer and no node identity is stable across a line boundary.** State the cost honestly in Q36: a snapshot is O(size of the snapshot), and a caller that snapshots every line pays Θ(l²) in *its own* allocation — which is fine, because it is the caller's choice and it is not the parser re-deriving anything.
+**A consequence that must be stated, because it is where this stage goes wrong
+if it is not.** If every append returns a document, and materialising a document
+costs O(document), then a caller appending *l* lines pays Θ(l²) — and it is no
+longer "the caller's choice", because the API gives them no other option. **The
+per-append cost must be O(line).** That is not a constraint the API imposes on
+the engine; it is the flow's own property, restated at the surface: continuing
+the flow costs the line, and nothing else. Whatever the C surface does, it may
+not make reading the document a function of the document's size.
+
+**Q31 (inventory's original reasoning on the C surface).** `markdown_core_parser_feed` already splits on line ends internally (`core/blocks.c:862-930`) and already satisfies partition-invariance; making the public call line-oriented would buy nothing and would hand callers a framing problem the engine already solves. The line is Stage 1's *internal* unit. Add one call, returning an owned tree; a caller that has fed half a line gets a snapshot of the lines completed so far, and Stage 2 is what lifts that restriction. Do **not** overload `finish`: it must stay the one-way terminator, because everything downstream of `finalize_document` is one-way (H6, H8, H10) and because a caller needs to be able to say "this stream is over" distinctly from "show me what you have". Finish should also stop being a reset (H1) — a finished parser reports finished, and reuse is `parser_free` + `parser_new`.
+
+**Q32 — ownership and validity. Superseded in part.** The inventory's answer
+below — an independent fully-owned tree per snapshot — is **correct about the
+hazards and wrong as a per-append default**, because under Q31's settled shape
+every append would pay it. Its own note concedes the arithmetic: *"a caller that
+snapshots every line pays Θ(l²)"*. Under the settled API that is not a caller's
+choice, so it is a violation of the flow.
+
+What survives, and it is the important half: **no node pointer and no node
+identity is stable across a line boundary today**, for five named reasons. That
+is a statement about the *engine*, not about the API, and it is a defect list
+for Stage 1 rather than a reason to copy. Making a closed block's nodes stable
+once closed is the same work as doing each block's work in the line that closes
+it — a block that is finished does not move again.
+
+The original reasoning follows.
+
+**Q32 (inventory's original reasoning).** A snapshot must be an **independent, fully-owned tree**, freed by the caller with `markdown_core_node_free`. The alternative — a borrowed view over live parser memory — is not merely risky, it is unimplementable: every inline literal borrows a block's `content` buffer that five mechanisms move (H5), table retypes and re-parents an open paragraph mid-line (`extensions/table.c:369-378,447`), formula's promotion frees the paragraph node it replaces (`extensions/formula.c:534-536`), and autolink edits a previously emitted sibling backwards (`extensions/autolink.c:313`). **No node pointer and no node identity is stable across a line boundary.** State the cost honestly in Q36: a snapshot is O(size of the snapshot), and a caller that snapshots every line pays Θ(l²) in *its own* allocation — which is fine, because it is the caller's choice and it is not the parser re-deriving anything.
 
 **Q33 — prefix or end.** Prefix, for the reason §11.6 gives: **partition-invariance is already true at HEAD**, measured over 808 prefixes across two corpora, so adopting the written form alone makes Stage 1 vacuous. Adopt the prose reading as criterion 1b — *the tree after k lines equals a one-shot parse of those k lines* — and keep 1a as a cheap regression gate. This is also the ruling that makes the late-resolution question well-posed at all: without 1b there is nothing for a definition to change, because nobody looks until the end.
 
