@@ -2642,7 +2642,32 @@ The original reasoning follows.
 
 **Q33 — prefix or end.** Prefix, for the reason §11.6 gives: **partition-invariance is already true at HEAD**, measured over 808 prefixes across two corpora, so adopting the written form alone makes Stage 1 vacuous. Adopt the prose reading as criterion 1b — *the tree after k lines equals a one-shot parse of those k lines* — and keep 1a as a cheap regression gate. This is also the ruling that makes the late-resolution question well-posed at all: without 1b there is nothing for a definition to change, because nobody looks until the end.
 
-**Q34 — failure mid-stream.** Today `parser->oom` is one bit meaning four things: the block phase lost an allocation, the inline phase did, an extension did, and "this parse is over". Under Stage 1 a fifth appears — a snapshot failed to allocate — and it must not be the same bit (H13): a snapshot's failure must leave the live parse alive and untouched, and the live parse's failure must not be reported by destroying the tree, which is what `finish` does today (`core/blocks.c:1697-1704`). Recommend: `snapshot()` returns NULL on its own allocation failure and sets nothing; a terminal parse loss sets a sticky bit that makes further `feed` a no-op (as now) and makes `snapshot()` and `finish()` both return NULL; and add a query so a caller can distinguish truncation from success without calling `finish`. Note that under the arena there is no OOM path at all — `alloc_arena_chunk` calls `abort()` (`core/arena.c:16,21`) — which is a fourth independent reason for Q12's deletion.
+**Q34 — failure mid-stream. SETTLED by the owner, 2026-08-20: `throws`.**
+
+`func append(chunk: String) throws -> Document`. And the shape carries a
+requirement that must not be assumed away: under value semantics, when the call
+throws, `updated` is never bound and **`document` is still in scope and must
+still be readable.** So a failed append may not leave the parser part-way
+through a line.
+
+> **Append is atomic.** Either the line's work is applied in full, or none of it
+> is and the parser stands exactly where it stood before the call.
+
+This is the opposite of what the engine does today, in three named ways:
+`finish` reports a terminal loss by **destroying the tree**
+(`core/blocks.c:1697-1704`); `parser->oom` is one sticky bit meaning four
+different things, written from 66 sites, 41 of them in extensions (C10); and
+under the arena there is no allocation-failure path at all — `alloc_arena_chunk`
+calls `abort()` (`core/arena.c:16,21`), which is a fifth independent reason for
+Q12's deletion.
+
+Atomicity is also the natural shape for the flow rather than an imposition on
+it: the line is already the unit of work, so "apply the line or don't" is the
+transaction the parser is already structured around. What it costs is that every
+allocation-failure point inside a line must either be moved before the first
+mutation, or be undoable. That is §4.13's question.
+
+**Q34 (inventory's original reasoning).** Today `parser->oom` is one bit meaning four things: the block phase lost an allocation, the inline phase did, an extension did, and "this parse is over". Under Stage 1 a fifth appears — a snapshot failed to allocate — and it must not be the same bit (H13): a snapshot's failure must leave the live parse alive and untouched, and the live parse's failure must not be reported by destroying the tree, which is what `finish` does today (`core/blocks.c:1697-1704`). Recommend: `snapshot()` returns NULL on its own allocation failure and sets nothing; a terminal parse loss sets a sticky bit that makes further `feed` a no-op (as now) and makes `snapshot()` and `finish()` both return NULL; and add a query so a caller can distinguish truncation from success without calling `finish`. Note that under the arena there is no OOM path at all — `alloc_arena_chunk` calls `abort()` (`core/arena.c:16,21`) — which is a fourth independent reason for Q12's deletion.
 
 **Q35 — bindings.** No. Three reasons: all three bindings copy into value types and free the handle, so a snapshot API costs a full deep copy per snapshot in each language and none of them can express a borrowed view even if Q32 allowed one; the ABI window is Step 12, after Stage 1; and Stage 1's gate is a timing slope on the C library, which no binding participates in. **One constraint applies now regardless:** Stage 1 must not adopt a C shape the bindings cannot express later — no borrowed views, no callback-driven feed, no snapshot whose validity is scoped to a parser generation. The surface added at 3.0 must be the same shape as the C one.
 
