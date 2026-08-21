@@ -1399,6 +1399,66 @@ requirements rather than sources. Step 8 in particular is no longer "port the
 delimiter engine or defer it"; it is the open question of what the inline phase
 must guarantee and whether meeting those guarantees needs an engine at all.
 
+### 4.11 There are no options
+
+**Owner ruling, 2026-08-20 (Q14):** *"delete all options, it is inherited from
+cmark, no meaning to preserve it."*
+
+The whole surface goes — the twelve `MARKDOWN_CORE_OPT_*` bits in the core
+header and all eleven fields of the public `markdown_core_parse_options`. The
+engine parses Markdown one way.
+
+**Which behaviour survives is not a question**, and this is why the ruling costs
+nothing to execute: `markdown_core_parse_options_init` sets **every field to
+`true`** (`extensions/ast.c`), and the facade sets `VALIDATE_UTF8`
+unconditionally. So the shipped product already has exactly one behaviour, and
+deleting the switches makes the code say what the product already does. Smart
+punctuation on, UTF-8 validated, HTML comments classified, both formula
+delimiter sets live, footnotes and directives on.
+
+**Extension attachment is the only remaining lever, and it is not an option** —
+it is which grammar the parser was built with, fixed at compile time by the
+descriptor table (Step 3), ordered by Q9 with `table` last.
+
+Three consequences:
+
+- **R5 and R6 dissolve.** They asked whether removing `VALIDATE_UTF8` and
+  `strip_html_comments` was a cleanup or a product change. Neither is a
+  decision now; both behaviours are unconditional.
+- **The `--profile` flag added at Step 0 loses its reason.** It exists to select
+  an option set for the parity harness. With one behaviour, `gfm` and
+  `gfm-extended` differ only by which extensions are compiled in, and the flag
+  becomes a build question rather than a runtime one. Step 3 must say what
+  replaces it before the harness breaks.
+- **The option-gate fixtures stop testing anything** —
+  `extensions-formula-option-gates.txt` and `extensions-directive-option-gates.txt`
+  describe gates that will not exist. They are whitelisted oracles (§4.9), so
+  they are read for the *grammar* they pin and then retired, not carried.
+
+### 4.12 Every defect is fixed before any other task
+
+**Owner ruling, 2026-08-20 (Q25):** *"fix all defects before start any tasks."*
+
+This generalises the question that was asked. It is not only D16's two sites:
+**every one of the twenty-five defects that can be fixed on the untouched
+baseline moves into Stage 0a**, including those §2 currently assigns to Steps 3,
+5, 7, 8, 9a, 10 and 14.
+
+Ten were already proved fixable there (D1–D8, D10, D11), and D17 is fixed. The
+remaining fourteen — D12, D13, D14, D15, D16, D18, D19, D20, D21, D22, D23, D24,
+D25 — must each be put to the same test that settled the first ten: **applied to
+the untouched baseline with no other step landed, built, run against every gate,
+and reverted.** A defect that passes that test belongs in Stage 0a. A defect
+that fails it is a defect with a *real* architectural dependency, and it must be
+named with the dependency and pinned by a known-red gate meanwhile, exactly as
+D9 is.
+
+**D9 remains the one known exception**, and its exemption is measured rather
+than assumed: its budget is the only thing between a resolved reference and
+68.7 GB of output from 1 MiB of input, because resolving a reference copies the
+destination into the node. It is fixed by deleting the copy, which is 9a's model
+change, and by nothing smaller.
+
 ### 4.10 The release from this base is 3.0
 
 **Owner ruling, 2026-08-20.** There is no 1.0.4 release. The version moves to
@@ -2089,11 +2149,11 @@ which is why they kept getting re-argued:
 |---|---|---|---|---|
 | **Q8** | May the reconstruction take code from existing commits? | **SETTLED 2026-08-20 — NO.** See §4.9. Ignore every existing commit except the formula fix and the directive syntax fix. Everything else is designed and written fresh. | owner | the entire port list |
 | **Q9** | What is the extension attach order? (D15) | **SETTLED 2026-08-20 — table LAST, with a test.** A decided order, not an inheritance: a table's row opener matches any line inside an open table, so every narrower claim attaches first. D15's CLI/facade disagreement is fixed in the same step. | owner | Step 3, 0a.5 |
-| **Q11–Q29** | Nineteen decisions the requirement restatement exposed | **PROPOSED**, each with a recommendation in §4.1.6 | §4.1.6 | their owning steps |
-| ↳ **Q14** | One knob per extension, or two? Attachment as the language, deleting the option surface. | **PROPOSED — owner's call.** It deletes public options; 3.0 permits it. | §4.1.6 | 3, 6, 7 |
-| ↳ **Q24** | Is the concrete view opt-in? Recommended: a parse option defaulting true, ~2% cost. | **PROPOSED — owner's call.** A default-on cost every caller pays. | §4.1.6 | 12 |
-| ↳ **Q25** | Do D16's two site fixes move into 0a.7? | **PROPOSED — owner's call**, and §4.1.6 says so: Stage 0a is otherwise complete. | §4.1.6 | 14, 0a.7 |
-| ↳ **Q26** | Do `Link.destination`, `Image.source`, `ReferenceDefinition.destination` stay optional? | **PROPOSED — owner's call.** Q7 already made the definition's required; this is whether the other two follow. | §4.1.6 | 9b, 14 |
+| **Q11–Q29** | Nineteen decisions the requirement restatement exposed | **PROPOSED** unless listed below, each with a recommendation in §4.1.6 | §4.1.6 | their owning steps |
+| **Q14** | The option surface | **SETTLED 2026-08-20 — DELETE ALL OF IT.** See §4.11. | owner | 3, 6, 7, 12, 15 |
+| **Q24** | Is the concrete view opt-in? | **SETTLED 2026-08-20 — NO. It is not optional; it is part of the model.** Diagnostics on directive attributes have nowhere to point without it. | owner | 12, 13 |
+| **Q25** | When are defects fixed? | **SETTLED 2026-08-20 — ALL of them, before any other task.** Not just D16's two sites: every defect that *can* be fixed at the baseline moves into Stage 0a. See §4.12. | owner | Stage 0a |
+| **Q26** | Do `Link.destination`, `Image.source`, `ReferenceDefinition.destination` stay optional? | **SETTLED 2026-08-20 — NO, all three are required.** Q7's argument generalises: a value reachable only through allocation loss is not optionality, it is a node that lies. | owner | 9b, 14 |
 | **Q10** | Does 1.0.4 ship? | **SETTLED 2026-08-20 — NO.** The release from this base is **3.0**. 1.0.4 is an internal alignment marker only, carrying no release obligation. | owner | see §4.10 |
 
 | ID | Question | Recommendation |
