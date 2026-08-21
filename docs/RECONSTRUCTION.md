@@ -1408,13 +1408,51 @@ The whole surface goes — the twelve `MARKDOWN_CORE_OPT_*` bits in the core
 header and all eleven fields of the public `markdown_core_parse_options`. The
 engine parses Markdown one way.
 
-**Which behaviour survives is not a question**, and this is why the ruling costs
-nothing to execute: `markdown_core_parse_options_init` sets **every field to
-`true`** (`extensions/ast.c`), and the facade sets `VALIDATE_UTF8`
-unconditionally. So the shipped product already has exactly one behaviour, and
-deleting the switches makes the code say what the product already does. Smart
-punctuation on, UTF-8 validated, HTML comments classified, both formula
-delimiter sets live, footnotes and directives on.
+**Which behaviour survives is not a question for ten of the eleven**, and that
+is why most of this ruling costs nothing to execute:
+`markdown_core_parse_options_init` sets **every field to `true`**
+(`extensions/ast.c`), so the shipped product already has one behaviour and
+deleting the switches makes the code say what it already does. Smart punctuation
+on, HTML comments classified, both formula delimiter sets live, footnotes and
+directives on.
+
+**UTF-8 is the exception, and it is decided the other way.**
+
+> **Owner ruling, 2026-08-20:** *"For UTF-8 we follow cmark's practice, assume
+> input is UTF-8 but do not validate it."*
+
+The facade sets `VALIDATE_UTF8` unconditionally today, so this is a real
+behaviour change and not a deletion of a switch nobody moved — an earlier draft
+of this section claimed the whole ruling was free, and for this option that was
+wrong. `markdown_core_utf8proc_check` (`core/utf8.c`), reached from
+`S_process_line` (`core/blocks.c:1591`), **rewrites the input**: every invalid
+sequence becomes a three-byte U+FFFD before the parser ever sees the line.
+Deleting it means invalid bytes reach the tree's literals unchanged.
+
+**The measured consequence is positional, and it is an argument for the ruling
+rather than a cost of it.** On `caf<0xE9> x`: validating gives
+`Text scope=1:1..1:8`, not validating gives `1:1..1:6`. The six is the truth —
+the user's line is six bytes. Validation lengthens it to eight and every column
+after the invalid byte then names a place in a buffer the author never wrote.
+**Not validating is what makes a position honest about the actual input**, which
+is the same principle §5 applies to labels and §11 to spans.
+
+Two things do **not** change, and both matter:
+
+- **NUL still becomes U+FFFD.** That substitution lives in `S_parser_feed`
+  (`core/blocks.c`), not in the validator, and it is required by CommonMark.
+  Verified: `a\0b` yields `a<U+FFFD>b` with validation off.
+- **No fixture in the repository contains invalid UTF-8**, so no golden moves.
+  Checked with a strict decoder over all 24 fixture and oracle files, not with
+  `iconv`, which fails on macOS for an unrelated ioctl reason and reports two
+  false positives. The change is observable only on input this corpus does not
+  contain — which is exactly why it needs a fixture of its own, in the step that
+  lands it.
+
+Downstream, each binding already repairs invalid bytes on decode — Swift's
+`String(decoding:as:UTF8.self)`, JavaScript's `TextDecoder`, and Kotlin's
+`String(ByteArray)` all substitute U+FFFD. The engine stops doing a job its
+consumers do anyway, and stops corrupting positions to do it.
 
 **Extension attachment is the only remaining lever, and it is not an option** —
 it is which grammar the parser was built with, fixed at compile time by the
