@@ -120,7 +120,20 @@ static int set_formula_literal_bytes(markdown_core_node *node, const unsigned ch
     formula->literal.data = (unsigned char *)data;
     formula->literal.len = len;
     formula->literal.alloc = 0;
-    markdown_core_chunk_to_cstr(markdown_core_node_mem(node), &formula->literal);
+    if (!markdown_core_chunk_to_cstr(markdown_core_node_mem(node), &formula->literal)) {
+        /* THE BORROW MUST NOT SURVIVE THE COPY FAILING. `data` belongs to the
+         * caller and dies immediately: `make_backslash_delimited_formula` frees
+         * its strbuf on the next statement, `replace_with_formula_block` frees
+         * the whole old code block, and `postprocess_node` clears the node's own
+         * content. Keeping a borrowed pointer past that is a use-after-free that
+         * every later read of the literal walks into -- ASan: heap-use-after-free
+         * in markdown_core_extensions_get_formula_literal -- and `parser->oom`
+         * stayed 0, so nothing downstream knew. Drop the borrow and say so; the
+         * callers turn the 0 into the loss flag. */
+        markdown_core_chunk empty = MARKDOWN_CORE_CHUNK_EMPTY;
+        formula->literal = empty;
+        return 0;
+    }
     return 1;
 }
 
@@ -151,7 +164,11 @@ static markdown_core_node *make_formula_node(markdown_core_syntax_extension *ext
     }
 
     get_formula(node)->mode = mode;
-    set_formula_literal_bytes(node, literal, literal_len);
+    if (!set_formula_literal_bytes(node, literal, literal_len)) {
+        parser->oom = true;
+        markdown_core_node_free(node);
+        return NULL;
+    }
     return node;
 }
 
@@ -520,7 +537,10 @@ static markdown_core_node *new_formula_block_from_literal(markdown_core_syntax_e
     formula->start_column = oldnode->start_column;
     formula->end_line = oldnode->end_line;
     formula->end_column = oldnode->end_column;
-    set_formula_literal_trimmed(formula, literal, literal_len);
+    if (!set_formula_literal_trimmed(formula, literal, literal_len)) {
+        markdown_core_node_free(formula);
+        return NULL;
+    }
     return formula;
 }
 
@@ -547,7 +567,11 @@ static void postprocess_node(markdown_core_syntax_extension *extension, markdown
     if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(node);
         if (formula && !formula->literal.data) {
-            set_formula_literal_trimmed(node, node->content.ptr, node->content.size);
+            /* The literal is copied OUT of `node->content` and the content is
+             * then cleared, so a failed copy would leave the chunk borrowing a
+             * buffer this very statement empties. */
+            if (!set_formula_literal_trimmed(node, node->content.ptr, node->content.size))
+                parser->oom = true;
             markdown_core_strbuf_clear(&node->content);
         }
         return;

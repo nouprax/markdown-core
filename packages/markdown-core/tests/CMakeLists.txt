@@ -230,8 +230,14 @@ markdown_core_add_test(regression_commonmark regression 120 spec_runner --spec
 # byte-key index keep hash-path duplicate semantics; probe exhaustion grows
 # the table once before falling back.
 if(MARKDOWN_CORE_STATIC)
-    set(MARKDOWN_CORE_FALLBACK_CASES reference_sorted_fallback directive_sorted_fallback key_index_probe_growth
-                                     map_prepare_oom constructor_oom oom_sweep)
+    set(MARKDOWN_CORE_FALLBACK_CASES
+        reference_sorted_fallback
+        directive_sorted_fallback
+        key_index_probe_growth
+        map_prepare_oom
+        constructor_oom
+        oom_sweep
+        formula_literal_borrow)
     foreach(case IN LISTS MARKDOWN_CORE_FALLBACK_CASES)
         markdown_core_add_test(regression_fallback_${case} regression 240 fallback_runner --case ${case})
     endforeach()

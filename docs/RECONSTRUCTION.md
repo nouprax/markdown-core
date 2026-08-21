@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.14 |
+| Landed | Steps 0 and 1, §4.0's re-ordering, and **all of Stage 0a**, 0a.0 through 0a.15 |
 | Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Stage 0a**, §4.2, at **0a.15** — D28 and D29, the last two defects in the stage; see §4.2.3 |
+| Next action | **§4.8's Stage 0 acceptance checklist**, then §4.1's steps in the order §4.1.4 verifies. Every defect §2 names is closed or carried with an owner |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -46,9 +46,9 @@ cmake --preset default && cmake --build --preset default --parallel
 cmake --preset asan    && cmake --build --preset asan    --parallel
 cmake --preset ubsan   && cmake --build --preset ubsan   --parallel
 
-ctest --preset correctness -j 8            # 67/67
-ctest --preset correctness-asan -j 8       # 58/58 — SEE THE WARNING BELOW
-ctest --preset correctness-ubsan -j 8      # 58/58 — SEE THE WARNING BELOW
+ctest --preset correctness -j 8            # 68/68
+ctest --preset correctness-asan -j 8       # 59/59 — SEE THE WARNING BELOW
+ctest --preset correctness-ubsan -j 8      # 59/59 — SEE THE WARNING BELOW
 node scripts/check-canonical-ast-fixtures.mjs   # 28 kinds, 47 fields, 6 cases
 bash scripts/audit-public-surface.sh
 node scripts/audit-extension-special-chars.mjs   # 4 extensions, 5 sentinels
@@ -392,8 +392,8 @@ ones whose witness is stated in this section rather than in the row.
 | D24 | `tasklist` decides `checked` by `strstr` over the whole line | wrong-output | **fixed at 0a.11** | `- [ ] see [x] below` → `checked=true` |
 | D25 | a `FootnoteReference` label can be a **dangling pointer**, read on every lookup | **use-after-free** | 0a.2 | ASan: `heap-use-after-free`, READ of size 1 in `markdown_core_map_lookup (map.c:279)`, freed by `handle_close_bracket (inlines.c:1384)` |
 | D27 | `parser->linebuf.oom` written at six sites and read at none | silent truncation (allocation failure only) | 3a, with A1 | §4.13.11, measured: 244 input bytes become 102 with `parser->oom == 0` |
-| D28 | `extensions/formula.c` ignores `markdown_core_chunk_to_cstr`'s failure and keeps a **borrowed** pointer | **use-after-free** | **0a — UNSCHEDULED, see below** | §4.13.11, ASan: `heap-use-after-free`, READ of size 5 in `markdown_core_extensions_get_formula_literal` |
-| D29 | `extensions/table.c:297` does not check `markdown_core_node_new_with_mem`, and `:305` dereferences NULL | **crash** | **0a — UNSCHEDULED, see below** | §4.13.11, SIGSEGV on `lead text⏎x | y` / `--|--` |
+| D28 | `extensions/formula.c` ignores `markdown_core_chunk_to_cstr`'s failure and keeps a **borrowed** pointer | **use-after-free** | **fixed at 0a.15** | §4.13.11, ASan: `heap-use-after-free`, READ of size 5 in `markdown_core_extensions_get_formula_literal` |
+| D29 | `extensions/table.c:297` does not check `markdown_core_node_new_with_mem`, and `:305` dereferences NULL | **crash** | **fixed at 0a.15** | §4.13.11, SIGSEGV on `lead text⏎x | y` / `--|--` |
 | D30 | `markdown_core_reference_create` commits an entry whose url or title was lost | wrong-document (allocation failure only) | 9a/11c delete it; §4.13.9 pins it | §4.13.11, measured on four refused allocations |
 | D31 | a raw HTML tag that crosses a line ending ends **one column short of its own literal** | wrong-position | 8 | found at 0a.6 and pinned as a golden row: `a <b`⏎`c> d` gives `HTML scope=1:3..2:1` for a literal whose last byte is at `2:2`, while `a <b c> d` gives `1:3..1:7`, which covers it. cmark-gfm is wrong the same way |
 | D32 | a **backslash hard break** consumes a line ending without telling the subject, so every later node in the paragraph keeps the break's own line | wrong-position | **fixed at 0a.12** | found at 0a.12 while measuring D26: `foo\`⏎`bar` gives `Text 1:6..1:8` — three columns that do not exist on a four-character line 1. `handle_backslash`'s hard-break branch calls `skip_line_end` and then `make_simple_subj` without `handle_newline`'s `++subj->line; column_offset = -pos`. cmark-gfm reports the same numbers. **5 registered `multi-line-span` findings, all of them attributed by the ledger to a defect that could not close them** |
@@ -1330,7 +1330,7 @@ Three rows move — two in `extensions-directive.txt` example 16 (the inner `:::
 1. **The upstream red is the oracle, not the fix, and clearing it is a decision.** `check-upstream-parity.mjs` reads 784/795 without it: **cmark-gfm emits the empty text node too**, verified directly, and 11 corpus inputs diverge (8 autolink, 3 hard-break/shortcut-reference). This is the history already recorded in `specs/mdast-parity/deltas.json` under `empty-text-node` — *"suppressing it here failed `scripts/check-upstream-parity.mjs`, which is how this was classified as a shape delta rather than a defect"* — reproduced. Registering it costs one normalizer projection (drop an empty-literal `Text` from **both** sides in `scripts/lib/upstream-cmark.mjs`), one `NORMALIZED_DELTAS` name and one `deltas.json` entry of kind `deliberate-difference`: **795/795, green.** That is **Q38**, and §4.1's Step 5 row should have said so from the start rather than leaving it to be discovered at Step 5. The `specs/mdast-parity/deltas.json` `empty-text-node` entry goes half-stale in the same moment and is updated here.
 2. **The free happens at `ENTER`, and that is legal today for a reason Step 5 removes.** `TEXT` is a leaf, so `S_is_leaf` suppresses its `EXIT` and `markdown_core_iter_next` has already computed `iter->next` past it. When Step 5 makes the event contract **total**, every node gets an `EXIT` and the rule "only the node whose `EXIT` is current may be freed" makes this free illegal. Step 5 must move it, or state that a leaf's `ENTER` *is* its `EXIT` for mutation purposes. Write that into the commit and into Step 5's row.
 
-**0a.15 — D28 and D29, the two memory-unsafety defects §4.13 added after this list was written.** Added 2026-08-21, before 0a.11, per §2's standing instruction; the reproductions and the argument for landing it *last* are in §2 beside the defect index. Neither fix moves a golden row and neither is reachable without an injected allocation failure, so it does not interact with 0a.12–0a.14's regenerations.
+**0a.15 — D28 and D29, the two memory-unsafety defects §4.13 added after this list was written. LANDED; §4.2.22 records it, and there were FIVE unchecked allocations, not four.** Added 2026-08-21, before 0a.11, per §2's standing instruction; the reproductions and the argument for landing it *last* are in §2 beside the defect index. Neither fix moves a golden row and neither is reachable without an injected allocation failure, so it does not interact with 0a.12–0a.14's regenerations.
 
 - **D29** (`extensions/table.c`, `try_inserting_table_header_paragraph`): check `markdown_core_node_new_with_mem` before `markdown_core_node_set_string_content`. Two neighbours travel with it and are named in §4.13.11 — the `!paragraph_content` path frees the lead paragraph and returns without setting `parser->oom`, and the failed-insert path frees the node with `mem->free` instead of `markdown_core_node_free`, leaking its content buffer.
 - **D28** (`extensions/formula.c`, `set_formula_literal_bytes`): `markdown_core_chunk_to_cstr` returning NULL must be a failure, not ignored — a borrowed chunk that could not be copied outlives its buffer at all three sites (`:154` via `make_formula_node`, `:523` via `new_formula_block_from_literal`, `:550` via `postprocess_node`).
@@ -2666,6 +2666,87 @@ a ninth registered delta · mdast **54/54**, backlog **24/24** · fuzz-parity
 **300/300** · scope-sanity **14** · position oracles **0 / 45 / 109** ·
 reference-order 2 rows, still red · canonical-ast 28/47/6 · public surface ·
 attach order · plan graph 22/45 · topology · format-c · format-cmake.
+
+---
+
+#### 4.2.22 0a.15 landed: five unchecked allocations, not four, and a gate that reads what no other gate reads
+
+**D29 — `try_inserting_table_header_paragraph` (`extensions/table.c`).** §4.13.11
+names three problems and there are **five**, because two allocations it did not
+name are unchecked in the same twelve lines:
+
+| # | what | consequence |
+|---|---|---|
+| 1 | `markdown_core_node_new_with_mem` unchecked | **SIGSEGV** — the NULL reaches `markdown_core_node_set_string_content`, which dereferences it |
+| 2 | `unescape_pipes` returning NULL | the lead paragraph is dropped and `parser->oom` stays clear |
+| 3 | the failed insert frees with `mem->free` | the node's content buffer leaks |
+| 4 | **`unescape_pipes` returning a POISONED buffer** | *not named anywhere.* It hands back `res` with `res->oom` set rather than NULL, and the caller copies whatever fitted |
+| 5 | **`markdown_core_node_set_string_content` cannot fail** | it returns `true` unconditionally, so a poisoned `node->content` is invisible unless the caller reads the flag itself |
+
+**(4) and (5) were found by the gate, on its first run**, and they are the
+interesting ones: with (1)–(3) fixed the sweep still reported *"allocation
+139 / 429: lossy document reported as success"* with the lead paragraph's text
+missing entirely. That is precisely the failure mode §4.13.9 built the sweep
+for — a wrong document with the failure bit clear — and it is why "fix the three
+things the doc names" would have shipped a hole.
+
+**D28 — `set_formula_literal_bytes` (`extensions/formula.c`).** The chunk is
+pointed at a **borrowed** buffer and `markdown_core_chunk_to_cstr` is then asked
+to copy it; the failure was ignored, so the borrow survived and the owner died
+on the next statement — `make_backslash_delimited_formula` frees its strbuf,
+`replace_with_formula_block` frees the whole old code block, `postprocess_node`
+clears the node's own content. The fix drops the borrow and returns 0, and all
+**three** call sites now propagate it (`make_formula_node`,
+`new_formula_block_from_literal`, `postprocess_node`).
+
+##### The sweep could not see D28, and the reason is structural
+
+`case_oom_sweep` compares trees with a deliberately **allocation-free**
+comparator — the sweep allocator is still armed during the comparison, so the
+comparator must not allocate, and the public literal accessors do. It therefore
+never touches an **extension payload**, and a formula's literal is exactly that.
+Measured: with D28 reverted and the corpus additions in place, `correctness`
+reads **68/68** and the sweep **passes**. Nothing crashes, because nothing reads
+the dangling pointer.
+
+So 0a.15 adds a seventh fallback case, **`formula_literal_borrow`**, which reads
+the literal through the public accessor with the sweep allocator **disarmed for
+the read** — arming it during the comparison would inject a second failure into
+the measurement. Reverting D28 against it gives, under `default`,
+*"allocation 18 / 23: formula literal lost or changed in a successful parse"*,
+and under ASan **§4.13.11's witness character for character**:
+`heap-use-after-free`, `READ of size 5`, in
+`markdown_core_extensions_get_formula_literal` at `formula.c:61`.
+
+##### The corpus additions, and why the sweep was blind before
+
+`FB_SWEEP_CORPUS` carried a table and an info-string fence, and neither of the
+two shapes that matter: **a paragraph a table splits its header row out of**
+(no blank line between), and a ```` ```formula ```` fence. Both are added with
+the reason written beside them. The sweep's own contract — *each injected failure
+must either surface as a failed parse or leave the output byte-identical to the
+control* — was already the right assertion; it simply had nothing to assert it
+over.
+
+##### Mutant kills
+
+| mutant | result |
+|---|---|
+| D29's unchecked `markdown_core_node_new_with_mem` | `regression_fallback_oom_sweep` **SEGFAULT** |
+| D29's poisoned-buffer check | `oom_sweep` fails: *lossy document reported as success*, lead text missing |
+| D28's ignored copy failure | `formula_literal_borrow` fails at allocation 18/23; under ASan, `heap-use-after-free` READ of size 5 |
+| D28, with `formula_literal_borrow` absent | **nothing** — 68/68 and the sweep green. That is the case for the new gate |
+
+##### Gates after
+
+`correctness` **68/68** · `correctness-asan` **59/59** · `correctness-ubsan`
+**59/59** (the counts grew by one: the new fallback case) · `conformance` 2/2 ·
+upstream parity **817/817** with 7/7 · mdast **54/54**, backlog **24/24** ·
+fuzz-parity 300/300 · scope-sanity 14 · position oracles 0 / 45 / 109 ·
+reference-order 2 rows, still red · canonical-ast 28/47/6 · public surface ·
+special chars · attach order · plan graph 22/45 · topology · format-c ·
+format-cmake. **Zero golden rows moved**, which is what an allocation-failure
+fix should move.
 
 ---
 

@@ -518,6 +518,28 @@ static const char FB_SWEEP_CORPUS[] =
     "code block\n"
     "```\n"
     "\n"
+    /* D28: the ```formula retype. `replace_with_formula_block` copies the OLD
+     * code block's literal into the new node and then frees the old node, so a
+     * refused copy left the formula chunk borrowing freed memory -- ASan:
+     * heap-use-after-free, READ of size 5, in
+     * markdown_core_extensions_get_formula_literal, with parser->oom == 0. The
+     * corpus had an info string but never this one, so the sweep could not see
+     * it. */
+    "```formula\n"
+    "x^2\n"
+    "```\n"
+    "\n"
+    /* D29: a paragraph the table extension splits its header row out of. Four
+     * allocations in try_inserting_table_header_paragraph were unchecked; the
+     * first was a SIGSEGV (an unchecked node reaching
+     * markdown_core_node_set_string_content) and the other three dropped the
+     * lead paragraph without setting parser->oom. The corpus has tables, but
+     * never one that interrupts a paragraph with no blank line between. */
+    "lead text\n"
+    "| a | b |\n"
+    "| - | - |\n"
+    "| 1 | 2 |\n"
+    "\n"
     "$$\n"
     "x^2\n"
     "$$\n"
@@ -675,6 +697,128 @@ done:
     return result;
 }
 
+/* The generic sweep above compares trees with an allocation-free comparator, so
+ * it never touches an EXTENSION payload -- and a formula's literal is exactly
+ * that. D28 lived in the gap: `set_formula_literal_bytes` pointed the chunk at a
+ * borrowed buffer, ignored `markdown_core_chunk_to_cstr` failing, and left the
+ * borrow in place while the owner was freed on the next statement. Nothing
+ * crashed until somebody READ the literal, and nothing in this file ever did.
+ *
+ * So this case reads it, through the public accessor, with the sweep allocator
+ * DISARMED for the read -- the accessor allocates, and arming it during the
+ * comparison would inject a second failure into the measurement. */
+static const char FB_FORMULA_CORPUS[] = "```formula\n"
+                                        "x+y+z\n"
+                                        "```\n"
+                                        "\n"
+                                        "$$\n"
+                                        "a*b\n"
+                                        "$$\n";
+
+static markdown_core_node *fb_formula_parse(markdown_core_mem *mem) {
+    markdown_core_parser *parser = markdown_core_parser_new_with_mem(
+        MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS | MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS, mem);
+    markdown_core_syntax_extension *extension;
+    markdown_core_node *root;
+
+    if (!parser)
+        return NULL;
+    extension = markdown_core_find_syntax_extension("formula");
+    if (!extension || !markdown_core_parser_attach_syntax_extension(parser, extension)) {
+        markdown_core_parser_free(parser);
+        return NULL;
+    }
+    markdown_core_parser_feed(parser, FB_FORMULA_CORPUS, strlen(FB_FORMULA_CORPUS));
+    root = markdown_core_parser_finish(parser);
+    markdown_core_parser_free(parser);
+    return root;
+}
+
+/* Concatenates every formula literal in the tree, in document order. Returns 0
+ * when a node claims to be a formula and cannot say what it holds. */
+static int fb_formula_literals(markdown_core_node *root, markdown_core_strbuf *out) {
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type ev;
+    int ok = 1;
+
+    if (!iter)
+        return 0;
+    while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        const char *literal;
+        if (ev != MARKDOWN_CORE_EVENT_ENTER)
+            continue;
+        if (strcmp(markdown_core_node_get_type_string(node), "formula") != 0 &&
+            strcmp(markdown_core_node_get_type_string(node), "formula_block") != 0)
+            continue;
+        literal = markdown_core_extensions_get_formula_literal(node);
+        if (!literal) {
+            ok = 0;
+            continue;
+        }
+        markdown_core_strbuf_puts(out, literal);
+        markdown_core_strbuf_putc(out, 0x1f);
+    }
+    markdown_core_iter_free(iter);
+    return ok;
+}
+
+static int case_formula_literal_borrow(void) {
+    markdown_core_mem *plain = markdown_core_get_default_mem_allocator();
+    markdown_core_strbuf control = MARKDOWN_CORE_BUF_INIT(plain);
+    markdown_core_strbuf measured = MARKDOWN_CORE_BUF_INIT(plain);
+    markdown_core_node *root;
+    unsigned long total, k;
+    int result = -1;
+
+    markdown_core_core_extensions_ensure_registered();
+
+    root = fb_formula_parse(plain);
+    if (!root || !fb_formula_literals(root, &control) || control.size == 0) {
+        fputs("control formula parse failed\n", stderr);
+        if (root)
+            markdown_core_node_free(root);
+        goto done;
+    }
+    markdown_core_node_free(root);
+
+    fb_sweep_count = 0;
+    fb_sweep_fail_at = 0;
+    root = fb_formula_parse(&fb_sweep_mem);
+    if (root)
+        markdown_core_node_free(root);
+    total = fb_sweep_count;
+    if (total == 0 || total > 200000UL) {
+        fprintf(stderr, "implausible allocation count %lu\n", total);
+        goto done;
+    }
+
+    for (k = 1; k <= total; k++) {
+        fb_sweep_count = 0;
+        fb_sweep_fail_at = k;
+        fb_sweep_fired = 0;
+        root = fb_formula_parse(&fb_sweep_mem);
+        if (!root)
+            continue;
+        /* Disarm before reading: the accessor allocates. */
+        fb_sweep_fail_at = 0;
+        markdown_core_strbuf_clear(&measured);
+        if (!fb_formula_literals(root, &measured) || measured.size != control.size ||
+            memcmp(measured.ptr, control.ptr, (size_t)control.size) != 0) {
+            fprintf(stderr, "allocation %lu / %lu: formula literal lost or changed in a successful parse\n", k, total);
+            markdown_core_node_free(root);
+            goto done;
+        }
+        markdown_core_node_free(root);
+    }
+    result = 0;
+done:
+    fb_sweep_fail_at = 0;
+    markdown_core_strbuf_free(&control);
+    markdown_core_strbuf_free(&measured);
+    return result;
+}
+
 typedef struct fb_case_entry {
     const char *name;
     int (*run)(void);
@@ -687,6 +831,7 @@ static const fb_case_entry FB_CASES[] = {
     {"map_prepare_oom", case_map_prepare_oom},
     {"constructor_oom", case_constructor_oom},
     {"oom_sweep", case_oom_sweep},
+    {"formula_literal_borrow", case_formula_literal_borrow},
 };
 
 int main(int argc, char **argv) {

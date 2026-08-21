@@ -294,20 +294,46 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     markdown_core_node *paragraph;
     markdown_core_strbuf *paragraph_content;
 
+    // Four allocations, and every one of them used to be trusted. The first was
+    // a crash: an unchecked node reached markdown_core_node_set_string_content,
+    // which dereferences it -- SIGSEGV on `lead text` above a two-column table
+    // with the allocation refused. The other three lose the lead paragraph
+    // WITHOUT setting parser->oom, so the document comes back short and the
+    // failure bit says everything was fine.
     paragraph = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+    if (!paragraph) {
+        parser->oom = true;
+        return;
+    }
 
     paragraph_content = unescape_pipes(parser->mem, parent_string, paragraph_offset);
-    if (!paragraph_content) {
+    /* `unescape_pipes` hands back a POISONED buffer rather than NULL when a put
+     * fails, and its content is then whatever fitted -- the sweep caught the
+     * lead paragraph coming back with no text at all while the parse reported
+     * success. A poisoned buffer is a loss, not a value. */
+    if (!paragraph_content || paragraph_content->oom) {
+        parser->oom = true;
+        if (paragraph_content) {
+            markdown_core_strbuf_free(paragraph_content);
+            parser->mem->free(paragraph_content);
+        }
         markdown_core_node_free(paragraph);
         return;
     }
     markdown_core_strbuf_trim(paragraph_content);
+    /* markdown_core_node_set_string_content returns true unconditionally, so
+     * the only way to see a failed copy is the buffer's own flag. */
     markdown_core_node_set_string_content(paragraph, (char *)paragraph_content->ptr);
+    if (paragraph->content.oom)
+        parser->oom = true;
     markdown_core_strbuf_free(paragraph_content);
     parser->mem->free(paragraph_content);
 
     if (!markdown_core_node_insert_before(parent_container, paragraph)) {
-        parser->mem->free(paragraph);
+        // markdown_core_node_free, not mem->free: the node owns a content
+        // buffer by now, and freeing the struct alone leaks it.
+        parser->oom = true;
+        markdown_core_node_free(paragraph);
     }
 }
 
