@@ -418,6 +418,38 @@ fourteen and before the stage closes; both are extension-local and neither
 touches anything the fourteen move. Decide it before 0a.11, which is the last
 step that touches `extensions/table.c`.
 
+**DECIDED, 2026-08-21, before 0a.11: 0a.15 exists and lands last.** §4.2.3
+carries it. Both witnesses were reproduced first, on the tree at `f98fefe`, and
+one clause of the sentence above is wrong: **neither defect is reachable without
+an injected allocation failure**, so §4.13.11's *"two are live outside
+allocation failure"* is a mis-statement — what separates D28/D29 from D27/D30 is
+that these two are memory-unsafety while those two are silent wrong-document,
+and that these two are *not* deleted by any later step's mechanism.
+
+- **D29 needs a refused allocation and nothing else.** `lead text⏎x | y⏎--|--`
+  parses cleanly at the baseline (`Paragraph` + `Table`, exit 0). Under a
+  one-shot allocator sweep it SIGSEGVs at allocation **35 of 64**:
+  `try_opening_table_block` → `try_inserting_table_header_paragraph` →
+  `markdown_core_node_set_string_content(NULL, …)` → `markdown_core_strbuf_sets`
+  reads `NULL + 8`. `EXC_BAD_ACCESS (code=1, address=0x8)`.
+- **D28 needs one too, and §4.13.11's citation is exact.** The reachable
+  spelling is the ```` ```formula ```` retype, not `\(…\)`:
+  ```` ```formula⏎x+y+z⏎``` ```` under the same sweep gives ASan
+  `heap-use-after-free`, **READ of size 5** in
+  `markdown_core_extensions_get_formula_literal` at `formula.c:61`, freed by
+  `markdown_core_node_free` under `replace_with_formula_block` at
+  `formula.c:557`. The borrowed pointer is the *old code block's* literal.
+
+**Landing last costs nothing, and that is measured rather than assumed.**
+Neither defect has a golden expression — no fixture input reaches either path —
+so §4.4's corollary (*fix a defect before any step regenerates a golden over
+it*) does not apply to them, and 0a.11 through 0a.14 can neither introduce nor
+mask them. **Their gate is a corpus addition to `case_oom_sweep`**
+(`tests/runners/fallback_runner.c`), whose `FB_SWEEP_CORPUS` today contains
+neither a paragraph immediately followed by a table nor a ```` ```formula ````
+info string — which is why the only allocation-failure gate in the tree is blind
+to both.
+
 **Citations are `function` (`file:line`) pinned to `8e76a94`.** The function
 name is the durable half: a landed fix shifts every line below it — deleting
 D3's four-line guard moves D4 from `inlines.c:492` to `488` — and that exact
@@ -1290,6 +1322,12 @@ Three rows move — two in `extensions-directive.txt` example 16 (the inner `:::
 
 1. **The upstream red is the oracle, not the fix, and clearing it is a decision.** `check-upstream-parity.mjs` reads 784/795 without it: **cmark-gfm emits the empty text node too**, verified directly, and 11 corpus inputs diverge (8 autolink, 3 hard-break/shortcut-reference). This is the history already recorded in `specs/mdast-parity/deltas.json` under `empty-text-node` — *"suppressing it here failed `scripts/check-upstream-parity.mjs`, which is how this was classified as a shape delta rather than a defect"* — reproduced. Registering it costs one normalizer projection (drop an empty-literal `Text` from **both** sides in `scripts/lib/upstream-cmark.mjs`), one `NORMALIZED_DELTAS` name and one `deltas.json` entry of kind `deliberate-difference`: **795/795, green.** That is **Q38**, and §4.1's Step 5 row should have said so from the start rather than leaving it to be discovered at Step 5. The `specs/mdast-parity/deltas.json` `empty-text-node` entry goes half-stale in the same moment and is updated here.
 2. **The free happens at `ENTER`, and that is legal today for a reason Step 5 removes.** `TEXT` is a leaf, so `S_is_leaf` suppresses its `EXIT` and `markdown_core_iter_next` has already computed `iter->next` past it. When Step 5 makes the event contract **total**, every node gets an `EXIT` and the rule "only the node whose `EXIT` is current may be freed" makes this free illegal. Step 5 must move it, or state that a leaf's `ENTER` *is* its `EXIT` for mutation purposes. Write that into the commit and into Step 5's row.
+
+**0a.15 — D28 and D29, the two memory-unsafety defects §4.13 added after this list was written.** Added 2026-08-21, before 0a.11, per §2's standing instruction; the reproductions and the argument for landing it *last* are in §2 beside the defect index. Neither fix moves a golden row and neither is reachable without an injected allocation failure, so it does not interact with 0a.12–0a.14's regenerations.
+
+- **D29** (`extensions/table.c`, `try_inserting_table_header_paragraph`): check `markdown_core_node_new_with_mem` before `markdown_core_node_set_string_content`. Two neighbours travel with it and are named in §4.13.11 — the `!paragraph_content` path frees the lead paragraph and returns without setting `parser->oom`, and the failed-insert path frees the node with `mem->free` instead of `markdown_core_node_free`, leaking its content buffer.
+- **D28** (`extensions/formula.c`, `set_formula_literal_bytes`): `markdown_core_chunk_to_cstr` returning NULL must be a failure, not ignored — a borrowed chunk that could not be copied outlives its buffer at all three sites (`:154` via `make_formula_node`, `:523` via `new_formula_block_from_literal`, `:550` via `postprocess_node`).
+- **The gate is `case_oom_sweep`'s corpus** (`tests/runners/fallback_runner.c`): add a paragraph immediately followed by a table, and a ```` ```formula ```` info string. The sweep's contract — *each injected failure must either surface as a failed parse or leave the output byte-identical to the control* — is already the right assertion; it simply never sees these two shapes. Prove the mutant kill by reverting each fix and reading the sweep, and say which of the two neighbours the sweep can and cannot see.
 
 #### 4.2.4 Nothing failed to reproduce — but eleven statements are wrong
 
@@ -2680,8 +2718,13 @@ following, together:
 - [ ] The facade and its single ABI break window (12), the null/empty rule (14)
 - [ ] Bindings, specs and docs regenerated (15)
 
-**Defects** — all seventeen of §2 closed, or explicitly carried with a named
-owner step and a registered known-red gate.
+**Defects** — **all thirty-one of §2** closed, or explicitly carried with a named
+owner step and a registered known-red gate. ~~seventeen~~ was stale from the
+revision before D18–D25 and §4.13's four were added; §2's own heading says
+thirty-one, its index table carries thirty rows (D1–D25, D27–D31) and **D26 is
+the thirty-first, proposed in §4.2.5 and not yet measured** — so closing the
+stage means D26 has been put to the same test as the others, or is carried with
+an owner like D9 is.
 
 **Gates**, all green and none of them vacuous:
 - [ ] `correctness`, `correctness-asan`, `correctness-ubsan` — each having
