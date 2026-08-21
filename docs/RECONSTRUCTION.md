@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0, 0a.1 and 0a.2 |
+| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.3 |
 | Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
 | `VERSION` | `1.0.3`, and it moves to `1.0.4` at the CLOSE of Stage 0a — the first commit range that moves behaviour |
-| Next action | **Stage 0a**, §4.2, at **0a.3** — 0a.0, 0a.1 and 0a.2 have landed |
+| Next action | **Stage 0a**, §4.2, at **0a.4** — 0a.0 through 0a.3 have landed |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -360,12 +360,19 @@ ones whose witness is stated in this section rather than in the row.
 | D24 | `tasklist` decides `checked` by `strstr` over the whole line | wrong-output | 3 | `- [ ] see [x] below` → `checked=true` |
 | D25 | a `FootnoteReference` label can be a **dangling pointer**, read on every lookup | **use-after-free** | 0a.2 | ASan: `heap-use-after-free`, READ of size 1 in `markdown_core_map_lookup (map.c:279)`, freed by `handle_close_bracket (inlines.c:1384)` |
 
-**D25 also exposes a gate blind spot, and it is the reason the defect survived.**
-The CLI allocates through the arena, and so does the `asan` preset, so the
-repository's own sanitizer gate **cannot observe a use-after-free in
-node-owned memory at all**. Reproducing it required a probe built against the
-default allocator. Q12 deletes the arena; until it does, the sanitizer gate is
-weaker than its name suggests, and 0a.3 should say so.
+**~~D25 also exposes a gate blind spot~~ — WRONG, and corrected at 0a.3.** This
+paragraph said the `asan` preset allocates through the arena and therefore
+*"cannot observe a use-after-free in node-owned memory at all"*. **The second
+half is false.** The fixture runner does not go through `core/main.c`:
+`spec_runner` → `ts_ast_parse` → `markdown_core_document_parse` →
+`extensions/ast.c:113`, which calls `markdown_core_parser_new` with the
+**default allocator**. `ctest --preset correctness-asan` runs the whole golden
+corpus on malloc/free, and 0a.2 measured it catching D25: with the regression
+example added and the fix reverted it reads **56/57** with a genuine
+`heap-use-after-free`. **One ordinary regression example is a complete
+memory-safety gate.** The blind spot is real but CLI-only — it covers
+`markdown-core` itself and `dump_cli_runner` — and **Q12 is not a prerequisite
+for anything in this stage.**
 
 **Citations are `function` (`file:line`) pinned to `8e76a94`.** The function
 name is the durable half: a landed fix shifts every line below it — deleting
@@ -1177,7 +1184,7 @@ Three oracles, ~200 lines of Node, no new dependency. **Every one of them takes 
 
 The ratchet composition stands and must still be verified in the 0a.6 commit: D10 turns `regression.txt:474`'s sentinel into a real position (17 → 16) and D7's continuation-line fixture adds one `SoftBreak` sentinel (16 → 17).
 
-**0a.3 — D4.** Unchanged: swap the operands, and gate it with an assertion under `#ifndef NDEBUG` that the existing sanitizer presets trip on `a *~~`.
+**0a.3 — D4. LANDED; §4.2.9 records it.** Unchanged: swap the operands, and gate it with an assertion under `#ifndef NDEBUG` that the existing sanitizer presets trip on `a *~~`.
 
 **Correct §2 and §11.4 here.** They say *"the CLI allocates through the arena, and so does the `asan` preset"*, and *"H12 makes it invisible even under `--preset asan`"*. **The second half is false.** The fixture runner does not go through `core/main.c`: `spec_runner` → `ts_ast_parse` → `markdown_core_document_parse` → `extensions/ast.c:113`, which calls `markdown_core_parser_new` — **the default allocator**. `ctest --preset correctness-asan` runs the whole golden corpus on malloc/free, and it was measured to catch D25: with the regression example added and the fix reverted, `correctness-asan` reads **56/57** with a genuine `heap-use-after-free`. What the arena hides is only the CLI and `dump_cli_runner`. Q12 is not a prerequisite for anything in this stage, and 0a.3's note should say *that*.
 
@@ -1492,6 +1499,48 @@ shrink §4.2.3 predicted.
 drop `668` → `683`, teardown `683` → `711`. **D14's `inlines.c:1321` is
 unchanged** — 0a.9 amends the branch condition, which sits above this commit's
 hunk — and `map.c` is untouched, so D9's `map.c:307` stands.
+
+---
+
+#### 4.2.9 0a.3 landed: D4, and the sanitizer gate is stronger than §2 said
+
+**Seventeen lines, one file, zero moved rows.** `scan_delims`'s forward flanking
+scan tested `subj->skip_chars[peek_at(subj, after_char_pos)]` before
+`after_char_pos < subj->input.len`. The operands are swapped, and the read now
+goes through one inline helper whose only other content is
+`assert(pos < subj->input.len)`. The assertion is the gate: `Release` carries
+`-DNDEBUG` and the `Asan` and `Ubsan` build types do not, so the two sanitizer
+presets execute it and the shipped binary does not.
+
+**The mutant kill.** Reverting the operand order takes `correctness-asan` and
+`correctness-ubsan` from 57/57 to **55/57** — `regression_commonmark` and
+`fuzz_smoke`, both `Subprocess aborted` — and `printf 'a *~~\n' | markdown-core
+--profile gfm` prints `Assertion failed: (pos < subj->input.len), function
+flanking_skip_at`. That is §4.5's stated witness, reproduced.
+
+**Nothing else moved**, which is the point: the discarded value cannot change the
+loop's exit, because `&&` short-circuits at `after_char_pos == len`. Goldens,
+both parity gates, the fuzzer, the scope-sanity ledger and all three position
+ledgers read exactly what they read before.
+
+**The correction 0a.3 owes, made in §2 and §11.4.** They said the `asan` preset
+allocates through the arena and therefore cannot see a use-after-free in
+node-owned memory. It does not: `spec_runner` → `ts_ast_parse` →
+`markdown_core_document_parse` → `extensions/ast.c:113` calls
+`markdown_core_parser_new` with the **default allocator**, so
+`ctest --preset correctness-asan` runs the whole golden corpus on malloc/free.
+0a.2 measured it — 56/57 with a genuine `heap-use-after-free` when D25's fix is
+reverted. The arena blind spot is real and is **CLI-only**. **Q12 is not a
+prerequisite for anything in Stage 0a.**
+
+**And the reason D4 is worth a commit is unchanged and worth restating**, because
+its own gate says nothing about today: the read is in bounds today only because
+`markdown_core_parse_inlines` builds its chunk from a `markdown_core_strbuf`,
+and a strbuf keeps `ptr[size] == '\0'` inside its allocation. That invariant is
+stated in `buffer.c` and nowhere near `inlines.c`. Any chunk that is a slice of
+a larger buffer makes the read live, silently, with **0 ASan reports over 14,783
+executions** — measured. The assertion is what keeps the ordering from drifting
+back once the invariant no longer holds.
 
 ---
 
@@ -2945,7 +2994,7 @@ Ranked by how badly each blocks Stage 1. The first six are blockers: Stage 1 can
 
 **H11 · The extension model is process-global, so a paused parser is not a self-contained value.** Node types are registration ordinals assigned into non-static globals (`extensions/table.c:18`, `strikethrough.c:4`, `formula.c:14-15`, `directive.c:29-31`) with `MARKDOWN_CORE_NODE_LAST_BLOCK`/`_LAST_INLINE` mutated at `core/syntax_extension.c:36-45`; the flag bit comes from a function-static cursor (`core/node.c:21`); the registry has no unregister path by design (`core/registry.h:11-15`); and a second registration **aborts the process** (`core/node.c:25-28`, measured exit 134). Measured values: `MARKDOWN_CORE_NODE_TABLE = 32779`, `_STRIKETHROUGH = 49163`. *At a pause:* the struct is achievable, but only after Step 3; until then a snapshot is a struct **plus an implicit dependency on this process's registration history**. *Smallest change:* Q16 — a fixed enum decoupled from attach order, and static descriptors.
 
-**H12 · The arena is ambient process state, and it hides the rest of this list.** `static struct arena_chunk *A` (`core/arena.c:12`) is one chain for the whole process; `arena_free` is a no-op (`core/arena.c:93-96`); `arena_push` is a silent no-op while `A` is cold (`core/arena.c:27`); an unbalanced `pop` frees the whole chain; `markdown_core_arena_reset` is public and frees documents their owners still hold; and OOM policy is `abort()` (`core/arena.c:16,21`). Table calls `push`/`pop` unconditionally mid-line (`extensions/table.c:342,352,357,550,556`) regardless of whether `parser->mem` is the arena, so its control flow is a function of *another parser's* allocation history — measured with `leaks --atExit`: 0 leaks with a malloc parser alone, **12 leaks / 480 bytes** for the same document if any arena parse happened earlier in the process (16 / 608 at three columns). And because the CLI uses the arena (`core/main.c:238`), **every use-after-free in this list is invisible through `markdown-core`, including under the ASan preset** — H5's dangling literal silently serves stale bytes instead of crashing. *Smallest change:* Q12 already rules delete. This inventory makes it a Stage 1 prerequisite rather than a cleanup: a parser held open across snapshots grows monotonically under the arena, which alone breaks the allocation bound (Q36).
+**H12 · The arena is ambient process state, and it hides the rest of this list.** `static struct arena_chunk *A` (`core/arena.c:12`) is one chain for the whole process; `arena_free` is a no-op (`core/arena.c:93-96`); `arena_push` is a silent no-op while `A` is cold (`core/arena.c:27`); an unbalanced `pop` frees the whole chain; `markdown_core_arena_reset` is public and frees documents their owners still hold; and OOM policy is `abort()` (`core/arena.c:16,21`). Table calls `push`/`pop` unconditionally mid-line (`extensions/table.c:342,352,357,550,556`) regardless of whether `parser->mem` is the arena, so its control flow is a function of *another parser's* allocation history — measured with `leaks --atExit`: 0 leaks with a malloc parser alone, **12 leaks / 480 bytes** for the same document if any arena parse happened earlier in the process (16 / 608 at three columns). And because the CLI uses the arena (`core/main.c:238`), **every use-after-free in this list is invisible through the `markdown-core` binary** — H5's dangling literal silently serves stale bytes instead of crashing. **Not under the ASan preset, though**, and 0a.2 proved it: the fixture runner allocates through malloc, so an ordinary corpus example makes `correctness-asan` a real memory-safety gate. The blind spot is the CLI and `dump_cli_runner`, not the suite. *Smallest change:* Q12 already rules delete. This inventory makes it a Stage 1 prerequisite rather than a cleanup: a parser held open across snapshots grows monotonically under the arena, which alone breaks the allocation bound (Q36).
 
 **H13 · `oom` is a single sticky bit shared by the live parse, the inline phase, the extensions and any snapshot pass.** Set at ~66 sites, 41 of them inside extensions; read at `core/blocks.c:1586` (feed becomes a no-op), `:1637`, `:1699` (finish frees the tree and returns NULL, then resets — so `oom` is silently back to 0 with a fresh document). *At a pause:* an allocation failure inside a *snapshot's* inline or postprocess pass poisons the *live* parse for a reason unrelated to the bytes fed; and a parser with `oom` set has no correct snapshot at all, because the only way the baseline reports the failure destroys the parse. *Smallest change:* split the bit — see Q34.
 
@@ -2967,7 +3016,7 @@ Two further hazards are recorded because they are cheap to fix and expensive to 
 
 #### A new defect: D25
 
-**A `FootnoteReference`'s label can be a dangling pointer, and it is read on every footnote lookup.** `handle_close_bracket` builds the label as a **borrow of a sibling node's literal** with a length computed from **columns** (`core/inlines.c:1338-1339,1353`), and the loop at `core/inlines.c:1381-1386` then frees that node. Normally the `^`-bearing node's literal is itself a borrow, so the dangle is harmless by accident — but when the `^` arrives as a character reference (`&Hat;`, `&#94;`), the node's literal is the entity-decode buffer: **owned, one byte long**, and the column-derived length reads far past it. ASan witness on `x [&Hat;abcdefghij] y\n\n[^z]: note\n`, default allocator: `heap-use-after-free … READ of size 1` in `markdown_core_utf8proc_iterate` ← `case_fold` ← `markdown_core_map_lookup (map.c:279)` ← `process_footnotes`, freed by `markdown_core_node_free` ← `handle_close_bracket (inlines.c:1384)`, allocated by `houdini_unescape_ent`. Under the CLI's arena it does not crash; it prints `literal="x [^\u0000…<U+FFFD>…] y"`. No gate can see it: `grep -rn '&Hat;\|&#94;\|&#x5[eE];' tests/ samples/` returns nothing, and H12 makes it invisible even under `--preset asan`. It is the same root-cause family as **D10** and 0a.2's ~10-line fix may well cover it, **but D10 is written up as the undefined-call reconstruction path while this fires inside `markdown_core_map_lookup` on any document with at least one footnote definition.** Name it in 0a.2's statement with this witness, or it will be fixed by accident and left unpinned.
+**A `FootnoteReference`'s label can be a dangling pointer, and it is read on every footnote lookup.** `handle_close_bracket` builds the label as a **borrow of a sibling node's literal** with a length computed from **columns** (`core/inlines.c:1338-1339,1353`), and the loop at `core/inlines.c:1381-1386` then frees that node. Normally the `^`-bearing node's literal is itself a borrow, so the dangle is harmless by accident — but when the `^` arrives as a character reference (`&Hat;`, `&#94;`), the node's literal is the entity-decode buffer: **owned, one byte long**, and the column-derived length reads far past it. ASan witness on `x [&Hat;abcdefghij] y\n\n[^z]: note\n`, default allocator: `heap-use-after-free … READ of size 1` in `markdown_core_utf8proc_iterate` ← `case_fold` ← `markdown_core_map_lookup (map.c:279)` ← `process_footnotes`, freed by `markdown_core_node_free` ← `handle_close_bracket (inlines.c:1384)`, allocated by `houdini_unescape_ent`. Under the CLI's arena it does not crash; it prints `literal="x [^\u0000…<U+FFFD>…] y"`. No gate saw it: `grep -rn '&Hat;\|&#94;\|&#x5[eE];' tests/ samples/` returned nothing. **The claim that H12 also made it invisible under `--preset asan` is wrong** — the fixture runner uses the default allocator, so the corpus example added at 0a.2 is a complete gate; see §4.2.9. It is the same root-cause family as **D10** and 0a.2's ~10-line fix may well cover it, **but D10 is written up as the undefined-call reconstruction path while this fires inside `markdown_core_map_lookup` on any document with at least one footnote definition.** Name it in 0a.2's statement with this witness, or it will be fixed by accident and left unpinned.
 
 ---
 

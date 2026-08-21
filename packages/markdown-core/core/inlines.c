@@ -262,6 +262,22 @@ static MARKDOWN_CORE_INLINE unsigned char peek_char(subject *subj) { return peek
 
 static MARKDOWN_CORE_INLINE unsigned char peek_at(subject *subj, bufsize_t pos) { return subj->input.data[pos]; }
 
+// Reads the flanking skip table for the byte at `pos`, which must be inside the
+// chunk.
+//
+// The flanking scan used to subscript this table with the byte at `pos` BEFORE
+// testing that `pos` was in range. It got away with it because
+// `markdown_core_parse_inlines` builds its chunk from a `markdown_core_strbuf`,
+// and a strbuf always keeps `ptr[size] == '\0'` inside its own allocation --
+// an invariant stated in buffer.c and nowhere near here. Any chunk that is a
+// slice of a larger buffer makes the read live, silently: no sanitizer can see
+// it, measured, with 0 ASan reports over 14,783 executions of it. The assertion
+// is what keeps the operand order from drifting back.
+static MARKDOWN_CORE_INLINE unsigned char flanking_skip_at(subject *subj, bufsize_t pos) {
+    assert(pos < subj->input.len);
+    return subj->skip_chars[peek_at(subj, pos)];
+}
+
 // Return true if there are more characters in the subject.
 static MARKDOWN_CORE_INLINE int is_eof(subject *subj) { return (subj->pos >= subj->input.len); }
 
@@ -489,7 +505,7 @@ static int scan_delims(subject *subj, unsigned char c, bool *can_open, bool *can
         after_char = 10;
     } else {
         after_char_pos = subj->pos;
-        while (subj->skip_chars[peek_at(subj, after_char_pos)] && after_char_pos < subj->input.len) {
+        while (after_char_pos < subj->input.len && flanking_skip_at(subj, after_char_pos)) {
             after_char_pos += 1;
         }
         len = markdown_core_utf8proc_iterate(subj->input.data + after_char_pos, subj->input.len - after_char_pos,
