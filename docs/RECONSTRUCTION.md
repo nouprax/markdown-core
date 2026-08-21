@@ -366,31 +366,32 @@ ones whose witness is stated in this section rather than in the row.
 
 | # | What is wrong | Severity | Owner | Confirmed |
 |---|---|---|---|---|
-| D1 | extensions fold `$ : }` and bytes `0x01`–`0x08` into `skip_chars`, killing CommonMark flanking | wrong-output | 0a.4 | built & reverted |
-| D2 | `'}'` registered special, never consumed | wrong-output | 0a.4 | built & reverted |
-| D3 | `adjust_subj_node_newlines` behind an option nothing sets | wrong-position | 0a.6 | built & reverted |
-| D4 | `skip_chars[peek_at(...)]` read before the bounds test | latent | 0a.3 | built & reverted |
-| D5 | title-rewind path writes the scanned chunk into the refmap | wrong-output | 0a.7 | built & reverted |
-| D6 | `make_autolink` writes `title = ""` where nothing was written | wrong-output | 0a.7 | built & reverted |
-| D7 | `make_autolink` omits `column_offset + block_offset` | wrong-position | 0a.6 | built & reverted |
-| D8 | `try_opening_table_header` returns the parent on eleven non-opening paths | wrong-output | 0a.5 | built & reverted |
+| D1 | extensions fold `$ : }` and bytes `0x01`–`0x08` into `skip_chars`, killing CommonMark flanking | wrong-output | **fixed at 0a.4** | built & reverted |
+| D2 | `'}'` registered special, never consumed | wrong-output | **fixed at 0a.4** | built & reverted |
+| D3 | `adjust_subj_node_newlines` behind an option nothing sets | wrong-position | **fixed at 0a.6** | built & reverted |
+| D4 | `skip_chars[peek_at(...)]` read before the bounds test | latent | **fixed at 0a.3** | built & reverted |
+| D5 | title-rewind path writes the scanned chunk into the refmap | wrong-output | **fixed at 0a.7** | built & reverted |
+| D6 | `make_autolink` writes `title = ""` where nothing was written | wrong-output | **fixed at 0a.7** | built & reverted |
+| D7 | `make_autolink` omits `column_offset + block_offset` | wrong-position | **fixed at 0a.6** | built & reverted |
+| D8 | `try_opening_table_header` returns the parent on eleven non-opening paths | wrong-output | **fixed at 0a.5** | built & reverted |
 | D9 | reference resolution is order-dependent | wrong-output | **9a only** | 200 refs → 99 resolve, 101 do not |
-| D10 | an undefined footnote call **loses source bytes** | data-loss | 0a.2 | `x[^a⏎b] tail` → `"x[^] tail"` |
-| D11 | a nested duplicate definition **deletes a paragraph** | data-loss | 0a.2 | `"OUTER opens first"` in no node |
+| D10 | an undefined footnote call **loses source bytes** | data-loss | **fixed at 0a.2** | `x[^a⏎b] tail` → `"x[^] tail"` |
+| D11 | a nested duplicate definition **deletes a paragraph** | data-loss | **fixed at 0a.2** | `"OUTER opens first"` in no node |
 | D12 | `consolidate_text_nodes` drops `end_line` | wrong-position | **fixed at 0a.14** | built & reverted |
 | D13 | autolink's `len==0` sentinel leaves a zero-length `Text` | wrong-output | **fixed at 0a.14** | built & reverted |
-| D14 | the `"[^"` prefix rebuilt over decoded bytes | wrong-output | 9a | built & reverted |
+| D14 | the `"[^"` prefix rebuilt over decoded bytes | wrong-output | **fixed at 0a.9** | built & reverted |
 | D15 | the CLI and the facade attach extensions in different orders | wrong-output | **fixed at 0a.11** | built & reverted |
-| D16 | two more null/empty sites | wrong-output | 14 | built & reverted |
+| D16 | two more null/empty sites | wrong-output | **fixed at 0a.7** | built & reverted |
 | D17 | shipped v1.0.3 declares `MARKDOWN_CORE_VERSION` = **1.0.0** | wrong-output | **fixed at 0a.0** | header vs `VERSION` |
 | D18 | a paragraph whose leading definitions were consumed keeps the **definition's** line | wrong-position | **fixed at 0a.12** | `[a]: /1⏎text here` → `Text 1:1..1:9`, a column that does not exist on line 1 **[verified here]** |
 | D19 | a link takes `start_line` from the **closing** bracket | wrong-position | **fixed at 0a.12** | `[a](/u "t⏎t2") tail` → `Link 1:1..1:14`, `Text 1:15..1:19` — both on a 9-character line **[verified here]** |
 | D20 | strikethrough never sets `end_column` | wrong-position | **fixed at 0a.12** | `a~~` → `Text scope=1:1..1:0` |
-| D21 | **a container directive's closing fence does not close it** | **content-attribution loss** | 7 | `:::note⏎body⏎:::⏎after` → `after` is pulled *inside* the block **and** reported at line 3 while it is on line 4 **[verified here]** |
-| D22 | an extension consuming a span with a line ending cannot report it | wrong-position | 7 lands, 8 owns | `Directive 1:1..1:29` on a 28-character line; blocks Step 7's oracle |
+| D21 | **a container directive's closing fence does not close it** | **content-attribution loss** | **fixed at 0a.10** | `:::note⏎body⏎:::⏎after` → `after` is pulled *inside* the block **and** reported at line 3 while it is on line 4 **[verified here]** |
+| D22 | an extension consuming a span with a line ending cannot report it | wrong-position | **primitive fixed at 0a.10; the MODEL is still Step 8's** | `Directive 1:1..1:29` on a 28-character line; blocks Step 7's oracle |
 | D23 | `S_insert_emph` takes the **whole** run's start column | wrong-position + overlap | **fixed at 0a.13** | `***a**` → `Text "*"` claims columns 1–3 and `Strong` also starts at 1: two nodes, one byte |
 | D24 | `tasklist` decides `checked` by `strstr` over the whole line | wrong-output | **fixed at 0a.11** | `- [ ] see [x] below` → `checked=true` |
-| D25 | a `FootnoteReference` label can be a **dangling pointer**, read on every lookup | **use-after-free** | 0a.2 | ASan: `heap-use-after-free`, READ of size 1 in `markdown_core_map_lookup (map.c:279)`, freed by `handle_close_bracket (inlines.c:1384)` |
+| D25 | a `FootnoteReference` label can be a **dangling pointer**, read on every lookup | **use-after-free** | **fixed at 0a.2** | ASan: `heap-use-after-free`, READ of size 1 in `markdown_core_map_lookup (map.c:279)`, freed by `handle_close_bracket (inlines.c:1384)` |
+| D26 | `handle_newline` and `handle_backslash` give `SoftBreak` and `LineBreak` no position at all | wrong-position | **fixed at 0a.12b** | proposed in §4.2.5 with every quantity wrong; measured at 0a.12 (153 rows, two sites, +22/−4), refused there because both available spellings trade one not-a-place class for another, and landed at 0a.12b once **Q40** decided that a line ending is a place for a node that IS one |
 | D27 | `parser->linebuf.oom` written at six sites and read at none | silent truncation (allocation failure only) | 3a, with A1 | §4.13.11, measured: 244 input bytes become 102 with `parser->oom == 0` |
 | D28 | `extensions/formula.c` ignores `markdown_core_chunk_to_cstr`'s failure and keeps a **borrowed** pointer | **use-after-free** | **fixed at 0a.15** | §4.13.11, ASan: `heap-use-after-free`, READ of size 5 in `markdown_core_extensions_get_formula_literal` |
 | D29 | `extensions/table.c:297` does not check `markdown_core_node_new_with_mem`, and `:305` dereferences NULL | **crash** | **fixed at 0a.15** | §4.13.11, SIGSEGV on `lead text⏎x | y` / `--|--` |
@@ -1385,22 +1386,33 @@ That is the ruling working as intended: the discipline of proving each defect fi
 
 #### 4.2.6 What Stage 0a now moves, and why §4.4's argument gets stronger
 
-**252 golden rows, 2 hand-written C assertions, and one `.ast` row** — against 32 + 1 in the previous stage. By file, from the independent measurements:
+**THE ESTIMATE WAS 252 GOLDEN ROWS, 2 C ASSERTIONS AND ONE `.ast` ROW. THE MEASURED TOTAL IS 419 ROWS, 5 ASSERTIONS AND 4 `.ast` ROWS**, and the whole of the difference is two sub-steps that did not exist when the estimate was written: 0a.12b (D26, 152 rows) and D32 riding inside 0a.12 (5 rows). Every figure below is what the commit measured, not what it predicted:
 
 | Sub-step | Defects | `spec.txt` | `regression.txt` | `extensions.txt` | other |
 |---|---|---|---|---|---|
-| 0a.2 | D10 | — | 1 | — | + 1 ledger row |
-| 0a.6 | D3 | 13 | — | — | |
-| 0a.7 | D5, D6, D16 | 54 | — | 4 | + 1 assertion (`main.c:1076`) |
+| 0a.2 | D10, D11, D25 | — | 1 | — | + 1 ledger row; 4 new examples |
+| 0a.5 | D8 | — | — | — | new fixture `extensions-conflicts.txt`, 2 examples |
+| 0a.6 | D3, D7 | 13 | — | — | 2 new examples |
+| 0a.7 | D5, D6, D16 | 54 | — | 4 | + 1 assertion; Q39 |
+| 0a.9 | D14 | — | — | — | 3 new examples, **0 rows** |
 | 0a.10 | D21, D22 | — | — | — | 2 `extensions-directive.txt`, 1 `structure.ast` |
-| 0a.12 | D18, D19, D20, **D32** | **16** | **2** | 3 | + 1 new example; ledgers 207→205, 122→110 |
+| 0a.11 | D15, D24 | — | — | — | **0 rows**, 3 new examples |
+| 0a.12 | D18, D19, D20, **D32** | 16 | 2 | 3 | + 1 new example |
+| 0a.12b | **D26** | 104 | 18 | 5 | 17 `smart_punct.txt`, 6 `extensions-directive.txt`, 2 `extensions-formula-option-gates.txt`, 2 `inlines.ast`, 3 assertions |
 | 0a.13 | D23 | 45 | 11 | 1 | |
-| 0a.14 | D12, D13 | ~6 removed + replacements | — | ~30 removed + replacements | + 1 assertion (`main.c:1166`) |
-| | **total** | | | **252 rows** | **net row count −46** |
+| 0a.14 | D12, D13 | 28 | 18 | 122 | 1 `inlines.ast`, 1 assertion; **107 removed, 61 rewritten** |
+| 0a.15 | D28, D29 | — | — | — | **0 rows**; 1 new fallback case |
+| | **total** | **260** | **50** | **135** | **419 rows, 4 `.ast` rows, 5 assertions, net row count −46** |
 
-`specs/scope-sanity/ledger.json` goes **207 → ~166**, every movement a shrink: −1 (D10) +1 (D7's fixture) −3 (D20) −38 (D13). That is the largest reduction in the ledger's history and it is taken under the ledger's own rule with no recorded exception.
+`specs/scope-sanity/ledger.json` goes **207 → 14**, not the estimated ~166 — an order of magnitude further, because D26 was not in the estimate. Every movement is a shrink except two recorded exceptions of the shapes the ledger already tracks (0a.12's third SoftBreak-in-a-second-line row, 0a.12b's one sentinel→partial), and 0a.12b **closed the hole that made the second one invisible**: the `partial` class was measured, stored, counted and never compared against the budget. `specs/positions/places.json` goes **122 → 109** with two whole families emptied; `specs/positions/containment.json` goes **58 → 45**.
 
-**Three caveats, because the 252 is a sum of independent measurements and not yet a composed one.**
+**The three caveats below were written while the 252 was a sum of independent measurements. All three are now discharged, and the answers are recorded here rather than deleted.**
+
+1. **The four pairs were re-measured composed, and none interacted.** D13 × D20: different files and different mechanisms — D20 is `strikethrough.c`'s unset end column, D13 is autolink's zero-length split, and 0a.12's three `extensions.txt` rows are disjoint from 0a.14's. D13 × D23: 0a.13 moved 57 rows and 0a.14 moved none of them back. D6 × D16: additive as predicted, 18 + 40 = 58. D14 × D10/D25: composed at 0a.9 and the composition **changed the numbers**, which §4.2.15 records — 360 of the 432 matrix cases move, not 252, and the NUL and invalid-UTF-8 rows are 0 and 0, not 162 and 90, because 0a.2 had already removed the heap bytes.
+2. **The composed number was expected to be ≤ 252 and is 419.** The prediction was sound for the defects it covered; what broke it is two defects that did not exist when it was written.
+3. **Corpus growth, measured at the close:** upstream parity goes **795 → 817 inputs** with **7** active `expectedDivergence`s and `deltas` **4 → 9**. mdast holds at 54/54 with the backlog at 24, which is the design (§2: Stage 0a closes none of them).
+
+**The original three caveats, for the record:**
 
 1. **Four pairs must be re-measured composed, once:** D13 × D20 (both concern consolidation carrying a zero end position, and the agent's `--update` runs overlap in `extensions.txt`'s negative bucket), D13 × D23 (both touch emphasis examples in `spec.txt`), D6 × D16 (expected additive — 18 + 40 = 58, cross-checked against the corpus's 58 `title=""` rows, but prove it), and D14 × D10/D25 (same branch, same function). D18 × D19 is already verified additive: 10 + 1 = 11 rows and nothing else.
 2. **The composed number is expected to be ≤ 252**, never more, because a row fixed twice is counted twice here.
@@ -1412,7 +1424,7 @@ That is the ruling working as intended: the discipline of proving each defect fi
 
 *The blessed-golden half — and this is where 252 is a much stronger number than 32.* §4.4's corollary is that a golden regenerated while a defect is live **blesses** the defect, because the reviewer's only available answer is "unchanged from before, therefore fine". The stage now unpins **five** goldens that currently assert a defect as expected output — `regression.txt:474` (`Text scope=0:0..0:0 literal="[^~~is~~1]"`), `extensions.txt:804`/`:809` (`59:1..59:0`), `extensions-directive.txt` example 16 (an inner fence ending at the outer fence's line), `tests/api/main.c:1076` and `:1166` — plus a sixth, `specs/canonical-ast/structure.ast`, which no defect statement predicted and which only the `conformance` preset catches. Each of those flips from defending the defect to killing it. **A corpus that asserts six wrong answers is not a corpus that got 32 rows more expensive to regenerate; it is a corpus that cannot be used to review anything until it is corrected.**
 
-*The counterweight, stated honestly.* 252 rows is a lot of hand review, and the standing gate requires every moved row to be reviewed and named. That is why the stage is fifteen commits and not one: the largest single regeneration is 106 rows (0a.14) and the next is 58 (0a.7) and 57 (0a.13), each in a commit whose subject is the defect and whose reviewer has §2's statement in hand. The alternative is not "fewer rows"; it is the same rows, spread across eight steps, with no statement in hand at any of them.
+*The counterweight, stated honestly.* 419 rows is a lot of hand review, and the standing gate requires every moved row to be reviewed and named. That is why the stage is seventeen commits and not one: the largest single regeneration is 152 rows (0a.12b), then 168 line-changes over 107 rows (0a.14), then 58 (0a.7) and 57 (0a.13), each in a commit whose subject is the defect and whose reviewer has §2's statement in hand. **And "reviewed by hand" was made mechanical wherever the claim allowed it**, which is what made 419 rows reviewable at all: 0a.12b checked that every deleted line is a break carrying `0:0..0:0` and every added line is a break carrying a real position (0 exceptions), and that 145 of 152 end exactly at their own line's ending counted in bytes; 0a.13 checked that all 57 new spans are strictly inside their old ones (57 of 57); 0a.14 classified all 107 removals and 61 rewrites by shape. A script cannot say a row is *right*, but it can say every row moved in the one direction the fix claims — and then the eye only has to look at the residue. The alternative is not "fewer rows"; it is the same rows, spread across eight steps, with no statement in hand at any of them.
 
 #### 4.2.7 0a.1 landed: what the three oracles read, and where §4.2.3 was wrong
 
