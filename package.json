@@ -9,6 +9,7 @@
     },
     "scripts": {
         "audit:ci": "scripts/audit-ci-policy.sh",
+        "audit:extension-special-chars": "node scripts/audit-extension-special-chars.mjs",
         "audit:inline-sourcepos": "node scripts/audit-inline-sourcepos.mjs",
         "audit:packages": "scripts/audit-package-contents.sh",
         "audit:position-places": "node scripts/audit-position-places.mjs",

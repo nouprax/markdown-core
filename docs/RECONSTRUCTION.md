@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.3 |
+| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.4 |
 | Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
 | `VERSION` | `1.0.3`, and it moves to `1.0.4` at the CLOSE of Stage 0a — the first commit range that moves behaviour |
-| Next action | **Stage 0a**, §4.2, at **0a.4** — 0a.0 through 0a.3 have landed |
+| Next action | **Stage 0a**, §4.2, at **0a.5** — 0a.0 through 0a.4 have landed |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -51,19 +51,20 @@ ctest --preset correctness-asan -j 8       # 57/57 — SEE THE WARNING BELOW
 ctest --preset correctness-ubsan -j 8      # 57/57 — SEE THE WARNING BELOW
 node scripts/check-canonical-ast-fixtures.mjs   # 28 kinds, 47 fields, 6 cases
 bash scripts/audit-public-surface.sh
+node scripts/audit-extension-special-chars.mjs   # 4 extensions, 5 sentinels
 node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
-node scripts/check-upstream-parity.mjs     # 799/799 vs cmark-gfm 0.29.0.gfm.13, 4/4 divergences
-node scripts/check-mdast-parity.mjs        # 46/46, backlog 23/23 still diverging
+node scripts/check-upstream-parity.mjs     # 802/802 vs cmark-gfm 0.29.0.gfm.13, 4/4 divergences
+node scripts/check-mdast-parity.mjs        # 51/51, backlog 23/23 still diverging
 node scripts/audit-scope-sanity.mjs        # 206 rows, only-shrink holds
 
 # The three position oracles, landed at 0a.1 (§4.2.7). Each fails on a row
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
 # fails here rather than in review.
 node scripts/audit-inline-sourcepos.mjs    # 12 rows registered, 68 scanned
-node scripts/audit-scope-containment.mjs   # 58 rows registered, 3570 scanned
-node scripts/audit-position-places.mjs     # 132 rows registered, 3831 scanned
+node scripts/audit-scope-containment.mjs   # 58 rows registered, 3582 scanned
+node scripts/audit-position-places.mjs     # 132 rows registered, 3843 scanned
 ```
 
 **`22 steps, 42 edges` was stale**, and it is the second number in this table to
@@ -1188,7 +1189,7 @@ The ratchet composition stands and must still be verified in the 0a.6 commit: D1
 
 **Correct §2 and §11.4 here.** They say *"the CLI allocates through the arena, and so does the `asan` preset"*, and *"H12 makes it invisible even under `--preset asan`"*. **The second half is false.** The fixture runner does not go through `core/main.c`: `spec_runner` → `ts_ast_parse` → `markdown_core_document_parse` → `extensions/ast.c:113`, which calls `markdown_core_parser_new` — **the default allocator**. `ctest --preset correctness-asan` runs the whole golden corpus on malloc/free, and it was measured to catch D25: with the regression example added and the fix reverted, `correctness-asan` reads **56/57** with a genuine `heap-use-after-free`. What the arena hides is only the CLI and `dump_cli_runner`. Q12 is not a prerequisite for anything in this stage, and 0a.3's note should say *that*.
 
-**0a.4 — D1 and D2, before Step 3 writes the descriptors.** Unchanged.
+**0a.4 — D1 and D2, before Step 3 writes the descriptors. LANDED; §4.2.10 records it.** Unchanged.
 
 **0a.5 — D8.** The six `return parent_container;` → `return NULL;` and both "do not take" warnings stand. **What changes is the gate, and the reason is 0a.11.** With `table` last — which is Q9, and which 0a.11 implements — D8's block-open symptom is **unobservable through both product entry points**: measured with D8 *unfixed*, the independence property over 1,728 no-table documents goes 375 failing → 0 on D15's fix alone. So the `extensions-conflicts.txt` fixture framed as an end-to-end parse reads *"0 passed / 2 failed at baseline, 2 passed / 0 failed with the fix"* **only while the attach order is still wrong**. Two obligations follow, and both are mandatory:
 
@@ -1541,6 +1542,63 @@ stated in `buffer.c` and nowhere near `inlines.c`. Any chunk that is a slice of
 a larger buffer makes the read live, silently, with **0 ASan reports over 14,783
 executions** — measured. The assertion is what keeps the ordering from drifting
 back once the invariant no longer holds.
+
+---
+
+#### 4.2.10 0a.4 landed: three deleted lines, and §2's 186 is confirmed
+
+**Three lines out of the engine.** `markdown_core_syntax_extension_set_emphasis(ext, 1)`
+from `extensions/directive.c` and `extensions/formula.c`, and the `'}'`
+registration from directive's `special_inline_chars`. Strikethrough's
+`set_emphasis` stays: `~` has to remain transparent to `scan_delims` or upstream
+parity breaks, and it is the only byte that belongs in that table.
+
+**§2's measurement reproduces exactly, and its alphabet needs writing down.**
+Over all **19,607** strings of length ≤ 5 over `{a, '}', ':', '$', '*', '_',
+'.'}`, **186** parse differently before and after — 0.95%, §2's number to the
+digit. **The set has `}` as a member and no space**; read the other way, with a
+space in place of the `}`, the same experiment gives **130**. The set notation
+`{a } : $ * _ .}` admits both readings and one of them is wrong, so it is spelled
+out here. Under `--profile gfm`, which detaches both extensions, the same 19,607
+inputs give **0** differences, which is what makes this a statement about
+attaching an extension rather than about the extensions themselves.
+
+**D2 alone is 0 differences over 37,448**, measured with D1 already fixed, at
+both `--profile default` and `--profile gfm-extended` — §2's claim, reproduced.
+Deleting the `'}'` registration changes no output at all.
+
+**D2's gate is a source audit, and the first attempt at a runtime one was
+measured to fail.** §4.5 calls for "a structural invariant: every registered
+`special_inline_chars` byte is dispatched by `match_inline` or is a sentinel
+`< 0x20`". The obvious runtime form — count a paragraph's inline children before
+consolidation, using the low-level parser — **does not work**, because
+`markdown_core_parser_finish` itself calls `markdown_core_consolidate_text_nodes`
+(`core/blocks.c:1697`). There is no API in this repository that returns an
+unconsolidated tree, so the split a stray registration causes is invisible
+everywhere. That test was written, run with `'}'` re-registered, measured to
+pass anyway, and deleted rather than kept.
+
+`scripts/audit-extension-special-chars.mjs` reads the source instead: it
+collects every `(void *)'x'` and `(void *)SENTINEL` appended to `special_chars`,
+resolves each sentinel through its `#define`, finds the file's `match_inline`
+hook through its own registration, and requires every registered byte ≥ 0x20 to
+appear in a `character == 'x'` comparison inside that function's body. Both
+mutants die: re-adding `'}'` fails it, and raising a `FORMULA_DELIM_*` sentinel
+into printable range fails it too. It runs in CI beside `audit:surface`.
+
+**Gates.** 3 rows in `specs/mdast-parity/corpus.md` — `foo:_bar_`, `foo$_bar_`,
+`a}*.foo.*` — with the kill measured: **46/49 with the fix reverted, 51/51 with
+it**. 3 engine examples, one in `extensions-formula-option-gates.txt` and two in
+`extensions-directive.txt`, which are also upstream-parity corpus and take that
+gate 799 → **802/802**. **Zero golden rows moved**, as §2's table predicts.
+
+**One thing the sentinel argument makes concrete.** §2 says the delimiter-tag
+sentinels `0x01`–`0x04` and `0x08` are ordinary file bytes a user can type, and
+the audit's output now states them: `formula.c: '$' '\' 0x01 0x02 0x03 0x04`,
+`directive.c: ':' ']' 0x08`. Deleting them from `skip_chars` — which is what
+this commit does — stops the flanking corruption; they remain in
+`special_chars`, where a literal `0x01` still splits a text run and still
+dispatches. **Only removing the concept closes that**, and it is Step 3's.
 
 ---
 

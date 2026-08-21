@@ -1374,10 +1374,14 @@ markdown_core_syntax_extension *create_directive_extension(void) {
 
     special_chars = markdown_core_llist_append(mem, special_chars, (void *)':');
     special_chars = markdown_core_llist_append(mem, special_chars, (void *)']');
-    special_chars = markdown_core_llist_append(mem, special_chars, (void *)'}');
     special_chars = markdown_core_llist_append(mem, special_chars, (void *)DIRECTIVE_LABEL_DELIM);
     markdown_core_syntax_extension_set_special_inline_chars(ext, special_chars);
-    markdown_core_syntax_extension_set_emphasis(ext, 1);
+    /* No set_emphasis here. That flag folds every byte above into the parser's
+     * FLANKING SKIP table, which scan_delims walks over as though the bytes
+     * were not there -- so merely attaching this extension changed what
+     * CommonMark emphasis means, with no option to gate it. `~` is the only
+     * byte that legitimately belongs in that table (strikethrough.c), because
+     * upstream parity depends on it. */
 
     return ext;
 }

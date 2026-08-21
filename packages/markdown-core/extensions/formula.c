@@ -610,7 +610,9 @@ markdown_core_syntax_extension *create_formula_extension(void) {
     special_chars = markdown_core_llist_append(mem, special_chars, (void *)FORMULA_DELIM_LATEX_BACKSLASH_INLINE);
     special_chars = markdown_core_llist_append(mem, special_chars, (void *)FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY);
     markdown_core_syntax_extension_set_special_inline_chars(ext, special_chars);
-    markdown_core_syntax_extension_set_emphasis(ext, 1);
+    /* No set_emphasis here; see the note in extensions/directive.c. Attaching
+     * this extension folded `$` and the four delimiter sentinels into the
+     * flanking skip table and changed the base language. */
 
     return ext;
 }
