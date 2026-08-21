@@ -85,7 +85,7 @@ attributes and remain ordinary Markdown text.
 Document scope=1:1..2:19 children=1
 └── Paragraph scope=1:1..2:19 children=3
     ├── Text scope=1:1..1:16 literal=":invalid{=value}" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:17..1:17 children=0
     └── Text scope=2:1..2:19 literal=":open{title=\"value}" children=0
 ````````````````````````````````
 
@@ -99,7 +99,7 @@ key-value grammar and remain ordinary Markdown text.
 Document scope=1:1..2:17 children=1
 └── Paragraph scope=1:1..2:17 children=3
     ├── Text scope=1:1..1:22 literal=":shortcut{#identifier}" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:23..1:23 children=0
     └── Text scope=2:1..2:17 literal=":shortcut{.class}" children=0
 ````````````````````````````````
 
@@ -192,9 +192,9 @@ but they cannot end with a hyphen or underscore.
 Document scope=1:1..3:5 children=1
 └── Paragraph scope=1:1..3:5 children=5
     ├── Text scope=1:1..1:5 literal=":a-[]" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:6..1:6 children=0
     ├── Directive scope=2:1..2:5 mode=embedded name="-a" attributes=null label=0 children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=2:6..2:6 children=0
     └── Directive scope=3:1..3:5 mode=embedded name="_a" attributes=null label=0 children=0
 ````````````````````````````````
 
@@ -244,9 +244,9 @@ Document scope=1:1..4:43 children=1
 └── DirectiveBlock scope=1:1..4:43 mode=standalone name="spoiler" attributes=null label=null children=1
     └── Paragraph scope=2:1..4:43 children=5
         ├── Text scope=2:1..2:35 literal="These three are not enough to close" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
+        ├── SoftBreak scope=2:36..2:36 children=0
         ├── Text scope=3:1..3:3 literal=":::" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
+        ├── SoftBreak scope=3:4..3:4 children=0
         └── Text scope=4:1..4:43 literal="So this line is also part of the container." children=0
 ````````````````````````````````
 

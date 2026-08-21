@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.12 |
+| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.12b |
 | Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Stage 0a**, §4.2, at **0a.12b** — 0a.0 through 0a.12 have landed. **0a.12b (D26) and 0a.15 (D28, D29) now exist**; see §4.2.3 |
+| Next action | **Stage 0a**, §4.2, at **0a.13** — 0a.0 through 0a.12b have landed. **0a.15 (D28, D29) also exists**; see §4.2.3 |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -58,14 +58,14 @@ node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
 node scripts/check-upstream-parity.mjs     # 817/817 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
 node scripts/check-mdast-parity.mjs        # 54/54, backlog 24/24 still diverging
-node scripts/audit-scope-sanity.mjs        # 205 rows, only-shrink holds
+node scripts/audit-scope-sanity.mjs        # 52 rows, only-shrink holds
 
 # The three position oracles, landed at 0a.1 (§4.2.7). Each fails on a row
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
 # fails here rather than in review.
 node scripts/audit-inline-sourcepos.mjs    # 0 rows registered, 68 scanned
-node scripts/audit-scope-containment.mjs   # 58 rows registered, 3663 scanned
-node scripts/audit-position-places.mjs     # 110 rows registered, 3934 scanned
+node scripts/audit-scope-containment.mjs   # 59 rows registered, 3961 scanned
+node scripts/audit-position-places.mjs     # 113 rows registered, 4083 scanned
 
 # D9's pin. REGISTERED RED and it fails if a row STOPS reproducing, because
 # deleting the budget clears both rows and costs 204.678x output growth.
@@ -1317,7 +1317,7 @@ Three rows move — two in `extensions-directive.txt` example 16 (the inner `:::
 - D18 corrects the **line**. `start_column` is deliberately untouched and is right wherever the remaining first line has the same stripped prefix as the definition's line, which is every corpus case plus block quotes and list items. Where the prefixes differ, the residue is the content→source column class that exists with no reference definition in sight (`a\n  *b* tail` → `Emphasis 2:1..2:3`, truth `2:3..2:5`). That is Q22/Step 10's.
 - D19's example 518 ends at `2:10` where the true source column is `2:12`; the two-column shortfall is the continuation line's stripped leading spaces — the same class, visible with no link present.
 
-**0a.12b — D26, the break-node class. MEASURED AT 0a.12 AND GIVEN ITS OWN SUB-STEP.** §4.2.5 said it "belongs at 0a.12"; putting it to the test says otherwise, and the reason is not its size. See §4.2.5 for the corrected numbers and §4.2.18 for the measurement. In short: assigning a break its honest position moves **153** rows out of `scope-sanity`'s sentinel class and **138** of them into `audit-position-places.mjs`'s `off-column` class, because a line ending is at column *len+1* and `lineLengths()` excludes it — so by that oracle's definition **a soft break has no position that is a place.** The alternative spelling (the last byte of its own line) was measured too: **3** places rows and **138** *containment* rows, because the break then overlaps the text it follows. Both readings are this programme's own, taken independently and agreeing to the row. That makes D26 a **ruling about what a position is**, not a repair — and §4.2.3's own 0a.0 item 5 says a defect commit must not smuggle a divergence decision. It also forces deleting the declared `scope.zero` coverage state from `specs/canonical-ast/manifest.json` and its validator from `check-canonical-ast-fixtures.mjs`, because the only two witnesses of that state in the canonical corpus are the two rows the fix clears — a public-contract edit. **0a.12b owes: the ruling (call it Q40 — is a line ending a place?), the two-site fix (`handle_newline` AND `handle_backslash`; a one-site fix leaves four LineBreak sentinels standing), the contract edit, and 151 fixture rows plus 2 `.ast` rows plus 3 hand-written C assertions in `tests/api/main.c`.** It lands after 0a.12 rather than before it, which costs exactly one row — spec example 185's `SoftBreak` — regenerated twice.
+**0a.12b — D26, the break-node class. LANDED; §4.2.19 records it, and Q40 is taken.** Measured at 0a.12 and given its own sub-step there. §4.2.5 said it "belongs at 0a.12"; putting it to the test says otherwise, and the reason is not its size. See §4.2.5 for the corrected numbers and §4.2.18 for the measurement. In short: assigning a break its honest position moves **153** rows out of `scope-sanity`'s sentinel class and **138** of them into `audit-position-places.mjs`'s `off-column` class, because a line ending is at column *len+1* and `lineLengths()` excludes it — so by that oracle's definition **a soft break has no position that is a place.** The alternative spelling (the last byte of its own line) was measured too: **3** places rows and **138** *containment* rows, because the break then overlaps the text it follows. Both readings are this programme's own, taken independently and agreeing to the row. That makes D26 a **ruling about what a position is**, not a repair — and §4.2.3's own 0a.0 item 5 says a defect commit must not smuggle a divergence decision. It also forces deleting the declared `scope.zero` coverage state from `specs/canonical-ast/manifest.json` and its validator from `check-canonical-ast-fixtures.mjs`, because the only two witnesses of that state in the canonical corpus are the two rows the fix clears — a public-contract edit. **0a.12b owes: the ruling (call it Q40 — is a line ending a place?), the two-site fix (`handle_newline` AND `handle_backslash`; a one-site fix leaves four LineBreak sentinels standing), the contract edit, and 151 fixture rows plus 2 `.ast` rows plus 3 hand-written C assertions in `tests/api/main.c`.** It lands after 0a.12 rather than before it, which costs exactly one row — spec example 185's `SoftBreak` — regenerated twice.
 
 **0a.13 — D23, the overlap class.** The complete cut, four lines beyond §2's one-liner. 57 rows, hand-checked against the source columns before regenerating; CommonMark 426 (`foo******bar*********baz`) becomes `Strong 4..18 > 6..16 > 8..14` with the tail `Text` at `1:19`, against the golden's `4..21 / 6..21 / 8..21 / Text 1:13`. It lands after 0a.12 and separately from it because 57 rows is the largest single regeneration in the stage and it deserves its own review. It does **not** interact with 0a.14: `S_insert_emph` already frees a delimiter node whose literal is spent (`if (opener_num_chars == 0) markdown_core_node_free(opener_inl)`), so the emphasis path creates no empty `Text` for D13 to clean up.
 
@@ -2344,6 +2344,131 @@ Each mutant `touch`ed, `sleep 2`, rebuilt, and confirmed live by running its wit
 
 ---
 
+#### 4.2.19 0a.12b landed: Q40 taken narrowly, and 153 sentinels become places
+
+**Q40 is answered, and the narrow form is the one that survives measurement.** A
+line of *L* bytes has *L+1* boundaries and the last of them is where the line
+ending lives, so column *L+1* is a place — **for a node that IS a line ending,
+and for nothing else.** The general form was built and measured first and
+rejected: admitting *L+1* for every kind would have excused **twelve** rows
+already in `specs/positions/places.json` (eleven `Text`, one `Emphasis`) that
+are wrong for other reasons. The narrow form excuses none of them, because no
+break node was ever registered there — before this commit they all carried
+`0:0..0:0` and were deferred to `audit-scope-sanity.mjs`. The rule lives in
+`fault()` in `scripts/audit-position-places.mjs` and the reasoning is in the
+file, not only here.
+
+**Two sites, and §4.2.5 named one.** `handle_newline` writes the break's line
+and column read in the frame of the line being *left*. `handle_backslash`'s
+hard-break arm does the same — a one-site fix would have left four `LineBreak`
+sentinels standing.
+
+**The two arms are symmetric BY CONSTRUCTION, and the first cut was not.** An
+adversarial re-read caught it: the backslash arm read `subj->line` and
+`subj->column_offset` *after* `skip_line_end` had consumed the newline, and its
+answer was right only because `skip_line_end` happens not to advance the line
+frame. That is an accident, not a contract — and it is an accident that would
+turn into `LineBreak 2:-1..2:-1`, a **negative column on the wrong line**, the
+day anything fixes `skip_line_end`. The capture is hoisted to the top of
+`handle_backslash`, beside the `start` offset that was already captured there.
+The output is identical in both worlds; **the change is robustness, and it moves
+zero rows** — `correctness` reads 67/67 across it.
+
+**What each break covers.** The bytes that spell it. A soft break and a
+two-space hard break own the line ending alone — the two spaces stay with the
+`Text` they follow, as upstream also has them. A backslash hard break owns the
+backslash *and* the line ending, because the backslash belonged to no node at
+all before this, so the break takes nothing from anyone.
+
+##### What moved
+
+**152 fixture rows across six files, 2 `.ast` rows, and 5 lines carrying 3
+hand-written C assertions** — `spec.txt` 104, `regression.txt` 18,
+`smart_punct.txt` 17, `extensions-directive.txt` 6, `extensions.txt` 5,
+`extensions-formula-option-gates.txt` 2, `specs/canonical-ast/inlines.ast` 2,
+`tests/api/main.c` 3 assertions.
+
+Mechanically classified rather than eyeballed, twice and independently:
+
+- **every** deleted line is a break carrying `0:0..0:0` and **every** added line
+  is a break carrying a real position — 0 exceptions in either direction,
+  checked by grep over the whole diff;
+- **145 of the 152** end *exactly* at their own line's ending, counted in
+  **bytes** (the first count said 144 and was wrong: it measured `String.length`,
+  and one spec example's line contains a two-byte U+00A0);
+- the other **7 are in classes already registered to someone else**, and none is
+  new wrongness: 3 block-quote lazy continuations and 1 stripped-indent
+  continuation whose siblings are already `continuation-line-content-offset`
+  (Q22/Step 10), 2 more of the same class inside a `<span>` fixture, and 1 whose
+  whole paragraph is on line zero because it is the split-off table lead
+  (Step 10's).
+
+##### The ledgers, and a hole this commit had to close first
+
+`scope-sanity` **205 → 52**, and five of its seven files leave the ledger
+outright. What remains is 37 sentinel — 36 of them D13's empty `Text`, which is
+0a.14's — plus 13 negative and 2 partial. `places` **110 → 113**, `containment`
+**58 → 59**; the four new rows are annotated to Q22/Step 10 by hand, because
+`--update` writes rows and not owners.
+
+**`partial` was measured, stored, counted in the total, and never compared
+against the budget.** `audit-scope-sanity.mjs` iterated `["sentinel",
+"negative"]` only, so a fix that moved a row from one not-a-place class into the
+third could grow it without limit and the gate stayed green — which is the one
+thing this ledger exists to prevent, and exactly how D13's Option A was
+rejected. This commit moves one row that way (the split-off table lead's break
+inherits its paragraph's line zero), so the hole is closed **first** and then
+the growth is recorded as the fourth exception in the ledger's own `purpose`.
+Proved: with the budget set back to `partial: 1` the gate now throws
+`partial rows grew 1 -> 2`; before the fix it printed `at budget, only-shrink
+holds`.
+
+##### The contract edit, and why there is no honest alternative
+
+`specs/canonical-ast/manifest.json` declared **`scope.zero`** as a required
+coverage state, and `check-canonical-ast-fixtures.mjs` carried its validator.
+The only two witnesses of that state in the whole canonical corpus are
+`inlines.ast`'s `LineBreak` and `SoftBreak`, and this fix gives both a real
+position — so the gate goes red with
+`manifest state vocabulary must exactly match the fail-closed audit vocabulary`,
+and it goes red the same way whether you edit the manifest or the validator
+alone. Both must go, and **re-witnessing is not available**: the only remaining
+producers of `0:0..0:0` are D13's empty `Text`, which 0a.14 deletes, and the
+split-off table lead, which is Step 10's — so adding a witness would pin a
+defect the stage is closing, which is §4.4's corollary exactly. This is a
+**coverage obligation**, not a grammar or schema change: the dump still permits
+`0:0..0:0`, no golden format moves, and no binding is affected.
+
+##### Mutant kill
+
+Reverting `core/inlines.c` alone, with goldens and ledgers left fixed,
+`touch`ed, `sleep 2`, rebuilt, and the mutant confirmed live in the binary
+first:
+
+| gate | green | mutant |
+|---|---|---|
+| `ctest --preset correctness` | 67/67 | **60/67** — `spec_commonmark`, `spec_smart_punctuation`, `regression_commonmark`, `extensions_gfm`, `extensions_directive`, `extensions_formula_option_gates`, `api_engine` |
+| `ctest --preset conformance` | 2/2 | **0/2** — both `facade_native` and `facade_dump_cli` |
+| `audit-position-places.mjs` | 113 | **red, 3 CLEARED** |
+| `audit-scope-containment.mjs` | 59 | **red, 1 CLEARED** |
+| `audit-scope-sanity.mjs` | 52 | **green** — it reads goldens, not the binary |
+| `check-canonical-ast-fixtures.mjs` | 28/47/6 | **green** — the validator this fix deleted was the only thing that watched the class |
+
+The last row is worth stating plainly: **the gate that blocked the fix does not
+defend it.** That is not an argument for keeping `scope.zero`; it is an argument
+for knowing which gate holds which fact.
+
+##### Gates after
+
+`correctness` **67/67** · `correctness-asan` **58/58** · `correctness-ubsan`
+**58/58** · `conformance` **2/2** · upstream parity **817/817** with **7/7** ·
+mdast **54/54**, backlog **24/24** · fuzz-parity **300/300** · scope-sanity
+**52** · position oracles **0 / 59 / 113** · reference-order 2 rows, still red ·
+canonical-ast 28/47/6 · public surface · attach order · plan graph 22/45 ·
+topology · format-c · format-cmake.
+
+---
+
 ### 4.3 The ordering argument
 
 **The old plan said: "Step 3 must come before every later step."** That sentence
@@ -2955,9 +3080,8 @@ following, together:
 owner step and a registered known-red gate. ~~seventeen~~ was stale from the
 revision before D18–D25 and §4.13's four were added; §2's own heading now says
 thirty-two, its index table carries thirty-one rows (D1–D25, D27–D32) and
-**D26 is the thirty-second** — measured at 0a.12 and deliberately NOT taken
-there, for the reason §4.2.5 records — so closing the stage means 0a.12b has
-landed it or it is carried with an owner like D9 is.
+**D26 is the thirty-second** — measured at 0a.12, refused there, and landed at
+**0a.12b** with the ruling it needed (Q40).
 
 **Gates**, all green and none of them vacuous:
 - [ ] `correctness`, `correctness-asan`, `correctness-ubsan` — each having
@@ -3622,6 +3746,7 @@ which is why they kept getting re-argued:
 |---|---|---|---|---|
 | **Q8** | May the reconstruction take code from existing commits? | **SETTLED 2026-08-20 — NO.** See §4.9. Ignore every existing commit except the formula fix and the directive syntax fix. Everything else is designed and written fresh. | owner | the entire port list |
 | **Q9** | What is the extension attach order? (D15) | **SETTLED 2026-08-20 — table LAST, with a test. IMPLEMENTED 0a.11**, and the ruling is load-bearing: all six inputs whose parse the reorder moves are a line inside an OPEN table that a narrower extension also claims, which D8's fix does not touch. Every other extension's position is measured to be free — moving `directive` changes 0 of 4,000 random `:`/URL documents (§4.2.17). A decided order, not an inheritance: a table's row opener matches any line inside an open table, so every narrower claim attaches first. D15's CLI/facade disagreement is fixed in the same step. | owner | Step 3, 0a.5, **0a.11** |
+| **Q40** | Is a line ending a place? (D26) | **PROPOSED, taken at 0a.12b — YES, and only for a node that IS one.** A line of L bytes has L+1 boundaries and the last is where the line ending lives, so a `SoftBreak` or `LineBreak` at column L+1 is a place. The GENERAL form was measured before it was rejected: admitting L+1 for every kind would have excused **twelve** rows already in `specs/positions/places.json` — eleven `Text` and one `Emphasis` — that are wrong for other reasons. The narrow form excuses none of them, because no break node was ever registered there. `scripts/audit-position-places.mjs` carries the rule and says so. | 0a.12b | Step 5, which owns the dump spelling that would make the question moot |
 | **Q11–Q29** | Nineteen decisions the requirement restatement exposed | **PROPOSED** unless listed below, each with a recommendation in §4.1.6 | §4.1.6 | their owning steps |
 | **Q14** | The option surface | **SETTLED 2026-08-20 — DELETE ALL OF IT.** See §4.11. | owner | 3, 6, 7, 12, 15 |
 | **Q24** | Is the concrete view opt-in? | **SETTLED 2026-08-20 — NO. It is not optional; it is part of the model.** Diagnostics on directive attributes have nowhere to point without it. | owner | 12, 13 |

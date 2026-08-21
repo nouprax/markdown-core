@@ -125,8 +125,14 @@ if (update) {
     const failures = [];
     const slack = [];
     for (const [relative, counts] of Object.entries(measured)) {
-        const budget = ledger.budget[relative] ?? { sentinel: 0, negative: 0 };
-        for (const kind of ["sentinel", "negative"]) {
+        const budget = ledger.budget[relative] ?? { sentinel: 0, negative: 0, partial: 0 };
+        /* `partial` -- a coordinate on line zero with a non-zero column -- was
+           MEASURED, stored and counted in the total, and never compared against
+           the budget. It could therefore grow without limit while this gate
+           stayed green, which is the one thing this ledger exists to prevent: a
+           fix that moves a row from one not-a-place class to another looks free.
+           Found at 0a.12b, where D26 moved exactly one row that way. */
+        for (const kind of ["sentinel", "negative", "partial"]) {
             if (counts[kind] > budget[kind])
                 failures.push(`${relative}: ${kind} rows grew ${budget[kind]} -> ${counts[kind]}`);
             else if (counts[kind] < budget[kind])
@@ -139,7 +145,7 @@ if (update) {
     }
     if (failures.length > 0)
         throw new Error(
-            `${failures.join("\n")}\nA scope that is a sentinel or a negative range is not a position. See ${ledger.rule}`
+            `${failures.join("\n")}\nA sentinel, a negative range and a line-zero column are all not positions. See ${ledger.rule}`
         );
     if (slack.length > 0) {
         throw new Error(

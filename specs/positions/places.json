@@ -505,6 +505,16 @@
                     "closedBy": "unassigned"
                 },
                 {
+                    "nodePath": "0.0.0.3",
+                    "kind": "SoftBreak",
+                    "phase": "inline",
+                    "scope": "2:6..2:6",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "Q22 / Step 10 \u2014 the content-to-source column map. The break is at its line's true ending; the SIBLING it follows is the one that is wrong, and that sibling is already registered in this ledger under continuation-line-content-offset. Registered at 0a.12b, when D26 gave breaks a position and made a second symptom of one defect visible.",
+                    "class": "continuation-line-content-offset"
+                },
+                {
                     "nodePath": "0.0.0.4",
                     "kind": "Text",
                     "phase": "inline",
@@ -737,6 +747,16 @@
                     "end": "off-column",
                     "class": "continuation-line-content-offset",
                     "closedBy": "unassigned"
+                },
+                {
+                    "nodePath": "0.0.0.3",
+                    "kind": "SoftBreak",
+                    "phase": "inline",
+                    "scope": "2:6..2:6",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "Q22 / Step 10 \u2014 the content-to-source column map. The break is at its line's true ending; the SIBLING it follows is the one that is wrong, and that sibling is already registered in this ledger under continuation-line-content-offset. Registered at 0a.12b, when D26 gave breaks a position and made a second symptom of one defect visible.",
+                    "class": "continuation-line-content-offset"
                 }
             ]
         },
@@ -801,6 +821,16 @@
                     "end": "off-column",
                     "class": "continuation-line-content-offset",
                     "closedBy": "unassigned"
+                },
+                {
+                    "nodePath": "0.0.0.0.0.3",
+                    "kind": "SoftBreak",
+                    "phase": "inline",
+                    "scope": "2:8..2:8",
+                    "start": "off-column",
+                    "end": "off-column",
+                    "closedBy": "Q22 / Step 10 \u2014 the content-to-source column map. The break is at its line's true ending; the SIBLING it follows is the one that is wrong, and that sibling is already registered in this ledger under continuation-line-content-offset. Registered at 0a.12b, when D26 gave breaks a position and made a second symptom of one defect visible.",
+                    "class": "continuation-line-content-offset"
                 },
                 {
                     "nodePath": "0.0.0.0.0.4",

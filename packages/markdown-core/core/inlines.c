@@ -936,6 +936,13 @@ static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *clo
 // Parse backslash-escape or just a backslash, returning an inline.
 static markdown_core_node *handle_backslash(markdown_core_parser *parser, subject *subj) {
     bufsize_t start = subj->pos;
+    /* The line frame BEFORE anything is consumed. The hard-break arm below
+     * needs it, and reading it after `skip_line_end` would be right only
+     * because `skip_line_end` happens not to advance the frame -- an accident,
+     * not a contract. `handle_newline` captures its frame first for the same
+     * reason, and the two arms must not merely look symmetric. */
+    int escape_line = subj->line;
+    int escape_column_offset = subj->column_offset;
     advance(subj);
     unsigned char nextchar = peek_char(subj);
     if ((parser->backslash_ispunct ? parser->backslash_ispunct : markdown_core_ispunct)(nextchar)) {
@@ -964,9 +971,21 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
         // from the wrong line's start: `foo\` / `bar` reported Text 1:6..1:8 --
         // three columns that do not exist on a four-character line 1.
         // cmark-gfm reports the same numbers, so upstream cannot be the oracle.
+        //
+        // The node's extent is the bytes that SPELL it: the backslash and the
+        // line ending it escapes. The backslash belonged to no node at all
+        // before this, so the break is not taking it from anyone.
+        markdown_core_node *hard = make_simple_subj(subj, MARKDOWN_CORE_NODE_LINE_BREAK);
+        if (hard) {
+            hard->start_line = hard->end_line = escape_line;
+            hard->start_column = start + 1 + escape_column_offset + subj->block_offset;
+            /* subj->pos is one past the line ending's last byte, so that byte's
+             * column is subj->pos + offset -- CR, LF or CRLF alike. */
+            hard->end_column = subj->pos + escape_column_offset + subj->block_offset;
+        }
         ++subj->line;
         subj->column_offset = -subj->pos;
-        return make_simple_subj(subj, MARKDOWN_CORE_NODE_LINE_BREAK);
+        return hard;
     } else {
         return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("\\"));
     }
@@ -1532,8 +1551,19 @@ match:
 
 // Parse a hard or soft linebreak, returning an inline.
 // Assumes the subject has a cr or newline at the current position.
+// A break node's extent is the line ending it stands for, read in the frame of
+// the line being LEFT -- so it is captured here, before `subj->line` and
+// `subj->column_offset` move on to the next one. That column is one past the
+// last byte of its line, which is where a line ending is; Q40 says so and
+// `scripts/audit-position-places.mjs` admits it for break nodes and for nothing
+// else. Before this the node was `calloc`'d and never written, so 153 golden
+// rows across seven files said `0:0..0:0` -- a coordinate that is not a place
+// either, and one that carries no line at all.
 static markdown_core_node *handle_newline(subject *subj) {
     bufsize_t nlpos = subj->pos;
+    int break_line = subj->line;
+    int break_column = nlpos + 1 + subj->column_offset + subj->block_offset;
+    markdown_core_node *brk;
     // skip over cr, crlf, or lf:
     if (peek_at(subj, subj->pos) == '\r') {
         advance(subj);
@@ -1546,10 +1576,17 @@ static markdown_core_node *handle_newline(subject *subj) {
     // skip spaces at beginning of line
     skip_spaces(subj);
     if (nlpos > 1 && peek_at(subj, nlpos - 1) == ' ' && peek_at(subj, nlpos - 2) == ' ') {
-        return make_simple_subj(subj, MARKDOWN_CORE_NODE_LINE_BREAK);
+        brk = make_simple_subj(subj, MARKDOWN_CORE_NODE_LINE_BREAK);
     } else {
-        return make_simple_subj(subj, MARKDOWN_CORE_NODE_SOFT_BREAK);
+        brk = make_simple_subj(subj, MARKDOWN_CORE_NODE_SOFT_BREAK);
     }
+    if (brk) {
+        // The two spaces of a hard break stay with the text they follow, as
+        // upstream also has them, so both forms own exactly the line ending.
+        brk->start_line = brk->end_line = break_line;
+        brk->start_column = brk->end_column = break_column;
+    }
+    return brk;
 }
 
 // " ' . -

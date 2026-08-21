@@ -1119,7 +1119,7 @@ static void source_pos(test_batch_runner *runner) {
                      "title=null children=1\n"
                      "│   │   └── Text scope=3:16..3:36 literal=\"http://www.google.com\" "
                      "children=0\n"
-                     "│   ├── SoftBreak scope=0:0..0:0 children=0\n"
+                     "│   ├── SoftBreak scope=3:38..3:38 children=0\n"
                      "│   ├── Text scope=4:1..4:6 literal=\"there \" children=0\n"
                      "│   ├── Code scope=4:8..4:9 mode=embedded literal=\"hi\" children=0\n"
                      "│   ├── Text scope=4:11..4:14 literal=\" -- \" children=0\n"
@@ -1132,12 +1132,12 @@ static void source_pos(test_batch_runner *runner) {
                      "        ├── ListItem scope=6:3..8:1 checked=null children=1\n"
                      "        │   └── Paragraph scope=6:6..7:10 children=3\n"
                      "        │       ├── Text scope=6:6..6:10 literal=\"Okay.\" children=0\n"
-                     "        │       ├── SoftBreak scope=0:0..0:0 children=0\n"
+                     "        │       ├── SoftBreak scope=6:11..6:11 children=0\n"
                      "        │       └── Text scope=7:6..7:10 literal=\"Sure.\" children=0\n"
                      "        └── ListItem scope=9:3..10:20 checked=null children=1\n"
                      "            └── Paragraph scope=9:6..10:20 children=3\n"
                      "                ├── Text scope=9:6..9:15 literal=\"Yes, okay.\" children=0\n"
-                     "                ├── SoftBreak scope=0:0..0:0 children=0\n"
+                     "                ├── SoftBreak scope=9:16..9:16 children=0\n"
                      "                └── Image scope=10:6..10:20 source=\"hi\" title=\"yes\" "
                      "children=1\n"
                      "                    └── Text scope=10:8..10:9 literal=\"ok\" children=0\n",
@@ -1153,7 +1153,7 @@ static void source_pos_inlines(test_batch_runner *runner) {
                      "└── Paragraph scope=1:1..2:6 children=3\n"
                      "    ├── Emphasis scope=1:1..1:7 children=1\n"
                      "    │   └── Text scope=1:2..1:6 literal=\"first\" children=0\n"
-                     "    ├── SoftBreak scope=0:0..0:0 children=0\n"
+                     "    ├── SoftBreak scope=1:8..1:8 children=0\n"
                      "    └── Text scope=2:1..2:6 literal=\"second\" children=0\n",
                      "closed emphasis scopes are as expected");
     test_facade_dump(runner,
@@ -1164,7 +1164,7 @@ static void source_pos_inlines(test_batch_runner *runner) {
                      "└── Paragraph scope=1:1..2:7 children=1\n"
                      "    └── Emphasis scope=1:1..2:7 children=3\n"
                      "        ├── Text scope=1:2..1:6 literal=\"first\" children=0\n"
-                     "        ├── SoftBreak scope=0:0..0:0 children=0\n"
+                     "        ├── SoftBreak scope=1:7..1:7 children=0\n"
                      "        └── Text scope=2:1..2:6 literal=\"second\" children=0\n",
                      "multiline emphasis scopes are as expected");
 }

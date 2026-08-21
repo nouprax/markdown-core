@@ -20,6 +20,16 @@
  *                how "ends at the line ending" and "covers nothing" get
  *                spelled when the only vocabulary available is a coordinate.
  *
+ * ONE EXCEPTION, taken at 0a.12b and narrow on purpose (Q40). A line of L bytes
+ * has L+1 boundaries, and the last of them is where the line ending lives. So
+ * column L+1 IS a place — but only for a node that IS a line ending, i.e. a
+ * SoftBreak or a LineBreak. The general form of the rule was measured before it
+ * was rejected: admitting L+1 for every kind would have excused TWELVE rows
+ * already in this ledger (eleven Text, one Emphasis) that are wrong for other
+ * reasons. The narrow form excuses none of them, because no break node was ever
+ * registered here — before 0a.12b they all carried 0:0..0:0 and were deferred to
+ * scripts/audit-scope-sanity.mjs.
+ *
  * What this oracle deliberately does NOT count is a coordinate on line zero.
  * `scripts/audit-scope-sanity.mjs` owns those — the `0:0..0:0` sentinel and
  * the line-zero-with-a-column shape — and a row two ratchets both claim can be
@@ -55,10 +65,15 @@ const verbose = process.argv.includes("--verbose");
 
 const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdown-core", "pnpm build:c");
 
-const fault = ([line, column], lengths) => {
+/* Q40, and nothing wider: only these two kinds may sit on a line ending. */
+const LINE_ENDING_KINDS = new Set(["SoftBreak", "LineBreak"]);
+
+const fault = ([line, column], lengths, kind) => {
     if (line > lengths.length) return "off-line";
     if (column === 0) return "zero-column";
-    if (column > lengths[line - 1]) return "off-column";
+    if (column > lengths[line - 1]) {
+        return LINE_ENDING_KINDS.has(kind) && column === lengths[line - 1] + 1 ? "place" : "off-column";
+    }
     return "place";
 };
 
@@ -79,8 +94,8 @@ for (const example of fixtureCorpus(root)) {
             continue;
         }
         scanned += 1;
-        const start = fault(scope.start, lengths);
-        const end = fault(scope.end, lengths);
+        const start = fault(scope.start, lengths, node.kind);
+        const end = fault(scope.end, lengths, node.kind);
         if (start === "place" && end === "place") continue;
         findings.push({
             nodePath,

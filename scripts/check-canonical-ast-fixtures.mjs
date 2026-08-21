@@ -81,7 +81,16 @@ const stateValidators = {
     "image.title.null": (tree) => /^.*Image scope=.* title=null /m.test(tree),
     "image.title.value": (tree) => /^.*Image scope=.* title=".+" /m.test(tree),
     "scope.positive": (tree) => / scope=[1-9]\d*:[1-9]\d*\.\./.test(tree),
-    "scope.zero": (tree) => / scope=0:0\.\.0:0 /.test(tree),
+    /* `scope.zero` was here, and it required the canonical corpus to demonstrate
+       a node with NO position -- 0:0..0:0. Its only two witnesses in that corpus
+       were the LineBreak and the SoftBreak in inlines.ast, and 0a.12b gave both
+       of them a real position (D26). The remaining producers of that shape are
+       D13's empty Text and the split-off table lead, and pinning either as
+       canonical coverage would bless a defect the stage is closing -- which is
+       exactly the trap section 4.4 of docs/RECONSTRUCTION.md names. The state is
+       therefore deleted rather than re-witnessed. This is a coverage obligation,
+       not a grammar or schema change: the dump still permits 0:0..0:0, so no
+       binding and no golden format moves. */
     "children.empty": (tree) => / children=0(?:\n|$)/.test(tree),
     "children.populated": (tree) => / children=[1-9]\d*(?:\n|$)/.test(tree),
     "escaping.empty-string": (tree) => /=""/.test(tree),
