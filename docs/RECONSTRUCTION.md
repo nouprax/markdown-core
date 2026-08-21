@@ -298,16 +298,19 @@ Absent at baseline: sessions, incremental, delta, the source rope, node ids and
 revisions, diagnostics, concrete records, the delimiter engine,
 `ReferenceDefinition` nodes, `parser->line_marks` — **and every parity oracle.**
 
-### Twenty-five defects live in the baseline
+### Twenty-six defects live in the baseline
 
 The first eleven were found by reading. **All eleven have since been built,
 gated and reverted** on isolated worktrees at `8e76a94` — every claim below
 about a line count, a moved golden row or a green suite is a measurement, not
 an estimate. Doing that found five more (D12–D16). D17 was found reconciling
 the gates and is fixed at 0a.0. D18–D24 were found restating the port list as
-requirements, and D25 while inventorying parser state for Stage 1.
+requirements, D25 while inventorying parser state for Stage 1, and D26 while executing the
+Q25 ruling — see §4.2.5. Every one of the fourteen that Q25 put to the test was
+found **fixable on the untouched baseline**; none produced an architectural
+dependency, and D9 remains the plan's only exception.
 
-**All twenty-five are recorded here**, because a defect the plan does not name
+**All twenty-six are recorded here**, because a defect the plan does not name
 is a defect the plan will re-derive later at full price — and because a list
 split across three sections is a list nobody reads.
 
@@ -949,9 +952,9 @@ Edge list (`step: [what must already be true]`):
 ```
 0:[]            1:[0]           0a:[1]          2:[0a]        3a:[0a]
 3:[0a,2,3a]     3b:[0a]         15A:[1]         5:[0a]        6:[3]
-7:[3,15A]       10:[0a]         9a:[0a]         11a:[0a,5,10] 8:[3,6,7,11a]
+7:[0a,3,15A]    10:[0a]         9a:[0a]         11a:[0a,5,10] 8:[0a,3,6,7,11a]
 9b:[9a,10,15A]  11b:[11a,8]     11c:[9b,11a]    12:[6,7,11b,11c,15A]
-13:[7,12]       14:[9b,12,15A]  15C:[12,13,14]
+13:[7,12]       14:[0a,9b,12,15A]  15C:[12,13,14]
 ```
 
 **The check is executable, and it reads the edge list above rather than a copy
@@ -1075,153 +1078,214 @@ Two further findings that are not new defects but change what an existing item m
 
 Scratch artifacts (outside the repository): `/private/tmp/claude-501/-Users-donz-Repos-GitHub-markdown-core/19b6648c-2779-4f7c-bddf-acfaf7c2be6b/scratchpad/dag.mjs` and `dag2.mjs` — the acyclicity check and the linear-order verifier of §4.1.4, runnable with `node`. Repository unmodified; `git status` clean.
 
+# Replacement for §4.2, and the edits the ruling forces
+
+*Drop-in prose. §4.2 replaces `docs/RECONSTRUCTION.md` lines 1046–1193 in full; the consequent edits follow, each keyed to its section. The edge list has been run through `scripts/check-plan-graph.mjs` and the linear order through a verifier — both results are stated below.*
+
+---
+
 ### 4.2 Stage 0a — the defect stage
 
-Ordered by three rules, in this precedence: **(1)** an oracle's first reading is
-taken on the *unfixed* tree, so the two new position oracles land alone and
-first; **(2)** memory-unsafety and data loss before wrongness; **(3)** a defect
-whose *statement* changes under a later step lands before that step.
+**Owner ruling, 2026-08-20 (Q25):** *"Fix all defects before start any tasks."*
+
+The ruling was executed, not paraphrased. The fourteen defects §2 had assigned to Steps 3, 5, 7, 8, 9a, 10 and 14 — D12, D13, D14, D15, D16, D18, D19, D20, D21, D22, D23, D24, D25 — were each put to the test that settled the first ten: **applied to the untouched baseline with no other step landed, built, run against every gate in the repository, and reverted.**
+
+**Fourteen tested. Fourteen fixable. Zero produced an architectural dependency.** D9 remains the only exception in the plan, and its exemption is still the measured one: its budget is the only thing between a resolved reference and 68.7 GB of output from 1 MiB of input, because resolving a reference copies the destination into the node; it is fixed by deleting the copy, which is Step 9a's model change, and by nothing smaller. It is pinned, not fixed, at 0a.8.
+
+Two of the fourteen *looked* like dependencies in §2 and were not. **D12 "blocked by D13"** is a sequencing constraint between two defects that are now both inside this stage — not a step dependency, and the two land in one commit. **D22 "7 lands the primitive, 8 owns the model"** was an ownership label, not a blocker: the primitive is twenty lines in `core/inlines.c` and needs nothing Step 7 provides. Two more — **D14 "that is a policy move, not a repair"** and **D16 "the rule has to become structural"** — were arguments about *desirability*, and the ruling is precisely a decision about desirability. Both are now measured to be repairs: see the verdict rows.
+
+#### 4.2.1 The fourteen, tested
+
+| # | Verdict | Evidence, measured on the untouched baseline | Lands |
+|---|---|---|---|
+| **D12** | **FIXABLE-AT-BASELINE**, in the same commit as D13 and no other | The one-line fix *alone* turns `extensions.txt:804`/`:809` from `59:1..59:0` into `59:1..0:0` — a strictly worse row that **every gate in the repository passes**: 65/65, 795/795, 46/46, canonical green, ledger 207 unchanged, because `endLine < startLine` keeps it in the same `negative` bucket it left. With D13 and D10 landed it has **no witness at all**: 4 hits over the 860-example corpus, every one through an operand with no position; 0 hits over 40,000 random inputs filtered to merges where both operands are positioned. It is a real defect (the assignment is plainly missing) that is unobservable on this engine, and it must not be sold as fixing anything measurable | **0a.14** |
+| **D13** | **FIXABLE-AT-BASELINE**, by removing the node, not by respelling the position | Option A (§2's wording — give the empty fragment an honest empty range) was built in two cuts and **rejected on measurement**: every sentinel row it removes returns as a negative row, because a closed `(line, column)` interval cannot express an empty range; `extensions.txt` negative goes 10 → 36 (narrow) or 38 (wide) and `specs/scope-sanity/ledger.json` forbids growth in either class, so A cannot land without raising the ratchet, which defeats the ratchet. A-narrow also does not clear its own class — producer (2) still emits `0:0..0:0`. Option B is 24 lines across `core/iterator.c` and `extensions/autolink.c`: 106 rows changed, net **−46**, ledger **207 → 169**, and every gate green **after** one registered upstream divergence (Q31) | **0a.14** |
+| **D14** | **FIXABLE-AT-BASELINE** | **§2 is wrong twice.** It reproduces on the untouched tree with no D10 fix: `x[\^a] tail` → `literal="x[^a]] tail"` (backslash lost, `^` invented, `]` doubled) and `x[&#94;a] tail` → `literal="x[^\0\0\0\0\0] tail"`. And the "policy move, not a repair" objection does not survive measurement: at the baseline **no** escaped or entity-spelled call ever resolves, because the column arithmetic makes the lookup key `n]` or `\0\0\0\0\0`, never `n` — verified with `a[\^n]` + `[^n]: note`, which drops the definition before *and* after. The narrowing removes broken behaviour only. 432-case matrix (6 caret spellings × 8 labels × 3 tails × 3 definition contexts): 252 move; the baseline emits **invalid UTF-8 on 90 of them and NUL bytes on 162** — heap bytes materialised into a document. One condition, bounds-tested before the subscript. **Zero golden rows** | **0a.9** |
+| **D15** | **FIXABLE-AT-BASELINE** | Over all 2,744 ordered triples of 14 significant lines, **414 (15.1%) parse differently through the CLI than through the facade**; after one shared attach path, 0. The 809-input fixture corpus shows 0 CLI-vs-facade differences, which is why no oracle sees it. `markdown_core_core_extensions_attach(parser, mask)` walking one ordered table with `table` last (Q9), declared **without** `MARKDOWN_CORE_EXPORT` so the export map and `audit-public-surface.sh` are untouched. The CLI's `-e NAME` lever must route through the same bit table or the hole is still open. **Zero golden rows** | **0a.11** |
+| **D16** | **FIXABLE-AT-BASELINE** | 40 rows — 37 `spec.txt`, 3 `extensions.txt` — cross-checked independently here: the corpus carries **58** `title=""` rows (54 spec + 4 extensions), 18 of them D6's, and 58 − 18 = 40 exactly. **Mechanism correction:** `markdown_core_clean_title` already folds a zero-length title to `CHUNK_EMPTY`, so `inlines.c:1755` is **behaviour-neutral today**; the entire visible defect is `chunk_clone`, which `calloc`s `len+1` unconditionally and turns the refmap's NULL back into `""`. Take both anyway — `chunk_clone` alone leaves 1755 asserting "written and empty" for something never written, which is the exact tension 0a.7 was told not to resolve | **0a.7** |
+| **D18** | **FIXABLE-AT-BASELINE** | 10 rows, one file (`spec.txt` examples 177, 179, 184, 185), every one of them the **golden being wrong**: example 185 pinned `Text "===" scope=1:1..1:3` for text on line 2 and `Link scope=2:1..2:5` for a link on line 3. The fix counts `\n` in the prefix `resolve_reference_link_definitions` drops, which is sound because `markdown_core_parse_reference_inline` only returns after `skip_line_end` succeeds — so the dropped prefix always ends on a line boundary. Putting it in the helper covers **both** consumers (`finalize` and the setext path); the setext one is why example 184 moves. Verified under block quotes, list items, stacked and multi-line definitions, CRLF, and the all-consumed case | **0a.12** |
+| **D19** | **FIXABLE-AT-BASELINE** | 1 row (`spec.txt` example 518, which pinned `Link scope=1:1..1:25` on a 14-character line 1). +14/−1 at the `match:` label, reusing the file's own `count_newlines` and reproducing `handle_newline`'s exact `column_offset` convention. Two further witnesses separate the defect's halves: `[a\nb](/u) tail` gives a **link that begins after its own child** with no newline counting involved, and `*[a](/u "t\nt2")* tail` displaces every later node in the paragraph. Do **not** guard it on `MARKDOWN_CORE_OPT_SOURCEPOS` — that is D3, nothing sets it, and the guard would make the fix a no-op | **0a.12** |
+| **D20** | **FIXABLE-AT-BASELINE** | One line. 3 rows in `extensions.txt` (568, 582, 584), each a negative range becoming a real one; ledger 207 → 204 via `--update`, the gate's sanctioned path. The `extensions_gfm` red was the **golden** being wrong | **0a.12** |
+| **D21** | **FIXABLE-AT-BASELINE** | +54/−14 across three files, including one new extension-API constant. **Two smaller candidates were built and discarded**: returning 0 on the fence line does not fix it (`check_open_blocks` does not close unmatched blocks — the lazy branch still fires, because `parser->blank` is false), and advancing past the line end to make it read as blank silently changes list tightness. Full-corpus differential — every example in all ten fixture files × two profiles, 11,180 dump lines — moved **exactly two lines**, both in the golden that pinned the defect, plus one row in `specs/canonical-ast/structure.ast` that the task's gate list does not cover. **External confirmation:** mdast parity goes 46/46 → **48/48 with the backlog unchanged at 23** — remark, driven by the normative grammar Step 7 will port, produces the same tree as the fixed engine. 4,000 directed random documents through the ASan build, 0 failures | **0a.10** |
+| **D22** | **FIXABLE-AT-BASELINE**, and it does **not** need Step 7 | Make the primitive honest (`markdown_core_inline_parser_set_offset` advances the subject's line counter over a consumed span) and let directive's two sites read the end back from the subject instead of computing `start_column + len - 1`. Result is exactly the oracle: `Directive 1:1..2:5`, `Text 2:6..2:10`, agreeing byte-for-byte with a softbreak control at the same indent under two newlines, CRLF, block quote and list item. `set_offset`'s other three callers are unaffected. **Zero existing golden rows — the defect is completely unpinned**, which is the finding; the pin was added and proved to bite | **0a.10** |
+| **D23** | **FIXABLE-AT-BASELINE**, and take the complete cut | §2's named one-liner (`emph->start_column += opener_num_chars`) gives the right `Strong` and **leaves the defect's other half open**: the leftover `Text "*"` still claims columns 1–3, so the two nodes still overlap, and the mirror case `**a***` is untouched. 31 rows. The complete cut is 4 more lines in the same function — the opener keeps its leading bytes, the closer its trailing ones — and every case becomes byte-exact and non-overlapping: `*****a*****` → `Emphasis 1:1..1:11 > Strong 1:2..1:10 > Strong 1:4..1:8`. **57 rows** (spec 45, regression 11, extensions 1). Taking the one-liner buys a second golden churn later | **0a.13** |
+| **D24** | **FIXABLE-AT-BASELINE** | +7/−1. The re2c rule is `("[ ]"\|"[x]"\|"[X]")spacechar+`, so a non-zero `matched` guarantees `matched >= 4` and the read at `first_nonspace + 1` is in range. **Zero existing golden rows.** It is confirmed to be the pending upstream delta `tasklist-checked-marker` — and activating it **cannot be done by editing JSON alone**: `check-upstream-parity.mjs` keys `expectedDivergences` by input and fails any entry not reachable in the corpus, and the registered input `- [ ] call me [x] later` was in no fixture at all | **0a.11** |
+| **D25** | **FIXABLE-AT-BASELINE**, and it is **one hunk with D10's byte half** | Reproduced three ways; the ASan stack is §11.4's witness byte for byte, and `map.c:279` / `inlines.c:1384` still resolve exactly. The fix is one expression — the length was never the bug, the **base pointer** was: the old code borrowed *the following node's* literal, the fix borrows `subj->input + opener->position + 1`, and on one line the arithmetic is provably identical when the node after `[` borrows `subj->input` at `opener->position`, which is exactly what a decoded entity breaks. **Zero golden rows on the fix alone**, so its fixture is mandatory, not optional evidence | **0a.2** |
+
+**Two of the fourteen carry a decision that is not the implementer's.** D13 needs `empty-text-node` registered as a deliberate divergence from cmark-gfm, because upstream emits the empty node too (**Q31**). D16's spec example 169 flips `[foo]: <>` from `destination="" title=""` to `destination=null title=null`, and the destination *was* written (**Q32**). Both are in §9; neither may be taken silently inside a defect commit.
+
+#### 4.2.2 The stage
+
+Ordered by four rules, in this precedence: **(1)** an oracle's first reading is taken on the *unfixed* tree, so the position oracles land alone and first; **(2)** memory-unsafety, lifetime and data loss before wrongness; **(3)** a defect that makes another defect's gate vacuous lands **after** that gate has proved its mutant kill; **(4)** anything whose statement changes under a later step lands before that step.
 
 | # | Lands | Defects | C lines | Goldens moved | New gate | Cost |
 |---|---|---|---|---|---|---|
-| 0a.1 | Two oracles, no engine change | — | 0 | 0 | **inline-sourcepos oracle**, **scope-containment invariant** | ~120 script lines, ½ day |
-| 0a.2 | Footnote data loss | D10, D11 | 19 | 1 + 1 ledger | 2 regression examples, 1 upstream model delta, 1 `expectedDivergence` | 1 day |
+| 0a.0 | Gate reconciliation | D17 | 1 | 0 | four items, all verified; two decisions taken (Q31, Q32) | ½ day |
+| 0a.1 | **Three** oracles, no engine change | — | 0 | 0 | inline-sourcepos · scope-containment **incl. sibling non-overlap** · **position-is-a-place** | ~200 script lines, 1 day |
+| 0a.2 | Lifetime and data loss | D10, D11, **D25** | ~28 | 1 + 1 ledger | 3 regression examples, 1 upstream **model** delta, 2 `expectedDivergence`s | 1½ days |
 | 0a.3 | The out-of-bounds read | D4 | 1 | 0 | a debug assertion the existing ASan/UBSan presets trip | 1 hour |
 | 0a.4 | Extension registration | D1, D2 | 3 (all deletions) | 0 | 3 mdast corpus rows, 3 engine examples, 1 structural invariant | ½ day |
-| 0a.5 | Cross-extension interference | D8 | 6 | 0 | `extensions-conflicts.txt`, 2 examples | ½ day |
-| 0a.6 | Positions | D3, D7 | 7 | 13 | 2 regression examples; 0a.1's oracle goes 13 → 1 | 1 day |
-| 0a.7 | The two title defects | D5, D6 | 3 | 18 + 1 assertion | 1 regression example; activate `refdef-title-rewind` | ½ day |
+| 0a.5 | Cross-extension interference | D8 | 6 | 0 | `extensions-conflicts.txt`, 2 examples — **and its order-independent form** | ½ day |
+| 0a.6 | Positions behind a dead option | D3, D7 | 7 | 13 | 2 regression examples; oracle (a) goes 13 → 1 | 1 day |
+| 0a.7 | The null/empty rule, all three sites | D5, D6, **D16** | ~11 | **58 + 1 assertion** | 1 regression example; activate `refdef-title-rewind` | 1 day |
 | 0a.8 | **D9 pinned, not fixed** | — | 0 | 0 | order-independence oracle (**registered red**), output-size bound (green) | ½ day |
-| | **total** | **10 fixed, 1 pinned** | **39** | **32 + 1 ledger** | **~13 examples, 4 oracles** | **~5 days** |
+| 0a.9 | Footnote-call recognition | D14 | 1 | 0 | 3 regression examples + the caret matrix reduced to a fixture | ½ day |
+| 0a.10 | Directive close and span | D21, D22 | ~88 changed | 2 + 1 `.ast` | 3 directive examples, 1 mdast `baselineBacklog` entry; mdast 46 → 48 | 1½ days |
+| 0a.11 | One attach path, one marker | D15, D24 | ~48 | 0 | CLI/facade equality test; activate `tasklist-checked-marker`; **convert 0a.5's gate** | 1 day |
+| 0a.12 | Positions that are not places | D18, D19, D20 | ~24 | 14 | 2 regression examples; oracle (c)'s reading drops | 1 day |
+| 0a.13 | The overlap class | D23 | 6 | 57 | oracle (b)'s sibling half goes red on revert | 1 day |
+| 0a.14 | The empty-`Text` class | D12, D13 | 24 | **106 changed, net −46** + 1 assertion | ledger 207 → 169; `empty-text-node` projection + delta | 1½ days |
+| | **total** | **24 fixed, 1 pinned** | **~250** | **252 + 2 assertions** | **~20 examples, 7 oracles/invariants** | **~13 days** |
 
-**0a.0 — reconcile the gates before touching the engine.** No engine change
-except D17. Four items, all verified:
+**The stage grew from 39 changed lines to ~250, and almost all of the growth is two mechanisms rather than many expressions.** D21's block-close semantics is 68 lines and D15's shared attach path is 40; the other twelve defects together are ~140. Eleven files are touched: `core/blocks.c`, `core/inlines.c`, `core/iterator.c`, `core/markdown-core-extension-api.h`, `core/main.c`, `extensions/ast.c`, `extensions/autolink.c`, `extensions/directive.c`, `extensions/strikethrough.c`, `extensions/table.c`, `extensions/tasklist.c`, plus one new `extensions/core-extensions.c`.
 
-1. **Repoint `specs/`.** The doc move to `docs/deprecated/` repointed `scripts/`
-   and `.github/` but NOT `specs/`, and the manifests are executable policy that
-   name doc paths. `specs/canonical-ast/manifest.json` named two files that no
-   longer existed, which is why the fixtures checker reported "manifest contract
-   paths drifted". Ten files repointed. *Done.*
-2. **Restore the two era-skewed checkers** to their baseline versions, per the
-   rule in §0. Both green at baseline, both red at main's. *Done.*
-3. **D17 — the version macro.** At `580d10c` the header declares
-   `MARKDOWN_CORE_VERSION ((1 << 16) | (0 << 8) | 0)` — **1.0.0** — beside
-   `MARKDOWN_CORE_VERSION_STRING "1.0.3"`. The shipped v1.0.3 tag therefore
-   answers 1.0.0 to any consumer doing a compile-time version check. `main` has
-   it consistent, so it was fixed later and the reset brought the defect back
-   with the rest of the baseline. One line. It does not wait for the 1.0.4 bump,
-   because it is wrong at 1.0.3 too.
-4. **Register the known-red checks** in §0 with their owner steps, so a red gate
-   is a statement rather than a surprise.
+#### 4.2.3 The sub-steps
 
-**0a.1 — the two oracles that must exist before any position is touched.**
-Neither exists today and neither can be replaced by a corpus row.
-(a) *Inline sourcepos vs upstream*: compare every inline `code` and
-`html_inline` position from the already-pinned `cmark-gfm --to xml --sourcepos`
-against our dump over all 671 `spec.txt` examples. ~25 lines of Node, no new
-dependency. **Baseline reading: 13 mismatches.** After D3: 1 (spec example 200,
-a table cell whose de-escaped content buffer differs from the source — the
-pre-existing content-offset-as-column class, unrelated). (b) *Scope containment*:
-for every node, `parent.start ≤ child.start` and `child.end ≤ parent.end`. This
-one **cannot** be an upstream comparison, because upstream has D7 too.
+**0a.0 — reconcile the gates before touching the engine.** No engine change except D17. Four items, all verified; the first three stand as written (repoint `specs/`, restore the two era-skewed checkers, D17's one-line version macro, register the known-reds with their owner steps). **A fifth item is added by the ruling:** take Q31 and Q32 *here*, before any commit needs them, so that no defect commit smuggles a divergence decision. Record both in §9 with the measurement already in hand.
 
-**0a.2 — D10 and D11, the two data-loss defects, first among the fixes.**
-D10 is two hunks: take the label from buffer offsets
-(`markdown_core_chunk_dup(&subj->input, opener->position + 1, initial_pos -
-opener->position - 2)` — byte-for-byte the expression `handle_close_bracket`
-already uses 58 lines earlier for `raw_label`), and set
-`fnref->start_line = opener->inl_text->start_line`. Underflow is impossible by
-construction: the branch is entered only when `input[opener->position]` is the
-`^`. Plus four lines in `blocks.c:625` positioning the `calloc`'d replacement
-node. D11 is one word — `EXIT` → `ENTER` at `blocks.c:578` — plus an 8-line
-sweep before `blocks.c:675` clearing `node` on every map entry whose node still
-has a parent, because a duplicate that lost is still spliced where the author
-wrote it and the *tree* owns it. **Neither hunk alone is enough**, measured: with
-only the `ENTER` change the loss changes victim.
+**0a.1 — the oracles that must exist before any position is touched.** There are now **three**, because the ruling brought two whole classes of position defect into the stage that the original two oracles cannot see.
 
-**Land D10 before D7 and the scope ratchet nets out.** D10 turns
-`regression.txt:474`'s sentinel into a real position (17 → 16 for that file);
-D7's continuation-line fixture adds one `SoftBreak` sentinel (16 → 17). The
-only-shrink ratchet then never sees a growth and `specs/scope-sanity/ledger.json`
-needs no recorded exception. *This composition is predicted from two separate
-measurements — verify it in the 0a.6 commit, and if it does not hold, record the
-exception the way the ledger's own `purpose` field already records this exact
-precedent.*
+- **(a) Inline sourcepos vs upstream** — unchanged. Every inline `code` and `html_inline` position from the pinned `cmark-gfm --to xml --sourcepos` against our dump over all 671 `spec.txt` examples. **Baseline reading: 13.** After D3: 1 (spec example 200, the pre-existing content-offset-as-column class).
+- **(b) Scope containment, extended to siblings.** For every node, `parent.start ≤ child.start` and `child.end ≤ parent.end` — **and no two siblings overlap**. The sibling half is new and it is what makes D23 falsifiable: D23's defect is `Text "*"` and `Strong` both claiming column 1, which is not a containment violation at all. It cannot be an upstream comparison; upstream has D7, D18, D19 and D23 too.
+- **(c) A position is a place** — new. For every dumped scope, the line exists in the input and the column is within that line's length. This is the oracle that watches D18, D19, D20 and D22, none of which trips (a), (b), the sentinel/negative/line-zero ratchet, or any parity gate. **Its baseline reading is already measured and recorded in §4.1.3: 78 of 1,928 inline nodes over the three fixture files at `--profile gfm-extended` carry a position that is not a place.** Stage 0a must drive that number down and name what is left; the residue is the continuation-line column class, which is Step 10's.
 
-**0a.3 — D4.** Swap the operands: `while (after_char_pos < subj->input.len &&
-subj->skip_chars[peek_at(subj, after_char_pos)])`. The gate cannot be an output
-test — the fix changes no output over 20,797 compared inputs — and it cannot be
-ASan, which is blind here by construction. It is an assertion immediately before
-the subscript, under `#ifndef NDEBUG`, which the existing `correctness-asan` and
-`correctness-ubsan` presets then trip on `printf 'a *~~' | markdown-core
---profile gfm`. **Without it this fix is unfalsifiable by the current harness.**
+Three oracles, ~200 lines of Node, no new dependency. **Every one of them takes its first reading on the unfixed tree.**
 
-**0a.4 — D1 and D2, before Step 3 writes the descriptors.** Three deletions:
-`formula.c:613`, `directive.c:1380`, `directive.c:1377`. Keep
-`strikethrough.c:110`. The gate for D1 already exists and is only corpus-blind:
-`check-mdast-parity.mjs` runs at `--profile gfm-extended` and remark gives the
-right answer — proved with the script's own `--corpus` override, 0/3 before and
-3/3 after on `foo:_bar_`, `foo$_bar_`, `a}*.foo.*`. `check-upstream-parity.mjs`
-can **never** see D1: it runs `--profile gfm`, which is precisely the profile
-that detaches both extensions. That is why 795/795 is green over a live
-wrong-output defect. D2, once D1 is fixed, has no behavioural signature at all;
-its honest gate is **structural** — every byte an extension registers in
-`special_inline_chars` is either dispatched by its `match_inline` or is an
-internal sentinel (`< 0x20`, used only as a delimiter tag). ~20 lines, and it
-catches the next one too.
+**0a.2 — D10, D11 and D25: the lifetime and data-loss defects, first among the fixes.** D10 is two hunks (the label taken from buffer offsets; `fnref->start_line` from the opener) plus four lines in `blocks.c:625` positioning the `calloc`'d replacement node. D11 is one word — `EXIT` → `ENTER` at `blocks.c:578` — plus the 8-line sweep before `blocks.c:675`; neither hunk alone is enough, measured. **D25 is the same expression as D10's byte half**, and that is why it lands here rather than anywhere else: if D10 lands as written, D25 is fixed *by accident*, which is exactly what §11.4 warned about. Name it, with the `&Hat;` witness and its own fixture.
 
-**0a.5 — D8.** Six `return parent_container;` → `return NULL;` at
-`table.c:325, 329, 337, 354, 365, 372`. **Do not** take the tempting caller-side
-fix in `blocks.c` that treats `new_container == *container` as a decline: the
-success path at `table.c:457` legitimately returns the same node, because the
-paragraph is retyped in place. **Do not** take the reorder the old plan proposed
-as Step 4h either: moving `table` last was built and measured to be
-output-identical to the return fix today (0 differences over 995 inputs), but it
-works only because nothing is registered after `table` once it moves, and it
-perturbs a global list instead of correcting the one function that lies. The
-gate is a new `tests/fixtures/extensions-conflicts.txt` framed as an
-independence property — *enabling `table` must not change how another
-extension's block opener parses* — with the expectations taken from the
-no-table parse. Measured: 0 passed / 2 failed at the baseline, 2 passed / 0
-failed with the fix.
+**Correct §4.2's own underflow argument while writing this hunk.** The previous text said the branch is entered only when `input[opener->position]` is the `^`. **That is false, and `&Hat;` is the counterexample** — the branch tests the *decoded* first byte. The sound argument is that the branch requires `literal->len > 1 || next->next`, so the label span is ≥ 2 bytes and the length is ≥ 0. `subj->input` is `parent->content`, freed only in `markdown_core_node_free`, so it outlives `process_footnotes` — the same lifetime every `make_str` literal already relies on.
 
-**0a.6 — D3 and D7.** D3: delete the four-line `OPT_SOURCEPOS` guard and amend
-`inlines.c:343` for the container-relative end column. D7: add
-`+ subj->column_offset + subj->block_offset` to both assignments at
-`inlines.c:221-222`. They compose — applied together the combined golden
-movement is exactly D3's 13 rows and nothing more, and the interaction case
-`` a `x\ny` <https://e.example/> z `` becomes correct where cmark-gfm
-`--sourcepos` is still wrong. Three of D3's 13 new rows carry an end column of
-**zero** (`Code scope=1:3..3:0`) for a content span ending on a newline. That is
-byte-identical to cmark, so it is not a regression — but column 0 is not a place
-either, and it is a **fourth class** the scope-sanity ledger does not classify
-(it tracks sentinel, negative and line-zero). Name it in the ledger's `purpose`
-field in this commit; do not let it enter the corpus unnamed.
+**The differential moves three classes, not two:** the entity caret (`x [&Hat;abcdefghij] y` — UAF and arena garbage → real bytes), the label crossing a line end (`x[^a\nb] tail` — `x[^] tail` → `x[^a\nb] tail`), and the **escaped** caret (`[\^abc] x` — `[^abc]] x`, a manufactured `]` → `[^^abc] x`). The third is not memory-unsafe and is not named by any existing defect; it is closed here and its *language* half — that neither spelling should open a footnote call — is 0a.9's.
 
-**0a.7 — D5 and D6.** D5 adds one line inside the successful rewind: set `title`
-to exactly what the no-title branch four lines above already sets
-(`inlines.c:1755`, `markdown_core_chunk_literal("")`). No free is needed — the
-stale chunk came from `markdown_core_chunk_dup`, which borrows. **Note the
-tension and do not try to resolve it here:** that value is the written-and-empty
-chunk, so the definition path already records an absent title the way D6 records
-an absent autolink title. `inlines.c:1755` is therefore a *third* site of the
-null/empty violation, alongside D6's `inlines.c:219` and D16's
-`inlines.c:1300`. D5's job is to make the rewind path agree with its own
-neighbour; making all three say "not written" is Step 14, and doing it here
-would smuggle a rule change into a defect fix. Its gate is already written and waiting:
-move `refdef-title-rewind` from `pendingDeltas`/`pendingExpectedDivergences` into
-`deltas`/`expectedDivergences` and add the registered input to `regression.txt`.
-Measured: 796/796 with `registered divergences: 1/1 inputs reproduced`. D6
-deletes one line and moves 18 golden rows plus one assertion string in
-`tests/api/main.c:1075`. **No parity oracle can ever police D6** —
-`scripts/lib/upstream-cmark.mjs:174` maps `title:""` to `"null"` before
-comparing, on all three of them. A golden dump is the only mechanism in this
-repository that can hold that fix down, which is exactly why the 18 rows must be
-regenerated *once*, deliberately, in a commit whose subject says so.
+The ratchet composition stands and must still be verified in the 0a.6 commit: D10 turns `regression.txt:474`'s sentinel into a real position (17 → 16) and D7's continuation-line fixture adds one `SoftBreak` sentinel (16 → 17).
 
-**0a.8 — D9.** No engine change. Two gates, and the *statement* of the defect
-recorded next to them, so that the next reader of `map.c:307` finds out from the
-code what the 68 GB experiment cost to learn.
+**0a.3 — D4.** Unchanged: swap the operands, and gate it with an assertion under `#ifndef NDEBUG` that the existing sanitizer presets trip on `a *~~`.
+
+**Correct §2 and §11.4 here.** They say *"the CLI allocates through the arena, and so does the `asan` preset"*, and *"H12 makes it invisible even under `--preset asan`"*. **The second half is false.** The fixture runner does not go through `core/main.c`: `spec_runner` → `ts_ast_parse` → `markdown_core_document_parse` → `extensions/ast.c:113`, which calls `markdown_core_parser_new` — **the default allocator**. `ctest --preset correctness-asan` runs the whole golden corpus on malloc/free, and it was measured to catch D25: with the regression example added and the fix reverted, `correctness-asan` reads **56/57** with a genuine `heap-use-after-free`. What the arena hides is only the CLI and `dump_cli_runner`. Q12 is not a prerequisite for anything in this stage, and 0a.3's note should say *that*.
+
+**0a.4 — D1 and D2, before Step 3 writes the descriptors.** Unchanged.
+
+**0a.5 — D8.** The six `return parent_container;` → `return NULL;` and both "do not take" warnings stand. **What changes is the gate, and the reason is 0a.11.** With `table` last — which is Q9, and which 0a.11 implements — D8's block-open symptom is **unobservable through both product entry points**: measured with D8 *unfixed*, the independence property over 1,728 no-table documents goes 375 failing → 0 on D15's fix alone. So the `extensions-conflicts.txt` fixture framed as an end-to-end parse reads *"0 passed / 2 failed at baseline, 2 passed / 0 failed with the fix"* **only while the attach order is still wrong**. Two obligations follow, and both are mandatory:
+
+1. **0a.5 lands before 0a.11**, and its commit records the 0/2 → 2/2 mutant kill against the baseline order.
+2. **0a.11's commit converts the gate to an order-independent form** — a direct test that `try_opening_table_header` returns `parent_container` on a decline, or an extension registered *after* `table` in `tests/api/main.c` — and re-proves the mutant kill after the reorder. A gate that goes vacuous the moment a later defect is fixed is not a gate; §4.5's "four defects invisible to every oracle" warning applies to D8 twice over.
+
+**0a.6 — D3 and D7.** Unchanged, including the `inlines.c:343` amendment for the container-relative end column and the instruction to name the end-column-zero class in the ledger's `purpose` field. **Two corroborations arrived independently.** First, un-gating `OPT_SOURCEPOS` alone turns five spec examples red for a *second* reason: `adjust_subj_node_newlines` writes `node->end_column = since_newline`, which is **0** when the span's last byte is a newline, and never adds `block_offset` — that is the same class the existing text calls "a fourth class the ledger does not classify", and the `inlines.c:343` amendment is what answers it. Second, the family is wider than the extension API: the *core* has D22's bug wherever it consumes a newline-bearing span (`` `x\ny` tail`` → `Text " tail" scope=1:6..1:10`; CommonMark 500 likewise). Under Q14 the `MARKDOWN_CORE_OPT_SOURCEPOS` bit is deleted outright at Step 3; 0a.6 removes its only live use, so that deletion becomes trivial rather than a behaviour change.
+
+**0a.7 — D5, D6 and D16: the null/empty rule at all three sites, in one commit.** The previous text said *"note the tension and do not try to resolve it here"* and named `inlines.c:1755` as a third violation to be left standing. **Q25 reverses that instruction**, and the reversal is what makes this the cheapest commit in the stage rather than the most awkward:
+
+- D6 deletes one line (`make_autolink`'s `title = chunk_literal("")`), 18 rows.
+- D16 is two hunks, ~8 lines: `chunk_clone` returns `CHUNK_EMPTY` for a NULL-data source, and the no-title branch records absence. 40 rows.
+- D5 then sets the rewind path's `title` to exactly what its own neighbour sets — which, with D16 in the same commit, is **absence**, not `""`. D5's fix therefore reads `title=null` from the start and its new regression example is written once, correctly, instead of being written as `""` and rewritten at Step 14.
+
+58 rows move, plus one assertion string in `tests/api/main.c:1076`. **No parity oracle can ever police D6 or D16** — `scripts/lib/upstream-cmark.mjs:174` maps `title:""` to `"null"` before comparing, on all three of them — so the golden dump is the only mechanism in this repository that can hold the fix down, which is exactly why the 58 rows are regenerated *once*, deliberately, in a commit whose subject says so. The `spec_commonmark`/`extensions_gfm` reds that appear before regeneration are **the goldens being wrong**: they assert `title=""` for a title nobody wrote.
+
+**One row needs a hand decision and must be named in the commit** rather than passing as "unchanged in kind": spec example 169, `[foo]: <>`, goes `destination="" title=""` → `destination=null title=null`. The destination *was* written and was empty, so `""` is arguably right. It flips because `markdown_core_clean_url` folds length-0 to NULL, the same fold `clean_title` does, and the fix makes the reference path agree with the inline path, which already answers `[a](<>)` → `destination=null`. That is consistency, not correctness; a rule that truly separates the two requires the folds to stop, which is Step 14's structural job. **Q32.**
+
+The mdast note must also be amended in this commit: `specs/mdast-parity/corpus.md:243` still diverges correctly after D5, and its note must say the title defect is fixed and only the node model remains — otherwise the next reader re-derives D5.
+
+**0a.8 — D9 pinned.** Unchanged. No engine change; two gates and the statement of the defect recorded beside `map.c:307`.
+
+**0a.9 — D14, the footnote-call recognition rule.** One condition at `inlines.c:1321`, testing the **raw** source byte with the bounds test before the subscript (D4's lesson). It lands after 0a.2 because it amends the entry condition of the branch whose slice 0a.2 rewrites, and the pair must be re-measured composed. Zero golden rows; the gate is three regression examples (escaped, entity-spelled, and a spelling with a matching definition present) plus the 432-case matrix reduced to a fixture. **This discharges half of Step 9a's raw-`^` clause** — the "opens with a raw `^`" half. The other half, "and the document defines that label", stays 9a's, because it is a model question about what a failed call becomes (§5.7, Q2).
+
+**0a.10 — D21 and D22, the directive pair.** D21 adds one constant to the extension API:
+
+> `MARKDOWN_CORE_BLOCK_CLOSED` — returned by a `markdown_core_match_block_func` when the input is the container's own closing line. The parser closes the container and every block still open inside it, ends the container at this line, and stops processing the line.
+
+The core half extracts the existing "ends on the line being processed" arithmetic out of `finalize` byte-identically and threads a `should_continue` out-param through `parse_extension_block`, exactly as `parse_code_block_prefix` already does for fenced code. Other extensions are inert: `table`, `formula` and `tasklist` return only 0/1, so `matched != CLOSED → return matched != 0` is the old code. **One lifetime invariant a reviewer must keep true:** `S_set_end_to_current_line(parser, container)` runs *after* `finalize`, which frees a node only in its `PARAGRAPH` case, and the node reaching this path always carries an extension-minted type. ASan cannot police that — the CLI is the arena path — so it is stated here and asserted in the commit.
+
+D22 makes `markdown_core_inline_parser_set_offset` honest and has directive's two sites recompute their end *after* the consume, which keeps every OOM path returning `NULL` without having moved the subject.
+
+Three rows move — two in `extensions-directive.txt` example 16 (the inner `:::spoiler` was ending at the **outer** `::::` fence's line: the golden was wrong) and one in `specs/canonical-ast/structure.ast`, which the `conformance` preset catches and which no defect statement predicted. D22's pin is a new example, and because `extensions-directive.txt` is also mdast corpus, it needs one `baselineBacklog` entry closed by Step 7 (the pre-existing attributes-JSON and label-shape gap, not anything D22 introduces): backlog 23 → 24.
+
+**0a.11 — D15 and D24, the two Step 3 was holding.** D15 is one shared attach path plus routing the CLI's `-e NAME` lever through the same bit table, without which "impossible by construction" is false. The order is Q9's — `table` last — so Step 3 inherits a decided *and implemented* order and its job becomes making the order **unexpressible**, not choosing it. D24 is one read of the byte `scan_tasklist` already matched.
+
+**Activating `tasklist-checked-marker` requires a corpus addition, and §4.1.7 does not say so.** The registered input was in no fixture; `check-upstream-parity.mjs` fails any `expectedDivergences` entry not reachable in the corpus. Add the example (`extensions.txt`'s task-list section, or `regression.txt` per `refdef-title-rewind`'s precedent — both are parity corpus), then move the entry out of `pendingDeltas`/`pendingExpectedDivergences`. And convert 0a.5's gate here, per the obligation above.
+
+**0a.12 — D18, D19 and D20: positions that are not places.** 14 rows in two files, every one the golden being wrong. The three are independent — different files, disjoint rows, verified from a scratch reconfigure — and land together because they are one class and one oracle reading. Two honest limits belong in the commit message, not discovered later:
+
+- D18 corrects the **line**. `start_column` is deliberately untouched and is right wherever the remaining first line has the same stripped prefix as the definition's line, which is every corpus case plus block quotes and list items. Where the prefixes differ, the residue is the content→source column class that exists with no reference definition in sight (`a\n  *b* tail` → `Emphasis 2:1..2:3`, truth `2:3..2:5`). That is Q22/Step 10's.
+- D19's example 518 ends at `2:10` where the true source column is `2:12`; the two-column shortfall is the continuation line's stripped leading spaces — the same class, visible with no link present.
+
+**0a.13 — D23, the overlap class.** The complete cut, four lines beyond §2's one-liner. 57 rows, hand-checked against the source columns before regenerating; CommonMark 426 (`foo******bar*********baz`) becomes `Strong 4..18 > 6..16 > 8..14` with the tail `Text` at `1:19`, against the golden's `4..21 / 6..21 / 8..21 / Text 1:13`. It lands after 0a.12 and separately from it because 57 rows is the largest single regeneration in the stage and it deserves its own review. It does **not** interact with 0a.14: `S_insert_emph` already frees a delimiter node whose literal is spent (`if (opener_num_chars == 0) markdown_core_node_free(opener_inl)`), so the emphasis path creates no empty `Text` for D13 to clean up.
+
+**0a.14 — D12 and D13, the empty-`Text` class, last.** It is last because it *removes* rows, and how many it removes depends on which empties exist — which 0a.12 and 0a.13 both affect. Option B, 24 lines: consolidation drops a `TEXT` node that owns no bytes and takes a merged run's end only from an operand that owns bytes (the `len > 0` guard is what makes the D12 line safe, since an empty operand may still be absorbed by a merge); autolink's `postprocess_text` stops leaving an empty prefix or an empty tail. Producer (3) — consolidation merging a run of empties into an empty — becomes unreachable by construction.
+
+**106 rows change, 60 are replacements, 46 disappear.** The 46 are cross-checked here against the corpus: exactly 46 `Text … literal="" children=0` rows exist, of which **36 are the `0:0..0:0` sentinel** (30 `extensions.txt`, 6 `spec.txt`) and 10 carry honest positions — the base-language empty a hard break's stripped spaces leave. The other 60 are `children=` counts on `Paragraph`/`Link`/`TableCell`/`Strikethrough`. One hand-written assertion, `tests/api/main.c:1166`, **pins the defect** as expected output, the same shape as D10's; it is updated in this commit. The ledger goes **207 → 169** by `--update`, all shrink.
+
+**Two things this commit must state.**
+
+1. **The upstream red is the oracle, not the fix, and clearing it is a decision.** `check-upstream-parity.mjs` reads 784/795 without it: **cmark-gfm emits the empty text node too**, verified directly, and 11 corpus inputs diverge (8 autolink, 3 hard-break/shortcut-reference). This is the history already recorded in `specs/mdast-parity/deltas.json` under `empty-text-node` — *"suppressing it here failed `scripts/check-upstream-parity.mjs`, which is how this was classified as a shape delta rather than a defect"* — reproduced. Registering it costs one normalizer projection (drop an empty-literal `Text` from **both** sides in `scripts/lib/upstream-cmark.mjs`), one `NORMALIZED_DELTAS` name and one `deltas.json` entry of kind `deliberate-difference`: **795/795, green.** That is **Q31**, and §4.1's Step 5 row should have said so from the start rather than leaving it to be discovered at Step 5. The `specs/mdast-parity/deltas.json` `empty-text-node` entry goes half-stale in the same moment and is updated here.
+2. **The free happens at `ENTER`, and that is legal today for a reason Step 5 removes.** `TEXT` is a leaf, so `S_is_leaf` suppresses its `EXIT` and `markdown_core_iter_next` has already computed `iter->next` past it. When Step 5 makes the event contract **total**, every node gets an `EXIT` and the rule "only the node whose `EXIT` is current may be freed" makes this free illegal. Step 5 must move it, or state that a leaf's `ENTER` *is* its `EXIT` for mutation purposes. Write that into the commit and into Step 5's row.
+
+#### 4.2.4 Nothing failed to reproduce — but eleven statements are wrong
+
+**Every one of the fourteen reproduced on the untouched baseline.** There is no defect here that §2 invented. There are, however, eleven statements in §2, §4.1.7 and §4.2 that measurement contradicted, and each is a correction to make rather than a defect to schedule.
+
+| Where | What it says | What is true |
+|---|---|---|
+| §2 row D14 | it needs D10 fixed, and the fix is "a policy move, not a repair" | Reproduces at the baseline unaided; and no escaped or entity-spelled call ever resolves there, so the narrowing removes broken behaviour only. Both clauses go |
+| §2 row D12 | "blocked by D13" | Blocked by producer (2), `S_update_text_sourcepos` (`core/inlines.c:1898-1922`), which is **not** the site D13 names. And after D13 and D10 it has no witness in 860 fixture examples or 40,000 random inputs |
+| §2 item 13 / §4.1.7 | D13 is `set_sourcepos_from_range`'s `len == 0` | That site produces **31** of the 36 sentinel rows; `markdown_core_node_unput` produces the other 5 — including `extensions.txt:804`, the very row §2 uses to argue D12 is blocked. §4.1.7's three-producer note is the accurate description and should replace the §2 row. §4.1.7 also under-counts the *sites*: there is a **fourth** producing `Text scope=0:0..0:0` with a non-empty literal, D10's `calloc`'d replacement node (`core/blocks.c:620`, `regression.txt:474`) — four sites, three of them zero-length |
+| §2 item 16 | D16 is two sites, `chunk_clone` and `inlines.c:1755` | `markdown_core_clean_title` already folds length-0 to `CHUNK_EMPTY`, so 1755 is behaviour-neutral **today**; the entire visible defect is `chunk_clone`. Take both, but for the reason stated in 0a.7, not this one |
+| §2 / §11.4 | *"the CLI allocates through the arena, and so does the `asan` preset"*; *"H12 makes it invisible even under `--preset asan`"* | False for the fixture path. `extensions/ast.c:113` uses the default allocator; only `core/main.c:238` uses the arena. **One ordinary regression example is a complete memory-safety gate for D25.** The blind spot is CLI-only, and Q12 is not a prerequisite |
+| §4.2 0a.2 | underflow is impossible because "the branch is entered only when `input[opener->position]` is the `^`" | Unsound — `&Hat;` enters the branch with `&` at that byte. Substitute the ≥2-bytes-of-label argument |
+| §4.1.7 row D18 | the witness is a `Text` node | The **paragraph itself** carries the wrong start, and through the setext path so does a `Heading` (spec 184). Any oracle for D18 must assert the block position, not only the inline one |
+| §4.1.7 row D19 | truth is `Link 1:1..2:6`, `Text 2:7..2:11` | Arithmetically wrong. Line 2 is `t2") tail`: the `)` is the 4th character and ` tail` occupies 5..9. The newline consumes one linear column too, so the subtraction is 10, not 9 — truth is `Link 1:1..2:4`, `Text 2:5..2:9`. Engine-after-fix and hand arithmetic agree. **Fix the row before it becomes a test expectation** |
+| §4.1.7 row D21 | "a blank line after the fence hides it" | It hides the *sibling-attribution* half only. `:::note/body/:::/(blank)/after` still emits `Paragraph scope=2:1..3:3` — a paragraph whose extent covers a line none of its children touch. The extent half is never hidden. And with the trailing line outside a block quote, `after` is pulled inside **both** the quote and the directive and recorded at a column that does not exist on its line |
+| §4.1.7 row D22 | "**7** lands the primitive; **8** owns the model" | 0a.10 lands the primitive. Step 8 still owns the model |
+| §4.1.7 row D24 | "may be the same thing as the pending upstream delta — check before re-deriving" | It is. And activating the delta needs a **corpus addition**, not a JSON edit |
+| §4.2 0a.5 | the gate reads "0 passed / 2 failed at baseline" | True only until 0a.11. See the two obligations in 0a.5 |
+
+#### 4.2.5 One new defect the ruling exposes: D26
+
+Counting the sentinel rows to size 0a.14 turned up a class nothing in §2 names. The corpus carries **188** `scope=0:0..0:0` rows, not 36:
+
+```
+    133  SoftBreak
+     37  Text          (36 empty-literal — D13's; 1 non-empty — D10's replacement node)
+     17  LineBreak
+      1  Paragraph     (the footnote-ordinal paragraph, deleted by Step 9a)
+```
+
+`handle_newline` (`core/inlines.c:1443-1460`) creates its break node with `make_simple`, which `calloc`s, and **never assigns a start or an end** — while `nlpos`, `subj->line` and `subj->column_offset` are all in hand two lines earlier. So Stage 0a closes 37 of the 188 and Step 9a closes 1; **150 rows have no owner**, and Step 5's requirement — *"no node carries `0:0..0:0` as a stand-in for 'no bytes'"* — is unreachable without them.
+
+> **D26 (proposed, unmeasured).** `handle_newline` gives `SoftBreak` and `LineBreak` no position at all. Severity: wrong-position. 150 golden rows. **It must be put to the same test as the other fourteen before it is scheduled**; on the evidence it is a two-line fix and belongs at 0a.12, but it is listed here as a §2 addition with an unmeasured budget, not as a sub-step with a stated one. If it passes, 0a.12's golden movement grows by up to 150 rows and the ledger's sentinel budget falls by the same.
+
+That is the ruling working as intended: the discipline of proving each defect fixable at the baseline is also the discipline that finds the ones nobody had counted.
+
+#### 4.2.6 What Stage 0a now moves, and why §4.4's argument gets stronger
+
+**252 golden rows, 2 hand-written C assertions, and one `.ast` row** — against 32 + 1 in the previous stage. By file, from the independent measurements:
+
+| Sub-step | Defects | `spec.txt` | `regression.txt` | `extensions.txt` | other |
+|---|---|---|---|---|---|
+| 0a.2 | D10 | — | 1 | — | + 1 ledger row |
+| 0a.6 | D3 | 13 | — | — | |
+| 0a.7 | D5, D6, D16 | 54 | — | 4 | + 1 assertion (`main.c:1076`) |
+| 0a.10 | D21, D22 | — | — | — | 2 `extensions-directive.txt`, 1 `structure.ast` |
+| 0a.12 | D18, D19, D20 | 11 | — | 3 | |
+| 0a.13 | D23 | 45 | 11 | 1 | |
+| 0a.14 | D12, D13 | ~6 removed + replacements | — | ~30 removed + replacements | + 1 assertion (`main.c:1166`) |
+| | **total** | | | **252 rows** | **net row count −46** |
+
+`specs/scope-sanity/ledger.json` goes **207 → ~166**, every movement a shrink: −1 (D10) +1 (D7's fixture) −3 (D20) −38 (D13). That is the largest reduction in the ledger's history and it is taken under the ledger's own rule with no recorded exception.
+
+**Three caveats, because the 252 is a sum of independent measurements and not yet a composed one.**
+
+1. **Four pairs must be re-measured composed, once:** D13 × D20 (both concern consolidation carrying a zero end position, and the agent's `--update` runs overlap in `extensions.txt`'s negative bucket), D13 × D23 (both touch emphasis examples in `spec.txt`), D6 × D16 (expected additive — 18 + 40 = 58, cross-checked against the corpus's 58 `title=""` rows, but prove it), and D14 × D10/D25 (same branch, same function). D18 × D19 is already verified additive: 10 + 1 = 11 rows and nothing else.
+2. **The composed number is expected to be ≤ 252**, never more, because a row fixed twice is counted twice here.
+3. **Corpus growth:** ~20 new examples, of which most land in files that are also the upstream-parity corpus, taking that gate from 795 inputs to roughly **813** with **four** registered `expectedDivergence`s active (D5, D10's byte retention, D25's entity caret, D24's tasklist marker) and `deltas` going 4 → 6 (D11's footnote-model rule, D13's `empty-text-node`). Measure it once at the close of the stage rather than per commit.
+
+**Does 252 change §4.4's argument that regenerating once beats regenerating repeatedly? It strengthens it, on both halves.**
+
+*The duplicate-work half.* Under the old schedule these same 252 rows were regenerated by Steps 5, 7, 8, 9a, 10 and 14 — and regenerated *again* whenever an earlier step touched the same file first. Step 14 alone was going to move 40 rows for `title=""`, ten steps after the defect could have been closed for eight lines. Step 8 was going to move 71 position rows behind six other steps. Step 5 was going to move 106. Under this schedule **Step 5, Step 8 and Step 14 each move zero**, and 5 and 8 gain something better than a smaller diff: an acceptance test that says *the rewrite moves no golden row*, which is the only falsifiable form of "subsumes it by construction".
+
+*The blessed-golden half — and this is where 252 is a much stronger number than 32.* §4.4's corollary is that a golden regenerated while a defect is live **blesses** the defect, because the reviewer's only available answer is "unchanged from before, therefore fine". The stage now unpins **five** goldens that currently assert a defect as expected output — `regression.txt:474` (`Text scope=0:0..0:0 literal="[^~~is~~1]"`), `extensions.txt:804`/`:809` (`59:1..59:0`), `extensions-directive.txt` example 16 (an inner fence ending at the outer fence's line), `tests/api/main.c:1076` and `:1166` — plus a sixth, `specs/canonical-ast/structure.ast`, which no defect statement predicted and which only the `conformance` preset catches. Each of those flips from defending the defect to killing it. **A corpus that asserts six wrong answers is not a corpus that got 32 rows more expensive to regenerate; it is a corpus that cannot be used to review anything until it is corrected.**
+
+*The counterweight, stated honestly.* 252 rows is a lot of hand review, and the standing gate requires every moved row to be reviewed and named. That is why the stage is fifteen commits and not one: the largest single regeneration is 106 rows (0a.14) and the next is 58 (0a.7) and 57 (0a.13), each in a commit whose subject is the defect and whose reviewer has §2's statement in hand. The alternative is not "fewer rows"; it is the same rows, spread across eight steps, with no statement in hand at any of them.
+
+---
 
 ### 4.3 The ordering argument
 
