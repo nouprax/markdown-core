@@ -4,6 +4,24 @@ All notable release changes are recorded here. Markdown Core follows Semantic
 Versioning for source packages and public API behavior; the C binary ABI is not
 promised to remain compatible between releases.
 
+## 3.0.0 - unreleased
+
+The engine is reconstructed from the 1.0 baseline. The 2.0.0 line is withdrawn:
+its major version was bought with a session and incremental parsing API that no
+longer exists.
+
+- Keep the bytes of a footnote call whose label crosses a line ending, and read
+  a label spelled with a character reference out of the source rather than out
+  of a released buffer.
+- Resolve a repeated footnote label to the definition that opens first, and
+  keep the definition that does not win where it was written, instead of
+  destroying it and everything inside it.
+- Give an unresolved footnote call a source position instead of line zero.
+- Stop the formula and directive extensions from changing what CommonMark
+  emphasis means when they are attached.
+- Test the flanking scan's bound before reading it, and stop the directive
+  extension registering a byte its inline matcher cannot consume.
+
 ## 1.0.3 - 2026-07-15
 
 - Add a single environment setup and validation entry point for local

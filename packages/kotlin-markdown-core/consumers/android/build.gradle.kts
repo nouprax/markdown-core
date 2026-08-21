@@ -16,7 +16,7 @@ android {
 }
 
 dependencies {
-    implementation("com.nouprax:kotlin-markdown-core:1.0.3")
+    implementation("com.nouprax:kotlin-markdown-core:3.0.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
 }

@@ -26,7 +26,7 @@ only as a record.
 | Branch | `reconstruct-from-1.0` |
 | Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.4 |
 | Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
-| `VERSION` | `1.0.3`, and it moves to `1.0.4` at the CLOSE of Stage 0a — the first commit range that moves behaviour |
+| `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
 | Next action | **Stage 0a**, §4.2, at **0a.5** — 0a.0 through 0a.4 have landed |
 
 `--profile` is a named option set for the CLI, added because the restored parity
@@ -94,7 +94,7 @@ mdast backlog and D9's oracle use:
 |---|---|---|
 | `scripts/audit-ast-projections.mjs` | Added at `26045be`; audits a kind/field table the baseline engine does not have. | Step 15 |
 | `scripts/check-generated-scanners.sh` | Added at `8926594`; the baseline build has no re2c invocation or version pin (R9). | R9's experiment, then Step 3 |
-| `node scripts/check-release-version.mjs --skip-swift` | **D17 is fixed**; what remains is an unexpected legacy tag (`codex-doc-pass-backup`), which is repo hygiene, not engine state. | release |
+| `node scripts/check-release-version.mjs --skip-swift` | **D17 is fixed and the 3.0.0 bump closed the rest**; what remains is **two** unexpected legacy tags — `codex-doc-pass-backup` and `pre-format-baseline` — which is repo hygiene, not engine state. Every version-drift, release-note and CHANGELOG assertion now passes. | release |
 | `node scripts/fuzz-parity.mjs --oracle mdast` | 0/3 — the mdast oracle is red on every generated input, for the same reason the 23-entry backlog exists. CI runs both oracles; only the upstream one was listed. | Stage 0 close |
 | `pnpm audit:ci`, `audit:source-lists`, `audit:ast-projections`, `format:es:check` | Not yet triaged by era (§0's rule). | 0a.0 item 5 |
 
@@ -200,11 +200,16 @@ disconnected root.
 Kept from `main`: `.github/`, `scripts/` and `AGENTS.md` — the operational
 layer, including the Action SHA pins. Everything else is the baseline.
 
-`VERSION` stays **1.0.3**. It is not carried forward from `2.0.0`: that major
-was bought with the session API, which no longer exists here, and 1.0.3 is
-simply the truth because this engine *is* 1.0.3 byte for byte. It moves to
-**1.0.4** at the close of Stage 0a, which is now the first commit range that
-moves behaviour.
+~~`VERSION` stays **1.0.3**~~ — **superseded by the owner ruling of 2026-08-21:
+`VERSION` is `3.0.0` as of that commit.** The reasoning that made 1.0.3 right
+still holds for the *engine* — it was byte-identical to 1.0.3, and the 2.0.0
+major was bought with a session API that no longer exists — but it stopped being
+right for the *tree* the moment 0a.2 moved parse output. **1.0.4 was never
+available**: Q27 measured `check-release-version.mjs`'s ordering assertion to be
+unsatisfiable at 1.0.4, because the tag `v2.0.0` exists and every tag must be
+strictly below `VERSION` when its own tag is absent. 3.0.0 is the smallest
+number that both is honest and leaves that gate reachable. §4.10 states what the
+number does and does not oblige.
 
 ### The pin
 
@@ -912,7 +917,7 @@ Seven defects that this restatement found by measurement are numbered **D18–D2
 
 **Totals.** ≈ **4,560 lines of new C**, against the old port list's ≈ 7,600 — the requirement list is roughly three thousand lines smaller than the port list, and §4.1.2 says where every one of those lines went. Add ~1,400 lines of new gate script and ~2,000 lines of binding work **distributed across Steps 7, 9b, 12, 13 and 14**, not batched at the end (§4.1.4).
 
-**`VERSION`.** The line "`VERSION` moves to 1.0.4 at the close of Stage 0a" is now in question and is tracked as **Q27**: measured, at `VERSION=1.0.4` the ordering assertion in `check-release-version.mjs` is **unsatisfiable**, because the tag `v2.0.0` exists and the script requires every existing tag to be strictly less than `VERSION` when `v$VERSION` is absent. The honest options are to leave `VERSION` at `1.0.3` with an `Unreleased` heading in `CHANGELOG.md`, or to go to `3.0.0` early and accept that the release-notes file must exist from that commit. Do not adopt a version whose only job is honesty and whose effect is to make a gate permanently unreachable.
+**`VERSION`.** ~~"`VERSION` moves to 1.0.4 at the close of Stage 0a"~~ — **settled 2026-08-21 by owner ruling: `VERSION` is `3.0.0`, taken early.** Q27's measurement is why: at `VERSION=1.0.4` the ordering assertion in `check-release-version.mjs` is **unsatisfiable**, because the tag `v2.0.0` exists and the script requires every existing tag to be strictly less than `VERSION` when `v$VERSION` is absent. The stated cost of going to 3.0.0 early — the release-notes file must exist from that commit — was paid at the bump, and the gate now fails on the legacy tags alone. Do not adopt a version whose only job is honesty and whose effect is to make a gate permanently unreachable; that was the argument against 1.0.4, and it is the argument for 3.0.0.
 
 ---
 
@@ -1057,7 +1062,7 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | **Q24** | Is the concrete view opt-in? | 12 | **A parse option defaulting to `true`.** Cost is ~2.5–3× input resident. The gate that makes it safe: the semantic dump must be **byte-identical** with the option on and off, over every corpus. An option that changes the parse is a second engine. |
 | **Q25** | Do D16's two site fixes move into 0a.7? | 14 | **Owner call, because Stage 0a is otherwise closed.** Measured: 58 golden rows carry `title=""`; 18 are D6's; the remaining **~40 are D16's** `chunk_clone` path, and under the current schedule they are regenerated by nine steps with the reviewer's only available answer being "unchanged, therefore fine". Moving them is ~6 lines and resolves D5's stated tension in the commit that already has the defect statement in hand. If it does not move, Step 14 moves 40 rows; if it does, Step 14 moves **zero**, which is the right shape for a step whose deliverable is an invariant. |
 | **Q26** | Do `Link.destination`, `Image.source`, `ReferenceDefinition.destination` stay optional? | 14 | **No — required.** Q7 already rules a definition's destination required; §5.1 rules that a reference carries none. Once 9b splits `LinkReference` out of `Link`, an inline link's destination has no reachable null except allocation loss, which Q7 answers with the failure bit. |
-| **Q27** | Does `VERSION` move to 1.0.4 at all? | 15C | **No.** Measured: the ordering assertion in `check-release-version.mjs` passes at `3.0.0` and **fails at `1.0.4`**, because `v2.0.0` exists and the script requires every tag to be strictly less than `VERSION`. `3.0.0-dev` fails the `stableSemver` assert. Leave `VERSION` at `1.0.3` and record the state in `CHANGELOG.md` under `Unreleased`, or go to `3.0.0` early. |
+| **Q27** | Does `VERSION` move to 1.0.4 at all? | 15C | **SETTLED 2026-08-21: no — it went to `3.0.0` early**, the second of the two options this row offered. Measured: the ordering assertion in `check-release-version.mjs` passes at `3.0.0` and **fails at `1.0.4`**, because `v2.0.0` exists and the script requires every tag to be strictly less than `VERSION`. `3.0.0-dev` fails the `stableSemver` assert. The stated cost — a release-notes file from that commit — was paid; see §4.10. |
 | **Q28** | Is `markdown_core_parser_feed_reentrant` deleted? | 11a | **Yes.** Zero in-tree callers, and it re-enters line processing with bytes that are in no source line — unrepresentable under L1. Keeping an entry point whose only purpose is to inject bytes no position can name, in the step that establishes that every byte has a position, is carrying a contradiction forward for no consumer. |
 | **Q29** | Does `mode` survive on `Code`, `CodeBlock`, `Directive`, `DirectiveBlock`? | 15A | **No** — delete it from those four, keep it on `Formula`/`FormulaBlock` where it is genuinely variable. Both decoders prove the point: Kotlin and ES hard-code the constant and one of them then *asserts* the constant it just synthesized, and the Kotlin wire format does not transmit it. A field whose value is implied by its type is ceremony four surfaces must keep in step. |
 | **Q30** | Do the bindings spell child edges typed (`content`, `items`, `label`, `header`, `rows`, `cells`) or flat (`children`)? | 15A | **Typed.** Kotlin and ES already do; Swift's flat `children` is what forces `labelCount: Int?`, forces `Table.init` to filter rows by `isHeader` and `preconditionFailure` if the count is not one, and forces `children: [any Markup] = []` onto eleven leaf kinds. Two of three bindings and the contract already assume it. |
@@ -2158,9 +2163,31 @@ And one amendment to **Q34**'s recorded recommendation. §11.8 recommends *"spli
 
 ### 4.10 The release from this base is 3.0
 
-**Owner ruling, 2026-08-20.** There is no 1.0.4 release. The version moves to
-1.0.4 as an internal alignment marker so the numeric macro and the version
-string stay honest with each other, and it carries no release obligation.
+**Owner ruling, 2026-08-20.** There is no 1.0.4 release.
+
+**Owner ruling, 2026-08-21, which supersedes the marker: `VERSION` is `3.0.0`
+now**, taken at 0a.4's close and before 0a.5. This is Q27's second option,
+adopted early rather than at the end of the stage, and the reason to prefer it
+over the 1.0.4 marker is measured rather than aesthetic: **the marker was
+unreachable.** `check-release-version.mjs` requires every existing tag to be
+strictly below `VERSION` whenever `v$VERSION` is absent, and `v2.0.0` exists, so
+1.0.4 makes that assertion permanently unsatisfiable. 3.0.0 satisfies it.
+
+**What the bump did, and what it did not.** Nine files carry the number and all
+nine moved together — `VERSION`, the tracked `markdown-core-version.h`, the npm
+manifest, and the seven README and consumer coordinates the gate pins. The
+CMake-generated header and the Kotlin publications derive from `VERSION` and
+needed nothing. `docs/deprecated/releases/3.0.0.md` and a `## 3.0.0 -
+unreleased` CHANGELOG section exist from this commit, which is exactly what Q27
+said adopting 3.0.0 early would cost; the release note says plainly that it
+accumulates and that `v3.0.0` does not exist. **`check-release-version.mjs` now
+fails on one thing only — two legacy tags that are not versions** — where before
+the bump it also failed on the missing release note. The bump made that gate
+*more* reachable, not less.
+
+**It carries no release obligation.** Nothing here schedules a 3.0.0 tag. The
+number states what the tree is; the tag states that it shipped, and that is
+§4.8's business.
 
 Two consequences worth stating, because the plan was written assuming otherwise:
 
@@ -2170,9 +2197,10 @@ Two consequences worth stating, because the plan was written assuming otherwise:
   and the discipline that remains is only that it changes *deliberately* and
   the bindings follow. Step 12 keeps the "write the target header first" method
   and loses the "one window" urgency.
-- **The release gates are off the critical path** until 3.0. `check-release-version`'s
-  legacy-tag condition, the release notes and the README examples are a
-  3.0 obligation, not a Stage 0a one.
+- **The release gates are off the critical path** until 3.0 — but less of them
+  than this bullet assumed. The release notes and the README examples were paid
+  at the bump and are green; what remains a 3.0 obligation is
+  `check-release-version`'s **legacy-tag condition** alone.
 
 ### 4.8 Stage 0 acceptance
 

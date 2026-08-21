@@ -36,7 +36,7 @@ The root Swift package supports iOS 18 and macOS 15 or later and exports the
 `MarkdownCore` product and module:
 
 ```swift
-.package(url: "https://github.com/nouprax/markdown-core", from: "1.0.3")
+.package(url: "https://github.com/nouprax/markdown-core", from: "3.0.0")
 ```
 
 ```swift
@@ -60,7 +60,7 @@ Use the root Maven coordinate from a Kotlin Multiplatform source set:
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("com.nouprax:kotlin-markdown-core:1.0.3")
+            implementation("com.nouprax:kotlin-markdown-core:3.0.0")
         }
     }
 }
