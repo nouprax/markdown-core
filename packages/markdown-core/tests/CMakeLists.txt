@@ -312,6 +312,11 @@ markdown_core_add_test(
     directive)
 markdown_core_add_test(extensions_directive_option_gates extensions 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-directive-option-gates.txt")
+# extensions: enabling one extension must not change another's block opener.
+# Every example carries its own option set, because the property is about two
+# extensions being on at once and no other fixture co-enables any two.
+markdown_core_add_test(extensions_conflicts extensions 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-conflicts.txt")
 # pathological: adversarial inputs, one CTest test per case so timeouts and
 # failures stay addressable.  The audit script cross-checks this list against
 # `pathological_runner --list` and `complexity_runner --list`.

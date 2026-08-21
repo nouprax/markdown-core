@@ -311,6 +311,26 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     }
 }
 
+// A decline is NULL. `core/blocks.c` offers each attached extension a turn at
+// this line in attach order and stops at the first non-NULL answer, so
+// returning `parent_container` when nothing was opened takes away every later
+// extension's turn -- and this function used to do that on every path,
+// including "there is no table here". Enabling tables then changed the parse of
+// input containing no table at all: a directive or formula block could not
+// interrupt a paragraph.
+//
+// TWO KINDS OF `return parent_container` BELOW MUST STAY, and both say
+// something this one does not:
+//
+//   the four allocation failures AFTER markdown_core_node_set_type succeeds.
+//   The paragraph has already become a TABLE by then, so the container really
+//   was opened; answering NULL would leave a retyped node behind and tell the
+//   caller nothing happened. They set parser->oom and the parse is abandoned.
+//
+//   the final return, which is the genuine opening path.
+//
+// `table` is the only extension with this shape; directive and formula already
+// answer NULL on every decline.
 static markdown_core_node *try_opening_table_header(markdown_core_syntax_extension *self, markdown_core_parser *parser,
                                                     markdown_core_node *parent_container, unsigned char *input,
                                                     int len) {
@@ -322,11 +342,11 @@ static markdown_core_node *try_opening_table_header(markdown_core_syntax_extensi
     uint16_t i;
 
     if (parent_container->flags & MARKDOWN_CORE_NODE__TABLE_VISITED) {
-        return parent_container;
+        return NULL;
     }
 
     if (!scan_table_start(input, len, markdown_core_parser_get_first_nonspace(parser))) {
-        return parent_container;
+        return NULL;
     }
 
     // Since scan_table_start was successful, we must have a delimiter row.
@@ -334,7 +354,7 @@ static markdown_core_node *try_opening_table_header(markdown_core_syntax_extensi
                                     len - markdown_core_parser_get_first_nonspace(parser));
     // assert may be optimized out, don't rely on it for security boundaries
     if (!delimiter_row) {
-        return parent_container;
+        return NULL;
     }
 
     assert(delimiter_row);
@@ -351,7 +371,7 @@ static markdown_core_node *try_opening_table_header(markdown_core_syntax_extensi
         free_table_row(parser->mem, header_row);
         markdown_core_arena_pop();
         parent_container->flags |= MARKDOWN_CORE_NODE__TABLE_VISITED;
-        return parent_container;
+        return NULL;
     }
 
     if (markdown_core_arena_pop()) {
@@ -362,14 +382,14 @@ static markdown_core_node *try_opening_table_header(markdown_core_syntax_extensi
         if (!delimiter_row || !header_row || header_row->n_columns != delimiter_row->n_columns) {
             free_table_row(parser->mem, delimiter_row);
             free_table_row(parser->mem, header_row);
-            return parent_container;
+            return NULL;
         }
     }
 
     if (!markdown_core_node_set_type(parent_container, MARKDOWN_CORE_NODE_TABLE)) {
         free_table_row(parser->mem, header_row);
         free_table_row(parser->mem, delimiter_row);
-        return parent_container;
+        return NULL;
     }
 
     if (header_row->paragraph_offset) {
@@ -382,6 +402,9 @@ static markdown_core_node *try_opening_table_header(markdown_core_syntax_extensi
      * payload -- every table helper tolerates that -- and the sticky flag
      * makes the parse fail, so nothing downstream trusts the node. */
     markdown_core_node_set_syntax_extension(parent_container, self);
+    // From here down the node IS a table, so every remaining
+    // `return parent_container` means "opened, then failed" rather than
+    // "declined". Do not turn these into NULL with the six above it.
     parent_container->as.opaque = parser->mem->calloc(1, sizeof(node_table));
     if (!parent_container->as.opaque) {
         parser->oom = true;

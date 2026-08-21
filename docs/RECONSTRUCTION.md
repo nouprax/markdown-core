@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.4 |
+| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.5 |
 | Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Stage 0a**, §4.2, at **0a.5** — 0a.0 through 0a.4 have landed |
+| Next action | **Stage 0a**, §4.2, at **0a.6** — 0a.0 through 0a.5 have landed |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -46,16 +46,16 @@ cmake --preset default && cmake --build --preset default --parallel
 cmake --preset asan    && cmake --build --preset asan    --parallel
 cmake --preset ubsan   && cmake --build --preset ubsan   --parallel
 
-ctest --preset correctness -j 8            # 65/65
-ctest --preset correctness-asan -j 8       # 57/57 — SEE THE WARNING BELOW
-ctest --preset correctness-ubsan -j 8      # 57/57 — SEE THE WARNING BELOW
+ctest --preset correctness -j 8            # 66/66
+ctest --preset correctness-asan -j 8       # 58/58 — SEE THE WARNING BELOW
+ctest --preset correctness-ubsan -j 8      # 58/58 — SEE THE WARNING BELOW
 node scripts/check-canonical-ast-fixtures.mjs   # 28 kinds, 47 fields, 6 cases
 bash scripts/audit-public-surface.sh
 node scripts/audit-extension-special-chars.mjs   # 4 extensions, 5 sentinels
 node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
-node scripts/check-upstream-parity.mjs     # 802/802 vs cmark-gfm 0.29.0.gfm.13, 4/4 divergences
+node scripts/check-upstream-parity.mjs     # 804/804 vs cmark-gfm 0.29.0.gfm.13, 4/4 divergences
 node scripts/check-mdast-parity.mjs        # 51/51, backlog 23/23 still diverging
 node scripts/audit-scope-sanity.mjs        # 206 rows, only-shrink holds
 
@@ -63,8 +63,8 @@ node scripts/audit-scope-sanity.mjs        # 206 rows, only-shrink holds
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
 # fails here rather than in review.
 node scripts/audit-inline-sourcepos.mjs    # 12 rows registered, 68 scanned
-node scripts/audit-scope-containment.mjs   # 58 rows registered, 3582 scanned
-node scripts/audit-position-places.mjs     # 132 rows registered, 3843 scanned
+node scripts/audit-scope-containment.mjs   # 58 rows registered, 3586 scanned
+node scripts/audit-position-places.mjs     # 132 rows registered, 3851 scanned
 ```
 
 **`22 steps, 42 edges` was stale**, and it is the second number in this table to
@@ -76,7 +76,7 @@ than trust the row — that is how D17 was found.
 **A sanitizer preset with no build reports GREEN having run nothing.** With
 `build/asan` absent, `ctest --preset correctness-asan` prints
 `No tests were found!!!` and **exits 0**. Run the configure and build lines above
-first, and treat a sanitizer run that does not report `57/57` as a failure
+first, and treat a sanitizer run that does not report `58/58` as a failure
 however it exited. This is a gate that cannot fail, which is worse than a gate
 that is missing.
 
@@ -1129,7 +1129,7 @@ Two of the fourteen *looked* like dependencies in §2 and were not. **D12 "block
 
 | # | Verdict | Evidence, measured on the untouched baseline | Lands |
 |---|---|---|---|
-| **D12** | **FIXABLE-AT-BASELINE**, in the same commit as D13 and no other | The one-line fix *alone* turns `extensions.txt:804`/`:809` from `59:1..59:0` into `59:1..0:0` — a strictly worse row that **every gate in the repository passes**: 65/65, 795/795, 46/46, canonical green, ledger 207 unchanged, because `endLine < startLine` keeps it in the same `negative` bucket it left. With D13 and D10 landed it has **no witness at all**: 4 hits over the 860-example corpus, every one through an operand with no position; 0 hits over 40,000 random inputs filtered to merges where both operands are positioned. It is a real defect (the assignment is plainly missing) that is unobservable on this engine, and it must not be sold as fixing anything measurable | **0a.14** |
+| **D12** | **FIXABLE-AT-BASELINE**, in the same commit as D13 and no other | The one-line fix *alone* turns `extensions.txt:804`/`:809` from `59:1..59:0` into `59:1..0:0` — a strictly worse row that **every gate in the repository passed** at the time this was written: 65/65, 795/795, 46/46, canonical green, ledger 207 unchanged, because `endLine < startLine` keeps it in the same `negative` bucket it left. **That clause expired at 0a.1**: `audit-position-places.mjs` reads a live parse and reports the three rows moving to line zero, re-measured at 0a.2 (§4.2.8). With D13 and D10 landed it has **no witness at all**: 4 hits over the 860-example corpus, every one through an operand with no position; 0 hits over 40,000 random inputs filtered to merges where both operands are positioned. It is a real defect (the assignment is plainly missing) that is unobservable on this engine, and it must not be sold as fixing anything measurable | **0a.14** |
 | **D13** | **FIXABLE-AT-BASELINE**, by removing the node, not by respelling the position | Option A (§2's wording — give the empty fragment an honest empty range) was built in two cuts and **rejected on measurement**: every sentinel row it removes returns as a negative row, because a closed `(line, column)` interval cannot express an empty range; `extensions.txt` negative goes 10 → 36 (narrow) or 38 (wide) and `specs/scope-sanity/ledger.json` forbids growth in either class, so A cannot land without raising the ratchet, which defeats the ratchet. A-narrow also does not clear its own class — producer (2) still emits `0:0..0:0`. Option B is 24 lines across `core/iterator.c` and `extensions/autolink.c`: 106 rows changed, net **−46**, ledger **207 → 169**, and every gate green **after** one registered upstream divergence (Q31) | **0a.14** |
 | **D14** | **FIXABLE-AT-BASELINE** | **§2 is wrong twice.** It reproduces on the untouched tree with no D10 fix: `x[\^a] tail` → `literal="x[^a]] tail"` (backslash lost, `^` invented, `]` doubled) and `x[&#94;a] tail` → `literal="x[^\0\0\0\0\0] tail"`. And the "policy move, not a repair" objection does not survive measurement: at the baseline **no** escaped or entity-spelled call ever resolves, because the column arithmetic makes the lookup key `n]` or `\0\0\0\0\0`, never `n` — verified with `a[\^n]` + `[^n]: note`, which drops the definition before *and* after. The narrowing removes broken behaviour only. 432-case matrix (6 caret spellings × 8 labels × 3 tails × 3 definition contexts): 252 move; the baseline emits **invalid UTF-8 on 90 of them and NUL bytes on 162** — heap bytes materialised into a document. One condition, bounds-tested before the subscript. **Zero golden rows** | **0a.9** |
 | **D15** | **FIXABLE-AT-BASELINE** | Over all 2,744 ordered triples of 14 significant lines, **414 (15.1%) parse differently through the CLI than through the facade**; after one shared attach path, 0. The 809-input fixture corpus shows 0 CLI-vs-facade differences, which is why no oracle sees it. `markdown_core_core_extensions_attach(parser, mask)` walking one ordered table with `table` last (Q9), declared **without** `MARKDOWN_CORE_EXPORT` so the export map and `audit-public-surface.sh` are untouched. The CLI's `-e NAME` lever must route through the same bit table or the hole is still open. **Zero golden rows** | **0a.11** |
@@ -1196,7 +1196,7 @@ The ratchet composition stands and must still be verified in the 0a.6 commit: D1
 
 **0a.4 — D1 and D2, before Step 3 writes the descriptors. LANDED; §4.2.10 records it.** Unchanged.
 
-**0a.5 — D8.** The six `return parent_container;` → `return NULL;` and both "do not take" warnings stand. **What changes is the gate, and the reason is 0a.11.** With `table` last — which is Q9, and which 0a.11 implements — D8's block-open symptom is **unobservable through both product entry points**: measured with D8 *unfixed*, the independence property over 1,728 no-table documents goes 375 failing → 0 on D15's fix alone. So the `extensions-conflicts.txt` fixture framed as an end-to-end parse reads *"0 passed / 2 failed at baseline, 2 passed / 0 failed with the fix"* **only while the attach order is still wrong**. Two obligations follow, and both are mandatory:
+**0a.5 — D8. LANDED; §4.2.11 records it, and OBLIGATION 2 IS ALREADY PAID.** The six `return parent_container;` → `return NULL;` and both "do not take" warnings stand. **What changes is the gate, and the reason is 0a.11.** With `table` last — which is Q9, and which 0a.11 implements — D8's block-open symptom is **unobservable through both product entry points**: measured with D8 *unfixed*, the independence property over 1,728 no-table documents goes 375 failing → 0 on D15's fix alone. So the `extensions-conflicts.txt` fixture framed as an end-to-end parse reads *"0 passed / 2 failed at baseline, 2 passed / 0 failed with the fix"* **only while the attach order is still wrong**. Two obligations follow, and both are mandatory:
 
 1. **0a.5 lands before 0a.11**, and its commit records the 0/2 → 2/2 mutant kill against the baseline order.
 2. **0a.11's commit converts the gate to an order-independent form** — a direct test that `try_opening_table_header` returns `parent_container` on a decline, or an extension registered *after* `table` in `tests/api/main.c` — and re-proves the mutant kill after the reorder. A gate that goes vacuous the moment a later defect is fixed is not a gate; §4.5's "four defects invisible to every oracle" warning applies to D8 twice over.
@@ -1493,12 +1493,17 @@ shrink §4.2.3 predicted.
    **And measuring the obvious fix is why the row is worth having.** Adding
    `cur->end_line = tmp->end_line;` beside the existing `end_column` line does
    clear it — `1:1..2:7`, correct — **and moves three other rows to LINE ZERO**:
-   `<http://foo.bar/baz bim>` goes `Text 1:1..1:0` → `Text 1:1..0:0`. That is a
-   position oracle shrinking because rows moved into the scope-sanity ratchet's
-   bucket, which is the precise failure §4.2.7's interlock exists to catch, and
-   `audit-scope-sanity.mjs` did **not** catch it because it reads golden text
-   rather than a live parse. **0a.14 owes more than the line**, and it owes a
-   re-reading of both ratchets together.
+   `<http://foo.bar/baz bim>` goes `Text 1:1..1:0` → `Text 1:1..0:0`.
+
+   **§4.1's D12 row already said this**, and the credit belongs there: *"the
+   one-line fix alone turns `extensions.txt:804`/`:809` from `59:1..59:0` into
+   `59:1..0:0` — a strictly worse row that every gate in the repository passes
+   … ledger 207 unchanged, because `endLine < startLine` keeps it in the same
+   `negative` bucket it left."* What is new is only that the clause **"every
+   gate in the repository passes"** stopped being true at 0a.1:
+   `audit-position-places.mjs` reads a live parse and reports the move, which is
+   the interlock §4.2.7 describes doing the job it was built for. **0a.14 owes
+   more than the line**, and it owes a re-reading of both ratchets together.
 
 **Citations re-pinned.** `inlines.c` node-free loop `1384` → `1395`;
 `blocks.c` registration `578` → `586`, replacement node `625` → `646`, the `!ix`
@@ -1604,6 +1609,68 @@ the audit's output now states them: `formula.c: '$' '\' 0x01 0x02 0x03 0x04`,
 this commit does — stops the flanking corruption; they remain in
 `special_chars`, where a literal `0x01` still splits a text run and still
 dispatches. **Only removing the concept closes that**, and it is Step 3's.
+
+---
+
+#### 4.2.11 0a.5 landed: six declines, and obligation 2 is already paid
+
+**Six `return parent_container;` became `return NULL;`** in
+`try_opening_table_header` — the six §2 identifies as wrong declines with the
+node still a `PARAGRAPH`. The four allocation failures *after*
+`markdown_core_node_set_type(..., TABLE)` succeeds and the one genuine opening
+path are untouched, and both "do not take" warnings are now comments at the
+sites rather than only in this document: one at the function head stating that
+a decline is NULL and why the other five returns differ, one at the retype
+marking where the meaning changes.
+
+**The defect reproduces through the facade and not through the CLI**, which is
+worth writing down because it cost time. `core/main.c` attaches `table`
+unconditionally, so "formula alone" is unreachable from the command line, and it
+attaches `directive` *first*, through `attach_option_extensions`, so the CLI
+cannot show the directive half at all. `extensions/ast.c` — the path every
+binding uses — attaches only what is enabled, in the order table,
+strikethrough, autolink, tasklist, formula, directive. That is D15, and it is
+also what makes the fixture below possible.
+
+**The gate reads 0/2 at the baseline and 2/2 with the fix**, which is obligation
+1. `packages/markdown-core/tests/fixtures/extensions-conflicts.txt`, two
+examples, registered as `extensions_conflicts` and taking `correctness` from
+65 to 66:
+
+```
+text            with `formula table`     was: one Paragraph holding an inline Formula
+$$                                       now: Paragraph + FormulaBlock literal="x"
+x
+$$
+
+text            with `directive table`   was: one Paragraph of 8 children
+:::note                                  now: Paragraph + DirectiveBlock > Paragraph
+body
+:::
+```
+
+**Obligation 2 is paid here rather than at 0a.11.** §4.2.3 requires 0a.11 to
+convert the gate to an order-independent form, because moving `table` last makes
+the fixture pass whether or not an extension declines correctly. Waiting costs
+nothing and paying now costs one test, so
+`extension_decline_yields_turn` in `packages/markdown-core/tests/api/main.c`
+attaches `table` and then `directive` **itself** and asserts the directive block
+still opens. It is §4.5's second suggested form, and it keeps failing under any
+attach order. The fixture carries a paragraph saying it will go vacuous and
+naming the test that will not, so whoever moves `table` reads it in the file
+they are about to hollow out.
+
+**0a.11's obligation therefore reduces to a re-run**: re-read both gates after
+the reorder, confirm the api test still fails without the fix and the fixture
+now passes with or without it, and say so.
+
+**Mutant kill, narrowest form.** Reverting **one** of the six — the
+`scan_table_start` decline — is enough: `extensions_conflicts` goes 2/2 → 0/2
+and `api_engine` fails two named assertions. Both were measured.
+
+**Zero golden rows moved**, as §2's table predicts, and the new fixture joins
+the upstream-parity corpus: 802 → **804/804**. `correctness` 66/66, both
+sanitizer presets 58/58.
 
 ---
 

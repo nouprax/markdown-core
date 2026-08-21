@@ -1,0 +1,70 @@
+---
+title: Extension conflict test
+author: Dongyu Zhao
+version: 0.1
+date: '2026-08-21'
+license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
+...
+
+## Enabling one extension must not change another's block opener
+
+The parser offers each attached extension a turn at opening a block, in attach
+order, and stops at the first one that returns a node. So an extension that
+returns the parent container when it has decided NOT to open anything takes
+every later extension's turn away, and enabling it changes the parse of input
+that has nothing to do with it.
+
+Both examples below enable `table` beside an extension whose block opener the
+input actually needs, and both must parse exactly as they do with `table` off:
+
+```
+text            with formula alone      Paragraph
+$$                                      FormulaBlock literal="x"
+x
+$$
+
+text            with directive alone    Paragraph
+:::note                                 DirectiveBlock > Paragraph "body"
+body
+:::
+```
+
+No other fixture in this repository co-enables two extensions, which is why
+this file exists: most of the corpus enables nothing at all, and the rest
+enables one family at a time.
+
+**This file goes vacuous if the product's attach order changes, and that change
+is scheduled.** A fixture cannot choose the order extensions are attached in --
+it names an option set, and the facade attaches what is enabled in a fixed
+order that today puts `table` first. Move `table` last and both examples pass
+whether or not an extension declines correctly. The property is therefore also
+held by `extension_decline_yields_turn` in `packages/markdown-core/tests/api/main.c`,
+which attaches `table` and then `directive` itself and so keeps failing under
+any order. Whoever moves `table` must re-read both, and must not conclude from
+this file staying green that the property is still checked here.
+
+```````````````````````````````` example formula dollar-formula-delimiters table
+text
+$$
+x
+$$
+.
+Document scope=1:1..4:2 children=2
+├── Paragraph scope=1:1..1:4 children=1
+│   └── Text scope=1:1..1:4 literal="text" children=0
+└── FormulaBlock scope=2:1..4:2 mode=standalone literal="x" children=0
+````````````````````````````````
+
+```````````````````````````````` example directive table
+text
+:::note
+body
+:::
+.
+Document scope=1:1..4:3 children=2
+├── Paragraph scope=1:1..1:4 children=1
+│   └── Text scope=1:1..1:4 literal="text" children=0
+└── DirectiveBlock scope=2:1..4:3 mode=standalone name="note" attributes=null label=null children=1
+    └── Paragraph scope=3:1..4:3 children=1
+        └── Text scope=3:1..3:4 literal="body" children=0
+````````````````````````````````

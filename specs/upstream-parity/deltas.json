@@ -89,6 +89,7 @@
         "packages/markdown-core/tests/fixtures/extensions.txt",
         "packages/markdown-core/tests/fixtures/extensions-directive.txt",
         "packages/markdown-core/tests/fixtures/extensions-directive-option-gates.txt",
+        "packages/markdown-core/tests/fixtures/extensions-conflicts.txt",
         "packages/markdown-core/tests/fixtures/extensions-formula-github.txt",
         "packages/markdown-core/tests/fixtures/extensions-formula-latex.txt",
         "packages/markdown-core/tests/fixtures/extensions-formula-conflicts.txt",

@@ -1050,6 +1050,50 @@ static void test_facade_dump(test_batch_runner *runner, const char *markdown, in
     markdown_core_document_free(document);
 }
 
+// An extension that declines to open a block must answer NULL. The parser
+// offers each attached extension a turn in attach order and stops at the first
+// non-NULL answer, so an extension that returns the parent container on a
+// decline takes away the turn of every extension attached after it -- and
+// `table` used to do exactly that, on every path including "there is no table
+// here". Enabling tables then stopped a directive block from interrupting a
+// paragraph.
+//
+// THIS TEST SETS THE ATTACH ORDER ITSELF, and that is the point.
+// packages/markdown-core/tests/fixtures/extensions-conflicts.txt covers the
+// same property end to end, but only while the product's own attach order still
+// puts `table` first; the moment that order changes the fixture passes whether
+// or not the defect is present. This one keeps failing.
+static void extension_decline_yields_turn(test_batch_runner *runner) {
+    static const char *const markdown = "text\n:::note\nbody\n:::\n";
+
+    markdown_core_core_extensions_ensure_registered();
+    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_DIRECTIVE);
+    markdown_core_syntax_extension *table = markdown_core_find_syntax_extension("table");
+    markdown_core_syntax_extension *directive = markdown_core_find_syntax_extension("directive");
+
+    OK(runner, parser && table && directive, "table and directive extensions are available");
+    if (!parser || !table || !directive) {
+        if (parser)
+            markdown_core_parser_free(parser);
+        return;
+    }
+    OK(runner, markdown_core_parser_attach_syntax_extension(parser, table) != 0, "table attaches first");
+    OK(runner, markdown_core_parser_attach_syntax_extension(parser, directive) != 0, "directive attaches second");
+
+    markdown_core_parser_feed(parser, markdown, strlen(markdown));
+    markdown_core_node *doc = markdown_core_parser_finish(parser);
+    markdown_core_parser_free(parser);
+
+    markdown_core_node *paragraph = markdown_core_node_first_child(doc);
+    markdown_core_node *block = paragraph ? markdown_core_node_next(paragraph) : NULL;
+    INT_EQ(runner, markdown_core_node_get_type(paragraph), MARKDOWN_CORE_NODE_PARAGRAPH,
+           "the lead paragraph survives table declining");
+    OK(runner, block != NULL, "an extension attached after table still gets its turn");
+    STR_EQ(runner, block ? markdown_core_node_get_type_string(block) : "", "directive_block",
+           "a declining table does not swallow the directive block");
+    markdown_core_node_free(doc);
+}
+
 static void source_pos(test_batch_runner *runner) {
     static const char markdown[] = "# Hi *there*.\n"
                                    "\n"
@@ -1203,6 +1247,7 @@ int main(void) {
     strip_html_comments(runner);
     test_feed_across_line_ending(runner);
     test_pathological_regressions(runner);
+    extension_decline_yields_turn(runner);
     source_pos(runner);
     source_pos_inlines(runner);
     ref_source_pos(runner);
