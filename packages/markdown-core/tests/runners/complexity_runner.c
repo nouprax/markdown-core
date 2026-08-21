@@ -121,6 +121,104 @@ static char *cc_unique_references(size_t size, size_t *length) { return cc_refer
 
 static char *cc_duplicate_references(size_t size, size_t *length) { return cc_references(size, length, 1); }
 
+/* D9's second gate, and the only one of the two that is GREEN.
+ *
+ * Resolving a reference COPIES the definition's destination and title into the
+ * node, so one definition with a long destination, referenced many times, turns
+ * a small document into a large tree. `max_ref_size` is the only thing bounding
+ * that today: a running budget of `max(100000, input size)` bytes summed over
+ * successful lookups, after which lookups simply fail. With the budget deleted
+ * and nothing put in its place, 1 MiB of input produces 68.7 GB of output.
+ *
+ * The budget also causes D9 — whether a reference resolves comes to depend on
+ * how many resolved before it — so it CANNOT be the answer, and Step 9a deletes
+ * it. What Step 9a must not delete is this bound. Stating it here separates the
+ * two: `reference_expansion_bound` says the output stays linear in the input,
+ * and `scripts/audit-reference-order-independence.mjs` says resolution does not
+ * depend on order. Today the budget buys the first by breaking the second. A
+ * reference that names its definition rather than copying it buys both, which
+ * is why Step 9a's model change is the fix and nothing smaller is.
+ *
+ * Measured as a multiple of input size rather than an absolute, because the
+ * budget's own floor is 100 KB and the point is the ratio. */
+static const double MAX_REFERENCE_EXPANSION = 8.0;
+
+typedef struct cc_expansion {
+    size_t bytes;
+} cc_expansion;
+
+static int cc_expansion_visit(const markdown_core_node *node, void *context) {
+    cc_expansion *total = (cc_expansion *)context;
+    markdown_core_string_view destination;
+    markdown_core_string_view title;
+    if (markdown_core_node_link_properties(node, &destination, &title) ||
+        markdown_core_node_image_properties(node, &destination, &title)) {
+        total->bytes += destination.length + title.length;
+    }
+    return 0;
+}
+
+/* One definition with a long destination, referenced until the input reaches
+ * `size`. Every reference that resolves copies the destination, so the output
+ * grows as (references x destination length) while the input grows as
+ * (references x label length). */
+static char *cc_reference_expansion(size_t size, size_t *length) {
+    const size_t destination_length = 1024;
+    char *destination = ts_repeat("u", destination_length, NULL);
+    size_t reference_count = size / 8 ? size / 8 : 1;
+    size_t capacity = destination_length + 16 + reference_count * 8 + 16;
+    char *input = NULL;
+    size_t written = 0;
+    size_t index;
+    if (!destination)
+        return NULL;
+    input = (char *)malloc(capacity);
+    if (!input) {
+        free(destination);
+        return NULL;
+    }
+    written += (size_t)snprintf(input + written, capacity - written, "[a]: /%s\n\n", destination);
+    free(destination);
+    for (index = 0; index < reference_count; index++)
+        written += (size_t)snprintf(input + written, capacity - written, "[a]\n\n");
+    *length = written;
+    return input;
+}
+
+static int cc_run_expansion(const char *name) {
+    size_t length = 0;
+    char *input = cc_reference_expansion(SCALING_SIZES[0] * 256, &length);
+    markdown_core_parse_options options;
+    cc_expansion total = {0};
+    markdown_core_document *document;
+    double ratio;
+    int failed;
+
+    if (!input) {
+        fprintf(stderr, "cannot build input for %s\n", name);
+        return -1;
+    }
+    ts_ast_options_none(&options);
+    document = ts_ast_parse((const uint8_t *)input, length, &options);
+    if (!document) {
+        fprintf(stderr, "conversion failed for %s\n", name);
+        free(input);
+        return -1;
+    }
+    if (ts_ast_walk(markdown_core_document_root(document), cc_expansion_visit, &total) != 0) {
+        markdown_core_document_free(document);
+        free(input);
+        return -1;
+    }
+    markdown_core_document_free(document);
+    ratio = (double)total.bytes / (double)length;
+    failed = ratio > MAX_REFERENCE_EXPANSION;
+    printf("%s ... %s (%zu input bytes, %zu bytes of resolved destinations and titles, %.3fx)\n", name,
+           failed ? "[FAILED reference expansion]" : "[PASSED]", length, total.bytes, ratio);
+    free(input);
+    return failed ? -1 : 0;
+}
+
 typedef struct cc_case_entry {
     const char *name;
     cc_builder build;
@@ -132,6 +230,9 @@ static const cc_case_entry CC_CASES[] = {
     {"many_unique_attributes", cc_unique_attributes},   {"many_duplicate_attributes", cc_duplicate_attributes},
     {"many_unique_references", cc_unique_references},   {"many_duplicate_references", cc_duplicate_references},
 };
+
+/* Cases measured by output size rather than by time. */
+static const char *const CC_EXPANSION_CASES[] = {"reference_expansion_bound"};
 
 static int cc_measure(const char *input, size_t length, double *seconds) {
     double samples[SCALING_REPEATS];
@@ -226,6 +327,8 @@ int main(int argc, char **argv) {
     if (list_only) {
         for (i = 0; i < sizeof(CC_CASES) / sizeof(CC_CASES[0]); i++)
             puts(CC_CASES[i].name);
+        for (i = 0; i < sizeof(CC_EXPANSION_CASES) / sizeof(CC_EXPANSION_CASES[0]); i++)
+            puts(CC_EXPANSION_CASES[i]);
         return 0;
     }
     if (!case_name) {
@@ -235,6 +338,10 @@ int main(int argc, char **argv) {
     for (i = 0; i < sizeof(CC_CASES) / sizeof(CC_CASES[0]); i++) {
         if (strcmp(CC_CASES[i].name, case_name) == 0)
             return cc_run(&CC_CASES[i]) == 0 ? 0 : 1;
+    }
+    for (i = 0; i < sizeof(CC_EXPANSION_CASES) / sizeof(CC_EXPANSION_CASES[0]); i++) {
+        if (strcmp(CC_EXPANSION_CASES[i], case_name) == 0)
+            return cc_run_expansion(CC_EXPANSION_CASES[i]) == 0 ? 0 : 1;
     }
     fprintf(stderr, "unknown case: %s\n", case_name);
     return 2;

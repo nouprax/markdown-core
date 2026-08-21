@@ -1,0 +1,38 @@
+{
+    "schemaVersion": 1,
+    "script": "scripts/audit-reference-order-independence.mjs",
+    "subject": "D9: whether a reference resolves must not depend on how many resolved before it. REGISTERED RED — both rows must keep reproducing until Step 9a, and a row clearing fails this gate.",
+    "purpose": "Resolving a reference COPIES the definition's destination and title into the node, so markdown_core_map_lookup carries a running budget — max(100000, input size) bytes summed over successful lookups (core/map.c, core/blocks.c) — and stops resolving once it is spent. Two properties die:\n\n  uniform      200 references to one label are identical, so all 200 must resolve or none must. 100 resolve and 100 degrade to text. §2 records this as \"200 refs -> 99 resolve, 101 do not\"; measured here at a 1000-byte destination it is 100 and 100, because the guard admits a lookup while ref_size + r->size <= max_ref_size and 100 x 1000 is exactly the 100 KB floor. The split moves with the destination's length; that it splits at all is the defect.\n  independent  `[b]: /short` then `[b]` resolves. Prefix that document with an unrelated `[a]` whose destination spends the budget and the identical `[b]` becomes Text literal=\"[b]\". The contamination crosses labels, which is what makes this a resolution defect rather than a size limit.\n\nDELETING THE BUDGET IS NOT THE FIX, and that is why this is pinned rather than repaired. Measured with the guard removed: `reference_expansion_bound` in packages/markdown-core/tests/runners/complexity_runner.c goes from 0.999x to 204.678x — 656 KB of input producing 134 MB of copied destinations — and D9's own witness starts resolving. The budget buys a linear output bound by breaking resolution; the two gates together state both halves, and neither may be satisfied by giving up the other.\n\nA reference that NAMES its definition instead of copying it buys both at once, and that is Step 9a's model change. Nothing smaller reaches it: the copy is what costs the bytes, and the budget is what the copy forces.",
+    "profile": "gfm",
+    "destinationLength": 1000,
+    "uniformReferences": 200,
+    "contaminationReferences": 120,
+    "expected": [
+        {
+            "source": "uniform",
+            "input": "[a]: /u*999 then 200 references to [a]",
+            "findings": [
+                {
+                    "property": "uniform",
+                    "references": 200,
+                    "resolved": 100,
+                    "degradedToText": 100,
+                    "closedBy": "Step 9a — the reference model: a reference names its definition instead of copying it"
+                }
+            ]
+        },
+        {
+            "source": "independent",
+            "input": "[b]: /short\n\n[b]\n",
+            "findings": [
+                {
+                    "property": "independent",
+                    "aloneResolves": 1,
+                    "afterUnrelatedPrefixResolves": 0,
+                    "prefixReferences": 120,
+                    "closedBy": "Step 9a — the reference model: a reference names its definition instead of copying it"
+                }
+            ]
+        }
+    ]
+}

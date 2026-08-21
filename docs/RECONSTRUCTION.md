@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.7 |
+| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.8 |
 | Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Stage 0a**, §4.2, at **0a.8** — 0a.0 through 0a.7 have landed |
+| Next action | **Stage 0a**, §4.2, at **0a.9** — 0a.0 through 0a.8 have landed |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -46,7 +46,7 @@ cmake --preset default && cmake --build --preset default --parallel
 cmake --preset asan    && cmake --build --preset asan    --parallel
 cmake --preset ubsan   && cmake --build --preset ubsan   --parallel
 
-ctest --preset correctness -j 8            # 66/66
+ctest --preset correctness -j 8            # 67/67
 ctest --preset correctness-asan -j 8       # 58/58 — SEE THE WARNING BELOW
 ctest --preset correctness-ubsan -j 8      # 58/58 — SEE THE WARNING BELOW
 node scripts/check-canonical-ast-fixtures.mjs   # 28 kinds, 47 fields, 6 cases
@@ -65,6 +65,10 @@ node scripts/audit-scope-sanity.mjs        # 207 rows, only-shrink holds
 node scripts/audit-inline-sourcepos.mjs    # 0 rows registered, 68 scanned
 node scripts/audit-scope-containment.mjs   # 58 rows registered, 3612 scanned
 node scripts/audit-position-places.mjs     # 122 rows registered, 3872 scanned
+
+# D9's pin. REGISTERED RED and it fails if a row STOPS reproducing, because
+# deleting the budget clears both rows and costs 204.678x output growth.
+node scripts/audit-reference-order-independence.mjs  # 2 rows, must stay red
 ```
 
 **`22 steps, 42 edges` was stale**, and it is the second number in this table to
@@ -1247,7 +1251,7 @@ The ratchet composition stands and must still be verified in the 0a.6 commit: D1
 
 The mdast note must also be amended in this commit: `specs/mdast-parity/corpus.md:243` still diverges correctly after D5, and its note must say the title defect is fixed and only the node model remains — otherwise the next reader re-derives D5.
 
-**0a.8 — D9 pinned.** Unchanged. No engine change; two gates and the statement of the defect recorded beside `map.c:307`.
+**0a.8 — D9 pinned. LANDED; §4.2.14 records it.** Unchanged. No engine change; two gates and the statement of the defect recorded beside `map.c:307`.
 
 **0a.9 — D14, the footnote-call recognition rule.** One condition at `inlines.c:1321`, testing the **raw** source byte with the bounds test before the subscript (D4's lesson). It lands after 0a.2 because it amends the entry condition of the branch whose slice 0a.2 rewrites, and the pair must be re-measured composed. Zero golden rows; the gate is three regression examples (escaped, entity-spelled, and a spelling with a matching definition present) plus the 432-case matrix reduced to a fixture. **This discharges half of Step 9a's raw-`^` clause** — the "opens with a raw `^`" half. The other half, "and the document defines that label", stays 9a's, because it is a model question about what a failed call becomes (§5.7, Q2).
 
@@ -1865,6 +1869,62 @@ said Step 9; §4.2's defect schedule moved it to 0a.7 and the entry records that
 The mdast corpus note at `corpus.md` is amended in the same commit to say the
 title half is fixed and only the node model remains, so the next reader does not
 re-derive D5 from a row that still diverges for a different reason.
+
+---
+
+#### 4.2.14 0a.8 landed: D9 pinned, and the trade is now measured on both sides
+
+**No engine change.** One comment at `core/map.c`, two gates, and one README.
+
+**The trade, measured rather than argued.**
+
+| | order-independent | output bounded |
+|---|---|---|
+| today, with the budget | **no** — 100 of 200 identical references resolve | yes — **0.999x** |
+| the guard deleted | yes — D9's witness resolves | **no** — **204.678x** |
+| Step 9a's model | yes | yes |
+
+Both middle-row numbers were taken by deleting the three-line guard and
+rebuilding: `[b]` starts resolving after an unrelated `[a]`, and 656 KB of input
+starts producing **134 MB** of copied destinations. That is the whole argument
+for why D9 is the one defect Stage 0a pins: the budget buys the bound *by*
+breaking resolution, so neither gate can be satisfied by giving up the other,
+and a reference that NAMES its definition instead of copying it is the only
+thing that reaches both.
+
+**Gate 1 —
+`scripts/audit-reference-order-independence.mjs`, REGISTERED RED.** Two
+properties, both failing, both named to Step 9a:
+
+- **uniform:** 200 references to one label are identical, so all must resolve or
+  none must. **100 resolve, 100 degrade to text.** §2 records this as *"200 refs
+  → 99 resolve, 101 do not"*; measured at a 1000-byte destination it is 100 and
+  100, because the guard admits a lookup while `ref_size + r->size <=
+  max_ref_size` and 100 × 1000 is exactly the 100 KB floor. The split moves with
+  the destination's length; **that it splits at all** is the defect, and the doc
+  should not have pinned a number that depends on a parameter it did not state.
+- **independent:** `[b]` resolves alone and does not after an unrelated `[a]`
+  spends the budget. The contamination crosses labels, which is what makes this
+  a resolution defect rather than a size limit.
+
+**It fails when a row STOPS reproducing**, which is the point and is verified:
+deleting the guard clears both rows and the gate reports them as `CLEARED` with
+*"a row that moved is a behaviour change"*. A gate that only caught the defect
+appearing would be satisfied for the wrong reason the day someone deletes the
+budget — rows clear, every other suite stays green, and the engine quietly
+produces 134 MB from 656 KB.
+
+**Gate 2 — `reference_expansion_bound` in `complexity_runner.c`, GREEN.** The
+runner measured only *time* before; this case measures *output size*, summing
+every resolved destination and title in the tree and requiring the total to stay
+under 8× the input. It reads **0.999x** today and **204.678x** with the guard
+deleted, so it is a real bound and not a formality. `correctness` goes 66 → 67.
+
+**And the statement lives beside the code.** A 25-line comment at the guard says
+what it buys, what it costs, that deleting it is measured and is not the fix,
+and which two gates hold the two halves — so a reader who arrives at three
+suspicious lines without this document finds out why they are there before
+removing them. §2's citation `map.c:307` still lands on the guard.
 
 ---
 
