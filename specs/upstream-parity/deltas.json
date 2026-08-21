@@ -58,6 +58,18 @@
             "handling": "Keyed to one input rather than projected: dropping the loser in the normalizer would blind the gate to whether the loser survived, which is half of what this entry claims.",
             "evidence": "packages/markdown-core/core/blocks.c, process_footnotes: registration on ENTER rather than EXIT, and the sweep that hands a still-parented definition back to the tree before the map frees what it names. cmark-gfm 0.29.0.gfm.13 reproduces both halves.",
             "scope": "Whether an UNREFERENCED definition is kept is a different question and is not answered here: it is still dropped, and the `footnote-resolution-model` entry above states the model that changes it."
+        },
+        {
+            "id": "refdef-title-rewind",
+            "kind": "deliberate-difference",
+            "summary": "When a definition's title candidate is followed by non-whitespace (the title-rewind case), upstream keeps the scanned title in its reference map even though the title bytes stay paragraph text, so a reference to that label resolves with a title the definition does not have. Markdown Core drops the title with the rewind: scalar, map entry, and concrete spelling agree that the definition has none.",
+            "example": "[foo]: /url + a following \"title\" ok line, then [foo]",
+            "upstream": "Link title=\"title\"",
+            "ours": "Link title=null",
+            "rationale": "The CommonMark specification's own prose for this example says \"This is a link reference definition, but it has no title\", and the rewound bytes remain visible paragraph text \u2014 reading them a second time as a title states one set of bytes as two things. micromark resolves the reference without a title.",
+            "handling": "Keyed to one input rather than projected: upstream's kept title is one assignment in its reference parser, not a model. Erasing resolved titles in the normalizer would blind the gate to every real title difference. REGISTERED at 0a.7, which is where the fix landed \u2014 the `pendingStep` below said Step 9, and \u00a74.2's defect schedule moved it forward.",
+            "evidence": "packages/markdown-core/core/inlines.c, markdown_core_parse_reference_inline rewind branch; CommonMark spec.txt, the example above \"This is a link reference definition, but it has no title\".",
+            "landed": "0a.7, together with D6 and D16. Landing them separately would have made this entry read `Link title=\"\"` for one commit and `Link title=null` for the next, because the reference path used to turn an absent title into an empty one on the way out of the map."
         }
     ],
     "expectedDivergences": [
@@ -80,6 +92,11 @@
             "id": "footnote-duplicate-definition",
             "input": "Ref [^dup].\n\n[^dup]: OUTER opens first\n\n    [^dup]: INNER closes first\n",
             "note": "The nested duplicate. Upstream keeps only `INNER closes first`; `OUTER opens first` is in no node."
+        },
+        {
+            "id": "refdef-title-rewind",
+            "input": "[foo]: /url\n\"title\" ok\n\n[foo]\n",
+            "note": "Keyed to an input rather than projected: upstream's kept title is one assignment in its reference parser, not a model. Erasing resolved titles in the normalizer would blind the gate to every real title difference. ACTIVE as of 0a.7."
         }
     ],
     "notDeltas": [],
@@ -117,18 +134,6 @@
             "pendingStep": "Step 4c \u2014 the tasklist marker read"
         },
         {
-            "id": "refdef-title-rewind",
-            "kind": "deliberate-difference",
-            "summary": "When a definition's title candidate is followed by non-whitespace (the title-rewind case), upstream keeps the scanned title in its reference map even though the title bytes stay paragraph text, so a reference to that label resolves with a title the definition does not have. Markdown Core drops the title with the rewind: scalar, map entry, and concrete spelling agree that the definition has none.",
-            "example": "[foo]: /url + a following \"title\" ok line, then [foo]",
-            "upstream": "Link title=\"title\"",
-            "ours": "Link title=null",
-            "rationale": "The CommonMark specification's own prose for this example says \"This is a link reference definition, but it has no title\", and the rewound bytes remain visible paragraph text \u2014 reading them a second time as a title states one set of bytes as two things. micromark resolves the reference without a title.",
-            "handling": "NOT YET REGISTERED. This divergence exists because a fix that has not been re-applied to the 1.0 baseline. The baseline agrees with upstream here, which is the defect. It returns to `deltas` in the step named by `pendingStep`, and that step is not done until this entry is back and reproducing.",
-            "evidence": "packages/markdown-core/core/inlines.c, markdown_core_parse_reference_inline rewind branch; CommonMark spec.txt, the example above \"This is a link reference definition, but it has no title\".",
-            "pendingStep": "Step 9 \u2014 the reference-definition title rewind"
-        },
-        {
             "id": "table-split-lead-spelling",
             "kind": "deliberate-difference",
             "summary": "When a table's header row is recovered from a multi-line paragraph, upstream runs the split-off lead through the cell pipe-unescape before inline parsing, so the lead's escapes are processed twice: a `\\\\|` renders as `|`. Markdown Core keeps the lead's authored spelling and lets the inline pass read it as any other paragraph \u2014 `\\\\|` is an escaped backslash and a literal pipe.",
@@ -146,11 +151,6 @@
             "id": "tasklist-checked-marker",
             "input": "- [ ] call me [x] later\n",
             "note": "Keyed to an input rather than projected: upstream's substring search is a bug in one function, not a model this side could apply to a tree. Erasing `checked` in the normalizer would blind the gate to every real checked-state difference.  NOT ACTIVE at the 1.0 baseline: the fix that creates this divergence has not been re-applied, so this engine currently AGREES with upstream here \u2014 which is the defect. See `pendingDeltas` for the step that restores it."
-        },
-        {
-            "id": "refdef-title-rewind",
-            "input": "[foo]: /url\n\"title\" ok\n\n[foo]\n",
-            "note": "Keyed to an input rather than projected: upstream's kept title is one assignment in its reference parser, not a model. Erasing resolved titles in the normalizer would blind the gate to every real title difference.  NOT ACTIVE at the 1.0 baseline: the fix that creates this divergence has not been re-applied, so this engine currently AGREES with upstream here \u2014 which is the defect. See `pendingDeltas` for the step that restores it."
         },
         {
             "id": "table-split-lead-spelling",

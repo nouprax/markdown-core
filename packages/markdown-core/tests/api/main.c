@@ -1116,7 +1116,7 @@ static void source_pos(test_batch_runner *runner) {
                      "├── Paragraph scope=3:1..4:42 children=8\n"
                      "│   ├── Text scope=3:1..3:14 literal=\"Hello “ \" children=0\n"
                      "│   ├── Link scope=3:15..3:37 destination=\"http://www.google.com\" "
-                     "title=\"\" children=1\n"
+                     "title=null children=1\n"
                      "│   │   └── Text scope=3:16..3:36 literal=\"http://www.google.com\" "
                      "children=0\n"
                      "│   ├── SoftBreak scope=0:0..0:0 children=0\n"

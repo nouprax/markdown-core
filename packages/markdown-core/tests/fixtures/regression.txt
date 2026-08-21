@@ -4,7 +4,8 @@ Issue #113: EOL character weirdness on Windows
 (Important: first line ends with CR + CR + LF)
 
 ```````````````````````````````` example
-line1
+line1
+
 line2
 .
 Document scope=1:1..3:5 children=2
@@ -570,7 +571,7 @@ Document scope=1:1..1:29 children=1
 └── BlockQuote scope=1:1..1:29 children=1
     └── Paragraph scope=1:3..1:29 children=3
         ├── Text scope=1:3..1:6 literal="see " children=0
-        ├── Link scope=1:7..1:26 destination="https://x.example/" title="" children=1
+        ├── Link scope=1:7..1:26 destination="https://x.example/" title=null children=1
         │   └── Text scope=1:8..1:25 literal="https://x.example/" children=0
         └── Text scope=1:27..1:29 literal=" ok" children=0
 ````````````````````````````````
@@ -587,7 +588,7 @@ Document scope=1:1..2:27 children=1
     ├── Text scope=1:1..1:4 literal="lead" children=0
     ├── SoftBreak scope=0:0..0:0 children=0
     ├── Text scope=2:1..2:4 literal="see " children=0
-    ├── Link scope=2:5..2:24 destination="https://x.example/" title="" children=1
+    ├── Link scope=2:5..2:24 destination="https://x.example/" title=null children=1
     │   └── Text scope=2:6..2:23 literal="https://x.example/" children=0
     └── Text scope=2:25..2:27 literal=" ok" children=0
 ````````````````````````````````
@@ -632,4 +633,31 @@ Document scope=1:1..2:6 children=1
         ├── Text scope=1:3..1:4 literal="a " children=0
         ├── Code scope=1:6..2:3 mode=embedded literal="x y" children=0
         └── Text scope=2:5..2:6 literal=" b" children=0
+````````````````````````````````
+
+A definition's title candidate followed by non-whitespace is un-read: the
+rewind puts the position back before it, the bytes stay paragraph text, and the
+definition has no title. The scanned chunk used to go into the reference map
+anyway, so a reference to the label resolved with a title the definition does
+not have — and the same bytes were stated twice, once as prose and once as a
+title. The CommonMark specification's own prose for this construct says "this
+is a link reference definition, but it has no title". cmark-gfm keeps the
+title; that divergence is registered as `refdef-title-rewind`.
+
+The first paragraph's position is D18 and is wrong here: the definition was
+consumed off its front, and it keeps the definition's line and column. 0a.12
+fixes the line; the column is Q22's. Both rows move again there.
+
+```````````````````````````````` example
+[foo]: /url
+"title" ok
+
+[foo]
+.
+Document scope=1:1..4:5 children=2
+├── Paragraph scope=1:1..2:10 children=1
+│   └── Text scope=1:1..1:10 literal="\"title\" ok" children=0
+└── Paragraph scope=4:1..4:5 children=1
+    └── Link scope=4:1..4:5 destination="/url" title=null children=1
+        └── Text scope=4:2..4:4 literal="foo" children=0
 ````````````````````````````````

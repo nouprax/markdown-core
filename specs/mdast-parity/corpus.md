@@ -240,6 +240,12 @@ rewinds out of the definition entirely, and the reference resolves without
 it. remark reads it the same way (cmark-gfm keeps the scanned title in its
 map — the `refdef-title-rewind` entry in specs/upstream-parity/deltas.json).
 
+**The title half of this is FIXED as of 0a.7** and the divergence is registered
+and reproducing; what still diverges here is only the node model, which is Step
+9b's. The expected block below is that target model — `ReferenceDefinition` and
+`LinkReference` do not exist at this engine yet — and the parity gate never
+reads it. Do not re-derive D5 from this row.
+
 ```````````````````````````````` example
 [foo]: /url
 "title" ok

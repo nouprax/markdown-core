@@ -173,6 +173,16 @@ static markdown_core_chunk chunk_clone(subject *subj, markdown_core_chunk *src) 
     markdown_core_chunk c;
     bufsize_t len = src->len;
 
+    // NULL data means the field was never written, and a copy of "never
+    // written" is "never written". This used to allocate a one-byte buffer for
+    // it, so a reference resolved through a definition with no title handed the
+    // Link an empty title -- while the same document's inline link, which never
+    // goes through here, reported absence. One construct, two answers.
+    if (!src->data) {
+        markdown_core_chunk absent = MARKDOWN_CORE_CHUNK_EMPTY;
+        return absent;
+    }
+
     c.len = len;
     c.data = (unsigned char *)subj->mem->calloc((size_t)len + 1, 1);
     if (!c.data) {
@@ -216,7 +226,10 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(subject *subj, int
         return NULL;
     }
     link->as.link.url = markdown_core_clean_autolink(subj, &url, is_email);
-    link->as.link.title = markdown_core_chunk_literal("");
+    // No title line here: an autolink has no syntax for one, so the field is
+    // left as `make_simple` calloc'd it, which is absence. It used to be set to
+    // an empty title, and `extensions.txt` records both spellings of one
+    // construct on one line disagreeing about it three columns apart.
     link->start_line = link->end_line = subj->line;
     // Both offsets, like every other column in this file. This was the one site
     // that turned a raw subject-buffer offset into a column without them, so an
@@ -1755,6 +1768,7 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
     markdown_core_chunk lab;
     markdown_core_chunk url;
     markdown_core_chunk title;
+    const markdown_core_chunk absent_title = MARKDOWN_CORE_CHUNK_EMPTY;
 
     bufsize_t matchlen = 0;
     bufsize_t beforetitle;
@@ -1789,7 +1803,8 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
         subj.pos += matchlen;
     } else {
         subj.pos = beforetitle;
-        title = markdown_core_chunk_literal("");
+        // No title was written, so record that rather than an empty one.
+        title = absent_title;
     }
 
     // parse final spaces and newline:
@@ -1801,6 +1816,13 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
             if (!skip_line_end(&subj)) {
                 return 0;
             }
+            // The title candidate is un-read here: its bytes stay paragraph
+            // text, and the definition has no title. `title` still held the
+            // scanned chunk, which then went into the reference map -- so a
+            // reference to this label resolved with a title the definition does
+            // not have, and the same bytes were stated twice, once as prose and
+            // once as a title.
+            title = absent_title;
         } else {
             return 0;
         }

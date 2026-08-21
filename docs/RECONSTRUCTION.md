@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.6 |
+| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.7 |
 | Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Stage 0a**, §4.2, at **0a.7** — 0a.0 through 0a.6 have landed |
+| Next action | **Stage 0a**, §4.2, at **0a.8** — 0a.0 through 0a.7 have landed |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -55,7 +55,7 @@ node scripts/audit-extension-special-chars.mjs   # 4 extensions, 5 sentinels
 node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
-node scripts/check-upstream-parity.mjs     # 808/808 vs cmark-gfm 0.29.0.gfm.13, 4/4 divergences
+node scripts/check-upstream-parity.mjs     # 809/809 vs cmark-gfm 0.29.0.gfm.13, 5/5 divergences
 node scripts/check-mdast-parity.mjs        # 51/51, backlog 23/23 still diverging
 node scripts/audit-scope-sanity.mjs        # 207 rows, only-shrink holds
 
@@ -325,7 +325,7 @@ Absent at baseline: sessions, incremental, delta, the source rope, node ids and
 revisions, diagnostics, concrete records, the delimiter engine,
 `ReferenceDefinition` nodes, `parser->line_marks` — **and every parity oracle.**
 
-### Twenty-seven defects live in the baseline
+### Thirty-one defects live in the baseline
 
 The first eleven were found by reading. **All eleven have since been built,
 gated and reverted** on isolated worktrees at `8e76a94` — every claim below
@@ -333,14 +333,14 @@ about a line count, a moved golden row or a green suite is a measurement, not
 an estimate. Doing that found five more (D12–D16). D17 was found reconciling
 the gates and is fixed at 0a.0. D18–D24 were found restating the port list as
 requirements, D25 while inventorying parser state for Stage 1, D26 while executing the
-Q25 ruling — see §4.2.5 — and **D27 at 0a.6**, by un-gating D3 and reading what the
-newly live code then reported. It is the only one of the twenty-seven that this
+Q25 ruling — see §4.2.5 — and **D31 at 0a.6**, by un-gating D3 and reading what the
+newly live code then reported. It is the only one of the thirty-one that this
 programme created a witness for rather than inherited, and it is inherited too:
 cmark-gfm reports the same wrong column. Every one of the fourteen that Q25 put to the test was
 found **fixable on the untouched baseline**; none produced an architectural
 dependency, and D9 remains the plan's only exception.
 
-**All twenty-seven are recorded here**, because a defect the plan does not name
+**All thirty-one are recorded here**, because a defect the plan does not name
 is a defect the plan will re-derive later at full price — and because a list
 split across three sections is a list nobody reads.
 
@@ -377,7 +377,11 @@ ones whose witness is stated in this section rather than in the row.
 | D23 | `S_insert_emph` takes the **whole** run's start column | wrong-position + overlap | 8, gated by 11b | `***a**` → `Text "*"` claims columns 1–3 and `Strong` also starts at 1: two nodes, one byte |
 | D24 | `tasklist` decides `checked` by `strstr` over the whole line | wrong-output | 3 | `- [ ] see [x] below` → `checked=true` |
 | D25 | a `FootnoteReference` label can be a **dangling pointer**, read on every lookup | **use-after-free** | 0a.2 | ASan: `heap-use-after-free`, READ of size 1 in `markdown_core_map_lookup (map.c:279)`, freed by `handle_close_bracket (inlines.c:1384)` |
-| D27 | a raw HTML tag that crosses a line ending ends **one column short of its own literal** | wrong-position | 8 | found at 0a.6 and pinned as a golden row: `a <b`⏎`c> d` gives `HTML scope=1:3..2:1` for a literal whose last byte is at `2:2`, while `a <b c> d` gives `1:3..1:7`, which covers it. cmark-gfm is wrong the same way |
+| D27 | `parser->linebuf.oom` written at six sites and read at none | silent truncation (allocation failure only) | 3a, with A1 | §4.13.11, measured: 244 input bytes become 102 with `parser->oom == 0` |
+| D28 | `extensions/formula.c` ignores `markdown_core_chunk_to_cstr`'s failure and keeps a **borrowed** pointer | **use-after-free** | **0a — UNSCHEDULED, see below** | §4.13.11, ASan: `heap-use-after-free`, READ of size 5 in `markdown_core_extensions_get_formula_literal` |
+| D29 | `extensions/table.c:297` does not check `markdown_core_node_new_with_mem`, and `:305` dereferences NULL | **crash** | **0a — UNSCHEDULED, see below** | §4.13.11, SIGSEGV on `lead text⏎x | y` / `--|--` |
+| D30 | `markdown_core_reference_create` commits an entry whose url or title was lost | wrong-document (allocation failure only) | 9a/11c delete it; §4.13.9 pins it | §4.13.11, measured on four refused allocations |
+| D31 | a raw HTML tag that crosses a line ending ends **one column short of its own literal** | wrong-position | 8 | found at 0a.6 and pinned as a golden row: `a <b`⏎`c> d` gives `HTML scope=1:3..2:1` for a literal whose last byte is at `2:2`, while `a <b c> d` gives `1:3..1:7`, which covers it. cmark-gfm is wrong the same way |
 
 **~~D25 also exposes a gate blind spot~~ — WRONG, and corrected at 0a.3.** This
 paragraph said the `asan` preset allocates through the arena and therefore
@@ -392,6 +396,17 @@ example added and the fix reverted it reads **56/57** with a genuine
 memory-safety gate.** The blind spot is real but CLI-only — it covers
 `markdown-core` itself and `dump_cli_runner` — and **Q12 is not a prerequisite
 for anything in this stage.**
+
+**D28 AND D29 ARE STAGE 0a DEFECTS WITH NO SUB-STEP, and §4.2.3's list does not
+mention them.** §4.13.11 assigns both to Stage 0a — D28 *"ahead of Step 6"*, D29
+*"ahead of Step 3"* — and §4.12 says every defect is fixed before any other task.
+They are a use-after-free and a crash, so they are not deferrable on merit. But
+§4.2.3 enumerates 0a.0 through 0a.14 and neither appears in it, because §4.13
+was written after §4.2 and its four additions never made it into the sub-step
+list. **They need a sub-step, and the natural place is a new 0a.15**, after the
+fourteen and before the stage closes; both are extension-local and neither
+touches anything the fourteen move. Decide it before 0a.11, which is the last
+step that touches `extensions/table.c`.
 
 **Citations are `function` (`file:line`) pinned to `8e76a94`.** The function
 name is the durable half: a landed fix shifts every line below it — deleting
@@ -1079,6 +1094,8 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | **Q28** | Is `markdown_core_parser_feed_reentrant` deleted? | 11a | **Yes.** Zero in-tree callers, and it re-enters line processing with bytes that are in no source line — unrepresentable under L1. Keeping an entry point whose only purpose is to inject bytes no position can name, in the step that establishes that every byte has a position, is carrying a contradiction forward for no consumer. |
 | **Q29** | Does `mode` survive on `Code`, `CodeBlock`, `Directive`, `DirectiveBlock`? | 15A | **No** — delete it from those four, keep it on `Formula`/`FormulaBlock` where it is genuinely variable. Both decoders prove the point: Kotlin and ES hard-code the constant and one of them then *asserts* the constant it just synthesized, and the Kotlin wire format does not transmit it. A field whose value is implied by its type is ceremony four surfaces must keep in step. |
 | **Q30** | Do the bindings spell child edges typed (`content`, `items`, `label`, `header`, `rows`, `cells`) or flat (`children`)? | 15A | **Typed.** Kotlin and ES already do; Swift's flat `children` is what forces `labelCount: Int?`, forces `Table.init` to filter rows by `isHeader` and `preconditionFailure` if the count is not one, and forces `children: [any Markup] = []` onto eleven leaf kinds. Two of three bindings and the contract already assume it. |
+| **Q38** | Does the empty `Text` node D13 removes become a registered divergence from cmark-gfm? | 0a.14 | **OPEN.** Upstream emits the node too, so removing it costs one normalizer projection, one `NORMALIZED_DELTAS` name and one `deltas.json` entry. Measured at §4.2.3. Owed by the commit that lands D13. |
+| **Q39** | `[foo]: <>` resolves to `destination=null`, not `destination=""`. Is that right, when the destination WAS written and was empty? | 0a.7 | **TAKEN 2026-08-21, at 0a.7: yes, on consistency grounds, and the limit is stated.** `markdown_core_clean_url` folds a zero-length destination to `CHUNK_EMPTY` before it ever reaches the map — the same fold `clean_title` does — so `<>` is indistinguishable from *no destination* by the time the reference path sees it, and the inline path already answers `[a](<>)` with `destination=null`. Making `chunk_clone` preserve absence made the two paths agree. **This is consistency, not correctness:** a rule that truly separates "written and empty" from "not written" requires the folds to stop, which is Step 14's structural job, and this row is the one input in the corpus that will move again there. It is one row, `spec.txt` example 169. |
 
 ---
 
@@ -1143,7 +1160,7 @@ Two of the fourteen *looked* like dependencies in §2 and were not. **D12 "block
 | # | Verdict | Evidence, measured on the untouched baseline | Lands |
 |---|---|---|---|
 | **D12** | **FIXABLE-AT-BASELINE**, in the same commit as D13 and no other | The one-line fix *alone* turns `extensions.txt:804`/`:809` from `59:1..59:0` into `59:1..0:0` — a strictly worse row that **every gate in the repository passed** at the time this was written: 65/65, 795/795, 46/46, canonical green, ledger 207 unchanged, because `endLine < startLine` keeps it in the same `negative` bucket it left. **That clause expired at 0a.1**: `audit-position-places.mjs` reads a live parse and reports the three rows moving to line zero, re-measured at 0a.2 (§4.2.8). With D13 and D10 landed it has **no witness at all**: 4 hits over the 860-example corpus, every one through an operand with no position; 0 hits over 40,000 random inputs filtered to merges where both operands are positioned. It is a real defect (the assignment is plainly missing) that is unobservable on this engine, and it must not be sold as fixing anything measurable | **0a.14** |
-| **D13** | **FIXABLE-AT-BASELINE**, by removing the node, not by respelling the position | Option A (§2's wording — give the empty fragment an honest empty range) was built in two cuts and **rejected on measurement**: every sentinel row it removes returns as a negative row, because a closed `(line, column)` interval cannot express an empty range; `extensions.txt` negative goes 10 → 36 (narrow) or 38 (wide) and `specs/scope-sanity/ledger.json` forbids growth in either class, so A cannot land without raising the ratchet, which defeats the ratchet. A-narrow also does not clear its own class — producer (2) still emits `0:0..0:0`. Option B is 24 lines across `core/iterator.c` and `extensions/autolink.c`: 106 rows changed, net **−46**, ledger **207 → 169**, and every gate green **after** one registered upstream divergence (Q31) | **0a.14** |
+| **D13** | **FIXABLE-AT-BASELINE**, by removing the node, not by respelling the position | Option A (§2's wording — give the empty fragment an honest empty range) was built in two cuts and **rejected on measurement**: every sentinel row it removes returns as a negative row, because a closed `(line, column)` interval cannot express an empty range; `extensions.txt` negative goes 10 → 36 (narrow) or 38 (wide) and `specs/scope-sanity/ledger.json` forbids growth in either class, so A cannot land without raising the ratchet, which defeats the ratchet. A-narrow also does not clear its own class — producer (2) still emits `0:0..0:0`. Option B is 24 lines across `core/iterator.c` and `extensions/autolink.c`: 106 rows changed, net **−46**, ledger **207 → 169**, and every gate green **after** one registered upstream divergence (Q38) | **0a.14** |
 | **D14** | **FIXABLE-AT-BASELINE** | **§2 is wrong twice.** It reproduces on the untouched tree with no D10 fix: `x[\^a] tail` → `literal="x[^a]] tail"` (backslash lost, `^` invented, `]` doubled) and `x[&#94;a] tail` → `literal="x[^\0\0\0\0\0] tail"`. And the "policy move, not a repair" objection does not survive measurement: at the baseline **no** escaped or entity-spelled call ever resolves, because the column arithmetic makes the lookup key `n]` or `\0\0\0\0\0`, never `n` — verified with `a[\^n]` + `[^n]: note`, which drops the definition before *and* after. The narrowing removes broken behaviour only. 432-case matrix (6 caret spellings × 8 labels × 3 tails × 3 definition contexts): 252 move; the baseline emits **invalid UTF-8 on 90 of them and NUL bytes on 162** — heap bytes materialised into a document. One condition, bounds-tested before the subscript. **Zero golden rows** | **0a.9** |
 | **D15** | **FIXABLE-AT-BASELINE** | Over all 2,744 ordered triples of 14 significant lines, **414 (15.1%) parse differently through the CLI than through the facade**; after one shared attach path, 0. The 809-input fixture corpus shows 0 CLI-vs-facade differences, which is why no oracle sees it. `markdown_core_core_extensions_attach(parser, mask)` walking one ordered table with `table` last (Q9), declared **without** `MARKDOWN_CORE_EXPORT` so the export map and `audit-public-surface.sh` are untouched. The CLI's `-e NAME` lever must route through the same bit table or the hole is still open. **Zero golden rows** | **0a.11** |
 | **D16** | **FIXABLE-AT-BASELINE** | 40 rows — 37 `spec.txt`, 3 `extensions.txt` — cross-checked independently here: the corpus carries **58** `title=""` rows (54 spec + 4 extensions), 18 of them D6's, and 58 − 18 = 40 exactly. **Mechanism correction:** `markdown_core_clean_title` already folds a zero-length title to `CHUNK_EMPTY`, so `inlines.c:1755` is **behaviour-neutral today**; the entire visible defect is `chunk_clone`, which `calloc`s `len+1` unconditionally and turns the refmap's NULL back into `""`. Take both anyway — `chunk_clone` alone leaves 1755 asserting "written and empty" for something never written, which is the exact tension 0a.7 was told not to resolve | **0a.7** |
@@ -1156,7 +1173,9 @@ Two of the fourteen *looked* like dependencies in §2 and were not. **D12 "block
 | **D24** | **FIXABLE-AT-BASELINE** | +7/−1. The re2c rule is `("[ ]"\|"[x]"\|"[X]")spacechar+`, so a non-zero `matched` guarantees `matched >= 4` and the read at `first_nonspace + 1` is in range. **Zero existing golden rows.** It is confirmed to be the pending upstream delta `tasklist-checked-marker` — and activating it **cannot be done by editing JSON alone**: `check-upstream-parity.mjs` keys `expectedDivergences` by input and fails any entry not reachable in the corpus, and the registered input `- [ ] call me [x] later` was in no fixture at all | **0a.11** |
 | **D25** | **FIXABLE-AT-BASELINE**, and it is **one hunk with D10's byte half** | Reproduced three ways; the ASan stack is §11.4's witness byte for byte, and `map.c:279` / `inlines.c:1384` still resolve exactly. The fix is one expression — the length was never the bug, the **base pointer** was: the old code borrowed *the following node's* literal, the fix borrows `subj->input + opener->position + 1`, and on one line the arithmetic is provably identical when the node after `[` borrows `subj->input` at `opener->position`, which is exactly what a decoded entity breaks. **Zero golden rows on the fix alone**, so its fixture is mandatory, not optional evidence | **0a.2** |
 
-**Two of the fourteen carry a decision that is not the implementer's.** D13 needs `empty-text-node` registered as a deliberate divergence from cmark-gfm, because upstream emits the empty node too (**Q31**). D16's spec example 169 flips `[foo]: <>` from `destination="" title=""` to `destination=null title=null`, and the destination *was* written (**Q32**). Both are in §9; neither may be taken silently inside a defect commit.
+**Two of the fourteen carry a decision that is not the implementer's.** D13 needs `empty-text-node` registered as a deliberate divergence from cmark-gfm, because upstream emits the empty node too (**Q38**). D16's spec example 169 flips `[foo]: <>` from `destination="" title=""` to `destination=null title=null`, and the destination *was* written (**Q39**). Both are in §4.1.6's ledger; neither may be taken silently inside a defect commit.
+
+**These were written as Q31 and Q32 and those ids were already taken** — §11.8's inventory claims Q31–Q36, and §11.8's Q32 (snapshot ownership) is answered and cross-referenced from Q35. Renumbered to **Q38** and **Q39** at 0a.7, which is the commit that had to take the second one. 0a.0's row says it took both; it did not, and neither appeared in the ledger.
 
 #### 4.2.2 The stage
 
@@ -1164,7 +1183,7 @@ Ordered by four rules, in this precedence: **(1)** an oracle's first reading is 
 
 | # | Lands | Defects | C lines | Goldens moved | New gate | Cost |
 |---|---|---|---|---|---|---|
-| 0a.0 | Gate reconciliation | D17 | 1 | 0 | four items, all verified; two decisions taken (Q31, Q32) | ½ day |
+| 0a.0 | Gate reconciliation | D17 | 1 | 0 | four items, all verified; the two decisions (now Q38, Q39) were NOT taken here — Q39 was taken at 0a.7, Q38 is still owed by 0a.14 | ½ day |
 | 0a.1 | **Three** oracles, no engine change | — | 0 | 0 | inline-sourcepos · scope-containment **incl. sibling non-overlap** · **position-is-a-place** | ~200 script lines, 1 day |
 | 0a.2 | Lifetime and data loss | D10, D11, **D25** | ~28 | 1 + 1 ledger | 3 regression examples, 1 upstream **model** delta, 2 `expectedDivergence`s | 1½ days |
 | 0a.3 | The out-of-bounds read | D4 | 1 | 0 | a debug assertion the existing ASan/UBSan presets trip | 1 hour |
@@ -1185,7 +1204,7 @@ Ordered by four rules, in this precedence: **(1)** an oracle's first reading is 
 
 #### 4.2.3 The sub-steps
 
-**0a.0 — reconcile the gates before touching the engine.** No engine change except D17. Four items, all verified; the first three stand as written (repoint `specs/`, restore the two era-skewed checkers, D17's one-line version macro, register the known-reds with their owner steps). **A fifth item is added by the ruling:** take Q31 and Q32 *here*, before any commit needs them, so that no defect commit smuggles a divergence decision. Record both in §9 with the measurement already in hand.
+**0a.0 — reconcile the gates before touching the engine.** No engine change except D17. Four items, all verified; the first three stand as written (repoint `specs/`, restore the two era-skewed checkers, D17's one-line version macro, register the known-reds with their owner steps). **A fifth item is added by the ruling:** take Q38 and Q39 (written here as Q31 and Q32, ids that were already taken) *here*, before any commit needs them, so that no defect commit smuggles a divergence decision. **This did not happen** — Q39 was taken at 0a.7 in the commit that needed it, and Q38 is still owed by 0a.14.
 
 **0a.1 — the oracles that must exist before any position is touched. LANDED; the readings are in §4.2.7, and three of the numbers below were wrong.** There are **three**, because the ruling brought two whole classes of position defect into the stage that the original two oracles cannot see.
 
@@ -1216,7 +1235,7 @@ The ratchet composition stands and must still be verified in the 0a.6 commit: D1
 
 **0a.6 — D3 and D7. LANDED; §4.2.12 records it, and it found D27.** Unchanged, including the `inlines.c:343` amendment for the container-relative end column and the instruction to name the end-column-zero class in the ledger's `purpose` field. **Two corroborations arrived independently.** First, un-gating `OPT_SOURCEPOS` alone turns five spec examples red for a *second* reason: `adjust_subj_node_newlines` writes `node->end_column = since_newline`, which is **0** when the span's last byte is a newline, and never adds `block_offset` — that is the same class the existing text calls "a fourth class the ledger does not classify", and the `inlines.c:343` amendment is what answers it. Second, the family is wider than the extension API: the *core* has D22's bug wherever it consumes a newline-bearing span (`` `x\ny` tail`` → `Text " tail" scope=1:6..1:10`; CommonMark 500 likewise). Under Q14 the `MARKDOWN_CORE_OPT_SOURCEPOS` bit is deleted outright at Step 3; 0a.6 removes its only live use, so that deletion becomes trivial rather than a behaviour change.
 
-**0a.7 — D5, D6 and D16: the null/empty rule at all three sites, in one commit.** The previous text said *"note the tension and do not try to resolve it here"* and named `inlines.c:1755` as a third violation to be left standing. **Q25 reverses that instruction**, and the reversal is what makes this the cheapest commit in the stage rather than the most awkward:
+**0a.7 — D5, D6 and D16: the null/empty rule at all three sites, in one commit. LANDED; §4.2.13 records it, and Q39 was taken here.** The previous text said *"note the tension and do not try to resolve it here"* and named `inlines.c:1755` as a third violation to be left standing. **Q25 reverses that instruction**, and the reversal is what makes this the cheapest commit in the stage rather than the most awkward:
 
 - D6 deletes one line (`make_autolink`'s `title = chunk_literal("")`), 18 rows.
 - D16 is two hunks, ~8 lines: `chunk_clone` returns `CHUNK_EMPTY` for a NULL-data source, and the no-title branch records absence. 40 rows.
@@ -1224,7 +1243,7 @@ The ratchet composition stands and must still be verified in the 0a.6 commit: D1
 
 58 rows move, plus one assertion string in `tests/api/main.c:1076`. **No parity oracle can ever police D6 or D16** — `scripts/lib/upstream-cmark.mjs:174` maps `title:""` to `"null"` before comparing, on all three of them — so the golden dump is the only mechanism in this repository that can hold the fix down, which is exactly why the 58 rows are regenerated *once*, deliberately, in a commit whose subject says so. The `spec_commonmark`/`extensions_gfm` reds that appear before regeneration are **the goldens being wrong**: they assert `title=""` for a title nobody wrote.
 
-**One row needs a hand decision and must be named in the commit** rather than passing as "unchanged in kind": spec example 169, `[foo]: <>`, goes `destination="" title=""` → `destination=null title=null`. The destination *was* written and was empty, so `""` is arguably right. It flips because `markdown_core_clean_url` folds length-0 to NULL, the same fold `clean_title` does, and the fix makes the reference path agree with the inline path, which already answers `[a](<>)` → `destination=null`. That is consistency, not correctness; a rule that truly separates the two requires the folds to stop, which is Step 14's structural job. **Q32.**
+**One row needs a hand decision and must be named in the commit** rather than passing as "unchanged in kind": spec example 169, `[foo]: <>`, goes `destination="" title=""` → `destination=null title=null`. The destination *was* written and was empty, so `""` is arguably right. It flips because `markdown_core_clean_url` folds length-0 to NULL, the same fold `clean_title` does, and the fix makes the reference path agree with the inline path, which already answers `[a](<>)` → `destination=null`. That is consistency, not correctness; a rule that truly separates the two requires the folds to stop, which is Step 14's structural job. **Q39, taken at 0a.7.**
 
 The mdast note must also be amended in this commit: `specs/mdast-parity/corpus.md:243` still diverges correctly after D5, and its note must say the title defect is fixed and only the node model remains — otherwise the next reader re-derives D5.
 
@@ -1259,7 +1278,7 @@ Three rows move — two in `extensions-directive.txt` example 16 (the inner `:::
 
 **Two things this commit must state.**
 
-1. **The upstream red is the oracle, not the fix, and clearing it is a decision.** `check-upstream-parity.mjs` reads 784/795 without it: **cmark-gfm emits the empty text node too**, verified directly, and 11 corpus inputs diverge (8 autolink, 3 hard-break/shortcut-reference). This is the history already recorded in `specs/mdast-parity/deltas.json` under `empty-text-node` — *"suppressing it here failed `scripts/check-upstream-parity.mjs`, which is how this was classified as a shape delta rather than a defect"* — reproduced. Registering it costs one normalizer projection (drop an empty-literal `Text` from **both** sides in `scripts/lib/upstream-cmark.mjs`), one `NORMALIZED_DELTAS` name and one `deltas.json` entry of kind `deliberate-difference`: **795/795, green.** That is **Q31**, and §4.1's Step 5 row should have said so from the start rather than leaving it to be discovered at Step 5. The `specs/mdast-parity/deltas.json` `empty-text-node` entry goes half-stale in the same moment and is updated here.
+1. **The upstream red is the oracle, not the fix, and clearing it is a decision.** `check-upstream-parity.mjs` reads 784/795 without it: **cmark-gfm emits the empty text node too**, verified directly, and 11 corpus inputs diverge (8 autolink, 3 hard-break/shortcut-reference). This is the history already recorded in `specs/mdast-parity/deltas.json` under `empty-text-node` — *"suppressing it here failed `scripts/check-upstream-parity.mjs`, which is how this was classified as a shape delta rather than a defect"* — reproduced. Registering it costs one normalizer projection (drop an empty-literal `Text` from **both** sides in `scripts/lib/upstream-cmark.mjs`), one `NORMALIZED_DELTAS` name and one `deltas.json` entry of kind `deliberate-difference`: **795/795, green.** That is **Q38**, and §4.1's Step 5 row should have said so from the start rather than leaving it to be discovered at Step 5. The `specs/mdast-parity/deltas.json` `empty-text-node` entry goes half-stale in the same moment and is updated here.
 2. **The free happens at `ENTER`, and that is legal today for a reason Step 5 removes.** `TEXT` is a leaf, so `S_is_leaf` suppresses its `EXIT` and `markdown_core_iter_next` has already computed `iter->next` past it. When Step 5 makes the event contract **total**, every node gets an `EXIT` and the rule "only the node whose `EXIT` is current may be freed" makes this free illegal. Step 5 must move it, or state that a leaf's `ENTER` *is* its `EXIT` for mutation purposes. Write that into the commit and into Step 5's row.
 
 #### 4.2.4 Nothing failed to reproduce — but eleven statements are wrong
@@ -1752,7 +1771,7 @@ Stage 0a found it: 17 at the baseline, 16 after 0a.2, 17 here. The ledger's
   gate at all**. One `regression.txt` example now pins it, and the mutant kills
   that example.
 
-**D27, found by doing this.** Un-gating makes raw HTML report a line-crossing
+**D31, found by doing this.** Un-gating makes raw HTML report a line-crossing
 tag one column short of its own literal: `a <b`⏎`c> d` gives
 `HTML scope=1:3..2:1` for a literal whose last byte is at `2:2`, while
 `a <b c> d` gives `1:3..1:7`, which covers it. The cause is the span handed to
@@ -1770,6 +1789,82 @@ divergence decision. It belongs to Step 8's position model. The pin is a
 the same shape §4.5 credits for D10, where "the fixture pins the defect and
 unpinning it is the gate" — so the six `spec.txt` rows regenerated here are not
 the only record of it.
+
+---
+
+#### 4.2.13 0a.7 landed: one rule, three sites, sixty rows, and Q39 taken
+
+**The rule is `null` means not written and `""` means written and empty**, and
+the engine stated it three different ways. All three now agree, in one commit,
+because landing them apart would have made the middle commit assert `""` for
+something the next one calls absence:
+
+- **D6** — `make_autolink` set `title = chunk_literal("")`. An autolink has no
+  syntax for a title, so the field is now left as `make_simple` calloc'd it.
+  One line deleted.
+- **D16a** — `chunk_clone` always allocated, so a NULL-data source became a
+  non-NULL `""`. A copy of "never written" is "never written". Four lines.
+- **D16b** — `markdown_core_parse_reference_inline`'s no-title branch wrote
+  `chunk_literal("")`. Behaviour-neutral today, because `clean_title` folds
+  length-0 to `CHUNK_EMPTY` before the map sees it, and taken anyway so the rule
+  is stated once at every site rather than compensated for downstream.
+- **D5** — the title-rewind path un-read the title and left `title` holding the
+  scanned chunk, which went into the reference map. The bytes were stated twice,
+  once as paragraph prose and once as a title. It now records absence — and
+  reads `title=null` from the first commit rather than `""` for one commit and
+  `null` at Step 14, which is the whole reason the four land together.
+
+**60 rows moved, and 59 of them are one substitution.** `title=""` →
+`title=null`, in `spec.txt` (54), `extensions.txt` (4) and `regression.txt` (2),
+plus one assertion string in `tests/api/main.c`. §4.2.6's table predicted 54 and
+4; the two extra are 0a.6's own autolink examples, which carried `title=""` when
+they were written a commit ago. The hand review is therefore complete in a way a
+58-row diff usually is not: a script confirmed that **exactly one** row differs
+by anything other than that substitution.
+
+**That row is Q39, and it is taken here.** `spec.txt` example 169, `[foo]: <>`,
+goes `destination="" title=""` → `destination=null title=null`. The destination
+*was* written and was empty, so `""` is arguably right — but
+`markdown_core_clean_url` folds a zero-length destination to `CHUNK_EMPTY`
+before it ever reaches the map, so `<>` is already indistinguishable from *no
+destination* by the time the reference path sees it, and the inline path already
+answers `[a](<>)` with `destination=null`. **The decision is consistency, not
+correctness**, and the limit is stated in the ledger: separating the two truly
+requires the folds to stop, which is Step 14's, and this is the one corpus input
+that will move again there.
+
+**Two numbering faults found and fixed while taking it.** Q39 was written as
+**Q32**, and §11.8's inventory already owns Q31–Q36 — its Q32 is snapshot
+ownership, answered and cross-referenced from Q35. The pair is renumbered to
+**Q38** (D13's `empty-text-node` divergence, still owed by 0a.14) and **Q39**,
+and both are now in §4.1.6's ledger, which is where §4.2 said they were and
+where they were not. §4.2's own table claims 0a.0 took them; **it did not**, and
+the row now says so.
+
+**Mutant kills, one per site, and D5's kills in two different ways.**
+
+- D6 restored: **20 examples red** — 17 `spec.txt`, 1 `extensions.txt`, 2
+  `regression.txt`.
+- D16a restored: **37 examples red** — 35, 1, 1.
+- D5 restored: `regression.txt` red **and** `check-upstream-parity.mjs` at
+  807/809 with `registered divergences: 4/5` and the message *"registered
+  divergence `refdef-title-rewind` no longer reproduces: the two now agree"*.
+  A gate that notices a registered difference disappearing is worth more here
+  than one that notices a new one, because upstream keeping the title is the
+  thing this fix is deliberately unlike.
+
+**The goldens are the only mechanism that can hold D6 and D16 down**, and that
+is measured rather than assumed: `scripts/lib/upstream-cmark.mjs` maps
+`title:""` to `"null"` before comparing, on all three parity oracles, so no
+parity gate can ever see the difference. That is exactly why the 60 rows are
+regenerated once, deliberately, in a commit whose subject says so.
+
+**`refdef-title-rewind` is now a registered delta**, moved out of
+`pendingDeltas` — 809/809 with 5/5 divergences reproducing. Its `pendingStep`
+said Step 9; §4.2's defect schedule moved it to 0a.7 and the entry records that.
+The mdast corpus note at `corpus.md` is amended in the same commit to say the
+title half is fixed and only the node model remains, so the next reader does not
+re-derive D5 from a row that still diverges for a different reason.
 
 ---
 
@@ -2305,7 +2400,7 @@ Deletion is already **Step 3a**'s stated requirement (`0 new · −140`). Q34 ch
 
 #### 4.13.11 Four defects the sweep found, and what to do with them
 
-Numbered as §2 additions from the next free id. **Two are live outside allocation failure and must go to Stage 0a; two exist only under allocation failure and should be pinned by the §4.13.9 gate rather than separately fixed, because the mechanism deletes them.**
+Numbered as §2 additions from the next free id. **These four hold D27–D30, and 0a.6's raw-HTML column defect is therefore D31, not D27** — it was written as D27 first, because §2's index table stops at D25 and these four live only in this subsection. The index now carries all of them. **Two are live outside allocation failure and must go to Stage 0a; two exist only under allocation failure and should be pinned by the §4.13.9 gate rather than separately fixed, because the mechanism deletes them.**
 
 > **D27 (proposed, measured).** `parser->linebuf.oom` is written at six sites (`core/blocks.c:853, 858, 896, 905, 907, 909`) and **read at none**. Measured: feeding a four-line document in 32-byte chunks and refusing the first allocation of chunk 1 turns 244 input bytes into 102, with `parser->oom == 0` and `finish` returning a document — the accumulated prefix is handed to `S_process_line` at `:897` and committed **as if it were a whole line**, and because the poison is sticky the truncation continues for the rest of the stream. The only allocation-failure gate in the tree, `case_oom_sweep` (`tests/runners/fallback_runner.c:624`), feeds its corpus in one call, so `linebuf` is never written during the entire sweep and the gate is structurally blind to the exact buffer `append(chunk:)` makes the normal path. Severity: silent truncation. Fix: test the flag, and hoist the growth to `linebuf.size + len` at `core/blocks.c:862`. **Owner: 3a, with A1.**
 
