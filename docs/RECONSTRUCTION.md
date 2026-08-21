@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.10 |
+| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.11 |
 | Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Stage 0a**, §4.2, at **0a.11** — 0a.0 through 0a.10 have landed |
+| Next action | **Stage 0a**, §4.2, at **0a.12** — 0a.0 through 0a.11 have landed, and **0a.15 now exists** (§2, §4.2.3) |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -52,10 +52,11 @@ ctest --preset correctness-ubsan -j 8      # 58/58 — SEE THE WARNING BELOW
 node scripts/check-canonical-ast-fixtures.mjs   # 28 kinds, 47 fields, 6 cases
 bash scripts/audit-public-surface.sh
 node scripts/audit-extension-special-chars.mjs   # 4 extensions, 5 sentinels
+node scripts/audit-extension-attach-order.mjs    # one attach site, table last (D15, added 0a.11)
 node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
-node scripts/check-upstream-parity.mjs     # 813/813 vs cmark-gfm 0.29.0.gfm.13, 6/6 divergences
+node scripts/check-upstream-parity.mjs     # 816/816 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
 node scripts/check-mdast-parity.mjs        # 54/54, backlog 24/24 still diverging
 node scripts/audit-scope-sanity.mjs        # 207 rows, only-shrink holds
 
@@ -63,8 +64,8 @@ node scripts/audit-scope-sanity.mjs        # 207 rows, only-shrink holds
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
 # fails here rather than in review.
 node scripts/audit-inline-sourcepos.mjs    # 0 rows registered, 68 scanned
-node scripts/audit-scope-containment.mjs   # 58 rows registered, 3612 scanned
-node scripts/audit-position-places.mjs     # 122 rows registered, 3872 scanned
+node scripts/audit-scope-containment.mjs   # 58 rows registered, 3657 scanned
+node scripts/audit-position-places.mjs     # 122 rows registered, 3929 scanned
 
 # D9's pin. REGISTERED RED and it fails if a row STOPS reproducing, because
 # deleting the budget clears both rows and costs 204.678x output growth.
@@ -376,7 +377,7 @@ ones whose witness is stated in this section rather than in the row.
 | D12 | `consolidate_text_nodes` drops `end_line` | wrong-position | 5 | built & reverted |
 | D13 | autolink's `len==0` sentinel leaves a zero-length `Text` | wrong-output | 5 | built & reverted |
 | D14 | the `"[^"` prefix rebuilt over decoded bytes | wrong-output | 9a | built & reverted |
-| D15 | the CLI and the facade attach extensions in different orders | wrong-output | 3 | built & reverted |
+| D15 | the CLI and the facade attach extensions in different orders | wrong-output | **fixed at 0a.11** | built & reverted |
 | D16 | two more null/empty sites | wrong-output | 14 | built & reverted |
 | D17 | shipped v1.0.3 declares `MARKDOWN_CORE_VERSION` = **1.0.0** | wrong-output | **fixed at 0a.0** | header vs `VERSION` |
 | D18 | a paragraph whose leading definitions were consumed keeps the **definition's** line | wrong-position | 10 | `[a]: /1⏎text here` → `Text 1:1..1:9`, a column that does not exist on line 1 **[verified here]** |
@@ -385,7 +386,7 @@ ones whose witness is stated in this section rather than in the row.
 | D21 | **a container directive's closing fence does not close it** | **content-attribution loss** | 7 | `:::note⏎body⏎:::⏎after` → `after` is pulled *inside* the block **and** reported at line 3 while it is on line 4 **[verified here]** |
 | D22 | an extension consuming a span with a line ending cannot report it | wrong-position | 7 lands, 8 owns | `Directive 1:1..1:29` on a 28-character line; blocks Step 7's oracle |
 | D23 | `S_insert_emph` takes the **whole** run's start column | wrong-position + overlap | 8, gated by 11b | `***a**` → `Text "*"` claims columns 1–3 and `Strong` also starts at 1: two nodes, one byte |
-| D24 | `tasklist` decides `checked` by `strstr` over the whole line | wrong-output | 3 | `- [ ] see [x] below` → `checked=true` |
+| D24 | `tasklist` decides `checked` by `strstr` over the whole line | wrong-output | **fixed at 0a.11** | `- [ ] see [x] below` → `checked=true` |
 | D25 | a `FootnoteReference` label can be a **dangling pointer**, read on every lookup | **use-after-free** | 0a.2 | ASan: `heap-use-after-free`, READ of size 1 in `markdown_core_map_lookup (map.c:279)`, freed by `handle_close_bracket (inlines.c:1384)` |
 | D27 | `parser->linebuf.oom` written at six sites and read at none | silent truncation (allocation failure only) | 3a, with A1 | §4.13.11, measured: 244 input bytes become 102 with `parser->oom == 0` |
 | D28 | `extensions/formula.c` ignores `markdown_core_chunk_to_cstr`'s failure and keeps a **borrowed** pointer | **use-after-free** | **0a — UNSCHEDULED, see below** | §4.13.11, ASan: `heap-use-after-free`, READ of size 5 in `markdown_core_extensions_get_formula_literal` |
@@ -1120,7 +1121,7 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | **Q12** | Is the arena deleted, or made parser-owned? | 3a | **Delete.** Measured: ~7% CLI-only parse win, **+10–16% peak RSS**, `abort()` on allocation failure inside a library with a careful sticky-OOM discipline, total sanitizer blindness on the binary the parity oracles drive, and a demonstrated **480-byte leak in a parser that never asked for it** (a global `A != NULL` makes an unrelated default-allocator parse take `table.c`'s retry branch). Parser-owned is impossible without a document-owned lifetime model this engine does not have. Output-neutral: 7,251 comparisons, 0 differences. |
 | **Q13** | Is the cycle check unconditional — and is it a defect or a refactor by-product? | 3b | **Unconditional**, and *"the shipped library makes `b->parent == b` on request while the test that denies it flips a flag nothing else flips"* reads exactly like D1–D16. Measured cost: unmeasurable on four workloads, 10.7% on one already-pathological path the engine takes 36 seconds to parse. **The owner may re-file it into Stage 0a; that is the only change to 0a this restatement would ask for besides Q25.** |
 | **Q14** | One knob per extension, or two? | 3, 6, 7 | **One.** Attachment is the language. Delete `MARKDOWN_CORE_OPT_DIRECTIVE` and both formula delimiter options; keep formula's `dollar`/`latex` **sub-grammar** selection only if a use is stated, and today none is. |
-| **Q15** | What is the **inline** dispatch precedence? | 3 | Q9 settles the *block* order (`table` last) and says nothing about inlines — `table` has no inline hooks at all. `autolink` and `directive` both claim `':'`, and first-non-NULL wins today. **Recommend: table order is also inline order, `autolink` before `directive`** (a bare `:` far more often begins a URL), stated in the commit and pinned by a fixture. |
+| **Q15** | What is the **inline** dispatch precedence? | 3 | Q9 settles the *block* order (`table` last) and says nothing about inlines — `table` has no inline hooks at all. `autolink` and `directive` both claim `':'`, and first-non-NULL wins today. **Recommend: table order is also inline order, `autolink` before `directive`** (a bare `:` far more often begins a URL), stated in the commit and pinned by a fixture. **MEASURED AT 0a.11 AND THE COLLISION HAS NO WITNESS**: moving `directive` to first or to the middle changes 0 of 12 hand-built candidates and 0 of 4,000 random `:`/URL/attribute documents (§4.2.17). The recommendation stands as a tie-break; it must not be shipped as a fix, and **a fixture cannot pin it until an input exists that distinguishes the two** — finding one, or recording that none does, is Step 3's. |
 | **Q16** | Are extension node types and node-flag bits re-assigned as fixed constants? | 3 | **Yes**, in a fixed enum decoupled from the table order. They are internal — the shipped export map is 32 read-only facade symbols — and conflating "attach order" with "type numbering" is precisely what makes today's globals order-dependent. |
 | **Q17** | Is an inline node's position a projection of a stored byte range? | 8 | **Yes**, and store the pair — two `bufsize_t` on the inline node. This is what makes D12 *unexpressible* rather than fixed, and it is the concession that makes 11b cheap. |
 | **Q18** | Which inline-math padding rule? | 6 | **micromark-extension-math's**: strip one leading and one trailing space-or-line-ending, interior untouched. Not CommonMark's code-span rule, which also converts interior line endings. No oracle example separates them; three independent reasons do (the oracle's own prose cites micromark; the mdast gate compares `Formula.literal` against remark on every corpus input; a formula body is handed to KaTeX). **And it applies to the `\(…\)` / `\[…\]` forms too** — no oracle row covers that; pin it with two new ones. |
@@ -1204,7 +1205,7 @@ Two of the fourteen *looked* like dependencies in §2 and were not. **D12 "block
 | **D12** | **FIXABLE-AT-BASELINE**, in the same commit as D13 and no other | The one-line fix *alone* turns `extensions.txt:804`/`:809` from `59:1..59:0` into `59:1..0:0` — a strictly worse row that **every gate in the repository passed** at the time this was written: 65/65, 795/795, 46/46, canonical green, ledger 207 unchanged, because `endLine < startLine` keeps it in the same `negative` bucket it left. **That clause expired at 0a.1**: `audit-position-places.mjs` reads a live parse and reports the three rows moving to line zero, re-measured at 0a.2 (§4.2.8). With D13 and D10 landed it has **no witness at all**: 4 hits over the 860-example corpus, every one through an operand with no position; 0 hits over 40,000 random inputs filtered to merges where both operands are positioned. It is a real defect (the assignment is plainly missing) that is unobservable on this engine, and it must not be sold as fixing anything measurable | **0a.14** |
 | **D13** | **FIXABLE-AT-BASELINE**, by removing the node, not by respelling the position | Option A (§2's wording — give the empty fragment an honest empty range) was built in two cuts and **rejected on measurement**: every sentinel row it removes returns as a negative row, because a closed `(line, column)` interval cannot express an empty range; `extensions.txt` negative goes 10 → 36 (narrow) or 38 (wide) and `specs/scope-sanity/ledger.json` forbids growth in either class, so A cannot land without raising the ratchet, which defeats the ratchet. A-narrow also does not clear its own class — producer (2) still emits `0:0..0:0`. Option B is 24 lines across `core/iterator.c` and `extensions/autolink.c`: 106 rows changed, net **−46**, ledger **207 → 169**, and every gate green **after** one registered upstream divergence (Q38) | **0a.14** |
 | **D14** | **LANDED 0a.9.** Fixable at the baseline | **§2 is wrong twice, and two of this row's own numbers went stale.** Re-measured composed with 0a.2 at §4.2.15: **360** of the 432 move, not 252, and the NUL and invalid-UTF-8 rows are **0** and **0**, not 162 and 90 — 0a.2 removed the heap bytes before this commit ran. The original reading: It reproduces on the untouched tree with no D10 fix: `x[\^a] tail` → `literal="x[^a]] tail"` (backslash lost, `^` invented, `]` doubled) and `x[&#94;a] tail` → `literal="x[^\0\0\0\0\0] tail"`. And the "policy move, not a repair" objection does not survive measurement: at the baseline **no** escaped or entity-spelled call ever resolves, because the column arithmetic makes the lookup key `n]` or `\0\0\0\0\0`, never `n` — verified with `a[\^n]` + `[^n]: note`, which drops the definition before *and* after. The narrowing removes broken behaviour only. 432-case matrix (6 caret spellings × 8 labels × 3 tails × 3 definition contexts): 252 move; the baseline emits **invalid UTF-8 on 90 of them and NUL bytes on 162** — heap bytes materialised into a document. One condition, bounds-tested before the subscript. **Zero golden rows** | **0a.9** |
-| **D15** | **FIXABLE-AT-BASELINE** | Over all 2,744 ordered triples of 14 significant lines, **414 (15.1%) parse differently through the CLI than through the facade**; after one shared attach path, 0. The 809-input fixture corpus shows 0 CLI-vs-facade differences, which is why no oracle sees it. `markdown_core_core_extensions_attach(parser, mask)` walking one ordered table with `table` last (Q9), declared **without** `MARKDOWN_CORE_EXPORT` so the export map and `audit-public-surface.sh` are untouched. The CLI's `-e NAME` lever must route through the same bit table or the hole is still open. **Zero golden rows** | **0a.11** |
+| **D15** | **LANDED 0a.11.** Fixable at the baseline | Over all 2,744 ordered triples of 14 significant lines, **414 (15.1%) parse differently through the CLI than through the facade**; after one shared attach path, 0. The 809-input fixture corpus shows 0 CLI-vs-facade differences, which is why no oracle sees it — **and no corpus ever could**, because every fixture runs through the facade and so can see only one of the two orders (§4.2.17, mutant D). **Re-measured at 0a.11 with D8 fixed: the two old orders disagree on 4, not 414; the 414 is a baseline-era reading and was not reproduced, because reproducing it means reverting 0a.5.** `markdown_core_core_extensions_attach(parser, mask)` walking one ordered table with `table` last (Q9), declared **without** `MARKDOWN_CORE_EXPORT` so the export map and `audit-public-surface.sh` are untouched. The CLI's `-e NAME` lever must route through the same bit table or the hole is still open — **at 0a.11 it was deleted instead: no name outside the table can reach the registry, so the by-name path was unreachable code holding a second attach site open.** **Zero golden rows moved; three examples added, and a new structural audit, because the by-construction claim had no gate** | **0a.11** |
 | **D16** | **FIXABLE-AT-BASELINE** | 40 rows — 37 `spec.txt`, 3 `extensions.txt` — cross-checked independently here: the corpus carries **58** `title=""` rows (54 spec + 4 extensions), 18 of them D6's, and 58 − 18 = 40 exactly. **Mechanism correction:** `markdown_core_clean_title` already folds a zero-length title to `CHUNK_EMPTY`, so `inlines.c:1755` is **behaviour-neutral today**; the entire visible defect is `chunk_clone`, which `calloc`s `len+1` unconditionally and turns the refmap's NULL back into `""`. Take both anyway — `chunk_clone` alone leaves 1755 asserting "written and empty" for something never written, which is the exact tension 0a.7 was told not to resolve | **0a.7** |
 | **D18** | **FIXABLE-AT-BASELINE** | 10 rows, one file (`spec.txt` examples 177, 179, 184, 185), every one of them the **golden being wrong**: example 185 pinned `Text "===" scope=1:1..1:3` for text on line 2 and `Link scope=2:1..2:5` for a link on line 3. The fix counts `\n` in the prefix `resolve_reference_link_definitions` drops, which is sound because `markdown_core_parse_reference_inline` only returns after `skip_line_end` succeeds — so the dropped prefix always ends on a line boundary. Putting it in the helper covers **both** consumers (`finalize` and the setext path); the setext one is why example 184 moves. Verified under block quotes, list items, stacked and multi-line definitions, CRLF, and the all-consumed case | **0a.12** |
 | **D19** | **FIXABLE-AT-BASELINE** | 1 row (`spec.txt` example 518, which pinned `Link scope=1:1..1:25` on a 14-character line 1). +14/−1 at the `match:` label, reusing the file's own `count_newlines` and reproducing `handle_newline`'s exact `column_offset` convention. Two further witnesses separate the defect's halves: `[a\nb](/u) tail` gives a **link that begins after its own child** with no newline counting involved, and `*[a](/u "t\nt2")* tail` displaces every later node in the paragraph. Do **not** guard it on `MARKDOWN_CORE_OPT_SOURCEPOS` — that is D3, nothing sets it, and the guard would make the fix a no-op | **0a.12** |
@@ -1212,7 +1213,7 @@ Two of the fourteen *looked* like dependencies in §2 and were not. **D12 "block
 | **D21** | **FIXABLE-AT-BASELINE** | +54/−14 across three files, including one new extension-API constant. **Two smaller candidates were built and discarded**: returning 0 on the fence line does not fix it (`check_open_blocks` does not close unmatched blocks — the lazy branch still fires, because `parser->blank` is false), and advancing past the line end to make it read as blank silently changes list tightness. Full-corpus differential — every example in all ten fixture files × two profiles, 11,180 dump lines — moved **exactly two lines**, both in the golden that pinned the defect, plus one row in `specs/canonical-ast/structure.ast` that the task's gate list does not cover. **External confirmation:** mdast parity goes 46/46 → **48/48 with the backlog unchanged at 23** — remark, driven by the normative grammar Step 7 will port, produces the same tree as the fixed engine. 4,000 directed random documents through the ASan build, 0 failures | **0a.10** |
 | **D22** | **FIXABLE-AT-BASELINE**, and it does **not** need Step 7 | Make the primitive honest (`markdown_core_inline_parser_set_offset` advances the subject's line counter over a consumed span) and let directive's two sites read the end back from the subject instead of computing `start_column + len - 1`. Result is exactly the oracle: `Directive 1:1..2:5`, `Text 2:6..2:10`, agreeing byte-for-byte with a softbreak control at the same indent under two newlines, CRLF, block quote and list item. `set_offset`'s other three callers are unaffected. **Zero existing golden rows — the defect is completely unpinned**, which is the finding; the pin was added and proved to bite | **0a.10** |
 | **D23** | **FIXABLE-AT-BASELINE**, and take the complete cut | §2's named one-liner (`emph->start_column += opener_num_chars`) gives the right `Strong` and **leaves the defect's other half open**: the leftover `Text "*"` still claims columns 1–3, so the two nodes still overlap, and the mirror case `**a***` is untouched. 31 rows. The complete cut is 4 more lines in the same function — the opener keeps its leading bytes, the closer its trailing ones — and every case becomes byte-exact and non-overlapping: `*****a*****` → `Emphasis 1:1..1:11 > Strong 1:2..1:10 > Strong 1:4..1:8`. **57 rows** (spec 45, regression 11, extensions 1). Taking the one-liner buys a second golden churn later | **0a.13** |
-| **D24** | **FIXABLE-AT-BASELINE** | +7/−1. The re2c rule is `("[ ]"\|"[x]"\|"[X]")spacechar+`, so a non-zero `matched` guarantees `matched >= 4` and the read at `first_nonspace + 1` is in range. **Zero existing golden rows.** It is confirmed to be the pending upstream delta `tasklist-checked-marker` — and activating it **cannot be done by editing JSON alone**: `check-upstream-parity.mjs` keys `expectedDivergences` by input and fails any entry not reachable in the corpus, and the registered input `- [ ] call me [x] later` was in no fixture at all | **0a.11** |
+| **D24** | **LANDED 0a.11.** Fixable at the baseline | +7/−1. The re2c rule is `("[ ]"\|"[x]"\|"[X]")spacechar+`, so a non-zero `matched` guarantees `matched >= 4` and the read at `first_nonspace + 1` is in range. **Zero existing golden rows.** It is confirmed to be the pending upstream delta `tasklist-checked-marker` — and activating it **cannot be done by editing JSON alone**: `check-upstream-parity.mjs` keys `expectedDivergences` by input and fails any entry not reachable in the corpus, and the registered input `- [ ] call me [x] later` was in no fixture at all | **0a.11** |
 | **D25** | **FIXABLE-AT-BASELINE**, and it is **one hunk with D10's byte half** | Reproduced three ways; the ASan stack is §11.4's witness byte for byte, and `map.c:279` / `inlines.c:1384` still resolve exactly. The fix is one expression — the length was never the bug, the **base pointer** was: the old code borrowed *the following node's* literal, the fix borrows `subj->input + opener->position + 1`, and on one line the arithmetic is provably identical when the node after `[` borrows `subj->input` at `opener->position`, which is exactly what a decoded entity breaks. **Zero golden rows on the fix alone**, so its fixture is mandatory, not optional evidence | **0a.2** |
 
 **Two of the fourteen carry a decision that is not the implementer's.** D13 needs `empty-text-node` registered as a deliberate divergence from cmark-gfm, because upstream emits the empty node too (**Q38**). D16's spec example 169 flips `[foo]: <>` from `destination="" title=""` to `destination=null title=null`, and the destination *was* written (**Q39**). Both are in §4.1.6's ledger; neither may be taken silently inside a defect commit.
@@ -1303,7 +1304,7 @@ D22 makes `markdown_core_inline_parser_set_offset` honest and has directive's tw
 
 Three rows move — two in `extensions-directive.txt` example 16 (the inner `:::spoiler` was ending at the **outer** `::::` fence's line: the golden was wrong) and one in `specs/canonical-ast/structure.ast`, which the `conformance` preset catches and which no defect statement predicted. D22's pin is a new example, and because `extensions-directive.txt` is also mdast corpus, it needs one `baselineBacklog` entry closed by Step 7 (the pre-existing attributes-JSON and label-shape gap, not anything D22 introduces): backlog 23 → 24.
 
-**0a.11 — D15 and D24, the two Step 3 was holding.** D15 is one shared attach path plus routing the CLI's `-e NAME` lever through the same bit table, without which "impossible by construction" is false. The order is Q9's — `table` last — so Step 3 inherits a decided *and implemented* order and its job becomes making the order **unexpressible**, not choosing it. D24 is one read of the byte `scan_tasklist` already matched.
+**0a.11 — D15 and D24, the two Step 3 was holding. LANDED; §4.2.17 records it, and the `-e NAME` lever was DELETED rather than routed.** D15 is one shared attach path plus routing the CLI's `-e NAME` lever through the same bit table, without which "impossible by construction" is false. The order is Q9's — `table` last — so Step 3 inherits a decided *and implemented* order and its job becomes making the order **unexpressible**, not choosing it. D24 is one read of the byte `scan_tasklist` already matched.
 
 **Activating `tasklist-checked-marker` requires a corpus addition, and §4.1.7 does not say so.** The registered input was in no fixture; `check-upstream-parity.mjs` fails any `expectedDivergences` entry not reachable in the corpus. Add the example (`extensions.txt`'s task-list section, or `regression.txt` per `refdef-title-rewind`'s precedent — both are parity corpus), then move the entry out of `pendingDeltas`/`pendingExpectedDivergences`. And convert 0a.5's gate here, per the obligation above.
 
@@ -1346,7 +1347,7 @@ Three rows move — two in `extensions-directive.txt` example 16 (the inner `:::
 | §4.1.7 row D21 | "a blank line after the fence hides it" | It hides the *sibling-attribution* half only. `:::note/body/:::/(blank)/after` still emits `Paragraph scope=2:1..3:3` — a paragraph whose extent covers a line none of its children touch. The extent half is never hidden. And with the trailing line outside a block quote, `after` is pulled inside **both** the quote and the directive and recorded at a column that does not exist on its line |
 | §4.1.7 row D22 | "**7** lands the primitive; **8** owns the model" | 0a.10 lands the primitive. Step 8 still owns the model |
 | §4.1.7 row D24 | "may be the same thing as the pending upstream delta — check before re-deriving" | It is. And activating the delta needs a **corpus addition**, not a JSON edit |
-| §4.2 0a.5 | the gate reads "0 passed / 2 failed at baseline" | True only until 0a.11. See the two obligations in 0a.5 |
+| §4.2 0a.5 | the gate reads "0 passed / 2 failed at baseline" | True only until 0a.11, and **0a.11 measured it going vacuous**: with the same D8 mutant the fixture reads 4 passed / 0 failed while `api_engine` still fails on two named assertions. §4.2.17 |
 
 #### 4.2.5 One new defect the ruling exposes: D26
 
@@ -2109,6 +2110,158 @@ rather than the only mechanism.
 
 ---
 
+#### 4.2.17 0a.11 landed: one attach path, and the order is what was worth having
+
+**What is in the engine.** `markdown_core_core_extensions_attach(parser, mask)`
+in `extensions/core-extensions.c` walks one ordered table and is the **only**
+call to `markdown_core_parser_attach_syntax_extension` in the shipped library.
+Both product entry points now pass a **set** and cannot express a sequence:
+`extensions/ast.c` turns its eleven `options->` booleans into bits, and
+`core/main.c` turns its profile, its `--directive` flag and every `-e NAME` into
+the same bits. The order is `strikethrough → autolink → tasklist → formula →
+directive → table`, which is Q9.
+
+**D24 is one read.** `open_tasklist_item` took `checked` from `strstr` over the
+whole line and now takes it from `input[first_nonspace + 1]`, the second byte of
+the marker `scan_tasklist` just matched. The read is in range by the scanner's
+own rule (`("[ ]"|"[x]"|"[X]")spacechar+` ⇒ `matched >= 4`), asserted under
+`#ifndef NDEBUG` the way D4's is.
+
+**The `-e NAME` by-name path is DELETED, not routed.** §4.2.3 asks for `-e` to
+be *routed through the same bit table*; the honest reading turned out to be
+stronger. `attach_syntax_extension` and `parser_has_syntax_extension` in
+`core/main.c` existed to attach a name the bit table does not know — and no such
+name can exist in this product: the registry is populated by exactly one plugin,
+`core_extensions_registration`, so `markdown_core_find_syntax_extension` can
+only ever answer with one of the six. The fallback was unreachable code whose
+only effect was to keep a second attach site alive. `-e bogus` still prints
+`Unknown extension bogus` and `-e` with no argument still prints `No argument
+provided for -e`; both now happen in the argument pass, before the parser
+exists.
+
+##### What the reorder is worth, measured on this tree rather than quoted
+
+Over **2,744 ordered triples of 14 significant lines** (prose, `:::note`, `:::`,
+`::name`, `:inline{a=1}`, `$$`, `x`, `\[`, a table header, a delimiter row, a
+task item, `~~gone~~`, a bare URL, and a line claiming `:` twice), each parsed
+through a probe that attaches by name so the three orders can be compared
+directly:
+
+| | differ | of 2,744 |
+|---|---|---|
+| CLI's old order vs facade's old order | **4** | 0.1% |
+| facade's old order vs the shipped order | **6** | 0.2% |
+| CLI's old order vs the shipped order | **2** | 0.1% |
+| **CLI binary vs facade, after the fix** | **0** | 0.0% |
+
+**§4.2.1's `414 (15.1%)` was NOT re-measured, and the reason is stated rather
+than hidden**: reproducing it requires reverting 0a.5, and the 4 above is the
+same experiment on the tree as it stands. What the pair of numbers says is that
+**D8's fix already took about 99% of the CLI/facade gap** — which is exactly
+0a.5's warning read from the other side.
+
+**All six inputs the reorder moves are one shape**, and it is the shape Q9
+names: *a line inside an OPEN table that a narrower extension also claims.*
+`| a | b |` / `| - | - |` / `:::note` under the old facade order becomes a table
+row holding `Text "::"`, an inline `Directive`, and an autocompleted empty cell;
+`$$ / x / $$` after an open table becomes three one-cell rows. **D8 does not
+touch this class.** D8 answers the case where table's opener *declines*; nothing
+but the order answers the case where its row matcher *succeeds*, because inside
+an open table every line is a candidate row.
+
+**Q15 gets a negative result it should have before Step 3 spends effort on it.**
+§4.1.6 recommends `autolink` before `directive` on the grounds that both claim
+`':'`. That order is preserved here, but it has **no witness**: over 12 hand-built
+collision candidates and 4,000 random documents drawn from `:`/URL/attribute
+fragments, moving `directive` to first or to the middle changes **0** outputs.
+Only `table`'s position is observable. Step 3 should keep the recommendation as
+a tie-break and stop describing it as a fix.
+
+##### The three obligations, all discharged
+
+1. **`tasklist-checked-marker` needed a corpus example, and it did.** The
+   registered input `- [ ] call me [x] later` was in no fixture, so the JSON edit
+   alone would have failed `check-upstream-parity.mjs`'s "no longer in the
+   corpus" check — verified, because that is precisely how the D24 mutant below
+   fails. The example is appended to `extensions.txt`'s task-list section, which
+   is the END of the file, so **no existing line number moved** and the three
+   position ledgers (keyed by `file:line`) were untouched. The entry moved from
+   `pendingDeltas`/`pendingExpectedDivergences` to `deltas`/`expectedDivergences`;
+   its `pendingStep` said *"Step 4c"*, a step number that stopped existing at
+   §4.0's re-ordering, and it is dropped rather than corrected.
+2. **0a.5 already paid obligation 2**, and this commit confirms rather than
+   repeats it.
+3. **Both of 0a.5's gates were re-read after the reorder, and both answered as
+   0a.5 predicted.** With the `scan_table_start` decline reverted to
+   `return parent_container;` — the narrowest D8 mutant, confirmed live by
+   watching the directive block fail to open through the facade —
+   `extensions_conflicts` reads **4 passed / 0 failed** where at 0a.5 it read
+   0/2, i.e. **the fixture went vacuous exactly as its own paragraph warned**;
+   and `api_engine` **fails**, `712 tests passed, 2 failed`, naming
+   `an extension attached after table still gets its turn` and
+   `a declining table does not swallow the directive block`. The fixture's
+   warning paragraph is rewritten in place to say it *has* gone vacuous and that
+   the api test is now the only holder of that property.
+
+##### The gates, and one mutant nothing else catches
+
+The vacated ground is re-occupied rather than abandoned. `extensions-conflicts.txt`
+gains a second section, **"An open table must not swallow another extension's
+block opener"**, holding the two witnesses above. They are the order's gate:
+
+| Mutant | `extensions_conflicts` | `api_engine` | `extensions_gfm` | upstream parity | attach-order audit |
+|---|---|---|---|---|---|
+| **A** — revert one of D8's six declines | 4/4, **vacuous** | **FAIL**, 2 named | pass | pass | pass |
+| **B** — put `table` first in the table | **2 passed / 2 failed** | pass | pass | pass | **FAIL** |
+| **C** — restore D24's `strstr` | pass | pass | **FAIL** | **FAIL**, the divergence stops reproducing | pass |
+| **D** — a second attach site in `markdown_core_document_parse` | pass | pass | pass | pass | **FAIL, alone** |
+
+**Mutant D is the finding.** Re-introducing a second attach site — which is D15
+verbatim — leaves `correctness` at 67/67 and `conformance` at 2/2, and is caught
+by nothing but the new audit. The reason it is invisible is structural and
+cannot be fixed with a corpus row: **every fixture in this repository runs
+through the facade**, so a fixture can only ever observe one of the two orders.
+`conformance` looked like it should catch it — `facade_native` and
+`facade_dump_cli` compare the *facade* and the *CLI* against the same six
+canonical goldens — but the six canonical inputs contain nothing order-sensitive,
+and on the 2,744-triple set the particular order mutant D installs is itself
+output-neutral. That is D2's situation again: a real invariant with no output
+signature, gated by reading the source.
+
+So **`scripts/audit-extension-attach-order.mjs`** (≈100 lines, no new
+dependency, registered in `package.json` and in CI beside
+`audit:extension-special-chars`) asserts three things:
+
+1. `markdown_core_parser_attach_syntax_extension` is called from exactly one
+   function in `core/` and `extensions/`, and that function is
+   `markdown_core_core_extensions_attach`. Tests are exempt on purpose —
+   `extension_decline_yields_turn` attaches by hand precisely so that it keeps
+   failing under any order.
+2. The table names every extension `core_extensions_registration` registers,
+   exactly once, so a seventh extension cannot become attachable without being
+   given a position.
+3. It ends with `table` (Q9).
+
+##### What moved, and what did not
+
+**Three golden examples added, zero golden rows changed.** One in
+`extensions.txt` (D24's divergence pin) and two in `extensions-conflicts.txt`
+(the order witnesses), all appended, all reviewed against the source columns by
+hand. Nothing pre-existing moved, which is what §4.2.1's *"zero golden rows"*
+predicted for both defects — and it is also the reason the reorder needed a new
+fixture at all.
+
+Gates after: `correctness` **67/67**, `correctness-asan` **58/58**,
+`correctness-ubsan` **58/58**, `conformance` **2/2**, upstream parity
+**816/816** with **7/7** divergences reproduced (813 → 816 is the three new
+examples), mdast **54/54** with the backlog unmoved at **24/24**, fuzz-parity
+**300/300**, scope-sanity **207** and the three position oracles **0 / 58 /
+122** — every one of them unchanged, which is the right answer for a commit that
+adds no position and removes no node. `audit-source-lists.mjs` throws on a
+missing `packages/swift-markdown-core/Package.release.swift`; it throws
+identically at `f98fefe`, so it is one of §0's untriaged-by-era items and not
+this commit's.
+
 ---
 
 ### 4.3 The ordering argument
@@ -2760,10 +2913,14 @@ reverting the fix and watching the gate go red.
 | D9 | order-independence oracle (**registered red**, names Step 9a) + output-size bound in `complexity_runner.c` (green) | **both new** | n/a — the fix is Step 9a | **none.** With the budget deleted, every existing gate stays green while 1 MiB of input produces 68.7 GB of output |
 | D10 | position half: `regression.txt` example 24 **already exists and pins the defect** — unpinning it is the gate. Byte half: new example `x[^a\nb] tail` + an `expectedDivergence` | half new | yes, both halves | **half.** No corpus input loses bytes here, and upstream loses the same bytes |
 | D11 | new `regression.txt` example (the nested-duplicate reproducer) + an upstream **model** delta; sanitizers and `leaks --atExit` gate the ownership half | **new** | the minimal fix moves zero goldens, so the example is mandatory | **none.** Nothing in the corpus has a nested duplicate label |
+| D15 | 2 order witnesses in `extensions-conflicts.txt` (a `:::note` and a `$$` block after an OPEN table) **+ the new `scripts/audit-extension-attach-order.mjs`** | **both new** | **LANDED 0a.11, measured**: putting `table` first takes the fixture 4/4 → 2 passed / 2 failed; a second attach site in `markdown_core_document_parse` is caught by **the audit alone**, with `correctness` 67/67 and `conformance` 2/2 | **none, and no corpus can be**: every fixture runs through the facade, so no fixture can compare the two attach orders. `conformance` runs the CLI and the facade against the same six canonical goldens but none of the six inputs is order-sensitive |
+| D24 | 1 example in `extensions.txt` + activating `tasklist-checked-marker` in `specs/upstream-parity/deltas.json` | rows only | **LANDED 0a.11, measured**: restoring the `strstr` fails `extensions_gfm` **and** fails `check-upstream-parity.mjs`, which reports the divergence no longer reproducing | **upstream parity**, and only once the corpus reaches it: the registered input was in no fixture, so the JSON edit alone fails the gate's own reachability check |
 
 **Four defects — D2, D4, D7, D8 — are invisible to every oracle in this
 repository, and their gates are assertions and structural properties rather than
-output comparisons.** That has a consequence worth stating in §8: a later
+output comparisons.** **D15 is a fifth, and it is the strongest case of the
+class**: not merely unseen by the corpus but *unseeable* by one, because a
+fixture can only ever run through one of the two entry points that disagreed. That has a consequence worth stating in §8: a later
 refactor can delete the assertion and pass. Those four gates must be re-run and
 re-read *by name* at Steps 3, 8 and 11.
 
@@ -3380,7 +3537,7 @@ which is why they kept getting re-argued:
 | id | Question | Status | Decided in | Blocks |
 |---|---|---|---|---|
 | **Q8** | May the reconstruction take code from existing commits? | **SETTLED 2026-08-20 — NO.** See §4.9. Ignore every existing commit except the formula fix and the directive syntax fix. Everything else is designed and written fresh. | owner | the entire port list |
-| **Q9** | What is the extension attach order? (D15) | **SETTLED 2026-08-20 — table LAST, with a test.** A decided order, not an inheritance: a table's row opener matches any line inside an open table, so every narrower claim attaches first. D15's CLI/facade disagreement is fixed in the same step. | owner | Step 3, 0a.5 |
+| **Q9** | What is the extension attach order? (D15) | **SETTLED 2026-08-20 — table LAST, with a test. IMPLEMENTED 0a.11**, and the ruling is load-bearing: all six inputs whose parse the reorder moves are a line inside an OPEN table that a narrower extension also claims, which D8's fix does not touch. Every other extension's position is measured to be free — moving `directive` changes 0 of 4,000 random `:`/URL documents (§4.2.17). A decided order, not an inheritance: a table's row opener matches any line inside an open table, so every narrower claim attaches first. D15's CLI/facade disagreement is fixed in the same step. | owner | Step 3, 0a.5, **0a.11** |
 | **Q11–Q29** | Nineteen decisions the requirement restatement exposed | **PROPOSED** unless listed below, each with a recommendation in §4.1.6 | §4.1.6 | their owning steps |
 | **Q14** | The option surface | **SETTLED 2026-08-20 — DELETE ALL OF IT.** See §4.11. | owner | 3, 6, 7, 12, 15 |
 | **Q24** | Is the concrete view opt-in? | **SETTLED 2026-08-20 — NO. It is not optional; it is part of the model.** Diagnostics on directive attributes have nowhere to point without it. | owner | 12, 13 |

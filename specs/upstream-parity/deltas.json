@@ -70,6 +70,17 @@
             "handling": "Keyed to one input rather than projected: upstream's kept title is one assignment in its reference parser, not a model. Erasing resolved titles in the normalizer would blind the gate to every real title difference. REGISTERED at 0a.7, which is where the fix landed \u2014 the `pendingStep` below said Step 9, and \u00a74.2's defect schedule moved it forward.",
             "evidence": "packages/markdown-core/core/inlines.c, markdown_core_parse_reference_inline rewind branch; CommonMark spec.txt, the example above \"This is a link reference definition, but it has no title\".",
             "landed": "0a.7, together with D6 and D16. Landing them separately would have made this entry read `Link title=\"\"` for one commit and `Link title=null` for the next, because the reference path used to turn an absent title into an empty one on the way out of the map."
+        },
+        {
+            "id": "tasklist-checked-marker",
+            "kind": "deliberate-difference",
+            "summary": "Upstream decides a task item's checked state with a substring search for `[x]` over the whole line, so any unchecked item whose text contains a literal `[x]` is reported checked. Markdown Core reads the marker the scanner actually matched.",
+            "example": "- [ ] call me [x] later",
+            "upstream": "ListItem checked=true",
+            "ours": "ListItem checked=false",
+            "handling": "Keyed to one input rather than projected: upstream's substring search is a bug in one function, not a model this side could apply to a tree. Erasing `checked` in the normalizer would blind the gate to every real checked-state difference. REGISTERED at 0a.11, which is where the fix landed. The `pendingStep` this entry used to carry said Step 4c, a step number that stopped existing when the plan was re-ordered; the defect schedule owns it as D24.",
+            "evidence": "docs/reviews/2026-07-28-first-principles-review.md, finding I76, fixed in 7c5025d. Still present in upstream 0.29.0.gfm.13.",
+            "landed": "0a.11, together with D15. Activating it needed a CORPUS ADDITION and not a JSON edit: check-upstream-parity.mjs keys expectedDivergences by input and fails any entry the corpus never reaches, and `- [ ] call me [x] later` was in no fixture at all. The example is now the last one in extensions.txt."
         }
     ],
     "expectedDivergences": [
@@ -102,6 +113,11 @@
             "id": "footnote-call-label-bytes",
             "input": "a[^n] b\n\na[\\^n] b\n\na[&#94;n] b\n\na[&#x5E;n] b\n\na[&#x5e;n] b\n\na[&Hat;n] b\n\n[^n]: note\n",
             "note": "Six spellings of a caret against one label, with the definition present \u2014 the 432-case matrix reduced. Only the raw caret opens a call on this side, so five paragraphs decode to the identical text. Upstream recognizes all six, and the result is worse than a spelling difference: it emits `a[^n]] b` for the escaped one and then a single EMPTY text node for the rest, losing four paragraphs outright. Registered at 0a.9, which is the commit that made this side stop recognizing five of the six."
+        },
+        {
+            "id": "tasklist-checked-marker",
+            "input": "- [ ] call me [x] later\n",
+            "note": "Keyed to an input rather than projected: upstream's substring search is a bug in one function, not a model this side could apply to a tree. Erasing `checked` in the normalizer would blind the gate to every real checked-state difference. ACTIVE as of 0a.11."
         }
     ],
     "notDeltas": [],
@@ -128,17 +144,6 @@
     "corpusNote": "Every golden fixture cmark-gfm can judge. The spec and regression files are the base language. The extension files are here for the negative property: this repository's own syntax is off under --profile gfm, so those inputs must parse exactly as upstream parses them \u2014 which is what proves the extensions are additive rather than a change to the shared language. A golden that quietly encoded a divergence would be caught here; a golden no oracle ever reads is only a record that the output has not changed.\n\nRe-pinned against the untouched 1.0 baseline (580d10c) on 2026-08-20. Two cross-link/embed fixtures left the corpus with the feature. Three registered divergences moved to `pendingDeltas`: each describes a fix the reconstruction has not made yet, so at the baseline this engine AGREES with upstream where the entry expects it to differ. Do not restore them by hand \u2014 each returns as part of the step named in its `pendingStep`.",
     "pendingDeltas": [
         {
-            "id": "tasklist-checked-marker",
-            "kind": "deliberate-difference",
-            "summary": "Upstream decides a task item's checked state with a substring search for `[x]` over the whole line, so any unchecked item whose text contains a literal `[x]` is reported checked. Markdown Core reads the marker the scanner actually matched.",
-            "example": "- [ ] call me [x] later",
-            "upstream": "ListItem checked=true",
-            "ours": "ListItem checked=false",
-            "handling": "NOT YET REGISTERED. This divergence exists because a fix that has not been re-applied to the 1.0 baseline. The baseline agrees with upstream here, which is the defect. It returns to `deltas` in the step named by `pendingStep`, and that step is not done until this entry is back and reproducing.",
-            "evidence": "docs/reviews/2026-07-28-first-principles-review.md, finding I76, fixed in 7c5025d. Still present in upstream 0.29.0.gfm.13.",
-            "pendingStep": "Step 4c \u2014 the tasklist marker read"
-        },
-        {
             "id": "table-split-lead-spelling",
             "kind": "deliberate-difference",
             "summary": "When a table's header row is recovered from a multi-line paragraph, upstream runs the split-off lead through the cell pipe-unescape before inline parsing, so the lead's escapes are processed twice: a `\\\\|` renders as `|`. Markdown Core keeps the lead's authored spelling and lets the inline pass read it as any other paragraph \u2014 `\\\\|` is an escaped backslash and a literal pipe.",
@@ -152,11 +157,6 @@
         }
     ],
     "pendingExpectedDivergences": [
-        {
-            "id": "tasklist-checked-marker",
-            "input": "- [ ] call me [x] later\n",
-            "note": "Keyed to an input rather than projected: upstream's substring search is a bug in one function, not a model this side could apply to a tree. Erasing `checked` in the normalizer would blind the gate to every real checked-state difference.  NOT ACTIVE at the 1.0 baseline: the fix that creates this divergence has not been re-applied, so this engine currently AGREES with upstream here \u2014 which is the defect. See `pendingDeltas` for the step that restores it."
-        },
         {
             "id": "table-split-lead-spelling",
             "input": "pre \\\\| lead\n| a | b |\n| - | - |\n",

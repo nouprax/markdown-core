@@ -73,11 +73,6 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
     options->directives = true;
 }
 
-static bool attach_extension(markdown_core_parser *parser, const char *name) {
-    markdown_core_syntax_extension *extension = markdown_core_find_syntax_extension(name);
-    return extension && markdown_core_parser_attach_syntax_extension(parser, extension) != 0;
-}
-
 markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
                                                      const markdown_core_parse_options *requested_options,
                                                      markdown_core_error **error) {
@@ -85,6 +80,7 @@ markdown_core_document *markdown_core_document_parse(const uint8_t *source, size
     const markdown_core_parse_options *options = requested_options;
     markdown_core_document *document;
     markdown_core_parser *parser;
+    unsigned extensions = 0;
     int native_options = MARKDOWN_CORE_OPT_VALIDATE_UTF8;
 
     clear_error(error);
@@ -116,21 +112,27 @@ markdown_core_document *markdown_core_document_parse(const uint8_t *source, size
         return NULL;
     }
 
-#define ATTACH_IF(enabled, name)                                                                                       \
-    do {                                                                                                               \
-        if ((enabled) && !attach_extension(parser, (name))) {                                                          \
-            markdown_core_parser_free(parser);                                                                         \
-            set_error(error, MARKDOWN_CORE_ERROR_INTERNAL, "required syntax extension is unavailable");                \
-            return NULL;                                                                                               \
-        }                                                                                                              \
-    } while (0)
-    ATTACH_IF(options->tables, "table");
-    ATTACH_IF(options->strikethrough, "strikethrough");
-    ATTACH_IF(options->autolinks, "autolink");
-    ATTACH_IF(options->task_lists, "tasklist");
-    ATTACH_IF(options->formulas, "formula");
-    ATTACH_IF(options->directives, "directive");
-#undef ATTACH_IF
+    /* The facade says WHICH extensions, never in what order; `core-extensions.c`
+     * owns the order and `core/main.c` asks the same question the same way. The
+     * two used to disagree -- this side attached `directive` last and the CLI
+     * attached it first -- which is D15. */
+    if (options->tables)
+        extensions |= MARKDOWN_CORE_CORE_EXTENSION_TABLE;
+    if (options->strikethrough)
+        extensions |= MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH;
+    if (options->autolinks)
+        extensions |= MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK;
+    if (options->task_lists)
+        extensions |= MARKDOWN_CORE_CORE_EXTENSION_TASKLIST;
+    if (options->formulas)
+        extensions |= MARKDOWN_CORE_CORE_EXTENSION_FORMULA;
+    if (options->directives)
+        extensions |= MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE;
+    if (!markdown_core_core_extensions_attach(parser, extensions)) {
+        markdown_core_parser_free(parser);
+        set_error(error, MARKDOWN_CORE_ERROR_INTERNAL, "required syntax extension is unavailable");
+        return NULL;
+    }
 
     if (length)
         markdown_core_parser_feed(parser, (const char *)source, length);

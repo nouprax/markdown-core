@@ -1,0 +1,128 @@
+#!/usr/bin/env node
+/**
+ * The product attaches core extensions through exactly one path, and that path
+ * puts `table` last.
+ *
+ * This is D15's own statement, and until 0a.11 nothing in the repository could
+ * see it. `core/main.c` attached `directive` FIRST and `extensions/ast.c` — the
+ * path every binding goes through — attached it LAST, so the CLI's default
+ * language was not the facade's. Measured over 2,744 ordered triples of 14
+ * significant lines with D8 already fixed, the two orders still disagreed on 4;
+ * no fixture contained any of them, and none ever could, because every fixture
+ * runs through the facade and so can only see one of the two orders.
+ *
+ * `extensions-conflicts.txt` gates the ORDER — revert the table below and its
+ * last two examples fail. Nothing there gates the number of attach SITES, and
+ * two sites is how the defect was spelled. So this audit reads the source,
+ * which is the only place that fact lives:
+ *
+ *   1. `markdown_core_parser_attach_syntax_extension` is called from exactly
+ *      one function in the shipped library, and that function is
+ *      `markdown_core_core_extensions_attach`.
+ *   2. Its table names every registered core extension exactly once, so an
+ *      extension cannot become attachable without being given a position.
+ *   3. `table` is last (Q9): a table's row matcher claims any line inside an
+ *      open table, so every narrower claim is offered the line first. D8
+ *      answers the case where table DECLINES; only the order answers the case
+ *      where its matcher succeeds.
+ *
+ * Tests are exempt from (1) on purpose. `extension_decline_yields_turn` in
+ * `tests/api/main.c` attaches `table` and then `directive` by hand precisely so
+ * that it keeps failing under any order, and the fallback runner's sweep names
+ * its own list. A test that could not build a parser the product cannot build
+ * would be unable to gate the product's choice.
+ */
+
+import fs from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+const pkg = path.join(root, "packages/markdown-core");
+const read = (relative) => fs.readFileSync(path.join(pkg, relative), "utf8");
+
+const failures = [];
+const ATTACH = "markdown_core_parser_attach_syntax_extension";
+
+/** Every `*.c` under `core/` and `extensions/` — the shipped library, no tests. */
+function librarySources() {
+    return ["core", "extensions"].flatMap((dir) =>
+        fs
+            .readdirSync(path.join(pkg, dir))
+            .filter((name) => name.endsWith(".c"))
+            .map((name) => `${dir}/${name}`)
+    );
+}
+
+/** The name of the function a byte offset falls inside, by the last definition above it. */
+function enclosingFunction(source, offset) {
+    const definitions = [...source.slice(0, offset).matchAll(/^[A-Za-z_][\w *]*?\b(\w+)\([^;]*?\)\s*\{/gm)];
+    return definitions.length ? definitions[definitions.length - 1][1] : "(file scope)";
+}
+
+// (1) One attach site. The function's own definition and prototype are not
+// calls; a call is followed eventually by a `;` with no `{` in between.
+const sites = [];
+for (const file of librarySources()) {
+    const source = read(file);
+    for (const match of source.matchAll(new RegExp(`\\b${ATTACH}\\s*\\(`, "g"))) {
+        const tail = source.slice(match.index, source.indexOf(";", match.index) + 1);
+        if (tail.includes("{")) continue;
+        sites.push({ file, function: enclosingFunction(source, match.index) });
+    }
+}
+const strays = sites.filter((site) => site.function !== "markdown_core_core_extensions_attach");
+if (sites.length === 0) {
+    failures.push(`no call to ${ATTACH} in the library at all — this audit is reading the wrong tree`);
+}
+for (const stray of strays) {
+    failures.push(
+        `${stray.file}: ${ATTACH} is called from \`${stray.function}\`. ` +
+            "A second attach site is a second attach ORDER, which is D15."
+    );
+}
+
+// (2) and (3): the ordered table.
+const extensionsSource = read("extensions/core-extensions.c");
+const table = /CORE_EXTENSIONS\[\]\s*=\s*\{([\s\S]*?)\};/.exec(extensionsSource);
+if (!table) {
+    failures.push("extensions/core-extensions.c: no CORE_EXTENSIONS[] table");
+} else {
+    const ordered = [...table[1].matchAll(/"([a-z]+)"/g)].map((match) => match[1]);
+    const registered = [
+        ...extensionsSource.matchAll(
+            /markdown_core_plugin_register_syntax_extension\(plugin,\s*create_(\w+)_extension/g
+        )
+    ].map((match) => match[1]);
+
+    for (const name of registered) {
+        if (!ordered.includes(name)) {
+            failures.push(
+                `\`${name}\` is registered but has no place in CORE_EXTENSIONS[]. ` +
+                    "An extension the product cannot attach in a stated order is one it will attach in an unstated one."
+            );
+        }
+    }
+    for (const name of ordered) {
+        if (!registered.includes(name)) failures.push(`CORE_EXTENSIONS[] names \`${name}\`, which is not registered`);
+        if (ordered.indexOf(name) !== ordered.lastIndexOf(name)) {
+            failures.push(`CORE_EXTENSIONS[] names \`${name}\` twice`);
+        }
+    }
+    if (ordered[ordered.length - 1] !== "table") {
+        failures.push(
+            `CORE_EXTENSIONS[] must end with \`table\` (Q9); it ends with \`${ordered[ordered.length - 1]}\``
+        );
+    }
+    if (!failures.length) {
+        process.stdout.write(`extension attach order: ${ordered.join(" -> ")}\n`);
+    }
+}
+
+if (failures.length) {
+    process.stderr.write(`extension attach order audit FAILED\n  ${failures.join("\n  ")}\n`);
+    process.exit(1);
+}
+process.stdout.write(`  one attach site, ${sites.length} call(s), in markdown_core_core_extensions_attach.\n`);
+process.stdout.write("extension attach order audit passed.\n");

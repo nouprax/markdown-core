@@ -52,6 +52,7 @@ jobs:
                   pnpm audit:tests
                   pnpm audit:surface
                   pnpm audit:extension-special-chars
+                  pnpm audit:extension-attach-order
                   pnpm audit:source-lists
                   pnpm audit:ast-projections
 

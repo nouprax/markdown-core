@@ -19,6 +19,39 @@ typedef enum {
 MARKDOWN_CORE_EXPORT
 void markdown_core_core_extensions_ensure_registered(void);
 
+/** One bit per core extension.  A caller says WHICH extensions it wants and
+ * cannot say in what order, because the order is not in the bit values -- it
+ * is the order of the table in `core-extensions.c`, and that table is the only
+ * place it is written down.
+ */
+typedef enum {
+    MARKDOWN_CORE_CORE_EXTENSION_TABLE = 1u << 0,
+    MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH = 1u << 1,
+    MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK = 1u << 2,
+    MARKDOWN_CORE_CORE_EXTENSION_TASKLIST = 1u << 3,
+    MARKDOWN_CORE_CORE_EXTENSION_FORMULA = 1u << 4,
+    MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE = 1u << 5
+} markdown_core_core_extension_bit;
+
+/** Attaches every core extension named in `mask`, in this library's one order.
+ * Returns 1 when all of them attached and 0 when any did not; on failure the
+ * parser keeps whatever attached before the failure and the caller is expected
+ * to discard it.
+ *
+ * DELIBERATELY NOT `MARKDOWN_CORE_EXPORT`.  Both product entry points -- the
+ * CLI and the facade every binding goes through -- are linked against the
+ * static archives, so neither needs the symbol in `core/exports/markdown_core.map`,
+ * and putting it there would make the attach order part of the public ABI at
+ * the exact moment the point is that callers cannot choose it.
+ */
+int markdown_core_core_extensions_attach(markdown_core_parser *parser, unsigned mask);
+
+/** The bit for a core extension's registered name, or 0 when the name is not
+ * one of them.  This is what routes a `-e NAME` lever back through the ordered
+ * table instead of around it.
+ */
+unsigned markdown_core_core_extensions_bit(const char *name);
+
 MARKDOWN_CORE_EXPORT
 uint16_t markdown_core_extensions_get_table_columns(markdown_core_node *node);
 

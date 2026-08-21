@@ -9,6 +9,7 @@
     },
     "scripts": {
         "audit:ci": "scripts/audit-ci-policy.sh",
+        "audit:extension-attach-order": "node scripts/audit-extension-attach-order.mjs",
         "audit:extension-special-chars": "node scripts/audit-extension-special-chars.mjs",
         "audit:inline-sourcepos": "node scripts/audit-inline-sourcepos.mjs",
         "audit:packages": "scripts/audit-package-contents.sh",

@@ -1182,3 +1182,19 @@ Document scope=1:1..10:9 children=3
         └── Paragraph scope=10:3..10:9 children=1
             └── Text scope=10:3..10:9 literal="[@] bim" children=0
 ````````````````````````````````
+
+A task item's checked state is decided by the marker the scanner matched, not
+by a substring search over the line. `[x]` inside an unchecked item's own text
+answers for the wrong bytes: this item is open and mentions a closed one.
+cmark-gfm searches the line and reports it checked; that divergence is
+registered as `tasklist-checked-marker`.
+
+```````````````````````````````` example
+- [ ] call me [x] later
+.
+Document scope=1:1..1:23 children=1
+└── List scope=1:1..1:23 flavor=bullet start=null tight=true children=1
+    └── ListItem scope=1:1..1:23 checked=false children=1
+        └── Paragraph scope=1:7..1:23 children=1
+            └── Text scope=1:7..1:23 literal="call me [x] later" children=0
+````````````````````````````````

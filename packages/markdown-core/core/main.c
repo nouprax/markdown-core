@@ -54,40 +54,6 @@ void print_usage(void) {
     printf("  --version        Print version\n");
 }
 
-static bool parser_has_syntax_extension(markdown_core_parser *parser, const char *name) {
-    markdown_core_llist *tmp;
-
-    for (tmp = parser->syntax_extensions; tmp; tmp = tmp->next) {
-        markdown_core_syntax_extension *ext = (markdown_core_syntax_extension *)tmp->data;
-        if (strcmp(ext->name, name) == 0)
-            return true;
-    }
-
-    return false;
-}
-
-static bool attach_syntax_extension(markdown_core_parser *parser, const char *name) {
-    markdown_core_syntax_extension *syntax_extension;
-
-    if (parser_has_syntax_extension(parser, name))
-        return true;
-
-    syntax_extension = markdown_core_find_syntax_extension(name);
-    if (!syntax_extension) {
-        fprintf(stderr, "Unknown extension %s\n", name);
-        return false;
-    }
-
-    return markdown_core_parser_attach_syntax_extension(parser, syntax_extension) != 0;
-}
-
-static bool attach_option_extensions(markdown_core_parser *parser, int options) {
-    if ((options & MARKDOWN_CORE_OPT_DIRECTIVE) && !attach_syntax_extension(parser, "directive"))
-        return false;
-
-    return true;
-}
-
 static bool print_document(markdown_core_node *document) {
     markdown_core_document facade_document = {document};
     markdown_core_error *error = NULL;
@@ -157,6 +123,8 @@ int main(int argc, char *argv[]) {
 #endif
 
     bool gfm_profile = false;
+    unsigned requested_extensions = 0;
+    unsigned extensions;
 
     files = (int *)calloc(argc, sizeof(*files));
 
@@ -218,11 +186,29 @@ int main(int argc, char *argv[]) {
             print_usage();
             goto success;
         } else if ((strcmp(argv[i], "-e") == 0) || (strcmp(argv[i], "--extension") == 0)) {
-            i += 1; // Simpler to handle extensions in a second pass, as we can directly register
-                    // them with the parser.
+            i += 1;
 
-            if (i < argc && strcmp(argv[i], "footnotes") == 0) {
+            /* `-e NAME` is a request for an extension, not for a position in
+             * the attach order. Turning the name into a BIT is what keeps that
+             * true: the extension attaches where `core-extensions.c` puts it,
+             * not where the flag appeared, and this file has no way to say
+             * otherwise -- which is the whole of D15's fix. It used to attach
+             * by name in a second pass, i.e. after everything else, so
+             * `-e formula` under `--profile gfm` bought a different language
+             * from the one the same set gives the facade. */
+            if (i >= argc) {
+                fprintf(stderr, "No argument provided for %s\n", argv[i - 1]);
+                goto failure;
+            }
+            if (strcmp(argv[i], "footnotes") == 0) {
                 options |= MARKDOWN_CORE_OPT_FOOTNOTES;
+            } else {
+                unsigned bit = markdown_core_core_extensions_bit(argv[i]);
+                if (!bit) {
+                    fprintf(stderr, "Unknown extension %s\n", argv[i]);
+                    goto failure;
+                }
+                requested_extensions |= bit;
             }
         } else if (*argv[i] == '-') {
             print_usage();
@@ -238,35 +224,25 @@ int main(int argc, char *argv[]) {
     parser = markdown_core_parser_new_with_mem(options, markdown_core_get_arena_mem_allocator());
 #endif
 
-    if (!attach_option_extensions(parser, options))
-        goto failure;
+    /* The CLI says WHICH extensions and cannot say in what order; the order is
+     * `core-extensions.c`'s, and it is the facade's too. Before D15 was fixed
+     * these were two different orders and therefore two different languages --
+     * the CLI attached `directive` FIRST, the facade attached it LAST, and
+     * every binding goes through the facade.
+     *
+     * This repository's own two are off under the gfm profiles so a parity run
+     * against upstream compares one language; the condition is exactly the one
+     * the two old attach sites spelled between them. */
+    extensions = MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
+                 MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK | MARKDOWN_CORE_CORE_EXTENSION_TASKLIST;
+    if (!gfm_profile)
+        extensions |= MARKDOWN_CORE_CORE_EXTENSION_FORMULA | MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE;
+    if (options & MARKDOWN_CORE_OPT_DIRECTIVE)
+        extensions |= MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE;
+    extensions |= requested_extensions;
 
-    if (!attach_syntax_extension(parser, "table") || !attach_syntax_extension(parser, "strikethrough") ||
-        !attach_syntax_extension(parser, "autolink") || !attach_syntax_extension(parser, "tasklist"))
+    if (!markdown_core_core_extensions_attach(parser, extensions))
         goto failure;
-
-    /* This repository's own two, off under the gfm profiles so a parity run
-     * against upstream compares the same language. Their attach position is
-     * unchanged for every other invocation. */
-    if (!gfm_profile && (!attach_syntax_extension(parser, "formula") || !attach_syntax_extension(parser, "directive")))
-        goto failure;
-
-    for (i = 1; i < argc; i++) {
-        if ((strcmp(argv[i], "-e") == 0) || (strcmp(argv[i], "--extension") == 0)) {
-            i += 1;
-            if (i < argc) {
-                if (strcmp(argv[i], "footnotes") == 0) {
-                    continue;
-                }
-                if (!attach_syntax_extension(parser, argv[i])) {
-                    goto failure;
-                }
-            } else {
-                fprintf(stderr, "No argument provided for %s\n", argv[i - 1]);
-                goto failure;
-            }
-        }
-    }
 
     for (i = 0; i < numfps; i++) {
         FILE *fp = fopen(argv[files[i]], "rb");

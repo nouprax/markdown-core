@@ -1,4 +1,5 @@
 #include "tasklist.h"
+#include <assert.h>
 #include <parser.h>
 #include "ext_scanners.h"
 
@@ -84,8 +85,20 @@ static markdown_core_node *open_tasklist_item(markdown_core_syntax_extension *se
     markdown_core_node_set_syntax_extension(parent_container, self);
     markdown_core_parser_advance_offset(parser, (char *)input, 3, false);
 
-    // Either an upper or lower case X means the task is completed.
-    parent_container->as.list.checked = (strstr((char *)input, "[x]") || strstr((char *)input, "[X]"));
+    // Either an upper or lower case X means the task is completed -- read from
+    // the marker the scanner just matched, not from anywhere else on the line.
+    // A substring search over the whole line answers for the wrong bytes:
+    // `- [ ] call me [x] later` is an OPEN task whose text happens to mention a
+    // closed one, and searching says it is closed. (Upstream cmark-gfm still
+    // does; the difference is registered as `tasklist-checked-marker`.)
+    //
+    // The read is in range because the scanner says so, not because the line is
+    // long: `scan_tasklist`'s rule is ("[ ]"|"[x]"|"[X]")spacechar+, so a
+    // non-zero `matched` means at least four bytes were matched from
+    // `first_nonspace` and the marker byte is the second of them.
+    assert(matched >= 4 && parser->first_nonspace + 1 < len);
+    parent_container->as.list.checked =
+        (input[parser->first_nonspace + 1] == 'x' || input[parser->first_nonspace + 1] == 'X');
 
     return NULL;
 }

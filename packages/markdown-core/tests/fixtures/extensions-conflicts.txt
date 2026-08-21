@@ -33,15 +33,32 @@ No other fixture in this repository co-enables two extensions, which is why
 this file exists: most of the corpus enables nothing at all, and the rest
 enables one family at a time.
 
-**This file goes vacuous if the product's attach order changes, and that change
-is scheduled.** A fixture cannot choose the order extensions are attached in --
-it names an option set, and the facade attaches what is enabled in a fixed
-order that today puts `table` first. Move `table` last and both examples pass
-whether or not an extension declines correctly. The property is therefore also
-held by `extension_decline_yields_turn` in `packages/markdown-core/tests/api/main.c`,
+**The two examples above went vacuous at 0a.11, as 0a.5 predicted.** A fixture
+cannot choose the order extensions are attached in -- it names an option set,
+and the facade attaches what is enabled in a fixed order, which now puts
+`table` LAST. Both pass whether or not an extension declines correctly:
+measured, reverting one of `try_opening_table_header`'s six declines leaves
+them 2/2. **The property they were written for is now held only by
+`extension_decline_yields_turn` in `packages/markdown-core/tests/api/main.c`**,
 which attaches `table` and then `directive` itself and so keeps failing under
-any order. Whoever moves `table` must re-read both, and must not conclude from
-this file staying green that the property is still checked here.
+any order -- measured again at 0a.11, and it does. Do not conclude from these
+two staying green that the decline is still checked here; it is not.
+
+## An open table must not swallow another extension's block opener
+
+The two below are the ones the attach order decides, and they are not vacuous.
+D8 answers the case where a decline steals a later extension's turn; it says
+nothing about the case where table's row matcher *succeeds*, because inside an
+open table every line is a candidate row. Only the order answers that, and the
+answer is Q9: `table` attaches LAST, so every narrower claim is offered the
+line first.
+
+Measured over 2,744 ordered triples of 14 significant lines, with D8 already
+fixed: the two former product orders -- CLI `directive` first, facade
+`directive` last -- still disagreed on 4, and the shape of every one of them is
+this one. Under the old facade order both examples below parse as table rows:
+the fence becomes `Text "::"` plus an inline `Directive` in an autocompleted
+two-cell row, and the formula block becomes three rows of one cell.
 
 ```````````````````````````````` example formula dollar-formula-delimiters table
 text
@@ -67,4 +84,40 @@ Document scope=1:1..4:3 children=2
 └── DirectiveBlock scope=2:1..4:3 mode=standalone name="note" attributes=null label=null children=1
     └── Paragraph scope=3:1..3:4 children=1
         └── Text scope=3:1..3:4 literal="body" children=0
+````````````````````````````````
+
+```````````````````````````````` example formula dollar-formula-delimiters table
+| a | b |
+| - | - |
+$$
+x
+$$
+.
+Document scope=1:1..5:2 children=2
+├── Table scope=1:1..2:9 alignments=[none,none] children=1
+│   └── TableRow scope=1:1..1:9 isHeader=true children=2
+│       ├── TableCell scope=1:2..1:4 children=1
+│       │   └── Text scope=1:3..1:3 literal="a" children=0
+│       └── TableCell scope=1:6..1:8 children=1
+│           └── Text scope=1:7..1:7 literal="b" children=0
+└── FormulaBlock scope=3:1..5:2 mode=standalone literal="x" children=0
+````````````````````````````````
+
+```````````````````````````````` example directive table
+| a | b |
+| - | - |
+:::note
+body
+:::
+.
+Document scope=1:1..5:3 children=2
+├── Table scope=1:1..2:9 alignments=[none,none] children=1
+│   └── TableRow scope=1:1..1:9 isHeader=true children=2
+│       ├── TableCell scope=1:2..1:4 children=1
+│       │   └── Text scope=1:3..1:3 literal="a" children=0
+│       └── TableCell scope=1:6..1:8 children=1
+│           └── Text scope=1:7..1:7 literal="b" children=0
+└── DirectiveBlock scope=3:1..5:3 mode=standalone name="note" attributes=null label=null children=1
+    └── Paragraph scope=4:1..4:4 children=1
+        └── Text scope=4:1..4:4 literal="body" children=0
 ````````````````````````````````
