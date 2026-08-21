@@ -555,3 +555,81 @@ Document scope=1:1..5:30 children=2
         └── Paragraph scope=5:13..5:30 children=1
             └── Text scope=5:13..5:30 literal="INNER closes first" children=0
 ````````````````````````````````
+
+An autolink inside a block quote contains its own text. Its columns used to
+come from a raw subject-buffer offset with neither the container's block offset
+nor the line's column offset added, so the Link and the Text it holds were
+computed in two different coordinate spaces and the child escaped the parent.
+cmark-gfm reports the same wrong columns, so upstream sourcepos cannot be the
+oracle here.
+
+```````````````````````````````` example autolink
+> see <https://x.example/> ok
+.
+Document scope=1:1..1:29 children=1
+└── BlockQuote scope=1:1..1:29 children=1
+    └── Paragraph scope=1:3..1:29 children=3
+        ├── Text scope=1:3..1:6 literal="see " children=0
+        ├── Link scope=1:7..1:26 destination="https://x.example/" title="" children=1
+        │   └── Text scope=1:8..1:25 literal="https://x.example/" children=0
+        └── Text scope=1:27..1:29 literal=" ok" children=0
+````````````````````````````````
+
+The same defect on a continuation line, where the missing term is the column
+offset rather than the block offset.
+
+```````````````````````````````` example autolink
+lead
+see <https://x.example/> ok
+.
+Document scope=1:1..2:27 children=1
+└── Paragraph scope=1:1..2:27 children=5
+    ├── Text scope=1:1..1:4 literal="lead" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=2:1..2:4 literal="see " children=0
+    ├── Link scope=2:5..2:24 destination="https://x.example/" title="" children=1
+    │   └── Text scope=2:6..2:23 literal="https://x.example/" children=0
+    └── Text scope=2:25..2:27 literal=" ok" children=0
+````````````````````````````````
+
+THIS EXAMPLE PINS A DEFECT (D27), and the row below is the wrong answer.
+
+A node's scope covers its literal: `a <b c> d` gives `HTML scope=1:3..1:7` for
+five bytes of tag. When the same tag crosses a line ending the end column is one
+short — `2:1` below, where the `>` is at column 2 — so the closing byte belongs
+to no node while the text after it is placed correctly at `2:3`. The cause is
+the span handed to `adjust_subj_node_newlines`: raw HTML passes `matchlen` with
+an `extra` of 1, which omits the tag's last byte from the newline count, and the
+same `extra` makes the following node's column right. cmark-gfm is wrong the
+same way, so fixing it is a deliberate divergence and belongs to Step 8's
+position model, not to a defect commit that would have to decide it in passing.
+Unpinning this row is that step's gate.
+
+```````````````````````````````` example
+a <b
+c> d
+.
+Document scope=1:1..2:4 children=1
+└── Paragraph scope=1:1..2:4 children=3
+    ├── Text scope=1:1..1:2 literal="a " children=0
+    ├── HTML scope=1:3..2:1 literal="<b\nc>" children=0
+    └── Text scope=2:3..2:4 literal=" d" children=0
+````````````````````````````````
+
+A code span that crosses a line ending inside a block quote ends at a column of
+the SOURCE line, not of the container's stripped content. `since_newline` counts
+from the start of the content, which begins at column 3 here, so the block
+offset has to be added back. Without it the span ends at 2:1 and every gate in
+this repository stays green, which is why this example exists.
+
+```````````````````````````````` example
+> a `x
+> y` b
+.
+Document scope=1:1..2:6 children=1
+└── BlockQuote scope=1:1..2:6 children=1
+    └── Paragraph scope=1:3..2:6 children=3
+        ├── Text scope=1:3..1:4 literal="a " children=0
+        ├── Code scope=1:6..2:3 mode=embedded literal="x y" children=0
+        └── Text scope=2:5..2:6 literal=" b" children=0
+````````````````````````````````

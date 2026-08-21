@@ -218,8 +218,12 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(subject *subj, int
     link->as.link.url = markdown_core_clean_autolink(subj, &url, is_email);
     link->as.link.title = markdown_core_chunk_literal("");
     link->start_line = link->end_line = subj->line;
-    link->start_column = start_column + 1;
-    link->end_column = end_column + 1;
+    // Both offsets, like every other column in this file. This was the one site
+    // that turned a raw subject-buffer offset into a column without them, so an
+    // autolink inside a block quote, or on any line but the first of its
+    // paragraph, produced a Link that did not contain its own Text.
+    link->start_column = start_column + 1 + subj->column_offset + subj->block_offset;
+    link->end_column = end_column + 1 + subj->column_offset + subj->block_offset;
     text = make_str_with_entities(subj, start_column + 1, end_column - 1, &url);
     if (text)
         append_child(link, text);
@@ -346,17 +350,23 @@ static int count_newlines(subject *subj, bufsize_t from, bufsize_t len, int *sin
 // Adjust `node`'s `end_line`, `end_column`, and `subj`'s `line` and
 // `column_offset` according to the number of newlines in a just-matched span
 // of text in `subj`.
-static void adjust_subj_node_newlines(subject *subj, markdown_core_node *node, int matchlen, int extra, int options) {
-    if (!(options & MARKDOWN_CORE_OPT_SOURCEPOS)) {
-        return;
-    }
-
+//
+// This is the only code that walks a consumed span's line endings, and it used
+// to run only when MARKDOWN_CORE_OPT_SOURCEPOS was set -- which nothing in the
+// tree ever set. Inline code and raw HTML that crossed a line ending therefore
+// reported a column on their START line, usually past the end of it, and every
+// node after them in the same paragraph was displaced by the same amount.
+//
+// `block_offset` is on the end column because `since_newline` counts from the
+// start of the line's CONTENT, and inside a block quote or list item the
+// content does not begin at column 1.
+static void adjust_subj_node_newlines(subject *subj, markdown_core_node *node, int matchlen, int extra) {
     int since_newline;
     int newlines = count_newlines(subj, subj->pos - matchlen - extra, matchlen, &since_newline);
     if (newlines) {
         subj->line += newlines;
         node->end_line += newlines;
-        node->end_column = since_newline;
+        node->end_column = since_newline + subj->block_offset;
         subj->column_offset = -subj->pos + since_newline + extra;
     }
 }
@@ -460,7 +470,7 @@ static markdown_core_node *handle_backticks(subject *subj, int options) {
             make_code(subj, startpos, endpos - openticks.len - 1, markdown_core_chunk_buf_detach(&buf));
         if (!node)
             return NULL;
-        adjust_subj_node_newlines(subj, node, endpos - startpos, openticks.len, options);
+        adjust_subj_node_newlines(subj, node, endpos - startpos, openticks.len);
         return node;
     }
 }
@@ -1092,7 +1102,7 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
         contents = markdown_core_chunk_dup(&subj->input, subj->pos - 1, matchlen + 1);
         subj->pos += matchlen;
         markdown_core_node *node = make_raw_html(subj, subj->pos - matchlen - 1, subj->pos - 1, contents);
-        adjust_subj_node_newlines(subj, node, matchlen, 1, options);
+        adjust_subj_node_newlines(subj, node, matchlen, 1);
         return node;
     }
 
@@ -1102,7 +1112,7 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
             contents = markdown_core_chunk_dup(&subj->input, subj->pos - 1, matchlen + 1);
             subj->pos += matchlen;
             markdown_core_node *node = make_raw_html(subj, subj->pos - matchlen - 1, subj->pos - 1, contents);
-            adjust_subj_node_newlines(subj, node, matchlen, 1, options);
+            adjust_subj_node_newlines(subj, node, matchlen, 1);
             return node;
         }
     }

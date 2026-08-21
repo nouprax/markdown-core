@@ -1,7 +1,7 @@
 {
     "schemaVersion": 1,
     "rule": "docs/deprecated/specs/canonical-ast-dump.md",
-    "purpose": "A dumped scope is a place in the source. Two classes of row are not: the sentinel 0:0..0:0, written when a node is recorded as having no position, and a negative range, written when a closed (line, column) interval is asked to express an empty one. Both are symptoms of one representation defect — the dump has no spelling for \"no position\" or \"empty\" that does not borrow a coordinate. This ledger used to name M3's extents as the cure and cite docs/reviews/2026-08-05-m3-endstate-poc.md as its authority; that design was reverted on 2026-08-07 (docs/reviews/2026-08-07-requirement-audit.md) and the cure is a dump spelling, not a substrate. Until it exists the counts may only shrink, with one recorded exception: regression.txt's sentinel budget went 18 -> 19 on 2026-08-10, because the autolink position defect it now pins only appears on a paragraph whose buffer holds more than its first line, and a second line is a SoftBreak. The row is the same known class the ledger already tracks, not a new one. When every count reaches zero this ledger and scripts/audit-scope-sanity.mjs are deleted, not kept at zero.",
+    "purpose": "A dumped scope is a place in the source. Two classes of row are not: the sentinel 0:0..0:0, written when a node is recorded as having no position, and a negative range, written when a closed (line, column) interval is asked to express an empty one. Both are symptoms of one representation defect — the dump has no spelling for \"no position\" or \"empty\" that does not borrow a coordinate. This ledger used to name M3's extents as the cure and cite docs/reviews/2026-08-05-m3-endstate-poc.md as its authority; that design was reverted on 2026-08-07 (docs/reviews/2026-08-07-requirement-audit.md) and the cure is a dump spelling, not a substrate. Until it exists the counts may only shrink, with two recorded exceptions, both the same shape and both in regression.txt. First, its sentinel budget went 18 -> 19 on 2026-08-10, because the autolink position defect it now pins only appears on a paragraph whose buffer holds more than its first line, and a second line is a SoftBreak. The row is the same known class the ledger already tracks, not a new one. When every count reaches zero this ledger and scripts/audit-scope-sanity.mjs are deleted, not kept at zero. Second, at 0a.6 on 2026-08-21 the same budget went 16 -> 17: D7's fix needs a witness on a CONTINUATION line, because the term it restores is the line's column offset and that term is zero on the first line of a paragraph. A paragraph with a second line has a SoftBreak between them, and a SoftBreak is a sentinel by construction. The row is the known class, not a new one. regression.txt's budget is back where Stage 0a found it: 17 at the baseline, 16 after 0a.2 turned an unresolved footnote call's sentinel into a real position, 17 again here. The ledger total tracks it, 207 -> 206 -> 207.",
     "budget": {
         "packages/markdown-core/tests/fixtures/extensions-directive.txt": {
             "sentinel": 6,
@@ -19,7 +19,7 @@
             "partial": 1
         },
         "packages/markdown-core/tests/fixtures/regression.txt": {
-            "sentinel": 16,
+            "sentinel": 17,
             "negative": 0,
             "partial": 0
         },

@@ -2,7 +2,7 @@
     "schemaVersion": 1,
     "script": "scripts/audit-position-places.mjs",
     "subject": "Every dumped coordinate over every fixture example: the line must exist in the input and the column must name a byte on it. Byte columns, counted from 1, on lines split the way S_parser_feed splits them.",
-    "purpose": "One hundred and thirty-one rows in nine families, and the families are what matter — the number on its own says nothing about which of them a step is allowed to move.\n\n  58  end-at-line-ending              a block's end names column 0 of a line that exists. A fence left unclosed inside a block quote gives CodeBlock 1:3..3:0. There is no column 0; this is how \"ends at the line ending\" gets spelled when the only vocabulary is a coordinate. Neighbour of H14 (§11.4). No step owns it.\n  19  continuation-line-content-offset  a column taken from the paragraph's CONTENT buffer and printed against a source line whose prefix was stripped. Two spaces, aaa, newline, one space, bbb gives Text 2:3..2:5 on a four-byte line. §4.2's 0a.12 calls this out as the residue it does NOT fix: Q22/Step 10.\n  19  multi-line-span                 a span that crossed a line ending, reported as though it had not — and every node after it in the same paragraph displaced by the same amount. Twelve are the inline Code and HTML rows specs/positions/inline-sourcepos.json registers against upstream; the rest are their displaced neighbours, a backslash hard break, and a link whose destination or title spans a line. 0a.6.\n   9  recovered-table-cell            a cell the table extension synthesized carries L:0..L:0. Requirement 10.\n   9  unmatched-code-span-literal     an unmatched backtick run's literal is placed one column right: `hi`lo` gives Text 1:5..1:8 inside a seven-byte paragraph. §4.1.3 names it and assigns it to Step 8.\n   6  split-off-table-lead            the paragraph a table was split out of, and its inline children, keep positions belonging to neither half. Requirement 10.\n   6  end-column-never-set            an inline node's end column is left at 0. An autolink with a space inside gives Text 1:1..1:0. This is D20's shape; the corpus carries the autolink spelling of it and not yet the strikethrough one.\n   3  consumed-definition-line        a paragraph whose leading reference definitions were consumed keeps the definition's line. D18, 0a.12.\n   2  content-start-past-marker-line  a footnote definition starts at the column after its marker, which does not exist when the marker ends the line: [^footnote]: is twelve bytes and the definition starts at 19:13. NOT NAMED BY ANY DEFECT IN §2; found by this oracle.\n\n`class` is analysis and `closedBy` is measurement: only the multi-line-span rows carry an owner, because specs/positions/inline-sourcepos.json shows upstream reporting exactly those spans as crossing a line, and because un-gating adjust_subj_node_newlines was measured to clear thirteen of these rows and add three. Every other family's owner is left unassigned deliberately — the step that moves the rows proves the attribution by moving them, and this gate's CLEARED list is that proof.\n\nA coordinate on line zero is NOT counted here; scripts/audit-scope-sanity.mjs owns the 0:0..0:0 sentinel and the line-zero-with-a-column shape, and there is no line to measure a column against. A zero COLUMN on a real line is measurable and is counted. Where a row is both — Text 1:1..1:0 is a zero column AND a reversed range — the two ratchets interlock rather than overlap: making the end a real column at or after the start clears both, while zeroing the node clears this one and GROWS the sentinel budget, which fails there.",
+    "purpose": "One hundred and twenty-two rows in nine families, and the families are what matter — the number on its own says nothing about which of them a step is allowed to move. It was 131 before 0a.6, which cleared thirteen and added three.\n\n  61  end-at-line-ending              a coordinate names column 0 of a line that exists. There is no column 0; this is how \"ends at the line ending\" gets spelled when the only vocabulary is a coordinate. FIFTY-EIGHT are a block's end, H14's neighbour (§11.4). THE OTHER THREE ARE NEW AND ARE 0a.6's: un-gating adjust_subj_node_newlines made a code span that opens with a line ending report `1:3..3:0`, whose start is one past the end of a two-byte line and whose end is column zero — and both halves are exactly what cmark-gfm reports, which is why specs/positions/inline-sourcepos.json reads zero over them. Agreeing with an authority that is itself wrong is not a defect this stage introduced; it is the same class, made visible. No step owns it.\n  19  continuation-line-content-offset  a column taken from the paragraph's CONTENT buffer and printed against a source line whose prefix was stripped. Two spaces, aaa, newline, one space, bbb gives Text 2:3..2:5 on a four-byte line. §4.2's 0a.12 calls this out as the residue it does NOT fix: Q22/Step 10.\n   9  recovered-table-cell            a cell the table extension synthesized carries L:0..L:0. Requirement 10.\n   9  unmatched-code-span-literal     an unmatched backtick run's literal is placed one column right: `hi`lo` gives Text 1:5..1:8 inside a seven-byte paragraph. §4.1.3 names it and assigns it to Step 8.\n   7  multi-line-span                 a span that crossed a line ending, reported as though it had not, and every node after it in the same paragraph displaced by the same amount. WAS NINETEEN. 0a.6 cleared the twelve that were inline Code and HTML; what is left is their displaced neighbours in inputs the un-gating does not reach — a backslash hard break, and a link whose destination or title spans a line.\n   6  split-off-table-lead            the paragraph a table was split out of, and its inline children, keep positions belonging to neither half. Requirement 10.\n   6  end-column-never-set            an inline node's end column is left at 0. An autolink with a space inside gives Text 1:1..1:0. This is D20's shape; the corpus carries the autolink spelling of it and not yet the strikethrough one.\n   3  consumed-definition-line        a paragraph whose leading reference definitions were consumed keeps the definition's line. D18, 0a.12.\n   2  content-start-past-marker-line  a footnote definition starts at the column after its marker, which does not exist when the marker ends the line: [^footnote]: is twelve bytes and the definition starts at 19:13. NOT NAMED BY ANY DEFECT IN §2; found by this oracle.\n\nFifty of the 122 are inline, out of 2,275 inline nodes; the gate prints that split on every run.\n\n`class` is analysis and `closedBy` is measurement. Two families now carry a measured owner: the twelve multi-line-span rows 0a.6 cleared, and the three end-at-line-ending rows the same commit created. Every other family's owner is deliberately unassigned — the step that moves the rows proves the attribution by moving them, and this gate's CLEARED list is that proof.\n\nA coordinate on line zero is NOT counted here; scripts/audit-scope-sanity.mjs owns the 0:0..0:0 sentinel and the line-zero-with-a-column shape, and there is no line to measure a column against. A zero COLUMN on a real line is measurable and is counted. Where a row is both — Text 1:1..1:0 is a zero column AND a reversed range — the two ratchets interlock rather than overlap: making the end a real column at or after the start clears both, while zeroing the node clears this one and GROWS the sentinel budget, which fails there.\n\nWHAT THIS ORACLE STILL CANNOT SEE, named at 0a.6 so it is not re-derived: a scope that is a place and is still wrong. `a <b`, newline, `c> d` gives HTML scope=1:3..2:1 for a literal whose last byte is at 2:2, so the closing byte belongs to no node — and 2:1 is a perfectly good place. Containment sees a gap, not an overlap, and upstream reports the same numbers. It is pinned as a golden row in regression.txt with prose above it, and it belongs to Step 8.",
     "corpus": "every example in packages/markdown-core/tests/fixtures/*.txt",
     "profile": "gfm-extended",
     "expected": [
@@ -415,8 +415,8 @@
                     "scope": "1:1..1:7",
                     "start": "place",
                     "end": "off-column",
-                    "closedBy": "0a.14 - D12; measured: propagating end_line through consolidate_text_nodes gives 1:1..2:7. The NAIVE one-line form of that fix moves three other rows to LINE ZERO instead of fixing them, so 0a.14 owes more than the line.",
-                    "class": "multi-line-span"
+                    "class": "multi-line-span",
+                    "closedBy": "0a.14 - D12; measured: propagating end_line through consolidate_text_nodes gives 1:1..2:7. The NAIVE one-line form of that fix moves three other rows to LINE ZERO instead of fixing them, so 0a.14 owes more than the line."
                 }
             ]
         },
@@ -592,11 +592,11 @@
                     "nodePath": "0.0.0",
                     "kind": "Code",
                     "phase": "inline",
-                    "scope": "1:3..1:7",
+                    "scope": "1:3..3:0",
                     "start": "off-column",
-                    "end": "off-column",
-                    "class": "multi-line-span",
-                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines"
+                    "end": "zero-column",
+                    "closedBy": "unowned — the end-column-zero class. 0a.6 created these three by un-gating adjust_subj_node_newlines; agreeing with upstream here means adopting upstream's own column zero. See this ledger's purpose.",
+                    "class": "end-at-line-ending"
                 }
             ]
         },
@@ -1508,11 +1508,11 @@
                     "nodePath": "0.0.0",
                     "kind": "Code",
                     "phase": "inline",
-                    "scope": "1:3..1:17",
+                    "scope": "1:3..5:0",
                     "start": "off-column",
-                    "end": "off-column",
-                    "class": "multi-line-span",
-                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines"
+                    "end": "zero-column",
+                    "closedBy": "unowned — the end-column-zero class. 0a.6 created these three by un-gating adjust_subj_node_newlines; agreeing with upstream here means adopting upstream's own column zero. See this ledger's purpose.",
+                    "class": "end-at-line-ending"
                 }
             ]
         },
@@ -1524,27 +1524,11 @@
                     "nodePath": "0.0.0",
                     "kind": "Code",
                     "phase": "inline",
-                    "scope": "1:3..1:8",
+                    "scope": "1:3..3:0",
                     "start": "off-column",
-                    "end": "off-column",
-                    "class": "multi-line-span",
-                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:6728",
-            "input": "`foo   bar \nbaz`\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0",
-                    "kind": "Code",
-                    "phase": "inline",
-                    "scope": "1:2..1:15",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "multi-line-span",
-                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines"
+                    "end": "zero-column",
+                    "closedBy": "unowned — the end-column-zero class. 0a.6 created these three by un-gating adjust_subj_node_newlines; agreeing with upstream here means adopting upstream's own column zero. See this ledger's purpose.",
+                    "class": "end-at-line-ending"
                 }
             ]
         },
@@ -1645,32 +1629,6 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:8926",
-            "input": "[link](<foo\nbar>)\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1",
-                    "kind": "HTML",
-                    "phase": "inline",
-                    "scope": "1:8..1:16",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "multi-line-span",
-                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines"
-                },
-                {
-                    "nodePath": "0.0.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "1:17..1:17",
-                    "start": "off-column",
-                    "end": "off-column",
-                    "class": "multi-line-span",
-                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines"
-                }
-            ]
-        },
-        {
             "source": "packages/markdown-core/tests/fixtures/spec.txt:9191",
             "input": "[link](   /uri\n  \"title\"  )\n",
             "findings": [
@@ -1699,54 +1657,6 @@
                     "end": "zero-column",
                     "class": "end-column-never-set",
                     "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:11034",
-            "input": "<a  /><b2\ndata=\"foo\" >\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1",
-                    "kind": "HTML",
-                    "phase": "inline",
-                    "scope": "1:7..1:22",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "multi-line-span",
-                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:11047",
-            "input": "<a foo=\"bar\" bam = 'baz <em>\"</em>'\n_boolean zoop:33=zoop:33 />\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0",
-                    "kind": "HTML",
-                    "phase": "inline",
-                    "scope": "1:1..1:63",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "multi-line-span",
-                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:11158",
-            "input": "foo <!-- this is a --\ncomment - with hyphens -->\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1",
-                    "kind": "HTML",
-                    "phase": "inline",
-                    "scope": "1:5..1:48",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "multi-line-span",
-                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines"
                 }
             ]
         },
@@ -1802,70 +1712,6 @@
                     "phase": "inline",
                     "scope": "1:7..1:9",
                     "start": "off-column",
-                    "end": "off-column",
-                    "class": "multi-line-span",
-                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:11386",
-            "input": "`code  \nspan`\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0",
-                    "kind": "Code",
-                    "phase": "inline",
-                    "scope": "1:2..1:12",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "multi-line-span",
-                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:11396",
-            "input": "`code\\\nspan`\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0",
-                    "kind": "Code",
-                    "phase": "inline",
-                    "scope": "1:2..1:11",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "multi-line-span",
-                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:11408",
-            "input": "<a href=\"foo  \nbar\">\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0",
-                    "kind": "HTML",
-                    "phase": "inline",
-                    "scope": "1:1..1:20",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "multi-line-span",
-                    "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:11418",
-            "input": "<a href=\"foo\\\nbar\">\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0",
-                    "kind": "HTML",
-                    "phase": "inline",
-                    "scope": "1:1..1:19",
-                    "start": "place",
                     "end": "off-column",
                     "class": "multi-line-span",
                     "closedBy": "0a.6 — D3, un-gating adjust_subj_node_newlines"
