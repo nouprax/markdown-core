@@ -1354,10 +1354,30 @@ noMatch:
 
         markdown_core_chunk *literal = &opener->inl_text->next->as.literal;
 
-        // look back to the opening '[', and skip ahead to the next character
-        // if we're looking at a '[^' sequence, and there is other text or nodes
-        // after the ^, let's call it a footnote reference.
-        if ((literal->len > 0 && literal->data[0] == '^') && (literal->len > 1 || opener->inl_text->next->next)) {
+        // A footnote call opens with a caret the SOURCE spells literally.
+        //
+        // This used to test the decoded first byte, so `[\^a]` and `[&#94;a]`
+        // opened calls too — and neither could ever resolve, because the label
+        // was reconstructed from a different coordinate space than the one the
+        // lookup key came from. What they produced instead was a rebuilt `[^`
+        // prefix over decoded bytes: `[\^abc] x` came back as `[^^abc] x`, an
+        // invented caret, and `[&#94;a]` as `[^#94;a]`.
+        //
+        // `opener->position` is the byte after the '[', which is where the
+        // caret must be. The bounds test comes first because that is the order
+        // a subscript and its guard belong in -- D4 is what happens when they
+        // are the other way round. It is REDUNDANT here and the proof is worth
+        // writing down rather than rediscovering: reaching this function means
+        // a ']' was consumed, and that ']' is after the '[', so
+        // `opener->position <= initial_pos - 2 < subj->input.len`. No mutant
+        // kills it, measured; it is kept because a reader should not have to
+        // reconstruct that argument before touching the line.
+        //
+        // This is half of Step 9a's rule. The other half — "and the document
+        // defines that label" — is a model question about what a failed call
+        // becomes, and stays there (§5.7, Q2).
+        if (opener->position < subj->input.len && subj->input.data[opener->position] == '^' &&
+            (literal->len > 1 || opener->inl_text->next->next)) {
 
             // Before we got this far, the `handle_close_bracket` function may have
             // advanced the current state beyond our footnote's actual closing

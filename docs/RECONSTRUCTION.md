@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.8 |
+| Landed | Steps 0 and 1, §4.0's re-ordering, and Stage 0a's 0a.0 through 0a.9 |
 | Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Stage 0a**, §4.2, at **0a.9** — 0a.0 through 0a.8 have landed |
+| Next action | **Stage 0a**, §4.2, at **0a.10** — 0a.0 through 0a.9 have landed |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -55,7 +55,7 @@ node scripts/audit-extension-special-chars.mjs   # 4 extensions, 5 sentinels
 node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
-node scripts/check-upstream-parity.mjs     # 809/809 vs cmark-gfm 0.29.0.gfm.13, 5/5 divergences
+node scripts/check-upstream-parity.mjs     # 810/810 vs cmark-gfm 0.29.0.gfm.13, 6/6 divergences
 node scripts/check-mdast-parity.mjs        # 51/51, backlog 23/23 still diverging
 node scripts/audit-scope-sanity.mjs        # 207 rows, only-shrink holds
 
@@ -1165,7 +1165,7 @@ Two of the fourteen *looked* like dependencies in §2 and were not. **D12 "block
 |---|---|---|---|
 | **D12** | **FIXABLE-AT-BASELINE**, in the same commit as D13 and no other | The one-line fix *alone* turns `extensions.txt:804`/`:809` from `59:1..59:0` into `59:1..0:0` — a strictly worse row that **every gate in the repository passed** at the time this was written: 65/65, 795/795, 46/46, canonical green, ledger 207 unchanged, because `endLine < startLine` keeps it in the same `negative` bucket it left. **That clause expired at 0a.1**: `audit-position-places.mjs` reads a live parse and reports the three rows moving to line zero, re-measured at 0a.2 (§4.2.8). With D13 and D10 landed it has **no witness at all**: 4 hits over the 860-example corpus, every one through an operand with no position; 0 hits over 40,000 random inputs filtered to merges where both operands are positioned. It is a real defect (the assignment is plainly missing) that is unobservable on this engine, and it must not be sold as fixing anything measurable | **0a.14** |
 | **D13** | **FIXABLE-AT-BASELINE**, by removing the node, not by respelling the position | Option A (§2's wording — give the empty fragment an honest empty range) was built in two cuts and **rejected on measurement**: every sentinel row it removes returns as a negative row, because a closed `(line, column)` interval cannot express an empty range; `extensions.txt` negative goes 10 → 36 (narrow) or 38 (wide) and `specs/scope-sanity/ledger.json` forbids growth in either class, so A cannot land without raising the ratchet, which defeats the ratchet. A-narrow also does not clear its own class — producer (2) still emits `0:0..0:0`. Option B is 24 lines across `core/iterator.c` and `extensions/autolink.c`: 106 rows changed, net **−46**, ledger **207 → 169**, and every gate green **after** one registered upstream divergence (Q38) | **0a.14** |
-| **D14** | **FIXABLE-AT-BASELINE** | **§2 is wrong twice.** It reproduces on the untouched tree with no D10 fix: `x[\^a] tail` → `literal="x[^a]] tail"` (backslash lost, `^` invented, `]` doubled) and `x[&#94;a] tail` → `literal="x[^\0\0\0\0\0] tail"`. And the "policy move, not a repair" objection does not survive measurement: at the baseline **no** escaped or entity-spelled call ever resolves, because the column arithmetic makes the lookup key `n]` or `\0\0\0\0\0`, never `n` — verified with `a[\^n]` + `[^n]: note`, which drops the definition before *and* after. The narrowing removes broken behaviour only. 432-case matrix (6 caret spellings × 8 labels × 3 tails × 3 definition contexts): 252 move; the baseline emits **invalid UTF-8 on 90 of them and NUL bytes on 162** — heap bytes materialised into a document. One condition, bounds-tested before the subscript. **Zero golden rows** | **0a.9** |
+| **D14** | **LANDED 0a.9.** Fixable at the baseline | **§2 is wrong twice, and two of this row's own numbers went stale.** Re-measured composed with 0a.2 at §4.2.15: **360** of the 432 move, not 252, and the NUL and invalid-UTF-8 rows are **0** and **0**, not 162 and 90 — 0a.2 removed the heap bytes before this commit ran. The original reading: It reproduces on the untouched tree with no D10 fix: `x[\^a] tail` → `literal="x[^a]] tail"` (backslash lost, `^` invented, `]` doubled) and `x[&#94;a] tail` → `literal="x[^\0\0\0\0\0] tail"`. And the "policy move, not a repair" objection does not survive measurement: at the baseline **no** escaped or entity-spelled call ever resolves, because the column arithmetic makes the lookup key `n]` or `\0\0\0\0\0`, never `n` — verified with `a[\^n]` + `[^n]: note`, which drops the definition before *and* after. The narrowing removes broken behaviour only. 432-case matrix (6 caret spellings × 8 labels × 3 tails × 3 definition contexts): 252 move; the baseline emits **invalid UTF-8 on 90 of them and NUL bytes on 162** — heap bytes materialised into a document. One condition, bounds-tested before the subscript. **Zero golden rows** | **0a.9** |
 | **D15** | **FIXABLE-AT-BASELINE** | Over all 2,744 ordered triples of 14 significant lines, **414 (15.1%) parse differently through the CLI than through the facade**; after one shared attach path, 0. The 809-input fixture corpus shows 0 CLI-vs-facade differences, which is why no oracle sees it. `markdown_core_core_extensions_attach(parser, mask)` walking one ordered table with `table` last (Q9), declared **without** `MARKDOWN_CORE_EXPORT` so the export map and `audit-public-surface.sh` are untouched. The CLI's `-e NAME` lever must route through the same bit table or the hole is still open. **Zero golden rows** | **0a.11** |
 | **D16** | **FIXABLE-AT-BASELINE** | 40 rows — 37 `spec.txt`, 3 `extensions.txt` — cross-checked independently here: the corpus carries **58** `title=""` rows (54 spec + 4 extensions), 18 of them D6's, and 58 − 18 = 40 exactly. **Mechanism correction:** `markdown_core_clean_title` already folds a zero-length title to `CHUNK_EMPTY`, so `inlines.c:1755` is **behaviour-neutral today**; the entire visible defect is `chunk_clone`, which `calloc`s `len+1` unconditionally and turns the refmap's NULL back into `""`. Take both anyway — `chunk_clone` alone leaves 1755 asserting "written and empty" for something never written, which is the exact tension 0a.7 was told not to resolve | **0a.7** |
 | **D18** | **FIXABLE-AT-BASELINE** | 10 rows, one file (`spec.txt` examples 177, 179, 184, 185), every one of them the **golden being wrong**: example 185 pinned `Text "===" scope=1:1..1:3` for text on line 2 and `Link scope=2:1..2:5` for a link on line 3. The fix counts `\n` in the prefix `resolve_reference_link_definitions` drops, which is sound because `markdown_core_parse_reference_inline` only returns after `skip_line_end` succeeds — so the dropped prefix always ends on a line boundary. Putting it in the helper covers **both** consumers (`finalize` and the setext path); the setext one is why example 184 moves. Verified under block quotes, list items, stacked and multi-line definitions, CRLF, and the all-consumed case | **0a.12** |
@@ -1253,7 +1253,7 @@ The mdast note must also be amended in this commit: `specs/mdast-parity/corpus.m
 
 **0a.8 — D9 pinned. LANDED; §4.2.14 records it.** Unchanged. No engine change; two gates and the statement of the defect recorded beside `map.c:307`.
 
-**0a.9 — D14, the footnote-call recognition rule.** One condition at `inlines.c:1321`, testing the **raw** source byte with the bounds test before the subscript (D4's lesson). It lands after 0a.2 because it amends the entry condition of the branch whose slice 0a.2 rewrites, and the pair must be re-measured composed. Zero golden rows; the gate is three regression examples (escaped, entity-spelled, and a spelling with a matching definition present) plus the 432-case matrix reduced to a fixture. **This discharges half of Step 9a's raw-`^` clause** — the "opens with a raw `^`" half. The other half, "and the document defines that label", stays 9a's, because it is a model question about what a failed call becomes (§5.7, Q2).
+**0a.9 — D14, the footnote-call recognition rule. LANDED; §4.2.15 records it.** One condition at `inlines.c:1321`, testing the **raw** source byte with the bounds test before the subscript (D4's lesson). It lands after 0a.2 because it amends the entry condition of the branch whose slice 0a.2 rewrites, and the pair must be re-measured composed. Zero golden rows; the gate is three regression examples (escaped, entity-spelled, and a spelling with a matching definition present) plus the 432-case matrix reduced to a fixture. **This discharges half of Step 9a's raw-`^` clause** — the "opens with a raw `^`" half. The other half, "and the document defines that label", stays 9a's, because it is a model question about what a failed call becomes (§5.7, Q2).
 
 **0a.10 — D21 and D22, the directive pair.** D21 adds one constant to the extension API:
 
@@ -1925,6 +1925,68 @@ what it buys, what it costs, that deleting it is measured and is not the fix,
 and which two gates hold the two halves — so a reader who arrives at three
 suspicious lines without this document finds out why they are there before
 removing them. §2's citation `map.c:307` still lands on the guard.
+
+---
+
+#### 4.2.15 0a.9 landed: recognition is a question about the source
+
+**One condition.** The branch tested the DECODED first byte, so `[\^a]` and
+`[&#94;a]` opened footnote calls — and neither could ever resolve, because the
+label was reconstructed from a different coordinate space than the lookup key.
+What they produced was a rebuilt `[^` prefix over decoded bytes. It now tests
+`subj->input.data[opener->position]`, the byte after the `[` in the source.
+
+**The 432-case matrix, re-measured composed with 0a.2 as §4.2.3 required, and
+two of §2's numbers are now stale.** Six caret spellings × eight labels × three
+tails × three definition contexts:
+
+| | §2, on the untouched baseline | measured here, after 0a.2 |
+|---|---|---|
+| cases that move | 252 | **360** |
+| rows emitting NUL bytes | 162 | **0** |
+| rows emitting invalid UTF-8 | 90 | **0** |
+
+The zeroes are 0a.2's doing, not 0a.9's: the label became a slice of the source
+there, so the heap bytes were already gone before this commit. **What 0a.9 moves
+is spelling, and the split is exactly the caret** — all 72 raw-caret cases are
+untouched, and all 72 of each of the five other spellings move. The label and
+tail dimensions never affect the decision, which is why the fixture drops them.
+§2's *"252 move"* was a measurement of a tree that no longer exists.
+
+**Zero pre-existing golden rows moved.** The two rows that did are 0a.2's own
+fixtures, whose registered `pending` note said this commit would move them:
+`[\^abc] x` goes `[^^abc] x` → **`[^abc] x`**, and `x [&Hat;abcdefghij] y` goes
+`x [^Hat;abcdefghij] y` → **`x [^abcdefghij] y`**. Both are now simply the
+decoded text, which is what an escape and an entity are for.
+
+**The reduced matrix is one example and it reads at a glance**: six spellings of
+one label with the definition present, as six paragraphs. Exactly one
+`FootnoteReference` appears and the definition resolves to it; the other five
+decode to the identical `a[^n] b` and open nothing. They are separate paragraphs
+rather than one, deliberately — one paragraph would add five `SoftBreak`
+sentinels to a ratchet whose whole purpose is to shrink.
+
+**Upstream's answer for that input is worse than a spelling difference**, and
+registering it is what turned 809/809 into 810/810 with a sixth divergence:
+cmark-gfm emits `a[^n]] b` for the escaped one and then **a single empty text
+node for the rest**, losing four paragraphs outright.
+
+**Mutant kills, and one honest negative.** Reverting to the decoded byte fails
+three regression examples. Putting the bounds test *after* the subscript kills
+**nothing** — 58/58 under ASan — and the comment now carries the proof of why:
+reaching this function means a `]` was consumed after the `[`, so
+`opener->position <= initial_pos - 2 < subj->input.len`. The guard is redundant
+and kept anyway, because a reader should not have to reconstruct that argument
+before touching the line. Saying "no mutant kills it" beside it is better than
+implying one does.
+
+**Half of Step 9a's rule is discharged.** "Opens with a raw `^`" is settled here.
+"And the document defines that label" stays 9a's, because it is a model question
+about what a failed call becomes — and this commit measured the premise §2 gave
+for deferring the whole thing: **no escaped or entity-spelled call resolved at
+the baseline either**, across all 144 matrix cases with a matching definition.
+The narrowing removed broken behaviour only, so §2's *"a policy move, not a
+repair"* does not survive, exactly as §4.2.4 says.
 
 ---
 
