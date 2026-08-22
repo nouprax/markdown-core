@@ -27,7 +27,7 @@ only as a record.
 | Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a) **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b) **5** (§4.14.5) and **D35** (§4.14.5a) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 6** — deliverable #2, and unblocked: the graph says `6:[3]`. **15A is deferred and that is deliberate**: its dependency is only Step 1, and it blocks 7, 9b, 12 and 14 alone, so nothing before those is waiting on it. Remaining: `15A 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 6** (deliverable #2), **Step 10** or **Step 9a** — all three unblocked by the graph. **Read §4.14.6 first: Step 6 is a cross-binding step, not a 60-line one.** 15A is deferred deliberately; it blocks only 7, 9b, 12 and 14. Remaining: `15A 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -3827,6 +3827,45 @@ position oracles 0 / 45 / **106** · reference-order 2 rows, still red ·
 canonical-ast 28/47/6 · public surface · special chars · attach order · plan
 graph 22/45 · source lists 23, 4 of 5 · topology · format-c · format-cmake.
 Neither parity oracle moves: neither compares positions.
+
+
+---
+
+#### 4.14.6 Step 6 surveyed, not started: it is a cross-binding step
+
+§4.1 sizes Step 6 at *"~60 · deletions across 18 files"*. Measured before
+starting it, the option deletion alone reaches **22 tracked files**, and they
+include **all three bindings**:
+
+```
+packages/es-markdown-core/src/parse-options.ts, src/runtime/parser.ts
+packages/kotlin-markdown-core/build.gradle.kts,
+    src/commonMain/.../model/ParseOptions.kt
+packages/swift-markdown-core/Sources/MarkdownCore/Document.swift,
+    Tests/MarkdownCoreConformanceTests/ConformanceSuite.swift,
+    Tools/CanonicalASTResourceGenerator/...
+specs/canonical-ast/manifest.json, scripts/check-canonical-ast-fixtures.mjs
+core/main.c, core/markdown-core.h, extensions/ast.c, extensions/formula.c,
+    tests/CMakeLists.txt, tests/api/main.c, tests/support/test_support.{c,h},
+    tests/runners/{fallback,pathological}_runner.c, and two fixtures
+```
+
+**And the four formula fixtures have to be rewritten to their oracles.** Three
+of the four differ from `specs/oracles/` today, and the differences are not
+cosmetic: `extensions-formula-option-gates.txt` currently means *"attached, the
+dollar option off"* and the oracle means *"not attached at all"*, so its
+examples change identity; `extensions-formula-github.txt` gains the fenced
+formula form and D1's `foo$_bar_` row, and loses two backslash rows to the
+option-gates file. §4.1.8 already rules on every one of those; what it does not
+say is that the fixture edits are a rewrite rather than a prose fix.
+
+**Step 6 therefore needs the Swift, Kotlin and ES toolchains to verify**, the
+same as 15A, and the two should probably be done together — 15A's whole subject
+is those surfaces, and Q29 (delete `mode` from four kinds) moves the same
+files. Whoever takes them should read §4.1.8 and Q14, Q18 and Q29 first.
+
+Nothing about Step 6 is *harder* than the plan says. It is *wider*, and the
+width is in the bindings, which nothing landed so far has touched.
 
 
 ---
