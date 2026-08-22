@@ -432,7 +432,7 @@ static void remove_delimiters(markdown_core_inline_parser *inline_parser, delimi
     delimiter *delim = closer;
 
     while (delim != NULL && delim != opener) {
-        delimiter *previous = delim->previous;
+        delimiter *previous = markdown_core_delimiter_previous(delim);
         markdown_core_inline_parser_remove_delimiter(inline_parser, delim);
         delim = previous;
     }
@@ -483,25 +483,27 @@ static markdown_core_node *make_backslash_delimited_formula(const markdown_core_
 static delimiter *insert_formula(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                                  markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
     markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
-    markdown_core_node *opener_node = opener->inl_text;
-    markdown_core_node *closer_node = closer->inl_text;
-    delimiter *res = closer->next;
+    markdown_core_node *opener_node = markdown_core_delimiter_node(opener);
+    markdown_core_node *closer_node = markdown_core_delimiter_node(closer);
+    delimiter *res = markdown_core_delimiter_next(closer);
     markdown_core_node *formula = NULL;
-    bufsize_t body_start = opener->position;
-    bufsize_t body_end = closer->position - closer->length;
-    markdown_core_formula_mode mode = mode_for_delim(opener->rule);
+    bufsize_t body_start = markdown_core_delimiter_position(opener);
+    bufsize_t body_end = markdown_core_delimiter_position(closer) - markdown_core_delimiter_length(closer);
+    markdown_core_formula_mode mode = mode_for_delim(markdown_core_delimiter_rule_of(opener));
     const unsigned char *literal = chunk->data + body_start;
     bufsize_t literal_len = body_end - body_start;
 
-    if (opener->rule != closer->rule) {
+    if (markdown_core_delimiter_rule_of(opener) != markdown_core_delimiter_rule_of(closer)) {
         goto done;
     }
 
-    if (opener->length != closer->length && is_backslash_delim(opener->rule)) {
+    if (markdown_core_delimiter_length(opener) != markdown_core_delimiter_length(closer) &&
+        is_backslash_delim(markdown_core_delimiter_rule_of(opener))) {
         goto done;
     }
 
-    if (opener->rule == FORMULA_DELIM_DOLLAR_INLINE && literal_len > 0 && literal[0] == '`') {
+    if (markdown_core_delimiter_rule_of(opener) == FORMULA_DELIM_DOLLAR_INLINE && literal_len > 0 &&
+        literal[0] == '`') {
         if (literal_len < 2 || literal[literal_len - 1] != '`') {
             goto done;
         }
@@ -510,7 +512,7 @@ static delimiter *insert_formula(const markdown_core_syntax_extension *extension
         literal_len -= 2;
     }
 
-    if (is_backslash_delim(opener->rule)) {
+    if (is_backslash_delim(markdown_core_delimiter_rule_of(opener))) {
         formula = make_backslash_delimited_formula(extension, parser, mode, chunk->data, body_start, body_end, 2,
                                                    mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE ? ']' : ')');
     } else {

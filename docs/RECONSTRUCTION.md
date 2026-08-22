@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, **all of Stage 0a** (0a.0 through 0a.15), **Step 2** (§4.14.2), and **3a.1 – 3a.3** (§4.14.3a), and **3.1 – 3.4** (§4.14.3) |
-| Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a) and **3** (3.1–3.5, §4.14.3) |
+| Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 3**, one clause left: **3.5**, hiding the public `delimiter` struct behind accessors. Then 3b, 15A, 5, 6, 7, 10, 9a, 11a, 8, 9b, 11b, 11c, 12, 13, 14, 15C. Step 3a is complete (§4.14.3a). Then §4.1's steps in the order §4.1.4 verifies: `3 3b 15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 3b**, then §4.1.4's order: `15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -982,8 +982,8 @@ Seven defects that this restatement found by measurement are numbered **D18–D2
 | ✅ **1** | Every oracle that can judge a behaviour change exists in the tree and has been re-pinned against the **baseline** binary. | ~1,400 script | 0 |
 | **0a** | The seventeen §2 defects are fixed, or pinned by a named gate with a named owner, on an engine nothing else has touched. **§4.2 stands unchanged** — it was derived on this tree, not ported. | 39 + ~180 gate | The two position oracles took their first reading on the *unfixed* tree (0a.1). |
 | ✅ **2** | Every C source the build compiles is a `clang-format` fixpoint, and the config makes **braces mandatory on every `if`/`else`/`for`/`while`/`do` body**. `scripts/format-c.sh --check` is the gate. | 0 new · 1 config line · **2,472** diff lines over **38** sources (~~2,393 over 36~~, stale: Stage 0a added code), plus 35 lines over the **three bridge sources the gate could not see** | 0a has landed and each defect commit re-pinned its own `file:line` citations (R13). No other work is in flight in `packages/markdown-core/` (R17). |
-| **3a** | The engine has **one allocator model**: `markdown_core_mem`, supplied per parser, defaulting to `calloc`. There is no process-global scratch allocator, no `core/arena.c`, and no re-parse retry in `table.c`. The Release CLI allocates and frees exactly as the library does, so `#if DEBUG` in `core/main.c` collapses to one path. | 0 new · **−140** | `extensions-conflicts.txt` exists (0a.5) and re-proves D8 after the retry path it patched is deleted (R14). `node scripts/audit-source-lists.mjs` **runs** (it throws at HEAD). |
-| **3** | An extension is a `static const` descriptor in a fixed compile-time table. It is not registered, not looked up by name, and carries no mutable state. A parser records *which* extensions are on as a bitmask and **cannot express an order** — the order is the table's, and `table` is last. A descriptor declares **three** byte sets (terminates-text, dispatch, flanking-transparent), not one list. A delimiter names its **rule**, not a byte. Node types and node-flag bits are compile-time constants. There is no process-global mutable state anywhere in the extension path. | **+500 / −535** | D1, D2 fixed (0a.4) so the descriptor author transcribes a correct source. D8 fixed (0a.5). The tree is a format fixpoint (2). One allocator (3a). The source-list audit runs. |
+| ✅ **3a** | The engine has **one allocator model**: `markdown_core_mem`, supplied per parser, defaulting to `calloc`. There is no process-global scratch allocator, no `core/arena.c`, and no re-parse retry in `table.c`. The Release CLI allocates and frees exactly as the library does, so `#if DEBUG` in `core/main.c` collapses to one path. | 0 new · **−140** | `extensions-conflicts.txt` exists (0a.5) and re-proves D8 after the retry path it patched is deleted (R14). `node scripts/audit-source-lists.mjs` **runs** (it throws at HEAD). |
+| ✅ **3** | An extension is a `static const` descriptor in a fixed compile-time table. It is not registered, not looked up by name, and carries no mutable state. A parser records *which* extensions are on as a bitmask and **cannot express an order** — the order is the table's, and `table` is last. A descriptor declares **three** byte sets (terminates-text, dispatch, flanking-transparent), not one list. A delimiter names its **rule**, not a byte. Node types and node-flag bits are compile-time constants. There is no process-global mutable state anywhere in the extension path. | **+500 / −535** | D1, D2 fixed (0a.4) so the descriptor author transcribes a correct source. D8 fixed (0a.5). The tree is a format fixpoint (2). One allocator (3a). The source-list audit runs. |
 | **3b** | `markdown_core_node_append_child` / `_prepend_child` / `_insert_before` / `_insert_after` / `_set_type` refuse any link that would make a node its own ancestor — **always**. `markdown_core_enable_safety_checks` does not exist. | ~25 | None beyond "the tree builds". See **Q13**: this may be a §2 defect, not a refactor by-product. |
 | **15A** | **One** machine-readable AST contract lives in `docs/` (normative) and **one** audit checks all six projection surfaces against it — C header, C dump, Kotlin bridge + decoder + model, ES bridge + export list + decoder + model, Swift model + dumper, and the canonical-AST manifest — and it is **green**. | 0 C · ~500 JSON+script | Nothing under `docs/deprecated/` is normative *and* no executable policy file still points there. |
 | **5** | The iterator's event contract is **total** (every node gets `ENTER` and `EXIT`; `S_is_leaf` is gone). Its mutation rule names *nodes*, not events: only the node whose `EXIT` is current may be freed. A subtree operation stays inside its subtree. **No zero-length `Text` node exists in a finished tree, and no node carries `0:0..0:0` as a stand-in for "no bytes".** A merged run's scope is the union of what it merged, line **and** column. One function computes a position from a byte range. | ~200 | D3 and D7 fixed (0a.6) so merged positions are merged from correct operands. D10's replacement node carries a start line (0a.2). |
@@ -3584,6 +3584,37 @@ touched** — by a commit that deletes seven files and changes thirty-six.
 One clause of §4.1's row: *"The public `delimiter` struct, annotated 'Exposed
 raw for now' since 1.0, is hidden behind accessors."* Thirty field reads across
 the three extensions that push delimiters, over eight fields. It is 3.5.
+
+
+##### 3.5 — the `delimiter` struct is opaque, and Step 3 is done
+
+`markdown-core-extension-api.h` spelled the struct out under the comment
+*"Exposed raw for now"* from 1.0 until here, which made **every field part of
+the extension surface**. The three extensions that push delimiters read **eight
+fields between them and write none**, so the whole exposure bought eight
+one-line accessors — and buys back the freedom to change the representation,
+which Step 8 needs.
+
+The definition moves to `core/delimiter.h`, private to core and included by
+`inlines.c` alone; the extension API keeps `typedef struct delimiter delimiter;`
+and eight `const`-taking readers. **37 field accesses across three extensions**
+became calls. The opacity is checkable rather than asserted: a translation unit
+that includes only the extension API and writes `d->can_open` does not compile —
+*"incomplete definition of type 'delimiter'"*.
+
+Step 3's requirement is now true in every clause: a `static const` descriptor
+in a fixed compile-time table, no registration, no name lookup, no mutable
+state, a bitmask a caller cannot order, three declared byte sets, a delimiter
+that names its rule, compile-time node types and flag bits, and no
+process-global mutable state anywhere in the extension path.
+
+**Gates after.** `correctness` **69/69** · `correctness-asan` **60/60** ·
+`correctness-ubsan` **60/60** · `conformance` 2/2 · upstream parity 817/817 with
+7/7 · mdast 54/54, backlog 24/24 · fuzz-parity 300/300 · scope-sanity 14 ·
+position oracles 0 / 45 / 109 · reference-order 2 rows, still red ·
+canonical-ast 28/47/6 · public surface · special chars · attach order · plan
+graph 22/45 · source lists 23, 4 of 5 · topology · format-c · format-cmake.
+**Zero golden rows moved.**
 
 
 ---

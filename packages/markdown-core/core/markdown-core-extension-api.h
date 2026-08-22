@@ -152,20 +152,42 @@ typedef enum {
     MARKDOWN_CORE_DELIM_RULE_COUNT
 } markdown_core_delimiter_rule;
 
-/** Exposed raw for now */
+/** The delimiter stack's element, OPAQUE.
+ *
+ * The struct was spelled out here under the comment "Exposed raw for now" from
+ * 1.0 until Step 3, which made every field part of the extension surface. The
+ * three extensions that push delimiters read eight fields between them and
+ * write none; those eight reads are the accessors below and the definition now
+ * lives in `core/delimiter.h`.
+ */
+typedef struct delimiter delimiter;
 
-typedef struct delimiter {
-    struct delimiter *previous;
-    struct delimiter *next;
-    markdown_core_node *inl_text;
-    /** The extension that pushed it, or NULL for a core rule. One load. */
-    const markdown_core_syntax_extension *owner;
-    bufsize_t position;
-    bufsize_t length;
-    markdown_core_delimiter_rule rule;
-    int can_open;
-    int can_close;
-} delimiter;
+MARKDOWN_CORE_EXPORT
+delimiter *markdown_core_delimiter_previous(const delimiter *delim);
+
+MARKDOWN_CORE_EXPORT
+delimiter *markdown_core_delimiter_next(const delimiter *delim);
+
+/** The literal text node the delimiter was pushed for. */
+MARKDOWN_CORE_EXPORT
+markdown_core_node *markdown_core_delimiter_node(const delimiter *delim);
+
+MARKDOWN_CORE_EXPORT
+markdown_core_delimiter_rule markdown_core_delimiter_rule_of(const delimiter *delim);
+
+/** The subject offset just past the delimiter's last byte. */
+MARKDOWN_CORE_EXPORT
+bufsize_t markdown_core_delimiter_position(const delimiter *delim);
+
+/** How many bytes the delimiter run owns. */
+MARKDOWN_CORE_EXPORT
+bufsize_t markdown_core_delimiter_length(const delimiter *delim);
+
+MARKDOWN_CORE_EXPORT
+int markdown_core_delimiter_can_open(const delimiter *delim);
+
+MARKDOWN_CORE_EXPORT
+int markdown_core_delimiter_can_close(const delimiter *delim);
 
 /**
  * ### Plugin API.

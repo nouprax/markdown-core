@@ -11,6 +11,7 @@
 #include "houdini.h"
 #include "utf8.h"
 #include "scanners.h"
+#include "delimiter.h"
 #include "inlines.h"
 #include "syntax_extension.h"
 
@@ -2233,3 +2234,19 @@ delimiter *markdown_core_inline_parser_get_last_delimiter(markdown_core_inline_p
 }
 
 int markdown_core_inline_parser_get_line(markdown_core_inline_parser *parser) { return parser->line; }
+
+delimiter *markdown_core_delimiter_previous(const delimiter *delim) { return delim->previous; }
+
+delimiter *markdown_core_delimiter_next(const delimiter *delim) { return delim->next; }
+
+markdown_core_node *markdown_core_delimiter_node(const delimiter *delim) { return delim->inl_text; }
+
+markdown_core_delimiter_rule markdown_core_delimiter_rule_of(const delimiter *delim) { return delim->rule; }
+
+bufsize_t markdown_core_delimiter_position(const delimiter *delim) { return delim->position; }
+
+bufsize_t markdown_core_delimiter_length(const delimiter *delim) { return delim->length; }
+
+int markdown_core_delimiter_can_open(const delimiter *delim) { return delim->can_open; }
+
+int markdown_core_delimiter_can_close(const delimiter *delim) { return delim->can_close; }

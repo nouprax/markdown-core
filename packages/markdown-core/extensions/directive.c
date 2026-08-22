@@ -1061,10 +1061,10 @@ static delimiter *find_directive_opener(markdown_core_inline_parser *inline_pars
     int closer_count = 0;
 
     while (delim) {
-        if (delim->rule == rule) {
-            if (delim->can_close) {
+        if (markdown_core_delimiter_rule_of(delim) == rule) {
+            if (markdown_core_delimiter_can_close(delim)) {
                 closer_count++;
-            } else if (delim->can_open) {
+            } else if (markdown_core_delimiter_can_open(delim)) {
                 if (closer_count > 0) {
                     closer_count--;
                 } else {
@@ -1072,7 +1072,7 @@ static delimiter *find_directive_opener(markdown_core_inline_parser *inline_pars
                 }
             }
         }
-        delim = delim->previous;
+        delim = markdown_core_delimiter_previous(delim);
     }
 
     return NULL;
@@ -1313,7 +1313,7 @@ static void remove_delimiters(markdown_core_inline_parser *inline_parser, delimi
     delimiter *delim = closer;
 
     while (delim != NULL && delim != opener) {
-        delimiter *previous = delim->previous;
+        delimiter *previous = markdown_core_delimiter_previous(delim);
         markdown_core_inline_parser_remove_delimiter(inline_parser, delim);
         delim = previous;
     }
@@ -1360,11 +1360,11 @@ static markdown_core_node *make_empty_label_node(const markdown_core_syntax_exte
 static delimiter *insert_label_directive(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                                          markdown_core_inline_parser *inline_parser, delimiter *opener,
                                          delimiter *closer) {
-    markdown_core_node *opener_node = opener->inl_text;
-    markdown_core_node *closer_node = closer->inl_text;
+    markdown_core_node *opener_node = markdown_core_delimiter_node(opener);
+    markdown_core_node *closer_node = markdown_core_delimiter_node(closer);
     markdown_core_chunk *opener_literal = &opener_node->as.literal;
     markdown_core_chunk *closer_literal = &closer_node->as.literal;
-    delimiter *res = closer->next;
+    delimiter *res = markdown_core_delimiter_next(closer);
     markdown_core_node *directive_node;
     markdown_core_node *label_node;
     markdown_core_node *tmp;
@@ -1372,9 +1372,9 @@ static delimiter *insert_label_directive(const markdown_core_syntax_extension *e
     node_directive *directive;
     bufsize_t name_len;
 
-    if (opener->rule != closer->rule || opener_literal->len < 3 || opener_literal->data[0] != ':' ||
-        opener_literal->data[opener_literal->len - 1] != '[' || closer_literal->len < 1 ||
-        closer_literal->data[0] != ']') {
+    if (markdown_core_delimiter_rule_of(opener) != markdown_core_delimiter_rule_of(closer) || opener_literal->len < 3 ||
+        opener_literal->data[0] != ':' || opener_literal->data[opener_literal->len - 1] != '[' ||
+        closer_literal->len < 1 || closer_literal->data[0] != ']') {
         goto done;
     }
 
@@ -1431,11 +1431,11 @@ done:
 
 static delimiter *insert_directive(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                                    markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
-    if (opener->rule == DIRECTIVE_LABEL_DELIM) {
+    if (markdown_core_delimiter_rule_of(opener) == DIRECTIVE_LABEL_DELIM) {
         return insert_label_directive(extension, parser, inline_parser, opener, closer);
     }
 
-    return closer->next;
+    return markdown_core_delimiter_next(closer);
 }
 
 static const char *get_type_string(const markdown_core_syntax_extension *extension, markdown_core_node *node) {

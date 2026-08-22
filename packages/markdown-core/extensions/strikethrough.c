@@ -50,11 +50,11 @@ static delimiter *insert(const markdown_core_syntax_extension *self, markdown_co
     markdown_core_node *strikethrough;
     markdown_core_node *tmp, *next;
     delimiter *delim, *tmp_delim;
-    delimiter *res = closer->next;
+    delimiter *res = markdown_core_delimiter_next(closer);
 
-    strikethrough = opener->inl_text;
+    strikethrough = markdown_core_delimiter_node(opener);
 
-    if (opener->inl_text->as.literal.len != closer->inl_text->as.literal.len) {
+    if (markdown_core_delimiter_node(opener)->as.literal.len != markdown_core_delimiter_node(closer)->as.literal.len) {
         goto done;
     }
 
@@ -64,10 +64,10 @@ static delimiter *insert(const markdown_core_syntax_extension *self, markdown_co
 
     markdown_core_node_set_syntax_extension(strikethrough, self);
 
-    tmp = markdown_core_node_next(opener->inl_text);
+    tmp = markdown_core_node_next(markdown_core_delimiter_node(opener));
 
     while (tmp) {
-        if (tmp == closer->inl_text) {
+        if (tmp == markdown_core_delimiter_node(closer)) {
             break;
         }
         next = markdown_core_node_next(tmp);
@@ -75,13 +75,14 @@ static delimiter *insert(const markdown_core_syntax_extension *self, markdown_co
         tmp = next;
     }
 
-    strikethrough->end_column = closer->inl_text->start_column + closer->inl_text->as.literal.len - 1;
-    markdown_core_node_free(closer->inl_text);
+    strikethrough->end_column =
+        markdown_core_delimiter_node(closer)->start_column + markdown_core_delimiter_node(closer)->as.literal.len - 1;
+    markdown_core_node_free(markdown_core_delimiter_node(closer));
 
 done:
     delim = closer;
     while (delim != NULL && delim != opener) {
-        tmp_delim = delim->previous;
+        tmp_delim = markdown_core_delimiter_previous(delim);
         markdown_core_inline_parser_remove_delimiter(inline_parser, delim);
         delim = tmp_delim;
     }
