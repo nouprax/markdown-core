@@ -87,18 +87,6 @@ typedef struct markdown_core_mem {
 MARKDOWN_CORE_EXPORT
 markdown_core_mem *markdown_core_get_default_mem_allocator(void);
 
-/** An arena allocator; uses system calloc to allocate large
- * slabs of memory.  Memory in these slabs is not reused at all.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_mem *markdown_core_get_arena_mem_allocator(void);
-
-/** Resets the arena allocator, quickly returning all used memory
- * to the operating system.
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_arena_reset(void);
-
 /** Callback for freeing user data with a 'markdown_core_mem' context.
  */
 typedef void (*markdown_core_free_func)(markdown_core_mem *mem, void *user_data);

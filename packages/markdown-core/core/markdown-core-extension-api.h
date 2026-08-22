@@ -647,12 +647,6 @@ void markdown_core_manage_extensions_special_characters(markdown_core_parser *pa
 MARKDOWN_CORE_EXPORT
 markdown_core_llist *markdown_core_parser_get_syntax_extensions(markdown_core_parser *parser);
 
-MARKDOWN_CORE_EXPORT
-void markdown_core_arena_push(void);
-
-MARKDOWN_CORE_EXPORT
-int markdown_core_arena_pop(void);
-
 #ifdef __cplusplus
 }
 #endif

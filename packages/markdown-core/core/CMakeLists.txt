@@ -41,7 +41,6 @@ set(LIBRARY_SOURCES
     map.c
     houdini_html_u.c
     markdown_core_ctype.c
-    arena.c
     linked_list.c
     once.c
     syntax_extension.c

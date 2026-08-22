@@ -365,6 +365,12 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
 //
 //   the final return, which is the genuine opening path.
 //
+// D8 turned SIX wrong declines in this function from `return parent_container`
+// into `return NULL`. Step 3a deleted the arena and with it one of the six --
+// the retry that re-parsed both rows because the arena's pop had just freed
+// them, and whose mismatch answered NULL. FIVE remain. The line is gone; the
+// property is not, and `extensions-conflicts.txt` is what re-proves it.
+//
 // `table` is the only extension with this shape; directive and formula already
 // answer NULL on every decline.
 static markdown_core_node *try_opening_table_header(markdown_core_syntax_extension *self, markdown_core_parser *parser,
@@ -395,8 +401,6 @@ static markdown_core_node *try_opening_table_header(markdown_core_syntax_extensi
 
     assert(delimiter_row);
 
-    markdown_core_arena_push();
-
     // Check for a matching header row. We call `row_from_string` with the entire
     // (potentially long) parent container as input, but this should be safe since
     // `row_from_string` bails out early if it does not find a row.
@@ -405,21 +409,8 @@ static markdown_core_node *try_opening_table_header(markdown_core_syntax_extensi
     if (!header_row || header_row->n_columns != delimiter_row->n_columns) {
         free_table_row(parser->mem, delimiter_row);
         free_table_row(parser->mem, header_row);
-        markdown_core_arena_pop();
         parent_container->flags |= MARKDOWN_CORE_NODE__TABLE_VISITED;
         return NULL;
-    }
-
-    if (markdown_core_arena_pop()) {
-        delimiter_row = row_from_string(self, parser, input + markdown_core_parser_get_first_nonspace(parser),
-                                        len - markdown_core_parser_get_first_nonspace(parser));
-        header_row = row_from_string(self, parser, (unsigned char *)parent_string, (int)strlen(parent_string));
-        // row_from_string can return NULL, add additional check to ensure n_columns match
-        if (!delimiter_row || !header_row || header_row->n_columns != delimiter_row->n_columns) {
-            free_table_row(parser->mem, delimiter_row);
-            free_table_row(parser->mem, header_row);
-            return NULL;
-        }
     }
 
     if (!markdown_core_node_set_type(parent_container, MARKDOWN_CORE_NODE_TABLE)) {
@@ -612,14 +603,12 @@ static int matches(markdown_core_syntax_extension *self, markdown_core_parser *p
     int res = 0;
 
     if (markdown_core_node_get_type(parent_container) == MARKDOWN_CORE_NODE_TABLE) {
-        markdown_core_arena_push();
         table_row *new_row = row_from_string(self, parser, input + markdown_core_parser_get_first_nonspace(parser),
                                              len - markdown_core_parser_get_first_nonspace(parser));
         if (new_row && new_row->n_columns) {
             res = 1;
         }
         free_table_row(parser->mem, new_row);
-        markdown_core_arena_pop();
     }
 
     return res;

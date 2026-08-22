@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, **all of Stage 0a** (0a.0 through 0a.15), and **Step 2** (§4.14.2) |
+| Landed | Steps 0 and 1, §4.0's re-ordering, **all of Stage 0a** (0a.0 through 0a.15), **Step 2** (§4.14.2), and **3a.1** (§4.14.3a) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 3a**, beginning with the `audit-source-lists.mjs` triage its row demands. Then §4.1's steps in the order §4.1.4 verifies: `3 3b 15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 3a**, continued: A4, then A1, then D27 with A3's half. Then §4.1's steps in the order §4.1.4 verifies: `3 3b 15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -54,7 +54,7 @@ bash scripts/audit-public-surface.sh
 node scripts/audit-extension-special-chars.mjs   # 4 extensions, 5 sentinels
 node scripts/audit-extension-attach-order.mjs    # one attach site, table last (D15, added 0a.11)
 node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
-node scripts/audit-source-lists.mjs              # 28 sources, 4 of 5 lists, 1 registered absent
+node scripts/audit-source-lists.mjs              # 27 sources, 4 of 5 lists, 1 registered absent
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
 node scripts/check-upstream-parity.mjs     # 817/817 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
@@ -383,7 +383,7 @@ ones whose witness is stated in this section rather than in the row.
 | D5 | title-rewind path writes the scanned chunk into the refmap | wrong-output | **fixed at 0a.7** | built & reverted |
 | D6 | `make_autolink` writes `title = ""` where nothing was written | wrong-output | **fixed at 0a.7** | built & reverted |
 | D7 | `make_autolink` omits `column_offset + block_offset` | wrong-position | **fixed at 0a.6** | built & reverted |
-| D8 | `try_opening_table_header` returns the parent on eleven non-opening paths | wrong-output | **fixed at 0a.5** | built & reverted |
+| D8 | `try_opening_table_header` returns the parent on ~~eleven~~ **ten** non-opening paths | wrong-output | **fixed at 0a.5**; one of the ten went with the arena at 3a.1 (R14) | built & reverted |
 | D9 | reference resolution is order-dependent | wrong-output | **9a only** | 200 refs → 99 resolve, 101 do not |
 | D10 | an undefined footnote call **loses source bytes** | data-loss | **fixed at 0a.2** | `x[^a⏎b] tail` → `"x[^] tail"` |
 | D11 | a nested duplicate definition **deletes a paragraph** | data-loss | **fixed at 0a.2** | `"OUTER opens first"` in no node |
@@ -631,9 +631,12 @@ D9 cannot, and §4.2 says what pins it in the meantime.
    `:::name` opener appearing as a paragraph continuation line with table
    co-enabled.
 
-   **Correction: "eleven non-opening paths" over-counts.** There are eleven
-   `return parent_container;` statements, but six are wrong declines with the
-   node still a `PARAGRAPH` (`325, 329, 337, 354, 365, 372`), four run *after*
+   **Correction: "eleven non-opening paths" over-counts, and 3a.1 made it ten.**
+   There were eleven
+   `return parent_container;` statements, but six were wrong declines with the
+   node still a `PARAGRAPH` (`325, 329, 337, 354, 365, 372`) — **`365` was the
+   arena re-parse retry's, and Step 3a deleted the retry, so five remain
+   (R14)** — four run *after*
    `markdown_core_node_set_type(..., TABLE)` has succeeded and are
    allocation-failure paths that set `parser->oom` (`390, 401, 421, 432`), and
    one is the genuine opening path (`457`). **Fixing all eleven would be wrong.**
@@ -2943,6 +2946,104 @@ defect share.
 `node scripts/audit-source-lists.mjs` still **throws** at HEAD on a missing
 `packages/swift-markdown-core/Package.release.swift`. It is Step 3a's stated
 prerequisite, not Step 2's, and it is triaged there.
+
+---
+
+#### 4.14.3a Step 3a: one allocator model
+
+§4.1's row is the arena and the CLI; §4.13.7 adds **A1**, **A3** and **A4** to
+the same step, and §4.13.11 adds **D27**. They land as sub-steps, one commit
+each, in the order below.
+
+##### 3a.1 — A2: the arena is gone, and its only live bug was a leak in a parser that never asked for it
+
+**What was deleted.** `core/arena.c` (96 lines), the two declarations in
+`core/markdown-core.h` (`markdown_core_get_arena_mem_allocator`,
+`markdown_core_arena_reset`), the two in `core/markdown-core-extension-api.h`
+(`markdown_core_arena_push`, `_pop`), both push/pop pairs and the re-parse retry
+in `extensions/table.c`, and both `#if DEBUG` blocks in `core/main.c`. Four of
+the five source lists lose `core/arena.c`; the fifth is the registered absence.
+**27 sources where there were 28.**
+
+**The witness, reproduced before anything was changed.** Q12 records *"a
+demonstrated 480-byte leak in a parser that never asked for it"*. It reproduces
+exactly, and the mechanism is worth stating because it is the whole argument
+against a process-global allocator:
+
+```
+$ arena_probe                 # one default-allocator parse of a table
+Process: 0 leaks for 0 total leaked bytes.
+$ arena_probe --arena-first   # an unrelated arena parse first, then the same parse
+Process: 12 leaks for 480 total leaked bytes.
+```
+
+Both leak roots are `row_from_string` under `try_opening_table_block`, **in the
+default-allocator parse**. `markdown_core_arena_pop()` answers *"the arena
+freed your rows, build them again"* whenever the global `A` is non-NULL — and
+`A` is non-NULL because some *other* parser, possibly in another library, used
+the arena once. The retry then overwrote `delimiter_row` and `header_row`
+without freeing the pair it had just built: 240 bytes each. A parser that never
+named the arena paid for it.
+
+After the deletion the probe does not compile —
+*"call to undeclared function `markdown_core_get_arena_mem_allocator`"* — which
+is the strongest form the fix can take.
+
+**R14, discharged here rather than at Step 3.** D8 turned **six** wrong declines
+in `try_opening_table_header` from `return parent_container` into `return NULL`.
+The retry held one of the six, so **five** remain and §2's *"eleven"* becomes
+ten. The line is gone and the property is not: `extensions-conflicts.txt` is
+4/4 and is what re-proves it. The comment above the function now says so, in
+the file, where the next reader of that `return NULL` count will be.
+
+**Output neutrality, measured on the binary that changed.** The Release CLI is
+the only thing in the repository whose allocator moved, so the corpus was run
+through **both CLIs**: 817 fixture examples × 3 profiles (`default`, `gfm`,
+`gfm-extended`) = **2,451 comparisons, 0 differences**.
+
+**What it costs, and Q12's number is the bottom of a range.** Q12 says
+*"~7% CLI-only parse win"*. Measured here with the parse and the teardown timed
+separately, against the same tree built both ways:
+
+| workload | parse, arena | parse, calloc | delta | teardown the arena never did |
+|---|---|---|---|---|
+| 995 KB of plain paragraphs | 1.20 ms | 1.27 ms | **+5.8%** | +0.13 ms |
+| 50 KB of cmark's `benchmarks.md`, ×40 | 0.44 ms | 0.54 ms | **+22.7%** | +0.07 ms |
+| 690 KB of this repository's benchmark samples | 4.88 ms | 7.30 ms | **+49.6%** | +0.92 ms |
+
+The spread is allocation density, and ~7% is the prose end of it. Whole-CLI
+wall time on the 690 KB input moves 20.17 → 23.95 ms median, **+18.8%**. Peak
+RSS moves the other way, as Q12 says it should: **−3.5%** at 92 KB and
+**−8.6%** at 690 KB.
+
+**None of that reopens Q12**, and the reason is §4.13.10's rather than
+performance: `alloc_arena_chunk` calls `abort()` on both of its allocation
+failures, `arena_calloc` and `arena_realloc` have no failure return at all, and
+an abort is the one outcome the append contract exists to make impossible. A
+19% CLI regression is a price; an `abort()` inside a library is a broken
+contract. The cost is recorded because the doc's number was wrong by up to
+seven times, not because the decision is in question.
+
+**One thing found and deliberately not fixed.** `core/syntax_extension.c:10`
+holds `static markdown_core_mem *_mem = &MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR;`
+— a second allocator selection, hidden, so an extension's own struct never
+comes from the parser's `mem`. **Nothing in the engine assigns it**, so it is
+not mutable state in practice, and Step 3 deletes it outright by making an
+extension a `static const` descriptor that allocates nothing. Recorded so it is
+not re-found. `core/node.c`'s `enable_safety_checks` (3b),
+`core/registry.c`'s `syntax_extensions` list and `extensions/table.c`'s
+runtime-assigned `__TABLE_VISITED` flag bit (both Step 3) are the other three
+file-scope mutables in the library, and all three already have owners.
+
+**Gates after.** `correctness` **68/68** · `correctness-asan` **59/59** ·
+`correctness-ubsan` **59/59** · `conformance` 2/2 · upstream parity **817/817**
+with 7/7 · mdast **54/54**, backlog **24/24** · fuzz-parity 300/300 ·
+scope-sanity 14 · position oracles 0 / 45 / 109 · reference-order 2 rows, still
+red · canonical-ast 28/47/6 · public surface · special chars · attach order ·
+plan graph 22/45 · **source lists 27 sources, 4 of 5** · topology · format-c ·
+format-cmake. **Zero golden rows moved.** `leaks --atExit` on the CLI reads 0
+before and 0 after: the arena CLI did not leak, it simply never freed anything
+that a leak checker could still see a root for.
 
 ---
 

@@ -218,11 +218,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-#if DEBUG
     parser = markdown_core_parser_new(options);
-#else
-    parser = markdown_core_parser_new_with_mem(options, markdown_core_get_arena_mem_allocator());
-#endif
 
     /* The CLI says WHICH extensions and cannot say in what order; the order is
      * `core-extensions.c`'s, and it is the facade's too. Before D15 was fixed
@@ -291,7 +287,6 @@ success:
 
 failure:
 
-#if DEBUG
     if (parser) {
         markdown_core_parser_free(parser);
     }
@@ -299,9 +294,6 @@ failure:
     if (document) {
         markdown_core_node_free(document);
     }
-#else
-    markdown_core_arena_reset();
-#endif
 
     // Registered extensions are process-lifetime by contract; the OS reclaims
     // them at exit.

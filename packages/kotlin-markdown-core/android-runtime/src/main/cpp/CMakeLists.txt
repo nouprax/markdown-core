@@ -23,7 +23,6 @@ add_library(
     "${MARKDOWN_CORE_CORE_DIR}/map.c"
     "${MARKDOWN_CORE_CORE_DIR}/houdini_html_u.c"
     "${MARKDOWN_CORE_CORE_DIR}/markdown_core_ctype.c"
-    "${MARKDOWN_CORE_CORE_DIR}/arena.c"
     "${MARKDOWN_CORE_CORE_DIR}/linked_list.c"
     "${MARKDOWN_CORE_CORE_DIR}/once.c"
     "${MARKDOWN_CORE_CORE_DIR}/syntax_extension.c"
