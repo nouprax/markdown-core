@@ -671,6 +671,12 @@ static void opaque_free(markdown_core_syntax_extension *self, markdown_core_mem 
 markdown_core_syntax_extension *create_table_extension(void) {
     markdown_core_syntax_extension *self = markdown_core_syntax_extension_new("table");
 
+    /* A block-only extension: no byte ends a text run for it, no byte is
+     * offered to an inline hook it does not have, and no byte is transparent
+     * to flanking. Declared rather than omitted, so that a missing call
+     * always means the audit's reader is broken and never means "empty". */
+    markdown_core_syntax_extension_set_byte_sets(self, NULL, NULL, NULL);
+
     markdown_core_syntax_extension_set_match_block_func(self, matches);
     markdown_core_syntax_extension_set_open_block_func(self, try_opening_table_block);
     markdown_core_syntax_extension_set_get_type_string_func(self, get_type_string);

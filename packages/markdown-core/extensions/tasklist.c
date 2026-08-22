@@ -108,6 +108,10 @@ static markdown_core_node *open_tasklist_item(markdown_core_syntax_extension *se
 markdown_core_syntax_extension *create_tasklist_extension(void) {
     markdown_core_syntax_extension *ext = markdown_core_syntax_extension_new("tasklist");
 
+    /* A block-only extension; see the note in extensions/table.c for why the
+     * empty declaration is written out rather than omitted. */
+    markdown_core_syntax_extension_set_byte_sets(ext, NULL, NULL, NULL);
+
     markdown_core_syntax_extension_set_match_block_func(ext, matches);
     markdown_core_syntax_extension_set_get_type_string_func(ext, get_type_string);
     markdown_core_syntax_extension_set_open_block_func(ext, open_tasklist_item);

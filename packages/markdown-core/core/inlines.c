@@ -755,18 +755,22 @@ static markdown_core_node *handle_period(subject *subj, bool smart) {
     }
 }
 
-static int extension_has_special_char(markdown_core_syntax_extension *ext, unsigned char c) {
-    markdown_core_llist *tmp_char;
+int markdown_core_byte_set_has(const char *set, unsigned char c) {
+    const unsigned char *p;
 
-    for (tmp_char = ext->special_inline_chars; tmp_char; tmp_char = tmp_char->next) {
-        unsigned char tmp_c = (unsigned char)(size_t)tmp_char->data;
-
-        if (tmp_c == c) {
+    if (set == NULL || c == 0) {
+        return 0;
+    }
+    for (p = (const unsigned char *)set; *p; p++) {
+        if (*p == c) {
             return 1;
         }
     }
-
     return 0;
+}
+
+static int extension_dispatches(markdown_core_syntax_extension *ext, unsigned char c) {
+    return markdown_core_byte_set_has(ext->dispatch, c);
 }
 
 static markdown_core_syntax_extension *get_extension_for_special_char(markdown_core_parser *parser, unsigned char c) {
@@ -774,7 +778,7 @@ static markdown_core_syntax_extension *get_extension_for_special_char(markdown_c
 
     for (tmp_ext = parser->inline_syntax_extensions; tmp_ext; tmp_ext = tmp_ext->next) {
         markdown_core_syntax_extension *ext = (markdown_core_syntax_extension *)tmp_ext->data;
-        if (extension_has_special_char(ext, c)) {
+        if (extension_dispatches(ext, c)) {
             return ext;
         }
     }
@@ -1682,26 +1686,32 @@ void markdown_core_inlines_reset_special_chars(markdown_core_parser *parser) {
     memcpy(parser->skip_chars, BASE_SKIP_CHARS, sizeof(parser->skip_chars));
 }
 
-void markdown_core_inlines_add_special_character(markdown_core_parser *parser, unsigned char c, bool emphasis) {
+void markdown_core_inlines_add_text_terminator(markdown_core_parser *parser, unsigned char c) {
     if (is_core_special_character(c)) {
         return;
     }
-
     parser->special_chars[c] = 1;
-    if (emphasis) {
-        parser->skip_chars[c] = 1;
-    }
 }
 
-void markdown_core_inlines_remove_special_character(markdown_core_parser *parser, unsigned char c, bool emphasis) {
+void markdown_core_inlines_remove_text_terminator(markdown_core_parser *parser, unsigned char c) {
     if (is_core_special_character(c)) {
         return;
     }
-
     parser->special_chars[c] = 0;
-    if (emphasis) {
-        parser->skip_chars[c] = 0;
+}
+
+void markdown_core_inlines_add_flanking_transparent(markdown_core_parser *parser, unsigned char c) {
+    if (is_core_special_character(c)) {
+        return;
     }
+    parser->skip_chars[c] = 1;
+}
+
+void markdown_core_inlines_remove_flanking_transparent(markdown_core_parser *parser, unsigned char c) {
+    if (is_core_special_character(c)) {
+        return;
+    }
+    parser->skip_chars[c] = 0;
 }
 
 static markdown_core_node *try_extensions(markdown_core_parser *parser, markdown_core_node *parent, unsigned char c,
@@ -1712,7 +1722,7 @@ static markdown_core_node *try_extensions(markdown_core_parser *parser, markdown
     for (tmp = parser->inline_syntax_extensions; tmp; tmp = tmp->next) {
         markdown_core_syntax_extension *ext = (markdown_core_syntax_extension *)tmp->data;
 
-        if (!extension_has_special_char(ext, c)) {
+        if (!extension_dispatches(ext, c)) {
             continue;
         }
 
@@ -1735,7 +1745,7 @@ static delimiter *find_extension_opener_for_special_char(markdown_core_parser *p
     while (delim) {
         markdown_core_syntax_extension *extension = get_extension_for_special_char(parser, delim->delim_char);
 
-        if (extension && extension_has_special_char(extension, c)) {
+        if (extension && extension_dispatches(extension, c)) {
             if (delim->can_close) {
                 closer_count[delim->delim_char]++;
             } else if (delim->can_open) {

@@ -21,6 +21,22 @@
  * label an opener, and `match` never sees them. They are exempt from the
  * dispatch requirement and required to stay below 0x20 — a sentinel that grew
  * into printable range would be an ordinary byte a user can type.
+ *
+ * SINCE 3.2 AN EXTENSION DECLARES THREE SETS, and two laws relate them, both
+ * checked below:
+ *
+ *   terminates_text      ⊆ dispatch    — a byte that ends a text run and is
+ *                                        dispatched to nobody is D2 exactly
+ *   flanking_transparent ⊆ dispatch    — a byte an extension makes invisible to
+ *                                        `scan_delims` without owning it is D1
+ *
+ * AND THE AUDIT MUST SEE SOMETHING. The declaration used to be a run of
+ * `markdown_core_llist_append` calls; when 3.2 replaced it with one
+ * `set_byte_sets` call this reader matched nothing, skipped all four
+ * extensions, printed no report and exited 0. A source-scanning audit with no
+ * saw-nothing assertion is one refactor away from being a gate that cannot
+ * fail. Every `create_*_extension` in this directory must be found and must
+ * declare its sets.
  */
 
 import fs from "node:fs";
@@ -31,10 +47,37 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const extensionsDir = path.join(root, "packages/markdown-core/extensions");
 
-// `(void *)'x'` or `(void *)SENTINEL_NAME`, in the argument to the llist append
-// that builds the list handed to `set_special_inline_chars`.
-const REGISTRATION = /special_chars\s*=\s*markdown_core_llist_append\([^;]*?\(void \*\)(?:'((?:\\.|[^'])+)'|(\w+))\)/g;
-const DEFINE = (name) => new RegExp(`^#define\\s+${name}\\s+(\\d+)\\s*$`, "m");
+// The one declaration: three C string literals, or NULL, in one call.
+const BYTE_SETS =
+    /markdown_core_syntax_extension_set_byte_sets\(\s*\w+\s*,\s*(NULL|"(?:\\.|[^"])*")\s*,\s*(NULL|"(?:\\.|[^"])*")\s*,\s*(NULL|"(?:\\.|[^"])*")\s*\)/;
+const CREATE = /markdown_core_syntax_extension \*create_(\w+)_extension\(void\)\s*\{/;
+
+/** The bytes a C string literal denotes, with the escapes this repository uses. */
+function bytesOf(literal) {
+    if (literal === "NULL") return [];
+    const body = literal.slice(1, -1);
+    const bytes = [];
+    for (let i = 0; i < body.length;) {
+        if (body[i] !== "\\") {
+            bytes.push(body.charCodeAt(i));
+            i += 1;
+            continue;
+        }
+        const kind = body[i + 1];
+        if (kind === "x") {
+            const hex = /^[0-9a-fA-F]+/.exec(body.slice(i + 2));
+            if (hex === null) throw new Error(`bad hex escape in ${literal}`);
+            bytes.push(parseInt(hex[0], 16));
+            i += 2 + hex[0].length;
+            continue;
+        }
+        const simple = { "\\": 0x5c, '"': 0x22, n: 0x0a, r: 0x0d, t: 0x09, 0: 0x00 };
+        if (!(kind in simple)) throw new Error(`unsupported escape \\${kind} in ${literal}`);
+        bytes.push(simple[kind]);
+        i += 2;
+    }
+    return bytes;
+}
 // The one shape every extension's inline match uses: comparing its `character`
 // (or `c`) parameter with a character literal.
 const DISPATCH = /\b(?:character|c)\s*[!=]=\s*'((?:\\.|[^'])+)'/g;
@@ -55,40 +98,74 @@ function matchBody(source, file) {
 
 const failures = [];
 const report = [];
+let declared = 0;
 for (const entry of fs
     .readdirSync(extensionsDir)
     .filter((name) => name.endsWith(".c"))
     .sort()) {
     const source = fs.readFileSync(path.join(extensionsDir, entry), "utf8");
-    const registered = [...source.matchAll(REGISTRATION)].map((match) => {
-        if (match[1] !== undefined) return { byte: byteOf(match[1]), spelling: `'${match[1]}'` };
-        const define = DEFINE(match[2]).exec(source);
-        if (define === null)
-            throw new Error(`${entry}: registers \`${match[2]}\`, which this file does not #define to a number.`);
-        return { byte: Number(define[1]), spelling: match[2] };
-    });
-    if (registered.length === 0) continue;
+    if (!CREATE.test(source)) continue;
+
+    const sets = BYTE_SETS.exec(source);
+    if (sets === null) {
+        // Every extension in this directory declares its sets, even the empty
+        // ones, so that "no call" always means "the reader is broken".
+        failures.push(`${entry}: defines a create_*_extension and no set_byte_sets call. This audit cannot see it.`);
+        continue;
+    }
+    declared += 1;
+    const terminates = bytesOf(sets[1]);
+    const dispatch = bytesOf(sets[2]);
+    const transparent = bytesOf(sets[3]);
 
     const body = matchBody(source, entry);
     if (body === null) {
-        failures.push(`${entry}: registers ${String(registered.length)} special inline chars and has no match_inline.`);
+        if (dispatch.length > 0) {
+            failures.push(`${entry}: declares ${String(dispatch.length)} dispatch bytes and has no match_inline.`);
+        }
+        report.push(`  ${entry}: no inline hook`);
         continue;
     }
     const dispatched = new Set([...body.matchAll(DISPATCH)].map((match) => byteOf(match[1])));
-    for (const { byte, spelling } of registered) {
+
+    for (const byte of dispatch) {
+        if (byte === 0) {
+            failures.push(`${entry}: declares NUL, which the feed replaces before inlines run.`);
+        }
         if (byte < 0x20) continue;
-        if (!dispatched.has(byte))
+        if (!dispatched.has(byte)) {
             failures.push(
-                `${entry}: registers ${spelling} as a special inline char, and its match_inline never dispatches on it.`
+                `${entry}: declares ${spell(byte)} in its dispatch set, and its match_inline never dispatches on it.`
             );
+        }
     }
-    for (const { byte, spelling } of registered)
-        if (byte < 0x20 && byte === 0)
-            failures.push(`${entry}: registers ${spelling} as NUL, which the feed replaces before inlines run.`);
+
+    // The two laws that make D1 and D2 unexpressible rather than fixed.
+    const owned = new Set(dispatch);
+    for (const byte of terminates) {
+        if (!owned.has(byte)) {
+            failures.push(
+                `${entry}: ${spell(byte)} ends a text run and is in no dispatch set. That split is pure cost (D2).`
+            );
+        }
+    }
+    for (const byte of transparent) {
+        if (!owned.has(byte)) {
+            failures.push(
+                `${entry}: ${spell(byte)} is flanking-transparent and the extension does not own it. That is D1.`
+            );
+        }
+    }
+
+    const show = (label, bytes) => `${label}=${bytes.length ? bytes.map(spell).join(" ") : "(none)"}`;
     report.push(
-        `  ${entry}: ${registered.map(({ byte }) => spell(byte)).join(" ")} ` +
-            `(${String(registered.filter(({ byte }) => byte < 0x20).length)} sentinel)`
+        `  ${entry}: ${show("terminates", terminates)}  ${show("dispatch", dispatch)}  ` +
+            `${show("transparent", transparent)}`
     );
+}
+
+if (declared === 0) {
+    failures.push("no extension declared any byte set; this audit read nothing at all");
 }
 
 if (failures.length > 0) {

@@ -10,10 +10,26 @@ struct markdown_core_syntax_extension {
     markdown_core_open_block_func try_opening_block;
     markdown_core_match_inline_func match_inline;
     markdown_core_inline_from_delim_func insert_inline_from_delim;
-    markdown_core_llist *special_inline_chars;
+    /* THREE byte sets, not one list.
+     *
+     * `special_inline_chars` was a single `llist` read by five consumers that
+     * each meant something different by it: two byte tables were folded out of
+     * it, `try_extensions` used it for cursor dispatch,
+     * `get_extension_for_special_char` used it for delimiter-tag OWNERSHIP,
+     * `bracket_takes_close_bracket` used it for `]` arbitration, and
+     * `handle_backslash` used it to disable a core optimisation. One list
+     * cannot say three different things, and D1 and D2 are what happens when it
+     * tries: `set_emphasis` folded every byte an extension named into
+     * `skip_chars`, which killed CommonMark flanking merely by attaching the
+     * extension, and `'}'` sat in the list dispatching to nothing.
+     *
+     * Each set is a NUL-terminated byte list; NUL itself is never a member
+     * because the feed replaces it before inlines run. A NULL set is empty. */
+    const char *terminates_text;      /* ends a text run: subject_find_special_char */
+    const char *dispatch;             /* offered to match_inline, and owns a delimiter tag */
+    const char *flanking_transparent; /* scan_delims looks through it */
     char *name;
     void *priv;
-    bool emphasis;
     markdown_core_free_func free_function;
     markdown_core_get_type_string_func get_type_string_func;
     markdown_core_can_contain_func can_contain_func;

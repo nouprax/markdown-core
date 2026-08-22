@@ -104,7 +104,6 @@ static int can_contain(markdown_core_syntax_extension *extension, markdown_core_
 
 markdown_core_syntax_extension *create_strikethrough_extension(void) {
     markdown_core_syntax_extension *ext = markdown_core_syntax_extension_new("strikethrough");
-    markdown_core_llist *special_chars = NULL;
 
     markdown_core_syntax_extension_set_get_type_string_func(ext, get_type_string);
     markdown_core_syntax_extension_set_can_contain_func(ext, can_contain);
@@ -112,11 +111,11 @@ markdown_core_syntax_extension *create_strikethrough_extension(void) {
     markdown_core_syntax_extension_set_match_inline_func(ext, match);
     markdown_core_syntax_extension_set_inline_from_delim_func(ext, insert);
 
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    special_chars = markdown_core_llist_append(mem, special_chars, (void *)'~');
-    markdown_core_syntax_extension_set_special_inline_chars(ext, special_chars);
-
-    markdown_core_syntax_extension_set_emphasis(ext, 1);
+    /* `~` is the ONE byte in this repository that is genuinely
+     * flanking-transparent, and it must stay so: it is inherited from
+     * cmark-gfm, it behaves identically there, and upstream parity breaks
+     * without it (§2, D1's correction (b)). */
+    markdown_core_syntax_extension_set_byte_sets(ext, "~", "~", "~");
 
     return ext;
 }

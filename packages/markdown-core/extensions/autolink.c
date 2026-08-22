@@ -655,15 +655,13 @@ static markdown_core_node *postprocess(markdown_core_syntax_extension *ext, mark
 
 markdown_core_syntax_extension *create_autolink_extension(void) {
     markdown_core_syntax_extension *ext = markdown_core_syntax_extension_new("autolink");
-    markdown_core_llist *special_chars = NULL;
 
     markdown_core_syntax_extension_set_match_inline_func(ext, match);
     markdown_core_syntax_extension_set_postprocess_func(ext, postprocess);
 
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    special_chars = markdown_core_llist_append(mem, special_chars, (void *)':');
-    special_chars = markdown_core_llist_append(mem, special_chars, (void *)'w');
-    markdown_core_syntax_extension_set_special_inline_chars(ext, special_chars);
+    /* `:` opens a scheme, `w` opens `www.`. Neither is transparent to
+     * flanking: autolink never asked for that and never had it. */
+    markdown_core_syntax_extension_set_byte_sets(ext, ":w", ":w", NULL);
 
     return ext;
 }

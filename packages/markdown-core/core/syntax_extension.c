@@ -14,7 +14,6 @@ void markdown_core_syntax_extension_free(markdown_core_mem *mem, markdown_core_s
         extension->free_function(mem, extension->priv);
     }
 
-    markdown_core_llist_free(mem, extension->special_inline_chars);
     mem->free(extension->name);
     mem->free(extension);
 }
@@ -32,10 +31,6 @@ markdown_core_syntax_extension *markdown_core_syntax_extension_new(const char *n
     }
     strcpy(res->name, name);
     return res;
-}
-
-void markdown_core_syntax_extension_set_emphasis(markdown_core_syntax_extension *extension, int emphasis) {
-    extension->emphasis = emphasis == 1;
 }
 
 void markdown_core_syntax_extension_set_open_block_func(markdown_core_syntax_extension *extension,
@@ -58,9 +53,12 @@ void markdown_core_syntax_extension_set_inline_from_delim_func(markdown_core_syn
     extension->insert_inline_from_delim = func;
 }
 
-void markdown_core_syntax_extension_set_special_inline_chars(markdown_core_syntax_extension *extension,
-                                                             markdown_core_llist *special_chars) {
-    extension->special_inline_chars = special_chars;
+void markdown_core_syntax_extension_set_byte_sets(markdown_core_syntax_extension *extension,
+                                                  const char *terminates_text, const char *dispatch,
+                                                  const char *flanking_transparent) {
+    extension->terminates_text = terminates_text;
+    extension->dispatch = dispatch;
+    extension->flanking_transparent = flanking_transparent;
 }
 
 void markdown_core_syntax_extension_set_get_type_string_func(markdown_core_syntax_extension *extension,

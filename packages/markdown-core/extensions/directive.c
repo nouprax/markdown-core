@@ -1482,8 +1482,6 @@ static int accepts_lines(markdown_core_syntax_extension *extension, markdown_cor
 
 markdown_core_syntax_extension *create_directive_extension(void) {
     markdown_core_syntax_extension *ext = markdown_core_syntax_extension_new("directive");
-    markdown_core_llist *special_chars = NULL;
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
 
     markdown_core_syntax_extension_set_match_inline_func(ext, match);
     markdown_core_syntax_extension_set_inline_from_delim_func(ext, insert_directive);
@@ -1496,10 +1494,12 @@ markdown_core_syntax_extension *create_directive_extension(void) {
     markdown_core_syntax_extension_set_opaque_alloc_func(ext, directive_opaque_alloc);
     markdown_core_syntax_extension_set_opaque_free_func(ext, directive_opaque_free);
 
-    special_chars = markdown_core_llist_append(mem, special_chars, (void *)':');
-    special_chars = markdown_core_llist_append(mem, special_chars, (void *)']');
-    special_chars = markdown_core_llist_append(mem, special_chars, (void *)DIRECTIVE_LABEL_DELIM);
-    markdown_core_syntax_extension_set_special_inline_chars(ext, special_chars);
+    /* `:` opens a directive. `]` is in the dispatch set for the `]`
+     * ARBITRATION `bracket_takes_close_bracket` performs, not because it
+     * terminates a text run -- `is_core_special_character` refuses it there.
+     * 0x08 is a delimiter tag, and 3.3 removes it for the reason formula's
+     * four are removed. */
+    markdown_core_syntax_extension_set_byte_sets(ext, ":\x08", ":]\x08", NULL);
     /* No set_emphasis here. That flag folds every byte above into the parser's
      * FLANKING SKIP table, which scan_delims walks over as though the bytes
      * were not there -- so merely attaching this extension changed what

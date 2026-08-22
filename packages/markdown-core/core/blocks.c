@@ -558,18 +558,31 @@ static markdown_core_node *add_child(markdown_core_parser *parser, markdown_core
     return child;
 }
 
+/* Two of the three byte sets are folded into parser tables here; the third,
+ * `dispatch`, is asked directly because it also answers ownership questions
+ * that a merged table cannot. The two folds are now independent, which is the
+ * whole point: before this, one list fed both tables and whether it fed the
+ * second was a single `emphasis` bool covering every byte the extension named.
+ * That is D1. */
 void markdown_core_manage_extensions_special_characters(markdown_core_parser *parser, int add) {
     markdown_core_llist *tmp_ext;
 
     for (tmp_ext = parser->inline_syntax_extensions; tmp_ext; tmp_ext = tmp_ext->next) {
         markdown_core_syntax_extension *ext = (markdown_core_syntax_extension *)tmp_ext->data;
-        markdown_core_llist *tmp_char;
-        for (tmp_char = ext->special_inline_chars; tmp_char; tmp_char = tmp_char->next) {
-            unsigned char c = (unsigned char)(size_t)tmp_char->data;
+        const unsigned char *c;
+
+        for (c = (const unsigned char *)ext->terminates_text; c && *c; c++) {
             if (add) {
-                markdown_core_inlines_add_special_character(parser, c, ext->emphasis);
+                markdown_core_inlines_add_text_terminator(parser, *c);
             } else {
-                markdown_core_inlines_remove_special_character(parser, c, ext->emphasis);
+                markdown_core_inlines_remove_text_terminator(parser, *c);
+            }
+        }
+        for (c = (const unsigned char *)ext->flanking_transparent; c && *c; c++) {
+            if (add) {
+                markdown_core_inlines_add_flanking_transparent(parser, *c);
+            } else {
+                markdown_core_inlines_remove_flanking_transparent(parser, *c);
             }
         }
     }

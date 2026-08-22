@@ -653,8 +653,6 @@ static markdown_core_node *postprocess(markdown_core_syntax_extension *extension
 
 markdown_core_syntax_extension *create_formula_extension(void) {
     markdown_core_syntax_extension *ext = markdown_core_syntax_extension_new("formula");
-    markdown_core_llist *special_chars = NULL;
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
 
     markdown_core_syntax_extension_set_match_inline_func(ext, match);
     markdown_core_syntax_extension_set_match_block_func(ext, formula_block_matches);
@@ -667,13 +665,18 @@ markdown_core_syntax_extension *create_formula_extension(void) {
     markdown_core_syntax_extension_set_opaque_free_func(ext, formula_opaque_free);
     markdown_core_syntax_extension_set_inline_from_delim_func(ext, insert_formula);
 
-    special_chars = markdown_core_llist_append(mem, special_chars, (void *)'$');
-    special_chars = markdown_core_llist_append(mem, special_chars, (void *)'\\');
-    special_chars = markdown_core_llist_append(mem, special_chars, (void *)FORMULA_DELIM_DOLLAR_INLINE);
-    special_chars = markdown_core_llist_append(mem, special_chars, (void *)FORMULA_DELIM_DOLLAR_DISPLAY);
-    special_chars = markdown_core_llist_append(mem, special_chars, (void *)FORMULA_DELIM_LATEX_BACKSLASH_INLINE);
-    special_chars = markdown_core_llist_append(mem, special_chars, (void *)FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY);
-    markdown_core_syntax_extension_set_special_inline_chars(ext, special_chars);
+    /* `$` and `\\` open a formula. The four bytes 0x01-0x04 are not source at
+     * all: they are DELIMITER TAGS, and they are here only because
+     * `get_extension_for_special_char` derives a delimiter's owner from its
+     * `delim_char`. They are ordinary file bytes and a literal 0x01 in user
+     * text therefore splits a text run and dispatches here. Only giving a
+     * delimiter a RULE instead of a byte removes them, which is 3.3's.
+     *
+     * `\\` is in the dispatch set and NOT the terminator set, because
+     * `is_core_special_character` refuses it there anyway -- and it must stay
+     * in dispatch, since `handle_backslash` asks whether any extension owns
+     * `\\` before taking a core fast path. */
+    markdown_core_syntax_extension_set_byte_sets(ext, "$\x01\x02\x03\x04", "$\\\x01\x02\x03\x04", NULL);
     /* No set_emphasis here; see the note in extensions/directive.c. Attaching
      * this extension folded `$` and the four delimiter sentinels into the
      * flanking skip table and changed the base language. */

@@ -65,8 +65,8 @@ typedef struct markdown_core_plugin markdown_core_plugin;
  *
  * #### Inline parsing phase hooks
  *
- * For each character provided by the extension through
- * 'markdown_core_syntax_extension_set_special_inline_chars',
+ * For each character in the DISPATCH set the extension declares through
+ * 'markdown_core_syntax_extension_set_byte_sets',
  * the function provided by the extension through
  * 'markdown_core_syntax_extension_set_match_inline_func'
  * will get called, it is the responsibility of the extension
@@ -254,9 +254,6 @@ void markdown_core_syntax_extension_free(markdown_core_mem *mem, markdown_core_s
 MARKDOWN_CORE_EXPORT
 markdown_core_syntax_extension *markdown_core_syntax_extension_new(const char *name);
 
-MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_set_emphasis(markdown_core_syntax_extension *extension, int emphasis);
-
 /** See the documentation for 'markdown_core_syntax_extension'
  */
 MARKDOWN_CORE_EXPORT
@@ -281,11 +278,20 @@ MARKDOWN_CORE_EXPORT
 void markdown_core_syntax_extension_set_inline_from_delim_func(markdown_core_syntax_extension *extension,
                                                                markdown_core_inline_from_delim_func func);
 
-/** See the documentation for 'markdown_core_syntax_extension'
+/** Declare the extension's three byte sets: the bytes that END A TEXT RUN, the
+ * bytes OFFERED TO `match_inline` (which also decide delimiter-tag ownership
+ * and `]` arbitration), and the bytes `scan_delims` LOOKS THROUGH when deciding
+ * flanking. Each is a NUL-terminated byte list, or NULL for the empty set.
+ *
+ * There used to be one list and one `emphasis` bool for all three questions.
+ * Declaring flanking transparency for every byte an extension names is D1:
+ * attaching `formula` or `directive` folded `$ : }` into `skip_chars` and
+ * killed CommonMark flanking in documents that used neither.
  */
 MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_set_special_inline_chars(markdown_core_syntax_extension *extension,
-                                                             markdown_core_llist *special_chars);
+void markdown_core_syntax_extension_set_byte_sets(markdown_core_syntax_extension *extension,
+                                                  const char *terminates_text, const char *dispatch,
+                                                  const char *flanking_transparent);
 
 /** See the documentation for 'markdown_core_syntax_extension'
  */

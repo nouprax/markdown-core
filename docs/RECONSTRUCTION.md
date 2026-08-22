@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, **all of Stage 0a** (0a.0 through 0a.15), **Step 2** (§4.14.2), and **3a.1 – 3a.3** (§4.14.3a), and **3.1** (§4.14.3) |
+| Landed | Steps 0 and 1, §4.0's re-ordering, **all of Stage 0a** (0a.0 through 0a.15), **Step 2** (§4.14.2), and **3a.1 – 3a.3** (§4.14.3a), and **3.1 – 3.2** (§4.14.3) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 3**, continued: the three byte sets, then the delimiter rule, then the `static const` descriptor table. Step 3a is complete (§4.14.3a). Then §4.1's steps in the order §4.1.4 verifies: `3 3b 15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 3**, continued: 3.3, a delimiter names its rule; then 3.4, the `static const` descriptor table. Step 3a is complete (§4.14.3a). Then §4.1's steps in the order §4.1.4 verifies: `3 3b 15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -3304,6 +3304,107 @@ position oracles 0 / 45 / 109 · reference-order 2 rows, still red ·
 canonical-ast 28/47/6 · public surface · special chars · attach order · plan
 graph 22/45 · source lists 27, 4 of 5 · topology · format-c · format-cmake.
 **Zero golden rows moved.**
+
+
+##### 3.2 — three byte sets, and the audit that stopped reading
+
+**One list, five readers, five meanings.** `special_inline_chars` was a single
+`markdown_core_llist` on the descriptor, and §4.1.3 counted the consumers:
+`markdown_core_manage_extensions_special_characters` folded it into two byte
+tables, `try_extensions` used it for cursor dispatch,
+`get_extension_for_special_char` used it for delimiter-tag **ownership**,
+`bracket_takes_close_bracket` used it for `]` arbitration, and
+`handle_backslash` used it to decide whether a core fast path was safe. Whether
+it also fed the *second* byte table was one `emphasis` bool covering **every**
+byte the extension named — which is D1, and `'}'` sitting in the list
+dispatching to nothing is D2.
+
+**Three sets now, declared in one call.**
+
+| set | question | folded into |
+|---|---|---|
+| `terminates_text` | does this byte end a text run? | `parser->special_chars` |
+| `dispatch` | is this byte offered to `match_inline`? | asked directly; also answers ownership and `]` arbitration |
+| `flanking_transparent` | does `scan_delims` look through it? | `parser->skip_chars` |
+
+`markdown_core_syntax_extension_set_special_inline_chars` and
+`_set_emphasis` are deleted, and so is the `emphasis` bool.
+`markdown_core_inlines_add_special_character(parser, c, emphasis)` becomes four
+functions, one per table and direction, because the two folds are now
+independent facts rather than one call with a flag.
+
+What each extension declares, printed by the audit:
+
+```
+autolink.c:      terminates=':' 'w'                dispatch=':' 'w'                    transparent=(none)
+directive.c:     terminates=':' 0x08               dispatch=':' ']' 0x08               transparent=(none)
+formula.c:       terminates='$' 0x01..0x04         dispatch='$' '\' 0x01..0x04         transparent=(none)
+strikethrough.c: terminates='~'                    dispatch='~'                        transparent='~'
+table.c, tasklist.c: block-only, all three empty
+```
+
+**Behaviour-neutral, and the two asymmetries are why.** `\` leaves formula's
+terminator set and `]` leaves directive's, because
+`is_core_special_character` refused both there already — the old single list
+passed them to a function that dropped them on the floor. Both stay in
+`dispatch`, where they are load-bearing: `handle_backslash` asks whether any
+extension owns `\`, and `bracket_takes_close_bracket` asks whether any owns
+`]`. Zero golden rows move.
+
+##### The audit stopped reading, and said nothing
+
+`scripts/audit-extension-special-chars.mjs` parsed the run of
+`markdown_core_llist_append` calls. With the declaration replaced by one
+`set_byte_sets` call its reader matched nothing, `registered.length === 0` hit a
+`continue` for all four extensions, and it printed
+
+```
+Extension special characters: every registered byte is dispatched or is a sentinel.
+```
+
+**with an empty report and exit 0.** It is the same failure 3.1's sibling audit
+avoided by asserting that it saw *something* — and this one had no such
+assertion, so a refactor turned a gate into a sentence.
+
+It now reads the new declaration, prints all three sets for all six extensions,
+and asserts three things instead of one. The two new ones are laws relating the
+sets, and each is one of the defects made **unexpressible**:
+
+| law | the defect it forbids |
+|---|---|
+| `terminates_text ⊆ dispatch` | **D2** — a byte that ends a text run and is dispatched to nobody |
+| `flanking_transparent ⊆ dispatch` | **D1** — a byte an extension makes invisible to `scan_delims` without owning it |
+| every dispatch byte ≥ 0x20 is compared in `match_inline` | the original law |
+
+And every `create_*_extension` in the directory must be found **and must
+declare**, even the two block-only ones, so that a missing call always means the
+reader is broken and never means "empty". That requirement caught `table` and
+`tasklist` on the first run.
+
+| mutant | result |
+|---|---|
+| `'}'` in `terminates_text` only | *`'}'` ends a text run and is in no dispatch set. That split is pure cost (D2).* |
+| `'$'` in `flanking_transparent` only | *`'$'` is flanking-transparent and the extension does not own it. That is D1.* |
+| `'}'` in `dispatch` | *declares `'}'` in its dispatch set, and its match_inline never dispatches on it* |
+| delete an extension's `set_byte_sets` call | *defines a create_\*_extension and no set_byte_sets call. This audit cannot see it.* |
+
+##### What it left
+
+The sentinels are still in two sets. `FORMULA_DELIM_*` (0x01–0x04) and
+`DIRECTIVE_LABEL_DELIM` (0x08) are **delimiter tags, not source**, and they are
+declared only because `get_extension_for_special_char` derives a delimiter's
+owner from its `delim_char`. A literal 0x01 in user text therefore still splits
+a text run and still dispatches to `formula`. §4.1.3 is right that only removing
+the concept closes it, and that is 3.3: a delimiter names its **rule**.
+
+**Gates after.** `correctness` **69/69** · `correctness-asan` **60/60** ·
+`correctness-ubsan` **60/60** · `conformance` 2/2 · upstream parity 817/817 with
+7/7 · mdast 54/54, backlog 24/24 · fuzz-parity 300/300 · scope-sanity 14 ·
+position oracles 0 / 45 / 109 · reference-order 2 rows, still red ·
+canonical-ast 28/47/6 · public surface · special chars (now reporting six
+extensions and three sets each) · attach order · plan graph 22/45 · source
+lists 27, 4 of 5 · topology · format-c · format-cmake. **Zero golden rows
+moved.**
 
 
 ---
