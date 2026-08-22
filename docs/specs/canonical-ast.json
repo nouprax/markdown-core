@@ -4,9 +4,21 @@
     "prose": "docs/specs/canonical-ast.md",
     "dumpGrammar": "docs/specs/canonical-ast-dump.md",
     "enums": {
-        "PlacementMode": ["embedded", "standalone"],
-        "ListFlavor": ["bullet", "ordered"],
-        "TableAlignment": ["none", "left", "center", "right"]
+        "PlacementMode": [
+            "embedded",
+            "standalone"
+        ],
+        "ListFlavor": [
+            "bullet",
+            "ordered"
+        ],
+        "TableAlignment": [
+            "none",
+            "left",
+            "center",
+            "right"
+        ],
+        "DirectiveAttribute": "a name/value pair of Strings"
     },
     "inheritedField": {
         "name": "scope",
@@ -221,12 +233,12 @@
                 },
                 {
                     "name": "attributes",
-                    "type": "String",
+                    "type": "[DirectiveAttribute]",
                     "optional": true
                 },
                 {
                     "name": "label",
-                    "type": "[Markup]",
+                    "type": "DirectiveLabel",
                     "optional": true
                 },
                 {
@@ -235,7 +247,18 @@
                     "optional": false
                 }
             ],
-            "invariants": "attributes is normalized string-map JSON object text; mode is `standalone`; label is inline; content is block; null label and explicit empty label remain distinct"
+            "invariants": "attributes is an ordered sequence of name/value pairs sorted by name; label is a DirectiveLabel node whose scope spans its brackets; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one"
+        },
+        {
+            "name": "DirectiveLabel",
+            "fields": [
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "inline content; the scope spans the brackets, so an empty label is still a place"
         },
         {
             "name": "FootnoteDefinition",
@@ -397,16 +420,16 @@
                 },
                 {
                     "name": "attributes",
-                    "type": "String",
+                    "type": "[DirectiveAttribute]",
                     "optional": true
                 },
                 {
                     "name": "label",
-                    "type": "[Markup]",
+                    "type": "DirectiveLabel",
                     "optional": true
                 }
             ],
-            "invariants": "attributes is normalized string-map JSON object text; mode is `embedded`; null label and explicit empty label remain distinct"
+            "invariants": "attributes is an ordered sequence of name/value pairs sorted by name; label is a DirectiveLabel node whose scope spans its brackets; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one"
         },
         {
             "name": "FootnoteReference",

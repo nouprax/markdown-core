@@ -598,8 +598,8 @@ static int case_directive_long_label(pc_context *context) {
     markdown_core_string_view name;
     markdown_core_string_view attributes;
     markdown_core_string_view literal;
-    bool has_label = false;
-    size_t label_count = 0;
+    bool has_attributes = false;
+    size_t attribute_count = 0;
     char *expected = NULL;
 
     if (pc_build(context, ":long[", "a", 1500, "]") != 0) {
@@ -613,12 +613,19 @@ static int case_directive_long_label(pc_context *context) {
     }
     directive = pc_first_directive(context);
     if (markdown_core_node_get_kind(directive) != MARKDOWN_CORE_KIND_DIRECTIVE ||
-        !markdown_core_node_directive_properties(directive, &name, &attributes, &has_label, &label_count) ||
-        name.length != 4 || memcmp(name.data, "long", 4) != 0 || !has_label || label_count != 1) {
-        fprintf(stderr, "directive name/label properties are wrong\n");
+        !markdown_core_node_directive_properties(directive, &name, &has_attributes, &attribute_count) ||
+        name.length != 4 || memcmp(name.data, "long", 4) != 0 || has_attributes || attribute_count != 0) {
+        fprintf(stderr, "directive name/attribute properties are wrong\n");
         return -1;
     }
-    label = markdown_core_node_directive_first_label_child(directive);
+    /* The label is a NODE now, not a count on the parent: it is the
+     * directive's only child and the text is its child. */
+    label = markdown_core_node_get_first_child(directive);
+    if (markdown_core_node_get_kind(label) != MARKDOWN_CORE_KIND_DIRECTIVE_LABEL) {
+        fprintf(stderr, "a labelled directive's first child is its label\n");
+        return -1;
+    }
+    label = markdown_core_node_get_first_child(label);
     expected = ts_repeat("a", 1500, NULL);
     if (!expected) {
         return -1;
@@ -636,12 +643,11 @@ static int case_directive_long_label(pc_context *context) {
 static int case_directive_long_attributes(pc_context *context) {
     const markdown_core_node *directive;
     markdown_core_string_view name;
-    markdown_core_string_view attributes;
-    bool has_label = false;
-    size_t label_count = 0;
+    markdown_core_string_view attribute_name;
+    markdown_core_string_view attribute_value;
+    bool has_attributes = false;
+    size_t attribute_count = 0;
     char *value;
-    char *expected;
-    size_t expected_length;
     int result = -1;
 
     if (pc_build(context, ":long{data-x=\"", "a", 5000, "\"}") != 0) {
@@ -654,28 +660,26 @@ static int case_directive_long_attributes(pc_context *context) {
         return -1;
     }
     directive = pc_first_directive(context);
-    if (!markdown_core_node_directive_properties(directive, &name, &attributes, &has_label, &label_count) ||
-        name.length != 4 || memcmp(name.data, "long", 4) != 0) {
-        fprintf(stderr, "directive name properties are wrong\n");
+    if (!markdown_core_node_directive_properties(directive, &name, &has_attributes, &attribute_count) ||
+        name.length != 4 || memcmp(name.data, "long", 4) != 0 || !has_attributes || attribute_count != 1) {
+        fprintf(stderr, "directive name/attribute properties are wrong\n");
         return -1;
     }
     value = ts_repeat("a", 5000, NULL);
     if (!value) {
         return -1;
     }
-    expected_length = strlen("{\"data-x\":\"\"}") + 5000;
-    expected = (char *)malloc(expected_length + 1);
-    if (expected) {
-        snprintf(expected, expected_length + 1, "{\"data-x\":\"%s\"}", value);
-        if (attributes.data && attributes.length == expected_length &&
-            memcmp(attributes.data, expected, expected_length) == 0) {
-            result = 0;
-        } else {
-            fprintf(stderr, "directive attributes JSON is wrong\n");
-        }
+    /* The value is compared where it lives. It used to be compared through a
+     * rendered JSON string, which meant a 5000-byte value was also a test of
+     * the escaper; Step 7 deleted that round-trip. */
+    if (markdown_core_node_directive_attribute_at(directive, 0, &attribute_name, &attribute_value) &&
+        attribute_name.length == 6 && memcmp(attribute_name.data, "data-x", 6) == 0 && attribute_value.length == 5000 &&
+        memcmp(attribute_value.data, value, 5000) == 0) {
+        result = 0;
+    } else {
+        fprintf(stderr, "directive attribute value is wrong\n");
     }
     free(value);
-    free(expected);
     return result;
 }
 

@@ -17,7 +17,6 @@ void test_cplusplus(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 
     static const char directive_markdown[] = ":cpp{id=ordinary title=\"My Video\" muted=true}\n";
-    static const char directive_attributes[] = "{\"id\":\"ordinary\",\"title\":\"My Video\",\"muted\":\"true\"}";
     markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DIRECTIVE);
     const markdown_core_syntax_extension *extension = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
     markdown_core_parser_attach_syntax_extension(parser, extension);
@@ -25,12 +24,23 @@ void test_cplusplus(test_batch_runner *runner) {
     markdown_core_node *document = markdown_core_parser_finish(parser);
     markdown_core_node *paragraph = markdown_core_node_first_child(document);
     markdown_core_node *directive = markdown_core_node_first_child(paragraph);
-    STR_EQ(runner, markdown_core_extensions_get_directive_attributes(directive), directive_attributes,
-           "directive attributes normalize to string-map JSON in C++");
-    INT_EQ(runner, markdown_core_extensions_set_directive_attributes(directive, "{ \"replacement\" : \"exact\" }"), 1,
-           "directive string-map JSON setter works with C++");
-    STR_EQ(runner, markdown_core_extensions_get_directive_attributes(directive), "{\"replacement\":\"exact\"}",
-           "directive JSON setter returns normalized string-map JSON in C++");
+    {
+        /* Reaches the attribute sequence from C++ -- what this case is for is
+         * that the headers compile and link there, not the grammar. */
+        const char *name = nullptr;
+        const char *value = nullptr;
+        size_t name_length = 0;
+        size_t value_length = 0;
+        INT_EQ(runner, markdown_core_extensions_directive_has_attributes(directive), 1,
+               "directive reports an attribute container in C++");
+        INT_EQ(runner, (int)markdown_core_extensions_directive_attribute_count(directive), 3,
+               "directive attribute count in C++");
+        INT_EQ(
+            runner,
+            markdown_core_extensions_directive_attribute_at(directive, 0, &name, &name_length, &value, &value_length),
+            1, "directive attribute read in C++");
+        OK(runner, name_length == 2 && memcmp(name, "id", 2) == 0, "directive attributes are sorted by name in C++");
+    }
     markdown_core_node_free(document);
     markdown_core_parser_free(parser);
 }

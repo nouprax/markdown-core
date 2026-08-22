@@ -24,6 +24,7 @@
             "TableRow",
             "TableCell",
             "DirectiveBlock",
+            "DirectiveLabel",
             "FootnoteDefinition",
             "Text",
             "SoftBreak",
@@ -81,7 +82,7 @@
             "children.populated",
             "escaping.empty-string",
             "escaping.newline",
-            "escaping.json"
+            "escaping.attribute-value"
         ],
         "orders": [
             "document.source-order",
@@ -136,7 +137,9 @@
                     "children.populated",
                     "escaping.newline"
                 ],
-                "orders": ["document.source-order"]
+                "orders": [
+                    "document.source-order"
+                ]
             }
         },
         {
@@ -165,6 +168,7 @@
                     "Link",
                     "Image",
                     "Directive",
+                    "DirectiveLabel",
                     "Table",
                     "TableRow",
                     "TableCell"
@@ -199,7 +203,11 @@
                     "escaping.empty-string",
                     "escaping.newline"
                 ],
-                "orders": ["document.source-order", "table.header-rows-cells", "inline.source-order"]
+                "orders": [
+                    "document.source-order",
+                    "table.header-rows-cells",
+                    "inline.source-order"
+                ]
             }
         },
         {
@@ -218,7 +226,13 @@
                 "directives": true
             },
             "coverage": {
-                "kinds": ["Document", "Paragraph", "Text", "Formula", "FormulaBlock"],
+                "kinds": [
+                    "Document",
+                    "Paragraph",
+                    "Text",
+                    "Formula",
+                    "FormulaBlock"
+                ],
                 "states": [
                     "placement.embedded",
                     "placement.standalone",
@@ -226,7 +240,10 @@
                     "children.empty",
                     "children.populated"
                 ],
-                "orders": ["document.source-order", "inline.source-order"]
+                "orders": [
+                    "document.source-order",
+                    "inline.source-order"
+                ]
             }
         },
         {
@@ -256,6 +273,7 @@
                     "Link",
                     "Image",
                     "Directive",
+                    "DirectiveLabel",
                     "Formula",
                     "FootnoteReference",
                     "LineBreak",
@@ -270,10 +288,12 @@
                     "image.title.value",
                     "scope.positive",
                     "children.empty",
-                    "children.populated",
-                    "escaping.json"
+                    "children.populated"
                 ],
-                "orders": ["document.source-order", "inline.source-order"]
+                "orders": [
+                    "document.source-order",
+                    "inline.source-order"
+                ]
             }
         },
         {
@@ -292,9 +312,20 @@
                 "directives": true
             },
             "coverage": {
-                "kinds": ["Document", "ThematicBreak", "Paragraph", "Text"],
-                "states": ["scope.positive", "children.empty", "children.populated"],
-                "orders": ["document.source-order"]
+                "kinds": [
+                    "Document",
+                    "ThematicBreak",
+                    "Paragraph",
+                    "Text"
+                ],
+                "states": [
+                    "scope.positive",
+                    "children.empty",
+                    "children.populated"
+                ],
+                "orders": [
+                    "document.source-order"
+                ]
             }
         },
         {
@@ -321,6 +352,7 @@
                     "Text",
                     "Strong",
                     "DirectiveBlock",
+                    "DirectiveLabel",
                     "Paragraph"
                 ],
                 "states": [
@@ -334,9 +366,13 @@
                     "scope.positive",
                     "children.empty",
                     "children.populated",
-                    "escaping.json"
+                    "escaping.attribute-value"
                 ],
-                "orders": ["document.source-order", "table.header-rows-cells", "directive.label-before-content"]
+                "orders": [
+                    "document.source-order",
+                    "table.header-rows-cells",
+                    "directive.label-before-content"
+                ]
             }
         }
     ]

@@ -48,7 +48,11 @@ private struct ChildrenVisitor: MarkupVisitor {
 
     // Label first, then content: they are two runs of one C child list, and
     // the dump's `children=` counts both.
-    mutating func visit(_ node: DirectiveBlock) -> [any Markup] { (node.label ?? []) + node.content }
+    mutating func visit(_ node: DirectiveBlock) -> [any Markup] {
+        (node.label.map { [$0 as any Markup] } ?? []) + node.content
+    }
+
+    mutating func visit(_ node: DirectiveLabel) -> [any Markup] { node.content }
 
     mutating func visit(_ node: FootnoteDefinition) -> [any Markup] { node.content }
 
@@ -74,7 +78,7 @@ private struct ChildrenVisitor: MarkupVisitor {
 
     mutating func visit(_ node: Image) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: Directive) -> [any Markup] { node.label ?? [] }
+    mutating func visit(_ node: Directive) -> [any Markup] { node.label.map { [$0 as any Markup] } ?? [] }
 
     mutating func visit(_: FootnoteReference) -> [any Markup] { [] }
 

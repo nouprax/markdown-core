@@ -59,7 +59,8 @@ const exported = [
     "es_node_table_column_count",
     "es_node_table_alignment",
     "es_node_table_row_header",
-    "es_node_directive_label_count",
+    "es_node_directive_attribute_count",
+    "es_set_attribute_index",
     "es_string"
 ].map((name) => `_${name}`);
 const result = spawnSync(

@@ -78,6 +78,8 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: FormulaBlock) -> String { kindName(node) }
     mutating func visit(_ node: Table) -> String { kindName(node) }
     mutating func visit(_ node: DirectiveBlock) -> String { kindName(node) }
+
+    mutating func visit(_ node: DirectiveLabel) -> String { kindName(node) }
     mutating func visit(_ node: FootnoteDefinition) -> String { kindName(node) }
     mutating func visit(_ node: Text) -> String { kindName(node) }
     mutating func visit(_ node: SoftBreak) -> String { kindName(node) }

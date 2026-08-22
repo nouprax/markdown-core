@@ -64,29 +64,26 @@ extension Markup {
         }
     }
 
-    /// A directive's label children, or `nil` when the source wrote no label.
+    /// A directive's label, or `nil` when the source wrote none.
     ///
-    /// `label` and `content` are two runs of one child list: the C facade names
-    /// where each begins and `label_count` says how long the first one is.
-    /// Until Step 15A the Swift model kept the COUNT and threw the nodes into a
-    /// flat `children`, so `label` was an `Int?` in a contract that says
-    /// `[Markup]?`.
-    static func directiveLabel(from node: OpaquePointer, count: Int?) -> [any Markup]? {
-        guard let count else { return nil }
-        var result: [any Markup] = []
-        result.reserveCapacity(count)
-        var child = markdown_core_node_directive_first_label_child(node)
-        while let current = child, result.count < count {
-            result.append(markup(from: current))
-            child = markdown_core_node_get_next_sibling(current)
-        }
-        return result
+    /// The label is the first child when it is there at all, so this is a
+    /// look, not a search. Until Step 7 the C facade spliced the label node
+    /// out of the child list and named its count on the parent, and this
+    /// walked a run of children with no container; the node is visible now.
+    static func directiveLabel(from node: OpaquePointer) -> DirectiveLabel? {
+        guard let first = markdown_core_node_get_first_child(node),
+            markdown_core_node_get_kind(first) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL
+        else { return nil }
+        return DirectiveLabel(from: first)
     }
 
-    /// A directive's content children: everything after the label.
+    /// A directive block's content: every child after the label.
     static func directiveContent(from node: OpaquePointer) -> [any Markup] {
         var result: [any Markup] = []
-        var child = markdown_core_node_directive_first_content_child(node)
+        var child = markdown_core_node_get_first_child(node)
+        if let first = child, markdown_core_node_get_kind(first) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL {
+            child = markdown_core_node_get_next_sibling(first)
+        }
         while let current = child {
             result.append(markup(from: current))
             child = markdown_core_node_get_next_sibling(current)

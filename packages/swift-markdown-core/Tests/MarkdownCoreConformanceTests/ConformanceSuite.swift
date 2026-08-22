@@ -20,7 +20,8 @@ import Testing
         let expected: Set<String> = [
             "Document", "BlockQuote", "Paragraph", "Heading", "ThematicBreak", "List",
             "ListItem", "CodeBlock", "HTMLBlock", "FormulaBlock", "Table",
-            "DirectiveBlock", "FootnoteDefinition", "Text", "SoftBreak", "LineBreak",
+            "DirectiveBlock", "DirectiveLabel", "FootnoteDefinition", "Text", "SoftBreak",
+            "LineBreak",
             "Code", "HTML", "Formula", "Emphasis", "Strong",
             "Strikethrough", "Link", "Image", "Directive", "FootnoteReference",
             "TableRow", "TableCell",

@@ -81,21 +81,20 @@ other five carried one until Step 15A.4 and every one of them was a constant:
 | `CodeBlock` | `standalone` |
 | `FormulaBlock` | `standalone` — `markdown_core_extensions_set_formula_mode` refuses any other value for this kind |
 
-### Directive attributes JSON
+### Directive attributes
 
-Directive `attributes` is an optional `String` containing the normalized JSON
-representation of a generic directive attribute list. Every member name and
-value is a JSON string. Non-string values and nested objects or arrays are
-invalid. `null` means no attributes container was present; `"{}"` means an
-explicit empty map.
+Directive `attributes` is an optional ordered sequence of `DirectiveAttribute`
+pairs, each a `name: String` and a `value: String`. It is **sorted by name**:
+after class-accumulation and last-value-wins the sequence is a map, and a map
+has no source order to keep. `null` means the source wrote no attribute
+container; an empty sequence means it wrote `{}`.
 
-Markdown source uses `{key=value}` attribute-list syntax, not JSON syntax.
-Bare attributes and unquoted, single-quoted, or double-quoted values are
-supported. HTML-style `#id` and `.class` shortcuts are not supported; `id` and
-`class` written as ordinary keys have no special behavior. Values that look
-like booleans or numbers remain strings. Every repeated key uses its last
-value while retaining its first source position. JSON serialization is
-deterministic and is the value passed to consumers for decoding.
+Markdown source uses `{key=value}` attribute-list syntax. Bare attributes and
+unquoted, single-quoted or double-quoted values are supported. `#name` and
+`.name` are shorthand for `id` and `class`. `class` is the one name whose
+repeats accumulate, space-separated in source order, whether they were written
+as shorthand or as `class=`; every other name keeps its last value. Values that
+look like booleans or numbers remain strings.
 
 Attribute names have no HTML semantics and are never projected to HTML
 attributes. For example:
@@ -104,7 +103,7 @@ attributes. For example:
 :video[My video]{id=123 muted=true title="My Video"}
 ```
 
-is exposed as `{"id":"123","muted":"true","title":"My Video"}`.
+is exposed as `id="123"`, `muted="true"`, `title="My Video"`, in that order.
 
 ### Other enums
 
@@ -135,7 +134,8 @@ error rather than silently dropping a value.
 | `Table` | `alignments: [TableAlignment]`, `header: TableRow`, `rows: [TableRow]` | one alignment per column; header is non-optional |
 | `TableRow` | `isHeader: Bool`, `cells: [TableCell]` | `isHeader` is true only for `Table.header` and false for entries in `Table.rows` |
 | `TableCell` | `content: [Markup]` | inline content |
-| `DirectiveBlock` | `name: String`, `attributes: String?`, `label: [Markup]?`, `content: [Markup]` | attributes is normalized string-map JSON object text; label is inline; content is block; null label and explicit empty label remain distinct |
+| `DirectiveBlock` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes is an ordered sequence of name/value pairs sorted by name; label is a node whose scope spans its brackets; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
+| `DirectiveLabel` | `content: [Markup]` | inline content; the scope spans the brackets, so an empty label is still a place |
 | `FootnoteDefinition` | `id: String`, `content: [Markup]` | id is non-empty; block content |
 | `Text` | `literal: String` | leaf |
 | `SoftBreak` | none | leaf |
@@ -148,7 +148,7 @@ error rather than silently dropping a value.
 | `Strikethrough` | `content: [Markup]` | inline content |
 | `Link` | `destination: String?`, `title: String?`, `content: [Markup]` | absent and empty title remain distinct; inline content |
 | `Image` | `source: String?`, `title: String?`, `content: [Markup]` | content is parsed alt-text inline content |
-| `Directive` | `name: String`, `attributes: String?`, `label: [Markup]?` | attributes is normalized string-map JSON object text; null label and explicit empty label remain distinct |
+| `Directive` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?` | attributes is an ordered sequence of name/value pairs sorted by name; label is a node whose scope spans its brackets; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
 | `FootnoteReference` | `id: String` | id is non-empty; leaf |
 
 Every row above also has the final inherited field `scope: Scope`; it is not

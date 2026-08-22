@@ -70,11 +70,16 @@ grep -q 'public struct TableRow: Markup' packages/swift-markdown-core/Sources/Ma
     && grep -q 'visit(_ node: TableRow)' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift \
     && grep -q 'visit(_ node: TableCell)' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift \
     || fail "Swift table rows and cells are not first-class Markup visitor nodes"
+# The kind count is the CONTRACT's, not a number written here. It was 28 in
+# three places until Step 7 added a 29th kind and all three said the same wrong
+# thing at once.
+kind_count=$(node -e 'process.stdout.write(String(JSON.parse(require("node:fs").readFileSync("docs/specs/canonical-ast.json", "utf8")).kinds.length))')
+
 if grep -R -n 'defaultVisit' packages/swift-markdown-core/Sources/MarkdownCore; then
     fail "Swift MarkupVisitor exposes a catch-all fallback"
 fi
-test "$(grep -c 'mutating func visit' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift)" -eq 28 \
-    || fail "Swift MarkupVisitor is not exhaustive over all 28 Markup kinds"
+test "$(grep -c 'mutating func visit' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift)" -eq "$kind_count" \
+    || fail "Swift MarkupVisitor is not exhaustive over all $kind_count Markup kinds"
 
 grep -q 'explicitApi()' packages/kotlin-markdown-core/build.gradle.kts \
     || fail "Kotlin explicit API mode is disabled"
@@ -98,8 +103,8 @@ grep -q 'visitor.visitTableRow(this)' packages/kotlin-markdown-core/src/commonMa
 if grep -R -n 'defaultVisit' packages/kotlin-markdown-core/src/commonMain; then
     fail "Kotlin Visitor exposes a catch-all fallback"
 fi
-test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/Visitor.kt)" -eq 28 \
-    || fail "Kotlin Visitor is not exhaustive over all 28 Markup kinds"
+test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/Visitor.kt)" -eq "$kind_count" \
+    || fail "Kotlin Visitor is not exhaustive over all $kind_count Markup kinds"
 
 if grep -R -E -n 'readonly children' packages/es-markdown-core/src/model; then
     fail "ES exposes generic children"
@@ -112,8 +117,8 @@ grep -q 'TableRow extends MarkupBase<"tableRow">' packages/es-markdown-core/src/
 if grep -R -E -n 'defaultVisit|visit[A-Z][A-Za-z]+\?' packages/es-markdown-core/src; then
     fail "ES Visitor exposes a catch-all or optional typed handlers"
 fi
-test "$(grep -c '^    visit[A-Z].*(this:' packages/es-markdown-core/src/visitor.ts)" -eq 28 \
-    || fail "ES Visitor is not exhaustive over all 28 Markup kinds"
+test "$(grep -c '^    visit[A-Z].*(this:' packages/es-markdown-core/src/visitor.ts)" -eq "$kind_count" \
+    || fail "ES Visitor is not exhaustive over all $kind_count Markup kinds"
 
 node - packages/es-markdown-core/package.json packages/es-markdown-core/src/index.ts <<'NODE'
 import fs from "node:fs";

@@ -66,7 +66,11 @@ public object Walker {
             }
 
             is DirectiveBlock -> {
-                label?.walk(visit)
+                label?.let { walk(it, visit) }
+                content.walk(visit)
+            }
+
+            is DirectiveLabel -> {
                 content.walk(visit)
             }
 
@@ -95,7 +99,7 @@ public object Walker {
             }
 
             is Directive -> {
-                label?.walk(visit)
+                label?.let { walk(it, visit) }
             }
 
             is ThematicBreak,

@@ -10,7 +10,8 @@ enum es_string_field {
     ES_STRING_LITERAL,
     ES_STRING_FORMULA_LITERAL,
     ES_STRING_DIRECTIVE_NAME,
-    ES_STRING_DIRECTIVE_ATTRIBUTES,
+    ES_STRING_DIRECTIVE_ATTRIBUTE_NAME,
+    ES_STRING_DIRECTIVE_ATTRIBUTE_VALUE,
     ES_STRING_LINK_DESTINATION,
     ES_STRING_LINK_TITLE,
     ES_STRING_IMAGE_SOURCE,
@@ -143,13 +144,22 @@ int32_t es_node_table_row_header(const markdown_core_node *node) {
     return value;
 }
 
-int32_t es_node_directive_label_count(const markdown_core_node *node) {
-    markdown_core_string_view name, attributes;
-    bool has_label;
-    size_t label_count;
-    markdown_core_node_directive_properties(node, &name, &attributes, &has_label, &label_count);
-    return has_label ? (int32_t)label_count : -1;
+/* -1 when the source wrote no attribute container at all, so an absent one and
+ * an empty one stay apart on a single return value. */
+int32_t es_node_directive_attribute_count(const markdown_core_node *node) {
+    markdown_core_string_view name;
+    bool has_attributes = false;
+    size_t count = 0;
+    markdown_core_node_directive_properties(node, &name, &has_attributes, &count);
+    return has_attributes ? (int32_t)count : -1;
 }
+
+/* Set immediately before an attribute read. The bridge is single-threaded --
+ * one wasm instance, one call at a time -- so a slot is enough, and it keeps
+ * es_string's signature the one every other field already uses. */
+static size_t es_attribute_index = 0;
+
+void es_set_attribute_index(int32_t index) { es_attribute_index = index < 0 ? 0 : (size_t)index; }
 
 void es_string(const void *object, int32_t field, uintptr_t *data, size_t *length) {
     markdown_core_string_view first = {NULL, 0}, second = {NULL, 0}, third = {NULL, 0};
@@ -174,9 +184,14 @@ void es_string(const void *object, int32_t field, uintptr_t *data, size_t *lengt
         markdown_core_node_formula_properties(node, &mode, &first);
         break;
     case ES_STRING_DIRECTIVE_NAME:
-    case ES_STRING_DIRECTIVE_ATTRIBUTES:
-        markdown_core_node_directive_properties(node, &first, &second, &first_bool, &count);
-        first = field == ES_STRING_DIRECTIVE_NAME ? first : second;
+        markdown_core_node_directive_properties(node, &first, &first_bool, &count);
+        break;
+    case ES_STRING_DIRECTIVE_ATTRIBUTE_NAME:
+    case ES_STRING_DIRECTIVE_ATTRIBUTE_VALUE:
+        /* The index rides in `es_attribute_index`: `es_string` takes a field
+         * and an object, and an attribute needs one more number than that. */
+        markdown_core_node_directive_attribute_at(node, es_attribute_index, &first, &second);
+        first = field == ES_STRING_DIRECTIVE_ATTRIBUTE_NAME ? first : second;
         break;
     case ES_STRING_LINK_DESTINATION:
     case ES_STRING_LINK_TITLE:

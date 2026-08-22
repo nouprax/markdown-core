@@ -124,9 +124,13 @@ private struct DumpVisitor: MarkupVisitor {
         record(
             "DirectiveBlock",
             node,
-            fields: directiveFields(node.name, node.attributes, node.label?.count),
-            children: (node.label?.count ?? 0) + node.content.count
+            fields: directiveFields(node.name, node.attributes),
+            children: (node.label == nil ? 0 : 1) + node.content.count
         )
+    }
+
+    mutating func visit(_ node: DirectiveLabel) -> DumpRecord {
+        record("DirectiveLabel", node, children: node.content.count)
     }
 
     mutating func visit(_ node: FootnoteDefinition) -> DumpRecord {
@@ -199,8 +203,8 @@ private struct DumpVisitor: MarkupVisitor {
         record(
             "Directive",
             node,
-            fields: directiveFields(node.name, node.attributes, node.label?.count),
-            children: node.label?.count ?? 0
+            fields: directiveFields(node.name, node.attributes),
+            children: node.label == nil ? 0 : 1
         )
     }
 
@@ -234,16 +238,12 @@ private struct DumpVisitor: MarkupVisitor {
         )
     }
 
-    private func directiveFields(
-        _ name: String,
-        _ attributes: String?,
-        _ labelCount: Int?
-    ) -> [String] {
-        [
-            "name=\(jsonString(name))",
-            "attributes=\(optionalString(attributes))",
-            "label=\(labelCount.map(String.init) ?? "null")",
-        ]
+    private func directiveFields(_ name: String, _ attributes: [DirectiveAttribute]?) -> [String] {
+        guard let attributes else {
+            return ["name=\(jsonString(name))", "attributes=null"]
+        }
+        let pairs = attributes.map { "\($0.name)=\(jsonString($0.value))" }.joined(separator: " ")
+        return ["name=\(jsonString(name))", "attributes=[\(pairs)]"]
     }
 }
 

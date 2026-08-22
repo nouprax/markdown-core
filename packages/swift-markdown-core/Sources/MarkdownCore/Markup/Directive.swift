@@ -3,10 +3,11 @@ import MarkdownCoreC
 public struct Directive: Markup {
     public let scope: Scope
     public let name: String
-    public let attributes: String?
-    /// The label's inline content, or `nil` when the source wrote no label.
-    /// A written-but-empty label is `[]` and stays distinct from `nil`.
-    public let label: [any Markup]?
+    /// The attributes the source wrote, sorted by name, or `nil` when it wrote
+    /// no `{...}` at all. A written-but-empty `{}` is `[]` and stays distinct.
+    public let attributes: [DirectiveAttribute]?
+    /// The bracketed label, or `nil` when the source wrote none.
+    public let label: DirectiveLabel?
 
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
@@ -18,7 +19,7 @@ extension Directive {
             scope: Self.scope(from: node),
             name: values.name,
             attributes: values.attributes,
-            label: Self.directiveLabel(from: node, count: values.labelCount)
+            label: Self.directiveLabel(from: node)
         )
     }
 }

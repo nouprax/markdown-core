@@ -124,7 +124,8 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_DIRECTIVE,
     MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE,
     MARKDOWN_CORE_KIND_TABLE_ROW,
-    MARKDOWN_CORE_KIND_TABLE_CELL
+    MARKDOWN_CORE_KIND_TABLE_CELL,
+    MARKDOWN_CORE_KIND_DIRECTIVE_LABEL
 } markdown_core_node_kind;
 
 typedef enum markdown_core_list_flavor {
@@ -205,13 +206,11 @@ MARKDOWN_CORE_API bool markdown_core_node_table_row_is_header(const markdown_cor
  * always embedded and a `DirectiveBlock` always standalone, so the value was
  * implied by the kind and four surfaces had to keep a constant in step (Q29). */
 MARKDOWN_CORE_API bool markdown_core_node_directive_properties(const markdown_core_node *node,
-                                                               markdown_core_string_view *name,
-                                                               markdown_core_string_view *attributes, bool *has_label,
-                                                               size_t *label_count);
-MARKDOWN_CORE_API const markdown_core_node *
-markdown_core_node_directive_first_label_child(const markdown_core_node *node);
-MARKDOWN_CORE_API const markdown_core_node *
-markdown_core_node_directive_first_content_child(const markdown_core_node *node);
+                                                               markdown_core_string_view *name, bool *has_attributes,
+                                                               size_t *attribute_count);
+MARKDOWN_CORE_API bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, size_t index,
+                                                                 markdown_core_string_view *name,
+                                                                 markdown_core_string_view *value);
 MARKDOWN_CORE_API bool markdown_core_node_link_properties(const markdown_core_node *node,
                                                           markdown_core_string_view *destination,
                                                           markdown_core_string_view *title);

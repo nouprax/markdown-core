@@ -12,6 +12,8 @@ public protocol MarkupVisitor {
     mutating func visit(_ node: FormulaBlock) -> Result
     mutating func visit(_ node: Table) -> Result
     mutating func visit(_ node: DirectiveBlock) -> Result
+
+    mutating func visit(_ node: DirectiveLabel) -> Result
     mutating func visit(_ node: FootnoteDefinition) -> Result
     mutating func visit(_ node: Text) -> Result
     mutating func visit(_ node: SoftBreak) -> Result

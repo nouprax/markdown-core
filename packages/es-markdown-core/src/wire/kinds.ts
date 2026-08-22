@@ -26,7 +26,8 @@ export type NativeKind =
     | "directive"
     | "footnoteReference"
     | "tableRow"
-    | "tableCell";
+    | "tableCell"
+    | "directiveLabel";
 
 export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "none",
@@ -57,5 +58,6 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "directive",
     "footnoteReference",
     "tableRow",
-    "tableCell"
+    "tableCell",
+    "directiveLabel"
 ]);

@@ -58,11 +58,15 @@ internal fun WireReader.markup(): Markup {
         }
 
         WireKind.DIRECTIVE_BLOCK -> {
+            val name = requiredString()
+            val attributes = directiveAttributes()
+            val children = markupList()
+            val label = children.firstOrNull() as? DirectiveLabel
             DirectiveBlock(
-                requiredString(),
-                string(),
-                optionalMarkupList(),
-                markupList(),
+                name,
+                attributes,
+                label,
+                if (label == null) children else children.drop(1),
                 nodeScope,
             )
         }
@@ -130,6 +134,10 @@ internal fun WireReader.markup(): Markup {
         WireKind.TABLE_CELL -> {
             readTableCell(nodeScope)
         }
+
+        WireKind.DIRECTIVE_LABEL -> {
+            DirectiveLabel(markupList(), nodeScope)
+        }
     }
 }
 
@@ -144,12 +152,6 @@ private fun WireReader.markupList(): kotlin.collections.List<Markup> {
     val count = int()
     require(count >= 0) { "invalid native child count" }
     return immutableList(count) { markup() }
-}
-
-private fun WireReader.optionalMarkupList(): kotlin.collections.List<Markup>? {
-    val count = int()
-    require(count >= -1) { "invalid native child count" }
-    return if (count == -1) null else immutableList(count) { markup() }
 }
 
 private fun WireReader.readList(scope: Scope): List {
@@ -179,11 +181,27 @@ private fun WireReader.readDirective(scope: Scope): Directive {
     // An inline directive is always embedded: the wire stopped carrying the
     // byte at Q29 and the model no longer repeats the kind.
     val name = requiredString()
-    val attributes = string()
-    val label = optionalMarkupList()
-    val content = markupList()
-    require(content.isEmpty()) { "inline directive contains block content" }
+    val attributes = directiveAttributes()
+    val children = markupList()
+    val label = children.firstOrNull() as? DirectiveLabel
+    require(children.size == (if (label == null) 0 else 1)) { "inline directive contains block content" }
     return Directive(name, attributes, label, scope)
+}
+
+/**
+ * An absent attribute container and an empty one are different things, so the
+ * wire carries the presence byte before the count rather than spending -1 on
+ * it the way an optional child list does.
+ */
+private fun WireReader.directiveAttributes(): kotlin.collections.List<DirectiveAttribute>? {
+    val present = boolean()
+    val count = int()
+    require(count >= 0) { "invalid native directive attribute count" }
+    if (!present) {
+        require(count == 0) { "an absent directive attribute container cannot hold attributes" }
+        return null
+    }
+    return immutableList(count) { DirectiveAttribute(requiredString(), requiredString()) }
 }
 
 private fun WireReader.readTable(scope: Scope): Table {

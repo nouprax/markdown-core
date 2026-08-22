@@ -22,7 +22,8 @@ export interface NativeExports extends WebAssembly.Exports {
     es_node_table_alignment(node: number, index: number): number;
     es_node_table_row_header(node: number): number;
     es_node_directive_mode(node: number): number;
-    es_node_directive_label_count(node: number): number;
+    es_node_directive_attribute_count(node: number): number;
+    es_set_attribute_index(index: number): void;
     es_string(object: number, field: number, dataOutput: number, lengthOutput: number): void;
 }
 

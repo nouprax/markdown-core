@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6) and **7.1** (§4.14.7a) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1** (§4.14.7a) and **7.2** (§4.14.7b) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 7.2 — the directive SURFACE**, the second half of Step 7. 7.1 landed the grammar (§4.14.7a); 7.2 is `attributes=[…]` sorted, `DirectiveLabel` as a visible node, `label=` deleted, the JSON round-trip gone, and the bindings, contract and manifest that project all of it — plus the **13 held-back oracle examples** and the two mutants they owe, **D4 and D7**. Then `10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 7's last piece — Q14's other half**, deleting `MARKDOWN_CORE_OPT_DIRECTIVE`, and then Q19/Q20 if they are not already answered (Q19 is: the sort landed at 7.2). 7.1 landed the grammar (§4.14.7a) and 7.2 the surface (§4.14.7b). Then `10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -49,7 +49,7 @@ cmake --preset ubsan   && cmake --build --preset ubsan   --parallel
 ctest --preset correctness -j 8            # 69/69
 ctest --preset correctness-asan -j 8       # 60/60 — SEE THE WARNING BELOW
 ctest --preset correctness-ubsan -j 8      # 60/60 — SEE THE WARNING BELOW
-node scripts/check-canonical-ast-fixtures.mjs   # 28 kinds, 47 fields, 6 cases
+node scripts/check-canonical-ast-fixtures.mjs   # 29 kinds, 48 fields, 6 cases
 bash scripts/audit-public-surface.sh
 node scripts/audit-extension-special-chars.mjs   # 6 descriptors read, every byte dispatched
 node scripts/audit-extension-attach-order.mjs    # one attach site, table last (D15, added 0a.11)
@@ -57,16 +57,16 @@ node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/audit-source-lists.mjs              # 23 sources, 4 of 5 lists, 1 registered absent
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
-node scripts/check-upstream-parity.mjs     # 846/846 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
-node scripts/check-mdast-parity.mjs        # 80/80, backlog 20/20 still diverging
-node scripts/audit-scope-sanity.mjs        # 4 unresolved rows, 5128 scanned, only-shrink holds
+node scripts/check-upstream-parity.mjs     # 859/859 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
+node scripts/check-mdast-parity.mjs        # 93/93, backlog 7/7 still diverging
+node scripts/audit-scope-sanity.mjs        # 4 unresolved rows, 5190 scanned, only-shrink holds
 
 # The three position oracles, landed at 0a.1 (§4.2.7). Each fails on a row
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
 # fails here rather than in review.
 node scripts/audit-inline-sourcepos.mjs    # 0 rows registered, 68 scanned
-node scripts/audit-scope-containment.mjs   # 45 rows registered, 4053 scanned
-node scripts/audit-position-places.mjs     # 106 rows registered, 4177 scanned
+node scripts/audit-scope-containment.mjs   # 45 rows registered, 4089 scanned
+node scripts/audit-position-places.mjs     # 106 rows registered, 4224 scanned
 
 # D9's pin. REGISTERED RED and it fails if a row STOPS reproducing, because
 # deleting the budget clears both rows and costs 204.678x output growth.
@@ -114,10 +114,10 @@ mdast backlog and D9's oracle use:
 | Check | Why red | Owner |
 |---|---|---|
 | ~~`scripts/audit-ast-projections.mjs`~~ | **GREEN at 15A.2.** It was never era skew — §4.1.2 measured it as one binding a full era behind the other two, and Q30's typed child edges closed all sixteen Swift-only failures. | — |
-| `scripts/format-swift.sh --check` | **NEWLY REGISTERED at 15A.2, and it was in no list.** `swift format lint --strict` exits 1 at `46e20f2` with **184** findings, all `[AllPublicDeclarationsHaveDocumentation]`; the pinned 6.3.0 matches, and `.github/workflows/ci.yml:182` runs it as a required health check. 15A.2 takes it to 170; Step 6's option deletion takes it to **163**. | **Q41** |
+| `scripts/format-swift.sh --check` | **NEWLY REGISTERED at 15A.2, and it was in no list.** `swift format lint --strict` exits 1 at `46e20f2` with **184** findings, all `[AllPublicDeclarationsHaveDocumentation]`; the pinned 6.3.0 matches, and `.github/workflows/ci.yml:182` runs it as a required health check. 15A.2 takes it to 170, Step 6's option deletion to **163**, and Step 7.2's two new public types back to **164**. | **Q41** |
 | `scripts/check-generated-scanners.sh` | Added at `8926594`; the baseline build has no re2c invocation or version pin (R9). | R9's experiment, then Step 3 |
 | `node scripts/check-release-version.mjs --skip-swift` | **D17 is fixed and the 3.0.0 bump closed the rest**; what remains is **two** unexpected legacy tags — `codex-doc-pass-backup` and `pre-format-baseline` — which is repo hygiene, not engine state. Every version-drift, release-note and CHANGELOG assertion now passes. | release |
-| `node scripts/fuzz-parity.mjs --oracle mdast` | 0/3 — the mdast oracle is red on every generated input, for the same reason the backlog exists (24 entries at the baseline, 20 after Step 7.1). CI runs both oracles; only the upstream one was listed. | Stage 0 close |
+| `node scripts/fuzz-parity.mjs --oracle mdast` | 0/3 — the mdast oracle is red on every generated input, for the same reason the backlog exists (24 entries at the baseline, 7 after Step 7.2). CI runs both oracles; only the upstream one was listed. | Stage 0 close |
 | `pnpm audit:ci` | **TRIAGED at Step 6, and it is era skew of the purest kind.** The script was restored from `main`, where every workflow action reference is pinned to a full commit SHA; the workflows are the baseline's, where they are tag refs. It names **`benchmark.yml`, `pr-metrics.yml` and others** — `actions/checkout@v7`, `setup-java@v5`, `setup-emsdk@v16`. No engine state is involved. Pinning them is infrastructure work and the SHAs are a license-adjacent record, so it is not something a step should invent. | release / 15C |
 | `pnpm format:es:check` | **TRIAGED at Step 6: `prettier --check .` reports 100 files**, including `scripts/check-plan-graph.mjs` and `specs/upstream-parity/deltas.json`. Same skew — prettier's config came from `main`, the files did not. It is a required CI step (`ci.yml:97`). Reformatting 100 files in one commit would bury every real diff in Stage 0, and doing it per-step means each step's diff carries unrelated churn. **Q42.** | **Q42** |
 | ~~`pnpm audit:source-lists`~~ | **TRIAGED AND GREEN**, ahead of Step 3a, whose row requires it to RUN. It did not fail, it **threw** — `ENOENT` on `packages/swift-markdown-core/Package.release.swift`, a release manifest that postdates `580d10c` and arrived with Step 0's `scripts/` restore. The absence is now registered in the script with an owner and printed on every run, and the pass line says **`4 of 5 lists in agreement, 1 registered absent`** so it can never read as though all five were compared. | the absence: 15C |
@@ -167,8 +167,8 @@ through the binary before trusting a green suite.
    a step that lands without deleting its own entries fails as loudly as a new
    divergence. Zero close in Stage 0a, by design — the backlog measures distance
    to mdast's *model*, while the defects measure wrongness against the engine's
-   own intent. **24 at the baseline, 22 after Step 6, 20 after Step 7.1**, owned by
-   Step 7 (13), Step 9b (6) and Step 10 (1). Step 6's two closed by *leaving the corpus*, not
+   own intent. **24 at the baseline, 22 after Step 6, 20 after 7.1, 7 after 7.2** —
+   Step 9b's six and Step 10's one. Step 6's two closed by *leaving the corpus*, not
    by agreeing, so the gate now distinguishes a settled entry from an unreachable
    one and the two are recorded in `retiredBacklog` with the reason (§4.14.6).
    **An entry that stops being exercised is not an entry that closed.**
@@ -1171,7 +1171,7 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | **Q16** | Are extension node types and node-flag bits re-assigned as fixed constants? | 3 | **TAKEN at 3.1.** A fixed enum decoupled from the table order, at exactly the values the runtime allocator produced (measured both sides). The export map is 32 facade symbols and `local: *`, so renumbering was available and was declined to keep the commit structural. §4.14.3. |
 | **Q17** | Is an inline node's position a projection of a stored byte range? | 8 | **Yes**, and store the pair — two `bufsize_t` on the inline node. This is what makes D12 *unexpressible* rather than fixed, and it is the concession that makes 11b cheap. |
 | **Q18** | Which inline-math padding rule? | 6 | **TAKEN at Step 6, and this row's phrasing is what misled.** "Strip one leading and one trailing space-or-line-ending" reads as two independent strips and is not: the oracle pins `text $$ mid$$ text` as `literal=" mid"`, so it is **both or neither**. The `\(…\)` / `\[…\]` forms are covered, by two new pins. Two further corrections came out of the implementation: a **tab is not whitespace** for the all-whitespace test — `$$ \t $$` strips to `"\t"`, exactly as `` ` \t ` `` does — and the **CRLF clause is unreachable**, because the line reader hands inline content LF-only. Both measured; §4.14.6. |
-| **Q19** | Are directive attributes sorted in the model, or only in the dump? | 7 | **Sorted in the model.** After class-accumulation and last-value-wins the list *is* a map; source order is meaningful only inside `class`'s accumulated value, which is already a string. Two orders is how a third order appears in a binding. |
+| **Q19** | Are directive attributes sorted in the model, or only in the dump? | 7 | **TAKEN at 7.2: sorted in the model**, by a linked-list merge sort that cannot fail to allocate -- the duplicate normalizer above it already degrades to a no-index path, and a sort that could fail would hand back an unsorted list with nothing to say so. remark's own projection is sorted, so the mdast oracle checks it. Originally: **Sorted in the model.** After class-accumulation and last-value-wins the list *is* a map; source order is meaningful only inside `class`'s accumulated value, which is already a string. Two orders is how a third order appears in a binding. |
 | **Q20** | Are character references decoded in directive attribute values? | 7 | **Decode** (one call to the existing `houdini_unescape_html_f`), pin `:n{a=&amp;}` → `a="&"`. If declined, it must be a *registered* divergence in `deltas.json`, not silence. |
 | **Q21** | Does a reference definition box itself, or only its resource? | 9b | **Only its resource.** Measured on this machine: `chunk` 16, `association` 32, `definition` 64, `reference` 40, widest existing union arm (`markdown_core_code`) **40**. `{association; resource *}` is 32+8 = **40** — the union does not grow, the association stays inline and uniformly readable for all five kinds, and the label can never be lost to a failed box allocation. |
 | **Q22** | Does the content-to-source map have **one** owner? | 8, 10, 11a | **Yes, and this is the sharpest thing the restatement found.** Three steps independently proposed a mechanism for one fact: Step 10's per-line parse-time marks, Step 8's newline index, and 11a's `CONTENT` regions. **Recommend: 10 produces it, 11a retains it, 8 projects through it, 11b tiles it.** Three implementations of one fact is the disease this plan names in five other places. |
@@ -1184,7 +1184,7 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | **Q29** | Does `mode` survive on `Code`, `CodeBlock`, `Directive`, `DirectiveBlock`? | 15A | **TAKEN at 15A.4, and it is FIVE kinds, not four.** `FormulaBlock` is not "genuinely variable" either: the corpus has 12 `standalone` and zero `embedded`, and `markdown_core_extensions_set_formula_mode` REFUSES any other value for that kind (`extensions/formula.c:100`). `Formula` is the only kind whose mode is a fact about the source. 195 golden rows, twelve surfaces, and a seventh hand-written copy of the contract found and deleted. ~~**No** — delete it from those four, keep it on `Formula`/`FormulaBlock` where it is genuinely variable. Both decoders prove the point: Kotlin and ES hard-code the constant and one of them then *asserts* the constant it just synthesized, and the Kotlin wire format does not transmit it. A field whose value is implied by its type is ceremony four surfaces must keep in step.~~ **Every one of those claims was verified before acting on it, and every one was true.** |
 | **Q30** | Do the bindings spell child edges typed (`content`, `items`, `label`, `header`, `rows`, `cells`) or flat (`children`)? | 15A | **TAKEN at 15A.2: typed.** The Swift dump is byte-identical afterwards and `audit-ast-projections.mjs` is green. ~~**Typed.** Kotlin and ES already do; Swift's flat `children` is what forces `labelCount: Int?`, forces `Table.init` to filter rows by `isHeader` and `preconditionFailure` if the count is not one, and forces `children: [any Markup] = []` onto eleven leaf kinds. Two of three bindings and the contract already assume it.~~ **Every one of those was measured true at 15A.2 and every one of them is gone.** |
 | **Q42** | When does `prettier --check .` get satisfied, and by reformatting or by scoping? | 15C | **OPEN.** `ci.yml:97` runs it as a required step and it reports **100 files** at Step 6, none of them engine sources — `scripts/*.mjs`, `specs/**/*.json`, docs. Same era skew as `audit:ci`: the config came from `main` with Step 0's `scripts/` restore, the files did not. **Recommend: one deliberate `prettier --write` commit at 15C that touches nothing else**, rather than letting each step carry unrelated churn or leaving a required check red through Stage 0. Scoping prettier away from `specs/` is the alternative and is worse — those are the files a reader diffs most. |
-| **Q41** | Does the repository keep swift-format's `AllPublicDeclarationsHaveDocumentation`? | 15A / 15C | **OPEN, and it is the owner's.** It is a required CI health check that has been failing: 184 findings at `46e20f2`, 170 after 15A.2, **163** after Step 6. Satisfying it means writing a doc comment on every public declaration in the Swift binding, and for a projection layer most of those can only restate the signature — the pass this repository rejected once already. **Recommend: scope the rule to types and functions, or turn it off**, and say so in `.swift-format` rather than leaving a required check red. Whichever way it goes, it is an owner decision and §4.8 needs an answer before Stage 0 closes. |
+| **Q41** | Does the repository keep swift-format's `AllPublicDeclarationsHaveDocumentation`? | 15A / 15C | **OPEN, and it is the owner's.** It is a required CI health check that has been failing: 184 findings at `46e20f2`, 170 after 15A.2, 163 after Step 6, **164** after Step 7.2. Satisfying it means writing a doc comment on every public declaration in the Swift binding, and for a projection layer most of those can only restate the signature — the pass this repository rejected once already. **Recommend: scope the rule to types and functions, or turn it off**, and say so in `.swift-format` rather than leaving a required check red. Whichever way it goes, it is an owner decision and §4.8 needs an answer before Stage 0 closes. |
 | **Q38** | Does the empty `Text` node D13 removes become a registered divergence from cmark-gfm? | 0a.14 | **OPEN.** Upstream emits the node too, so removing it costs one normalizer projection, one `NORMALIZED_DELTAS` name and one `deltas.json` entry. Measured at §4.2.3. Owed by the commit that lands D13. |
 | **Q39** | `[foo]: <>` resolves to `destination=null`, not `destination=""`. Is that right, when the destination WAS written and was empty? | 0a.7 | **TAKEN 2026-08-21, at 0a.7: yes, on consistency grounds, and the limit is stated.** `markdown_core_clean_url` folds a zero-length destination to `CHUNK_EMPTY` before it ever reaches the map — the same fold `clean_title` does — so `<>` is indistinguishable from *no destination* by the time the reference path sees it, and the inline path already answers `[a](<>)` with `destination=null`. Making `chunk_clone` preserve absence made the two paths agree. **This is consistency, not correctness:** a rule that truly separates "written and empty" from "not written" requires the folds to stop, which is Step 14's structural job, and this row is the one input in the corpus that will move again there. It is one row, `spec.txt` example 169. |
 
@@ -4334,6 +4334,116 @@ scope sanity 5058 → **5128** scopes, containment 4004 → **4053**, places 412
 
 **Gates.** All green: correctness 69/69, ASan 60/60, UBSan 60/60, conformance
 2/2, every audit, `lint-c`, all four linters, and all three binding suites.
+
+---
+
+#### 4.14.7b Step 7.2: the label was a node all along, and three copies of one number
+
+The second half of Step 7. 7.1 landed the grammar; this is the surface. **57
+files, +1,048 / −826.** With 7.1 that puts Step 7 at 62 files against §4.1's
+*"~530 written · +150 net"* — the line count is close, the file count is not,
+and the difference is the twelve projection surfaces.
+
+**The whole directive oracle now reproduces.** 46 of 51 examples pass, and the
+five that do not are all `SoftBreak scope=0:0..0:0` — D26 staleness, where the
+oracle is wrong and this engine is right. The working fixture IS the oracle's
+text now, with Q29's `mode=` removed, those seven SoftBreak positions corrected,
+and D21's three container-fence pins appended because the oracle has not got
+them.
+
+**THE LABEL WAS ALREADY A NODE.** `MARKDOWN_CORE_NODE_DIRECTIVE_LABEL` has been
+in the tree since 1.0; the facade *spliced it out*. `get_first_child` skipped
+past it into its children and `get_next_sibling` climbed back out, so a
+directive's label reached every binding as a **count on the parent** and a run
+of children with no container — which is why the model said `label: [Markup]?`
+and the dump said `label=2`. Making it visible is a deletion: `is_label`, both
+splice branches, and the two accessors that existed only to name where the
+label's children began and ended.
+
+**Its scope now spans its brackets, and that is what makes an empty label a
+place.** Content-only made `[]` a *negative* range — end one column before start
+— because there was nothing between the brackets to point at. `:red[]:` reads
+`1:5..1:6` now. The label's own content did not move with it: `internal_offset`
+is the field for exactly this (a heading's `#` and a table cell's leading pipe
+use it), and without it the block path's label text landed one column early,
+which the oracle caught on two rows.
+
+**Attributes are a sequence, and the JSON round-trip is gone.** 256 lines of it:
+a renderer, an escaper, a JSON string parser with its own surrogate-pair
+handling, and a cached `attributes_json` chunk on every directive node. What
+replaces it is three functions over the list the parser already holds. The
+public shape:
+
+```
+markdown_core_node_directive_properties(node, &name, &has_attributes, &count)
+markdown_core_node_directive_attribute_at(node, index, &name, &value)
+```
+
+`has_attributes` is not a convenience: `:n` wrote no container and `:n{}` wrote
+an empty one, a count of zero cannot tell them apart, and the old `null` versus
+`"{}"` said so.
+
+**Q19's sort is a linked-list merge sort, and the reason is failure.** The
+duplicate normalizer above it already has a no-allocation fallback for when its
+index cannot be built; a sort that could fail to allocate would hand back an
+UNSORTED list with nothing to say so. Bottom-up merge over the list itself
+cannot fail. remark's own projection is sorted, which is what the mdast oracle
+compares against — the sort was verified against it rather than assumed.
+
+**Standing rule 2: backlog 20 → 7, and Step 7's thirteen all closed.** Every one
+of them was an attribute-bearing directive whose disagreement with remark was
+the spelling; the 13 fixture rows held back at 7.1 landed here and every one
+agrees. What remains is Step 9b's six and Step 10's one.
+
+**Three copies of one number, and three hand-written exceptions.**
+
+- `scripts/audit-public-surface.sh` asserted each binding's visitor had **28**
+  methods, in three places, with the number written out. Adding a 29th kind made
+  all three say the same wrong thing at once. The count is read from the
+  contract now.
+- `check-canonical-ast-fixtures.mjs` and `audit-ast-projections.mjs` each
+  decided which contract fields the dump prints with a regex naming four kinds
+  by hand **plus an explicit `label` exception** — because a label was a count.
+  Both now ask whether a field's type names a kind, which the contract answers.
+- The fixtures gate's field splitter read `attributes=[a="1" b="2"]` as TWO
+  fields. It blanked quoted strings and not bracketed groups; it does both now.
+
+None of those three was found by reading. Each was a gate going red on a change
+it was written to notice, which is the whole argument for having them.
+
+**`escaping.json` was renamed to `escaping.attribute-value`, and one case lost
+it.** The state checks that the dump escapes a quote inside an attribute value;
+`inlines.ast` declared it while demonstrating no such value, which only became
+visible when the JSON string stopped supplying quotes for free.
+
+**Mutants: nine, all killed.**
+
+| | mutant | correctness | mdast | conformance |
+| --- | --- | --- | --- | --- |
+| D4 | a shorthand value runs past a marker | 1 | killed | — |
+| D7 | a class separator before every value | 1 | killed | — |
+| S1 | attributes not sorted | 3 | killed | — |
+| S2 | the block label's scope is content-only | 1 | — | killed |
+| S3 | the inline label's scope is content-only | 1 | — | killed |
+| S4 | the label's content offset dropped | 1 | — | killed |
+| F1 | an absent attribute container reads as empty | 2 | — | killed |
+| F2 | the attribute separator dropped | 1 | killed | killed |
+| F3 | the label hidden again | 2 | killed | killed |
+
+**D4 and D7 are the two 7.1 left owed**, and the rows that kill them are the
+ones this commit landed. S2, S3 and S4 are invisible to the mdast oracle because
+it does not compare positions — the canonical-AST goldens are what catch them,
+which is the second time this branch has found that division of labour holding.
+
+**Counts.** 13 more examples: upstream parity 846 → **859**, mdast 80 → **93**,
+scope sanity 5128 → **5190** scopes, containment 4053 → **4089**, places 4177 →
+**4224**. Every ledger count held: 4, 45, 106, 0, 2. Q41 is at **164**, up one
+from 163 — `DirectiveAttribute` and `DirectiveLabel` are new public
+declarations and the rule wants comments on their members.
+
+**Gates.** All green: correctness 69/69, ASan 60/60, UBSan 60/60, conformance
+2/2, 29 kinds and 48 fields, every audit, `lint-c`, all four linters, and all
+three binding suites including Kotlin macOS-arm64 native.
 
 ---
 

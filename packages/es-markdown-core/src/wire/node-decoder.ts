@@ -1,4 +1,6 @@
 import type { MarkupBase } from "../model/base.js";
+import type { DirectiveAttribute } from "../model/directive-attribute.js";
+import type { DirectiveLabel } from "../model/directive-label.js";
 import type { Document } from "../model/document.js";
 import type { Markup } from "../model/markup.js";
 import type { TableCell, TableRow } from "../model/table.js";
@@ -13,8 +15,8 @@ type MarkupValueOf<Kind extends Markup["kind"]> = Extract<MarkupValue, { readonl
 
 interface DirectiveFields {
     readonly name: string;
-    readonly attributes: string | null;
-    readonly label: readonly Markup[] | null;
+    readonly attributes: readonly DirectiveAttribute[] | null;
+    readonly label: DirectiveLabel | null;
     readonly content: readonly Markup[];
 }
 
@@ -25,13 +27,14 @@ const stringField = {
     literal: 4,
     formulaLiteral: 5,
     directiveName: 6,
-    directiveAttributes: 7,
-    linkDestination: 8,
-    linkTitle: 9,
-    imageSource: 10,
-    imageTitle: 11,
-    footnoteID: 12,
-    errorMessage: 13
+    directiveAttributeName: 7,
+    directiveAttributeValue: 8,
+    linkDestination: 9,
+    linkTitle: 10,
+    imageSource: 11,
+    imageTitle: 12,
+    footnoteID: 13,
+    errorMessage: 14
 } as const;
 
 export class NodeDecoder {
@@ -184,6 +187,8 @@ export class NodeDecoder {
                 return this.copyTableRow(node);
             case "tableCell":
                 return this.copyTableCell(node);
+            case "directiveLabel":
+                return { ...this.base(node, kind), content: this.content(node) };
         }
         return unreachable(kind);
     }
@@ -248,18 +253,34 @@ export class NodeDecoder {
 
     private directiveFields(node: number): DirectiveFields {
         const childPointers = this.childPointers(node);
-        const labelCount = this.native.es_node_directive_label_count(node);
-        if (!Number.isInteger(labelCount) || labelCount < -1 || labelCount > childPointers.length) {
-            throw new Error(`native parser returned an invalid directive label count ${labelCount}`);
-        }
-        const label = labelCount < 0 ? null : childPointers.slice(0, labelCount).map((child) => this.copyMarkup(child));
-        const contentOffset = labelCount < 0 ? 0 : labelCount;
+        // The label is the first child when it is there at all. Until Step 7
+        // the C facade spliced the node out and named its count instead, and
+        // this had to slice the run out of a flat child list.
+        const first = childPointers.length > 0 ? this.copyMarkup(childPointers[0]!) : null;
+        const label = first !== null && first.kind === "directiveLabel" ? first : null;
         return {
             name: this.requiredString(node, stringField.directiveName),
-            attributes: this.readString(node, stringField.directiveAttributes),
+            attributes: this.directiveAttributes(node),
             label,
-            content: childPointers.slice(contentOffset).map((child) => this.copyMarkup(child))
+            content: childPointers.slice(label === null ? 0 : 1).map((child) => this.copyMarkup(child))
         };
+    }
+
+    private directiveAttributes(node: number): readonly DirectiveAttribute[] | null {
+        const count = this.native.es_node_directive_attribute_count(node);
+        if (!Number.isInteger(count) || count < -1) {
+            throw new Error(`native parser returned an invalid directive attribute count ${String(count)}`);
+        }
+        if (count < 0) return null;
+        const attributes: DirectiveAttribute[] = [];
+        for (let index = 0; index < count; index++) {
+            this.native.es_set_attribute_index(index);
+            attributes.push({
+                name: this.requiredString(node, stringField.directiveAttributeName),
+                value: this.requiredString(node, stringField.directiveAttributeValue)
+            });
+        }
+        return Object.freeze(attributes);
     }
 
     private content(node: number): readonly Markup[] {

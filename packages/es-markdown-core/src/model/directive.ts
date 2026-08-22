@@ -1,8 +1,10 @@
 import type { MarkupBase } from "./base.js";
-import type { Markup } from "./markup.js";
+import type { DirectiveAttribute } from "./directive-attribute.js";
+import type { DirectiveLabel } from "./directive-label.js";
 
 export interface Directive extends MarkupBase<"directive"> {
     readonly name: string;
-    readonly attributes: string | null;
-    readonly label: readonly Markup[] | null;
+    /** Sorted by name, or `null` when the source wrote no `{...}` at all. */
+    readonly attributes: readonly DirectiveAttribute[] | null;
+    readonly label: DirectiveLabel | null;
 }

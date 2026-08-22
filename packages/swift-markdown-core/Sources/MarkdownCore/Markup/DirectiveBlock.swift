@@ -3,11 +3,12 @@ import MarkdownCoreC
 public struct DirectiveBlock: Markup {
     public let scope: Scope
     public let name: String
-    public let attributes: String?
-    /// The label's inline content, or `nil` when the source wrote no label.
-    public let label: [any Markup]?
-    /// The block content the fence encloses. Distinct from `label`, which the
-    /// C tree keeps in the same child list -- see `Markup.directiveLabel`.
+    /// The attributes the source wrote, sorted by name, or `nil` when it wrote
+    /// no `{...}` at all.
+    public let attributes: [DirectiveAttribute]?
+    /// The bracketed label, or `nil` when the source wrote none.
+    public let label: DirectiveLabel?
+    /// The block content the fence encloses.
     public let content: [any Markup]
 
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -15,12 +16,11 @@ public struct DirectiveBlock: Markup {
 
 extension DirectiveBlock {
     init(from node: OpaquePointer) {
-        let values = DirectiveValues(from: node)
         self.init(
             scope: Self.scope(from: node),
-            name: values.name,
-            attributes: values.attributes,
-            label: Self.directiveLabel(from: node, count: values.labelCount),
+            name: DirectiveValues(from: node).name,
+            attributes: DirectiveValues(from: node).attributes,
+            label: Self.directiveLabel(from: node),
             content: Self.directiveContent(from: node)
         )
     }

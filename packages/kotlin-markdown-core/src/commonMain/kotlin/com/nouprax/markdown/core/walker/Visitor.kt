@@ -29,6 +29,8 @@ public interface Visitor<Result> {
 
     public fun visitDirectiveBlock(node: DirectiveBlock): Result
 
+    public fun visitDirectiveLabel(node: DirectiveLabel): Result
+
     public fun visitFootnoteDefinition(node: FootnoteDefinition): Result
 
     public fun visitText(node: Text): Result

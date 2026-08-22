@@ -71,11 +71,18 @@ const stateValidators = {
     "tableRow.isHeader.false": (tree) => /^.*TableRow scope=.* isHeader=false /m.test(tree),
     "tableRow.isHeader.true": (tree) => /^.*TableRow scope=.* isHeader=true /m.test(tree),
     "directive.attributes.null": (tree) => /^.*Directive(?:Block)? scope=.* attributes=null /m.test(tree),
-    "directive.attributes.empty": (tree) => /^.*Directive(?:Block)? scope=.* attributes="\{\}" /m.test(tree),
-    "directive.attributes.value": (tree) => /^.*Directive(?:Block)? scope=.* attributes="\{.+\}" /m.test(tree),
-    "directive.label.null": (tree) => /^.*Directive(?:Block)? scope=.* label=null /m.test(tree),
-    "directive.label.empty": (tree) => /^.*Directive(?:Block)? scope=.* label=0 /m.test(tree),
-    "directive.label.populated": (tree) => /^.*Directive(?:Block)? scope=.* label=[1-9]\d* /m.test(tree),
+    "directive.attributes.empty": (tree) => /^.*Directive(?:Block)? scope=.* attributes=\[\] /m.test(tree),
+    "directive.attributes.value": (tree) => /^.*Directive(?:Block)? scope=.* attributes=\[.+\] /m.test(tree),
+    // A label is a NODE now, so its three states are read off the tree rather
+    // than off a count on the parent: absent is a directive with no
+    // DirectiveLabel child, empty is one with `children=0`, populated is one
+    // with children.
+    "directive.label.null": (tree) =>
+        /^(.*)Directive(?:Block)? scope=[^\n]*\n(?!\1(?:\u2502|\|)?\s*(?:\u251c|\u2514)\u2500\u2500 DirectiveLabel )/m.test(
+            tree
+        ),
+    "directive.label.empty": (tree) => /DirectiveLabel scope=\S+ children=0$/m.test(tree),
+    "directive.label.populated": (tree) => /DirectiveLabel scope=\S+ children=[1-9]\d*$/m.test(tree),
     "link.title.null": (tree) => /^.*Link scope=.* title=null /m.test(tree),
     "link.title.empty": (tree) => /^.*Link scope=.* title="" /m.test(tree),
     "link.title.value": (tree) => /^.*Link scope=.* title=".+" /m.test(tree),
@@ -96,7 +103,10 @@ const stateValidators = {
     "children.populated": (tree) => / children=[1-9]\d*(?:\n|$)/.test(tree),
     "escaping.empty-string": (tree) => /=""/.test(tree),
     "escaping.newline": (tree) => /\\n/.test(tree),
-    "escaping.json": (tree) => /attributes="\{\\"/.test(tree)
+    // An attribute VALUE that contains a quote. It was called `escaping.json`
+    // when the whole attribute map was one JSON string; the escaping it checks
+    // is the dump's, and that is what it was always about.
+    "escaping.attribute-value": (tree) => /attributes=\[[^\]]*="[^\]]*\\"/.test(tree)
 };
 const orderValidators = {
     "document.source-order": (tree) => tree.startsWith("Document scope="),
@@ -105,7 +115,7 @@ const orderValidators = {
             tree
         ),
     "directive.label-before-content": (tree) =>
-        /DirectiveBlock scope=.*label=[1-9]\d* children=[2-9]\d*\n[\s\S]*Text scope=[\s\S]*Paragraph scope=/.test(tree),
+        /DirectiveBlock scope=.* children=[2-9]\d*\n[\s\S]*DirectiveLabel scope=[\s\S]*Paragraph scope=/.test(tree),
     "inline.source-order": (tree) => /Paragraph scope=.* children=[2-9]\d*/.test(tree)
 };
 
@@ -202,18 +212,28 @@ for (const testCase of manifest.cases ?? []) {
         const kind = match[1];
         actualKinds.add(kind);
         for (const field of fieldsByKind[kind] ?? []) allObservedFields.add(`${kind}.${field}`);
-        const lineWithoutStrings = line.replace(/"(?:\\.|[^"\\])*"/g, '""');
+        // Strings first, then bracketed groups: `attributes=[a="1" b="2"]` is
+        // ONE field, and without the second pass ` b=` reads as a second one.
+        const lineWithoutStrings = line
+            .replace(/"(?:\\.|[^"\\])*"/g, '""')
+            .replace(/=\[[^\]]*\]/g, "=[]");
         const fieldNames = [...lineWithoutStrings.matchAll(/ ([A-Za-z]+)=/g)].map((field) => field[1]);
         // The dump's field names for a kind ARE the contract's, minus the
         // fields that are the child structure itself. Until Step 15A this was a
         // hand-written copy of the table -- a SEVENTH one -- and Q29 found it
         // by deleting `mode` from the contract and watching this file disagree.
+        //
+        // A field is child structure when its type names a KIND. That used to
+        // be a regex listing four of them plus an explicit `label` exception,
+        // because a directive's label was a COUNT in the dump rather than a
+        // node; Step 7 made it a node and the exception became a lie.
+        const kindNames = new Set(contract.kinds.map((kind) => kind.name));
+        const isChildEdge = (type) =>
+            [...type.matchAll(/[A-Za-z]+/g)].some((word) => word[0] === "Markup" || kindNames.has(word[0]));
         const dumpFields = Object.fromEntries(
             contract.kinds.map((kind) => [
                 kind.name,
-                kind.fields
-                    .filter((field) => field.name === "label" || !/Markup|ListItem|TableRow|TableCell/.test(field.type))
-                    .map((field) => field.name)
+                kind.fields.filter((field) => !isChildEdge(field.type)).map((field) => field.name)
             ])
         );
         const expectedFieldNames = ["scope", ...(dumpFields[kind] ?? []), "children"];

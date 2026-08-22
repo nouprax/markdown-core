@@ -212,26 +212,36 @@ static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE: {
-        bool has_label = false;
-        size_t label_count = 0;
-        const markdown_core_node *content;
-        size_t content_count = 0;
-        markdown_core_node_directive_properties(node, &first, &second, &has_label, &label_count);
+        /* The label is a CHILD NODE now, so it needs no wire slot of its own:
+         * the children are written whole, exactly as for every other kind, and
+         * the decoder tells a label from content by its kind. What is still
+         * spelled out is the attribute sequence, because a count of pairs is
+         * not something write_children can carry. */
+        bool has_attributes = false;
+        size_t count = 0;
+        size_t index;
+        markdown_core_node_directive_properties(node, &first, &has_attributes, &count);
         put_string(buffer, first, true);
-        put_string(buffer, second, second.data != NULL);
-        if (has_label) {
-            write_nodes(buffer, markdown_core_node_directive_first_label_child(node), label_count);
-        } else {
-            put_i32(buffer, -1);
+        put_u8(buffer, has_attributes ? 1 : 0);
+        if (count > INT32_MAX) {
+            buffer->failed = true;
+            return;
         }
-        content = markdown_core_node_directive_first_content_child(node);
-        for (const markdown_core_node *cursor = content; cursor != NULL;
-             cursor = markdown_core_node_get_next_sibling(cursor)) {
-            ++content_count;
+        put_i32(buffer, has_attributes ? (int32_t)count : 0);
+        for (index = 0; has_attributes && index < count; ++index) {
+            if (!markdown_core_node_directive_attribute_at(node, index, &first, &second)) {
+                buffer->failed = true;
+                return;
+            }
+            put_string(buffer, first, true);
+            put_string(buffer, second, true);
         }
-        write_nodes(buffer, content, content_count);
+        write_children(buffer, node);
         break;
     }
+    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
+        write_children(buffer, node);
+        break;
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
         markdown_core_node_footnote_id(node, &first);
         put_string(buffer, first, true);

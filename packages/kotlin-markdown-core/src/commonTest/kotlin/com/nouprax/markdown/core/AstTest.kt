@@ -31,6 +31,7 @@ class AstTest {
                 "FormulaBlock",
                 "Table",
                 "DirectiveBlock",
+                "DirectiveLabel",
                 "FootnoteDefinition",
                 "Text",
                 "SoftBreak",
@@ -115,13 +116,14 @@ private fun flatten(root: Any): kotlin.collections.List<Any> =
             is Table -> flatten(root.header) + root.rows.flatMap(::flatten)
             is TableRow -> root.cells.flatMap(::flatten)
             is TableCell -> root.content.flatMap(::flatten)
-            is DirectiveBlock -> (root.label.orEmpty() + root.content).flatMap(::flatten)
+            is DirectiveBlock -> (listOfNotNull(root.label) + root.content).flatMap(::flatten)
             is FootnoteDefinition -> root.content.flatMap(::flatten)
             is Emphasis -> root.content.flatMap(::flatten)
             is Strong -> root.content.flatMap(::flatten)
             is Strikethrough -> root.content.flatMap(::flatten)
             is Link -> root.content.flatMap(::flatten)
             is Image -> root.content.flatMap(::flatten)
-            is Directive -> root.label.orEmpty().flatMap(::flatten)
+            is Directive -> listOfNotNull(root.label).flatMap(::flatten)
+            is DirectiveLabel -> root.content.flatMap(::flatten)
             else -> emptyList()
         }

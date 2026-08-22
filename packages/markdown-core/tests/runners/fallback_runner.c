@@ -295,15 +295,59 @@ static char *fb_parse_directive_attributes(const char *input, markdown_core_mem 
         return NULL;
     }
 
+    /* Renders the attribute sequence as `name=value` pairs so the two
+     * duplicate-normalization paths can be compared as one string. It used to
+     * read the JSON the node cached; Step 7 deleted that round-trip, so the
+     * rendering lives with the test that wants it. */
     iter = markdown_core_iter_new(document);
     while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        if (event == MARKDOWN_CORE_EVENT_ENTER) {
-            const char *json = markdown_core_extensions_get_directive_attributes(markdown_core_iter_get_node(iter));
-            if (json) {
-                result = fb_strdup(json);
-                break;
+        markdown_core_node *node;
+        size_t count;
+        size_t i;
+        size_t length = 0;
+        char *rendered;
+        if (event != MARKDOWN_CORE_EVENT_ENTER) {
+            continue;
+        }
+        node = markdown_core_iter_get_node(iter);
+        if (!markdown_core_extensions_directive_has_attributes(node)) {
+            continue;
+        }
+        count = markdown_core_extensions_directive_attribute_count(node);
+        for (i = 0; i < count; i++) {
+            const char *name;
+            const char *value;
+            size_t name_length;
+            size_t value_length;
+            if (markdown_core_extensions_directive_attribute_at(node, i, &name, &name_length, &value, &value_length)) {
+                length += name_length + value_length + 2;
             }
         }
+        rendered = (char *)malloc(length + 1);
+        if (!rendered) {
+            break;
+        }
+        length = 0;
+        for (i = 0; i < count; i++) {
+            const char *name;
+            const char *value;
+            size_t name_length;
+            size_t value_length;
+            if (!markdown_core_extensions_directive_attribute_at(node, i, &name, &name_length, &value, &value_length)) {
+                continue;
+            }
+            if (length) {
+                rendered[length++] = ' ';
+            }
+            memcpy(rendered + length, name, name_length);
+            length += name_length;
+            rendered[length++] = '=';
+            memcpy(rendered + length, value, value_length);
+            length += value_length;
+        }
+        rendered[length] = '\0';
+        result = rendered;
+        break;
     }
     markdown_core_iter_free(iter);
     markdown_core_node_free(document);
@@ -360,8 +404,7 @@ static int case_directive_sorted_fallback(void) {
     size_t i;
     int result = -1;
 
-    if (fb_compare_directive_paths(":x{a=1 b=2 a=3 c=4 b=5}\n", "{\"a\":\"3\",\"b\":\"5\",\"c\":\"4\"}", "small") !=
-        0) {
+    if (fb_compare_directive_paths(":x{a=1 b=2 a=3 c=4 b=5}\n", "a=3 b=5 c=4", "small") != 0) {
         return -1;
     }
 
@@ -379,13 +422,35 @@ static int case_directive_sorted_fallback(void) {
         input_length += (size_t)snprintf(input + input_length, 24, "%sk%zu=v%zu", i ? " " : "", i % FB_UNIQUE_KEYS, i);
     }
     input_length += (size_t)snprintf(input + input_length, 8, "}\n");
-    expected_length += (size_t)snprintf(expected + expected_length, 8, "{");
-    for (i = 0; i < FB_UNIQUE_KEYS; i++) {
-        size_t last = i + FB_UNIQUE_KEYS * ((FB_ATTRIBUTE_COUNT - 1 - i) / FB_UNIQUE_KEYS);
-        expected_length +=
-            (size_t)snprintf(expected + expected_length, 32, "%s\"k%zu\":\"v%zu\"", i ? "," : "", i, last);
+    /* Sorted by NAME (Q19), which for `k0`..`k63` is lexicographic, not
+     * numeric: k0, k1, k10, k11, ... */
+    {
+        size_t order[FB_UNIQUE_KEYS];
+        for (i = 0; i < FB_UNIQUE_KEYS; i++) {
+            order[i] = i;
+        }
+        for (i = 1; i < FB_UNIQUE_KEYS; i++) {
+            size_t key = order[i];
+            size_t j = i;
+            char key_text[24];
+            snprintf(key_text, sizeof(key_text), "k%zu", key);
+            while (j > 0) {
+                char other[24];
+                snprintf(other, sizeof(other), "k%zu", order[j - 1]);
+                if (strcmp(other, key_text) <= 0) {
+                    break;
+                }
+                order[j] = order[j - 1];
+                j--;
+            }
+            order[j] = key;
+        }
+        for (i = 0; i < FB_UNIQUE_KEYS; i++) {
+            size_t key = order[i];
+            size_t last = key + FB_UNIQUE_KEYS * ((FB_ATTRIBUTE_COUNT - 1 - key) / FB_UNIQUE_KEYS);
+            expected_length += (size_t)snprintf(expected + expected_length, 32, "%sk%zu=v%zu", i ? " " : "", key, last);
+        }
     }
-    expected_length += (size_t)snprintf(expected + expected_length, 8, "}");
 
     result = fb_compare_directive_paths(input, expected, "sampled");
     free(input);

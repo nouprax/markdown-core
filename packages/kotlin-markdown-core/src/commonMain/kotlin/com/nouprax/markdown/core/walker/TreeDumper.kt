@@ -121,9 +121,12 @@ private class DumpVisitor : Visitor<DumpRecord> {
         record(
             "DirectiveBlock",
             node,
-            fields = directiveFields(node.name, node.attributes, node.label?.size),
-            children = node.label.orEmpty().size + node.content.size,
+            fields = directiveFields(node.name, node.attributes),
+            children = (if (node.label == null) 0 else 1) + node.content.size,
         )
+
+    override fun visitDirectiveLabel(node: DirectiveLabel): DumpRecord =
+        record("DirectiveLabel", node, children = node.content.size)
 
     override fun visitFootnoteDefinition(node: FootnoteDefinition): DumpRecord =
         record(
@@ -192,8 +195,8 @@ private class DumpVisitor : Visitor<DumpRecord> {
         record(
             "Directive",
             node,
-            fields = directiveFields(node.name, node.attributes, node.label?.size),
-            children = node.label.orEmpty().size,
+            fields = directiveFields(node.name, node.attributes),
+            children = if (node.label == null) 0 else 1,
         )
 
     override fun visitFootnoteReference(node: FootnoteReference): DumpRecord =
@@ -215,13 +218,15 @@ private fun record(
 
 private fun directiveFields(
     name: String,
-    attributes: String?,
-    labelCount: Int?,
+    attributes: kotlin.collections.List<DirectiveAttribute>?,
 ): kotlin.collections.List<String> =
     listOf(
         "name=${jsonString(name)}",
-        "attributes=${optionalString(attributes)}",
-        "label=${labelCount ?: "null"}",
+        "attributes=" +
+            (
+                attributes?.joinToString(" ", prefix = "[", postfix = "]") { "${it.name}=${jsonString(it.value)}" }
+                    ?: "null"
+            ),
     )
 
 private fun scope(value: Scope): String =

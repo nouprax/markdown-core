@@ -288,6 +288,9 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
         return MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK;
     }
+    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
+        return MARKDOWN_CORE_KIND_DIRECTIVE_LABEL;
+    }
     return MARKDOWN_CORE_KIND_NONE;
 }
 
@@ -320,8 +323,9 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
                                         "Directive",
                                         "FootnoteReference",
                                         "TableRow",
-                                        "TableCell"};
-    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_TABLE_CELL) {
+                                        "TableCell",
+                                        "DirectiveLabel"};
+    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_DIRECTIVE_LABEL) {
         return "None";
     }
     return names[kind];
@@ -338,35 +342,20 @@ markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
     return scope;
 }
 
-static bool is_label(const markdown_core_node *node) {
-    return node && node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
-}
-
+/* THE LABEL IS A NODE. It always was one in the tree; this facade used to
+ * splice it out -- first_child skipped past it into its children and
+ * next_sibling climbed back out -- so a directive's label reached every
+ * binding as a COUNT on the parent and a run of children with no container.
+ * Step 7 stops hiding it: `DirectiveLabel` is the 29th kind, its scope spans
+ * its brackets, and `label=` is gone from the dump because the node is there
+ * to be seen. The two accessors that existed only to name where the label's
+ * children began and ended went with it. */
 const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node) {
-    const markdown_core_node *child;
-    if (!node) {
-        return NULL;
-    }
-    child = node->first_child;
-    if (is_label(child)) {
-        return child->first_child ? child->first_child : child->next;
-    }
-    return child;
+    return node ? node->first_child : NULL;
 }
 
 const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node) {
-    const markdown_core_node *next;
-    if (!node) {
-        return NULL;
-    }
-    next = node->next;
-    if (next && is_label(next)) {
-        return next->first_child ? next->first_child : next->next;
-    }
-    if (!next && is_label(node->parent)) {
-        return node->parent->next;
-    }
-    return next;
+    return node ? node->next : NULL;
 }
 
 size_t markdown_core_node_child_count(const markdown_core_node *node) {
@@ -526,52 +515,44 @@ bool markdown_core_node_table_row_is_header(const markdown_core_node *node, bool
     return true;
 }
 
-static const markdown_core_node *directive_label_node(const markdown_core_node *node) {
-    if (!node || (node->type != MARKDOWN_CORE_NODE_DIRECTIVE && node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
-        return NULL;
-    }
-    return is_label(node->first_child) ? node->first_child : NULL;
-}
-
+/* ATTRIBUTES ARE AN ORDERED SEQUENCE, sorted by name (Q19). The JSON string
+ * this used to hand out was a second representation of the list the parser
+ * already holds, with a parser of its own to read it back; both are gone.
+ * `has_attributes` distinguishes `:n` from `:n{}` -- absent from empty -- which
+ * the old `null` versus `"{}"` said and a count alone cannot. */
 bool markdown_core_node_directive_properties(const markdown_core_node *node, markdown_core_string_view *name,
-                                             markdown_core_string_view *attributes, bool *has_label,
-                                             size_t *label_count) {
+                                             bool *has_attributes, size_t *attribute_count) {
     const char *value;
-    const markdown_core_node *label;
-    const markdown_core_node *child;
-    if (!node || !name || !attributes || !has_label || !label_count ||
+    if (!node || !name || !has_attributes || !attribute_count ||
         (node->type != MARKDOWN_CORE_NODE_DIRECTIVE && node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
         return false;
     }
     value = markdown_core_extensions_get_directive_name((markdown_core_node *)node);
     name->data = (const uint8_t *)value;
     name->length = value ? strlen(value) : 0;
-    value = markdown_core_extensions_get_directive_attributes((markdown_core_node *)node);
-    attributes->data = (const uint8_t *)value;
-    attributes->length = value ? strlen(value) : 0;
-    *has_label = markdown_core_directive_has_label((markdown_core_node *)node) != 0;
-    *label_count = 0;
-    label = directive_label_node(node);
-    child = label ? label->first_child : NULL;
-    while (child) {
-        (*label_count)++;
-        child = child->next;
-    }
+    *has_attributes = markdown_core_extensions_directive_has_attributes((markdown_core_node *)node) != 0;
+    *attribute_count = markdown_core_extensions_directive_attribute_count((markdown_core_node *)node);
     return true;
 }
 
-const markdown_core_node *markdown_core_node_directive_first_label_child(const markdown_core_node *node) {
-    const markdown_core_node *label = directive_label_node(node);
-    return label ? label->first_child : NULL;
-}
-
-const markdown_core_node *markdown_core_node_directive_first_content_child(const markdown_core_node *node) {
-    const markdown_core_node *label;
-    if (!node || node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
-        return NULL;
+bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, size_t index,
+                                               markdown_core_string_view *name, markdown_core_string_view *value) {
+    const char *name_bytes;
+    const char *value_bytes;
+    size_t name_length;
+    size_t value_length;
+    if (!node || !name || !value) {
+        return false;
     }
-    label = directive_label_node(node);
-    return label ? label->next : node->first_child;
+    if (!markdown_core_extensions_directive_attribute_at((markdown_core_node *)node, index, &name_bytes, &name_length,
+                                                         &value_bytes, &value_length)) {
+        return false;
+    }
+    name->data = (const uint8_t *)name_bytes;
+    name->length = name_length;
+    value->data = (const uint8_t *)value_bytes;
+    value->length = value_length;
+    return true;
 }
 
 static bool link_properties(const markdown_core_node *node, uint16_t expected, markdown_core_string_view *url,
@@ -753,7 +734,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     markdown_core_optional_bool checked;
     markdown_core_list_flavor flavor;
     markdown_core_placement_mode mode;
-    bool x, y, has_label;
+    bool x, y, has_attributes;
     size_t count, i;
     int32_t level;
     switch (kind) {
@@ -845,17 +826,27 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         break;
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE:
-        markdown_core_node_directive_properties(node, &a, &b, &has_label, &count);
+        markdown_core_node_directive_properties(node, &a, &has_attributes, &count);
         buffer_cstr(buffer, " name=");
         buffer_json_string(buffer, a);
         buffer_cstr(buffer, " attributes=");
-        buffer_optional_string(buffer, b);
-        buffer_cstr(buffer, " label=");
-        if (has_label) {
-            buffer_i64(buffer, (int64_t)count);
-        } else {
+        if (!has_attributes) {
             buffer_cstr(buffer, "null");
+            break;
         }
+        buffer_cstr(buffer, "[");
+        for (i = 0; i < count; i++) {
+            if (!markdown_core_node_directive_attribute_at(node, i, &a, &b)) {
+                continue;
+            }
+            if (i) {
+                buffer_cstr(buffer, " ");
+            }
+            buffer_bytes(buffer, a.data, a.length);
+            buffer_cstr(buffer, "=");
+            buffer_json_string(buffer, b);
+        }
+        buffer_cstr(buffer, "]");
         break;
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
     case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:

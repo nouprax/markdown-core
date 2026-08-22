@@ -414,29 +414,49 @@ static void formula_extension_accessors(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
+/* Reads one attribute and compares it, so a sequence can be asserted without a
+ * serialization to compare against -- which is what the deleted JSON was
+ * doing for these tests. */
+static void attribute_eq(test_batch_runner *runner, markdown_core_node *node, size_t index, const char *name,
+                         const char *value, const char *message) {
+    const char *actual_name = NULL;
+    const char *actual_value = NULL;
+    size_t name_length = 0;
+    size_t value_length = 0;
+    int ok = markdown_core_extensions_directive_attribute_at(node, index, &actual_name, &name_length, &actual_value,
+                                                             &value_length);
+    OK(runner,
+       ok && name_length == strlen(name) && memcmp(actual_name, name, name_length) == 0 &&
+           value_length == strlen(value) && memcmp(actual_value, value, value_length) == 0,
+       message);
+}
+
 static void directive_extension_accessors(test_batch_runner *runner) {
     /* `:-a[]` was the input here until Step 7, and it is not a directive: a
      * name may not BEGIN with a hyphen or underscore any more than it may end
      * with one. `class` is also the one name whose repeats accumulate now, so
-     * the three of them are one value rather than the last one. */
-    const char *source_attributes = "{\"id\":\"123\",\"muted\":\"true\",\"title\":\"My Video\","
-                                    "\"bare\":\"\",\"dup\":\"last\",\"class\":\"red green blue\"}";
+     * the three of them are one value rather than the last one, and Step 7.2
+     * made the sequence SORTED BY NAME rather than first-key source order. */
     markdown_core_node *doc =
         parse_with_directive_extension(":a[]{id=first muted=true title=\"My Video\" bare dup=first dup=last "
                                        "class=red class=green class=blue id=123}\n");
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *directive = markdown_core_node_first_child(paragraph);
-    const char *invalid_attributes[] = {
-        "data-x=\"1\"",   "{\"x\":1}",           "{\"x\":true}",       "{\"x\":null}",
-        "{\"x\":{}}",     "{\"x\":[]}",          "{\"x\":\"bad\\q\"}", "{\"x\":\"open}",
-        "{\"x\":\"y\",}", "{\"x\":\"\\uD800\"}", "{\"x\"\f:\"y\"}",    "{\"x\":\"y\"}tail",
-    };
-    size_t i;
 
     STR_EQ(runner, markdown_core_node_get_type_string(directive), "directive", "directive inline type string");
     STR_EQ(runner, markdown_core_extensions_get_directive_name(directive), "a", "directive name getter");
-    STR_EQ(runner, markdown_core_extensions_get_directive_attributes(directive), source_attributes,
-           "directive attribute list normalizes to string-map JSON");
+    INT_EQ(runner, markdown_core_extensions_directive_has_attributes(directive), 1,
+           "directive reports its attribute container");
+    INT_EQ(runner, (int)markdown_core_extensions_directive_attribute_count(directive), 6, "directive attribute count");
+    attribute_eq(runner, directive, 0, "bare", "", "attribute 0 sorts first and keeps its empty value");
+    attribute_eq(runner, directive, 1, "class", "red green blue", "class accumulates in source order");
+    attribute_eq(runner, directive, 2, "dup", "last", "a repeated name keeps its last value");
+    attribute_eq(runner, directive, 3, "id", "123", "id is an ordinary name and keeps its last value");
+    attribute_eq(runner, directive, 4, "muted", "true", "a bare attribute has an empty value");
+    attribute_eq(runner, directive, 5, "title", "My Video", "a quoted value keeps its spaces");
+    OK(runner, !markdown_core_extensions_directive_attribute_at(directive, 6, NULL, NULL, NULL, NULL),
+       "an out-of-range attribute index is refused");
+
     INT_EQ(runner, markdown_core_extensions_set_directive_name(directive, "next_name-2"), 1,
            "set directive name succeeds");
     STR_EQ(runner, markdown_core_extensions_get_directive_name(directive), "next_name-2",
@@ -454,48 +474,29 @@ static void directive_extension_accessors(test_batch_runner *runner) {
     STR_EQ(runner, markdown_core_extensions_get_directive_name(directive), "next_name-2",
            "rejected directive name leaves payload unchanged");
 
-    INT_EQ(runner,
-           markdown_core_extensions_set_directive_attributes(
-               directive, "{ \"class\" : \"ordinary\", \"empty\" : \"\", \"nul\" : \"\\u0000\", "
-                          "\"dup\":\"first\", \"dup\":\"last\" }"),
-           1, "set directive attributes from string-map JSON succeeds");
-    STR_EQ(runner, markdown_core_extensions_get_directive_attributes(directive),
-           "{\"class\":\"ordinary\",\"empty\":\"\",\"nul\":\"\\u0000\",\"dup\":\"last\"}",
-           "directive attributes setter normalizes JSON and applies last duplicate");
-
-    for (i = 0; i < sizeof(invalid_attributes) / sizeof(invalid_attributes[0]); i++) {
-        INT_EQ(runner, markdown_core_extensions_set_directive_attributes(directive, invalid_attributes[i]), 0,
-               "directive attributes setter rejects invalid string-map JSON");
-        STR_EQ(runner, markdown_core_extensions_get_directive_attributes(directive),
-               "{\"class\":\"ordinary\",\"empty\":\"\",\"nul\":\"\\u0000\",\"dup\":\"last\"}",
-               "failed directive attributes setter is transactional");
-    }
-
     INT_EQ(runner, markdown_core_extensions_set_directive_name(paragraph, "ok"), 0,
            "set directive name rejects non-directive nodes");
-    INT_EQ(runner, markdown_core_extensions_set_directive_attributes(paragraph, "{\"data-x\":\"1\"}"), 0,
-           "set directive attributes rejects non-directive nodes");
     OK(runner, markdown_core_extensions_get_directive_name(paragraph) == NULL,
        "get directive name rejects non-directive nodes");
-    OK(runner, markdown_core_extensions_get_directive_attributes(paragraph) == NULL,
-       "get directive attributes rejects non-directive nodes");
+    INT_EQ(runner, markdown_core_extensions_directive_has_attributes(paragraph), 0,
+           "a non-directive node has no attribute container");
+    INT_EQ(runner, (int)markdown_core_extensions_directive_attribute_count(paragraph), 0,
+           "a non-directive node has no attributes to count");
     markdown_core_node_free(doc);
 
+    /* ABSENT is not EMPTY. `:plain[]` wrote no container and `:empty{}` wrote
+     * one with nothing in it; a count of zero cannot tell them apart, which is
+     * why has_attributes exists at all. */
     doc = parse_with_directive_extension(":plain[] :empty{}\n");
     paragraph = markdown_core_node_first_child(doc);
     directive = markdown_core_node_first_child(paragraph);
-    OK(runner, markdown_core_extensions_get_directive_attributes(directive) == NULL,
-       "missing directive attributes return NULL");
+    INT_EQ(runner, markdown_core_extensions_directive_has_attributes(directive), 0,
+           "a directive with no attribute container reports none");
     directive = markdown_core_node_next(markdown_core_node_next(directive));
-    STR_EQ(runner, markdown_core_extensions_get_directive_attributes(directive), "{}",
-           "explicit empty directive attributes are preserved");
-    markdown_core_node_free(doc);
-
-    doc = parse_with_directive_extension(":a{data-x=1 class=ordinary}\n");
-    paragraph = markdown_core_node_first_child(doc);
-    directive = markdown_core_node_first_child(paragraph);
-    STR_EQ(runner, markdown_core_extensions_get_directive_attributes(directive),
-           "{\"data-x\":\"1\",\"class\":\"ordinary\"}", "directive attributes retain first-key source order");
+    INT_EQ(runner, markdown_core_extensions_directive_has_attributes(directive), 1,
+           "an explicit empty attribute container is preserved");
+    INT_EQ(runner, (int)markdown_core_extensions_directive_attribute_count(directive), 0,
+           "an explicit empty attribute container holds nothing");
     markdown_core_node_free(doc);
 }
 

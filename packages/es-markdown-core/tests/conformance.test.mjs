@@ -36,6 +36,7 @@ test("conformance: public node schema is reachable", () => {
             "tableRow",
             "tableCell",
             "directiveBlock",
+            "directiveLabel",
             "footnoteDefinition",
             "text",
             "softBreak",
@@ -99,10 +100,13 @@ test("conformance: directive labels preserve missing, empty, and populated state
     const block = document.content[3];
 
     assert.equal(missing.label, null);
-    assert.equal(missing.attributes, '{"id":"1"}');
-    assert.deepEqual(empty.label, []);
-    assert.equal(label.label[0].literal, "text");
-    assert.equal(block.label[0].literal, "title");
+    assert.deepEqual(missing.attributes, [{ name: "id", value: "1" }]);
+    // A label written empty is a node with no children, and its scope still
+    // spans its brackets -- which is what tells it from a label never written.
+    assert.equal(empty.label.kind, "directiveLabel");
+    assert.deepEqual(empty.label.content, []);
+    assert.equal(label.label.content[0].literal, "text");
+    assert.equal(block.label.content[0].literal, "title");
     assert.deepEqual(block.content, []);
 });
 

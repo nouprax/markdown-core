@@ -125,9 +125,6 @@ const snake = (kind) =>
         .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
         .toUpperCase();
 
-/** A field the dump cannot print, because it IS the child structure. */
-const structural = (field) => /Markup|ListItem|TableRow|TableCell/.test(field.type);
-
 /** Every kind named by one file, in the order it names them. */
 function namedKinds(relative, pattern, transform = (m) => m[1]) {
     const text = read(relative);
@@ -166,6 +163,16 @@ const modelProjections = [
 
 const kinds = definition();
 const contract = JSON.parse(fs.readFileSync(path.join(root, CONTRACT_PATH), "utf8"));
+
+/** A field the dump cannot print, because it IS the child structure -- which
+ * is any field whose type names a KIND. The predicate used to list four of
+ * them by hand and the call sites carried an explicit `label` exception,
+ * because a directive's label was a COUNT in the dump rather than a node;
+ * Step 7 made it a node and the exception became a lie. */
+const kindNames = new Set(contract.kinds.map((kind) => kind.name));
+const structural = (field) =>
+    [...field.type.matchAll(/[A-Za-z]+/g)].some((word) => word[0] === "Markup" || kindNames.has(word[0]));
+
 let failed = false;
 
 // The prose's table is a second copy of the contract, in order.
@@ -328,7 +335,7 @@ for (const { label, expect, actual } of kindSurfaces) {
     for (const [kind, fields] of kinds) {
         const expected = contract.kinds
             .find((entry) => entry.name === kind)
-            .fields.filter((field) => field.name === "label" || !structural(field))
+            .fields.filter((field) => !structural(field))
             .map((field) => field.name);
         const printed = arms.get(snake(kind)) ?? [];
         const missing = expected.filter((field) => !printed.includes(field));

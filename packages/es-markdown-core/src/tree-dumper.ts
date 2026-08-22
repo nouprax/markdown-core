@@ -1,7 +1,9 @@
 import type { BlockQuote } from "./model/block-quote.js";
 import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
+import type { DirectiveAttribute } from "./model/directive-attribute.js";
 import type { DirectiveBlock } from "./model/directive-block.js";
+import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
 import type { Document } from "./model/document.js";
 import type { Emphasis } from "./model/emphasis.js";
@@ -99,9 +101,10 @@ const dumpVisitor: Visitor<DumpRecord> = {
         record(
             "DirectiveBlock",
             node,
-            directiveFields(node.name, node.attributes, node.label?.length ?? null),
-            (node.label?.length ?? 0) + node.content.length
+            directiveFields(node.name, node.attributes),
+            (node.label === null ? 0 : 1) + node.content.length
         ),
+    visitDirectiveLabel: (node: DirectiveLabel) => record("DirectiveLabel", node, [], node.content.length),
     visitFootnoteDefinition: (node: FootnoteDefinition) =>
         record("FootnoteDefinition", node, [`id=${jsonString(node.id)}`], node.content.length),
     visitText: (node: Text) => record("Text", node, [`literal=${jsonString(node.literal)}`]),
@@ -129,12 +132,7 @@ const dumpVisitor: Visitor<DumpRecord> = {
             node.content.length
         ),
     visitDirective: (node: Directive) =>
-        record(
-            "Directive",
-            node,
-            directiveFields(node.name, node.attributes, node.label?.length ?? null),
-            node.label?.length ?? 0
-        ),
+        record("Directive", node, directiveFields(node.name, node.attributes), node.label === null ? 0 : 1),
     visitFootnoteReference: (node: FootnoteReference) =>
         record("FootnoteReference", node, [`id=${jsonString(node.id)}`])
 };
@@ -144,16 +142,10 @@ function record(kind: string, node: Markup, fields: readonly string[] = [], chil
     return { line: `${kind} ${scope(node.scope)}${fieldText} children=${children}`, children };
 }
 
-function directiveFields(
-    name: string,
-    attributes: string | null,
-    labelCount: number | null
-): readonly string[] {
-    return [
-        `name=${jsonString(name)}`,
-        `attributes=${optionalString(attributes)}`,
-        `label=${labelCount ?? "null"}`
-    ];
+function directiveFields(name: string, attributes: readonly DirectiveAttribute[] | null): readonly string[] {
+    if (attributes === null) return [`name=${jsonString(name)}`, "attributes=null"];
+    const pairs = attributes.map((pair) => `${pair.name}=${jsonString(pair.value)}`).join(" ");
+    return [`name=${jsonString(name)}`, `attributes=[${pairs}]`];
 }
 
 function scope(value: Scope): string {

@@ -134,6 +134,7 @@ func markup(from node: OpaquePointer) -> any Markup {
     case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE: FootnoteReference(from: node)
     case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node)
     case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node)
+    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL: DirectiveLabel(from: node)
     default: preconditionFailure("native parser returned an unknown node kind")
     }
 }

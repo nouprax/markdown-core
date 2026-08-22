@@ -15,9 +15,11 @@ Document scope=1:1..9:3 children=3
 │       │       └── Text scope=3:9..3:9 literal="b" children=0
 │       └── TableCell scope=3:14..3:16 children=1
 │           └── Text scope=3:15..3:15 literal="c" children=0
-├── DirectiveBlock scope=5:1..5:28 name="leaf" attributes="{\"id\":\"identifier\"}" label=1 children=1
-│   └── Text scope=5:8..5:12 literal="Label" children=0
-└── DirectiveBlock scope=7:1..9:3 name="container" attributes="{\"metadata\":\"{\\\"count\\\":9007199254740993}\",\"properties\":\"{\\\"tags\\\":[\\\"a\\\",null]}\"}" label=1 children=2
-    ├── Text scope=7:14..7:18 literal="Title" children=0
+├── DirectiveBlock scope=5:1..5:28 name="leaf" attributes=[id="identifier"] children=1
+│   └── DirectiveLabel scope=5:7..5:13 children=1
+│       └── Text scope=5:8..5:12 literal="Label" children=0
+└── DirectiveBlock scope=7:1..9:3 name="container" attributes=[metadata="{\"count\":9007199254740993}" properties="{\"tags\":[\"a\",null]}"] children=2
+    ├── DirectiveLabel scope=7:13..7:19 children=1
+    │   └── Text scope=7:14..7:18 literal="Title" children=0
     └── Paragraph scope=8:1..8:4 children=1
         └── Text scope=8:1..8:4 literal="Body" children=0

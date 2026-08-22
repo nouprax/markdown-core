@@ -35,7 +35,6 @@ typedef struct directive_attribute {
 typedef struct {
     markdown_core_chunk name;
     directive_attribute *attributes;
-    markdown_core_chunk attributes_json;
     int fence_length;
     int closed;
     int consume_line;
@@ -180,10 +179,6 @@ static int scan_attributes_raw(const unsigned char *data, bufsize_t len, bufsize
         i++;
     }
     return 0;
-}
-
-static void clear_attribute_caches(markdown_core_node *node, node_directive *directive) {
-    markdown_core_chunk_free(markdown_core_node_mem(node), &directive->attributes_json);
 }
 
 static int set_chunk_bytes(markdown_core_mem *mem, markdown_core_chunk *chunk, const unsigned char *data,
@@ -380,6 +375,71 @@ static int accumulate_class_attributes(markdown_core_mem *mem, directive_attribu
     return 1;
 }
 
+/* Q19: THE MODEL IS SORTED, and by name. Two orders is how a third order
+ * appears in a binding -- after class-accumulation and last-value-wins the
+ * list IS a map, and a map has no source order to preserve. remark's own
+ * projection is sorted too, which is what the mdast oracle compares against.
+ *
+ * A LINKED-LIST MERGE SORT, not an array and qsort: the duplicate normalizer
+ * above already has a no-allocation fallback for the case where the index
+ * cannot be built, and a sort that could fail to allocate would put an
+ * unsorted list back on the node with nothing to say so. This one cannot
+ * fail. */
+static int attribute_name_before(const directive_attribute *a, const directive_attribute *b) {
+    bufsize_t common = a->name.len < b->name.len ? a->name.len : b->name.len;
+    int cmp = memcmp(a->name.data, b->name.data, (size_t)common);
+    if (cmp) {
+        return cmp < 0;
+    }
+    return a->name.len <= b->name.len;
+}
+
+static directive_attribute *merge_attribute_runs(directive_attribute *left, directive_attribute *right) {
+    directive_attribute *head = NULL;
+    directive_attribute **tail = &head;
+    while (left && right) {
+        directive_attribute **from = attribute_name_before(left, right) ? &left : &right;
+        *tail = *from;
+        *from = (*from)->next;
+        tail = &(*tail)->next;
+    }
+    *tail = left ? left : right;
+    return head;
+}
+
+static directive_attribute *sort_attributes_by_name(directive_attribute *head) {
+    directive_attribute *rest = head;
+    directive_attribute *runs[32];
+    size_t i;
+    size_t used = 0;
+
+    while (rest) {
+        directive_attribute *one = rest;
+        rest = rest->next;
+        one->next = NULL;
+        for (i = 0; i < used && runs[i]; i++) {
+            one = merge_attribute_runs(runs[i], one);
+            runs[i] = NULL;
+        }
+        if (i == sizeof(runs) / sizeof(runs[0])) {
+            /* 2^32 attributes in one `{...}` is not reachable in a bufsize_t
+             * document; merging into the last slot keeps the sort total even
+             * if it ever were. */
+            i--;
+            one = merge_attribute_runs(runs[i], one);
+        }
+        runs[i] = one;
+        if (i == used) {
+            used++;
+        }
+    }
+    head = NULL;
+    for (i = 0; i < used; i++) {
+        head = merge_attribute_runs(runs[i], head);
+    }
+    return head;
+}
+
 static int compare_attribute_ptrs(const void *left, const void *right) {
     const directive_attribute *a = *(const directive_attribute *const *)left;
     const directive_attribute *b = *(const directive_attribute *const *)right;
@@ -490,262 +550,6 @@ static int normalize_duplicate_attributes(markdown_core_mem *mem, directive_attr
     return 1;
 }
 
-static void append_json_escaped(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len) {
-    bufsize_t i;
-    char encoded[7];
-    for (i = 0; i < len; i++) {
-        unsigned char c = data[i];
-        switch (c) {
-        case '"':
-            markdown_core_strbuf_puts(buf, "\\\"");
-            break;
-        case '\\':
-            markdown_core_strbuf_puts(buf, "\\\\");
-            break;
-        case '\b':
-            markdown_core_strbuf_puts(buf, "\\b");
-            break;
-        case '\f':
-            markdown_core_strbuf_puts(buf, "\\f");
-            break;
-        case '\n':
-            markdown_core_strbuf_puts(buf, "\\n");
-            break;
-        case '\r':
-            markdown_core_strbuf_puts(buf, "\\r");
-            break;
-        case '\t':
-            markdown_core_strbuf_puts(buf, "\\t");
-            break;
-        default:
-            if (c < 0x20) {
-                snprintf(encoded, sizeof(encoded), "\\u%04x", c);
-                markdown_core_strbuf_puts(buf, encoded);
-            } else {
-                markdown_core_strbuf_putc(buf, c);
-            }
-        }
-    }
-}
-
-static const char *render_attributes_json(markdown_core_node *node, node_directive *directive) {
-    markdown_core_strbuf json;
-    directive_attribute *attr;
-    int first = 1;
-    if (directive->attributes_json.data) {
-        return (const char *)directive->attributes_json.data;
-    }
-    markdown_core_strbuf_init(markdown_core_node_mem(node), &json, 0);
-    markdown_core_strbuf_putc(&json, '{');
-    for (attr = directive->attributes; attr; attr = attr->next) {
-        if (!attr->active) {
-            continue;
-        }
-        if (!first) {
-            markdown_core_strbuf_putc(&json, ',');
-        }
-        first = 0;
-        markdown_core_strbuf_putc(&json, '"');
-        append_json_escaped(&json, attr->name.data, attr->name.len);
-        markdown_core_strbuf_puts(&json, "\":\"");
-        append_json_escaped(&json, attr->value.data, attr->value.len);
-        markdown_core_strbuf_putc(&json, '"');
-    }
-    markdown_core_strbuf_putc(&json, '}');
-    directive->attributes_json = markdown_core_chunk_buf_detach(&json);
-    return (const char *)directive->attributes_json.data;
-}
-
-static void skip_json_space(const unsigned char *data, bufsize_t len, bufsize_t *pos) {
-    while (*pos < len && (data[*pos] == ' ' || data[*pos] == '\t' || data[*pos] == '\n' || data[*pos] == '\r')) {
-        (*pos)++;
-    }
-}
-
-static int json_hex_value(unsigned char c) {
-    if (c >= '0' && c <= '9') {
-        return c - '0';
-    }
-    if (c >= 'a' && c <= 'f') {
-        return c - 'a' + 10;
-    }
-    if (c >= 'A' && c <= 'F') {
-        return c - 'A' + 10;
-    }
-    return -1;
-}
-
-static int parse_json_hex4(const unsigned char *data, bufsize_t len, bufsize_t *pos, int32_t *codepoint) {
-    int i;
-    int32_t value = 0;
-    if (*pos > len - 4) {
-        return 0;
-    }
-    for (i = 0; i < 4; i++) {
-        int digit = json_hex_value(data[*pos + (bufsize_t)i]);
-        if (digit < 0) {
-            return 0;
-        }
-        value = (value << 4) | digit;
-    }
-    *pos += 4;
-    *codepoint = value;
-    return 1;
-}
-
-static int parse_json_unicode_escape(const unsigned char *data, bufsize_t len, bufsize_t *pos,
-                                     markdown_core_strbuf *buf) {
-    int32_t codepoint;
-    if (!parse_json_hex4(data, len, pos, &codepoint)) {
-        return 0;
-    }
-    if (codepoint >= 0xD800 && codepoint <= 0xDBFF) {
-        int32_t low;
-        if (*pos > len - 2 || data[*pos] != '\\' || data[*pos + 1] != 'u') {
-            return 0;
-        }
-        *pos += 2;
-        if (!parse_json_hex4(data, len, pos, &low) || low < 0xDC00 || low > 0xDFFF) {
-            return 0;
-        }
-        codepoint = 0x10000 + ((codepoint - 0xD800) << 10) + (low - 0xDC00);
-    } else if (codepoint >= 0xDC00 && codepoint <= 0xDFFF) {
-        return 0;
-    }
-    markdown_core_utf8proc_encode_char(codepoint, buf);
-    return 1;
-}
-
-static int parse_json_string(markdown_core_mem *mem, const unsigned char *data, bufsize_t len, bufsize_t *pos,
-                             markdown_core_chunk *result) {
-    markdown_core_strbuf value;
-    if (*pos >= len || data[*pos] != '"') {
-        return 0;
-    }
-    (*pos)++;
-    markdown_core_strbuf_init(mem, &value, 0);
-    while (*pos < len) {
-        unsigned char c = data[(*pos)++];
-        if (c == '"') {
-            *result = markdown_core_chunk_buf_detach(&value);
-            return 1;
-        }
-        if (c < 0x20) {
-            markdown_core_strbuf_free(&value);
-            return 0;
-        }
-        if (c != '\\') {
-            markdown_core_strbuf_putc(&value, c);
-            continue;
-        }
-        if (*pos >= len) {
-            markdown_core_strbuf_free(&value);
-            return 0;
-        }
-        c = data[(*pos)++];
-        switch (c) {
-        case '"':
-        case '\\':
-        case '/':
-            markdown_core_strbuf_putc(&value, c);
-            break;
-        case 'b':
-            markdown_core_strbuf_putc(&value, '\b');
-            break;
-        case 'f':
-            markdown_core_strbuf_putc(&value, '\f');
-            break;
-        case 'n':
-            markdown_core_strbuf_putc(&value, '\n');
-            break;
-        case 'r':
-            markdown_core_strbuf_putc(&value, '\r');
-            break;
-        case 't':
-            markdown_core_strbuf_putc(&value, '\t');
-            break;
-        case 'u':
-            if (!parse_json_unicode_escape(data, len, pos, &value)) {
-                markdown_core_strbuf_free(&value);
-                return 0;
-            }
-            break;
-        default:
-            markdown_core_strbuf_free(&value);
-            return 0;
-        }
-    }
-    markdown_core_strbuf_free(&value);
-    return 0;
-}
-
-static int parse_attributes_json(markdown_core_mem *mem, const unsigned char *data, bufsize_t len,
-                                 directive_attribute **result) {
-    directive_attribute *head = NULL;
-    directive_attribute *tail = NULL;
-    size_t count = 0;
-    bufsize_t pos = 0;
-    int ok = 0;
-    *result = NULL;
-    skip_json_space(data, len, &pos);
-    if (pos >= len || data[pos++] != '{') {
-        return 0;
-    }
-    skip_json_space(data, len, &pos);
-    if (pos < len && data[pos] == '}') {
-        pos++;
-        skip_json_space(data, len, &pos);
-        return pos == len;
-    }
-    while (pos < len) {
-        markdown_core_chunk name = MARKDOWN_CORE_CHUNK_EMPTY;
-        markdown_core_chunk value = MARKDOWN_CORE_CHUNK_EMPTY;
-        if (!parse_json_string(mem, data, len, &pos, &name)) {
-            goto done;
-        }
-        if (!attribute_name_is_valid(name.data, name.len)) {
-            goto member_done;
-        }
-        skip_json_space(data, len, &pos);
-        if (pos >= len || data[pos++] != ':') {
-            goto member_done;
-        }
-        skip_json_space(data, len, &pos);
-        if (!parse_json_string(mem, data, len, &pos, &value)) {
-            goto member_done;
-        }
-        if (!append_attribute(mem, &head, &tail, name.data, name.len, value.data, value.len, count++, NULL)) {
-            goto member_done;
-        }
-        markdown_core_chunk_free(mem, &name);
-        markdown_core_chunk_free(mem, &value);
-        skip_json_space(data, len, &pos);
-        if (pos < len && data[pos] == ',') {
-            pos++;
-            skip_json_space(data, len, &pos);
-            continue;
-        }
-        if (pos < len && data[pos] == '}') {
-            pos++;
-            skip_json_space(data, len, &pos);
-            ok = pos == len;
-            break;
-        }
-        goto done;
-    member_done:
-        markdown_core_chunk_free(mem, &name);
-        markdown_core_chunk_free(mem, &value);
-        goto done;
-    }
-done:
-    if (ok && normalize_duplicate_attributes(mem, head, count)) {
-        *result = head;
-        return 1;
-    }
-    free_attribute_list(mem, head);
-    return 0;
-}
-
 const char *markdown_core_extensions_get_directive_name(markdown_core_node *node) {
     node_directive *directive = get_directive(node);
     if (!directive) {
@@ -802,34 +606,51 @@ int markdown_core_extensions_set_directive_name(markdown_core_node *node, const 
     return 1;
 }
 
-const char *markdown_core_extensions_get_directive_attributes(markdown_core_node *node) {
+int markdown_core_extensions_directive_has_attributes(markdown_core_node *node) {
     node_directive *directive = get_directive(node);
-    if (!directive || !directive->has_attributes) {
-        return NULL;
-    }
-
-    return render_attributes_json(node, directive);
+    return directive && directive->has_attributes;
 }
 
-int markdown_core_extensions_set_directive_attributes(markdown_core_node *node, const char *attributes) {
+/* The list is walked rather than indexed. A directive's attribute count is the
+ * size of one `{...}`, so the walk is short and a second array to index into
+ * would be a third representation of the same list -- which is what the JSON
+ * cache was. */
+static directive_attribute *attribute_at(node_directive *directive, size_t index) {
+    directive_attribute *attr;
+    for (attr = directive ? directive->attributes : NULL; attr; attr = attr->next) {
+        if (!attr->active) {
+            continue;
+        }
+        if (index == 0) {
+            return attr;
+        }
+        index--;
+    }
+    return NULL;
+}
+
+size_t markdown_core_extensions_directive_attribute_count(markdown_core_node *node) {
     node_directive *directive = get_directive(node);
-    directive_attribute *parsed = NULL;
-    size_t len;
-    if (!directive || !attributes) {
+    directive_attribute *attr;
+    size_t count = 0;
+    for (attr = directive ? directive->attributes : NULL; attr; attr = attr->next) {
+        if (attr->active) {
+            count++;
+        }
+    }
+    return count;
+}
+
+int markdown_core_extensions_directive_attribute_at(markdown_core_node *node, size_t index, const char **name,
+                                                    size_t *name_length, const char **value, size_t *value_length) {
+    directive_attribute *attr = attribute_at(get_directive(node), index);
+    if (!attr || !name || !name_length || !value || !value_length) {
         return 0;
     }
-    len = strlen(attributes);
-    if (len > INT_MAX) {
-        return 0;
-    }
-    if (!parse_attributes_json(markdown_core_node_mem(node), (const unsigned char *)attributes, (bufsize_t)len,
-                               &parsed)) {
-        return 0;
-    }
-    free_attribute_list(markdown_core_node_mem(node), directive->attributes);
-    directive->attributes = parsed;
-    directive->has_attributes = 1;
-    clear_attribute_caches(node, directive);
+    *name = (const char *)attr->name.data;
+    *name_length = (size_t)attr->name.len;
+    *value = (const char *)attr->value.data;
+    *value_length = (size_t)attr->value.len;
     return 1;
 }
 
@@ -851,7 +672,6 @@ static void directive_opaque_free(const markdown_core_syntax_extension *extensio
 
     markdown_core_chunk_free(mem, &directive->name);
     free_attribute_list(mem, directive->attributes);
-    markdown_core_chunk_free(mem, &directive->attributes_json);
     mem->free(directive);
 }
 
@@ -984,7 +804,7 @@ static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, b
         ok = 0;
     }
     if (ok) {
-        *result = attrs;
+        *result = sort_attributes_by_name(attrs);
         attrs = NULL;
     }
     free_attribute_list(mem, attrs);
@@ -1043,6 +863,11 @@ static markdown_core_node *make_label_node(const markdown_core_syntax_extension 
     label_node->start_line = label_node->end_line = start_line;
     label_node->start_column = start_column;
     label_node->end_column = end_column;
+    /* The scope starts ON the `[` and the content starts after it. This is
+     * what `internal_offset` is for -- a heading's `#` and a table cell's
+     * leading pipe use the same field -- and it is why making the scope
+     * bracket-inclusive did not move the label's own children. */
+    label_node->internal_offset = 1;
     return label_node;
 }
 
@@ -1084,15 +909,16 @@ static int apply_parsed_directive(const markdown_core_syntax_extension *extensio
     if (parsed->has_attributes) {
         directive->attributes = parsed->attributes;
         parsed->attributes = NULL;
-        clear_attribute_caches(node, directive);
     }
 
     if (parsed->has_label) {
-        int label_start_column = start_column + (int)parsed->label_start + 1;
-        int label_end_column = label_start_column + (int)parsed->label_len - 1;
-        if (parsed->label_len == 0) {
-            label_end_column = label_start_column - 1;
-        }
+        /* THE LABEL'S SCOPE SPANS ITS BRACKETS. It used to span the content
+         * only, which made `[]` a NEGATIVE range -- end one column before
+         * start -- because there was no content to point at. A label always
+         * has its two brackets, so the bracket-inclusive range is a place for
+         * every label there is, and `:red[]:` reads `1:5..1:6`. */
+        int label_start_column = start_column + (int)parsed->label_start;
+        int label_end_column = label_start_column + (int)parsed->label_len + 1;
 
         if (!attach_label_node(extension, node, data + parsed->label_start, parsed->label_len, start_line,
                                label_start_column, label_end_column)) {
@@ -1498,7 +1324,6 @@ static int set_attributes_from_wrapper(markdown_core_node *node, const unsigned 
 
     directive->attributes = attributes;
     directive->has_attributes = 1;
-    clear_attribute_caches(node, directive);
     return 1;
 }
 
@@ -1562,8 +1387,12 @@ static delimiter *insert_label_directive(const markdown_core_syntax_extension *e
         }
     }
 
-    label_node = make_empty_label_node(extension, parser->mem, opener_node->end_line, opener_node->end_column + 1,
-                                       closer_node->start_line, closer_node->start_column - 1);
+    /* THE LABEL'S SCOPE SPANS ITS BRACKETS. The opener node ends ON the `[`
+     * and the closer starts ON the `]`, so the label runs from one to the
+     * other -- content-only made `[]` a negative range, end one column before
+     * start, because there was nothing between them to point at. */
+    label_node = make_empty_label_node(extension, parser->mem, opener_node->end_line, opener_node->end_column,
+                                       closer_node->start_line, closer_node->start_column);
     if (!label_node) {
         markdown_core_node_free(directive_node);
         goto done;

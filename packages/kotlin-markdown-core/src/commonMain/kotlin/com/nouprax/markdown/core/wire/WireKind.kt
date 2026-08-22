@@ -31,6 +31,7 @@ internal enum class WireKind(
     FOOTNOTE_REFERENCE(26),
     TABLE_ROW(27),
     TABLE_CELL(28),
+    DIRECTIVE_LABEL(29),
     ;
 
     companion object {

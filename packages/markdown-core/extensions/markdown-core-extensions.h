@@ -151,21 +151,26 @@ const char *markdown_core_extensions_get_directive_name(markdown_core_node *node
 MARKDOWN_CORE_EXPORT
 int markdown_core_extensions_set_directive_name(markdown_core_node *node, const char *name);
 
-/** Returns directive attributes as a normalized JSON object containing only string keys and
- * string values. Returns NULL when the node is not a directive or has no attributes. Markdown
- * attribute-list syntax such as {id=123 muted=true title="My Video"} is represented as
- * {"id":"123","muted":"true","title":"My Video"}. The returned pointer remains valid until
- * the attributes are replaced or the owning node is freed.
+/** Whether the source wrote an attribute container at all. `:n` has none and
+ * `:n{}` has an empty one; a count of zero cannot tell them apart.
  */
 MARKDOWN_CORE_EXPORT
-const char *markdown_core_extensions_get_directive_attributes(markdown_core_node *node);
+int markdown_core_extensions_directive_has_attributes(markdown_core_node *node);
 
-/** Sets directive attributes from a JSON object containing only string keys and string values.
- * The object is parsed and normalized. Returns 1 on success and 0 on error; failure leaves the
- * node unchanged.
+/** How many attributes the directive carries. Names are unique: `class` values
+ * accumulate into one and every other repeat keeps its last value.
  */
 MARKDOWN_CORE_EXPORT
-int markdown_core_extensions_set_directive_attributes(markdown_core_node *node, const char *attributes);
+size_t markdown_core_extensions_directive_attribute_count(markdown_core_node *node);
+
+/** Reads the attribute at `index`, in the order the model holds them, which is
+ * sorted by name (Q19). Returns 1 on success and 0 when the node is not a
+ * directive or the index is out of range. The bytes are BORROWED from the node
+ * and are not NUL-terminated, which is why each comes with its length.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_extensions_directive_attribute_at(markdown_core_node *node, size_t index, const char **name,
+                                                    size_t *name_length, const char **value, size_t *value_length);
 
 #ifdef __cplusplus
 }
