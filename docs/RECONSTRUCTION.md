@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, **all of Stage 0a** (0a.0 through 0a.15), **Step 2** (§4.14.2), and **3a.1 – 3a.3** (§4.14.3a), and **3.1 – 3.2** (§4.14.3) |
+| Landed | Steps 0 and 1, §4.0's re-ordering, **all of Stage 0a** (0a.0 through 0a.15), **Step 2** (§4.14.2), and **3a.1 – 3a.3** (§4.14.3a), and **3.1 – 3.3** (§4.14.3) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 3**, continued: 3.3, a delimiter names its rule; then 3.4, the `static const` descriptor table. Step 3a is complete (§4.14.3a). Then §4.1's steps in the order §4.1.4 verifies: `3 3b 15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 3**, continued: 3.4, the `static const` descriptor table — registry, plugin and name lookup deleted, attachment by bitmask, the `delimiter` struct hidden. Step 3a is complete (§4.14.3a). Then §4.1's steps in the order §4.1.4 verifies: `3 3b 15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -346,7 +346,7 @@ Absent at baseline: sessions, incremental, delta, the source rope, node ids and
 revisions, diagnostics, concrete records, the delimiter engine,
 `ReferenceDefinition` nodes, `parser->line_marks` — **and every parity oracle.**
 
-### Thirty-two defects live in the baseline
+### Thirty-three defects live in the baseline
 
 The first eleven were found by reading. **All eleven have since been built,
 gated and reverted** on isolated worktrees at `8e76a94` — every claim below
@@ -355,7 +355,7 @@ an estimate. Doing that found five more (D12–D16). D17 was found reconciling
 the gates and is fixed at 0a.0. D18–D24 were found restating the port list as
 requirements, D25 while inventorying parser state for Stage 1, D26 while executing the
 Q25 ruling — see §4.2.5 — and **D31 at 0a.6**, by un-gating D3 and reading what the
-newly live code then reported. It is the only one of the thirty-two that this
+newly live code then reported. It is the only one of the thirty-three that this
 programme created a witness for rather than inherited, and it is inherited too:
 cmark-gfm reports the same wrong column. **D32 was found at 0a.12**, while
 measuring D26's cost: the backslash hard break is the third mechanism in
@@ -364,7 +364,7 @@ looked at. Every one of the fourteen that Q25 put to the test was
 found **fixable on the untouched baseline**; none produced an architectural
 dependency, and D9 remains the plan's only exception.
 
-**All thirty-two are recorded here**, because a defect the plan does not name
+**All thirty-three are recorded here**, because a defect the plan does not name
 is a defect the plan will re-derive later at full price — and because a list
 split across three sections is a list nobody reads.
 
@@ -407,6 +407,7 @@ ones whose witness is stated in this section rather than in the row.
 | D29 | `extensions/table.c:297` does not check `markdown_core_node_new_with_mem`, and `:305` dereferences NULL | **crash** | **fixed at 0a.15** | §4.13.11, SIGSEGV on `lead text⏎x | y` / `--|--` |
 | D30 | `markdown_core_reference_create` commits an entry whose url or title was lost | wrong-document (allocation failure only) | 9a/11c delete it; §4.13.9 pins it | §4.13.11, measured on four refused allocations |
 | D31 | a raw HTML tag that crosses a line ending ends **one column short of its own literal** | wrong-position | 8 | found at 0a.6 and pinned as a golden row: `a <b`⏎`c> d` gives `HTML scope=1:3..2:1` for a literal whose last byte is at `2:2`, while `a <b c> d` gives `1:3..1:7`, which covers it. cmark-gfm is wrong the same way |
+| D33 | `process_emphasis` chooses its arm by the delimiter's **byte**, and the chain has **no final `else`** — a delimiter no arm claims leaves the cursor where it is, is freed by the removal below, and is read again on the next turn | **use-after-free**, or a **non-terminating loop** | **fixed at 3.3** | found at 3.3 by a probe extension: ASan `heap-use-after-free`, READ of size 8 in `process_emphasis`; with `can_open` set the loop never ends. Unreachable in-tree because every extension pushes a tag it declares — and the push is PUBLIC and takes the byte from the caller. §4.1.3 predicted a NULL dispatch here and did not notice the fall-through |
 | D32 | a **backslash hard break** consumes a line ending without telling the subject, so every later node in the paragraph keeps the break's own line | wrong-position | **fixed at 0a.12** | found at 0a.12 while measuring D26: `foo\`⏎`bar` gives `Text 1:6..1:8` — three columns that do not exist on a four-character line 1. `handle_backslash`'s hard-break branch calls `skip_line_end` and then `make_simple_subj` without `handle_newline`'s `++subj->line; column_offset = -pos`. cmark-gfm reports the same numbers. **5 registered `multi-line-span` findings, all of them attributed by the ledger to a defect that could not close them** |
 
 **~~D25 also exposes a gate blind spot~~ — WRONG, and corrected at 0a.3.** This
@@ -3407,6 +3408,97 @@ lists 27, 4 of 5 · topology · format-c · format-cmake. **Zero golden rows
 moved.**
 
 
+##### 3.3 — a delimiter names its rule, and D33: the loop that did not advance
+
+**The byte was answering three questions.** A `delimiter` carried an
+`unsigned char delim_char`, and `process_emphasis` derived three different
+things from it:
+
+| from the byte | what it decided | what was wrong |
+|---|---|---|
+| `get_extension_for_special_char(parser, delim_char)` | **who owns it** | the first attached extension whose dispatch set contains the byte — i.e. attach order when two claim one (`autolink` and `directive` both claim `:`), and **NULL** when none does |
+| `opener->delim_char == closer->delim_char` | **which opener matches** | `formula` needed four sentinel BYTES (0x01–0x04) to keep `$x$` from matching `$$x$$`, and `directive` a fifth (0x08) |
+| `openers_bottom[length % 3][delim_char]` | **where the opener memo lives** | declared `[3][128]`, indexed by a byte the **public** push accepts unconstrained; `openers_bottom[2][200]` is offset 456 into 384 elements |
+
+A dense `markdown_core_delimiter_rule` answers all three: eleven rules, four
+core and seven from the three extensions that push delimiters; the owning
+extension is a pointer **on** the delimiter; matching is `opener->rule ==
+closer->rule`; and the memo is `[3][MARKDOWN_CORE_DELIM_RULE_COUNT]`. All five
+sentinel bytes are gone — no byte below 0x20 is special anywhere in the engine.
+
+##### D33 — a new defect, and it is the sharpest thing this step found
+
+The arm chain read
+
+```c
+if (extension)                                    ... else
+if (delim_char == '*' || delim_char == '_')       ... else
+if (delim_char == '\'' || delim_char == '"')       ...
+```
+
+and **nothing followed it**. A delimiter matching none of the three left
+`closer` exactly where it was, fell into the `!opener_found` removal below,
+freed it, and read it again on the next turn of the loop.
+
+- With `can_close` only: **ASan `heap-use-after-free`, READ of size 8 in
+  `process_emphasis`.**
+- With `can_open` set: nothing frees it and **the loop never ends.** That was
+  measured first, by accident, as a probe that would not terminate.
+
+The unreachable case is "a byte whose owner cannot be found", which is exactly
+what byte-keyed ownership produces. No in-tree extension reaches it, because
+each pushes a tag it also declares — but the push is **public** and takes the
+byte from the caller, so it is one call away, and §4.1.3 predicted a *NULL
+dispatch* here without noticing that the fall-through is worse. **D33 is
+recorded in §2 with its witness.**
+
+It is closed twice over: the owner comes off the delimiter so the lookup cannot
+fail, and the chain gains a final `else` that advances. The second is the one
+that matters — "unreachable by construction" through three `else if`s is
+reintroduced by the next rule someone adds without a handler.
+
+And `push_delimiter` now refuses a rule outside the enum. The parameter is
+typed, but C converts anything to an enum and the push is public, so the bound
+that sizes `openers_bottom` is enforced rather than assumed; an unnamed rule is
+not a delimiter and its text node stays as ordinary text.
+
+##### Gate
+
+`stray_delimiter` in `tests/api/main.c` builds an extension that pushes a
+delimiter **no one can handle** — once with a real rule and a NULL owner, once
+with a rule outside the enum — and asserts the parse finishes. It is a
+contract violation on purpose: the point of D33 is that the engine must survive
+a misbehaving extension, because the public push cannot stop one.
+
+| mutant | result |
+|---|---|
+| delete the final `else` arm | `correctness` **68/69, api_engine SegFault**; `correctness-asan` **59/60**, *heap-use-after-free at `inlines.c:856` in `process_emphasis`* |
+| delete `push_delimiter`'s rule bound | `correctness-asan` **59/60**, *stack-use-after-scope at `inlines.c:908` in `process_emphasis`* |
+| put `0x01` back in a byte set | the special-chars audit: *declares 0x01, a control byte* |
+
+The special-chars audit's sentinel **exemption** became a **prohibition**: a
+byte below 0x20 in any of the three sets is now a failure, because there is no
+longer any such thing as a delimiter tag that is also a byte.
+
+##### Output-neutral, and that is measured rather than hoped
+
+Removing the sentinels changes what a literal 0x01 in a document does — it no
+longer ends a text run and is no longer offered to `formula`'s inline hook —
+and **no golden moves**, because `markdown_core_consolidate_text_nodes` merges
+the split run back before any consumer sees the tree. Checked directly before
+the change: `a␁b` through the CLI at `--profile gfm-extended` gives one
+`Text literal="a\u0001b"` either way. The cost the split represented was real
+and invisible; that is the same reason D2 had no output signature.
+
+**Gates after.** `correctness` **69/69** · `correctness-asan` **60/60** ·
+`correctness-ubsan` **60/60** · `conformance` 2/2 · upstream parity 817/817 with
+7/7 · mdast 54/54, backlog 24/24 · fuzz-parity 300/300 · scope-sanity 14 ·
+position oracles 0 / 45 / 109 · reference-order 2 rows, still red ·
+canonical-ast 28/47/6 · public surface · special chars · attach order · plan
+graph 22/45 · source lists 27, 4 of 5 · topology · format-c · format-cmake.
+**Zero golden rows moved, and no fixture, spec or golden file touched.**
+
+
 ---
 
 ### 4.3 The ordering argument
@@ -4016,12 +4108,18 @@ following, together:
 - [ ] The facade and its single ABI break window (12), the null/empty rule (14)
 - [ ] Bindings, specs and docs regenerated (15)
 
-**Defects** — **all thirty-two of §2** closed, or explicitly carried with a named
-owner step and a registered known-red gate. ~~seventeen~~ was stale from the
-revision before D18–D25 and §4.13's four were added; §2's own heading now says
-thirty-two, its index table carries thirty-one rows (D1–D25, D27–D32) and
-**D26 is the thirty-second** — measured at 0a.12, refused there, and landed at
-**0a.12b** with the ruling it needed (Q40).
+**Defects** — **all thirty-three of §2** closed, or explicitly carried with a
+named owner step and a registered known-red gate. ~~seventeen~~ was stale from
+the revision before D18–D25 and §4.13's four were added, and ~~thirty-two~~ was
+stale the moment Step 3.3 found **D33**. §2's own heading now says thirty-three,
+its index table carries thirty-two rows (D1–D25, D27–D33) and **D26 is the
+thirty-third** — measured at 0a.12, refused there, and landed at **0a.12b**
+with the ruling it needed (Q40).
+
+**Thirty are closed and three are carried**, and the three are D9 (Step 9a, two
+gates registered at 0a.8, one known-red), D30 (9a/11c delete it; pinned by the
+allocation-failure sweep) and D31 (Step 8; pinned as a golden row in
+`regression.txt`). D27 was the fourth and **closed at 3a.3**.
 
 **Gates**, all green and none of them vacuous:
 - [ ] `correctness`, `correctness-asan`, `correctness-ubsan` — each having

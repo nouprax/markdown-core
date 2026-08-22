@@ -16,7 +16,12 @@
 
 #include "ext_scanners.h"
 
-#define DIRECTIVE_LABEL_DELIM 8
+/* This was a SENTINEL BYTE -- 8 -- because a delimiter carried a byte and the
+ * label opener had to be told from every other delimiter by it. It was an
+ * ordinary file byte: a literal 0x08 in a document ended the text run in
+ * front of it and was offered to this extension's inline hook. It is now one
+ * of the eleven delimiter RULES. */
+#define DIRECTIVE_LABEL_DELIM MARKDOWN_CORE_DELIM_RULE_DIRECTIVE_LABEL
 
 typedef struct directive_attribute {
     markdown_core_chunk name;
@@ -1033,9 +1038,9 @@ static markdown_core_node *make_delimiter_text(markdown_core_parser *parser, mar
     return node;
 }
 
-static markdown_core_node *match_directive_delimiter(markdown_core_parser *parser,
+static markdown_core_node *match_directive_delimiter(markdown_core_syntax_extension *self, markdown_core_parser *parser,
                                                      markdown_core_inline_parser *inline_parser,
-                                                     unsigned char delim_char, bufsize_t offset, bufsize_t len,
+                                                     markdown_core_delimiter_rule rule, bufsize_t offset, bufsize_t len,
                                                      int can_open, int can_close) {
     markdown_core_node *node = make_delimiter_text(parser, inline_parser, offset, len);
 
@@ -1044,16 +1049,16 @@ static markdown_core_node *match_directive_delimiter(markdown_core_parser *parse
         return NULL;
     }
 
-    markdown_core_inline_parser_push_delimiter(inline_parser, delim_char, can_open, can_close, node);
+    markdown_core_inline_parser_push_delimiter(inline_parser, self, rule, can_open, can_close, node);
     return node;
 }
 
-static delimiter *find_directive_opener(markdown_core_inline_parser *inline_parser, unsigned char delim_char) {
+static delimiter *find_directive_opener(markdown_core_inline_parser *inline_parser, markdown_core_delimiter_rule rule) {
     delimiter *delim = markdown_core_inline_parser_get_last_delimiter(inline_parser);
     int closer_count = 0;
 
     while (delim) {
-        if (delim->delim_char == delim_char) {
+        if (delim->rule == rule) {
             if (delim->can_close) {
                 closer_count++;
             } else if (delim->can_open) {
@@ -1099,7 +1104,8 @@ static markdown_core_node *match_colon_directive(markdown_core_syntax_extension 
 
     pos = name_start + name_len;
     if (pos < chunk->len && chunk->data[pos] == '[') {
-        return match_directive_delimiter(parser, inline_parser, DIRECTIVE_LABEL_DELIM, offset, pos - offset + 1, 1, 0);
+        return match_directive_delimiter(extension, parser, inline_parser, DIRECTIVE_LABEL_DELIM, offset,
+                                         pos - offset + 1, 1, 0);
     }
 
     if (pos < chunk->len && chunk->data[pos] == '{') {
@@ -1146,8 +1152,9 @@ static markdown_core_node *match_colon_directive(markdown_core_syntax_extension 
     return make_name_only_directive(extension, parser, inline_parser, chunk->data + name_start, name_len, pos);
 }
 
-static markdown_core_node *match_label_closer(markdown_core_parser *parser, markdown_core_inline_parser *inline_parser,
-                                              markdown_core_chunk *chunk, bufsize_t offset) {
+static markdown_core_node *match_label_closer(markdown_core_syntax_extension *self, markdown_core_parser *parser,
+                                              markdown_core_inline_parser *inline_parser, markdown_core_chunk *chunk,
+                                              bufsize_t offset) {
     delimiter *opener = find_directive_opener(inline_parser, DIRECTIVE_LABEL_DELIM);
     bufsize_t end;
     bufsize_t closer_len = 1;
@@ -1167,7 +1174,7 @@ static markdown_core_node *match_label_closer(markdown_core_parser *parser, mark
         }
     }
 
-    return match_directive_delimiter(parser, inline_parser, DIRECTIVE_LABEL_DELIM, offset, closer_len, 0, 1);
+    return match_directive_delimiter(self, parser, inline_parser, DIRECTIVE_LABEL_DELIM, offset, closer_len, 0, 1);
 }
 
 static markdown_core_node *match(markdown_core_syntax_extension *extension, markdown_core_parser *parser,
@@ -1185,7 +1192,7 @@ static markdown_core_node *match(markdown_core_syntax_extension *extension, mark
     }
 
     if (character == ']') {
-        return match_label_closer(parser, inline_parser, chunk, offset);
+        return match_label_closer(extension, parser, inline_parser, chunk, offset);
     }
 
     return NULL;
@@ -1361,7 +1368,7 @@ static delimiter *insert_label_directive(markdown_core_syntax_extension *extensi
     node_directive *directive;
     bufsize_t name_len;
 
-    if (opener->delim_char != closer->delim_char || opener_literal->len < 3 || opener_literal->data[0] != ':' ||
+    if (opener->rule != closer->rule || opener_literal->len < 3 || opener_literal->data[0] != ':' ||
         opener_literal->data[opener_literal->len - 1] != '[' || closer_literal->len < 1 ||
         closer_literal->data[0] != ']') {
         goto done;
@@ -1420,7 +1427,7 @@ done:
 
 static delimiter *insert_directive(markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                                    markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
-    if (opener->delim_char == DIRECTIVE_LABEL_DELIM) {
+    if (opener->rule == DIRECTIVE_LABEL_DELIM) {
         return insert_label_directive(extension, parser, inline_parser, opener, closer);
     }
 
@@ -1497,9 +1504,9 @@ markdown_core_syntax_extension *create_directive_extension(void) {
     /* `:` opens a directive. `]` is in the dispatch set for the `]`
      * ARBITRATION `bracket_takes_close_bracket` performs, not because it
      * terminates a text run -- `is_core_special_character` refuses it there.
-     * 0x08 is a delimiter tag, and 3.3 removes it for the reason formula's
-     * four are removed. */
-    markdown_core_syntax_extension_set_byte_sets(ext, ":\x08", ":]\x08", NULL);
+     * The sentinel 0x08 that used to be in both sets was a delimiter tag, not
+     * source, and 3.3 replaced it with a rule. */
+    markdown_core_syntax_extension_set_byte_sets(ext, ":", ":]", NULL);
     /* No set_emphasis here. That flag folds every byte above into the parser's
      * FLANKING SKIP table, which scan_delims walks over as though the bytes
      * were not there -- so merely attaching this extension changed what

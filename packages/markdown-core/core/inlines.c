@@ -575,7 +575,7 @@ static void print_delimiters(subject *subj)
         delim = subj->last_delim;
         while (delim != NULL) {
                 printf("Item at stack pos %p: %d %d %d next(%p) prev(%p)\n",
-                       (void*)delim, delim->delim_char,
+                       (void*)delim, (int)delim->rule,
                        delim->can_open, delim->can_close,
                        (void*)delim->next, (void*)delim->previous);
                 delim = delim->previous;
@@ -610,12 +610,36 @@ static void pop_bracket(subject *subj) {
     subj->mem->free(b);
 }
 
-static void push_delimiter(subject *subj, unsigned char c, bool can_open, bool can_close,
-                           markdown_core_node *inl_text) {
+/** The four rules core owns, keyed by the byte that spells each of them. */
+static markdown_core_delimiter_rule core_delimiter_rule(unsigned char c) {
+    switch (c) {
+    case '*':
+        return MARKDOWN_CORE_DELIM_RULE_EMPHASIS;
+    case '_':
+        return MARKDOWN_CORE_DELIM_RULE_UNDERSCORE;
+    case '\'':
+        return MARKDOWN_CORE_DELIM_RULE_SINGLE_QUOTE;
+    case '"':
+        return MARKDOWN_CORE_DELIM_RULE_DOUBLE_QUOTE;
+    default:
+        return MARKDOWN_CORE_DELIM_RULE_NONE;
+    }
+}
+
+static void push_delimiter(subject *subj, markdown_core_syntax_extension *owner, markdown_core_delimiter_rule rule,
+                           bool can_open, bool can_close, markdown_core_node *inl_text) {
     delimiter *delim;
     /* Extensions may pass NULL after their own allocation failures. */
     if (!inl_text) {
         subj->oom = 1;
+        return;
+    }
+    /* `openers_bottom` is sized by MARKDOWN_CORE_DELIM_RULE_COUNT, so a rule
+     * outside the enum is an out-of-bounds index. The parameter is typed, but
+     * the push is public and C will convert anything to an enum, so the bound
+     * is enforced rather than assumed: an unnamed rule is not a delimiter, and
+     * the literal text node stays in the tree as ordinary text. */
+    if (rule <= MARKDOWN_CORE_DELIM_RULE_NONE || rule >= MARKDOWN_CORE_DELIM_RULE_COUNT) {
         return;
     }
     delim = (delimiter *)subj->mem->calloc(1, sizeof(delimiter));
@@ -625,7 +649,8 @@ static void push_delimiter(subject *subj, unsigned char c, bool can_open, bool c
         subj->oom = 1;
         return;
     }
-    delim->delim_char = c;
+    delim->owner = owner;
+    delim->rule = rule;
     delim->can_open = can_open;
     delim->can_close = can_close;
     delim->inl_text = inl_text;
@@ -687,7 +712,7 @@ static markdown_core_node *handle_delim(subject *subj, unsigned char c, bool sma
     inl_text = make_str(subj, subj->pos - numdelims, subj->pos - 1, contents);
 
     if (inl_text && (can_open || can_close) && (!(c == '\'' || c == '"') || smart)) {
-        push_delimiter(subj, c, can_open, can_close, inl_text);
+        push_delimiter(subj, NULL, core_delimiter_rule(c), can_open, can_close, inl_text);
     }
 
     return inl_text;
@@ -773,17 +798,23 @@ static int extension_dispatches(markdown_core_syntax_extension *ext, unsigned ch
     return markdown_core_byte_set_has(ext->dispatch, c);
 }
 
-static markdown_core_syntax_extension *get_extension_for_special_char(markdown_core_parser *parser, unsigned char c) {
+/* Does ANY attached extension claim this byte?
+ *
+ * That is the only question left for a byte, and it has exactly one caller:
+ * `handle_backslash` must not take its run-of-backslashes fast path if an
+ * extension might want `\`. This function used to answer "WHICH extension owns
+ * a delimiter tagged with this byte", which is a different question with a
+ * worse answer -- attach order, or NULL, and NULL is D33. */
+static int any_extension_dispatches(markdown_core_parser *parser, unsigned char c) {
     markdown_core_llist *tmp_ext;
 
     for (tmp_ext = parser->inline_syntax_extensions; tmp_ext; tmp_ext = tmp_ext->next) {
-        markdown_core_syntax_extension *ext = (markdown_core_syntax_extension *)tmp_ext->data;
-        if (extension_dispatches(ext, c)) {
-            return ext;
+        if (extension_dispatches((markdown_core_syntax_extension *)tmp_ext->data, c)) {
+            return 1;
         }
     }
 
-    return NULL;
+    return 0;
 }
 
 static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsize_t stack_bottom) {
@@ -792,16 +823,18 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
     delimiter *opener;
     delimiter *old_closer;
     bool opener_found;
-    bufsize_t openers_bottom[3][128];
+    /* One slot per RULE, so the array is sized by construction. It used to be
+     * `[3][128]` indexed by a byte the public push accepts unconstrained. */
+    bufsize_t openers_bottom[3][MARKDOWN_CORE_DELIM_RULE_COUNT];
     int i;
 
     // initialize openers_bottom:
     memset(&openers_bottom, 0, sizeof(openers_bottom));
     for (i = 0; i < 3; i++) {
-        openers_bottom[i]['*'] = stack_bottom;
-        openers_bottom[i]['_'] = stack_bottom;
-        openers_bottom[i]['\''] = stack_bottom;
-        openers_bottom[i]['"'] = stack_bottom;
+        openers_bottom[i][MARKDOWN_CORE_DELIM_RULE_EMPHASIS] = stack_bottom;
+        openers_bottom[i][MARKDOWN_CORE_DELIM_RULE_UNDERSCORE] = stack_bottom;
+        openers_bottom[i][MARKDOWN_CORE_DELIM_RULE_SINGLE_QUOTE] = stack_bottom;
+        openers_bottom[i][MARKDOWN_CORE_DELIM_RULE_DOUBLE_QUOTE] = stack_bottom;
     }
 
     // move back to first relevant delim.
@@ -812,15 +845,23 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
     }
 
     // now move forward, looking for closers, and handling each
+    //
+    // EVERY ARM ADVANCES `closer`, and that is D33. The old chain was
+    // `if (extension) ... else if (delim_char is * or _) ... else if (' or ")`,
+    // so a delimiter that matched none of the three -- which is what a byte
+    // whose owner cannot be found looks like -- left `closer` where it was,
+    // fell into the removal below, freed it, and read it again on the next
+    // turn. With `can_open` set, nothing freed it and the loop never ended.
     while (closer != NULL) {
-        markdown_core_syntax_extension *extension = get_extension_for_special_char(parser, closer->delim_char);
+        markdown_core_syntax_extension *extension = closer->owner;
+        (void)parser;
         if (closer->can_close) {
             // Now look backwards for first matching opener:
             opener = closer->previous;
             opener_found = false;
             while (opener != NULL && opener->position >= stack_bottom &&
-                   opener->position >= openers_bottom[closer->length % 3][closer->delim_char]) {
-                if (opener->can_open && opener->delim_char == closer->delim_char) {
+                   opener->position >= openers_bottom[closer->length % 3][closer->rule]) {
+                if (opener->can_open && opener->rule == closer->rule) {
                     // interior closer of size 2 can't match opener of size 1
                     // or of size 1 can't match 2
                     if (!(closer->can_open || opener->can_close) || closer->length % 3 == 0 ||
@@ -833,21 +874,16 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
             }
             old_closer = closer;
 
-            if (extension) {
-                if (opener_found) {
-                    closer = extension->insert_inline_from_delim(extension, parser, subj, opener, closer);
-                } else {
-                    closer = closer->next;
-                }
-            } else if (closer->delim_char == '*' || closer->delim_char == '_') {
-                if (opener_found) {
-                    closer = S_insert_emph(subj, opener, closer);
-                } else {
-                    closer = closer->next;
-                }
-            } else if (closer->delim_char == '\'' || closer->delim_char == '"') {
+            if (extension != NULL) {
+                closer = opener_found ? extension->insert_inline_from_delim(extension, parser, subj, opener, closer)
+                                      : closer->next;
+            } else if (closer->rule == MARKDOWN_CORE_DELIM_RULE_EMPHASIS ||
+                       closer->rule == MARKDOWN_CORE_DELIM_RULE_UNDERSCORE) {
+                closer = opener_found ? S_insert_emph(subj, opener, closer) : closer->next;
+            } else if (closer->rule == MARKDOWN_CORE_DELIM_RULE_SINGLE_QUOTE ||
+                       closer->rule == MARKDOWN_CORE_DELIM_RULE_DOUBLE_QUOTE) {
                 markdown_core_chunk_free(subj->mem, &closer->inl_text->as.literal);
-                if (closer->delim_char == '\'') {
+                if (closer->rule == MARKDOWN_CORE_DELIM_RULE_SINGLE_QUOTE) {
                     closer->inl_text->as.literal = markdown_core_chunk_literal(RIGHTSINGLEQUOTE);
                 } else {
                     closer->inl_text->as.literal = markdown_core_chunk_literal(RIGHTDOUBLEQUOTE);
@@ -855,7 +891,7 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
                 closer = closer->next;
                 if (opener_found) {
                     markdown_core_chunk_free(subj->mem, &opener->inl_text->as.literal);
-                    if (old_closer->delim_char == '\'') {
+                    if (old_closer->rule == MARKDOWN_CORE_DELIM_RULE_SINGLE_QUOTE) {
                         opener->inl_text->as.literal = markdown_core_chunk_literal(LEFTSINGLEQUOTE);
                     } else {
                         opener->inl_text->as.literal = markdown_core_chunk_literal(LEFTDOUBLEQUOTE);
@@ -863,10 +899,16 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
                     remove_delimiter(subj, opener);
                     remove_delimiter(subj, old_closer);
                 }
+            } else {
+                /* No rule owns it. Unreachable while every push names a rule,
+                 * and it advances anyway: this is the arm whose absence was
+                 * D33, and a rule added without a handler must not resurrect
+                 * it. */
+                closer = closer->next;
             }
             if (!opener_found) {
                 // set lower bound for future searches for openers
-                openers_bottom[old_closer->length % 3][old_closer->delim_char] = old_closer->position;
+                openers_bottom[old_closer->length % 3][old_closer->rule] = old_closer->position;
                 if (!old_closer->can_open) {
                     // we can remove a closer that can't be an
                     // opener, once we've seen there's no
@@ -981,7 +1023,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
     advance(subj);
     unsigned char nextchar = peek_char(subj);
     if ((parser->backslash_ispunct ? parser->backslash_ispunct : markdown_core_ispunct)(nextchar)) {
-        if (nextchar == '\\' && get_extension_for_special_char(parser, '\\') == NULL) {
+        if (nextchar == '\\' && !any_extension_dispatches(parser, '\\')) {
             bufsize_t end = start;
             while (end + 1 < subj->input.len && subj->input.data[end] == '\\' && subj->input.data[end + 1] == '\\') {
                 end += 2;
@@ -1736,21 +1778,23 @@ static markdown_core_node *try_extensions(markdown_core_parser *parser, markdown
     return res;
 }
 
+/* The innermost unmatched opener belonging to an extension that also claims
+ * byte `c`. The owner comes off the delimiter now, so this no longer answers
+ * "the first attached extension that happens to claim the delimiter's byte". */
 static delimiter *find_extension_opener_for_special_char(markdown_core_parser *parser, subject *subj, unsigned char c) {
     delimiter *delim = subj->last_delim;
-    int closer_count[256];
+    int closer_count[MARKDOWN_CORE_DELIM_RULE_COUNT];
 
+    (void)parser;
     memset(closer_count, 0, sizeof(closer_count));
 
     while (delim) {
-        markdown_core_syntax_extension *extension = get_extension_for_special_char(parser, delim->delim_char);
-
-        if (extension && extension_dispatches(extension, c)) {
+        if (delim->owner != NULL && extension_dispatches(delim->owner, c)) {
             if (delim->can_close) {
-                closer_count[delim->delim_char]++;
+                closer_count[delim->rule]++;
             } else if (delim->can_open) {
-                if (closer_count[delim->delim_char] > 0) {
-                    closer_count[delim->delim_char]--;
+                if (closer_count[delim->rule] > 0) {
+                    closer_count[delim->rule]--;
                 } else {
                     return delim;
                 }
@@ -2022,9 +2066,11 @@ char *markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser
     return my_strndup((const char *)parser->input.data + startpos, len);
 }
 
-void markdown_core_inline_parser_push_delimiter(markdown_core_inline_parser *parser, unsigned char c, int can_open,
-                                                int can_close, markdown_core_node *inl_text) {
-    push_delimiter(parser, c, can_open != 0, can_close != 0, inl_text);
+void markdown_core_inline_parser_push_delimiter(markdown_core_inline_parser *parser,
+                                                markdown_core_syntax_extension *owner,
+                                                markdown_core_delimiter_rule rule, int can_open, int can_close,
+                                                markdown_core_node *inl_text) {
+    push_delimiter(parser, owner, rule, can_open != 0, can_close != 0, inl_text);
 }
 
 void markdown_core_inline_parser_remove_delimiter(markdown_core_inline_parser *parser, delimiter *delim) {

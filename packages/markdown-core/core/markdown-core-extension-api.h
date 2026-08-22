@@ -106,15 +106,64 @@ typedef struct markdown_core_plugin markdown_core_plugin;
  */
 typedef struct subject markdown_core_inline_parser;
 
+/** A delimiter names its RULE, not a byte.
+ *
+ * It used to carry an `unsigned char delim_char`, and three separate things
+ * were derived from that byte:
+ *
+ *   WHO OWNS IT -- `get_extension_for_special_char` walked the attached
+ *   extensions and returned the first whose dispatch set contained the byte.
+ *   Two extensions may claim one byte (`autolink` and `directive` both claim
+ *   `:`), so the answer was attach order; and if no extension claimed it the
+ *   answer was NULL, which `process_emphasis`'s `else if` chain then fell
+ *   straight through -- **without advancing the cursor** -- freeing the
+ *   delimiter and reading it again on the next turn. Measured: ASan
+ *   `heap-use-after-free`, READ of size 1 in `process_emphasis`, from an
+ *   extension that pushes a byte it does not itself dispatch; with
+ *   `can_open` set it is an infinite loop instead. That is **D33**.
+ *
+ *   WHICH OPENER MATCHES -- `opener->delim_char == closer->delim_char`, which
+ *   is why `formula` needed four distinct sentinel BYTES (0x01-0x04) to keep
+ *   `$x$` from matching `$$x$$`, and `directive` a fifth (0x08). Those bytes
+ *   are ordinary file bytes: a literal 0x01 in a document split a text run and
+ *   was offered to `formula`'s inline hook.
+ *
+ *   WHERE THE OPENER MEMO LIVES -- `openers_bottom[length % 3][delim_char]`,
+ *   an array declared `[3][128]` and indexed by a byte the PUBLIC push
+ *   accepts unconstrained. `openers_bottom[2][200]` is offset 456 into 384
+ *   elements.
+ *
+ * A dense rule id answers all three: the owner is on the delimiter, matching is
+ * `opener->rule == closer->rule`, and the memo is sized by construction.
+ */
+typedef enum {
+    MARKDOWN_CORE_DELIM_RULE_NONE = 0,
+    /* Core. */
+    MARKDOWN_CORE_DELIM_RULE_EMPHASIS,     /* `*` */
+    MARKDOWN_CORE_DELIM_RULE_UNDERSCORE,   /* `_` */
+    MARKDOWN_CORE_DELIM_RULE_SINGLE_QUOTE, /* `'`, smart punctuation only */
+    MARKDOWN_CORE_DELIM_RULE_DOUBLE_QUOTE, /* `"`, smart punctuation only */
+    /* Extensions. One entry per rule, not per extension and not per byte. */
+    MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH,
+    MARKDOWN_CORE_DELIM_RULE_FORMULA_DOLLAR_INLINE,
+    MARKDOWN_CORE_DELIM_RULE_FORMULA_DOLLAR_DISPLAY,
+    MARKDOWN_CORE_DELIM_RULE_FORMULA_LATEX_INLINE,
+    MARKDOWN_CORE_DELIM_RULE_FORMULA_LATEX_DISPLAY,
+    MARKDOWN_CORE_DELIM_RULE_DIRECTIVE_LABEL,
+    MARKDOWN_CORE_DELIM_RULE_COUNT
+} markdown_core_delimiter_rule;
+
 /** Exposed raw for now */
 
 typedef struct delimiter {
     struct delimiter *previous;
     struct delimiter *next;
     markdown_core_node *inl_text;
+    /** The extension that pushed it, or NULL for a core rule. One load. */
+    markdown_core_syntax_extension *owner;
     bufsize_t position;
     bufsize_t length;
-    unsigned char delim_char;
+    markdown_core_delimiter_rule rule;
     int can_open;
     int can_close;
 } delimiter;
@@ -608,8 +657,10 @@ char *markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser
  * more information on the parameters
  */
 MARKDOWN_CORE_EXPORT
-void markdown_core_inline_parser_push_delimiter(markdown_core_inline_parser *parser, unsigned char c, int can_open,
-                                                int can_close, markdown_core_node *inl_text);
+void markdown_core_inline_parser_push_delimiter(markdown_core_inline_parser *parser,
+                                                markdown_core_syntax_extension *owner,
+                                                markdown_core_delimiter_rule rule, int can_open, int can_close,
+                                                markdown_core_node *inl_text);
 
 /** Remove 'delim' from the delimiter stack
  */

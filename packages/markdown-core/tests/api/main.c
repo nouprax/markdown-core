@@ -1112,6 +1112,72 @@ static void extension_decline_yields_turn(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
+/* D33. `process_emphasis` used to choose its arm by the delimiter's BYTE:
+ *
+ *     if (extension)                       ... else
+ *     if (delim_char == '*' || '_')        ... else
+ *     if (delim_char == '\'' || '"')        ...
+ *
+ * where `extension` was "the first attached extension whose dispatch set
+ * contains this byte". A delimiter matching none of the three left `closer`
+ * exactly where it was, fell into the removal below, freed it, and read it
+ * again on the next turn -- ASan `heap-use-after-free`, READ of size 8 in
+ * `process_emphasis`. With `can_open` set nothing freed it and the loop never
+ * ended at all.
+ *
+ * No in-tree extension reaches it, because each pushes a tag it also declares.
+ * The public push does not care: it is one call from any extension, and both
+ * shapes below are the two ways to make it. The first is a rule the engine has
+ * no handler for; the second is a rule that is not in the enum, which would
+ * also index `openers_bottom` out of bounds. */
+static markdown_core_node *stray_delimiter_match(markdown_core_syntax_extension *self, markdown_core_parser *parser,
+                                                 markdown_core_node *parent, unsigned char character,
+                                                 markdown_core_inline_parser *inline_parser) {
+    markdown_core_node *node;
+    markdown_core_delimiter_rule rule =
+        (markdown_core_delimiter_rule)(size_t)markdown_core_syntax_extension_get_private(self);
+
+    (void)parent;
+    if (character != '@') {
+        return NULL;
+    }
+    markdown_core_inline_parser_advance_offset(inline_parser);
+    (void)parser;
+    node = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+    if (!node) {
+        return NULL;
+    }
+    markdown_core_node_set_literal(node, "@");
+    /* owner NULL, so no extension claims it, and the rule is not one of the
+     * four the core handles. */
+    markdown_core_inline_parser_push_delimiter(inline_parser, NULL, rule, 0, 1, node);
+    return node;
+}
+
+static void stray_delimiter_parse(test_batch_runner *runner, markdown_core_delimiter_rule rule, const char *what) {
+    markdown_core_syntax_extension *ext = markdown_core_syntax_extension_new("stray");
+    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *document;
+    const char *input = "a @ b @ c\n";
+
+    markdown_core_syntax_extension_set_match_inline_func(ext, stray_delimiter_match);
+    markdown_core_syntax_extension_set_byte_sets(ext, "@", "@", NULL);
+    markdown_core_syntax_extension_set_private(ext, (void *)(size_t)rule, NULL);
+    markdown_core_parser_attach_syntax_extension(parser, ext);
+    markdown_core_parser_feed(parser, input, strlen(input));
+    document = markdown_core_parser_finish(parser);
+
+    OK(runner, document != NULL, "a delimiter with %s still finishes the parse", what);
+    markdown_core_node_free(document);
+    markdown_core_parser_free(parser);
+    markdown_core_syntax_extension_free(markdown_core_get_default_mem_allocator(), ext);
+}
+
+static void stray_delimiter(test_batch_runner *runner) {
+    stray_delimiter_parse(runner, MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH, "a rule and no owner");
+    stray_delimiter_parse(runner, (markdown_core_delimiter_rule)200, "a rule outside the enum");
+}
+
 /* A1. An allocation failure is a fact about the write that failed, not a
  * property the buffer keeps. `markdown_core_strbuf_clear` used not to lift
  * `oom`, and `markdown_core_strbuf_detach` was the only operation in the engine
@@ -1378,6 +1444,7 @@ int main(void) {
     autolink_source_pos(runner);
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
+    stray_delimiter(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

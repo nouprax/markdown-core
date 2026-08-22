@@ -16,11 +16,15 @@
  * an exhaustive 37,448-case differential with zero differences. So this audit
  * reads the source, which is the only place the fact exists.
  *
- * Bytes below 0x20 are delimiter-tag SENTINELS, not characters the extension
- * expects to meet in the input: they are pushed onto the delimiter stack to
- * label an opener, and `match` never sees them. They are exempt from the
- * dispatch requirement and required to stay below 0x20 — a sentinel that grew
- * into printable range would be an ordinary byte a user can type.
+ * THERE ARE NO SENTINELS ANY MORE, and that is now a law rather than a note.
+ * Five bytes below 0x20 used to be declared here — `formula`'s 0x01–0x04 and
+ * `directive`'s 0x08 — because a delimiter carried a byte and four kinds of
+ * formula opener had to be told apart by it. They were exempt from the dispatch
+ * requirement precisely because they were not characters at all. They were
+ * still ordinary file bytes: a literal 0x01 in a document ended the text run in
+ * front of it and was offered to `formula`'s inline hook. 3.3 gave a delimiter
+ * a RULE instead of a byte and they are gone, so a byte below 0x20 in any set
+ * is now a failure.
  *
  * SINCE 3.2 AN EXTENSION DECLARES THREE SETS, and two laws relate them, both
  * checked below:
@@ -128,12 +132,16 @@ for (const entry of fs
     }
     const dispatched = new Set([...body.matchAll(DISPATCH)].map((match) => byteOf(match[1])));
 
-    for (const byte of dispatch) {
-        if (byte === 0) {
-            failures.push(`${entry}: declares NUL, which the feed replaces before inlines run.`);
+    for (const byte of [...terminates, ...dispatch, ...transparent]) {
+        if (byte < 0x20) {
+            failures.push(
+                `${entry}: declares ${spell(byte)}, a control byte. Delimiter tags are RULES since 3.3, and a byte ` +
+                    "below 0x20 is a byte a document can contain."
+            );
         }
-        if (byte < 0x20) continue;
-        if (!dispatched.has(byte)) {
+    }
+    for (const byte of dispatch) {
+        if (byte >= 0x20 && !dispatched.has(byte)) {
             failures.push(
                 `${entry}: declares ${spell(byte)} in its dispatch set, and its match_inline never dispatches on it.`
             );
@@ -177,5 +185,7 @@ if (failures.length > 0) {
     );
     process.exit(1);
 }
-process.stdout.write(`Extension special characters: every registered byte is dispatched or is a sentinel.\n`);
+process.stdout.write(
+    `Extension special characters: every declared byte is a character, and every one is dispatched.\n`
+);
 process.stdout.write(`${report.join("\n")}\n`);

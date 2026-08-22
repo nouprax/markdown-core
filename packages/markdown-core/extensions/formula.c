@@ -11,10 +11,15 @@
 
 #include "ext_scanners.h"
 
-#define FORMULA_DELIM_DOLLAR_INLINE 1
-#define FORMULA_DELIM_DOLLAR_DISPLAY 2
-#define FORMULA_DELIM_LATEX_BACKSLASH_INLINE 3
-#define FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY 4
+/* These were four SENTINEL BYTES -- 1, 2, 3, 4 -- because a delimiter carried a
+ * byte and four kinds of formula opener had to be told apart by it. They were
+ * ordinary file bytes: a literal 0x01 in a document ended the text run in front
+ * of it and was offered to this extension's inline hook. They are now four of
+ * the eleven delimiter RULES, and no byte below 0x20 is special anywhere. */
+#define FORMULA_DELIM_DOLLAR_INLINE MARKDOWN_CORE_DELIM_RULE_FORMULA_DOLLAR_INLINE
+#define FORMULA_DELIM_DOLLAR_DISPLAY MARKDOWN_CORE_DELIM_RULE_FORMULA_DOLLAR_DISPLAY
+#define FORMULA_DELIM_LATEX_BACKSLASH_INLINE MARKDOWN_CORE_DELIM_RULE_FORMULA_LATEX_INLINE
+#define FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY MARKDOWN_CORE_DELIM_RULE_FORMULA_LATEX_DISPLAY
 
 #define FORMULA_BLOCK_DELIM_NONE 0
 #define FORMULA_BLOCK_DELIM_LATEX_BACKSLASH 1
@@ -299,9 +304,10 @@ static markdown_core_node *make_delimiter_text(markdown_core_parser *parser, mar
     return node;
 }
 
-static markdown_core_node *match_formula_delimiter(markdown_core_parser *parser,
-                                                   markdown_core_inline_parser *inline_parser, unsigned char delim_char,
-                                                   bufsize_t len, int can_open, int can_close) {
+static markdown_core_node *match_formula_delimiter(markdown_core_syntax_extension *self, markdown_core_parser *parser,
+                                                   markdown_core_inline_parser *inline_parser,
+                                                   markdown_core_delimiter_rule rule, bufsize_t len, int can_open,
+                                                   int can_close) {
     markdown_core_node *node = make_delimiter_text(parser, inline_parser, len);
 
     if (!node) {
@@ -310,7 +316,7 @@ static markdown_core_node *match_formula_delimiter(markdown_core_parser *parser,
     }
 
     if (can_open || can_close) {
-        markdown_core_inline_parser_push_delimiter(inline_parser, delim_char, can_open, can_close, node);
+        markdown_core_inline_parser_push_delimiter(inline_parser, self, rule, can_open, can_close, node);
     }
     return node;
 }
@@ -368,11 +374,11 @@ static markdown_core_node *match(markdown_core_syntax_extension *extension, mark
         }
 
         if (scan_formula_dollar_display_open(chunk->data, len, offset)) {
-            return match_formula_delimiter(parser, inline_parser, FORMULA_DELIM_DOLLAR_DISPLAY, 2, 1, 1);
+            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_DOLLAR_DISPLAY, 2, 1, 1);
         }
 
         if (scan_formula_dollar_inline_open(chunk->data, len, offset)) {
-            return match_formula_delimiter(parser, inline_parser, FORMULA_DELIM_DOLLAR_INLINE, 1,
+            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_DOLLAR_INLINE, 1,
                                            dollar_inline_can_open(chunk, (bufsize_t)offset),
                                            dollar_inline_can_close(chunk, (bufsize_t)offset));
         }
@@ -380,28 +386,28 @@ static markdown_core_node *match(markdown_core_syntax_extension *extension, mark
         if (latex_formula_delimiters_enabled(parser)) {
             opener_len = scan_formula_latex_backslash_display_open(chunk->data, len, offset);
             if (opener_len) {
-                return match_formula_delimiter(parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY, opener_len,
-                                               1, 0);
+                return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
+                                               opener_len, 1, 0);
             }
 
             opener_len = scan_formula_latex_backslash_inline_open(chunk->data, len, offset);
             if (opener_len) {
-                return match_formula_delimiter(parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE, opener_len,
-                                               1, 0);
+                return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
+                                               opener_len, 1, 0);
             }
         }
 
         if (latex_formula_delimiters_enabled(parser)) {
             closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ']', 2);
             if (closer_len) {
-                return match_formula_delimiter(parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY, closer_len,
-                                               0, 1);
+                return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
+                                               closer_len, 0, 1);
             }
 
             closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ')', 2);
             if (closer_len) {
-                return match_formula_delimiter(parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE, closer_len,
-                                               0, 1);
+                return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
+                                               closer_len, 0, 1);
             }
         }
     }
@@ -409,13 +415,13 @@ static markdown_core_node *match(markdown_core_syntax_extension *extension, mark
     return NULL;
 }
 
-static markdown_core_formula_mode mode_for_delim(unsigned char delim_char) {
+static markdown_core_formula_mode mode_for_delim(markdown_core_delimiter_rule delim_char) {
     return delim_char == FORMULA_DELIM_DOLLAR_DISPLAY || delim_char == FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY
                ? MARKDOWN_CORE_FORMULA_MODE_STANDALONE
                : MARKDOWN_CORE_FORMULA_MODE_EMBEDDED;
 }
 
-static int is_backslash_delim(unsigned char delim_char) {
+static int is_backslash_delim(markdown_core_delimiter_rule delim_char) {
     return delim_char == FORMULA_DELIM_LATEX_BACKSLASH_INLINE || delim_char == FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY;
 }
 
@@ -480,19 +486,19 @@ static delimiter *insert_formula(markdown_core_syntax_extension *extension, mark
     markdown_core_node *formula = NULL;
     bufsize_t body_start = opener->position;
     bufsize_t body_end = closer->position - closer->length;
-    markdown_core_formula_mode mode = mode_for_delim((unsigned char)opener->delim_char);
+    markdown_core_formula_mode mode = mode_for_delim(opener->rule);
     const unsigned char *literal = chunk->data + body_start;
     bufsize_t literal_len = body_end - body_start;
 
-    if (opener->delim_char != closer->delim_char) {
+    if (opener->rule != closer->rule) {
         goto done;
     }
 
-    if (opener->length != closer->length && is_backslash_delim((unsigned char)opener->delim_char)) {
+    if (opener->length != closer->length && is_backslash_delim(opener->rule)) {
         goto done;
     }
 
-    if (opener->delim_char == FORMULA_DELIM_DOLLAR_INLINE && literal_len > 0 && literal[0] == '`') {
+    if (opener->rule == FORMULA_DELIM_DOLLAR_INLINE && literal_len > 0 && literal[0] == '`') {
         if (literal_len < 2 || literal[literal_len - 1] != '`') {
             goto done;
         }
@@ -501,7 +507,7 @@ static delimiter *insert_formula(markdown_core_syntax_extension *extension, mark
         literal_len -= 2;
     }
 
-    if (is_backslash_delim((unsigned char)opener->delim_char)) {
+    if (is_backslash_delim(opener->rule)) {
         formula = make_backslash_delimited_formula(extension, parser, mode, chunk->data, body_start, body_end, 2,
                                                    mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE ? ']' : ')');
     } else {
@@ -665,18 +671,15 @@ markdown_core_syntax_extension *create_formula_extension(void) {
     markdown_core_syntax_extension_set_opaque_free_func(ext, formula_opaque_free);
     markdown_core_syntax_extension_set_inline_from_delim_func(ext, insert_formula);
 
-    /* `$` and `\\` open a formula. The four bytes 0x01-0x04 are not source at
-     * all: they are DELIMITER TAGS, and they are here only because
-     * `get_extension_for_special_char` derives a delimiter's owner from its
-     * `delim_char`. They are ordinary file bytes and a literal 0x01 in user
-     * text therefore splits a text run and dispatches here. Only giving a
-     * delimiter a RULE instead of a byte removes them, which is 3.3's.
+    /* `$` and `\\` open a formula, and that is the whole set. The four
+     * sentinel bytes 0x01-0x04 that used to be here were delimiter tags, not
+     * source, and 3.3 replaced them with rules.
      *
      * `\\` is in the dispatch set and NOT the terminator set, because
      * `is_core_special_character` refuses it there anyway -- and it must stay
-     * in dispatch, since `handle_backslash` asks whether any extension owns
+     * in dispatch, since `handle_backslash` asks whether any extension claims
      * `\\` before taking a core fast path. */
-    markdown_core_syntax_extension_set_byte_sets(ext, "$\x01\x02\x03\x04", "$\\\x01\x02\x03\x04", NULL);
+    markdown_core_syntax_extension_set_byte_sets(ext, "$", "$\\", NULL);
     /* No set_emphasis here; see the note in extensions/directive.c. Attaching
      * this extension folded `$` and the four delimiter sentinels into the
      * flanking skip table and changed the base language. */
