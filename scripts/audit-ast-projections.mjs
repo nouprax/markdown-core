@@ -37,6 +37,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 
 const CONTRACT_PATH = "docs/specs/canonical-ast.json";
 const PROSE_PATH = "docs/specs/canonical-ast.md";
@@ -114,9 +115,28 @@ function projection({ label, directories, declaration, field }) {
     };
 }
 
-const projections = [
+/** SCREAMING_SNAKE for a PascalCase kind: `HTMLBlock` -> `HTML_BLOCK`. */
+const camel = (kind) =>
+    kind.replace(/^([A-Z]+)(?=[A-Z][a-z]|$)/, (m) => m.toLowerCase()).replace(/^([A-Z])/, (m) => m.toLowerCase());
+
+const snake = (kind) =>
+    kind
+        .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+        .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
+        .toUpperCase();
+
+/** A field the dump cannot print, because it IS the child structure. */
+const structural = (field) => /Markup|ListItem|TableRow|TableCell/.test(field.type);
+
+/** Every kind named by one file, in the order it names them. */
+function namedKinds(relative, pattern, transform = (m) => m[1]) {
+    const text = read(relative);
+    return [...text.matchAll(pattern)].map(transform);
+}
+
+const modelProjections = [
     projection({
-        label: "Swift",
+        label: "Swift model",
         directories: ["packages/swift-markdown-core/Sources/MarkdownCore"],
         // Document is a final class — it owns the native parse, which a value
         // type cannot release — while every other kind is a struct. Both are
@@ -125,7 +145,7 @@ const projections = [
         field: /public (?:let|var) ([A-Za-z]+)\s*:/g
     }),
     projection({
-        label: "Kotlin",
+        label: "Kotlin model",
         directories: ["packages/kotlin-markdown-core/src/commonMain/kotlin"],
         // Both spellings: most kinds take an `internal constructor`, the two
         // extension kinds take a plain one. A reader that knew only the first
@@ -134,7 +154,7 @@ const projections = [
         field: /(?:public |override )?val ([A-Za-z]+)\s*:/g
     }),
     projection({
-        label: "ES",
+        label: "ES model",
         directories: ["packages/es-markdown-core/src/model"],
         // A kind with no fields is a type alias, not an interface — which is
         // the correct TypeScript for it, and reads as "declared with zero
@@ -145,6 +165,7 @@ const projections = [
 ];
 
 const kinds = definition();
+const contract = JSON.parse(fs.readFileSync(path.join(root, CONTRACT_PATH), "utf8"));
 let failed = false;
 
 // The prose's table is a second copy of the contract, in order.
@@ -168,7 +189,158 @@ let failed = false;
     }
 }
 
-for (const { label, fieldsOf } of projections) {
+/* SIX SURFACES, and every one of them names every kind.
+ *
+ * §4.1's Step 15A requires ONE audit over the C header, the C dump, the Kotlin
+ * bridge + decoder + model, the ES bridge + export list + decoder + model, the
+ * Swift model + dumper, and the canonical-AST manifest. Until 15A.3 this file
+ * read three of those -- the three MODELS -- so a decoder that forgot a kind, a
+ * dumper that could not name one, or a wire enum that was one short was
+ * invisible here and visible only if some test happened to parse that kind. */
+const kindSurfaces = [
+    {
+        label: "C header kind enum",
+        expect: [...kinds.keys()].map(snake),
+        actual: namedKinds("packages/markdown-core/include/markdown_core.h", /MARKDOWN_CORE_KIND_([A-Z_]+)/g).filter(
+            (name) => name !== "NONE"
+        )
+    },
+    {
+        label: "C dump kind names",
+        expect: [...kinds.keys()],
+        actual: namedKinds("packages/markdown-core/extensions/ast.c", /^\s+"([A-Za-z]+)"[,}]/gm).filter(
+            (name) => name !== "None"
+        )
+    },
+    {
+        label: "Kotlin wire kinds",
+        expect: [...kinds.keys()].map(snake),
+        actual: namedKinds(
+            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/wire/WireKind.kt",
+            /^\s{4}([A-Z][A-Z_]*)\(\d+\),$/gm
+        )
+    },
+    {
+        label: "Kotlin decoder",
+        expect: [...kinds.keys()].map(snake),
+        actual: namedKinds(
+            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/wire/WireMarkupDecoder.kt",
+            /WireKind\.([A-Z_]+)\s*->/g
+        )
+    },
+    {
+        label: "Kotlin dumper",
+        expect: [...kinds.keys()],
+        actual: namedKinds(
+            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/TreeDumper.kt",
+            /override fun visit([A-Za-z]+)\(/g
+        )
+    },
+    {
+        label: "ES export list",
+        expect: [...kinds.keys()],
+        actual: namedKinds("packages/es-markdown-core/src/index.ts", /export (?:type )?\{([^}]*)\}/g, (m) => m[1])
+            .flatMap((names) => names.split(",").map((n) => n.trim()))
+            .filter((name) => kinds.has(name))
+    },
+    {
+        label: "ES wire kinds",
+        expect: [...kinds.keys()].map(camel),
+        actual: namedKinds("packages/es-markdown-core/src/wire/kinds.ts", /"([a-zA-Z]+)"/g).filter(
+            (name) => name !== "none"
+        )
+    },
+    {
+        label: "ES decoder",
+        expect: [...kinds.keys()].map(camel),
+        actual: namedKinds("packages/es-markdown-core/src/wire/node-decoder.ts", /case "([a-zA-Z]+)":/g)
+    },
+    {
+        label: "ES dumper",
+        expect: [...kinds.keys()],
+        actual: namedKinds("packages/es-markdown-core/src/tree-dumper.ts", /^\s+visit([A-Za-z]+): \(/gm)
+    },
+    {
+        label: "Swift dumper",
+        expect: [...kinds.keys()],
+        actual: namedKinds(
+            "packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift",
+            /mutating func visit\(_:? ?n?o?d?e?:? (?:MarkdownCore\.)?([A-Za-z]+)\)/g
+        )
+    },
+    {
+        label: "Swift walker",
+        expect: [...kinds.keys()],
+        actual: namedKinds(
+            "packages/swift-markdown-core/Sources/MarkdownCore/Walker/Walker.swift",
+            /mutating func visit\(_:? ?n?o?d?e?:? (?:MarkdownCore\.)?([A-Za-z]+)\)/g
+        )
+    },
+    {
+        label: "canonical-AST manifest",
+        expect: [...kinds.keys()],
+        actual: JSON.parse(read("specs/canonical-ast/manifest.json")).coverageRequirements.kinds
+    }
+];
+
+for (const { label, expect, actual } of kindSurfaces) {
+    const missing = expect.filter((kind) => !actual.includes(kind));
+    const extra = actual.filter((kind) => !expect.includes(kind));
+    if (actual.length === 0) {
+        console.error(`${label}: read no kinds at all — this reader is looking at the wrong thing`);
+        failed = true;
+        continue;
+    }
+    if (missing.length) {
+        console.error(`${label}: does not name ${missing.join(", ")}`);
+        failed = true;
+    }
+    if (extra.length) {
+        console.error(`${label}: names ${extra.join(", ")}, which the contract does not`);
+        failed = true;
+    }
+}
+
+/* The C dump prints every field the contract gives a kind, EXCEPT the ones that
+ * are the child structure itself -- `content`, `items`, `header`, `rows`,
+ * `cells` are the tree and the `children=` count. `label` is the exception to
+ * the exception: it is structural and the dump prints its LENGTH, because a
+ * directive's label and its content are two runs of one child list and nothing
+ * else in the line says where the first one ends. */
+{
+    const source = read("packages/markdown-core/extensions/ast.c");
+    const body = source.slice(source.indexOf("static void dump_fields"));
+    const arms = new Map();
+    let pending = [];
+    for (const line of body.slice(0, body.indexOf("\n}\n")).split("\n")) {
+        const label = /case MARKDOWN_CORE_KIND_([A-Z_]+):/.exec(line);
+        if (label) {
+            pending.push(label[1]);
+            continue;
+        }
+        for (const literal of line.matchAll(/"([^"]*)"/g)) {
+            for (const field of literal[1].matchAll(/([a-zA-Z_]+)=/g)) {
+                for (const kind of pending) arms.set(kind, [...(arms.get(kind) ?? []), field[1]]);
+            }
+        }
+        if (/^\s+break;/.test(line)) pending = [];
+    }
+    for (const [kind, fields] of kinds) {
+        const expected = contract.kinds
+            .find((entry) => entry.name === kind)
+            .fields.filter((field) => field.name === "label" || !structural(field))
+            .map((field) => field.name);
+        const printed = arms.get(snake(kind)) ?? [];
+        const missing = expected.filter((field) => !printed.includes(field));
+        if (missing.length) {
+            console.error(`C dump: ${kind} never prints ${missing.join(", ")}`);
+            failed = true;
+        }
+        void fields;
+    }
+}
+
+for (const { label, fieldsOf } of modelProjections) {
     for (const [kind, expected] of kinds) {
         const declared = fieldsOf(kind);
         if (declared === null) {
@@ -189,6 +361,7 @@ if (failed) {
     process.exit(1);
 }
 console.log(
-    `AST-projection audit passed: ${String(kinds.size)} kinds, ` +
-        `the prose table, and ${String(projections.length)} platforms.`
+    `AST-projection audit passed: ${String(kinds.size)} kinds over ` +
+        `${String(kindSurfaces.length)} surfaces, the C dump's fields, the prose table, and ` +
+        `${String(modelProjections.length)} models.`
 );

@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a) and **15A.1 – 15A.2** (§4.14.15A) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a) and **15A.1 – 15A.3** (§4.14.15A) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **15A.3** — the audit grows from three model surfaces to the six §4.1 names. Then 15A.4 (Q29) and Step 6. Remaining: `15A 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **15A.4** — Q29, deleting `mode` from `Code`, `CodeBlock`, `Directive` and `DirectiveBlock`: 183 golden rows and every one of the twelve surfaces. Then Step 6. Remaining: `15A 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -3893,6 +3893,63 @@ audits" must be green, and no step owns it.
 does not try to close it, because closing it means writing 170 doc comments and
 most of them can only restate the signature. That is exactly the pass this
 repository has already rejected once. It is **Q41**.
+
+
+##### 15A.3 — one audit, and the six surfaces are twelve readers
+
+§4.1 asks for *"**one** audit \[that\] checks all six projection surfaces
+against \[the contract\] — C header, C dump, Kotlin bridge + decoder + model, ES
+bridge + export list + decoder + model, Swift model + dumper, and the
+canonical-AST manifest"*. Until here it read **three**: the three models. A
+decoder that forgot a kind, a dumper that could not name one, or a wire enum
+one short was invisible to it and visible only if some test happened to parse
+that kind.
+
+The six surfaces are twelve concrete readers, because most of them are more
+than one file:
+
+| surface | readers |
+|---|---|
+| C header | the `markdown_core_node_kind` enum |
+| C dump | `markdown_core_node_kind_name`'s string table, **and `dump_fields`'s per-kind field emission** |
+| Kotlin | `WireKind` enum, `WireMarkupDecoder` arms, `TreeDumper` visits, the model |
+| ES | `wire/kinds.ts`, `wire/node-decoder.ts`, `index.ts`'s export list, `tree-dumper.ts`, the model |
+| Swift | `Walker`'s `ChildrenVisitor`, `TreeDumper`, the model |
+| manifest | `specs/canonical-ast/manifest.json`'s `coverageRequirements.kinds` |
+
+Every reader is checked **both ways**: a kind the contract has and the surface
+does not, and a kind the surface has and the contract does not. And every one
+carries the saw-nothing assertion 3.2 and 3.4 taught this repository to write —
+*"read no kinds at all — this reader is looking at the wrong thing"* — because
+a reader that matches nothing is how three audits in this programme have
+already turned into sentences.
+
+**The C dump's fields need one stated rule**, and it is the only interesting
+one: the dump prints every contract field **except** the ones that ARE the
+child structure (`content`, `items`, `header`, `rows`, `cells` are the tree and
+the `children=` count). `label` is the exception to the exception — it is
+structural and the dump prints its **length**, because a directive's label and
+its content are two runs of one child list and nothing else on the line says
+where the first ends.
+
+**It found no further drift**, and that is the result: after 15A.2 every other
+surface already named all 28 kinds. §4.1.2's reading — *"16 Swift-only failures
+and zero Kotlin or ES failures ... one binding a full era behind the other
+two"* — is confirmed exactly.
+
+| mutant | result |
+|---|---|
+| rename `MARKDOWN_CORE_KIND_TABLE_CELL` in the C header | *C header kind enum: does not name TABLE_CELL* |
+| misspell `"FootnoteReference"` in the C dump's name table | *C dump kind names: does not name FootnoteReference* |
+| stop printing ` level=` for `Heading` | *C dump: Heading never prints level* |
+| misspell a `WireKind` arm in the Kotlin decoder | *Kotlin decoder: does not name SOFT_BREAK* |
+| delete `Image` from the ES export list | *ES export list: does not name Image* |
+| misspell a kind in the canonical-AST manifest | *canonical-AST manifest: does not name TableCell* |
+
+**Gates after.** Every §0 gate green; `audit-ast-projections.mjs` reads
+`28 kinds over 12 surfaces, the C dump's fields, the prose table, and 3
+models`. No engine file, no binding file and no golden was touched by this
+sub-step: it is all audit.
 
 
 ---
