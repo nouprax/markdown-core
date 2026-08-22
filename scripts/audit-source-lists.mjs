@@ -15,9 +15,12 @@
  * of one fact, they are five facts that happen to have been equal once.
  *
  * The CMake graph is the authority because it is the one that is built and
- * tested on every commit. The other four follow it. Order is not checked —
+ * tested on every commit. The others follow it. Order is not checked —
  * a compiler does not care — but membership is, and so is existence: a list
  * naming a file that is not there is how all three of these broke.
+ *
+ * FOUR of the five are here today. The fifth is registered as absent with an
+ * owner and printed on every run; see `REGISTERED_ABSENT` below.
  *
  *   node scripts/audit-source-lists.mjs [--fix]
  */
@@ -62,6 +65,42 @@ function names(relative, label, pattern) {
     return found;
 }
 
+/**
+ * A follower this repository does not have yet.
+ *
+ * `packages/swift-markdown-core/Package.release.swift` is the trimmed SwiftPM
+ * manifest the source archive is published from. It postdates `580d10c` and
+ * arrived here with Step 0's wholesale `scripts/` restore, not with the
+ * package — so this audit named a file the tree has never contained and DIED
+ * on it, `ENOENT` out of `read()`, before comparing anything. A gate that
+ * throws is a gate nobody can read, and it blocked Step 3a, whose whole
+ * hazard is deleting `core/arena.c` from some of these lists and not others.
+ *
+ * An absence is registered, not tolerated: it must be named here with its
+ * owner, it is printed on every run, and the pass line reports how many lists
+ * were actually compared, so this can never read as "all five agree".
+ */
+const REGISTERED_ABSENT = {
+    "packages/swift-markdown-core/Package.release.swift": {
+        why: "the release manifest postdates the 1.0.3 baseline; the tree has no Swift release archive yet",
+        owner: "15C — release plumbing pointing at live paths (§4.1)"
+    }
+};
+
+const absent = [];
+/** A follower's two buckets, or `null` if the file is registered as not here yet. */
+function follower(relative, buckets) {
+    if (fs.existsSync(path.join(root, relative))) {
+        return buckets();
+    }
+    const registered = REGISTERED_ABSENT[relative];
+    if (registered === undefined) {
+        throw new Error(`${relative}: this list does not exist and is not registered as absent`);
+    }
+    absent.push({ relative, ...registered });
+    return null;
+}
+
 /** The names inside `const <name> = [ ... ]`, which is how the ES build spells it. */
 function esArray(relative, variable) {
     const text = read(relative);
@@ -76,36 +115,30 @@ function esArray(relative, variable) {
 const swiftPattern = (dir) => new RegExp(`"${dir}\\/(?<file>[A-Za-z0-9_-]+\\.c)"`, "g");
 const androidPattern = (dir) => new RegExp(`MARKDOWN_CORE_${dir}_DIR\\}\\/(?<file>[A-Za-z0-9_-]+\\.c)`, "g");
 
-const followers = {
-    "Package.swift": {
+const ANDROID_CMAKE = "packages/kotlin-markdown-core/android-runtime/src/main/cpp/CMakeLists.txt";
+const ES_BUILD = "packages/es-markdown-core/scripts/build.mjs";
+const SWIFT_RELEASE = "packages/swift-markdown-core/Package.release.swift";
+
+const declared = {
+    "Package.swift": follower("Package.swift", () => ({
         core: names("Package.swift", "core", swiftPattern("core")),
         extensions: names("Package.swift", "extensions", swiftPattern("extensions"))
-    },
-    "packages/swift-markdown-core/Package.release.swift": {
-        core: names("packages/swift-markdown-core/Package.release.swift", "core", swiftPattern("core")),
-        extensions: names(
-            "packages/swift-markdown-core/Package.release.swift",
-            "extensions",
-            swiftPattern("extensions")
-        )
-    },
-    "packages/kotlin-markdown-core/android-runtime/src/main/cpp/CMakeLists.txt": {
-        core: names(
-            "packages/kotlin-markdown-core/android-runtime/src/main/cpp/CMakeLists.txt",
-            "core",
-            androidPattern("CORE")
-        ),
-        extensions: names(
-            "packages/kotlin-markdown-core/android-runtime/src/main/cpp/CMakeLists.txt",
-            "extensions",
-            androidPattern("EXTENSIONS")
-        )
-    },
-    "packages/es-markdown-core/scripts/build.mjs": {
-        core: esArray("packages/es-markdown-core/scripts/build.mjs", "core"),
-        extensions: esArray("packages/es-markdown-core/scripts/build.mjs", "extensions")
-    }
+    })),
+    [SWIFT_RELEASE]: follower(SWIFT_RELEASE, () => ({
+        core: names(SWIFT_RELEASE, "core", swiftPattern("core")),
+        extensions: names(SWIFT_RELEASE, "extensions", swiftPattern("extensions"))
+    })),
+    [ANDROID_CMAKE]: follower(ANDROID_CMAKE, () => ({
+        core: names(ANDROID_CMAKE, "core", androidPattern("CORE")),
+        extensions: names(ANDROID_CMAKE, "extensions", androidPattern("EXTENSIONS"))
+    })),
+    [ES_BUILD]: follower(ES_BUILD, () => ({
+        core: esArray(ES_BUILD, "core"),
+        extensions: esArray(ES_BUILD, "extensions")
+    }))
 };
+
+const followers = Object.fromEntries(Object.entries(declared).filter(([, buckets]) => buckets !== null));
 
 let failed = false;
 const report = (message) => {
@@ -146,8 +179,19 @@ for (const [name, buckets] of Object.entries(followers)) {
     }
 }
 
+const compared = 1 + Object.keys(followers).length;
+const declaredCount = 1 + Object.keys(declared).length;
+
+for (const entry of absent) {
+    console.log(`  not here yet: ${entry.relative} — ${entry.why}. Owner: ${entry.owner}.`);
+}
+
 if (failed) {
-    console.error("\nSource-list audit failed: the five hand-written lists do not agree.");
+    console.error(`\nSource-list audit failed: ${String(compared)} hand-written lists do not agree.`);
     process.exit(1);
 }
-console.log(`Source-list audit passed: ${expected.size} sources, 5 lists in agreement.`);
+console.log(
+    `Source-list audit passed: ${String(expected.size)} sources, ` +
+        `${String(compared)} of ${String(declaredCount)} lists in agreement` +
+        (absent.length === 0 ? "." : `, ${String(absent.length)} registered absent.`)
+);

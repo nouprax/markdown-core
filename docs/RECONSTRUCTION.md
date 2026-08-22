@@ -54,6 +54,7 @@ bash scripts/audit-public-surface.sh
 node scripts/audit-extension-special-chars.mjs   # 4 extensions, 5 sentinels
 node scripts/audit-extension-attach-order.mjs    # one attach site, table last (D15, added 0a.11)
 node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
+node scripts/audit-source-lists.mjs              # 28 sources, 4 of 5 lists, 1 registered absent
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
 node scripts/check-upstream-parity.mjs     # 817/817 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
@@ -109,7 +110,8 @@ mdast backlog and D9's oracle use:
 | `scripts/check-generated-scanners.sh` | Added at `8926594`; the baseline build has no re2c invocation or version pin (R9). | R9's experiment, then Step 3 |
 | `node scripts/check-release-version.mjs --skip-swift` | **D17 is fixed and the 3.0.0 bump closed the rest**; what remains is **two** unexpected legacy tags — `codex-doc-pass-backup` and `pre-format-baseline` — which is repo hygiene, not engine state. Every version-drift, release-note and CHANGELOG assertion now passes. | release |
 | `node scripts/fuzz-parity.mjs --oracle mdast` | 0/3 — the mdast oracle is red on every generated input, for the same reason the 23-entry backlog exists. CI runs both oracles; only the upstream one was listed. | Stage 0 close |
-| `pnpm audit:ci`, `audit:source-lists`, `audit:ast-projections`, `format:es:check` | Not yet triaged by era (§0's rule). | 0a.0 item 5 |
+| `pnpm audit:ci`, `audit:ast-projections`, `format:es:check` | Not yet triaged by era (§0's rule). | 0a.0 item 5 |
+| ~~`pnpm audit:source-lists`~~ | **TRIAGED AND GREEN**, ahead of Step 3a, whose row requires it to RUN. It did not fail, it **threw** — `ENOENT` on `packages/swift-markdown-core/Package.release.swift`, a release manifest that postdates `580d10c` and arrived with Step 0's `scripts/` restore. The absence is now registered in the script with an owner and printed on every run, and the pass line says **`4 of 5 lists in agreement, 1 registered absent`** so it can never read as though all five were compared. | the absence: 15C |
 
 **`scripts/` IS NOT ONE THING, and Step 0 got this wrong.** It was restored
 from `main` wholesale. That is right for *infrastructure* — CI, environment,
@@ -1112,7 +1114,7 @@ Q10 removes a constraint the plan was shaped around. Four things move and three 
 
 **The bindings follow per commit, not in one batch.** ~2,000 lines distributed across Steps 7, 9b, 12, 13 and 14 — four times the old estimate of ~500, because "the bindings" is six lockstep surfaces and not three model directories. That figure is itself the argument against batching: 2,000 lines of mechanical cross-language edit in one commit is unreviewable.
 
-**The release gates are off the critical path until 3.0, and there are seven of them, not three.** Two are era skew from Step 0's wholesale `scripts/` restore (`audit:ci` wants 40-hex Action SHA pins that `.github/` predates; `audit:source-lists` **throws** on a missing `packages/swift-markdown-core/Package.release.swift`), one is two minutes of formatting on restored files (`format:es:check`, three real files), one is a second unexpected legacy tag (`pre-format-baseline`, which §0 does not name beside `codex-doc-pass-backup`), one is the ordering assertion of Q27, one is the release-notes path — hard-coded to `docs/deprecated/releases/$(cat VERSION).md` in five places, so publishing 3.0 would publish from the archive — and one is `audit:ast-projections`, which **is not era skew at all** but the live Swift drift of §4.1.2. That closes §0's fifth known-red row.
+**The release gates are off the critical path until 3.0, and there are seven of them, not three.** Two are era skew from Step 0's wholesale `scripts/` restore (`audit:ci` wants 40-hex Action SHA pins that `.github/` predates; `audit:source-lists` ~~throws~~ **is triaged and green**; the missing `packages/swift-markdown-core/Package.release.swift` is a registered absence owned by 15C), one is two minutes of formatting on restored files (`format:es:check`, three real files), one is a second unexpected legacy tag (`pre-format-baseline`, which §0 does not name beside `codex-doc-pass-backup`), one is the ordering assertion of Q27, one is the release-notes path — hard-coded to `docs/deprecated/releases/$(cat VERSION).md` in five places, so publishing 3.0 would publish from the archive — and one is `audit:ast-projections`, which **is not era skew at all** but the live Swift drift of §4.1.2. That closes §0's fifth known-red row.
 
 ---
 
