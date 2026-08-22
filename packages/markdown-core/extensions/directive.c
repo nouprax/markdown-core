@@ -1,4 +1,5 @@
 #include "directive.h"
+#include "syntax_extension.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -722,7 +723,7 @@ int markdown_core_extensions_set_directive_attributes(markdown_core_node *node, 
     return 1;
 }
 
-static void directive_opaque_alloc(markdown_core_syntax_extension *extension, markdown_core_mem *mem,
+static void directive_opaque_alloc(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,
                                    markdown_core_node *node) {
     /* A NULL payload is tolerated: every accessor goes through get_directive
      * and treats the node as attribute-less. */
@@ -731,7 +732,7 @@ static void directive_opaque_alloc(markdown_core_syntax_extension *extension, ma
     }
 }
 
-static void directive_opaque_free(markdown_core_syntax_extension *extension, markdown_core_mem *mem,
+static void directive_opaque_free(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,
                                   markdown_core_node *node) {
     node_directive *directive = (node_directive *)node->as.opaque;
     if (!directive) {
@@ -881,7 +882,7 @@ static int parse_directive_suffix(markdown_core_mem *mem, unsigned char *data, b
     return 1;
 }
 
-static markdown_core_node *make_label_node(markdown_core_syntax_extension *extension, markdown_core_mem *mem,
+static markdown_core_node *make_label_node(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,
                                            const unsigned char *label, bufsize_t label_len, int start_line,
                                            int start_column, int end_column) {
     markdown_core_node *label_node =
@@ -901,7 +902,7 @@ static markdown_core_node *make_label_node(markdown_core_syntax_extension *exten
     return label_node;
 }
 
-static int attach_label_node(markdown_core_syntax_extension *extension, markdown_core_node *directive_node,
+static int attach_label_node(const markdown_core_syntax_extension *extension, markdown_core_node *directive_node,
                              const unsigned char *label, bufsize_t label_len, int start_line, int start_column,
                              int end_column) {
     markdown_core_node *label_node;
@@ -920,7 +921,7 @@ static int attach_label_node(markdown_core_syntax_extension *extension, markdown
     return 1;
 }
 
-static int apply_parsed_directive(markdown_core_syntax_extension *extension, markdown_core_node *node,
+static int apply_parsed_directive(const markdown_core_syntax_extension *extension, markdown_core_node *node,
                                   const unsigned char *data, parsed_directive *parsed, int start_line,
                                   int start_column) {
     node_directive *directive = get_directive(node);
@@ -958,9 +959,10 @@ static int apply_parsed_directive(markdown_core_syntax_extension *extension, mar
     return 1;
 }
 
-static markdown_core_node *make_directive_node(markdown_core_syntax_extension *extension, markdown_core_parser *parser,
-                                               const unsigned char *name, bufsize_t name_len, int start_line,
-                                               int start_column, int end_line, int end_column) {
+static markdown_core_node *make_directive_node(const markdown_core_syntax_extension *extension,
+                                               markdown_core_parser *parser, const unsigned char *name,
+                                               bufsize_t name_len, int start_line, int start_column, int end_line,
+                                               int end_column) {
     markdown_core_node *node =
         markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_DIRECTIVE, parser->mem, extension);
     node_directive *directive;
@@ -988,7 +990,7 @@ static markdown_core_node *make_directive_node(markdown_core_syntax_extension *e
     return node;
 }
 
-static markdown_core_node *make_name_only_directive(markdown_core_syntax_extension *extension,
+static markdown_core_node *make_name_only_directive(const markdown_core_syntax_extension *extension,
                                                     markdown_core_parser *parser,
                                                     markdown_core_inline_parser *inline_parser,
                                                     const unsigned char *name, bufsize_t name_len,
@@ -1038,7 +1040,8 @@ static markdown_core_node *make_delimiter_text(markdown_core_parser *parser, mar
     return node;
 }
 
-static markdown_core_node *match_directive_delimiter(markdown_core_syntax_extension *self, markdown_core_parser *parser,
+static markdown_core_node *match_directive_delimiter(const markdown_core_syntax_extension *self,
+                                                     markdown_core_parser *parser,
                                                      markdown_core_inline_parser *inline_parser,
                                                      markdown_core_delimiter_rule rule, bufsize_t offset, bufsize_t len,
                                                      int can_open, int can_close) {
@@ -1086,7 +1089,7 @@ static int scan_parsed_attributes(markdown_core_mem *mem, const unsigned char *d
     return valid;
 }
 
-static markdown_core_node *match_colon_directive(markdown_core_syntax_extension *extension,
+static markdown_core_node *match_colon_directive(const markdown_core_syntax_extension *extension,
                                                  markdown_core_parser *parser,
                                                  markdown_core_inline_parser *inline_parser, markdown_core_chunk *chunk,
                                                  bufsize_t offset) {
@@ -1152,7 +1155,7 @@ static markdown_core_node *match_colon_directive(markdown_core_syntax_extension 
     return make_name_only_directive(extension, parser, inline_parser, chunk->data + name_start, name_len, pos);
 }
 
-static markdown_core_node *match_label_closer(markdown_core_syntax_extension *self, markdown_core_parser *parser,
+static markdown_core_node *match_label_closer(const markdown_core_syntax_extension *self, markdown_core_parser *parser,
                                               markdown_core_inline_parser *inline_parser, markdown_core_chunk *chunk,
                                               bufsize_t offset) {
     delimiter *opener = find_directive_opener(inline_parser, DIRECTIVE_LABEL_DELIM);
@@ -1177,7 +1180,7 @@ static markdown_core_node *match_label_closer(markdown_core_syntax_extension *se
     return match_directive_delimiter(self, parser, inline_parser, DIRECTIVE_LABEL_DELIM, offset, closer_len, 0, 1);
 }
 
-static markdown_core_node *match(markdown_core_syntax_extension *extension, markdown_core_parser *parser,
+static markdown_core_node *match(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_parser *inline_parser) {
     markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
@@ -1206,7 +1209,7 @@ static bufsize_t count_colons(const unsigned char *data, bufsize_t len, bufsize_
     return count;
 }
 
-static markdown_core_node *open_directive_block(markdown_core_syntax_extension *extension, int indented,
+static markdown_core_node *open_directive_block(const markdown_core_syntax_extension *extension, int indented,
                                                 markdown_core_parser *parser, markdown_core_node *parent_container,
                                                 unsigned char *input, int len) {
     bufsize_t first_nonspace = (bufsize_t)markdown_core_parser_get_first_nonspace(parser);
@@ -1272,7 +1275,7 @@ static markdown_core_node *open_directive_block(markdown_core_syntax_extension *
     return node;
 }
 
-static int directive_block_matches(markdown_core_syntax_extension *extension, markdown_core_parser *parser,
+static int directive_block_matches(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                                    unsigned char *input, int len, markdown_core_node *container) {
     node_directive *directive = get_directive(container);
     bufsize_t first_nonspace = (bufsize_t)markdown_core_parser_get_first_nonspace(parser);
@@ -1337,8 +1340,9 @@ static int set_attributes_from_wrapper(markdown_core_node *node, const unsigned 
     return 1;
 }
 
-static markdown_core_node *make_empty_label_node(markdown_core_syntax_extension *extension, markdown_core_mem *mem,
-                                                 int start_line, int start_column, int end_line, int end_column) {
+static markdown_core_node *make_empty_label_node(const markdown_core_syntax_extension *extension,
+                                                 markdown_core_mem *mem, int start_line, int start_column, int end_line,
+                                                 int end_column) {
     markdown_core_node *label_node =
         markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_DIRECTIVE_LABEL, mem, extension);
 
@@ -1353,7 +1357,7 @@ static markdown_core_node *make_empty_label_node(markdown_core_syntax_extension 
     return label_node;
 }
 
-static delimiter *insert_label_directive(markdown_core_syntax_extension *extension, markdown_core_parser *parser,
+static delimiter *insert_label_directive(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                                          markdown_core_inline_parser *inline_parser, delimiter *opener,
                                          delimiter *closer) {
     markdown_core_node *opener_node = opener->inl_text;
@@ -1425,7 +1429,7 @@ done:
     return res;
 }
 
-static delimiter *insert_directive(markdown_core_syntax_extension *extension, markdown_core_parser *parser,
+static delimiter *insert_directive(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                                    markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
     if (opener->rule == DIRECTIVE_LABEL_DELIM) {
         return insert_label_directive(extension, parser, inline_parser, opener, closer);
@@ -1434,7 +1438,7 @@ static delimiter *insert_directive(markdown_core_syntax_extension *extension, ma
     return closer->next;
 }
 
-static const char *get_type_string(markdown_core_syntax_extension *extension, markdown_core_node *node) {
+static const char *get_type_string(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
     if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE) {
         return "directive";
     }
@@ -1450,7 +1454,7 @@ static const char *get_type_string(markdown_core_syntax_extension *extension, ma
     return "<unknown>";
 }
 
-static int can_contain(markdown_core_syntax_extension *extension, markdown_core_node *node,
+static int can_contain(const markdown_core_syntax_extension *extension, markdown_core_node *node,
                        markdown_core_node_type child_type) {
     if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE) {
         return child_type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
@@ -1469,11 +1473,11 @@ static int can_contain(markdown_core_syntax_extension *extension, markdown_core_
     return 0;
 }
 
-static int contains_inlines(markdown_core_syntax_extension *extension, markdown_core_node *node) {
+static int contains_inlines(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
     return node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
 }
 
-static int accepts_lines(markdown_core_syntax_extension *extension, markdown_core_node *node) {
+static int accepts_lines(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
     node_directive *directive = get_directive(node);
 
     if (!directive) {
@@ -1487,32 +1491,21 @@ static int accepts_lines(markdown_core_syntax_extension *extension, markdown_cor
     return directive->fence_length == 2 || directive->consume_line;
 }
 
-markdown_core_syntax_extension *create_directive_extension(void) {
-    markdown_core_syntax_extension *ext = markdown_core_syntax_extension_new("directive");
-
-    markdown_core_syntax_extension_set_match_inline_func(ext, match);
-    markdown_core_syntax_extension_set_inline_from_delim_func(ext, insert_directive);
-    markdown_core_syntax_extension_set_match_block_func(ext, directive_block_matches);
-    markdown_core_syntax_extension_set_open_block_func(ext, open_directive_block);
-    markdown_core_syntax_extension_set_get_type_string_func(ext, get_type_string);
-    markdown_core_syntax_extension_set_can_contain_func(ext, can_contain);
-    markdown_core_syntax_extension_set_contains_inlines_func(ext, contains_inlines);
-    markdown_core_syntax_extension_set_accepts_lines_func(ext, accepts_lines);
-    markdown_core_syntax_extension_set_opaque_alloc_func(ext, directive_opaque_alloc);
-    markdown_core_syntax_extension_set_opaque_free_func(ext, directive_opaque_free);
-
-    /* `:` opens a directive. `]` is in the dispatch set for the `]`
-     * ARBITRATION `bracket_takes_close_bracket` performs, not because it
-     * terminates a text run -- `is_core_special_character` refuses it there.
-     * The sentinel 0x08 that used to be in both sets was a delimiter tag, not
-     * source, and 3.3 replaced it with a rule. */
-    markdown_core_syntax_extension_set_byte_sets(ext, ":", ":]", NULL);
-    /* No set_emphasis here. That flag folds every byte above into the parser's
-     * FLANKING SKIP table, which scan_delims walks over as though the bytes
-     * were not there -- so merely attaching this extension changed what
-     * CommonMark emphasis means, with no option to gate it. `~` is the only
-     * byte that legitimately belongs in that table (strikethrough.c), because
-     * upstream parity depends on it. */
-
-    return ext;
-}
+/* `:` opens a directive. `]` is in the dispatch set for the `]` arbitration
+ * `bracket_takes_close_bracket` performs, not because it terminates a text run --
+ * `is_core_special_character` refuses it there. */
+const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE = {
+    .name = "directive",
+    .match_inline = match,
+    .insert_inline_from_delim = insert_directive,
+    .last_block_matches = directive_block_matches,
+    .try_opening_block = open_directive_block,
+    .get_type_string_func = get_type_string,
+    .can_contain_func = can_contain,
+    .contains_inlines_func = contains_inlines,
+    .accepts_lines_func = accepts_lines,
+    .opaque_alloc_func = directive_opaque_alloc,
+    .opaque_free_func = directive_opaque_free,
+    .terminates_text = ":",
+    .dispatch = ":]",
+};

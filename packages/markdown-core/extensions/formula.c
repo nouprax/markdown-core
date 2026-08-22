@@ -1,4 +1,5 @@
 #include "formula.h"
+#include "syntax_extension.h"
 
 #include <assert.h>
 #include <string.h>
@@ -104,7 +105,7 @@ int markdown_core_extensions_set_formula_mode(markdown_core_node *node, markdown
     return 1;
 }
 
-static void formula_opaque_alloc(markdown_core_syntax_extension *extension, markdown_core_mem *mem,
+static void formula_opaque_alloc(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,
                                  markdown_core_node *node) {
     /* A NULL payload is tolerated: every accessor goes through get_formula
      * and treats the node as formula-less. */
@@ -113,7 +114,7 @@ static void formula_opaque_alloc(markdown_core_syntax_extension *extension, mark
     }
 }
 
-static void formula_opaque_free(markdown_core_syntax_extension *extension, markdown_core_mem *mem,
+static void formula_opaque_free(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,
                                 markdown_core_node *node) {
     node_formula *formula = (node_formula *)node->as.opaque;
     if (!formula) {
@@ -164,9 +165,10 @@ static int set_formula_literal_trimmed(markdown_core_node *node, const unsigned 
     return set_formula_literal_bytes(node, data, len);
 }
 
-static markdown_core_node *make_formula_node(markdown_core_syntax_extension *extension, markdown_core_parser *parser,
-                                             markdown_core_node_type node_type, markdown_core_formula_mode mode,
-                                             const unsigned char *literal, bufsize_t literal_len) {
+static markdown_core_node *make_formula_node(const markdown_core_syntax_extension *extension,
+                                             markdown_core_parser *parser, markdown_core_node_type node_type,
+                                             markdown_core_formula_mode mode, const unsigned char *literal,
+                                             bufsize_t literal_len) {
     markdown_core_node *node = markdown_core_node_new_with_mem_and_ext(node_type, parser->mem, extension);
     if (!node) {
         parser->oom = true;
@@ -228,7 +230,7 @@ static int scan_formula_block_close(const unsigned char *data, bufsize_t len, bu
     return 0;
 }
 
-static markdown_core_node *try_opening_formula_block(markdown_core_syntax_extension *extension, int indented,
+static markdown_core_node *try_opening_formula_block(const markdown_core_syntax_extension *extension, int indented,
                                                      markdown_core_parser *parser, markdown_core_node *parent_container,
                                                      unsigned char *input, int len) {
     int block_delim;
@@ -268,7 +270,7 @@ static markdown_core_node *try_opening_formula_block(markdown_core_syntax_extens
     return node;
 }
 
-static int formula_block_matches(markdown_core_syntax_extension *extension, markdown_core_parser *parser,
+static int formula_block_matches(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                                  unsigned char *input, int len, markdown_core_node *container) {
     node_formula *formula = get_formula(container);
     int first_nonspace = markdown_core_parser_get_first_nonspace(parser);
@@ -304,7 +306,8 @@ static markdown_core_node *make_delimiter_text(markdown_core_parser *parser, mar
     return node;
 }
 
-static markdown_core_node *match_formula_delimiter(markdown_core_syntax_extension *self, markdown_core_parser *parser,
+static markdown_core_node *match_formula_delimiter(const markdown_core_syntax_extension *self,
+                                                   markdown_core_parser *parser,
                                                    markdown_core_inline_parser *inline_parser,
                                                    markdown_core_delimiter_rule rule, bufsize_t len, int can_open,
                                                    int can_close) {
@@ -359,7 +362,7 @@ static int dollar_formula_delimiters_enabled(markdown_core_parser *parser) {
     return parser->options & MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS;
 }
 
-static markdown_core_node *match(markdown_core_syntax_extension *extension, markdown_core_parser *parser,
+static markdown_core_node *match(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_parser *inline_parser) {
     markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
@@ -450,7 +453,7 @@ static void free_nodes_through(markdown_core_node *first, markdown_core_node *la
     }
 }
 
-static markdown_core_node *make_backslash_delimited_formula(markdown_core_syntax_extension *extension,
+static markdown_core_node *make_backslash_delimited_formula(const markdown_core_syntax_extension *extension,
                                                             markdown_core_parser *parser,
                                                             markdown_core_formula_mode mode, const unsigned char *data,
                                                             bufsize_t body_start, bufsize_t body_end, int slash_count,
@@ -477,7 +480,7 @@ static markdown_core_node *make_backslash_delimited_formula(markdown_core_syntax
     return node;
 }
 
-static delimiter *insert_formula(markdown_core_syntax_extension *extension, markdown_core_parser *parser,
+static delimiter *insert_formula(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                                  markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
     markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
     markdown_core_node *opener_node = opener->inl_text;
@@ -534,7 +537,7 @@ done:
     return res;
 }
 
-static const char *get_type_string(markdown_core_syntax_extension *extension, markdown_core_node *node) {
+static const char *get_type_string(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
     if (node->type == MARKDOWN_CORE_NODE_FORMULA) {
         return "formula";
     }
@@ -546,7 +549,7 @@ static const char *get_type_string(markdown_core_syntax_extension *extension, ma
     return "<unknown>";
 }
 
-static int can_contain(markdown_core_syntax_extension *extension, markdown_core_node *node,
+static int can_contain(const markdown_core_syntax_extension *extension, markdown_core_node *node,
                        markdown_core_node_type child_type) {
     if (is_formula_node(node)) {
         return 0;
@@ -555,7 +558,7 @@ static int can_contain(markdown_core_syntax_extension *extension, markdown_core_
     return 0;
 }
 
-static int accepts_lines(markdown_core_syntax_extension *extension, markdown_core_node *node) {
+static int accepts_lines(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
     return node && node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK;
 }
 
@@ -563,7 +566,7 @@ static int info_is_formula(markdown_core_chunk *info) {
     return info->len == 7 && memcmp(info->data, "formula", 7) == 0;
 }
 
-static markdown_core_node *new_formula_block_from_literal(markdown_core_syntax_extension *extension,
+static markdown_core_node *new_formula_block_from_literal(const markdown_core_syntax_extension *extension,
                                                           markdown_core_mem *mem, markdown_core_node *oldnode,
                                                           const unsigned char *literal, bufsize_t literal_len) {
     markdown_core_node *formula =
@@ -588,7 +591,7 @@ static markdown_core_node *new_formula_block_from_literal(markdown_core_syntax_e
     return formula;
 }
 
-static int replace_with_formula_block(markdown_core_syntax_extension *extension, markdown_core_mem *mem,
+static int replace_with_formula_block(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,
                                       markdown_core_node *oldnode, const unsigned char *literal,
                                       bufsize_t literal_len) {
     markdown_core_node *formula = new_formula_block_from_literal(extension, mem, oldnode, literal, literal_len);
@@ -604,7 +607,7 @@ static int replace_with_formula_block(markdown_core_syntax_extension *extension,
     return 0;
 }
 
-static void postprocess_node(markdown_core_syntax_extension *extension, markdown_core_parser *parser,
+static void postprocess_node(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                              markdown_core_node *node) {
     markdown_core_node *child;
     markdown_core_node *next;
@@ -651,38 +654,28 @@ static void postprocess_node(markdown_core_syntax_extension *extension, markdown
     }
 }
 
-static markdown_core_node *postprocess(markdown_core_syntax_extension *extension, markdown_core_parser *parser,
+static markdown_core_node *postprocess(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                                        markdown_core_node *root) {
     postprocess_node(extension, parser, root);
     return root;
 }
 
-markdown_core_syntax_extension *create_formula_extension(void) {
-    markdown_core_syntax_extension *ext = markdown_core_syntax_extension_new("formula");
-
-    markdown_core_syntax_extension_set_match_inline_func(ext, match);
-    markdown_core_syntax_extension_set_match_block_func(ext, formula_block_matches);
-    markdown_core_syntax_extension_set_open_block_func(ext, try_opening_formula_block);
-    markdown_core_syntax_extension_set_postprocess_func(ext, postprocess);
-    markdown_core_syntax_extension_set_get_type_string_func(ext, get_type_string);
-    markdown_core_syntax_extension_set_can_contain_func(ext, can_contain);
-    markdown_core_syntax_extension_set_accepts_lines_func(ext, accepts_lines);
-    markdown_core_syntax_extension_set_opaque_alloc_func(ext, formula_opaque_alloc);
-    markdown_core_syntax_extension_set_opaque_free_func(ext, formula_opaque_free);
-    markdown_core_syntax_extension_set_inline_from_delim_func(ext, insert_formula);
-
-    /* `$` and `\\` open a formula, and that is the whole set. The four
-     * sentinel bytes 0x01-0x04 that used to be here were delimiter tags, not
-     * source, and 3.3 replaced them with rules.
-     *
-     * `\\` is in the dispatch set and NOT the terminator set, because
-     * `is_core_special_character` refuses it there anyway -- and it must stay
-     * in dispatch, since `handle_backslash` asks whether any extension claims
-     * `\\` before taking a core fast path. */
-    markdown_core_syntax_extension_set_byte_sets(ext, "$", "$\\", NULL);
-    /* No set_emphasis here; see the note in extensions/directive.c. Attaching
-     * this extension folded `$` and the four delimiter sentinels into the
-     * flanking skip table and changed the base language. */
-
-    return ext;
-}
+/* `$` and `\\` open a formula, and that is the whole set. `\\` is in the dispatch
+ * set and NOT the terminator set: `is_core_special_character` refuses it there
+ * anyway, and it must stay in dispatch because `handle_backslash` asks whether any
+ * extension claims `\\` before taking a core fast path. */
+const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_FORMULA = {
+    .name = "formula",
+    .match_inline = match,
+    .last_block_matches = formula_block_matches,
+    .try_opening_block = try_opening_formula_block,
+    .postprocess_func = postprocess,
+    .get_type_string_func = get_type_string,
+    .can_contain_func = can_contain,
+    .accepts_lines_func = accepts_lines,
+    .opaque_alloc_func = formula_opaque_alloc,
+    .opaque_free_func = formula_opaque_free,
+    .insert_inline_from_delim = insert_formula,
+    .terminates_text = "$",
+    .dispatch = "$\\",
+};

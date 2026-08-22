@@ -163,7 +163,7 @@ static int S_llist_append_checked(markdown_core_mem *mem, markdown_core_llist **
 }
 
 int markdown_core_parser_attach_syntax_extension(markdown_core_parser *parser,
-                                                 markdown_core_syntax_extension *extension) {
+                                                 const markdown_core_syntax_extension *extension) {
     if (!S_llist_append_checked(parser->mem, &parser->syntax_extensions, extension)) {
         return 0;
     }
@@ -568,7 +568,7 @@ void markdown_core_manage_extensions_special_characters(markdown_core_parser *pa
     markdown_core_llist *tmp_ext;
 
     for (tmp_ext = parser->inline_syntax_extensions; tmp_ext; tmp_ext = tmp_ext->next) {
-        markdown_core_syntax_extension *ext = (markdown_core_syntax_extension *)tmp_ext->data;
+        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)tmp_ext->data;
         const unsigned char *c;
 
         for (c = (const unsigned char *)ext->terminates_text; c && *c; c++) {
@@ -1629,7 +1629,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             markdown_core_node *new_container = NULL;
 
             for (tmp = parser->syntax_extensions; tmp; tmp = tmp->next) {
-                markdown_core_syntax_extension *ext = (markdown_core_syntax_extension *)tmp->data;
+                const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)tmp->data;
 
                 if (ext->try_opening_block) {
                     new_container = ext->try_opening_block(ext, indented, parser, *container, input->data, input->len);
@@ -1884,7 +1884,7 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
 #endif
 
     for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
-        markdown_core_syntax_extension *ext = (markdown_core_syntax_extension *)extensions->data;
+        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
         if (ext->postprocess_func) {
             markdown_core_node *processed = ext->postprocess_func(ext, parser, parser->root);
             if (processed) {

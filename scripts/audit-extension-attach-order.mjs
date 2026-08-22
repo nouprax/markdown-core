@@ -107,28 +107,41 @@ for (const stray of strays) {
 }
 
 // (2) and (3): the ordered table.
+//
+// Since 3.4 the table names DESCRIPTORS, not strings: there is nothing to look
+// up by name and nothing to register. The pairing it has to check is therefore
+// the other way round -- every descriptor DEFINED in `extensions/` must have a
+// place in the table, so an extension cannot become attachable without being
+// given a position.
 const extensionsSource = read("extensions/core-extensions.c");
 const table = /CORE_EXTENSIONS\[\]\s*=\s*\{([\s\S]*?)\};/.exec(extensionsSource);
 if (!table) {
     failures.push("extensions/core-extensions.c: no CORE_EXTENSIONS[] table");
 } else {
-    const ordered = [...table[1].matchAll(/"([a-z]+)"/g)].map((match) => match[1]);
-    const registered = [
-        ...extensionsSource.matchAll(
-            /markdown_core_plugin_register_syntax_extension\(plugin,\s*create_(\w+)_extension/g
-        )
-    ].map((match) => match[1]);
+    const ordered = [...table[1].matchAll(/&MARKDOWN_CORE_EXTENSION_(\w+)/g)].map((match) => match[1].toLowerCase());
+    const defined = fs
+        .readdirSync(path.join(pkg, "extensions"))
+        .filter((name) => name.endsWith(".c"))
+        .flatMap((name) => [
+            ...read(`extensions/${name}`).matchAll(
+                /^const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_(\w+) =/gm
+            )
+        ])
+        .map((match) => match[1].toLowerCase());
 
-    for (const name of registered) {
+    if (defined.length === 0) {
+        failures.push("no extension descriptor was found at all — this audit is reading the wrong tree");
+    }
+    for (const name of defined) {
         if (!ordered.includes(name)) {
             failures.push(
-                `\`${name}\` is registered but has no place in CORE_EXTENSIONS[]. ` +
+                `\`${name}\` defines a descriptor and has no place in CORE_EXTENSIONS[]. ` +
                     "An extension the product cannot attach in a stated order is one it will attach in an unstated one."
             );
         }
     }
     for (const name of ordered) {
-        if (!registered.includes(name)) failures.push(`CORE_EXTENSIONS[] names \`${name}\`, which is not registered`);
+        if (!defined.includes(name)) failures.push(`CORE_EXTENSIONS[] names \`${name}\`, which no source defines`);
         if (ordered.indexOf(name) !== ordered.lastIndexOf(name)) {
             failures.push(`CORE_EXTENSIONS[] names \`${name}\` twice`);
         }

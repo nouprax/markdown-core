@@ -8,7 +8,6 @@
 #include "markdown-core-extension-api.h"
 #include "syntax_extension.h"
 #include "parser.h"
-#include "registry.h"
 
 #include "../extensions/markdown-core-extensions.h"
 #include "../extensions/ast_internal.h"
@@ -74,19 +73,13 @@ static bool print_document(markdown_core_node *document) {
 }
 
 static void print_extensions(void) {
-    markdown_core_llist *syntax_extensions;
-    markdown_core_llist *tmp;
+    size_t i;
+    const char *name;
 
     printf("Available extensions:\nfootnotes\n");
-
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    syntax_extensions = markdown_core_list_syntax_extensions(mem);
-    for (tmp = syntax_extensions; tmp; tmp = tmp->next) {
-        markdown_core_syntax_extension *ext = (markdown_core_syntax_extension *)tmp->data;
-        printf("%s\n", ext->name);
+    for (i = 0; (name = markdown_core_core_extensions_name_at(i)) != NULL; i++) {
+        printf("%s\n", name);
     }
-
-    markdown_core_llist_free(mem, syntax_extensions);
 }
 
 int main(int argc, char *argv[]) {
@@ -107,8 +100,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 #endif
-
-    markdown_core_core_extensions_ensure_registered();
 
 #ifdef USE_PLEDGE
     if (pledge("stdio rpath", NULL) != 0) {

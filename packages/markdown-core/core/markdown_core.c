@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <stdio.h>
-#include "registry.h"
 #include "node.h"
 #include "markdown-core.h"
 

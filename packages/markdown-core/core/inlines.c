@@ -626,8 +626,9 @@ static markdown_core_delimiter_rule core_delimiter_rule(unsigned char c) {
     }
 }
 
-static void push_delimiter(subject *subj, markdown_core_syntax_extension *owner, markdown_core_delimiter_rule rule,
-                           bool can_open, bool can_close, markdown_core_node *inl_text) {
+static void push_delimiter(subject *subj, const markdown_core_syntax_extension *owner,
+                           markdown_core_delimiter_rule rule, bool can_open, bool can_close,
+                           markdown_core_node *inl_text) {
     delimiter *delim;
     /* Extensions may pass NULL after their own allocation failures. */
     if (!inl_text) {
@@ -794,7 +795,7 @@ int markdown_core_byte_set_has(const char *set, unsigned char c) {
     return 0;
 }
 
-static int extension_dispatches(markdown_core_syntax_extension *ext, unsigned char c) {
+static int extension_dispatches(const markdown_core_syntax_extension *ext, unsigned char c) {
     return markdown_core_byte_set_has(ext->dispatch, c);
 }
 
@@ -809,7 +810,7 @@ static int any_extension_dispatches(markdown_core_parser *parser, unsigned char 
     markdown_core_llist *tmp_ext;
 
     for (tmp_ext = parser->inline_syntax_extensions; tmp_ext; tmp_ext = tmp_ext->next) {
-        if (extension_dispatches((markdown_core_syntax_extension *)tmp_ext->data, c)) {
+        if (extension_dispatches((const markdown_core_syntax_extension *)tmp_ext->data, c)) {
             return 1;
         }
     }
@@ -853,7 +854,7 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
     // fell into the removal below, freed it, and read it again on the next
     // turn. With `can_open` set, nothing freed it and the loop never ended.
     while (closer != NULL) {
-        markdown_core_syntax_extension *extension = closer->owner;
+        const markdown_core_syntax_extension *extension = closer->owner;
         (void)parser;
         if (closer->can_close) {
             // Now look backwards for first matching opener:
@@ -1762,7 +1763,7 @@ static markdown_core_node *try_extensions(markdown_core_parser *parser, markdown
     markdown_core_llist *tmp;
 
     for (tmp = parser->inline_syntax_extensions; tmp; tmp = tmp->next) {
-        markdown_core_syntax_extension *ext = (markdown_core_syntax_extension *)tmp->data;
+        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)tmp->data;
 
         if (!extension_dispatches(ext, c)) {
             continue;
@@ -2067,7 +2068,7 @@ char *markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser
 }
 
 void markdown_core_inline_parser_push_delimiter(markdown_core_inline_parser *parser,
-                                                markdown_core_syntax_extension *owner,
+                                                const markdown_core_syntax_extension *owner,
                                                 markdown_core_delimiter_rule rule, int can_open, int can_close,
                                                 markdown_core_node *inl_text) {
     push_delimiter(parser, owner, rule, can_open != 0, can_close != 0, inl_text);

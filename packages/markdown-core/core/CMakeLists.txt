@@ -22,10 +22,7 @@ set(HEADERS
     inlines.h
     houdini.h
     markdown_core_ctype.h
-    once.h
-    registry.h
-    syntax_extension.h
-    plugin.h)
+    syntax_extension.h)
 set(LIBRARY_SOURCES
     markdown_core.c
     node.c
@@ -42,10 +39,6 @@ set(LIBRARY_SOURCES
     houdini_html_u.c
     markdown_core_ctype.c
     linked_list.c
-    once.c
-    syntax_extension.c
-    registry.c
-    plugin.c
     ${HEADERS})
 
 # Keep the engine target private, but make its sources available to the

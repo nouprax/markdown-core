@@ -1,7 +1,8 @@
 #include "strikethrough.h"
+#include "syntax_extension.h"
 #include <parser.h>
 
-static markdown_core_node *match(markdown_core_syntax_extension *self, markdown_core_parser *parser,
+static markdown_core_node *match(const markdown_core_syntax_extension *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_parser *inline_parser) {
     markdown_core_node *res = NULL;
@@ -44,7 +45,7 @@ static markdown_core_node *match(markdown_core_syntax_extension *self, markdown_
     return res;
 }
 
-static delimiter *insert(markdown_core_syntax_extension *self, markdown_core_parser *parser,
+static delimiter *insert(const markdown_core_syntax_extension *self, markdown_core_parser *parser,
                          markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
     markdown_core_node *strikethrough;
     markdown_core_node *tmp, *next;
@@ -90,11 +91,11 @@ done:
     return res;
 }
 
-static const char *get_type_string(markdown_core_syntax_extension *extension, markdown_core_node *node) {
+static const char *get_type_string(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
     return node->type == MARKDOWN_CORE_NODE_STRIKETHROUGH ? "strikethrough" : "<unknown>";
 }
 
-static int can_contain(markdown_core_syntax_extension *extension, markdown_core_node *node,
+static int can_contain(const markdown_core_syntax_extension *extension, markdown_core_node *node,
                        markdown_core_node_type child_type) {
     if (node->type != MARKDOWN_CORE_NODE_STRIKETHROUGH) {
         return false;
@@ -103,20 +104,16 @@ static int can_contain(markdown_core_syntax_extension *extension, markdown_core_
     return MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
 }
 
-markdown_core_syntax_extension *create_strikethrough_extension(void) {
-    markdown_core_syntax_extension *ext = markdown_core_syntax_extension_new("strikethrough");
-
-    markdown_core_syntax_extension_set_get_type_string_func(ext, get_type_string);
-    markdown_core_syntax_extension_set_can_contain_func(ext, can_contain);
-
-    markdown_core_syntax_extension_set_match_inline_func(ext, match);
-    markdown_core_syntax_extension_set_inline_from_delim_func(ext, insert);
-
-    /* `~` is the ONE byte in this repository that is genuinely
-     * flanking-transparent, and it must stay so: it is inherited from
-     * cmark-gfm, it behaves identically there, and upstream parity breaks
-     * without it (§2, D1's correction (b)). */
-    markdown_core_syntax_extension_set_byte_sets(ext, "~", "~", "~");
-
-    return ext;
-}
+/* `~` is the ONE byte in this repository that is genuinely
+ * flanking-transparent, and it must stay so: it is inherited from cmark-gfm,
+ * it behaves identically there, and upstream parity breaks without it. */
+const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_STRIKETHROUGH = {
+    .name = "strikethrough",
+    .get_type_string_func = get_type_string,
+    .can_contain_func = can_contain,
+    .match_inline = match,
+    .insert_inline_from_delim = insert,
+    .terminates_text = "~",
+    .dispatch = "~",
+    .flanking_transparent = "~",
+};

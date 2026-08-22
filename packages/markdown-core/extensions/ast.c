@@ -15,7 +15,6 @@
 #include <markdown-core.h>
 #include <node.h>
 #include <parser.h>
-#include <registry.h>
 
 struct markdown_core_error {
     markdown_core_error_code code;
@@ -115,7 +114,6 @@ markdown_core_document *markdown_core_document_parse(const uint8_t *source, size
         native_options |= MARKDOWN_CORE_OPT_DIRECTIVE;
     }
 
-    markdown_core_core_extensions_ensure_registered();
     parser = markdown_core_parser_new(native_options);
     if (!parser) {
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate parser");

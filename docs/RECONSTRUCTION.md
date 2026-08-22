@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, **all of Stage 0a** (0a.0 through 0a.15), **Step 2** (§4.14.2), and **3a.1 – 3a.3** (§4.14.3a), and **3.1 – 3.3** (§4.14.3) |
+| Landed | Steps 0 and 1, §4.0's re-ordering, **all of Stage 0a** (0a.0 through 0a.15), **Step 2** (§4.14.2), and **3a.1 – 3a.3** (§4.14.3a), and **3.1 – 3.4** (§4.14.3) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 3**, continued: 3.4, the `static const` descriptor table — registry, plugin and name lookup deleted, attachment by bitmask, the `delimiter` struct hidden. Step 3a is complete (§4.14.3a). Then §4.1's steps in the order §4.1.4 verifies: `3 3b 15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 3**, one clause left: **3.5**, hiding the public `delimiter` struct behind accessors. Then 3b, 15A, 5, 6, 7, 10, 9a, 11a, 8, 9b, 11b, 11c, 12, 13, 14, 15C. Step 3a is complete (§4.14.3a). Then §4.1's steps in the order §4.1.4 verifies: `3 3b 15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -54,7 +54,7 @@ bash scripts/audit-public-surface.sh
 node scripts/audit-extension-special-chars.mjs   # 4 extensions, 5 sentinels
 node scripts/audit-extension-attach-order.mjs    # one attach site, table last (D15, added 0a.11)
 node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
-node scripts/audit-source-lists.mjs              # 27 sources, 4 of 5 lists, 1 registered absent
+node scripts/audit-source-lists.mjs              # 23 sources, 4 of 5 lists, 1 registered absent
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
 node scripts/check-upstream-parity.mjs     # 817/817 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
@@ -3497,6 +3497,93 @@ position oracles 0 / 45 / 109 · reference-order 2 rows, still red ·
 canonical-ast 28/47/6 · public surface · special chars · attach order · plan
 graph 22/45 · source lists 27, 4 of 5 · topology · format-c · format-cmake.
 **Zero golden rows moved, and no fixture, spec or golden file touched.**
+
+
+##### 3.4 — the descriptor is a `static const` object in a fixed table, and seven files are gone
+
+**What an extension was.** A heap object built at run time by
+`markdown_core_syntax_extension_new` and sixteen setters, allocated from a
+hidden process-global allocator (`core/syntax_extension.c`'s `_mem`), handed to
+a process-global registry keyed by NAME (`core/registry.c`) through a
+process-global plugin object (`core/plugin.c`), filled in behind a
+process-global once-flag (`core/once.c`), and reached by string lookup.
+
+**What it is.** One `static const markdown_core_syntax_extension` per
+extension, in `.rodata`, named by a symbol, referenced by a fixed table in
+`extensions/core-extensions.c`. **Every hook takes a `const` descriptor**, so
+"carries no mutable state" is a fact the compiler checks rather than a
+convention — 94 declarations across the tree changed to say so.
+
+**Deleted outright**, and each because the thing it served no longer exists:
+
+| file | what it was |
+|---|---|
+| `core/registry.c` + `.h` | the process-global list and `markdown_core_find_syntax_extension` |
+| `core/plugin.c` + `.h` | the plugin object registration went through |
+| `core/syntax_extension.c` | `_new`, `_free`, sixteen setters, and a hidden `_mem` global |
+| `core/once.c` + `.h` | the once-flag that guarded registration, and nothing else |
+
+Also gone: `markdown_core_register_plugin`,
+`markdown_core_list_syntax_extensions`,
+`markdown_core_core_extensions_ensure_registered` and its eight call sites, and
+`priv` / `free_function` — a private-state pair **no extension in this
+repository ever used**. **23 source files where there were 28** before Step 3.
+
+**Nobody looks anything up by name any more.** A literal name becomes the
+descriptor symbol; the three harnesses that take extension names from *data*
+(both fuzzers and the sweep) map name → **bit** and hand the bit set to
+`markdown_core_core_extensions_attach`, which is the one thing that turns a set
+into a sequence. That is a real fix and not only tidiness: those loops attached
+in the order of their own name list, which is **a second attach order**, and a
+second attach order is D15.
+
+**What "cannot express an order" means exactly.** The CLI and the facade — the
+two product entry points, and everything every binding goes through — can only
+pass a bitmask. `markdown_core_parser_attach_syntax_extension` still exists,
+takes a `const` descriptor, and is **not in the export map**, so no consumer of
+the shipped library can reach it. A statically-linked test can, deliberately:
+3.3's D33 gate has to build an extension that misbehaves, and no real one does.
+`audit-extension-attach-order.mjs` is what keeps that honest — it asserts the
+**library** has exactly one attach site.
+
+##### Two more audits stopped reading, and both said so
+
+Repairing the audit at 3.2 did not inoculate the others. Both source-scanning
+audits went **red** on this commit:
+
+- `audit-extension-special-chars.mjs` — its reader looked for
+  `create_*_extension` and a `set_byte_sets` call. Neither exists now. It caught
+  itself only because 3.2 had given it a saw-nothing assertion; **that
+  assertion is the reason this is a failure and not a silent pass**, and it is
+  now stronger: it counts the descriptors it read and requires **six**, so
+  reading five is as loud as reading none.
+- `audit-extension-attach-order.mjs` — the table used to hold `"name"` strings
+  and the pairing was against `markdown_core_plugin_register_syntax_extension`
+  calls. It now reads `&MARKDOWN_CORE_EXTENSION_*` out of the table and pairs it
+  against the descriptors **defined** in `extensions/*.c`, which is the same
+  law the other way round: an extension cannot become attachable without being
+  given a position.
+
+| mutant | result |
+|---|---|
+| move `table` to the front of `CORE_EXTENSIONS[]` | *must end with `table` (Q9); it ends with `directive`* |
+| drop `tasklist` from the table | *`tasklist` defines a descriptor and has no place in CORE_EXTENSIONS\[\]* |
+| a byte set the reader cannot find | *read N extension descriptors and expected 6* |
+
+**Gates after.** `correctness` **69/69** · `correctness-asan` **60/60** ·
+`correctness-ubsan` **60/60** · `conformance` 2/2 · upstream parity 817/817 with
+7/7 · mdast 54/54, backlog 24/24 · fuzz-parity 300/300 · scope-sanity 14 ·
+position oracles 0 / 45 / 109 · reference-order 2 rows, still red ·
+canonical-ast 28/47/6 · public surface · special chars · attach order · plan
+graph 22/45 · **source lists 23 sources, 4 of 5** · topology · format-c ·
+format-cmake. **Zero golden rows moved, and no fixture, spec or golden file
+touched** — by a commit that deletes seven files and changes thirty-six.
+
+##### What Step 3 still owes
+
+One clause of §4.1's row: *"The public `delimiter` struct, annotated 'Exposed
+raw for now' since 1.0, is hidden behind accessors."* Thirty field reads across
+the three extensions that push delimiters, over eight fields. It is 3.5.
 
 
 ---

@@ -7,6 +7,7 @@ extern "C" {
 
 #include "markdown-core-extension-api.h"
 #include "markdown-core-export.h"
+#include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -47,9 +48,6 @@ typedef enum {
     MARKDOWN_CORE_FORMULA_MODE_STANDALONE
 } markdown_core_formula_mode;
 
-MARKDOWN_CORE_EXPORT
-void markdown_core_core_extensions_ensure_registered(void);
-
 /** One bit per core extension.  A caller says WHICH extensions it wants and
  * cannot say in what order, because the order is not in the bit values -- it
  * is the order of the table in `core-extensions.c`, and that table is the only
@@ -82,6 +80,11 @@ int markdown_core_core_extensions_attach(markdown_core_parser *parser, unsigned 
  * table instead of around it.
  */
 unsigned markdown_core_core_extensions_bit(const char *name);
+
+/** The name at `index` in the fixed table, or NULL past the end. The CLI's
+ * `--help` used to walk a process-global registry list to print this. */
+MARKDOWN_CORE_EXPORT
+const char *markdown_core_core_extensions_name_at(size_t index);
 
 MARKDOWN_CORE_EXPORT
 uint16_t markdown_core_extensions_get_table_columns(markdown_core_node *node);

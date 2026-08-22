@@ -12,6 +12,8 @@
  *   fallback_runner --case NAME
  */
 #include <stdint.h>
+#include "formula.h"
+#include "directive.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -267,7 +269,7 @@ static int case_constructor_oom(void) {
 }
 
 static char *fb_parse_directive_attributes(const char *input, markdown_core_mem *mem) {
-    markdown_core_syntax_extension *extension = markdown_core_find_syntax_extension("directive");
+    const markdown_core_syntax_extension *extension = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
     markdown_core_parser *parser;
     markdown_core_node *document;
     markdown_core_iter *iter;
@@ -357,8 +359,6 @@ static int case_directive_sorted_fallback(void) {
     size_t expected_length = 0;
     size_t i;
     int result = -1;
-
-    markdown_core_core_extensions_ensure_registered();
 
     if (fb_compare_directive_paths(":x{a=1 b=2 a=3 c=4 b=5}\n", "{\"a\":\"3\",\"b\":\"5\",\"c\":\"4\"}", "small") !=
         0) {
@@ -589,9 +589,12 @@ static markdown_core_node *fb_sweep_parse_chunked(markdown_core_mem *mem, size_t
     if (!parser) {
         return NULL;
     }
-    for (i = 0; i < sizeof(FB_SWEEP_EXTENSIONS) / sizeof(FB_SWEEP_EXTENSIONS[0]); i++) {
-        markdown_core_syntax_extension *extension = markdown_core_find_syntax_extension(FB_SWEEP_EXTENSIONS[i]);
-        if (!extension || !markdown_core_parser_attach_syntax_extension(parser, extension)) {
+    {
+        unsigned mask = 0;
+        for (i = 0; i < sizeof(FB_SWEEP_EXTENSIONS) / sizeof(FB_SWEEP_EXTENSIONS[0]); i++) {
+            mask |= markdown_core_core_extensions_bit(FB_SWEEP_EXTENSIONS[i]);
+        }
+        if (!markdown_core_core_extensions_attach(parser, mask)) {
             markdown_core_parser_free(parser);
             return NULL;
         }
@@ -686,8 +689,6 @@ static int fb_run_oom_sweep(size_t chunk) {
     unsigned long k;
     int result = -1;
 
-    markdown_core_core_extensions_ensure_registered();
-
     /* The control is always the ONE-CALL parse, so this also asserts that
      * chunking the same bytes builds the same document. */
     control = fb_sweep_parse(markdown_core_get_default_mem_allocator());
@@ -770,13 +771,13 @@ static const char FB_FORMULA_CORPUS[] = "```formula\n"
 static markdown_core_node *fb_formula_parse(markdown_core_mem *mem) {
     markdown_core_parser *parser = markdown_core_parser_new_with_mem(
         MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS | MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS, mem);
-    markdown_core_syntax_extension *extension;
+    const markdown_core_syntax_extension *extension;
     markdown_core_node *root;
 
     if (!parser) {
         return NULL;
     }
-    extension = markdown_core_find_syntax_extension("formula");
+    extension = &MARKDOWN_CORE_EXTENSION_FORMULA;
     if (!extension || !markdown_core_parser_attach_syntax_extension(parser, extension)) {
         markdown_core_parser_free(parser);
         return NULL;
@@ -826,8 +827,6 @@ static int case_formula_literal_borrow(void) {
     markdown_core_node *root;
     unsigned long total, k;
     int result = -1;
-
-    markdown_core_core_extensions_ensure_registered();
 
     root = fb_formula_parse(plain);
     if (!root || !fb_formula_literals(root, &control) || control.size == 0) {

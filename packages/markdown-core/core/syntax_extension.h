@@ -28,9 +28,7 @@ struct markdown_core_syntax_extension {
     const char *terminates_text;      /* ends a text run: subject_find_special_char */
     const char *dispatch;             /* offered to match_inline, and owns a delimiter tag */
     const char *flanking_transparent; /* scan_delims looks through it */
-    char *name;
-    void *priv;
-    markdown_core_free_func free_function;
+    const char *name;
     markdown_core_get_type_string_func get_type_string_func;
     markdown_core_can_contain_func can_contain_func;
     markdown_core_contains_inlines_func contains_inlines_func;

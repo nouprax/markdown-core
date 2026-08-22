@@ -51,10 +51,12 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const extensionsDir = path.join(root, "packages/markdown-core/extensions");
 
-// The one declaration: three C string literals, or NULL, in one call.
-const BYTE_SETS =
-    /markdown_core_syntax_extension_set_byte_sets\(\s*\w+\s*,\s*(NULL|"(?:\\.|[^"])*")\s*,\s*(NULL|"(?:\\.|[^"])*")\s*,\s*(NULL|"(?:\\.|[^"])*")\s*\)/;
-const CREATE = /markdown_core_syntax_extension \*create_(\w+)_extension\(void\)\s*\{/;
+// The one declaration: three designated initialisers in one `static const`
+// descriptor. Before 3.4 it was one `set_byte_sets` call in a `create_*`
+// function; before 3.2 it was a run of `llist_append`s.
+const DESCRIPTOR = /const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_\w+ = \{([\s\S]*?)\n\};/;
+const FIELD = (name) => new RegExp(`\\.${name}\\s*=\\s*("(?:\\\\.|[^"])*")`);
+const HOOK = /\.match_inline\s*=\s*(\w+)/;
 
 /** The bytes a C string literal denotes, with the escapes this repository uses. */
 function bytesOf(literal) {
@@ -90,12 +92,12 @@ const ESCAPES = { "\\\\": 0x5c, "\\'": 0x27, "\\n": 0x0a, "\\r": 0x0d, "\\t": 0x
 const byteOf = (literal) => (literal in ESCAPES ? ESCAPES[literal] : literal.charCodeAt(0));
 const spell = (byte) => (byte < 0x20 ? `0x${byte.toString(16).padStart(2, "0")}` : `'${String.fromCharCode(byte)}'`);
 
-/** The body of the extension's `match_inline` hook, found through its registration. */
+/** The body of the extension's `match_inline` hook, found through the descriptor. */
 function matchBody(source, file) {
-    const hook = /markdown_core_syntax_extension_set_match_inline_func\(\s*\w+\s*,\s*(\w+)\s*\)/.exec(source);
+    const hook = HOOK.exec(source);
     if (hook === null) return null;
     const start = source.search(new RegExp(`^static markdown_core_node \\*${hook[1]}\\(`, "m"));
-    if (start < 0) throw new Error(`${file}: match_inline hook \`${hook[1]}\` is registered but not defined here.`);
+    if (start < 0) throw new Error(`${file}: match_inline hook \`${hook[1]}\` is named but not defined here.`);
     const end = source.indexOf("\n}\n", start);
     return source.slice(start, end < 0 ? source.length : end);
 }
@@ -108,19 +110,17 @@ for (const entry of fs
     .filter((name) => name.endsWith(".c"))
     .sort()) {
     const source = fs.readFileSync(path.join(extensionsDir, entry), "utf8");
-    if (!CREATE.test(source)) continue;
+    const descriptor = DESCRIPTOR.exec(source);
+    if (descriptor === null) continue;
 
-    const sets = BYTE_SETS.exec(source);
-    if (sets === null) {
-        // Every extension in this directory declares its sets, even the empty
-        // ones, so that "no call" always means "the reader is broken".
-        failures.push(`${entry}: defines a create_*_extension and no set_byte_sets call. This audit cannot see it.`);
-        continue;
-    }
     declared += 1;
-    const terminates = bytesOf(sets[1]);
-    const dispatch = bytesOf(sets[2]);
-    const transparent = bytesOf(sets[3]);
+    const setOf = (name) => {
+        const match = FIELD(name).exec(descriptor[1]);
+        return match === null ? [] : bytesOf(match[1]);
+    };
+    const terminates = setOf("terminates_text");
+    const dispatch = setOf("dispatch");
+    const transparent = setOf("flanking_transparent");
 
     const body = matchBody(source, entry);
     if (body === null) {
@@ -172,8 +172,17 @@ for (const entry of fs
     );
 }
 
-if (declared === 0) {
-    failures.push("no extension declared any byte set; this audit read nothing at all");
+/* Every `*.c` in this directory that is an extension must have been read. A
+ * source-scanning audit with no saw-nothing assertion is one refactor away from
+ * a gate that cannot fail: it happened at 3.2, when the reader still looked for
+ * `llist_append` calls, and it happened again at 3.4, when the descriptor
+ * stopped being built by a `create_*` function. */
+const EXTENSION_FILES = 6;
+if (declared !== EXTENSION_FILES) {
+    failures.push(
+        `read ${String(declared)} extension descriptors and expected ${String(EXTENSION_FILES)}; ` +
+            "this audit is not reading what it thinks it is"
+    );
 }
 
 if (failures.length > 0) {

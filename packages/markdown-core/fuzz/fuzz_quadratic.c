@@ -15,10 +15,7 @@ const char *extension_names[] = {
     NULL,
 };
 
-int LLVMFuzzerInitialize(int *argc, char ***argv) {
-    markdown_core_core_extensions_ensure_registered();
-    return 0;
-}
+int LLVMFuzzerInitialize(int *argc, char ***argv) { return 0; }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     struct __attribute__((packed)) {
@@ -60,15 +57,19 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 
             markdown_core_parser *parser = markdown_core_parser_new(fuzz_config.options);
 
+            /* A name selects a BIT; only the fixed table turns a set of bits
+             * into a sequence. Attaching from the name list directly was a
+             * second attach order, which is D15's shape. */
+            unsigned extension_mask = 0;
             for (const char **it = extension_names; *it; ++it) {
-                const char *extension_name = *it;
-                markdown_core_syntax_extension *syntax_extension = markdown_core_find_syntax_extension(extension_name);
-                if (!syntax_extension) {
-                    fprintf(stderr, "%s is not a valid syntax extension\n", extension_name);
+                unsigned bit = markdown_core_core_extensions_bit(*it);
+                if (!bit) {
+                    fprintf(stderr, "%s is not a valid syntax extension\n", *it);
                     abort();
                 }
-                markdown_core_parser_attach_syntax_extension(parser, syntax_extension);
+                extension_mask |= bit;
             }
+            markdown_core_core_extensions_attach(parser, extension_mask);
 
             markdown_core_parser_feed(parser, markdown, markdown_size);
             markdown_core_node *doc = markdown_core_parser_finish(parser);

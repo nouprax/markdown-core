@@ -1,10 +1,14 @@
 #include <stdio.h>
+#include "table.h"
+#include "formula.h"
+#include "directive.h"
 #include <stdlib.h>
 #include <string.h>
 
 #include "markdown-core.h"
 #include "node.h"
 #include "buffer.h"
+#include "syntax_extension.h"
 #include "markdown-core-extensions.h"
 
 #include <markdown_core.h>
@@ -264,10 +268,9 @@ static void accessors(test_batch_runner *runner) {
 }
 
 static markdown_core_node *parse_with_formula_extension_options(const char *markdown, int options) {
-    markdown_core_core_extensions_ensure_registered();
 
     markdown_core_parser *parser = markdown_core_parser_new(options);
-    markdown_core_syntax_extension *formula = markdown_core_find_syntax_extension("formula");
+    const markdown_core_syntax_extension *formula = &MARKDOWN_CORE_EXTENSION_FORMULA;
 
     if (formula) {
         markdown_core_parser_attach_syntax_extension(parser, formula);
@@ -290,10 +293,9 @@ static markdown_core_node *parse_with_dollar_formula_extension(const char *markd
 }
 
 static markdown_core_node *parse_with_directive_extension(const char *markdown) {
-    markdown_core_core_extensions_ensure_registered();
 
     markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_DIRECTIVE);
-    markdown_core_syntax_extension *directive = markdown_core_find_syntax_extension("directive");
+    const markdown_core_syntax_extension *directive = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
 
     if (directive) {
         markdown_core_parser_attach_syntax_extension(parser, directive);
@@ -1083,10 +1085,9 @@ static void test_facade_dump(test_batch_runner *runner, const char *markdown, in
 static void extension_decline_yields_turn(test_batch_runner *runner) {
     static const char *const markdown = "text\n:::note\nbody\n:::\n";
 
-    markdown_core_core_extensions_ensure_registered();
     markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_DIRECTIVE);
-    markdown_core_syntax_extension *table = markdown_core_find_syntax_extension("table");
-    markdown_core_syntax_extension *directive = markdown_core_find_syntax_extension("directive");
+    const markdown_core_syntax_extension *table = &MARKDOWN_CORE_EXTENSION_TABLE;
+    const markdown_core_syntax_extension *directive = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
 
     OK(runner, parser && table && directive, "table and directive extensions are available");
     if (!parser || !table || !directive) {
@@ -1126,56 +1127,72 @@ static void extension_decline_yields_turn(test_batch_runner *runner) {
  * ended at all.
  *
  * No in-tree extension reaches it, because each pushes a tag it also declares.
- * The public push does not care: it is one call from any extension, and both
- * shapes below are the two ways to make it. The first is a rule the engine has
- * no handler for; the second is a rule that is not in the enum, which would
- * also index `openers_bottom` out of bounds. */
-static markdown_core_node *stray_delimiter_match(markdown_core_syntax_extension *self, markdown_core_parser *parser,
-                                                 markdown_core_node *parent, unsigned char character,
-                                                 markdown_core_inline_parser *inline_parser) {
+ * The public push does not care: it is one call from any extension, and the two
+ * descriptors below are the two ways to make it. The first pushes a real rule
+ * with a NULL owner, so nothing can handle it; the second pushes a rule outside
+ * the enum, which would also index `openers_bottom` out of bounds.
+ *
+ * They are `static const` descriptors, like every extension since 3.4. A test
+ * may still build one -- what 3.4 removed is the ability to REGISTER one, look
+ * one up by name, or mutate one after the fact. */
+static markdown_core_node *stray_delimiter_push(markdown_core_parser *parser,
+                                                markdown_core_inline_parser *inline_parser, unsigned char character,
+                                                markdown_core_delimiter_rule rule) {
     markdown_core_node *node;
-    markdown_core_delimiter_rule rule =
-        (markdown_core_delimiter_rule)(size_t)markdown_core_syntax_extension_get_private(self);
 
-    (void)parent;
+    (void)parser;
     if (character != '@') {
         return NULL;
     }
     markdown_core_inline_parser_advance_offset(inline_parser);
-    (void)parser;
     node = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
     if (!node) {
         return NULL;
     }
     markdown_core_node_set_literal(node, "@");
-    /* owner NULL, so no extension claims it, and the rule is not one of the
-     * four the core handles. */
     markdown_core_inline_parser_push_delimiter(inline_parser, NULL, rule, 0, 1, node);
     return node;
 }
 
-static void stray_delimiter_parse(test_batch_runner *runner, markdown_core_delimiter_rule rule, const char *what) {
-    markdown_core_syntax_extension *ext = markdown_core_syntax_extension_new("stray");
+static markdown_core_node *stray_unowned_match(const markdown_core_syntax_extension *self, markdown_core_parser *parser,
+                                               markdown_core_node *parent, unsigned char character,
+                                               markdown_core_inline_parser *inline_parser) {
+    (void)self;
+    (void)parent;
+    return stray_delimiter_push(parser, inline_parser, character, MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH);
+}
+
+static markdown_core_node *stray_unnamed_match(const markdown_core_syntax_extension *self, markdown_core_parser *parser,
+                                               markdown_core_node *parent, unsigned char character,
+                                               markdown_core_inline_parser *inline_parser) {
+    (void)self;
+    (void)parent;
+    return stray_delimiter_push(parser, inline_parser, character, (markdown_core_delimiter_rule)200);
+}
+
+static const markdown_core_syntax_extension STRAY_UNOWNED = {
+    .name = "stray-unowned", .match_inline = stray_unowned_match, .terminates_text = "@", .dispatch = "@"};
+static const markdown_core_syntax_extension STRAY_UNNAMED = {
+    .name = "stray-unnamed", .match_inline = stray_unnamed_match, .terminates_text = "@", .dispatch = "@"};
+
+static void stray_delimiter_parse(test_batch_runner *runner, const markdown_core_syntax_extension *extension,
+                                  const char *what) {
     markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
     markdown_core_node *document;
     const char *input = "a @ b @ c\n";
 
-    markdown_core_syntax_extension_set_match_inline_func(ext, stray_delimiter_match);
-    markdown_core_syntax_extension_set_byte_sets(ext, "@", "@", NULL);
-    markdown_core_syntax_extension_set_private(ext, (void *)(size_t)rule, NULL);
-    markdown_core_parser_attach_syntax_extension(parser, ext);
+    markdown_core_parser_attach_syntax_extension(parser, extension);
     markdown_core_parser_feed(parser, input, strlen(input));
     document = markdown_core_parser_finish(parser);
 
     OK(runner, document != NULL, "a delimiter with %s still finishes the parse", what);
     markdown_core_node_free(document);
     markdown_core_parser_free(parser);
-    markdown_core_syntax_extension_free(markdown_core_get_default_mem_allocator(), ext);
 }
 
 static void stray_delimiter(test_batch_runner *runner) {
-    stray_delimiter_parse(runner, MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH, "a rule and no owner");
-    stray_delimiter_parse(runner, (markdown_core_delimiter_rule)200, "a rule outside the enum");
+    stray_delimiter_parse(runner, &STRAY_UNOWNED, "a rule and no owner");
+    stray_delimiter_parse(runner, &STRAY_UNNAMED, "a rule outside the enum");
 }
 
 /* A1. An allocation failure is a fact about the write that failed, not a
