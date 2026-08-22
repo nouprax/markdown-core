@@ -122,13 +122,6 @@ static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_INLINE_P(markdown_core_node 
 MARKDOWN_CORE_EXPORT bool markdown_core_node_can_contain_type(markdown_core_node *node,
                                                               markdown_core_node_type child_type);
 
-/**
- * Enable (or disable) extra safety checks. These extra checks cause
- * extra performance overhead (in some cases quadratic), so they are only
- * intended to be used during testing.
- */
-MARKDOWN_CORE_EXPORT void markdown_core_enable_safety_checks(bool enable);
-
 #ifdef __cplusplus
 }
 #endif

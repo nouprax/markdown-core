@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a) and **3** (3.1–3.5, §4.14.3) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a) **3** (3.1–3.5, §4.14.3) and **3b** (§4.14.3b) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 3b**, then §4.1.4's order: `15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 15A**, then §4.1.4's order: `5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -346,7 +346,7 @@ Absent at baseline: sessions, incremental, delta, the source rope, node ids and
 revisions, diagnostics, concrete records, the delimiter engine,
 `ReferenceDefinition` nodes, `parser->line_marks` — **and every parity oracle.**
 
-### Thirty-three defects live in the baseline
+### Thirty-four defects live in the baseline
 
 The first eleven were found by reading. **All eleven have since been built,
 gated and reverted** on isolated worktrees at `8e76a94` — every claim below
@@ -364,7 +364,7 @@ looked at. Every one of the fourteen that Q25 put to the test was
 found **fixable on the untouched baseline**; none produced an architectural
 dependency, and D9 remains the plan's only exception.
 
-**All thirty-three are recorded here**, because a defect the plan does not name
+**All thirty-four are recorded here**, because a defect the plan does not name
 is a defect the plan will re-derive later at full price — and because a list
 split across three sections is a list nobody reads.
 
@@ -407,6 +407,7 @@ ones whose witness is stated in this section rather than in the row.
 | D29 | `extensions/table.c:297` does not check `markdown_core_node_new_with_mem`, and `:305` dereferences NULL | **crash** | **fixed at 0a.15** | §4.13.11, SIGSEGV on `lead text⏎x | y` / `--|--` |
 | D30 | `markdown_core_reference_create` commits an entry whose url or title was lost | wrong-document (allocation failure only) | 9a/11c delete it; §4.13.9 pins it | §4.13.11, measured on four refused allocations |
 | D31 | a raw HTML tag that crosses a line ending ends **one column short of its own literal** | wrong-position | 8 | found at 0a.6 and pinned as a golden row: `a <b`⏎`c> d` gives `HTML scope=1:3..2:1` for a literal whose last byte is at `2:2`, while `a <b c> d` gives `1:3..1:7`, which covers it. cmark-gfm is wrong the same way |
+| D34 | `markdown_core_node_insert_before` / `_insert_after` accept `sibling == node` — `S_can_contain(node->parent, sibling)` starts its ancestor walk at the PARENT and never meets the child, so it answers yes | **unbounded sibling list** | **fixed at 3b** | found at 3b while writing its gate: `insert_before(b, b)` returns 1 and leaves `b->next == b` and `b->prev == b`, with `a->first_child` and `a->last_child` disagreeing; walking `a`'s children never terminates. Reachable with `markdown_core_enable_safety_checks` in EITHER position, so the flag never covered it |
 | D33 | `process_emphasis` chooses its arm by the delimiter's **byte**, and the chain has **no final `else`** — a delimiter no arm claims leaves the cursor where it is, is freed by the removal below, and is read again on the next turn | **use-after-free**, or a **non-terminating loop** | **fixed at 3.3** | found at 3.3 by a probe extension: ASan `heap-use-after-free`, READ of size 8 in `process_emphasis`; with `can_open` set the loop never ends. Unreachable in-tree because every extension pushes a tag it declares — and the push is PUBLIC and takes the byte from the caller. §4.1.3 predicted a NULL dispatch here and did not notice the fall-through |
 | D32 | a **backslash hard break** consumes a line ending without telling the subject, so every later node in the paragraph keeps the break's own line | wrong-position | **fixed at 0a.12** | found at 0a.12 while measuring D26: `foo\`⏎`bar` gives `Text 1:6..1:8` — three columns that do not exist on a four-character line 1. `handle_backslash`'s hard-break branch calls `skip_line_end` and then `make_simple_subj` without `handle_newline`'s `++subj->line; column_offset = -pos`. cmark-gfm reports the same numbers. **5 registered `multi-line-span` findings, all of them attributed by the ledger to a defect that could not close them** |
 
@@ -984,7 +985,7 @@ Seven defects that this restatement found by measurement are numbered **D18–D2
 | ✅ **2** | Every C source the build compiles is a `clang-format` fixpoint, and the config makes **braces mandatory on every `if`/`else`/`for`/`while`/`do` body**. `scripts/format-c.sh --check` is the gate. | 0 new · 1 config line · **2,472** diff lines over **38** sources (~~2,393 over 36~~, stale: Stage 0a added code), plus 35 lines over the **three bridge sources the gate could not see** | 0a has landed and each defect commit re-pinned its own `file:line` citations (R13). No other work is in flight in `packages/markdown-core/` (R17). |
 | ✅ **3a** | The engine has **one allocator model**: `markdown_core_mem`, supplied per parser, defaulting to `calloc`. There is no process-global scratch allocator, no `core/arena.c`, and no re-parse retry in `table.c`. The Release CLI allocates and frees exactly as the library does, so `#if DEBUG` in `core/main.c` collapses to one path. | 0 new · **−140** | `extensions-conflicts.txt` exists (0a.5) and re-proves D8 after the retry path it patched is deleted (R14). `node scripts/audit-source-lists.mjs` **runs** (it throws at HEAD). |
 | ✅ **3** | An extension is a `static const` descriptor in a fixed compile-time table. It is not registered, not looked up by name, and carries no mutable state. A parser records *which* extensions are on as a bitmask and **cannot express an order** — the order is the table's, and `table` is last. A descriptor declares **three** byte sets (terminates-text, dispatch, flanking-transparent), not one list. A delimiter names its **rule**, not a byte. Node types and node-flag bits are compile-time constants. There is no process-global mutable state anywhere in the extension path. | **+500 / −535** | D1, D2 fixed (0a.4) so the descriptor author transcribes a correct source. D8 fixed (0a.5). The tree is a format fixpoint (2). One allocator (3a). The source-list audit runs. |
-| **3b** | `markdown_core_node_append_child` / `_prepend_child` / `_insert_before` / `_insert_after` / `_set_type` refuse any link that would make a node its own ancestor — **always**. `markdown_core_enable_safety_checks` does not exist. | ~25 | None beyond "the tree builds". See **Q13**: this may be a §2 defect, not a refactor by-product. |
+| ✅ **3b** | `markdown_core_node_append_child` / `_prepend_child` / `_insert_before` / `_insert_after` / `_set_type` refuse any link that would make a node its own ancestor — **always**. `markdown_core_enable_safety_checks` does not exist. | ~25 | None beyond "the tree builds". See **Q13**: this may be a §2 defect, not a refactor by-product. |
 | **15A** | **One** machine-readable AST contract lives in `docs/` (normative) and **one** audit checks all six projection surfaces against it — C header, C dump, Kotlin bridge + decoder + model, ES bridge + export list + decoder + model, Swift model + dumper, and the canonical-AST manifest — and it is **green**. | 0 C · ~500 JSON+script | Nothing under `docs/deprecated/` is normative *and* no executable policy file still points there. |
 | **5** | The iterator's event contract is **total** (every node gets `ENTER` and `EXIT`; `S_is_leaf` is gone). Its mutation rule names *nodes*, not events: only the node whose `EXIT` is current may be freed. A subtree operation stays inside its subtree. **No zero-length `Text` node exists in a finished tree, and no node carries `0:0..0:0` as a stand-in for "no bytes".** A merged run's scope is the union of what it merged, line **and** column. One function computes a position from a byte range. | ~200 | D3 and D7 fixed (0a.6) so merged positions are merged from correct operands. D10's replacement node carries a start line (0a.2). |
 | **6** | **Deliverable #2.** Attaching `formula` is the *only* gate — the two delimiter options do not exist. Five inline forms, four block forms, and one padding rule: one leading and one trailing space-or-line-ending is stripped from an inline formula's body when the body is not all whitespace. | ~60 · deletions across 18 files | 3. D1 fixed (0a.4), else one oracle row stays red and must be named as 0a.4's. |
@@ -1138,7 +1139,7 @@ Restating a port as a requirement exposes the decisions the port had already mad
 |---|---|---|---|
 | **Q11** | Does the repository adopt `InsertBraces: true`? | 2 | **TAKEN at Step 2, and every number in this row was wrong.** Footprint ~~2,393 diff lines across 36 files, 561 of them in `core/` + `extensions/`~~ → **2,472 across 38, of which 1,700 are in `core/` + `extensions/` and 772 in `tests/`**; the old split understated the engine's share threefold. Neutrality ~~29/29 objects identical~~ → **83/83 Release objects BYTE-identical**, no normalization needed; a debug build type moves only `assert`'s `__LINE__` immediate (82 substituted instructions under `asan`, 58 under `ubsan`, **zero** added or removed). The tool is `scripts/audit-format-neutrality.sh <rev>`, and it is a measurement tool, not a standing gate — §4.14.2 says why. |
 | **Q12** | Is the arena deleted, or made parser-owned? | 3a | **Delete.** Measured: ~7% CLI-only parse win, **+10–16% peak RSS**, `abort()` on allocation failure inside a library with a careful sticky-OOM discipline, total sanitizer blindness on the binary the parity oracles drive, and a demonstrated **480-byte leak in a parser that never asked for it** (a global `A != NULL` makes an unrelated default-allocator parse take `table.c`'s retry branch). Parser-owned is impossible without a document-owned lifetime model this engine does not have. Output-neutral: 7,251 comparisons, 0 differences. |
-| **Q13** | Is the cycle check unconditional — and is it a defect or a refactor by-product? | 3b | **Unconditional**, and *"the shipped library makes `b->parent == b` on request while the test that denies it flips a flag nothing else flips"* reads exactly like D1–D16. Measured cost: unmeasurable on four workloads, 10.7% on one already-pathological path the engine takes 36 seconds to parse. **The owner may re-file it into Stage 0a; that is the only change to 0a this restatement would ask for besides Q25.** |
+| **Q13** | Is the cycle check unconditional — and is it a defect or a refactor by-product? | 3b | **TAKEN at 3b: unconditional, and it was a defect** — the witness is in §4.14.3b and writing its gate found a second one, D34. The measured cost on this tree is +0.9% and +3.5% on two deep-nesting inputs and noise on two ordinary ones; the row's 10.7% is not reproduced and nothing here takes 36 seconds. The row's own reading — *"the shipped library makes `b->parent == b` on request while the test that denies it flips a flag nothing else flips"* reads exactly like D1–D16 — was exactly right. |
 | **Q14** | One knob per extension, or two? | 3, 6, 7 | **One.** Attachment is the language. Delete `MARKDOWN_CORE_OPT_DIRECTIVE` and both formula delimiter options; keep formula's `dollar`/`latex` **sub-grammar** selection only if a use is stated, and today none is. |
 | **Q15** | What is the **inline** dispatch precedence? | 3 | Q9 settles the *block* order (`table` last) and says nothing about inlines — `table` has no inline hooks at all. `autolink` and `directive` both claim `':'`, and first-non-NULL wins today. **Recommend: table order is also inline order, `autolink` before `directive`** (a bare `:` far more often begins a URL), stated in the commit and pinned by a fixture. **MEASURED AT 0a.11 AND THE COLLISION HAS NO WITNESS**: moving `directive` to first or to the middle changes 0 of 12 hand-built candidates and 0 of 4,000 random `:`/URL/attribute documents (§4.2.17). The recommendation stands as a tie-break; it must not be shipped as a fix, and **a fixture cannot pin it until an input exists that distinguishes the two** — finding one, or recording that none does, is Step 3's. |
 | **Q16** | Are extension node types and node-flag bits re-assigned as fixed constants? | 3 | **TAKEN at 3.1.** A fixed enum decoupled from the table order, at exactly the values the runtime allocator produced (measured both sides). The export map is 32 facade symbols and `local: *`, so renumbering was available and was declined to keep the commit structural. §4.14.3. |
@@ -3619,6 +3620,88 @@ graph 22/45 · source lists 23, 4 of 5 · topology · format-c · format-cmake.
 
 ---
 
+#### 4.14.3b Step 3b landed: the check the shipped library did not run, and D34
+
+**Q13's suspicion was right, and the witness is one line of C.**
+`markdown_core_enable_safety_checks` defaulted to **off** and only the api
+test's `main()` ever turned it on, so what shipped answered:
+
+```
+-- safety checks OFF (what the shipped library does) --
+append_child(q, q)                  returned 1, parent == self: YES
+prepend_child(r, r)                 returned 1, parent == self: YES
+append_child(a,b)=1 then (b,a)=1 -> a->parent == b: YES (a cycle)
+
+-- safety checks ON (what the test suite does) --
+append_child(q, q)                  returned 0
+prepend_child(r, r)                 returned 0
+append_child(a,b)=1 then (b,a)=0 -> no cycle
+```
+
+A library that makes a cycle on request while its own tests deny it is not
+testing the library. The flag and its declaration are deleted; the ancestor walk
+is unconditional.
+
+##### D34 — a node CAN be its own sibling, and the flag never covered it
+
+Writing the gate found a second hole the requirement names and Q13 does not.
+`markdown_core_node_insert_before(node, sibling)` guards with
+`S_can_contain(node->parent, sibling)`, and **with `sibling == node` that walk
+starts at the parent and never meets the child**, so it answers yes. Measured on
+the tree before the fix, with the flag in either position:
+
+```
+append_child(a,b)  = 1
+insert_before(b,b) = 1
+  b->next == b : YES      b->prev == b : YES
+  a->first_child == b : yes   a->last_child == b : no
+  walking a's children stops after 10 steps (bound 10)
+```
+
+An unbounded sibling list, and a parent whose `first_child` and `last_child`
+disagree. Any traversal of `a`'s children runs forever. **D34 is recorded in
+§2**; the fix is `node == sibling` refused in both `insert_before` and
+`insert_after`, and the ancestor walk cannot be made to cover it because the
+node is not its own ancestor — it is its own *neighbour*.
+
+##### Cost, measured on this tree rather than repeated
+
+Q13 says *"unmeasurable on four workloads, 10.7% on one already-pathological
+path the engine takes 36 seconds to parse"*. The direction is confirmed; the
+10.7% is not reproduced by anything here, and no input in this repository takes
+36 seconds:
+
+| input | flag off | unconditional | |
+|---|---|---|---|
+| 2,000-deep blockquote, 4 KB | 8.87 ms | 8.95 ms | **+0.9%** |
+| 200 paragraphs 200 deep, 81 KB | 24.68 ms | 25.54 ms | **+3.5%** |
+| 690 KB of benchmark samples | 22.80 ms | 22.69 ms | −0.5% |
+| 995 KB of plain paragraphs | 6.61 ms | 6.48 ms | −2.0% |
+
+The last two are noise. The walk is O(depth) per link and the parse's depth is
+the document's nesting, which is what the two blockquote rows measure.
+
+##### Mutant kills
+
+| mutant | result |
+|---|---|
+| put the ancestor walk back behind a default-off flag | `api_engine` fails **8** assertions — the six new ones **and `create_tree`'s tests 313 and 314**, which passed only because `main()` set the flag |
+| drop the `node == sibling` guard | `api_engine` fails 2: *cannot be inserted before / after itself* |
+
+The first row is worth reading twice: two assertions that were already in the
+suite were testing a configuration the product never ran.
+
+**Gates after.** `correctness` **69/69** · `correctness-asan` **60/60** ·
+`correctness-ubsan` **60/60** · `conformance` 2/2 · upstream parity 817/817 with
+7/7 · mdast 54/54, backlog 24/24 · fuzz-parity 300/300 · scope-sanity 14 ·
+position oracles 0 / 45 / 109 · reference-order 2 rows, still red ·
+canonical-ast 28/47/6 · public surface · special chars · attach order · plan
+graph 22/45 · source lists 23, 4 of 5 · topology · format-c · format-cmake.
+**Zero golden rows moved.**
+
+
+---
+
 ### 4.3 The ordering argument
 
 **The old plan said: "Step 3 must come before every later step."** That sentence
@@ -4226,15 +4309,15 @@ following, together:
 - [ ] The facade and its single ABI break window (12), the null/empty rule (14)
 - [ ] Bindings, specs and docs regenerated (15)
 
-**Defects** — **all thirty-three of §2** closed, or explicitly carried with a
+**Defects** — **all thirty-four of §2** closed, or explicitly carried with a
 named owner step and a registered known-red gate. ~~seventeen~~ was stale from
 the revision before D18–D25 and §4.13's four were added, and ~~thirty-two~~ was
 stale the moment Step 3.3 found **D33**. §2's own heading now says thirty-three,
-its index table carries thirty-two rows (D1–D25, D27–D33) and **D26 is the
+its index table carries thirty-three rows (D1–D25, D27–D34) and **D26 is the
 thirty-third** — measured at 0a.12, refused there, and landed at **0a.12b**
 with the ruling it needed (Q40).
 
-**Thirty are closed and three are carried**, and the three are D9 (Step 9a, two
+**Thirty-one are closed and three are carried**, and the three are D9 (Step 9a, two
 gates registered at 0a.8, one known-red), D30 (9a/11c delete it; pinned by the
 allocation-failure sweep) and D31 (Step 8; pinned as a golden row in
 `regression.txt`). D27 was the fourth and **closed at 3a.3**.

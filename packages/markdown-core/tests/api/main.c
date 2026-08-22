@@ -1113,6 +1113,35 @@ static void extension_decline_yields_turn(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
+/* 3b. The ancestor check is unconditional, so the shipped library answers the
+ * same as the test suite. It used to sit behind
+ * `markdown_core_enable_safety_checks`, which defaulted to OFF and which only
+ * `main()` here ever turned on -- so what shipped made `q->parent == q` on
+ * request and returned success, while the tests that denied it flipped a flag
+ * nothing else flipped. */
+static void no_node_is_its_own_ancestor(test_batch_runner *runner) {
+    markdown_core_node *q = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+    markdown_core_node *r = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+    markdown_core_node *a = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+    markdown_core_node *b = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+
+    INT_EQ(runner, markdown_core_node_append_child(q, q), 0, "a node cannot be appended to itself");
+    OK(runner, q->parent != q, "and it is not left as its own parent");
+    INT_EQ(runner, markdown_core_node_prepend_child(r, r), 0, "a node cannot be prepended to itself");
+    OK(runner, r->parent != r, "and it is not left as its own parent");
+
+    INT_EQ(runner, markdown_core_node_append_child(a, b), 1, "b becomes a child of a");
+    INT_EQ(runner, markdown_core_node_append_child(b, a), 0, "and a cannot then become a child of b");
+    OK(runner, a->parent == NULL, "so there is no two-node cycle");
+
+    INT_EQ(runner, markdown_core_node_insert_before(b, b), 0, "a node cannot be inserted before itself");
+    INT_EQ(runner, markdown_core_node_insert_after(b, b), 0, "a node cannot be inserted after itself");
+
+    markdown_core_node_free(a);
+    markdown_core_node_free(q);
+    markdown_core_node_free(r);
+}
+
 /* D33. `process_emphasis` used to choose its arm by the delimiter's BYTE:
  *
  *     if (extension)                       ... else
@@ -1434,7 +1463,6 @@ int main(void) {
     int retval;
     test_batch_runner *runner = test_batch_runner_new();
 
-    markdown_core_enable_safety_checks(true);
     version(runner);
     node_type_values(runner);
     constructor(runner);
@@ -1462,6 +1490,7 @@ int main(void) {
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
+    no_node_is_its_own_ancestor(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

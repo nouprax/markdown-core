@@ -5,14 +5,6 @@
 #include "node.h"
 #include "syntax_extension.h"
 
-/**
- * Expensive safety checks are off by default, but can be enabled
- * by calling markdown_core_enable_safety_checks().
- */
-static bool enable_safety_checks = false;
-
-void markdown_core_enable_safety_checks(bool enable) { enable_safety_checks = enable; }
-
 static void S_node_unlink(markdown_core_node *node);
 
 #define NODE_MEM(node) markdown_core_node_mem(node)
@@ -59,8 +51,23 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
         return 0;
     }
 
-    if (enable_safety_checks) {
-        // Verify that child is not an ancestor of node or equal to node.
+    /* `child` must not be `node` and must not be one of its ancestors.
+     *
+     * This used to sit behind `markdown_core_enable_safety_checks`, a
+     * process-global flag that defaulted to OFF and that only the test suite
+     * ever set -- so the shipped library answered `append_child(q, q)` with
+     * SUCCESS and left `q->parent == q`, and a two-node cycle took two calls.
+     * Measured before it was made unconditional, with the flag in its shipped
+     * position:
+     *
+     *     append_child(q, q)   returned 1, parent == self
+     *     prepend_child(r, r)  returned 1, parent == self
+     *     append_child(a, b) then append_child(b, a)  ->  a->parent == b
+     *
+     * A library that makes a cycle on request while its own tests deny it is
+     * not testing the library. The walk is O(depth) per link and the parse's
+     * depth is the document's nesting; §4.14.3b has the cost. */
+    {
         markdown_core_node *cur = node;
         do {
             if (cur == child) {
@@ -769,6 +776,17 @@ int markdown_core_node_insert_before(markdown_core_node *node, markdown_core_nod
         return 0;
     }
 
+    /* A node cannot be its own sibling. `S_can_contain(node->parent, sibling)`
+     * cannot see this: with `sibling == node`, the ancestor walk starts at the
+     * PARENT and never meets the child, so it answers yes. The splice below
+     * then unlinks the node and re-links it to itself -- measured,
+     * `insert_before(b, b)` returns 1 and leaves `b->next == b` and
+     * `b->prev == b`, an unbounded sibling list that any traversal walks
+     * forever. That is D34, and the safety flag never covered it. */
+    if (node == sibling) {
+        return 0;
+    }
+
     if (!node->parent || !S_can_contain(node->parent, sibling)) {
         return 0;
     }
@@ -799,6 +817,17 @@ int markdown_core_node_insert_before(markdown_core_node *node, markdown_core_nod
 
 int markdown_core_node_insert_after(markdown_core_node *node, markdown_core_node *sibling) {
     if (node == NULL || sibling == NULL) {
+        return 0;
+    }
+
+    /* A node cannot be its own sibling. `S_can_contain(node->parent, sibling)`
+     * cannot see this: with `sibling == node`, the ancestor walk starts at the
+     * PARENT and never meets the child, so it answers yes. The splice below
+     * then unlinks the node and re-links it to itself -- measured,
+     * `insert_before(b, b)` returns 1 and leaves `b->next == b` and
+     * `b->prev == b`, an unbounded sibling list that any traversal walks
+     * forever. That is D34, and the safety flag never covered it. */
+    if (node == sibling) {
         return 0;
     }
 
