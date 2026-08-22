@@ -26,21 +26,6 @@ markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
 
 void markdown_core_iter_free(markdown_core_iter *iter) { iter->mem->free(iter); }
 
-static bool S_is_leaf(markdown_core_node *node) {
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_HTML_BLOCK:
-    case MARKDOWN_CORE_NODE_THEMATIC_BREAK:
-    case MARKDOWN_CORE_NODE_CODE_BLOCK:
-    case MARKDOWN_CORE_NODE_TEXT:
-    case MARKDOWN_CORE_NODE_SOFT_BREAK:
-    case MARKDOWN_CORE_NODE_LINE_BREAK:
-    case MARKDOWN_CORE_NODE_CODE:
-    case MARKDOWN_CORE_NODE_HTML:
-        return 1;
-    }
-    return 0;
-}
-
 markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
     markdown_core_event_type ev_type = iter->next.ev_type;
     markdown_core_node *node = iter->next.node;
@@ -53,7 +38,7 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
     }
 
     /* roll forward to next item, setting both fields */
-    if (ev_type == MARKDOWN_CORE_EVENT_ENTER && !S_is_leaf(node)) {
+    if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
         if (node->first_child == NULL) {
             /* stay on this node but exit */
             iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
@@ -107,9 +92,13 @@ int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
         return 0;
     }
 
+    /* EXIT, not ENTER, and that is Step 5's mutation rule: the only node a walk
+     * may free is the one whose EXIT is current. `TEXT` was in the old
+     * `S_is_leaf` list, so its EXIT was suppressed and freeing at ENTER
+     * happened to be safe; with the contract total it is a use-after-free. */
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
-        if (ev_type != MARKDOWN_CORE_EVENT_ENTER || cur->type != MARKDOWN_CORE_NODE_TEXT) {
+        if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->type != MARKDOWN_CORE_NODE_TEXT) {
             continue;
         }
 
@@ -118,7 +107,10 @@ int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
             markdown_core_strbuf_put(&buf, cur->as.literal.data, cur->as.literal.len);
             tmp = cur->next;
             while (tmp && tmp->type == MARKDOWN_CORE_NODE_TEXT) {
-                markdown_core_iter_next(iter); // advance pointer
+                /* Bring `tmp` to its own EXIT before freeing it: two events
+                 * now, where a suppressed EXIT used to make one enough. */
+                markdown_core_iter_next(iter); /* tmp ENTER */
+                markdown_core_iter_next(iter); /* tmp EXIT  */
                 markdown_core_strbuf_put(&buf, tmp->as.literal.data, tmp->as.literal.len);
                 // ONLY AN OPERAND THAT OWNS BYTES CAN SAY WHERE THE RUN ENDS.
                 // An empty one has no last byte to end at, and the empties in
@@ -136,6 +128,12 @@ int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
                 markdown_core_node_free(tmp);
                 tmp = next;
             }
+            /* Every node the loop freed was ahead of the cursor and is now
+             * unlinked, so the cursor sits at the last one's EXIT. Re-establish
+             * `cur`'s EXIT: it recomputes the lookahead from the siblings that
+             * survived, and it is what makes the drop below legal under the
+             * rule rather than merely safe. */
+            markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
             markdown_core_chunk_free(iter->mem, &cur->as.literal);
             cur->as.literal = markdown_core_chunk_buf_detach(&buf);
             if (!cur->as.literal.data) {
@@ -155,11 +153,9 @@ int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
         // producer unreachable by construction: a run of empties can no longer
         // merge into an empty, because the operands are gone before the merge.
         //
-        // Freeing at ENTER is legal because `TEXT` is a leaf: `S_is_leaf`
-        // suppresses its EXIT and `markdown_core_iter_next` has already
-        // computed `iter->next` past it. WHEN STEP 5 MAKES THE EVENT CONTRACT
-        // TOTAL this stops being true, and Step 5 must either move this free or
-        // state that a leaf's ENTER is its EXIT for mutation purposes.
+        // Freeing here is legal because `cur`'s EXIT is current -- Step 5's
+        // mutation rule -- so `iter->next` already names a node outside this
+        // one's subtree.
         if (cur->as.literal.len == 0) {
             markdown_core_chunk_free(iter->mem, &cur->as.literal);
             markdown_core_node_free(cur);

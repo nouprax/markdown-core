@@ -237,6 +237,22 @@ typedef enum {
  * type are undefined until 'markdown_core_iter_next' is called for the first time.
  * The memory allocated for the iterator should be released using
  * 'markdown_core_iter_free' when it is no longer needed.
+ *
+ * THE EVENT CONTRACT IS TOTAL: every node in the subtree yields exactly one
+ * `ENTER` and exactly one `EXIT`, in that order, with its descendants' events
+ * between them.  Until Step 5 an internal `S_is_leaf` list of eight node types
+ * suppressed the `EXIT` of a node that "cannot have children" -- which was a
+ * list, not a property, so a `FOOTNOTE_REFERENCE` with no children got an
+ * `EXIT` and a `TEXT` with no children did not, and every walk had to know
+ * which.
+ *
+ * THE MUTATION RULE NAMES A NODE, NOT AN EVENT: while walking, the only node
+ * that may be freed is the one whose `EXIT` is current.  That is exactly the
+ * moment at which the iterator's lookahead names something outside the node's
+ * own subtree, and it is the only such moment.  Freeing at `ENTER` used to be
+ * legal for the eight suppressed types and is not legal for anything now; use
+ * `markdown_core_iter_reset(iter, node, MARKDOWN_CORE_EVENT_EXIT)` to bring a
+ * node back under the rule after mutating around it.
  */
 MARKDOWN_CORE_EXPORT
 markdown_core_iter *markdown_core_iter_new(markdown_core_node *root);

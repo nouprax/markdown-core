@@ -644,7 +644,14 @@ static markdown_core_node *postprocess(const markdown_core_syntax_extension *ext
             continue;
         }
 
-        if (ev == MARKDOWN_CORE_EVENT_ENTER && node->type == MARKDOWN_CORE_NODE_TEXT) {
+        /* EXIT, not ENTER. `postprocess_text` splices new siblings in after
+         * this node and may empty it, and the iterator's lookahead at a node's
+         * EXIT is the sibling that FOLLOWED it before the splice -- which is
+         * both the mutation rule and the behaviour this walk always had, when
+         * `TEXT`'s EXIT was suppressed and ENTER's lookahead was that same
+         * sibling. Doing it at ENTER once the contract is total makes the walk
+         * descend into the autolinks it just created. */
+        if (ev == MARKDOWN_CORE_EVENT_EXIT && node->type == MARKDOWN_CORE_NODE_TEXT) {
             postprocess_text(parser, node);
         }
     }

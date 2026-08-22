@@ -74,7 +74,13 @@ static bool S_strip_html_comments(markdown_core_node *root) {
 
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node = markdown_core_iter_get_node(iter);
-        if (ev_type == MARKDOWN_CORE_EVENT_ENTER && S_html_literal_starts_with_comment(node)) {
+        /* EXIT, not ENTER: the mutation rule names the node whose EXIT is
+         * current, and it is the only moment the iterator's lookahead is
+         * outside this node's subtree. `HTML` and `HTML_BLOCK` were both in
+         * the old `S_is_leaf` list, so their EXIT was suppressed and freeing
+         * at ENTER happened to be safe; with the contract total it is a
+         * use-after-free on the very next `markdown_core_iter_next`. */
+        if (ev_type == MARKDOWN_CORE_EVENT_EXIT && S_html_literal_starts_with_comment(node)) {
             markdown_core_node_free(node);
             stripped = true;
         }

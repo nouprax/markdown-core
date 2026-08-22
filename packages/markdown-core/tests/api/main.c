@@ -530,10 +530,14 @@ static void iterator_delete(test_batch_runner *runner) {
 
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node = markdown_core_iter_get_node(iter);
-        // Delete list, emph, and code nodes.
-        if ((ev_type == MARKDOWN_CORE_EVENT_EXIT && node->type == MARKDOWN_CORE_NODE_LIST) ||
-            (ev_type == MARKDOWN_CORE_EVENT_EXIT && node->type == MARKDOWN_CORE_NODE_EMPHASIS) ||
-            (ev_type == MARKDOWN_CORE_EVENT_ENTER && node->type == MARKDOWN_CORE_NODE_CODE)) {
+        // Delete list, emph, and code nodes -- all at EXIT, which is Step 5's
+        // mutation rule. `CODE` was deleted at ENTER here until the event
+        // contract became total, and that was legal only because `S_is_leaf`
+        // suppressed `CODE`'s EXIT. A test that frees at ENTER is a test
+        // asserting the suppression list.
+        if (ev_type == MARKDOWN_CORE_EVENT_EXIT &&
+            (node->type == MARKDOWN_CORE_NODE_LIST || node->type == MARKDOWN_CORE_NODE_EMPHASIS ||
+             node->type == MARKDOWN_CORE_NODE_CODE)) {
             markdown_core_node_free(node);
         }
     }
@@ -1113,6 +1117,68 @@ static void extension_decline_yields_turn(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
+/* Step 5. The event contract is TOTAL: every node yields exactly one ENTER and
+ * exactly one EXIT, in that order, with its descendants' events between them.
+ *
+ * Until Step 5 an internal `S_is_leaf` list of eight node types suppressed the
+ * EXIT of a node that "cannot have children" -- a list, not a property, so a
+ * `FOOTNOTE_REFERENCE` with no children got an EXIT and a `TEXT` with no
+ * children did not, and every walk in the engine had to know which. Three did:
+ * `consolidate_text_nodes`, `S_strip_html_comments` and `autolink`'s
+ * `postprocess`, and all three freed or spliced at ENTER because the
+ * suppression made it safe. The input below contains one of every suppressed
+ * kind. */
+static size_t total_nodes(markdown_core_node *node) {
+    size_t n = 1;
+    for (markdown_core_node *c = markdown_core_node_first_child(node); c; c = markdown_core_node_next(c)) {
+        n += total_nodes(c);
+    }
+    return n;
+}
+
+static void iterator_contract_is_total(test_batch_runner *runner) {
+    static const char md[] = "---\n"
+                             "\n"
+                             "<div>html block</div>\n"
+                             "\n"
+                             "    code block\n"
+                             "\n"
+                             "a `code` b <span>html</span> c\\\n"
+                             "d\n"
+                             "e\n";
+    markdown_core_node *doc = markdown_core_parse_document(md, sizeof(md) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_iter *iter = markdown_core_iter_new(doc);
+    markdown_core_node *stack[64];
+    size_t depth = 0, enters = 0, exits = 0, mismatched = 0, overflow = 0;
+    markdown_core_event_type ev;
+
+    while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (ev == MARKDOWN_CORE_EVENT_ENTER) {
+            enters += 1;
+            if (depth == sizeof(stack) / sizeof(stack[0])) {
+                overflow += 1;
+            } else {
+                stack[depth++] = node;
+            }
+        } else if (ev == MARKDOWN_CORE_EVENT_EXIT) {
+            exits += 1;
+            if (depth == 0 || stack[--depth] != node) {
+                mismatched += 1;
+            }
+        }
+    }
+
+    INT_EQ(runner, (int)enters, (int)total_nodes(doc), "every node is entered exactly once");
+    INT_EQ(runner, (int)exits, (int)enters, "every node is exited exactly once");
+    INT_EQ(runner, (int)mismatched, 0, "every EXIT closes the ENTER it belongs to");
+    INT_EQ(runner, (int)depth, 0, "the walk ends with nothing left open");
+    INT_EQ(runner, (int)overflow, 0, "the test's stack was deep enough");
+
+    markdown_core_iter_free(iter);
+    markdown_core_node_free(doc);
+}
+
 /* 3b. The ancestor check is unconditional, so the shipped library answers the
  * same as the test suite. It used to sit behind
  * `markdown_core_enable_safety_checks`, which defaulted to OFF and which only
@@ -1491,6 +1557,7 @@ int main(void) {
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
     no_node_is_its_own_ancestor(runner);
+    iterator_contract_is_total(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

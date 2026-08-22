@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a) **3** (3.1–3.5, §4.14.3) and **3b** (§4.14.3b) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a) **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b) and **5** (§4.14.5) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 15A**, then §4.1.4's order: `5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **D35** (§4.14.5a), then **Step 6** — deliverable #2, and unblocked: the graph says `6:[3]`. **15A is deferred and that is deliberate**: its dependency is only Step 1, and it blocks 7, 9b, 12 and 14 alone, so nothing before those is waiting on it. Remaining: `15A 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -987,7 +987,7 @@ Seven defects that this restatement found by measurement are numbered **D18–D2
 | ✅ **3** | An extension is a `static const` descriptor in a fixed compile-time table. It is not registered, not looked up by name, and carries no mutable state. A parser records *which* extensions are on as a bitmask and **cannot express an order** — the order is the table's, and `table` is last. A descriptor declares **three** byte sets (terminates-text, dispatch, flanking-transparent), not one list. A delimiter names its **rule**, not a byte. Node types and node-flag bits are compile-time constants. There is no process-global mutable state anywhere in the extension path. | **+500 / −535** | D1, D2 fixed (0a.4) so the descriptor author transcribes a correct source. D8 fixed (0a.5). The tree is a format fixpoint (2). One allocator (3a). The source-list audit runs. |
 | ✅ **3b** | `markdown_core_node_append_child` / `_prepend_child` / `_insert_before` / `_insert_after` / `_set_type` refuse any link that would make a node its own ancestor — **always**. `markdown_core_enable_safety_checks` does not exist. | ~25 | None beyond "the tree builds". See **Q13**: this may be a §2 defect, not a refactor by-product. |
 | **15A** | **One** machine-readable AST contract lives in `docs/` (normative) and **one** audit checks all six projection surfaces against it — C header, C dump, Kotlin bridge + decoder + model, ES bridge + export list + decoder + model, Swift model + dumper, and the canonical-AST manifest — and it is **green**. | 0 C · ~500 JSON+script | Nothing under `docs/deprecated/` is normative *and* no executable policy file still points there. |
-| **5** | The iterator's event contract is **total** (every node gets `ENTER` and `EXIT`; `S_is_leaf` is gone). Its mutation rule names *nodes*, not events: only the node whose `EXIT` is current may be freed. A subtree operation stays inside its subtree. **No zero-length `Text` node exists in a finished tree, and no node carries `0:0..0:0` as a stand-in for "no bytes".** A merged run's scope is the union of what it merged, line **and** column. One function computes a position from a byte range. | ~200 | D3 and D7 fixed (0a.6) so merged positions are merged from correct operands. D10's replacement node carries a start line (0a.2). |
+| ✅ **5** | The iterator's event contract is **total** (every node gets `ENTER` and `EXIT`; `S_is_leaf` is gone). Its mutation rule names *nodes*, not events: only the node whose `EXIT` is current may be freed. A subtree operation stays inside its subtree. **No zero-length `Text` node exists in a finished tree, and no node carries `0:0..0:0` as a stand-in for "no bytes".** A merged run's scope is the union of what it merged, line **and** column. One function computes a position from a byte range. | ~200 | D3 and D7 fixed (0a.6) so merged positions are merged from correct operands. D10's replacement node carries a start line (0a.2). |
 | **6** | **Deliverable #2.** Attaching `formula` is the *only* gate — the two delimiter options do not exist. Five inline forms, four block forms, and one padding rule: one leading and one trailing space-or-line-ending is stripped from an inline formula's body when the body is not all whitespace. | ~60 · deletions across 18 files | 3. D1 fixed (0a.4), else one oracle row stays red and must be named as 0a.4's. |
 | **7** | **Deliverable #1.** The directive grammar of micromark-extension-directive 4.0.0 and mdast-util-directive 3.1.0, applied to **code points**: name rules, one/two/three-colon forms, `#`/`.` shorthand, `class` accumulation, last-value-wins elsewhere, and **degradation** — a malformed label or attribute block leaves the directive standing and the punctuation as prose. `DirectiveLabel` is a visible node whose scope spans its brackets. A container's closing fence **closes it and every block open inside it** (D21). A directive that consumes a span containing a line ending leaves the subject's position honest (D22). Attributes are an ordered key/value sequence; the JSON round-trip is deleted. | ~530 written · **+150 net** | 3. 15A (this is the first step that changes the node inventory). 0a.6's newline-adjust mechanism is live, or Step 7 lands it (D22). |
 | **10** | For any block node with a content buffer and any byte offset within it, the engine can name the **source line and column** of that byte. Every node synthesized from a content offset carries a position that is a place: the split-off table lead, its inline children, the recovered header row and cells, and any paragraph whose front was consumed (D18). The lead keeps its authored spelling. | ~110 | **Nothing.** Every mechanism exists at the baseline; both consumers run while the marks would be live. |
@@ -3698,6 +3698,63 @@ position oracles 0 / 45 / 109 · reference-order 2 rows, still red ·
 canonical-ast 28/47/6 · public surface · special chars · attach order · plan
 graph 22/45 · source lists 23, 4 of 5 · topology · format-c · format-cmake.
 **Zero golden rows moved.**
+
+
+---
+
+#### 4.14.5 Step 5 landed: the event contract is total, and three walks were relying on it not being
+
+**`S_is_leaf` was a LIST, not a property.** Eight node types had their `EXIT`
+suppressed, so a `FOOTNOTE_REFERENCE` with no children got an `EXIT` and a
+`TEXT` with no children did not, and every walk in the engine had to know
+which. It is deleted; every node now yields exactly one `ENTER` and exactly one
+`EXIT`.
+
+**The mutation rule names a node, not an event**, and it is now written in the
+public header beside `markdown_core_iter_new`: *while walking, the only node
+that may be freed is the one whose `EXIT` is current* — that is exactly the
+moment the iterator's lookahead names something outside the node's own subtree,
+and the only such moment. **Three walks were freeing or splicing at `ENTER`,
+and all three were safe only because of the suppression list:**
+
+| walk | what it did at `ENTER` | what it does now |
+|---|---|---|
+| `markdown_core_consolidate_text_nodes` | merged a `TEXT` run and freed the merged-away nodes and the emptied node | works at `EXIT`; brings each merged-away node to its own `EXIT` before freeing it, then `markdown_core_iter_reset(iter, cur, EXIT)` so the final drop is legal under the rule and the lookahead is recomputed from the survivors |
+| `S_strip_html_comments` | freed an `HTML` / `HTML_BLOCK` node | frees at `EXIT` |
+| `autolink`'s `postprocess` | spliced new siblings in after a `TEXT` and emptied it | works at `EXIT`, **which is also the behaviour it always had**: the lookahead at a node's `EXIT` is the sibling that followed it before the splice, exactly what a suppressed `EXIT` gave `ENTER`. Doing it at `ENTER` with the contract total makes the walk descend into the autolinks it just created — two fixture examples said so |
+
+The api test's `iterator_delete` was a fourth: it freed `CODE` at `ENTER`, which
+is a test asserting the suppression list rather than the contract.
+
+**Gate.** `iterator_contract_is_total` walks a document containing one of every
+formerly-suppressed kind — thematic break, HTML block, indented code block,
+text, soft break, hard line break, inline code, inline HTML — with a stack, and
+asserts four things: every node is entered once, exited once, each `EXIT`
+closes the `ENTER` it belongs to, and the walk ends with nothing open.
+
+| mutant | result |
+|---|---|
+| restore `S_is_leaf` | **12 of 69 suites fail**; `api_engine` fails 12 assertions — the five new ones **and** `iterator_delete`'s and all four `strip-html-comments` assertions, because the EXIT-based frees never fire |
+
+**Zero golden rows moved**, which is the right answer for a change to the
+*order* events arrive in and not to what the tree contains.
+
+##### What Step 5 does not close, and one defect it found
+
+- *"No zero-length `Text` node exists in a finished tree"* — **true since
+  0a.14**; no golden carries `literal=""` on a `Text`.
+- *"A merged run's scope is the union of what it merged, line and column"* —
+  **true since 0a.14** (D12).
+- *"no node carries `0:0..0:0` as a stand-in"* — **one row left**, the split-off
+  table lead's paragraph, registered in `specs/scope-sanity/ledger.json` and
+  owned by **Step 10**.
+- *"One function computes a position from a byte range"* — not landed here. The
+  block half is Step 10's content-to-source map and the inline half is Step 8's
+  projection; writing a third one at Step 5 is the disease Q22 names.
+- The ledger's **11 negative rows** had no owner named anywhere. Reading them
+  found that **four of them are one defect**: an HTML block whose terminator is
+  on its own opening line ends **one line before it starts**. That is **D35**,
+  and §4.14.5a lands it.
 
 
 ---
