@@ -12,8 +12,9 @@ markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
     }
     markdown_core_mem *mem = root->content.mem;
     markdown_core_iter *iter = (markdown_core_iter *)mem->calloc(1, sizeof(markdown_core_iter));
-    if (!iter)
+    if (!iter) {
         return NULL;
+    }
     iter->mem = mem;
     iter->root = root;
     iter->cur.ev_type = MARKDOWN_CORE_EVENT_NONE;
@@ -102,13 +103,15 @@ int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
     markdown_core_node *cur, *tmp, *next;
     int ok = 1;
 
-    if (!iter)
+    if (!iter) {
         return 0;
+    }
 
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
-        if (ev_type != MARKDOWN_CORE_EVENT_ENTER || cur->type != MARKDOWN_CORE_NODE_TEXT)
+        if (ev_type != MARKDOWN_CORE_EVENT_ENTER || cur->type != MARKDOWN_CORE_NODE_TEXT) {
             continue;
+        }
 
         if (cur->next && cur->next->type == MARKDOWN_CORE_NODE_TEXT) {
             markdown_core_strbuf_clear(&buf);
@@ -205,8 +208,9 @@ int markdown_core_node_own(markdown_core_node *root) {
         if (cur->first_child) {
             cur = cur->first_child;
         } else {
-            while (cur != root && cur->next == NULL)
+            while (cur != root && cur->next == NULL) {
                 cur = cur->parent;
+            }
             cur = (cur == root) ? NULL : cur->next;
         }
     }

@@ -22,8 +22,9 @@ void markdown_core_syntax_extension_free(markdown_core_mem *mem, markdown_core_s
 markdown_core_syntax_extension *markdown_core_syntax_extension_new(const char *name) {
     markdown_core_syntax_extension *res =
         (markdown_core_syntax_extension *)_mem->calloc(1, sizeof(markdown_core_syntax_extension));
-    if (!res)
+    if (!res) {
         return NULL;
+    }
     res->name = (char *)_mem->calloc(1, sizeof(char) * (strlen(name)) + 1);
     if (!res->name) {
         _mem->free(res);

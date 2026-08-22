@@ -53,8 +53,9 @@ static void free_row_cells(markdown_core_mem *mem, table_row *row) {
 }
 
 static void free_table_row(markdown_core_mem *mem, table_row *row) {
-    if (!row)
+    if (!row) {
         return;
+    }
 
     free_row_cells(mem, row);
     mem->free(row);
@@ -69,15 +70,17 @@ static void free_node_table(markdown_core_mem *mem, void *ptr) {
 static void free_node_table_row(markdown_core_mem *mem, void *ptr) { mem->free(ptr); }
 
 static int get_n_table_columns(markdown_core_node *node) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque)
+    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque) {
         return -1;
+    }
 
     return (int)((node_table *)node->as.opaque)->n_columns;
 }
 
 static int set_n_table_columns(markdown_core_node *node, uint16_t n_columns) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque)
+    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque) {
         return 0;
+    }
 
     ((node_table *)node->as.opaque)->n_columns = n_columns;
     return 1;
@@ -111,16 +114,18 @@ static int get_n_autocompleted_cells(markdown_core_node *node) {
 }
 
 static int set_table_alignments(markdown_core_node *node, uint8_t *alignments) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque)
+    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque) {
         return 0;
+    }
 
     ((node_table *)node->as.opaque)->alignments = alignments;
     return 1;
 }
 
 static int set_cell_index(markdown_core_node *node, int i) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_CELL)
+    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_CELL) {
         return 0;
+    }
 
     node->as.cell_index = i;
     return 1;
@@ -130,18 +135,21 @@ static markdown_core_strbuf *unescape_pipes(markdown_core_mem *mem, unsigned cha
     markdown_core_strbuf *res = (markdown_core_strbuf *)mem->calloc(1, sizeof(markdown_core_strbuf));
     bufsize_t r, w;
 
-    if (!res)
+    if (!res) {
         return NULL;
+    }
     markdown_core_strbuf_init(mem, res, len + 1);
     markdown_core_strbuf_put(res, string, len);
     markdown_core_strbuf_putc(res, '\0');
 
-    if (res->oom)
+    if (res->oom) {
         return res;
+    }
 
     for (r = 0, w = 0; r < len; ++r) {
-        if (res->ptr[r] == '\\' && res->ptr[r + 1] == '|')
+        if (res->ptr[r] == '\\' && res->ptr[r + 1] == '|') {
             r++;
+        }
 
         res->ptr[w++] = res->ptr[r];
     }
@@ -234,8 +242,9 @@ static table_row *row_from_string(markdown_core_syntax_extension *self, markdown
             {
                 int cell_oom = 0;
                 node_cell *cell = append_row_cell(parser->mem, row, &cell_oom);
-                if (cell_oom)
+                if (cell_oom) {
                     parser->oom = true;
+                }
                 if (!cell) {
                     int_overflow_abort = 1;
                     markdown_core_strbuf_free(cell_buf);
@@ -324,8 +333,9 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     /* markdown_core_node_set_string_content returns true unconditionally, so
      * the only way to see a failed copy is the buffer's own flag. */
     markdown_core_node_set_string_content(paragraph, (char *)paragraph_content->ptr);
-    if (paragraph->content.oom)
+    if (paragraph->content.oom) {
         parser->oom = true;
+    }
     markdown_core_strbuf_free(paragraph_content);
     parser->mem->free(paragraph_content);
 
@@ -453,12 +463,13 @@ static markdown_core_node *try_opening_table_header(markdown_core_syntax_extensi
         node_cell *node = &delimiter_row->cells[i];
         bool left = node->buf->ptr[0] == ':', right = node->buf->ptr[node->buf->size - 1] == ':';
 
-        if (left && right)
+        if (left && right) {
             alignments[i] = 'c';
-        else if (left)
+        } else if (left) {
             alignments[i] = 'l';
-        else if (right)
+        } else if (right) {
             alignments[i] = 'r';
+        }
     }
     set_table_alignments(parent_container, alignments);
 
@@ -486,8 +497,9 @@ static markdown_core_node *try_opening_table_header(markdown_core_syntax_extensi
         node_cell *cell = &header_row->cells[i];
         markdown_core_node *header_cell = markdown_core_parser_add_child(
             parser, table_header, MARKDOWN_CORE_NODE_TABLE_CELL, parent_container->start_column + cell->start_offset);
-        if (!header_cell)
+        if (!header_cell) {
             break;
+        }
         header_cell->start_line = header_cell->end_line = parent_container->start_line;
         header_cell->internal_offset = cell->internal_offset;
         header_cell->end_column = parent_container->start_column + cell->end_offset;
@@ -511,8 +523,9 @@ static markdown_core_node *try_opening_table_row(markdown_core_syntax_extension 
     markdown_core_node *table_row_block;
     table_row *row;
 
-    if (markdown_core_parser_is_blank(parser))
+    if (markdown_core_parser_is_blank(parser)) {
         return NULL;
+    }
 
     if (get_n_autocompleted_cells(parent_container) > MAX_AUTOCOMPLETED_CELLS) {
         return NULL;
@@ -520,8 +533,9 @@ static markdown_core_node *try_opening_table_row(markdown_core_syntax_extension 
 
     table_row_block = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_TABLE_ROW,
                                                      parent_container->start_column);
-    if (!table_row_block)
+    if (!table_row_block) {
         return NULL;
+    }
     markdown_core_node_set_syntax_extension(table_row_block, self);
     table_row_block->end_column = parent_container->end_column;
     table_row_block->as.opaque = parser->mem->calloc(1, sizeof(node_table_row));
@@ -548,8 +562,9 @@ static markdown_core_node *try_opening_table_row(markdown_core_syntax_extension 
             markdown_core_node *node =
                 markdown_core_parser_add_child(parser, table_row_block, MARKDOWN_CORE_NODE_TABLE_CELL,
                                                parent_container->start_column + cell->start_offset);
-            if (!node)
+            if (!node) {
                 break;
+            }
             node->internal_offset = cell->internal_offset;
             node->end_column = parent_container->start_column + cell->end_offset;
             markdown_core_node_set_string_content(node, (char *)cell->buf->ptr);
@@ -562,8 +577,9 @@ static markdown_core_node *try_opening_table_row(markdown_core_syntax_extension 
         for (; i < table_columns; ++i) {
             markdown_core_node *node =
                 markdown_core_parser_add_child(parser, table_row_block, MARKDOWN_CORE_NODE_TABLE_CELL, 0);
-            if (!node)
+            if (!node) {
                 break;
+            }
             markdown_core_node_set_syntax_extension(node, self);
             set_cell_index(node, i);
         }
@@ -599,8 +615,9 @@ static int matches(markdown_core_syntax_extension *self, markdown_core_parser *p
         markdown_core_arena_push();
         table_row *new_row = row_from_string(self, parser, input + markdown_core_parser_get_first_nonspace(parser),
                                              len - markdown_core_parser_get_first_nonspace(parser));
-        if (new_row && new_row->n_columns)
+        if (new_row && new_row->n_columns) {
             res = 1;
+        }
         free_table_row(parser->mem, new_row);
         markdown_core_arena_pop();
     }
@@ -612,10 +629,11 @@ static const char *get_type_string(markdown_core_syntax_extension *self, markdow
     if (node->type == MARKDOWN_CORE_NODE_TABLE) {
         return "table";
     } else if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
-        if (node->as.opaque && ((node_table_row *)node->as.opaque)->is_header)
+        if (node->as.opaque && ((node_table_row *)node->as.opaque)->is_header) {
             return "table_header";
-        else
+        } else {
             return "table_row";
+        }
     } else if (node->type == MARKDOWN_CORE_NODE_TABLE_CELL) {
         return "table_cell";
     }
@@ -678,15 +696,17 @@ markdown_core_syntax_extension *create_table_extension(void) {
 }
 
 uint16_t markdown_core_extensions_get_table_columns(markdown_core_node *node) {
-    if (node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque)
+    if (node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque) {
         return 0;
+    }
 
     return ((node_table *)node->as.opaque)->n_columns;
 }
 
 uint8_t *markdown_core_extensions_get_table_alignments(markdown_core_node *node) {
-    if (node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque)
+    if (node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque) {
         return 0;
+    }
 
     return ((node_table *)node->as.opaque)->alignments;
 }
@@ -697,22 +717,25 @@ int markdown_core_extensions_set_table_columns(markdown_core_node *node, uint16_
 
 int markdown_core_extensions_set_table_alignments(markdown_core_node *node, uint16_t ncols, uint8_t *alignments) {
     uint8_t *a = (uint8_t *)markdown_core_node_mem(node)->calloc(1, ncols);
-    if (!a)
+    if (!a) {
         return 0;
+    }
     memcpy(a, alignments, ncols);
     return set_table_alignments(node, a);
 }
 
 int markdown_core_extensions_get_table_row_is_header(markdown_core_node *node) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_ROW || !node->as.opaque)
+    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_ROW || !node->as.opaque) {
         return 0;
+    }
 
     return ((node_table_row *)node->as.opaque)->is_header;
 }
 
 int markdown_core_extensions_set_table_row_is_header(markdown_core_node *node, int is_header) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_ROW || !node->as.opaque)
+    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_ROW || !node->as.opaque) {
         return 0;
+    }
 
     ((node_table_row *)node->as.opaque)->is_header = (is_header != 0);
     return 1;

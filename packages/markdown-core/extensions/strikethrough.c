@@ -10,8 +10,9 @@ static markdown_core_node *match(markdown_core_syntax_extension *self, markdown_
     int left_flanking, right_flanking, punct_before, punct_after, delims;
     char buffer[101];
 
-    if (character != '~')
+    if (character != '~') {
         return NULL;
+    }
 
     delims = markdown_core_inline_parser_scan_delimiters(inline_parser, sizeof(buffer) - 1, '~', &left_flanking,
                                                          &right_flanking, &punct_before, &punct_after);
@@ -24,8 +25,9 @@ static markdown_core_node *match(markdown_core_syntax_extension *self, markdown_
         parser->oom = true;
         return NULL;
     }
-    if (!markdown_core_node_set_literal(res, buffer))
+    if (!markdown_core_node_set_literal(res, buffer)) {
         parser->oom = true;
+    }
     res->start_line = res->end_line = markdown_core_inline_parser_get_line(inline_parser);
     res->start_column = markdown_core_inline_parser_get_column(inline_parser) - delims;
     // The run owns `delims` bytes and must say so. Left unset it stayed 0 from
@@ -52,19 +54,22 @@ static delimiter *insert(markdown_core_syntax_extension *self, markdown_core_par
 
     strikethrough = opener->inl_text;
 
-    if (opener->inl_text->as.literal.len != closer->inl_text->as.literal.len)
+    if (opener->inl_text->as.literal.len != closer->inl_text->as.literal.len) {
         goto done;
+    }
 
-    if (!markdown_core_node_set_type(strikethrough, MARKDOWN_CORE_NODE_STRIKETHROUGH))
+    if (!markdown_core_node_set_type(strikethrough, MARKDOWN_CORE_NODE_STRIKETHROUGH)) {
         goto done;
+    }
 
     markdown_core_node_set_syntax_extension(strikethrough, self);
 
     tmp = markdown_core_node_next(opener->inl_text);
 
     while (tmp) {
-        if (tmp == closer->inl_text)
+        if (tmp == closer->inl_text) {
             break;
+        }
         next = markdown_core_node_next(tmp);
         markdown_core_node_append_child(strikethrough, tmp);
         tmp = next;
@@ -92,8 +97,9 @@ static const char *get_type_string(markdown_core_syntax_extension *extension, ma
 
 static int can_contain(markdown_core_syntax_extension *extension, markdown_core_node *node,
                        markdown_core_node_type child_type) {
-    if (node->type != MARKDOWN_CORE_NODE_STRIKETHROUGH)
+    if (node->type != MARKDOWN_CORE_NODE_STRIKETHROUGH) {
         return false;
+    }
 
     return MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
 }

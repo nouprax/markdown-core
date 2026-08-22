@@ -22,20 +22,24 @@ static void encode_unknown(markdown_core_strbuf *buf) {
 static int utf8proc_charlen(const uint8_t *str, bufsize_t str_len) {
     int length, i;
 
-    if (!str_len)
+    if (!str_len) {
         return 0;
+    }
 
     length = utf8proc_utf8class[str[0]];
 
-    if (!length)
+    if (!length) {
         return -1;
+    }
 
-    if (str_len >= 0 && (bufsize_t)length > str_len)
+    if (str_len >= 0 && (bufsize_t)length > str_len) {
         return -str_len;
+    }
 
     for (i = 1; i < length; i++) {
-        if ((str[i] & 0xC0) != 0x80)
+        if ((str[i] & 0xC0) != 0x80) {
             return -i;
+        }
     }
 
     return length;
@@ -45,16 +49,19 @@ static int utf8proc_charlen(const uint8_t *str, bufsize_t str_len) {
 static int utf8proc_valid(const uint8_t *str, bufsize_t str_len) {
     int length = utf8proc_utf8class[str[0]];
 
-    if (!length)
+    if (!length) {
         return -1;
+    }
 
-    if ((bufsize_t)length > str_len)
+    if ((bufsize_t)length > str_len) {
         return -str_len;
+    }
 
     switch (length) {
     case 2:
-        if ((str[1] & 0xC0) != 0x80)
+        if ((str[1] & 0xC0) != 0x80) {
             return -1;
+        }
         if (str[0] < 0xC2) {
             // Overlong
             return -length;
@@ -62,10 +69,12 @@ static int utf8proc_valid(const uint8_t *str, bufsize_t str_len) {
         break;
 
     case 3:
-        if ((str[1] & 0xC0) != 0x80)
+        if ((str[1] & 0xC0) != 0x80) {
             return -1;
-        if ((str[2] & 0xC0) != 0x80)
+        }
+        if ((str[2] & 0xC0) != 0x80) {
             return -2;
+        }
         if (str[0] == 0xE0) {
             if (str[1] < 0xA0) {
                 // Overlong
@@ -80,12 +89,15 @@ static int utf8proc_valid(const uint8_t *str, bufsize_t str_len) {
         break;
 
     case 4:
-        if ((str[1] & 0xC0) != 0x80)
+        if ((str[1] & 0xC0) != 0x80) {
             return -1;
-        if ((str[2] & 0xC0) != 0x80)
+        }
+        if ((str[2] & 0xC0) != 0x80) {
             return -2;
-        if ((str[3] & 0xC0) != 0x80)
+        }
+        if ((str[3] & 0xC0) != 0x80) {
             return -3;
+        }
         if (str[0] == 0xF0) {
             if (str[1] < 0x90) {
                 // Overlong
@@ -148,8 +160,9 @@ int markdown_core_utf8proc_iterate(const uint8_t *str, bufsize_t str_len, int32_
 
     *dst = -1;
     length = utf8proc_charlen(str, str_len);
-    if (length < 0)
+    if (length < 0) {
         return -1;
+    }
 
     switch (length) {
     case 1:
@@ -157,23 +170,27 @@ int markdown_core_utf8proc_iterate(const uint8_t *str, bufsize_t str_len, int32_
         break;
     case 2:
         uc = ((str[0] & 0x1F) << 6) + (str[1] & 0x3F);
-        if (uc < 0x80)
+        if (uc < 0x80) {
             uc = -1;
+        }
         break;
     case 3:
         uc = ((str[0] & 0x0F) << 12) + ((str[1] & 0x3F) << 6) + (str[2] & 0x3F);
-        if (uc < 0x800 || (uc >= 0xD800 && uc < 0xE000))
+        if (uc < 0x800 || (uc >= 0xD800 && uc < 0xE000)) {
             uc = -1;
+        }
         break;
     case 4:
         uc = ((str[0] & 0x07) << 18) + ((str[1] & 0x3F) << 12) + ((str[2] & 0x3F) << 6) + (str[3] & 0x3F);
-        if (uc < 0x10000 || uc >= 0x110000)
+        if (uc < 0x10000 || uc >= 0x110000) {
             uc = -1;
+        }
         break;
     }
 
-    if (uc < 0)
+    if (uc < 0) {
         return -1;
+    }
 
     *dst = uc;
     return length;

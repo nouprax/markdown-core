@@ -678,9 +678,11 @@ static void test_content(test_batch_runner *runner, markdown_core_node_type type
 
         int got = markdown_core_node_append_child(node, child);
         int expected = 0;
-        if (allowed_content)
-            for (unsigned int *p = allowed_content; *p; ++p)
+        if (allowed_content) {
+            for (unsigned int *p = allowed_content; *p; ++p) {
                 expected |= *p == (unsigned int)child_type;
+            }
+        }
 
         INT_EQ(runner, got, expected, "add %d as child of %d", child_type, type);
 
@@ -990,8 +992,9 @@ static void test_pathological_regressions(test_batch_runner *runner) {
         // I don't care what the output is, so long as it doesn't take too long.
         char path[] = "[a](b";
         char *input = (char *)calloc(1, (sizeof(path) - 1) * 50000);
-        for (int i = 0; i < 50000; ++i)
+        for (int i = 0; i < 50000; ++i) {
             memcpy(input + i * (sizeof(path) - 1), path, sizeof(path) - 1);
+        }
 
         START_TIMING();
         markdown_core_node *doc =
@@ -1006,8 +1009,9 @@ static void test_pathological_regressions(test_batch_runner *runner) {
     {
         char path[] = "[a](<b";
         char *input = (char *)calloc(1, (sizeof(path) - 1) * 50000);
-        for (int i = 0; i < 50000; ++i)
+        for (int i = 0; i < 50000; ++i) {
             memcpy(input + i * (sizeof(path) - 1), path, sizeof(path) - 1);
+        }
 
         START_TIMING();
         markdown_core_node *doc =
@@ -1073,8 +1077,9 @@ static void extension_decline_yields_turn(test_batch_runner *runner) {
 
     OK(runner, parser && table && directive, "table and directive extensions are available");
     if (!parser || !table || !directive) {
-        if (parser)
+        if (parser) {
             markdown_core_parser_free(parser);
+        }
         return;
     }
     OK(runner, markdown_core_parser_attach_syntax_extension(parser, table) != 0, "table attaches first");

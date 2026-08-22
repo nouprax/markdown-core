@@ -61,14 +61,37 @@ function enclosingFunction(source, offset) {
     return definitions.length ? definitions[definitions.length - 1][1] : "(file scope)";
 }
 
-// (1) One attach site. The function's own definition and prototype are not
-// calls; a call is followed eventually by a `;` with no `{` in between.
+/**
+ * The index just past the `)` that closes the argument list opened at `open`,
+ * or -1 if the parentheses do not balance. Reading the parentheses rather than
+ * scanning for the next `;` is what makes this immune to where the braces sit:
+ * Step 2's `InsertBraces` turned `if (ATTACH(...))\n return 0;` into
+ * `if (ATTACH(...)) {`, and the old "a call has no `{` before its `;`" rule
+ * then classified the one real call site as a definition and reported that the
+ * library contains no attach call at all.
+ */
+function endOfArguments(source, open) {
+    let depth = 0;
+    for (let i = open; i < source.length; i += 1) {
+        if (source[i] === "(") depth += 1;
+        else if (source[i] === ")") {
+            depth -= 1;
+            if (depth === 0) return i + 1;
+        }
+    }
+    return -1;
+}
+
+// (1) One attach site. The function's own definition is not a call: its
+// argument list is followed by the body's `{`. Prototypes live in headers,
+// which this audit does not read.
 const sites = [];
 for (const file of librarySources()) {
     const source = read(file);
     for (const match of source.matchAll(new RegExp(`\\b${ATTACH}\\s*\\(`, "g"))) {
-        const tail = source.slice(match.index, source.indexOf(";", match.index) + 1);
-        if (tail.includes("{")) continue;
+        const end = endOfArguments(source, source.indexOf("(", match.index));
+        if (end < 0) continue;
+        if (/^\s*\{/.test(source.slice(end))) continue;
         sites.push({ file, function: enclosingFunction(source, match.index) });
     }
 }

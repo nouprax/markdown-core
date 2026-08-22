@@ -46,8 +46,9 @@ markdown_core_syntax_extension *markdown_core_find_syntax_extension(const char *
 
     for (tmp = syntax_extensions; tmp; tmp = tmp->next) {
         markdown_core_syntax_extension *ext = (markdown_core_syntax_extension *)tmp->data;
-        if (!strcmp(ext->name, name))
+        if (!strcmp(ext->name, name)) {
             return ext;
+        }
     }
     return NULL;
 }

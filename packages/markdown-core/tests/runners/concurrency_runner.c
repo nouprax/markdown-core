@@ -56,8 +56,9 @@ static void barrier_wait(barrier *b) {
     if (b->waiting >= b->threshold) {
         WakeAllConditionVariable(&b->released);
     } else {
-        while (b->waiting < b->threshold)
+        while (b->waiting < b->threshold) {
             SleepConditionVariableCS(&b->released, &b->lock, INFINITE);
+        }
     }
     LeaveCriticalSection(&b->lock);
 }
@@ -67,8 +68,9 @@ typedef unsigned(__stdcall *thread_entry)(void *);
 
 static int thread_spawn(thread_handle *handle, thread_entry entry, void *argument) {
     uintptr_t raw = _beginthreadex(NULL, 0, entry, argument, 0, NULL);
-    if (!raw)
+    if (!raw) {
         return 1;
+    }
     *handle = (HANDLE)raw;
     return 0;
 }
@@ -103,8 +105,9 @@ static void barrier_wait(barrier *b) {
     if (b->waiting >= b->threshold) {
         pthread_cond_broadcast(&b->released);
     } else {
-        while (b->waiting < b->threshold)
+        while (b->waiting < b->threshold) {
             pthread_cond_wait(&b->released, &b->lock);
+        }
     }
     pthread_mutex_unlock(&b->lock);
 }
@@ -179,16 +182,19 @@ static void options_for_variant(option_variant variant, markdown_core_parse_opti
 // accessors; returns the node count so results can be sanity-compared.
 static size_t traverse(const markdown_core_node *node) {
     size_t visited = 0;
-    if (!node)
+    if (!node) {
         return 0;
+    }
     visited += 1;
 
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_scope scope = markdown_core_node_scope(node);
-    if (!markdown_core_node_kind_name(kind))
+    if (!markdown_core_node_kind_name(kind)) {
         return 0;
-    if (scope.start.line < 0 || scope.end.line < 0)
+    }
+    if (scope.start.line < 0 || scope.end.line < 0) {
         return 0;
+    }
 
     markdown_core_string_view view;
     markdown_core_node_literal(node, &view);
@@ -201,13 +207,15 @@ static size_t traverse(const markdown_core_node *node) {
     const markdown_core_node *child = markdown_core_node_get_first_child(node);
     for (; child; child = markdown_core_node_get_next_sibling(child)) {
         size_t below = traverse(child);
-        if (!below)
+        if (!below) {
             return 0;
+        }
         visited += below;
         children += 1;
     }
-    if (children != markdown_core_node_child_count(node))
+    if (children != markdown_core_node_child_count(node)) {
         return 0;
+    }
     return visited;
 }
 
@@ -303,9 +311,11 @@ static THREAD_RETURN worker_main(void *argument) {
 }
 
 static void worker_release(worker *workers, int count) {
-    for (int index = 0; index < count; index++)
-        for (size_t slot = 0; slot < INPUT_COUNT * OPTION_VARIANT_COUNT; slot++)
+    for (int index = 0; index < count; index++) {
+        for (size_t slot = 0; slot < INPUT_COUNT * OPTION_VARIANT_COUNT; slot++) {
             markdown_core_dump_free(workers[index].dumps[slot]);
+        }
+    }
 }
 
 // Runs the thread pool, then compares every thread's dump for every
@@ -327,8 +337,9 @@ static int run_threads_and_verify(int iterations) {
             return 1;
         }
     }
-    for (int index = 0; index < THREAD_COUNT; index++)
+    for (int index = 0; index < THREAD_COUNT; index++) {
         thread_join(handles[index]);
+    }
 
     int failures = 0;
     for (int index = 0; index < THREAD_COUNT; index++) {
@@ -380,8 +391,9 @@ static int case_stress(void) {
     // steady-state parsing with disagreeing option sets.
     uint8_t *warm = NULL;
     size_t warm_length = 0;
-    if (parse_and_dump(INPUTS[0], OPTIONS_DEFAULT, &warm, &warm_length))
+    if (parse_and_dump(INPUTS[0], OPTIONS_DEFAULT, &warm, &warm_length)) {
         return 1;
+    }
     markdown_core_dump_free(warm);
     return run_threads_and_verify(STRESS_ITERATIONS);
 }
@@ -389,8 +401,9 @@ static int case_stress(void) {
 static int case_lifecycle(void) {
     uint8_t *first = NULL;
     size_t first_length = 0;
-    if (parse_and_dump(INPUTS[1], OPTIONS_DEFAULT, &first, &first_length))
+    if (parse_and_dump(INPUTS[1], OPTIONS_DEFAULT, &first, &first_length)) {
         return 1;
+    }
 
     int failed = 0;
     for (int cycle = 0; cycle < 2000 && !failed; cycle++) {
@@ -407,8 +420,9 @@ static int case_lifecycle(void) {
         // Failure paths must not disturb the registry or later parses.
         markdown_core_error *error = NULL;
         if (markdown_core_document_parse(NULL, 1, NULL, &error) != NULL ||
-            markdown_core_error_get_code(error) != MARKDOWN_CORE_ERROR_INVALID_ARGUMENT)
+            markdown_core_error_get_code(error) != MARKDOWN_CORE_ERROR_INVALID_ARGUMENT) {
             failed = 1;
+        }
         markdown_core_error_free(error);
     }
 
@@ -423,8 +437,9 @@ static int case_lifecycle(void) {
         }
     }
     markdown_core_dump_free(first);
-    if (failed)
+    if (failed) {
         fprintf(stderr, "concurrency: lifecycle regression failed\n");
+    }
     return failed;
 }
 
@@ -442,12 +457,15 @@ int main(int argc, char **argv) {
         fprintf(stderr, "usage: concurrency_runner --case first_parse|stress|lifecycle\n");
         return 1;
     }
-    if (strcmp(case_name, "first_parse") == 0)
+    if (strcmp(case_name, "first_parse") == 0) {
         return case_first_parse();
-    if (strcmp(case_name, "stress") == 0)
+    }
+    if (strcmp(case_name, "stress") == 0) {
         return case_stress();
-    if (strcmp(case_name, "lifecycle") == 0)
+    }
+    if (strcmp(case_name, "lifecycle") == 0) {
         return case_lifecycle();
+    }
     fprintf(stderr, "unknown case: %s\n", case_name);
     return 1;
 }

@@ -98,8 +98,9 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
 markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
                                                             markdown_core_syntax_extension *extension) {
     markdown_core_node *node = (markdown_core_node *)mem->calloc(1, sizeof(*node));
-    if (!node)
+    if (!node) {
         return NULL;
+    }
     markdown_core_strbuf_init(mem, &node->content, 0);
     node->type = (uint16_t)type;
     node->extension = extension;
@@ -172,11 +173,13 @@ static void S_free_nodes(markdown_core_node *e) {
     while (e != NULL) {
         markdown_core_strbuf_free(&e->content);
 
-        if (e->user_data && e->user_data_free_func)
+        if (e->user_data && e->user_data_free_func) {
             e->user_data_free_func(NODE_MEM(e), e->user_data);
+        }
 
-        if (e->as.opaque && e->extension && e->extension->opaque_free_func)
+        if (e->as.opaque && e->extension && e->extension->opaque_free_func) {
             e->extension->opaque_free_func(e->extension, NODE_MEM(e), e);
+        }
 
         free_node_as(e);
 
@@ -208,8 +211,9 @@ markdown_core_node_type markdown_core_node_get_type(markdown_core_node *node) {
 int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_type type) {
     markdown_core_node_type initial_type;
 
-    if (type == node->type)
+    if (type == node->type) {
         return 1;
+    }
 
     initial_type = (markdown_core_node_type)node->type;
     node->type = (uint16_t)type;

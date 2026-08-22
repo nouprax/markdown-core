@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, and **all of Stage 0a**, 0a.0 through 0a.15 |
-| Engine | byte-identical to `580d10c` (tag v1.0.3) **except** `core/main.c`, which gained `--profile` |
+| Landed | Steps 0 and 1, §4.0's re-ordering, **all of Stage 0a** (0a.0 through 0a.15), and **Step 2** (§4.14.2) |
+| Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **§4.8's Stage 0 acceptance checklist**, then §4.1's steps in the order §4.1.4 verifies. Every defect §2 names is closed or carried with an owner |
+| Next action | **Step 3a**, beginning with the `audit-source-lists.mjs` triage its row demands. Then §4.1's steps in the order §4.1.4 verifies: `3 3b 15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -70,6 +70,14 @@ node scripts/audit-position-places.mjs     # 109 rows registered, 4073 scanned
 # D9's pin. REGISTERED RED and it fails if a row STOPS reproducing, because
 # deleting the budget clears both rows and costs 204.678x output growth.
 node scripts/audit-reference-order-independence.mjs  # 2 rows, must stay red
+
+# The formatters. `format-c.sh` became load-bearing at Step 2: with
+# `InsertBraces: true` in `.clang-format` it is the only thing that says a
+# conditional body has no braces, and its scope now covers the ES and Kotlin
+# bridge sources as well as the engine (§4.14.2).
+sh scripts/format-c.sh --check
+sh scripts/format-cmake.sh --check
+bash scripts/audit-test-topology.sh
 ```
 
 **`22 steps, 42 edges` was stale**, and it is the second number in this table to
@@ -967,7 +975,7 @@ Seven defects that this restatement found by measurement are numbered **D18–D2
 | ✅ **0** | The engine is byte-identical to `580d10c` except `core/main.c`, which carries `--profile`. | — | — |
 | ✅ **1** | Every oracle that can judge a behaviour change exists in the tree and has been re-pinned against the **baseline** binary. | ~1,400 script | 0 |
 | **0a** | The seventeen §2 defects are fixed, or pinned by a named gate with a named owner, on an engine nothing else has touched. **§4.2 stands unchanged** — it was derived on this tree, not ported. | 39 + ~180 gate | The two position oracles took their first reading on the *unfixed* tree (0a.1). |
-| **2** | Every C source the build compiles is a `clang-format` fixpoint, and the config makes **braces mandatory on every `if`/`else`/`for`/`while`/`do` body**. `scripts/format-c.sh --check` is the gate. | 0 new · 1 config line · 2,393 diff lines | 0a has landed and each defect commit re-pinned its own `file:line` citations (R13). No other work is in flight in `packages/markdown-core/` (R17). |
+| ✅ **2** | Every C source the build compiles is a `clang-format` fixpoint, and the config makes **braces mandatory on every `if`/`else`/`for`/`while`/`do` body**. `scripts/format-c.sh --check` is the gate. | 0 new · 1 config line · **2,472** diff lines over **38** sources (~~2,393 over 36~~, stale: Stage 0a added code), plus 35 lines over the **three bridge sources the gate could not see** | 0a has landed and each defect commit re-pinned its own `file:line` citations (R13). No other work is in flight in `packages/markdown-core/` (R17). |
 | **3a** | The engine has **one allocator model**: `markdown_core_mem`, supplied per parser, defaulting to `calloc`. There is no process-global scratch allocator, no `core/arena.c`, and no re-parse retry in `table.c`. The Release CLI allocates and frees exactly as the library does, so `#if DEBUG` in `core/main.c` collapses to one path. | 0 new · **−140** | `extensions-conflicts.txt` exists (0a.5) and re-proves D8 after the retry path it patched is deleted (R14). `node scripts/audit-source-lists.mjs` **runs** (it throws at HEAD). |
 | **3** | An extension is a `static const` descriptor in a fixed compile-time table. It is not registered, not looked up by name, and carries no mutable state. A parser records *which* extensions are on as a bitmask and **cannot express an order** — the order is the table's, and `table` is last. A descriptor declares **three** byte sets (terminates-text, dispatch, flanking-transparent), not one list. A delimiter names its **rule**, not a byte. Node types and node-flag bits are compile-time constants. There is no process-global mutable state anywhere in the extension path. | **+500 / −535** | D1, D2 fixed (0a.4) so the descriptor author transcribes a correct source. D8 fixed (0a.5). The tree is a format fixpoint (2). One allocator (3a). The source-list audit runs. |
 | **3b** | `markdown_core_node_append_child` / `_prepend_child` / `_insert_before` / `_insert_after` / `_set_type` refuse any link that would make a node its own ancestor — **always**. `markdown_core_enable_safety_checks` does not exist. | ~25 | None beyond "the tree builds". See **Q13**: this may be a §2 defect, not a refactor by-product. |
@@ -1013,7 +1021,7 @@ Six things. Each existed because a commit existed, or because a constraint exist
 
 **6. Step 15 as a single step at the end**, and **Step 12's "ABI break window"**. The window is gone by Q10 (§4.1.4). Step 15 is deleted as a trailing step and replaced by 15A (early, before the first surface-changing step), 15B (a standing rule) and 15C (release). The argument is empirical and is already sitting in the tree: `audit-ast-projections.mjs` reports **16 Swift-only failures and zero Kotlin or ES failures** — that is not, as §0 records, "a kind/field table the baseline engine does not have"; it is **one binding a full era behind the other two**, and the gate that says so is parked with the owner "Step 15". *Deferring the bindings is how the drift happened.* There is no longer a batching argument to weigh against that: the surface breaks at Step 7 (attribute type, `DirectiveLabel` as a 29th kind), at 9b (three kinds, `label`+`identifier`, `id=`→`label=`), at 12 and at 13 regardless, and §4.4's own duplicate-golden argument applies verbatim one level up — a batch at the end regenerates six `.ast` files, four `TreeDumper`s and the coverage manifest for the second time.
 
-**Considered for deletion and surviving conditionally: Step 2.** Measured at HEAD: `sh scripts/format-c.sh --check` **exits 0**, and `.clang-format` contains no `InsertBraces` line. The tree is already a fixpoint of the current config, so the step as written — *"run `clang-format`"* — is a **no-op**, and the 1,296 lines §4.3 attributes to it are an observation about a historical commit, not a requirement. Its only possible content is adopting one invariant: **braces on every conditional body**. That invariant is worth having here for one reason that survives the closed history — Stage 0a and Steps 3–14 consist very largely of adding a statement to, or removing one from, an existing conditional body (§2's own defect list: *"adds one line inside the successful rewind"*, *"plus four lines in `blocks.c:625`"*, *"an 8-line sweep before `blocks.c:675`"*), and in a braceless body "add one line" and "change the control flow" are the same edit and look identical in review. **If the owner declines the rule (Q11), Step 2 is deleted outright, because there is nothing else in it.**
+**Considered for deletion and surviving conditionally: Step 2.** Measured at HEAD: `sh scripts/format-c.sh --check` **exits 0**, and `.clang-format` contains no `InsertBraces` line. The tree is already a fixpoint of the current config, so the step as written — *"run `clang-format`"* — is a **no-op**, and the 1,296 lines §4.3 attributes to it are an observation about a historical commit, not a requirement — **measured on this tree the invariant costs 2,472 diff lines over 38 sources, 835 brace pairs** (§4.14.2). Its only possible content is adopting one invariant: **braces on every conditional body**. That invariant is worth having here for one reason that survives the closed history — Stage 0a and Steps 3–14 consist very largely of adding a statement to, or removing one from, an existing conditional body (§2's own defect list: *"adds one line inside the successful rewind"*, *"plus four lines in `blocks.c:625`"*, *"an 8-line sweep before `blocks.c:675`"*), and in a braceless body "add one line" and "change the control flow" are the same edit and look identical in review. **If the owner declines the rule (Q11), Step 2 is deleted outright, because there is nothing else in it.**
 
 **Nothing else is deleted.** Every remaining row is a live requirement measured on this tree; none of them exists because a commit exists.
 
@@ -1122,7 +1130,7 @@ Restating a port as a requirement exposes the decisions the port had already mad
 
 | id | Question | Forced by | Recommendation |
 |---|---|---|---|
-| **Q11** | Does the repository adopt `InsertBraces: true`? | 2 | **Yes** — it is the whole content of Step 2 (measured: `format-c.sh --check` is already green). Footprint 2,393 diff lines across 36 files, 561 of them in `core/` + `extensions/`. **If no, delete Step 2.** Land the neutrality gate with it: normalized-disassembly equality, measured 29/29 objects identical. |
+| **Q11** | Does the repository adopt `InsertBraces: true`? | 2 | **TAKEN at Step 2, and every number in this row was wrong.** Footprint ~~2,393 diff lines across 36 files, 561 of them in `core/` + `extensions/`~~ → **2,472 across 38, of which 1,700 are in `core/` + `extensions/` and 772 in `tests/`**; the old split understated the engine's share threefold. Neutrality ~~29/29 objects identical~~ → **83/83 Release objects BYTE-identical**, no normalization needed; a debug build type moves only `assert`'s `__LINE__` immediate (82 substituted instructions under `asan`, 58 under `ubsan`, **zero** added or removed). The tool is `scripts/audit-format-neutrality.sh <rev>`, and it is a measurement tool, not a standing gate — §4.14.2 says why. |
 | **Q12** | Is the arena deleted, or made parser-owned? | 3a | **Delete.** Measured: ~7% CLI-only parse win, **+10–16% peak RSS**, `abort()` on allocation failure inside a library with a careful sticky-OOM discipline, total sanitizer blindness on the binary the parity oracles drive, and a demonstrated **480-byte leak in a parser that never asked for it** (a global `A != NULL` makes an unrelated default-allocator parse take `table.c`'s retry branch). Parser-owned is impossible without a document-owned lifetime model this engine does not have. Output-neutral: 7,251 comparisons, 0 differences. |
 | **Q13** | Is the cycle check unconditional — and is it a defect or a refactor by-product? | 3b | **Unconditional**, and *"the shipped library makes `b->parent == b` on request while the test that denies it flips a flag nothing else flips"* reads exactly like D1–D16. Measured cost: unmeasurable on four workloads, 10.7% on one already-pathological path the engine takes 36 seconds to parse. **The owner may re-file it into Stage 0a; that is the only change to 0a this restatement would ask for besides Q25.** |
 | **Q14** | One knob per extension, or two? | 3, 6, 7 | **One.** Attachment is the language. Delete `MARKDOWN_CORE_OPT_DIRECTIVE` and both formula delimiter options; keep formula's `dollar`/`latex` **sub-grammar** selection only if a use is stated, and today none is. |
@@ -2759,6 +2767,180 @@ reference-order 2 rows, still red · canonical-ast 28/47/6 · public surface ·
 special chars · attach order · plan graph 22/45 · topology · format-c ·
 format-cmake. **Zero golden rows moved**, which is what an allocation-failure
 fix should move.
+
+---
+
+### 4.14 The step records — Steps 2 onward
+
+Stage 0a's records are §4.2.7 through §4.2.22, one per sub-step. The steps of
+§4.1's list keep the same shape and continue here: what the step moved, what it
+corrected in this document, and what it left.
+
+---
+
+#### 4.14.2 Step 2 landed: 835 brace pairs, a gate the reformat broke, and three C sources no gate was reading
+
+**The invariant.** `.clang-format` gains exactly one line, `InsertBraces: true`,
+and the effective configuration differs from the baseline's in exactly that one
+key — `clang-format --dump-config` before and after differ on line 188 and
+nowhere else, and `RemoveBracesLLVM` stays `false`, which matters below.
+
+**What it costs, measured rather than repeated.** §4.1 said *2,393 diff lines*
+and Q11 said *36 files, 561 of them in `core/` + `extensions/`*. Both are stale
+and the second is stale by a factor of three:
+
+| area | files | diff lines |
+|---|---|---|
+| `core/` + `extensions/` | 24 | **1,700** |
+| `tests/` | 14 | 772 |
+| **the engine total** | **38** | **2,472** |
+| the three bridge sources (below) | 3 | 35 |
+| `.clang-format`, `format-c.sh`, `audit-extension-attach-order.mjs` | 3 | 39 |
+
+**835 brace pairs inserted, and the claim is mechanised.** Standing rule 3 asks
+that a moved row be more than eyeballed. The claim here is *the reformat added
+and moved braces and layout, and nothing else*, and it is checkable exactly:
+**delete every whitespace character and every `{` and `}` from both versions of
+a file and the residues must be byte-identical.** They are, for all 41 changed C
+sources — 38 that gained braces (835 `{` and 835 `}`, balanced per file, none
+removed anywhere) and 3 that only reflowed. The eye then reads nothing, because
+there is no residue to read.
+
+##### The reformat broke a gate, and it broke it loudly
+
+`scripts/audit-extension-attach-order.mjs` went **red**, with
+*"no call to `markdown_core_parser_attach_syntax_extension` in the library at
+all — this audit is reading the wrong tree."*
+
+The audit distinguished a call from the function's own definition by a
+heuristic: *a call is followed eventually by a `;` with no `{` in between*.
+`InsertBraces` turned the one real call site,
+
+```c
+if (!extension || !markdown_core_parser_attach_syntax_extension(parser, extension))
+    return 0;
+```
+
+into the braced form, and the `{` then landed between the call and the next `;`
+— so the audit classified D15's single attach site as a definition and found
+zero call sites. It is repaired by reading the **parentheses** instead: balance
+from the `(` that opens the argument list, and if the next non-space character
+after the closing `)` is `{`, it is a definition. That is immune to where the
+braces sit.
+
+**The interesting half is that it failed rather than passed.** 0a.11 wrote the
+clause *"no call … at all — this audit is reading the wrong tree"* as a
+belt-and-braces line; it is the only reason this did not land as a gate that
+silently stopped watching. A source-scanning audit without a saw-nothing
+assertion is one formatting change away from being vacuous, and nothing else
+would have said so. The repaired audit was re-proved against three mutants, in
+**both** brace spellings:
+
+| mutant | result |
+|---|---|
+| a second attach site in `core/blocks.c`, **braced** call | FAILED — names the function, cites D15 |
+| the same site, **braceless** call | FAILED — identically |
+| `CORE_EXTENSIONS[]` reordered to put `table` first | FAILED — *"must end with `table` (Q9)"* |
+
+`scripts/audit-extension-special-chars.mjs` is the other audit that parses C
+bodies; it was re-proved too (undispatch `'$'` in `formula.c` → red) and is
+unaffected, because it delimits a function body by `\n}\n` at column zero and
+an inserted brace is always indented.
+
+##### Three C sources the gate was not reading, and they were not fixpoints either
+
+The requirement says *"every C source **the build compiles**"*. `format-c.sh`
+searched `packages/markdown-core` only, and four tracked C sources live outside
+it: `packages/es-markdown-core/src/bridge.c`, compiled by
+`packages/es-markdown-core/scripts/build.mjs:76`, and the three files under
+`packages/kotlin-markdown-core/src/native/`, compiled by the Kotlin cinterop and
+by `android-runtime/src/main/cpp/CMakeLists.txt:41`. **Three of the four were
+not fixpoints of even the OLD config** — 53 lines of column-limit drift, dating
+from whenever they were last formatted by hand. No gate could see it, so the
+requirement's own sentence was false at HEAD for a reason that has nothing to do
+with braces.
+
+The `find` now names the two extra roots explicitly rather than searching
+`packages/`, which would walk `node_modules` and every build output. The scope
+extension is load-bearing, and the mutant says so: a braceless body in
+`markdown_core_kotlin_jni.c` is **red** with the extension and **green**
+without it.
+
+##### Neutrality: 83/83 objects byte-identical
+
+Q11 asked for *normalized-disassembly equality, measured 29/29 objects
+identical*. The measurement is both bigger and stronger than that. Under the
+`default` (Release) preset, **all 83 objects are byte-identical** before and
+after — not merely equal after normalization, equal as files. `assert` is
+compiled out at Release and no formatted source contains `__LINE__` or
+`__FILE__`, so there is nothing left for a moved line to change.
+
+Under `asan` and `ubsan` the objects necessarily differ, and the difference is
+exactly characterised: comparing normalized disassembly over all 74 objects of
+each build gives **52 identical / 22 differing** (`asan`) and **50 / 24**
+(`ubsan`), and every differing object differs only in one-line substitutions —
+**82 under `asan`, 58 under `ubsan`, and zero added or removed instructions in
+either.** Every substituted line is a `mov w2, #IMM`: the third argument of
+`__assert_rtn(func, file, line, expr)`, which is the line number. An assert
+moved down three lines reports three lines lower.
+
+The tool is **`scripts/audit-format-neutrality.sh <rev>`**, which builds `<rev>`
+in a detached worktree and the working tree side by side with identical flags
+and compares every object. It is deliberately **not** a standing gate and is not
+in §0's list: it needs a `<rev>` to compare against, and at any commit where the
+tree is already a fixpoint there is nothing to compare — so it refuses (exit 2)
+rather than reporting success, and it can never pass vacuously. The standing
+gate is `scripts/format-c.sh --check`.
+
+##### The mutant that kills nothing, and it is the config line itself
+
+Reverting `InsertBraces: true` — deleting the line this step exists to add —
+leaves **every gate green**, because `RemoveBracesLLVM` is `false` and
+`clang-format` will not take braces away. The braced tree is a fixpoint of both
+configurations.
+
+So the config line buys nothing about the code that is here; it buys the code
+that is *not* here yet. The mutant that does kill is the one the step is for:
+
+| mutant | `format-c.sh --check` |
+|---|---|
+| a braceless `if` body in `core/arena.c`, config as landed | **exit 1**, naming the two lines |
+| the same braceless body, `InsertBraces` line deleted | exit 0 |
+| a braceless `if` body in `markdown_core_kotlin_jni.c`, scope as landed | **exit 1** |
+| the same, `format-c.sh` scope reverted to `packages/markdown-core` | exit 0 |
+
+Two of those four rows are green, and both are green because the *gate* was
+weakened rather than the code. That is the whole argument for the step: from
+here, "add one line inside a conditional" and "change the control flow" cannot
+look like the same edit in review, and the tree cannot drift back without the
+gate saying so.
+
+##### Gates after
+
+`correctness` **68/68** · `correctness-asan` **59/59** · `correctness-ubsan`
+**59/59** · `conformance` 2/2 · upstream parity **817/817** with 7/7 · mdast
+**54/54**, backlog **24/24** · fuzz-parity 300/300 · scope-sanity 14 · position
+oracles 0 / 45 / 109 · reference-order 2 rows, still red · canonical-ast
+28/47/6 · public surface · special chars · attach order · plan graph 22/45 ·
+topology · format-c · format-cmake. **Zero golden rows moved, and no fixture,
+spec or golden file is touched at all** — which is what a formatting step should
+move, and the neutrality measurement is why it is a fact rather than a hope.
+
+##### A fifteenth stale number, found the same way as the other fourteen
+
+§0's state table said *"Engine | byte-identical to `580d10c` … **except**
+`core/main.c`"*. It has not been true since 0a.2. `git diff --shortstat 580d10c`
+over `core/` + `extensions/` + `include/` prints **27 files, +1,868 / −712**;
+Stage 0a's share alone is 16 files and +771 / −165. The row described the tree
+the plan was written against and nobody re-ran the command. It is corrected in
+place, with both halves stated so the formatting share is separable from the
+defect share.
+
+##### What it left
+
+`node scripts/audit-source-lists.mjs` still **throws** at HEAD on a missing
+`packages/swift-markdown-core/Package.release.swift`. It is Step 3a's stated
+prerequisite, not Step 2's, and it is triaged there.
 
 ---
 

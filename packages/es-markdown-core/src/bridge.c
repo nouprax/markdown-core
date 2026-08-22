@@ -48,15 +48,11 @@ const markdown_core_node *es_document_root(const markdown_core_document *documen
     return markdown_core_document_root(document);
 }
 
-int32_t es_error_code(const markdown_core_error *error) {
-    return (int32_t)markdown_core_error_get_code(error);
-}
+int32_t es_error_code(const markdown_core_error *error) { return (int32_t)markdown_core_error_get_code(error); }
 
 void es_error_free(markdown_core_error *error) { markdown_core_error_free(error); }
 
-int32_t es_node_kind(const markdown_core_node *node) {
-    return (int32_t)markdown_core_node_get_kind(node);
-}
+int32_t es_node_kind(const markdown_core_node *node) { return (int32_t)markdown_core_node_get_kind(node); }
 
 const markdown_core_node *es_node_first_child(const markdown_core_node *node) {
     return markdown_core_node_get_first_child(node);
@@ -154,8 +150,7 @@ int32_t es_node_directive_mode(const markdown_core_node *node) {
     markdown_core_string_view name, attributes;
     bool has_label;
     size_t label_count;
-    markdown_core_node_directive_properties(node, &mode, &name, &attributes, &has_label,
-                                            &label_count);
+    markdown_core_node_directive_properties(node, &mode, &name, &attributes, &has_label, &label_count);
     return (int32_t)mode;
 }
 
@@ -164,8 +159,7 @@ int32_t es_node_directive_label_count(const markdown_core_node *node) {
     markdown_core_string_view name, attributes;
     bool has_label;
     size_t label_count;
-    markdown_core_node_directive_properties(node, &mode, &name, &attributes, &has_label,
-                                            &label_count);
+    markdown_core_node_directive_properties(node, &mode, &name, &attributes, &has_label, &label_count);
     return has_label ? (int32_t)label_count : -1;
 }
 
@@ -179,8 +173,7 @@ void es_string(const void *object, int32_t field, uintptr_t *data, size_t *lengt
     case ES_STRING_CODE_INFO:
     case ES_STRING_CODE_LANGUAGE:
     case ES_STRING_CODE_LITERAL:
-        markdown_core_node_code_block_properties(node, &first, &second, &third, &first_bool,
-                                                 &second_bool);
+        markdown_core_node_code_block_properties(node, &first, &second, &third, &first_bool, &second_bool);
         es_write_view(field == ES_STRING_CODE_INFO       ? first
                       : field == ES_STRING_CODE_LANGUAGE ? second
                                                          : third,

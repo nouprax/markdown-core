@@ -235,14 +235,17 @@ int main(int argc, char *argv[]) {
      * the two old attach sites spelled between them. */
     extensions = MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
                  MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK | MARKDOWN_CORE_CORE_EXTENSION_TASKLIST;
-    if (!gfm_profile)
+    if (!gfm_profile) {
         extensions |= MARKDOWN_CORE_CORE_EXTENSION_FORMULA | MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE;
-    if (options & MARKDOWN_CORE_OPT_DIRECTIVE)
+    }
+    if (options & MARKDOWN_CORE_OPT_DIRECTIVE) {
         extensions |= MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE;
+    }
     extensions |= requested_extensions;
 
-    if (!markdown_core_core_extensions_attach(parser, extensions))
+    if (!markdown_core_core_extensions_attach(parser, extensions)) {
         goto failure;
+    }
 
     for (i = 0; i < numfps; i++) {
         FILE *fp = fopen(argv[files[i]], "rb");
@@ -279,8 +282,9 @@ int main(int argc, char *argv[]) {
 
     document = markdown_core_parser_finish(parser);
 
-    if (!document || !print_document(document))
+    if (!document || !print_document(document)) {
         goto failure;
+    }
 
 success:
     res = 0;
@@ -288,11 +292,13 @@ success:
 failure:
 
 #if DEBUG
-    if (parser)
+    if (parser) {
         markdown_core_parser_free(parser);
+    }
 
-    if (document)
+    if (document) {
         markdown_core_node_free(document);
+    }
 #else
     markdown_core_arena_reset();
 #endif

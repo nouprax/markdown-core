@@ -13,34 +13,39 @@ static struct arena_chunk {
 
 static struct arena_chunk *alloc_arena_chunk(size_t sz, struct arena_chunk *prev) {
     struct arena_chunk *c = (struct arena_chunk *)calloc(1, sizeof(*c));
-    if (!c)
+    if (!c) {
         abort();
+    }
     c->sz = sz;
     c->ptr = calloc(1, sz);
-    if (!c->ptr)
+    if (!c->ptr) {
         abort();
+    }
     c->prev = prev;
     return c;
 }
 
 void markdown_core_arena_push(void) {
-    if (!A)
+    if (!A) {
         return;
+    }
     A->push_point = 1;
     A = alloc_arena_chunk(10240, A);
 }
 
 int markdown_core_arena_pop(void) {
-    if (!A)
+    if (!A) {
         return 0;
+    }
     while (A && !A->push_point) {
         free(A->ptr);
         struct arena_chunk *n = A->prev;
         free(A);
         A = n;
     }
-    if (A)
+    if (A) {
         A->push_point = 0;
+    }
     return 1;
 }
 
@@ -56,8 +61,9 @@ void markdown_core_arena_reset(void) {
 }
 
 static void *arena_calloc(size_t nmem, size_t size) {
-    if (!A)
+    if (!A) {
         init_arena();
+    }
 
     size_t sz = nmem * size + sizeof(size_t);
 
@@ -81,12 +87,14 @@ static void *arena_calloc(size_t nmem, size_t size) {
 }
 
 static void *arena_realloc(void *ptr, size_t size) {
-    if (!A)
+    if (!A) {
         init_arena();
+    }
 
     void *new_ptr = arena_calloc(1, size);
-    if (ptr)
+    if (ptr) {
         memcpy(new_ptr, ptr, ((size_t *)ptr)[-1]);
+    }
     return new_ptr;
 }
 

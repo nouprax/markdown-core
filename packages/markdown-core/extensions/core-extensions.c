@@ -43,18 +43,21 @@ static const struct {
 int markdown_core_core_extensions_attach(markdown_core_parser *parser, unsigned mask) {
     size_t i;
 
-    if (!parser)
+    if (!parser) {
         return 0;
+    }
 
     for (i = 0; i < CORE_EXTENSION_COUNT; i++) {
         markdown_core_syntax_extension *extension;
 
-        if (!(mask & CORE_EXTENSIONS[i].bit))
+        if (!(mask & CORE_EXTENSIONS[i].bit)) {
             continue;
+        }
 
         extension = markdown_core_find_syntax_extension(CORE_EXTENSIONS[i].name);
-        if (!extension || !markdown_core_parser_attach_syntax_extension(parser, extension))
+        if (!extension || !markdown_core_parser_attach_syntax_extension(parser, extension)) {
             return 0;
+        }
     }
 
     return 1;
@@ -63,12 +66,14 @@ int markdown_core_core_extensions_attach(markdown_core_parser *parser, unsigned 
 unsigned markdown_core_core_extensions_bit(const char *name) {
     size_t i;
 
-    if (!name)
+    if (!name) {
         return 0;
+    }
 
     for (i = 0; i < CORE_EXTENSION_COUNT; i++) {
-        if (strcmp(name, CORE_EXTENSIONS[i].name) == 0)
+        if (strcmp(name, CORE_EXTENSIONS[i].name) == 0) {
             return CORE_EXTENSIONS[i].bit;
+        }
     }
 
     return 0;

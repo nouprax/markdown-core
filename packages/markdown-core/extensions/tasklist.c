@@ -19,16 +19,18 @@ static const char *get_type_string(markdown_core_syntax_extension *extension, ma
 int markdown_core_extensions_set_tasklist_item_checked(markdown_core_node *node, bool is_checked) {
     // The node has to exist, and be an extension, and actually be the right type in order to get
     // the value.
-    if (!node || !node->extension || strcmp(markdown_core_node_get_type_string(node), TYPE_STRING))
+    if (!node || !node->extension || strcmp(markdown_core_node_get_type_string(node), TYPE_STRING)) {
         return 0;
+    }
 
     node->as.list.checked = is_checked;
     return 1;
 }
 
 bool markdown_core_extensions_get_tasklist_item_checked(markdown_core_node *node) {
-    if (!node || !node->extension || strcmp(markdown_core_node_get_type_string(node), TYPE_STRING))
+    if (!node || !node->extension || strcmp(markdown_core_node_get_type_string(node), TYPE_STRING)) {
         return false;
+    }
 
     if (node->as.list.checked) {
         return true;
