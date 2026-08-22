@@ -432,7 +432,18 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
         b->end_column = parser->last_line_length;
     } else if (S_type(b) == MARKDOWN_CORE_NODE_DOCUMENT ||
                (S_type(b) == MARKDOWN_CORE_NODE_CODE_BLOCK && b->as.code.fenced) ||
-               (S_type(b) == MARKDOWN_CORE_NODE_HEADING && b->as.heading.setext)) {
+               (S_type(b) == MARKDOWN_CORE_NODE_HEADING && b->as.heading.setext) ||
+               /* D35: a block finalized on the line it OPENED did not end on
+                * the previous one. `line_number - 1` below assumes the block
+                * was closed by a later line, which is true of every block that
+                * needs a following line to end it -- and false of an HTML block
+                * of type 2 to 5, whose terminator can be on its own first line.
+                * Measured: `<!-- c -->` alone on line 3 gave
+                * `HTMLBlock scope=3:1..2:0` for a literal whose last byte is at
+                * 3:10, and `last_line_length` there is the length of the BLANK
+                * line before it. Four of the eleven negative rows in
+                * `specs/scope-sanity/ledger.json` were this. */
+               parser->line_number == b->start_line) {
         S_set_end_to_current_line(parser, b);
     } else {
         b->end_line = parser->line_number - 1;

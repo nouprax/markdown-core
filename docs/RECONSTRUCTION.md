@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a) **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b) and **5** (§4.14.5) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a) **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b) **5** (§4.14.5) and **D35** (§4.14.5a) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **D35** (§4.14.5a), then **Step 6** — deliverable #2, and unblocked: the graph says `6:[3]`. **15A is deferred and that is deliberate**: its dependency is only Step 1, and it blocks 7, 9b, 12 and 14 alone, so nothing before those is waiting on it. Remaining: `15A 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 6** — deliverable #2, and unblocked: the graph says `6:[3]`. **15A is deferred and that is deliberate**: its dependency is only Step 1, and it blocks 7, 9b, 12 and 14 alone, so nothing before those is waiting on it. Remaining: `15A 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -346,7 +346,7 @@ Absent at baseline: sessions, incremental, delta, the source rope, node ids and
 revisions, diagnostics, concrete records, the delimiter engine,
 `ReferenceDefinition` nodes, `parser->line_marks` — **and every parity oracle.**
 
-### Thirty-four defects live in the baseline
+### Thirty-five defects live in the baseline
 
 The first eleven were found by reading. **All eleven have since been built,
 gated and reverted** on isolated worktrees at `8e76a94` — every claim below
@@ -364,7 +364,7 @@ looked at. Every one of the fourteen that Q25 put to the test was
 found **fixable on the untouched baseline**; none produced an architectural
 dependency, and D9 remains the plan's only exception.
 
-**All thirty-four are recorded here**, because a defect the plan does not name
+**All thirty-five are recorded here**, because a defect the plan does not name
 is a defect the plan will re-derive later at full price — and because a list
 split across three sections is a list nobody reads.
 
@@ -407,6 +407,7 @@ ones whose witness is stated in this section rather than in the row.
 | D29 | `extensions/table.c:297` does not check `markdown_core_node_new_with_mem`, and `:305` dereferences NULL | **crash** | **fixed at 0a.15** | §4.13.11, SIGSEGV on `lead text⏎x | y` / `--|--` |
 | D30 | `markdown_core_reference_create` commits an entry whose url or title was lost | wrong-document (allocation failure only) | 9a/11c delete it; §4.13.9 pins it | §4.13.11, measured on four refused allocations |
 | D31 | a raw HTML tag that crosses a line ending ends **one column short of its own literal** | wrong-position | 8 | found at 0a.6 and pinned as a golden row: `a <b`⏎`c> d` gives `HTML scope=1:3..2:1` for a literal whose last byte is at `2:2`, while `a <b c> d` gives `1:3..1:7`, which covers it. cmark-gfm is wrong the same way |
+| D35 | `finalize` ends a block at `parser->line_number - 1`, which assumes a **later** line closed it — false for an HTML block of type 2 to 5, whose terminator can be on its own first line | wrong-position (reversed range) | **fixed at D35, after Step 5** | found by reading `specs/scope-sanity/ledger.json`'s eleven negative rows for an owner: TEN of them were this. `printf 'para\n\n<!-- c -->\n'` gives `HTMLBlock scope=3:1..2:0` for a literal whose last byte is at `3:10`, and `last_line_length` there is the length of the BLANK line before it |
 | D34 | `markdown_core_node_insert_before` / `_insert_after` accept `sibling == node` — `S_can_contain(node->parent, sibling)` starts its ancestor walk at the PARENT and never meets the child, so it answers yes | **unbounded sibling list** | **fixed at 3b** | found at 3b while writing its gate: `insert_before(b, b)` returns 1 and leaves `b->next == b` and `b->prev == b`, with `a->first_child` and `a->last_child` disagreeing; walking `a`'s children never terminates. Reachable with `markdown_core_enable_safety_checks` in EITHER position, so the flag never covered it |
 | D33 | `process_emphasis` chooses its arm by the delimiter's **byte**, and the chain has **no final `else`** — a delimiter no arm claims leaves the cursor where it is, is freed by the removal below, and is read again on the next turn | **use-after-free**, or a **non-terminating loop** | **fixed at 3.3** | found at 3.3 by a probe extension: ASan `heap-use-after-free`, READ of size 8 in `process_emphasis`; with `can_open` set the loop never ends. Unreachable in-tree because every extension pushes a tag it declares — and the push is PUBLIC and takes the byte from the caller. §4.1.3 predicted a NULL dispatch here and did not notice the fall-through |
 | D32 | a **backslash hard break** consumes a line ending without telling the subject, so every later node in the paragraph keeps the break's own line | wrong-position | **fixed at 0a.12** | found at 0a.12 while measuring D26: `foo\`⏎`bar` gives `Text 1:6..1:8` — three columns that do not exist on a four-character line 1. `handle_backslash`'s hard-break branch calls `skip_line_end` and then `make_simple_subj` without `handle_newline`'s `++subj->line; column_offset = -pos`. cmark-gfm reports the same numbers. **5 registered `multi-line-span` findings, all of them attributed by the ledger to a defect that could not close them** |
@@ -3757,6 +3758,77 @@ closes the `ENTER` it belongs to, and the walk ends with nothing open.
   and §4.14.5a lands it.
 
 
+##### 4.14.5a D35: an HTML block that ends one line before it starts
+
+**Found by reading the eleven negative rows in
+`specs/scope-sanity/ledger.json` for an owner.** They had none — the ledger
+names the *representation* defect (a closed interval cannot spell an empty
+range) and no step. Ten of the eleven turned out not to be that at all.
+
+`finalize` (`core/blocks.c`) ends a block at `parser->line_number - 1`, which
+assumes the block was closed **by a later line**. That is true of every block
+that needs a following line to end it, and false of an **HTML block of type 2
+to 5** — comment, processing instruction, declaration, CDATA — whose terminator
+can be on its own first line. Measured:
+
+```
+$ printf 'para\n\n<!-- c -->\n' | markdown-core --profile gfm
+└── HTMLBlock scope=3:1..2:0 literal="<!-- c -->\n"
+```
+
+The block starts on line 3 and ends on line 2, at column 0 — and
+`parser->last_line_length` there is the length of the **blank line before it**.
+A thematic break and an ATX heading on the same line are correct, because they
+are finalized when the *next* line arrives.
+
+**The fix is one clause**: also take the current line when
+`parser->line_number == b->start_line`. The witness becomes `3:1..3:10`, the
+last byte of its own literal.
+
+**Ten golden rows moved, and the claim is mechanised.** Every moved row is an
+`HTMLBlock`, its literal is unchanged, its start is unchanged, its old end was
+strictly before its start, and its new end is on the start line at or after the
+start column. A script checks all five for all ten; the eye then reads nothing.
+Three of the ten had ended at `0:0` — line zero, which is why the places oracle
+counted them separately.
+
+**Two ledgers move with it**, which is the point of having them:
+
+| ledger | before | after |
+|---|---|---|
+| `specs/scope-sanity/ledger.json` | 14 rows | **4** — and `spec.txt` leaves the ledger entirely |
+| `specs/positions/places.json` | 109 rows | **106**, `end-at-line-ending` 61 → 58 |
+
+What is left in scope-sanity is one sentinel (the split-off table lead's
+paragraph, Step 10's), **one** negative — `TableCell scope=3:6..3:5`, an empty
+cell, which is the representation defect in its pure form — and two partial.
+
+##### Two stale numbers found by counting rather than reading
+
+- `places.json`'s own prose said *"One hundred and nine rows in six families"*
+  and then listed `61 + 19 + 9 + 9 + 6 + 2`, **which is 106**. The total was
+  right and `continuation-line-content-offset` had been undercounted by three
+  since whenever it grew. Both are corrected from the data.
+- `--update` on `specs/positions/places.json` also **normalised pre-existing
+  escape drift** — `\u2014` written as a literal em dash in three unrelated
+  `closedBy` strings — exactly as §0's trap says it would. Those three lines in
+  the diff are not movement.
+
+##### Mutant kills
+
+| mutant | result |
+|---|---|
+| revert the one clause | `correctness` **67/69** (`spec_commonmark` and `extensions_gfm`), `audit-position-places` reports **3 rows APPEARED**, and `audit-scope-sanity` fails its only-shrink rule |
+
+**Gates after.** `correctness` **69/69** · `correctness-asan` **60/60** ·
+`correctness-ubsan` **60/60** · `conformance` 2/2 · upstream parity 817/817 with
+7/7 · mdast 54/54, backlog 24/24 · fuzz-parity 300/300 · **scope-sanity 4** ·
+position oracles 0 / 45 / **106** · reference-order 2 rows, still red ·
+canonical-ast 28/47/6 · public surface · special chars · attach order · plan
+graph 22/45 · source lists 23, 4 of 5 · topology · format-c · format-cmake.
+Neither parity oracle moves: neither compares positions.
+
+
 ---
 
 ### 4.3 The ordering argument
@@ -4366,15 +4438,15 @@ following, together:
 - [ ] The facade and its single ABI break window (12), the null/empty rule (14)
 - [ ] Bindings, specs and docs regenerated (15)
 
-**Defects** — **all thirty-four of §2** closed, or explicitly carried with a
+**Defects** — **all thirty-five of §2** closed, or explicitly carried with a
 named owner step and a registered known-red gate. ~~seventeen~~ was stale from
 the revision before D18–D25 and §4.13's four were added, and ~~thirty-two~~ was
 stale the moment Step 3.3 found **D33**. §2's own heading now says thirty-three,
-its index table carries thirty-three rows (D1–D25, D27–D34) and **D26 is the
+its index table carries thirty-four rows (D1–D25, D27–D35) and **D26 is the
 thirty-third** — measured at 0a.12, refused there, and landed at **0a.12b**
 with the ruling it needed (Q40).
 
-**Thirty-one are closed and three are carried**, and the three are D9 (Step 9a, two
+**Thirty-two are closed and three are carried**, and the three are D9 (Step 9a, two
 gates registered at 0a.8, one known-red), D30 (9a/11c delete it; pinned by the
 allocation-failure sweep) and D31 (Step 8; pinned as a golden row in
 `regression.txt`). D27 was the fourth and **closed at 3a.3**.

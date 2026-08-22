@@ -872,15 +872,15 @@ Document scope=1:1..21:14 children=12
 │   ├── Text scope=11:15..11:18 literal="okay" children=0
 │   ├── HTML scope=11:19..11:28 literal="</totally>" children=0
 │   └── Text scope=11:29..11:29 literal="." children=0
-├── HTMLBlock scope=13:1..12:0 literal="<!-- HTML comments are okay, though. -->\n" children=0
+├── HTMLBlock scope=13:1..13:40 literal="<!-- HTML comments are okay, though. -->\n" children=0
 ├── Paragraph scope=14:1..15:17 children=3
 │   ├── Text scope=14:1..14:24 literal="<!- But we're strict. ->" children=0
 │   ├── SoftBreak scope=14:25..14:25 children=0
 │   └── Text scope=15:1..15:17 literal="<! No nonsense. >" children=0
 ├── HTMLBlock scope=16:1..17:60 literal="<!-- Leave multiline comments the heck alone, though, okay?\nEven with {\"x\":\"y\"} or 1 > 2 or whatever. Even **markdown**.\n-->\n" children=0
-├── HTMLBlock scope=19:1..18:3 literal="<!--- Support everything CommonMark's parser does. -->\n" children=0
-├── HTMLBlock scope=20:1..19:54 literal="<!---->\n" children=0
-└── HTMLBlock scope=21:1..20:7 literal="<!--thistoo-->\n" children=0
+├── HTMLBlock scope=19:1..19:54 literal="<!--- Support everything CommonMark's parser does. -->\n" children=0
+├── HTMLBlock scope=20:1..20:7 literal="<!---->\n" children=0
+└── HTMLBlock scope=21:1..21:14 literal="<!--thistoo-->\n" children=0
 ````````````````````````````````
 
 ## Footnotes

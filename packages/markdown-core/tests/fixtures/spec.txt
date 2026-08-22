@@ -2661,7 +2661,7 @@ The end tag can occur on the same line as the start tag:
 *foo*
 .
 Document scope=1:1..2:5 children=2
-├── HTMLBlock scope=1:1..0:0 literal="<style>p{color:red;}</style>\n" children=0
+├── HTMLBlock scope=1:1..1:28 literal="<style>p{color:red;}</style>\n" children=0
 └── Paragraph scope=2:1..2:5 children=1
     └── Emphasis scope=2:1..2:5 children=1
         └── Text scope=2:2..2:4 literal="foo" children=0
@@ -2673,7 +2673,7 @@ Document scope=1:1..2:5 children=2
 *baz*
 .
 Document scope=1:1..2:5 children=2
-├── HTMLBlock scope=1:1..0:0 literal="<!-- foo -->*bar*\n" children=0
+├── HTMLBlock scope=1:1..1:17 literal="<!-- foo -->*bar*\n" children=0
 └── Paragraph scope=2:1..2:5 children=1
     └── Emphasis scope=2:1..2:5 children=1
         └── Text scope=2:2..2:4 literal="baz" children=0
@@ -2733,7 +2733,7 @@ A declaration (type 4):
 <!DOCTYPE html>
 .
 Document scope=1:1..1:15 children=1
-└── HTMLBlock scope=1:1..0:0 literal="<!DOCTYPE html>\n" children=0
+└── HTMLBlock scope=1:1..1:15 literal="<!DOCTYPE html>\n" children=0
 ````````````````````````````````
 
 
@@ -2769,7 +2769,7 @@ The opening tag can be indented 1-3 spaces, but not 4:
     <!-- foo -->
 .
 Document scope=1:1..3:16 children=2
-├── HTMLBlock scope=1:3..0:0 literal="  <!-- foo -->\n" children=0
+├── HTMLBlock scope=1:3..1:14 literal="  <!-- foo -->\n" children=0
 └── CodeBlock scope=3:5..3:16 mode=standalone info=null language=null literal="<!-- foo -->\n" fenced=false closed=true children=0
 ````````````````````````````````
 
@@ -5724,7 +5724,7 @@ Document scope=1:1..7:5 children=3
 │   └── ListItem scope=2:1..3:0 checked=null children=1
 │       └── Paragraph scope=2:3..2:5 children=1
 │           └── Text scope=2:3..2:5 literal="bar" children=0
-├── HTMLBlock scope=4:1..3:0 literal="<!-- -->\n" children=0
+├── HTMLBlock scope=4:1..4:8 literal="<!-- -->\n" children=0
 └── List scope=6:1..7:5 flavor=bullet start=null tight=true children=2
     ├── ListItem scope=6:1..6:5 checked=null children=1
     │   └── Paragraph scope=6:3..6:5 children=1
@@ -5756,7 +5756,7 @@ Document scope=1:1..9:8 children=3
 │   └── ListItem scope=5:1..6:0 checked=null children=1
 │       └── Paragraph scope=5:5..5:7 children=1
 │           └── Text scope=5:5..5:7 literal="foo" children=0
-├── HTMLBlock scope=7:1..6:0 literal="<!-- -->\n" children=0
+├── HTMLBlock scope=7:1..7:8 literal="<!-- -->\n" children=0
 └── CodeBlock scope=9:5..9:8 mode=standalone info=null language=null literal="code\n" fenced=false closed=true children=0
 ````````````````````````````````
 
