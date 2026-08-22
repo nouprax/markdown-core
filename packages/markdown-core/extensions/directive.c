@@ -18,13 +18,6 @@
 
 #include "ext_scanners.h"
 
-/* This was a SENTINEL BYTE -- 8 -- because a delimiter carried a byte and the
- * label opener had to be told from every other delimiter by it. It was an
- * ordinary file byte: a literal 0x08 in a document ended the text run in
- * front of it and was offered to this extension's inline hook. It is now one
- * of the eleven delimiter RULES. */
-#define DIRECTIVE_LABEL_DELIM MARKDOWN_CORE_DELIM_RULE_DIRECTIVE_LABEL
-
 typedef struct directive_attribute {
     markdown_core_chunk name;
     markdown_core_chunk value;
@@ -171,8 +164,14 @@ static int scan_label(const unsigned char *data, bufsize_t len, bufsize_t pos, b
             continue;
         }
 
+        /* micromark's factory-label.js counts the INNER brackets and fails at
+         * the 33rd (`if (code === 91 && ++balance > 32)`), so 32 nested labels
+         * are a label and 33 are prose. `depth` here starts at 1 for the
+         * label's own `[`, which is the off-by-one this bound accounts for. */
         if (data[i] == '[') {
-            depth++;
+            if (++depth > 33) {
+                return 0;
+            }
             i++;
             continue;
         }
@@ -1017,105 +1016,25 @@ static markdown_core_node *make_directive_node(const markdown_core_syntax_extens
     return node;
 }
 
-static markdown_core_node *make_name_only_directive(const markdown_core_syntax_extension *extension,
-                                                    markdown_core_parser *parser,
-                                                    markdown_core_inline_parser *inline_parser,
-                                                    const unsigned char *name, bufsize_t name_len,
-                                                    bufsize_t end_offset) {
-    markdown_core_node *node;
-    int start_line = markdown_core_inline_parser_get_line(inline_parser);
-    int start_column = markdown_core_inline_parser_get_column(inline_parser);
-    bufsize_t offset = (bufsize_t)markdown_core_inline_parser_get_offset(inline_parser);
-
-    node = make_directive_node(extension, parser, name, name_len, start_line, start_column, start_line,
-                               start_column + (int)(end_offset - offset) - 1);
-    if (node) {
-        /* Consume first, then read the end back from the subject. Computing it
-         * from start_column plus a length states the end in the START line's
-         * frame, which is wrong the moment the span crosses a line ending. The
-         * order matters the other way too: every failure above returns NULL
-         * without having moved the cursor. */
-        markdown_core_inline_parser_set_offset(inline_parser, (int)end_offset);
-        node->end_line = markdown_core_inline_parser_get_line(inline_parser);
-        node->end_column = markdown_core_inline_parser_get_column(inline_parser) - 1;
-    }
-
-    return node;
-}
-
-static markdown_core_node *make_delimiter_text(markdown_core_parser *parser, markdown_core_inline_parser *inline_parser,
-                                               bufsize_t offset, bufsize_t len) {
-    markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
-    markdown_core_node *node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
-
-    if (!node) {
-        return NULL;
-    }
-
-    node->as.literal = markdown_core_chunk_dup(chunk, offset, len);
-    node->start_line = markdown_core_inline_parser_get_line(inline_parser);
-    node->start_column = markdown_core_inline_parser_get_column(inline_parser);
-    /* THE THIRD SITE, and the one the labelled form depends on: a label closer
-     * carries its `{...}` attributes in this literal, so `]{title="one\ntwo"}`
-     * is a delimiter that spans a line ending. insert_label_directive takes the
-     * whole directive's end from this node, so computing it as start plus a
-     * length put the directive's end on the label's line. Consume, then read
-     * the end back. */
-    markdown_core_inline_parser_set_offset(inline_parser, (int)(offset + len));
-    node->end_line = markdown_core_inline_parser_get_line(inline_parser);
-    node->end_column = markdown_core_inline_parser_get_column(inline_parser) - 1;
-    return node;
-}
-
-static markdown_core_node *match_directive_delimiter(const markdown_core_syntax_extension *self,
-                                                     markdown_core_parser *parser,
-                                                     markdown_core_inline_parser *inline_parser,
-                                                     markdown_core_delimiter_rule rule, bufsize_t offset, bufsize_t len,
-                                                     int can_open, int can_close) {
-    markdown_core_node *node = make_delimiter_text(parser, inline_parser, offset, len);
-
-    if (!node) {
-        parser->oom = true;
-        return NULL;
-    }
-
-    markdown_core_inline_parser_push_delimiter(inline_parser, self, rule, can_open, can_close, node);
-    return node;
-}
-
-static delimiter *find_directive_opener(markdown_core_inline_parser *inline_parser, markdown_core_delimiter_rule rule) {
-    delimiter *delim = markdown_core_inline_parser_get_last_delimiter(inline_parser);
-    int closer_count = 0;
-
-    while (delim) {
-        if (markdown_core_delimiter_rule_of(delim) == rule) {
-            if (markdown_core_delimiter_can_close(delim)) {
-                closer_count++;
-            } else if (markdown_core_delimiter_can_open(delim)) {
-                if (closer_count > 0) {
-                    closer_count--;
-                } else {
-                    return delim;
-                }
-            }
-        }
-        delim = markdown_core_delimiter_previous(delim);
-    }
-
-    return NULL;
-}
-
-static int scan_parsed_attributes(markdown_core_mem *mem, const unsigned char *data, bufsize_t len, bufsize_t pos,
-                                  bufsize_t *end, int *oom) {
-    bufsize_t attr_start;
-    bufsize_t attr_len;
-    directive_attribute *attributes = NULL;
-    int valid = scan_attributes_raw(data, len, pos, &attr_start, &attr_len, end) &&
-                parse_attributes(mem, data + attr_start, attr_len, &attributes, oom);
-    free_attribute_list(mem, attributes);
-    return valid;
-}
-
+/* THE WHOLE CONSTRUCT IS SCANNED AT THE COLON, and that is the difference
+ * between this and what was here before.
+ *
+ * `:name[label]{attrs}` used to be started by PUSHING A DELIMITER for `:name[`
+ * and betting that a `]` would turn up later to pair with it. Two things
+ * follow from that bet and both are wrong. When no `]` arrives the directive
+ * is lost -- `:a[b` was one Text node where micromark gives a directive named
+ * `a` and the prose `[b`. And while the bet is open the label has no boundary,
+ * so whatever reaches the `]` first takes the directive with it: a GFM
+ * autolink literal, an emphasis run, a code span (D36).
+ *
+ * micromark decides at the colon instead, with
+ * `effects.attempt(label, afterLabel, afterLabel)` -- it SCANS the label, and
+ * BOTH branches continue. A label that closes is a label; one that does not is
+ * prose, and the directive stands either way. That is the same shape 7.1 gave
+ * the attribute block, and it is what this does.
+ *
+ * Scanning it here also means the bytes are CONSUMED here, so no other
+ * extension is ever offered them. There is nothing left to protect. */
 static markdown_core_node *match_colon_directive(const markdown_core_syntax_extension *extension,
                                                  markdown_core_parser *parser,
                                                  markdown_core_inline_parser *inline_parser, markdown_core_chunk *chunk,
@@ -1123,14 +1042,24 @@ static markdown_core_node *match_colon_directive(const markdown_core_syntax_exte
     bufsize_t name_start;
     bufsize_t name_len;
     bufsize_t pos;
+    bufsize_t label_start = 0;
+    bufsize_t label_len = 0;
+    bufsize_t label_open = 0;
+    int has_label = 0;
+    directive_attribute *attributes = NULL;
+    int has_attributes = 0;
+    markdown_core_node *node;
+    markdown_core_node *label_node = NULL;
+    node_directive *directive;
+    int start_line = markdown_core_inline_parser_get_line(inline_parser);
+    int start_column = markdown_core_inline_parser_get_column(inline_parser);
 
     /* A TEXT DIRECTIVE'S COLON MAY NOT SIT NEXT TO ANOTHER COLON, on either
      * side. The trailing half keeps `:red:` available to emoji; the leading
      * half keeps a run of colons whole, so `x ::a y` is text rather than
      * `x :` plus a directive named `a`, and `x:::a` is text rather than `x::`
-     * plus one. Only the trailing half was here. `::name` and `:::name` at the
-     * start of a line are leaf and container directives and open through the
-     * block path, which this does not touch. */
+     * plus one. `::name` and `:::name` at the start of a line are leaf and
+     * container directives and open through the block path, not this one. */
     if (offset > 0 && chunk->data[offset - 1] == ':') {
         return NULL;
     }
@@ -1144,87 +1073,90 @@ static markdown_core_node *match_colon_directive(const markdown_core_syntax_exte
     }
 
     pos = name_start + name_len;
+    if (pos < chunk->len && chunk->data[pos] == ':') {
+        return NULL;
+    }
+
     if (pos < chunk->len && chunk->data[pos] == '[') {
-        return match_directive_delimiter(extension, parser, inline_parser, DIRECTIVE_LABEL_DELIM, offset,
-                                         pos - offset + 1, 1, 0);
+        bufsize_t label_end;
+        if (scan_label(chunk->data, chunk->len, pos, &label_start, &label_len, &label_end)) {
+            has_label = 1;
+            label_open = pos;
+            pos = label_end;
+        }
     }
 
     if (pos < chunk->len && chunk->data[pos] == '{') {
         bufsize_t attr_start;
         bufsize_t attr_len;
-        bufsize_t end;
-        markdown_core_node *node;
-        directive_attribute *attributes = NULL;
-        node_directive *directive;
-        int line = markdown_core_inline_parser_get_line(inline_parser);
-        int column = markdown_core_inline_parser_get_column(inline_parser);
-
+        bufsize_t attr_end;
         int attr_oom = 0;
-
-        if (!scan_attributes_raw(chunk->data, chunk->len, pos, &attr_start, &attr_len, &end) ||
-            !parse_attributes(parser->mem, chunk->data + attr_start, attr_len, &attributes, &attr_oom)) {
-            if (attr_oom) {
-                parser->oom = true;
-                return NULL;
-            }
-            /* DEGRADATION. A malformed attribute block does not un-write the
-             * directive: the name stands and the braces are prose, so `:n{#}`
-             * is a directive named `n` followed by the text `{#}`. Returning
-             * NULL here instead made the whole `:n{#}` one Text node, which is
-             * the one reading the grammar does not admit -- the `:name` was
-             * well-formed before the `{` was ever read. */
-            return make_name_only_directive(extension, parser, inline_parser, chunk->data + name_start, name_len, pos);
-        }
-        node = make_directive_node(extension, parser, chunk->data + name_start, name_len, line, column, line,
-                                   column + (int)(end - offset) - 1);
-        if (!node) {
-            free_attribute_list(parser->mem, attributes);
+        if (scan_attributes_raw(chunk->data, chunk->len, pos, &attr_start, &attr_len, &attr_end) &&
+            parse_attributes(parser->mem, chunk->data + attr_start, attr_len, &attributes, &attr_oom)) {
+            has_attributes = 1;
+            pos = attr_end;
+        } else if (attr_oom) {
+            parser->oom = true;
             return NULL;
         }
-        directive = get_directive(node);
-        directive->attributes = attributes;
-        directive->has_attributes = 1;
-        /* See make_name_only_directive: an attribute value is the one part of a
-         * directive that can span a line ending, so this is the site the defect
-         * was visible at. */
-        markdown_core_inline_parser_set_offset(inline_parser, (int)end);
-        node->end_line = markdown_core_inline_parser_get_line(inline_parser);
-        node->end_column = markdown_core_inline_parser_get_column(inline_parser) - 1;
-        return node;
+        /* else the braces are prose; the directive stands (7.1's rule). */
     }
 
-    if (pos < chunk->len && chunk->data[pos] == ':') {
+    node = make_directive_node(extension, parser, chunk->data + name_start, name_len, start_line, start_column,
+                               start_line, start_column);
+    if (!node) {
+        free_attribute_list(parser->mem, attributes);
+        parser->oom = true;
         return NULL;
     }
+    directive = get_directive(node);
+    directive->attributes = attributes;
+    directive->has_attributes = has_attributes;
+    directive->has_label = has_label;
 
-    return make_name_only_directive(extension, parser, inline_parser, chunk->data + name_start, name_len, pos);
-}
-
-static markdown_core_node *match_label_closer(const markdown_core_syntax_extension *self, markdown_core_parser *parser,
-                                              markdown_core_inline_parser *inline_parser, markdown_core_chunk *chunk,
-                                              bufsize_t offset) {
-    delimiter *opener = find_directive_opener(inline_parser, DIRECTIVE_LABEL_DELIM);
-    bufsize_t end;
-    bufsize_t closer_len = 1;
-
-    if (!opener) {
-        return NULL;
-    }
-
-    {
-        int attr_oom = 0;
-        if (offset + 1 < chunk->len && chunk->data[offset + 1] == '{' &&
-            scan_parsed_attributes(parser->mem, chunk->data, chunk->len, offset + 1, &end, &attr_oom)) {
-            closer_len = end - offset;
-        }
-        if (attr_oom) {
+    if (has_label) {
+        /* Consume to the `]` first and read the label's end back from the
+         * subject, because a label may span a line ending and a column
+         * computed from the start plus a length states it in the wrong line's
+         * frame -- 0a.10's rule, and the reason D22 was a defect. */
+        int label_line = start_line;
+        int label_column = start_column + (int)(label_open - offset);
+        markdown_core_inline_parser_set_offset(inline_parser, (int)(label_start + label_len + 1));
+        label_node = make_label_node(extension, parser->mem, chunk->data + label_start, label_len, label_line,
+                                     label_column, markdown_core_inline_parser_get_column(inline_parser) - 1);
+        if (!label_node) {
+            markdown_core_node_free(node);
             parser->oom = true;
+            return NULL;
+        }
+        label_node->end_line = markdown_core_inline_parser_get_line(inline_parser);
+        if (!markdown_core_node_append_child(node, label_node)) {
+            markdown_core_node_free(label_node);
+            markdown_core_node_free(node);
+            parser->oom = true;
+            return NULL;
         }
     }
 
-    return match_directive_delimiter(self, parser, inline_parser, DIRECTIVE_LABEL_DELIM, offset, closer_len, 0, 1);
+    markdown_core_inline_parser_set_offset(inline_parser, (int)pos);
+    node->end_line = markdown_core_inline_parser_get_line(inline_parser);
+    node->end_column = markdown_core_inline_parser_get_column(inline_parser) - 1;
+
+    /* The label's content is its own buffer, so its inlines are parsed against
+     * it and not against the paragraph that contains it -- the same shape a
+     * table cell has, and the same one the BLOCK forms of this directive have
+     * always had. `process_inlines`' walk cannot reach a node created during a
+     * paragraph's own inline pass, so the parse is driven from here. */
+    if (label_node) {
+        markdown_core_parse_inlines(parser, label_node, parser->refmap, parser->options);
+    }
+    return node;
 }
 
+/* ONE BYTE, not two. `]` was claimed because a label's closer had to be
+ * recognised as a delimiter to pair with the opener; the label is scanned at
+ * the colon now, so the bracket is nobody's business but the core's -- which
+ * is what makes `[a](b)` inside a label work like any other link. */
 static markdown_core_node *match(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_parser *inline_parser) {
@@ -1233,10 +1165,6 @@ static markdown_core_node *match(const markdown_core_syntax_extension *extension
 
     if (character == ':') {
         return match_colon_directive(extension, parser, inline_parser, chunk, offset);
-    }
-
-    if (character == ']') {
-        return match_label_closer(extension, parser, inline_parser, chunk, offset);
     }
 
     return NULL;
@@ -1350,138 +1278,6 @@ static int directive_block_matches(const markdown_core_syntax_extension *extensi
     return 1;
 }
 
-static void remove_delimiters(markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
-    delimiter *delim = closer;
-
-    while (delim != NULL && delim != opener) {
-        delimiter *previous = markdown_core_delimiter_previous(delim);
-        markdown_core_inline_parser_remove_delimiter(inline_parser, delim);
-        delim = previous;
-    }
-
-    markdown_core_inline_parser_remove_delimiter(inline_parser, opener);
-}
-
-static int set_attributes_from_wrapper(markdown_core_node *node, const unsigned char *data, bufsize_t len,
-                                       bufsize_t pos, int *oom) {
-    bufsize_t attr_start;
-    bufsize_t attr_len;
-    bufsize_t end;
-    directive_attribute *attributes = NULL;
-    node_directive *directive = get_directive(node);
-
-    if (!directive || !scan_attributes_raw(data, len, pos, &attr_start, &attr_len, &end) || end != len ||
-        !parse_attributes(markdown_core_node_mem(node), data + attr_start, attr_len, &attributes, oom)) {
-        return 0;
-    }
-
-    directive->attributes = attributes;
-    directive->has_attributes = 1;
-    return 1;
-}
-
-static markdown_core_node *make_empty_label_node(const markdown_core_syntax_extension *extension,
-                                                 markdown_core_mem *mem, int start_line, int start_column, int end_line,
-                                                 int end_column) {
-    markdown_core_node *label_node =
-        markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_DIRECTIVE_LABEL, mem, extension);
-
-    if (!label_node) {
-        return NULL;
-    }
-
-    label_node->start_line = start_line;
-    label_node->end_line = end_line;
-    label_node->start_column = start_column;
-    label_node->end_column = end_column;
-    return label_node;
-}
-
-static delimiter *insert_label_directive(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
-                                         markdown_core_inline_parser *inline_parser, delimiter *opener,
-                                         delimiter *closer) {
-    markdown_core_node *opener_node = markdown_core_delimiter_node(opener);
-    markdown_core_node *closer_node = markdown_core_delimiter_node(closer);
-    markdown_core_chunk *opener_literal = &opener_node->as.literal;
-    markdown_core_chunk *closer_literal = &closer_node->as.literal;
-    delimiter *res = markdown_core_delimiter_next(closer);
-    markdown_core_node *directive_node;
-    markdown_core_node *label_node;
-    markdown_core_node *tmp;
-    markdown_core_node *tmpnext;
-    node_directive *directive;
-    bufsize_t name_len;
-
-    if (markdown_core_delimiter_rule_of(opener) != markdown_core_delimiter_rule_of(closer) || opener_literal->len < 3 ||
-        opener_literal->data[0] != ':' || opener_literal->data[opener_literal->len - 1] != '[' ||
-        closer_literal->len < 1 || closer_literal->data[0] != ']') {
-        goto done;
-    }
-
-    name_len = opener_literal->len - 2;
-    directive_node = make_directive_node(extension, parser, opener_literal->data + 1, name_len, opener_node->start_line,
-                                         opener_node->start_column, closer_node->end_line, closer_node->end_column);
-    if (!directive_node) {
-        goto done;
-    }
-
-    directive = get_directive(directive_node);
-    directive->has_label = 1;
-
-    {
-        int attr_oom = 0;
-        if (closer_literal->len > 1 && closer_literal->data[1] == '{' &&
-            !set_attributes_from_wrapper(directive_node, closer_literal->data, closer_literal->len, 1, &attr_oom)) {
-            if (attr_oom) {
-                parser->oom = true;
-            }
-            markdown_core_node_free(directive_node);
-            goto done;
-        }
-    }
-
-    /* THE LABEL'S SCOPE SPANS ITS BRACKETS. The opener node ends ON the `[`
-     * and the closer starts ON the `]`, so the label runs from one to the
-     * other -- content-only made `[]` a negative range, end one column before
-     * start, because there was nothing between them to point at. */
-    label_node = make_empty_label_node(extension, parser->mem, opener_node->end_line, opener_node->end_column,
-                                       closer_node->start_line, closer_node->start_column);
-    if (!label_node) {
-        markdown_core_node_free(directive_node);
-        goto done;
-    }
-
-    tmp = opener_node->next;
-    while (tmp && tmp != closer_node) {
-        tmpnext = tmp->next;
-        markdown_core_node_unlink(tmp);
-        markdown_core_node_append_child(label_node, tmp);
-        tmp = tmpnext;
-    }
-
-    markdown_core_node_append_child(directive_node, label_node);
-
-    if (markdown_core_node_insert_before(opener_node, directive_node)) {
-        markdown_core_node_free(opener_node);
-        markdown_core_node_free(closer_node);
-    } else {
-        markdown_core_node_free(directive_node);
-    }
-
-done:
-    remove_delimiters(inline_parser, opener, closer);
-    return res;
-}
-
-static delimiter *insert_directive(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
-                                   markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
-    if (markdown_core_delimiter_rule_of(opener) == DIRECTIVE_LABEL_DELIM) {
-        return insert_label_directive(extension, parser, inline_parser, opener, closer);
-    }
-
-    return markdown_core_delimiter_next(closer);
-}
-
 static const char *get_type_string(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
     if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE) {
         return "directive";
@@ -1541,7 +1337,6 @@ static int accepts_lines(const markdown_core_syntax_extension *extension, markdo
 const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE = {
     .name = "directive",
     .match_inline = match,
-    .insert_inline_from_delim = insert_directive,
     .last_block_matches = directive_block_matches,
     .try_opening_block = open_directive_block,
     .get_type_string_func = get_type_string,
@@ -1551,5 +1346,5 @@ const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE = {
     .opaque_alloc_func = directive_opaque_alloc,
     .opaque_free_func = directive_opaque_free,
     .terminates_text = ":",
-    .dispatch = ":]",
+    .dispatch = ":",
 };

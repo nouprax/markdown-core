@@ -122,17 +122,18 @@ Document scope=1:1..5:3 children=2
         └── Text scope=4:1..4:4 literal="body" children=0
 ````````````````````````````````
 
-## An inline scan must not cross another extension's structural closer
+## A label's contents are its own, and nothing outside can reach into them
 
 A directive label's `]` decides where the label ends. GFM's autolink literal
 runs to whitespace, so with both extensions on it used to swallow that `]` and
 the directive went with it: `:b[http://e.com]` was the text `:b[` followed by a
 link whose destination ended in a bracket (**D36**).
 
-The label's contents are still ordinary inline content, autolinks included --
-which is why suppressing the autolink inside a label is the wrong repair, and
-bounding its scan is the right one. `markdown_core_inline_parser_byte_is_protected`
-is the core's question; `autolink` asks it and never learns whose byte it is.
+Nothing in this file needs an extension to know about another one. The label is
+SCANNED at the colon and its bytes are consumed there, so `autolink` is never
+offered them; what it sees is the label's own buffer, parsed on its own, the
+way a table cell is. The examples below are the ones that were wrong before
+that, and they are kept because nothing else pins the interaction.
 
 ```````````````````````````````` example directive autolink
 :b[http://e.com]
@@ -158,9 +159,10 @@ Document scope=1:1..1:20 children=1
             └── Text scope=1:18..1:19 literal=" b" children=0
 ````````````````````````````````
 
-The `www.` form is the same scan and needs the same bound. It does not fire
-straight after a `[` -- cmark-gfm asks for a space or one of `*_~(` before it,
-which is why `:b[www.e.com]` is text -- so the witness puts a space in.
+The `www.` form goes through a second, identical scan and needs the same
+answer. It does not fire straight after a `[` -- cmark-gfm asks for a space or
+one of `*_~(` before it, which is why `:b[www.e.com]` is text -- so the witness
+puts a space in.
 
 ```````````````````````````````` example directive autolink
 :b[a www.e.com]
@@ -174,10 +176,9 @@ Document scope=1:1..1:15 children=1
                 └── Text scope=1:6..1:14 literal="www.e.com" children=0
 ````````````````````````````````
 
-What is protected is what an OPEN label is waiting for, counted as the scan
-sees openers and closers -- not what is still on the delimiter stack, which is
-not emptied until the whole paragraph has been read. Once the label has closed,
-its bracket is an ordinary URL character again.
+Once the label has ended, its bracket is an ordinary URL character again --
+there is no state to leak, because the label's bytes were never part of this
+paragraph's scan.
 
 ```````````````````````````````` example directive autolink
 :b[x] then http://e.com/a]b
@@ -192,9 +193,10 @@ Document scope=1:1..1:27 children=1
         └── Text scope=1:12..1:27 literal="http://e.com/a]b" children=0
 ````````````````````````````````
 
-And only a label's closer is structural. Strikethrough's `~~` is a delimiter
-too and declares nothing, because a `~` that never pairs is ordinary content
-and a URL that runs through one is the URL the author wrote.
+Strikethrough's `~~` is a delimiter and its content is NOT its own buffer, so a
+URL inside one still runs through a `~` -- which is right: a `~` that never
+pairs is ordinary content, and this is the control that says the label's
+behaviour comes from the label and not from some blanket rule about brackets.
 
 ```````````````````````````````` example strikethrough autolink
 ~~a http://e.com/x]y~~

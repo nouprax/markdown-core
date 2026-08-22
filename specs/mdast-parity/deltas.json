@@ -132,13 +132,6 @@
             "why": "GitHub documents a fenced form for block math. The info string is the selector, so the fence is not source content."
         },
         {
-            "id": "autolink-after-failed-label",
-            "input": ":note[See [docs](https://examp\n",
-            "authority": "consistency",
-            "summary": "After a directive label fails to close, remark leaves the remaining text unautolinked; this repository still recognizes the bare URL.",
-            "why": "Without the directive both agree: `See [docs](https://examp` is text plus an autolink in remark too. remark only skips the autolink on the path where it backtracked out of a label, which makes its own output inconsistent between the two inputs. Recognizing the URL in both is the consistent reading."
-        },
-        {
             "id": "table-excess-cells",
             "input": "a\n| --- |\nb.| status |\n",
             "authority": "GFM specification, and cmark-gfm",

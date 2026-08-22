@@ -551,8 +551,33 @@ static int pc_directive_literal_case(pc_context *context, const char *unit, size
     return pc_expect_text_is_input(context);
 }
 
+/* `:x[` repeated is the DEGRADATION path, like `:x{` beside it: the label is
+ * scanned at the colon and does not close, so each unit is a directive named
+ * `x` followed by the prose `[`. Step 7e made that true; before it the whole
+ * run was one literal, because a label that never closed lost its directive
+ * with it. What this case guards -- 20000 unclosed labels must not make the
+ * scan quadratic -- is unchanged. */
 static int case_directive_unclosed_labels(pc_context *context) {
-    return pc_directive_literal_case(context, ":x[", 20000);
+    char *brackets;
+    int result;
+
+    if (pc_build(context, NULL, ":x[", 20000, NULL) != 0) {
+        return -1;
+    }
+    if (pc_parse(context, PC_DIRECTIVE_ONLY) != 0) {
+        return -1;
+    }
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_DIRECTIVE, 20000, "Directive") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, 0, "DirectiveBlock") != 0) {
+        return -1;
+    }
+    brackets = ts_repeat("[", 20000, NULL);
+    if (!brackets) {
+        return -1;
+    }
+    result = pc_expect_text(context, brackets, 20000);
+    free(brackets);
+    return result;
 }
 
 /* `:x{` repeated is the DEGRADATION path, not the no-directive path: the name

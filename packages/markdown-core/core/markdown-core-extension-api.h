@@ -597,18 +597,6 @@ void markdown_core_inline_parser_remove_delimiter(markdown_core_inline_parser *p
 MARKDOWN_CORE_EXPORT
 delimiter *markdown_core_inline_parser_get_last_delimiter(markdown_core_inline_parser *parser);
 
-/** Whether `c` is the closing byte of a delimiter that is open RIGHT NOW and
- * whose closer is structural -- one no inline scan may run past.
- *
- * An extension that consumes a span by scanning forward asks this before
- * crossing a byte. Today the one such closer is a directive label's `]`: a
- * scan that swallows it does not mis-read a character, it deletes the
- * directive around it. Which rules have one is decided in the core, next to
- * the rule list itself, so an extension asks the question and never has to
- * know another extension's answer.
- */
-int markdown_core_inline_parser_byte_is_protected(markdown_core_inline_parser *parser, unsigned char c);
-
 MARKDOWN_CORE_EXPORT
 int markdown_core_inline_parser_get_line(markdown_core_inline_parser *parser);
 

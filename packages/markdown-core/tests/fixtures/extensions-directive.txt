@@ -207,6 +207,71 @@ Document scope=1:1..1:7 children=1
     └── Text scope=1:7..1:7 literal=":" children=0
 ````````````````````````````````
 
+A LABEL IS SCANNED AT THE COLON, not paired with a closer found later. Both
+branches continue, exactly as the attribute block's do: a label that closes is a
+label, a label that does not is prose, and the directive stands either way.
+
+```````````````````````````````` example
+:a[b and :c[
+.
+Document scope=1:1..1:12 children=1
+└── Paragraph scope=1:1..1:12 children=4
+    ├── Directive scope=1:1..1:2 name="a" attributes=null children=0
+    ├── Text scope=1:3..1:9 literal="[b and " children=0
+    ├── Directive scope=1:10..1:11 name="c" attributes=null children=0
+    └── Text scope=1:12..1:12 literal="[" children=0
+````````````````````````````````
+
+Because the whole construct is consumed there, nothing else is ever offered its
+bytes. An emphasis run opened before the directive cannot pair with a marker
+inside the label, and a code span inside one cannot protect the `]` that ends
+it -- the label ended before either was looked for.
+
+```````````````````````````````` example
+*a :b[c*]
+.
+Document scope=1:1..1:9 children=1
+└── Paragraph scope=1:1..1:9 children=2
+    ├── Text scope=1:1..1:3 literal="*a " children=0
+    └── Directive scope=1:4..1:9 name="b" attributes=null children=1
+        └── DirectiveLabel scope=1:6..1:9 children=1
+            └── Text scope=1:7..1:8 literal="c*" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+:b[a`b]`c]
+.
+Document scope=1:1..1:10 children=1
+└── Paragraph scope=1:1..1:10 children=2
+    ├── Directive scope=1:1..1:7 name="b" attributes=null children=1
+    │   └── DirectiveLabel scope=1:3..1:7 children=1
+    │       └── Text scope=1:4..1:6 literal="a`b" children=0
+    └── Text scope=1:9..1:10 literal="`c]" children=0
+````````````````````````````````
+
+The scan is lexical: only a backslash escape and bracket balance decide where
+the label ends, and nesting is capped at 32 as micromark caps it. Thirty-two
+nested brackets are a label and thirty-three are prose.
+
+```````````````````````````````` example
+:a[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+.
+Document scope=1:1..1:69 children=1
+└── Paragraph scope=1:1..1:69 children=1
+    └── Directive scope=1:1..1:69 name="a" attributes=null children=1
+        └── DirectiveLabel scope=1:3..1:69 children=1
+            └── Text scope=1:4..1:68 literal="[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+:a[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+.
+Document scope=1:1..1:71 children=1
+└── Paragraph scope=1:1..1:71 children=2
+    ├── Directive scope=1:1..1:2 name="a" attributes=null children=0
+    └── Text scope=1:3..1:71 literal="[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]" children=0
+````````````````````````````````
+
 A directive name may contain a hyphen or underscore but may not begin or end
 with one. This example previously expected `:-a[]` and `:_a[]` to be
 directives; scripts/check-mdast-parity.mjs found the disagreement with
