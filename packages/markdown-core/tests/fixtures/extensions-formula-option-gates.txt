@@ -41,7 +41,7 @@ x+y
 ```
 .
 Document scope=1:1..3:3 children=1
-└── FormulaBlock scope=1:1..3:3 mode=standalone literal="x+y" children=0
+└── FormulaBlock scope=1:1..3:3 literal="x+y" children=0
 ````````````````````````````````
 
 Attaching the extension must not change what CommonMark emphasis means. `$` used

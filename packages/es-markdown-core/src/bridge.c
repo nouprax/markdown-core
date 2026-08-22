@@ -145,21 +145,11 @@ int32_t es_node_table_row_header(const markdown_core_node *node) {
     return value;
 }
 
-int32_t es_node_directive_mode(const markdown_core_node *node) {
-    markdown_core_placement_mode mode;
-    markdown_core_string_view name, attributes;
-    bool has_label;
-    size_t label_count;
-    markdown_core_node_directive_properties(node, &mode, &name, &attributes, &has_label, &label_count);
-    return (int32_t)mode;
-}
-
 int32_t es_node_directive_label_count(const markdown_core_node *node) {
-    markdown_core_placement_mode mode;
     markdown_core_string_view name, attributes;
     bool has_label;
     size_t label_count;
-    markdown_core_node_directive_properties(node, &mode, &name, &attributes, &has_label, &label_count);
+    markdown_core_node_directive_properties(node, &name, &attributes, &has_label, &label_count);
     return has_label ? (int32_t)label_count : -1;
 }
 
@@ -187,7 +177,7 @@ void es_string(const void *object, int32_t field, uintptr_t *data, size_t *lengt
         break;
     case ES_STRING_DIRECTIVE_NAME:
     case ES_STRING_DIRECTIVE_ATTRIBUTES:
-        markdown_core_node_directive_properties(node, &mode, &first, &second, &first_bool, &count);
+        markdown_core_node_directive_properties(node, &first, &second, &first_bool, &count);
         first = field == ES_STRING_DIRECTIVE_NAME ? first : second;
         break;
     case ES_STRING_LINK_DESTINATION:

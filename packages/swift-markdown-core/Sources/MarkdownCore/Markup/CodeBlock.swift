@@ -2,7 +2,6 @@ import MarkdownCoreC
 
 public struct CodeBlock: Markup {
     public let scope: Scope
-    public let mode: PlacementMode
     public let info: String?
     public let language: String?
     public let literal: String
@@ -29,7 +28,6 @@ extension CodeBlock {
         )
         self.init(
             scope: Self.scope(from: node),
-            mode: .standalone,
             info: info.optionalString,
             language: language.optionalString,
             literal: literal.requiredString,

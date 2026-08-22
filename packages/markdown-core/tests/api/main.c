@@ -1418,7 +1418,7 @@ static void source_pos(test_batch_runner *runner) {
                      "children=0\n"
                      "│   ├── SoftBreak scope=3:38..3:38 children=0\n"
                      "│   ├── Text scope=4:1..4:6 literal=\"there \" children=0\n"
-                     "│   ├── Code scope=4:8..4:9 mode=embedded literal=\"hi\" children=0\n"
+                     "│   ├── Code scope=4:8..4:9 literal=\"hi\" children=0\n"
                      "│   ├── Text scope=4:11..4:14 literal=\" -- \" children=0\n"
                      "│   ├── Link scope=4:15..4:41 destination=\"www.google.com\" title=\"ok\" "
                      "children=1\n"

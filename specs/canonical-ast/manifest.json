@@ -122,7 +122,6 @@
                     "HTMLBlock"
                 ],
                 "states": [
-                    "placement.standalone",
                     "list.flavor.bullet",
                     "list.flavor.ordered",
                     "list.start.null",
@@ -175,8 +174,6 @@
                     "TableCell"
                 ],
                 "states": [
-                    "placement.embedded",
-                    "placement.standalone",
                     "list.flavor.bullet",
                     "list.start.null",
                     "list.tight.false",
@@ -275,7 +272,6 @@
                     "FootnoteDefinition"
                 ],
                 "states": [
-                    "placement.embedded",
                     "directive.attributes.value",
                     "directive.label.populated",
                     "link.title.value",
@@ -340,7 +336,6 @@
                     "Paragraph"
                 ],
                 "states": [
-                    "placement.standalone",
                     "table.alignment.left",
                     "table.alignment.center",
                     "table.alignment.right",

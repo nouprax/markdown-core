@@ -13,5 +13,5 @@ Document scope=1:1..17:17 children=7
 │   └── ListItem scope=9:1..10:0 checked=true children=1
 │       └── Paragraph scope=9:7..9:10 children=1
 │           └── Text scope=9:7..9:10 literal="task" children=0
-├── CodeBlock scope=11:1..13:3 mode=standalone info="swift title=\"demo\"" language="swift" literal="let x = 1\n" fenced=true closed=true children=0
+├── CodeBlock scope=11:1..13:3 info="swift title=\"demo\"" language="swift" literal="let x = 1\n" fenced=true closed=true children=0
 └── HTMLBlock scope=15:1..15:22 literal="<section>raw</section>\n" children=0

@@ -34,7 +34,6 @@ internal fun WireReader.markup(): Markup {
 
         WireKind.CODE_BLOCK -> {
             CodeBlock(
-                PlacementMode.STANDALONE,
                 string(),
                 string(),
                 requiredString(),
@@ -49,7 +48,9 @@ internal fun WireReader.markup(): Markup {
         }
 
         WireKind.FORMULA_BLOCK -> {
-            FormulaBlock(placement(), requiredString(), nodeScope)
+            // A formula block is always standalone: the wire stopped carrying
+            // the byte at Q29 and the model no longer repeats the kind.
+            FormulaBlock(requiredString(), nodeScope)
         }
 
         WireKind.TABLE -> {
@@ -58,7 +59,6 @@ internal fun WireReader.markup(): Markup {
 
         WireKind.DIRECTIVE_BLOCK -> {
             DirectiveBlock(
-                placement(),
                 requiredString(),
                 string(),
                 optionalMarkupList(),
@@ -84,7 +84,7 @@ internal fun WireReader.markup(): Markup {
         }
 
         WireKind.CODE -> {
-            Code(PlacementMode.EMBEDDED, requiredString(), nodeScope)
+            Code(requiredString(), nodeScope)
         }
 
         WireKind.HTML -> {
@@ -176,13 +176,14 @@ private fun WireReader.readListItems(): kotlin.collections.List<ListItem> {
 }
 
 private fun WireReader.readDirective(scope: Scope): Directive {
-    val mode = placement()
+    // An inline directive is always embedded: the wire stopped carrying the
+    // byte at Q29 and the model no longer repeats the kind.
     val name = requiredString()
     val attributes = string()
     val label = optionalMarkupList()
     val content = markupList()
     require(content.isEmpty()) { "inline directive contains block content" }
-    return Directive(mode, name, attributes, label, scope)
+    return Directive(name, attributes, label, scope)
 }
 
 private fun WireReader.readTable(scope: Scope): Table {

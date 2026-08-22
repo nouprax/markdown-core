@@ -541,18 +541,16 @@ static const markdown_core_node *directive_label_node(const markdown_core_node *
     return is_label(node->first_child) ? node->first_child : NULL;
 }
 
-bool markdown_core_node_directive_properties(const markdown_core_node *node, markdown_core_placement_mode *mode,
-                                             markdown_core_string_view *name, markdown_core_string_view *attributes,
-                                             bool *has_label, size_t *label_count) {
+bool markdown_core_node_directive_properties(const markdown_core_node *node, markdown_core_string_view *name,
+                                             markdown_core_string_view *attributes, bool *has_label,
+                                             size_t *label_count) {
     const char *value;
     const markdown_core_node *label;
     const markdown_core_node *child;
-    if (!node || !mode || !name || !attributes || !has_label || !label_count ||
+    if (!node || !name || !attributes || !has_label || !label_count ||
         (node->type != MARKDOWN_CORE_NODE_DIRECTIVE && node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
         return false;
     }
-    *mode = node->type == MARKDOWN_CORE_NODE_DIRECTIVE ? MARKDOWN_CORE_PLACEMENT_EMBEDDED
-                                                       : MARKDOWN_CORE_PLACEMENT_STANDALONE;
     value = markdown_core_extensions_get_directive_name((markdown_core_node *)node);
     name->data = (const uint8_t *)value;
     name->length = value ? strlen(value) : 0;
@@ -796,7 +794,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         break;
     case MARKDOWN_CORE_KIND_CODE_BLOCK:
         markdown_core_node_code_block_properties(node, &a, &b, &c, &x, &y);
-        buffer_cstr(buffer, " mode=standalone info=");
+        buffer_cstr(buffer, " info=");
         buffer_optional_string(buffer, a);
         buffer_cstr(buffer, " language=");
         buffer_optional_string(buffer, b);
@@ -816,14 +814,22 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         break;
     case MARKDOWN_CORE_KIND_CODE:
         markdown_core_node_literal(node, &a);
-        buffer_cstr(buffer, " mode=embedded literal=");
+        buffer_cstr(buffer, " literal=");
         buffer_json_string(buffer, a);
         break;
-    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
     case MARKDOWN_CORE_KIND_FORMULA:
+        /* The only kind whose mode is a fact about the SOURCE: `$x$` is
+         * embedded and `$$x$$` is standalone inside the same paragraph.  The
+         * other five carried a mode that their kind already implied, and Q29
+         * deleted all five at 15A.4. */
         markdown_core_node_formula_properties(node, &mode, &a);
         buffer_cstr(buffer, " mode=");
         buffer_cstr(buffer, mode_name(mode));
+        buffer_cstr(buffer, " literal=");
+        buffer_json_string(buffer, a);
+        break;
+    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
+        markdown_core_node_formula_properties(node, &mode, &a);
         buffer_cstr(buffer, " literal=");
         buffer_json_string(buffer, a);
         break;
@@ -847,9 +853,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         break;
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE:
-        markdown_core_node_directive_properties(node, &mode, &a, &b, &has_label, &count);
-        buffer_cstr(buffer, " mode=");
-        buffer_cstr(buffer, mode_name(mode));
+        markdown_core_node_directive_properties(node, &a, &b, &has_label, &count);
         buffer_cstr(buffer, " name=");
         buffer_json_string(buffer, a);
         buffer_cstr(buffer, " attributes=");

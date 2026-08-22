@@ -178,11 +178,18 @@ static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
         markdown_core_node_literal(node, &first);
         put_string(buffer, first, true);
         break;
-    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
     case MARKDOWN_CORE_KIND_FORMULA: {
+        /* The one kind whose mode is a fact about the source rather than about
+         * the kind; the other five stopped carrying it at Q29. */
         markdown_core_placement_mode mode;
         markdown_core_node_formula_properties(node, &mode, &first);
         put_i32(buffer, (int32_t)mode);
+        put_string(buffer, first, true);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_FORMULA_BLOCK: {
+        markdown_core_placement_mode mode;
+        markdown_core_node_formula_properties(node, &mode, &first);
         put_string(buffer, first, true);
         break;
     }
@@ -205,13 +212,11 @@ static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE: {
-        markdown_core_placement_mode mode;
         bool has_label = false;
         size_t label_count = 0;
         const markdown_core_node *content;
         size_t content_count = 0;
-        markdown_core_node_directive_properties(node, &mode, &first, &second, &has_label, &label_count);
-        put_i32(buffer, (int32_t)mode);
+        markdown_core_node_directive_properties(node, &first, &second, &has_label, &label_count);
         put_string(buffer, first, true);
         put_string(buffer, second, second.data != NULL);
         if (has_label) {

@@ -336,6 +336,15 @@ for (const { label, expect, actual } of kindSurfaces) {
             console.error(`C dump: ${kind} never prints ${missing.join(", ")}`);
             failed = true;
         }
+        // BOTH WAYS. The models may carry members the contract does not name --
+        // `accept`, `dump`, an initializer -- so their check is one-directional.
+        // The dump's line has no such slack: every `name=` on it is a contract
+        // field or it is a field the contract deleted and nobody removed.
+        const extra = printed.filter((field) => !expected.includes(field));
+        if (extra.length) {
+            console.error(`C dump: ${kind} prints ${extra.join(", ")}, which the contract does not give it`);
+            failed = true;
+        }
         void fields;
     }
 }

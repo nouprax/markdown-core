@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a) and **15A.1 – 15A.3** (§4.14.15A) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a) and **15A.1 – 15A.4** (§4.14.15A) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **15A.4** — Q29, deleting `mode` from `Code`, `CodeBlock`, `Directive` and `DirectiveBlock`: 183 golden rows and every one of the twelve surfaces. Then Step 6. Remaining: `15A 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 6** — deliverable #2. 15A is done except its own §4.8 obligation, **Q41**, which is the owner's. §4.14.6 sizes Step 6; the three binding toolchains all run here and §4.14.15A says how. Remaining: `15A 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -1157,7 +1157,7 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | **Q26** | Do `Link.destination`, `Image.source`, `ReferenceDefinition.destination` stay optional? | 14 | **No — required.** Q7 already rules a definition's destination required; §5.1 rules that a reference carries none. Once 9b splits `LinkReference` out of `Link`, an inline link's destination has no reachable null except allocation loss, which Q7 answers with the failure bit. |
 | **Q27** | Does `VERSION` move to 1.0.4 at all? | 15C | **SETTLED 2026-08-21: no — it went to `3.0.0` early**, the second of the two options this row offered. Measured: the ordering assertion in `check-release-version.mjs` passes at `3.0.0` and **fails at `1.0.4`**, because `v2.0.0` exists and the script requires every tag to be strictly less than `VERSION`. `3.0.0-dev` fails the `stableSemver` assert. The stated cost — a release-notes file from that commit — was paid; see §4.10. |
 | **Q28** | Is `markdown_core_parser_feed_reentrant` deleted? | 11a | **Yes.** Zero in-tree callers, and it re-enters line processing with bytes that are in no source line — unrepresentable under L1. Keeping an entry point whose only purpose is to inject bytes no position can name, in the step that establishes that every byte has a position, is carrying a contradiction forward for no consumer. |
-| **Q29** | Does `mode` survive on `Code`, `CodeBlock`, `Directive`, `DirectiveBlock`? | 15A | **No** — delete it from those four, keep it on `Formula`/`FormulaBlock` where it is genuinely variable. Both decoders prove the point: Kotlin and ES hard-code the constant and one of them then *asserts* the constant it just synthesized, and the Kotlin wire format does not transmit it. A field whose value is implied by its type is ceremony four surfaces must keep in step. |
+| **Q29** | Does `mode` survive on `Code`, `CodeBlock`, `Directive`, `DirectiveBlock`? | 15A | **TAKEN at 15A.4, and it is FIVE kinds, not four.** `FormulaBlock` is not "genuinely variable" either: the corpus has 12 `standalone` and zero `embedded`, and `markdown_core_extensions_set_formula_mode` REFUSES any other value for that kind (`extensions/formula.c:100`). `Formula` is the only kind whose mode is a fact about the source. 195 golden rows, twelve surfaces, and a seventh hand-written copy of the contract found and deleted. ~~**No** — delete it from those four, keep it on `Formula`/`FormulaBlock` where it is genuinely variable. Both decoders prove the point: Kotlin and ES hard-code the constant and one of them then *asserts* the constant it just synthesized, and the Kotlin wire format does not transmit it. A field whose value is implied by its type is ceremony four surfaces must keep in step.~~ **Every one of those claims was verified before acting on it, and every one was true.** |
 | **Q30** | Do the bindings spell child edges typed (`content`, `items`, `label`, `header`, `rows`, `cells`) or flat (`children`)? | 15A | **TAKEN at 15A.2: typed.** The Swift dump is byte-identical afterwards and `audit-ast-projections.mjs` is green. ~~**Typed.** Kotlin and ES already do; Swift's flat `children` is what forces `labelCount: Int?`, forces `Table.init` to filter rows by `isHeader` and `preconditionFailure` if the count is not one, and forces `children: [any Markup] = []` onto eleven leaf kinds. Two of three bindings and the contract already assume it.~~ **Every one of those was measured true at 15A.2 and every one of them is gone.** |
 | **Q41** | Does the repository keep swift-format's `AllPublicDeclarationsHaveDocumentation`? | 15A / 15C | **OPEN, and it is the owner's.** It is a required CI health check that has been failing: 184 findings at `46e20f2`, 170 after 15A.2. Satisfying it means writing a doc comment on every public declaration in the Swift binding, and for a projection layer most of those can only restate the signature — the pass this repository rejected once already. **Recommend: scope the rule to types and functions, or turn it off**, and say so in `.swift-format` rather than leaving a required check red. Whichever way it goes, it is an owner decision and §4.8 needs an answer before Stage 0 closes. |
 | **Q38** | Does the empty `Text` node D13 removes become a registered divergence from cmark-gfm? | 0a.14 | **OPEN.** Upstream emits the node too, so removing it costs one normalizer projection, one `NORMALIZED_DELTAS` name and one `deltas.json` entry. Measured at §4.2.3. Owed by the commit that lands D13. |
@@ -3950,6 +3950,77 @@ two"* — is confirmed exactly.
 `28 kinds over 12 surfaces, the C dump's fields, the prose table, and 3
 models`. No engine file, no binding file and no golden was touched by this
 sub-step: it is all audit.
+
+
+##### 15A.4 — Q29: `mode` is deleted from FIVE kinds, not four
+
+**Q29's reason is right and its number was one short.** A field whose value is
+implied by its type is ceremony the surfaces must keep in step; Q29 names
+`Code`, `CodeBlock`, `Directive` and `DirectiveBlock` and keeps `mode` on
+*"`Formula`/`FormulaBlock` where it is genuinely variable"*. Measured:
+
+- `Formula` is genuinely variable — the corpus has 12 `embedded` and 6
+  `standalone`.
+- **`FormulaBlock` is not.** The corpus has 12 `standalone` and zero
+  `embedded`, and it is not a corpus accident:
+  `markdown_core_extensions_set_formula_mode` **refuses** any value but
+  `standalone` for a `FORMULA_BLOCK` node (`extensions/formula.c:100`). Its mode
+  is as constant as a `CodeBlock`'s.
+
+So five kinds lose it and `Formula` keeps it, which is Q29's own rule applied to
+what the engine actually enforces.
+
+**Every claim Q29 makes about the decoders was verified before acting on it**,
+and every one was true: Kotlin hard-codes `PlacementMode.STANDALONE` for
+`CodeBlock` and `PlacementMode.EMBEDDED` for `Code`; ES hard-codes
+`mode: "standalone"` and `mode: "embedded"`; and ES then **asserts** the
+constant — `if (fields.mode !== "embedded") throw` for `Directive`,
+`if (mode !== "standalone") throw` for `FormulaBlock`. Three of those throws are
+gone with the field.
+
+**Twelve surfaces moved in one commit**, which is what 15B's standing rule
+means in practice:
+
+| | |
+|---|---|
+| contract | `canonical-ast.json` and the prose table; the PlacementMode invariants table keeps one row |
+| C | `dump_fields` stops printing it; **`markdown_core_node_directive_properties` loses its `mode` out-param** — a public-header change, and §4.1.5 says the surface is free until 3.0 |
+| Kotlin | model ×5, decoder, dumper, **and the JNI bridge stops writing the byte** |
+| ES | model ×5, decoder, dumper, bridge, **and `es_node_directive_mode` is deleted from the exported-function list** |
+| Swift | model ×5, `DirectiveValues`, dumper |
+| goldens | 11 fixtures and 5 `.ast` files |
+
+**195 golden rows moved, and the claim is mechanised**: every moved row differs
+from its predecessor by the removal of exactly ` mode=embedded` or
+` mode=standalone` and nothing else, and every one is one of the five kinds —
+97 `CodeBlock`, 59 `Code`, 16 `Directive`, 12 `FormulaBlock`, 11
+`DirectiveBlock`.
+
+##### A seventh copy of the contract, found by deleting a field from the first
+
+`scripts/check-canonical-ast-fixtures.mjs` carried its **own hand-written
+kind→fields table** — 28 rows, inline in the checker — and it is what failed
+when the contract lost `mode`. It now derives that table from
+`docs/specs/canonical-ast.json` by the same rule the projections audit uses, so
+the count of hand-written copies goes from seven to one.
+
+The manifest's `placement.embedded` / `placement.standalone` coverage states
+also had to move: they are demonstrated by a ` mode=` in the dump, and after
+Q29 only the `formulas` case has one. `blocks`, `completeness` and `structure`
+declared them and no longer earn them.
+
+**Mutant.** Putting ` mode=standalone` back for `CodeBlock` gives
+*"C dump: CodeBlock prints mode, which the contract does not give it"* and
+**4 of 69 suites red**. That check is new here: the C dump's field comparison
+was one-directional until this sub-step, so a field the contract had **deleted**
+and nobody removed was invisible. Q29 is exactly that case, which is why the
+check and the deletion land together.
+
+**Gates after.** Every §0 gate green · `audit-ast-projections` 28 kinds over 12
+surfaces · `check-canonical-ast-fixtures` 28/47/6 · Swift 8 tests + consumer +
+0 lint violations · Kotlin `:jvmTest` · ES node tests + `tsc` + `eslint` ·
+`format-c` · `format-cmake`. **195 golden rows moved, all mechanically
+verified.**
 
 
 ---

@@ -298,14 +298,14 @@ Document scope=1:1..6:23 children=1
     ├── TableRow scope=4:1..4:34 isHeader=false children=2
     │   ├── TableCell scope=4:2..4:33 children=3
     │   │   ├── Text scope=4:3..4:9 literal="Within " children=0
-    │   │   ├── Code scope=4:11..4:24 mode=embedded literal="|code| is okay" children=0
+    │   │   ├── Code scope=4:11..4:24 literal="|code| is okay" children=0
     │   │   └── Text scope=4:26..4:30 literal=" too." children=0
     │   └── TableCell scope=4:0..4:0 children=0
     ├── TableRow scope=5:1..5:24 isHeader=false children=2
     │   ├── TableCell scope=5:2..5:24 children=2
     │   │   ├── Emphasis scope=5:3..5:12 children=1
     │   │   │   └── Strong scope=5:4..5:11 children=1
-    │   │   │       └── Code scope=5:7..5:8 mode=embedded literal="c|" children=0
+    │   │   │       └── Code scope=5:7..5:8 literal="c|" children=0
     │   │   └── Text scope=5:13..5:22 literal=" | complex" children=0
     │   └── TableCell scope=5:0..5:0 children=0
     └── TableRow scope=6:1..6:23 isHeader=false children=2
@@ -363,42 +363,42 @@ Document scope=1:1..17:7 children=6
 │   │   ├── TableCell scope=3:2..3:5 children=1
 │   │   │   └── Text scope=3:3..3:4 literal="\\" children=0
 │   │   └── TableCell scope=3:7..3:12 children=1
-│   │       └── Code scope=3:9..3:10 mode=embedded literal="\\\\" children=0
+│   │       └── Code scope=3:9..3:10 literal="\\\\" children=0
 │   ├── TableRow scope=4:1..4:17 isHeader=false children=2
 │   │   ├── TableCell scope=4:2..4:7 children=1
 │   │   │   └── Text scope=4:3..4:6 literal="\\\\" children=0
 │   │   └── TableCell scope=4:9..4:16 children=1
-│   │       └── Code scope=4:11..4:14 mode=embedded literal="\\\\\\\\" children=0
+│   │       └── Code scope=4:11..4:14 literal="\\\\\\\\" children=0
 │   ├── TableRow scope=5:1..5:13 isHeader=false children=2
 │   │   ├── TableCell scope=5:2..5:5 children=1
 │   │   │   └── Text scope=5:3..5:4 literal="_" children=0
 │   │   └── TableCell scope=5:7..5:12 children=1
-│   │       └── Code scope=5:9..5:10 mode=embedded literal="\\_" children=0
+│   │       └── Code scope=5:9..5:10 literal="\\_" children=0
 │   ├── TableRow scope=6:1..6:13 isHeader=false children=2
 │   │   ├── TableCell scope=6:2..6:5 children=1
 │   │   │   └── Text scope=6:3..6:3 literal="|" children=0
 │   │   └── TableCell scope=6:7..6:12 children=1
-│   │       └── Code scope=6:9..6:9 mode=embedded literal="|" children=0
+│   │       └── Code scope=6:9..6:9 literal="|" children=0
 │   └── TableRow scope=7:1..7:13 isHeader=false children=2
 │       ├── TableCell scope=7:2..7:5 children=1
 │       │   └── Text scope=7:3..7:4 literal="\\a" children=0
 │       └── TableCell scope=7:7..7:12 children=1
-│           └── Code scope=7:9..7:10 mode=embedded literal="\\a" children=0
+│           └── Code scope=7:9..7:10 literal="\\a" children=0
 ├── Paragraph scope=9:1..9:7 children=2
 │   ├── Text scope=9:1..9:3 literal="\\ " children=0
-│   └── Code scope=9:5..9:6 mode=embedded literal="\\\\" children=0
+│   └── Code scope=9:5..9:6 literal="\\\\" children=0
 ├── Paragraph scope=11:1..11:11 children=2
 │   ├── Text scope=11:1..11:5 literal="\\\\ " children=0
-│   └── Code scope=11:7..11:10 mode=embedded literal="\\\\\\\\" children=0
+│   └── Code scope=11:7..11:10 literal="\\\\\\\\" children=0
 ├── Paragraph scope=13:1..13:7 children=2
 │   ├── Text scope=13:1..13:3 literal="_ " children=0
-│   └── Code scope=13:5..13:6 mode=embedded literal="\\_" children=0
+│   └── Code scope=13:5..13:6 literal="\\_" children=0
 ├── Paragraph scope=15:1..15:7 children=2
 │   ├── Text scope=15:1..15:3 literal="| " children=0
-│   └── Code scope=15:5..15:6 mode=embedded literal="\\|" children=0
+│   └── Code scope=15:5..15:6 literal="\\|" children=0
 └── Paragraph scope=17:1..17:7 children=2
     ├── Text scope=17:1..17:3 literal="\\a " children=0
-    └── Code scope=17:5..17:6 mode=embedded literal="\\a" children=0
+    └── Code scope=17:5..17:6 literal="\\a" children=0
 ````````````````````````````````
 
 ### Embedded HTML
@@ -942,14 +942,14 @@ Document scope=1:1..26:26 children=9
 │   ├── BlockQuote scope=20:5..20:39 children=1
 │   │   └── Paragraph scope=20:7..20:39 children=1
 │   │       └── Text scope=20:7..20:39 literal="Blockquotes can be in a footnote." children=0
-│   ├── CodeBlock scope=22:9..23:0 mode=standalone info=null language=null literal="as well as code blocks\n" fenced=false closed=true children=0
+│   ├── CodeBlock scope=22:9..23:0 info=null language=null literal="as well as code blocks\n" fenced=false closed=true children=0
 │   └── Paragraph scope=24:5..24:37 children=1
 │       └── Text scope=24:5..24:37 literal="or, naturally, simple paragraphs." children=0
 ├── FootnoteDefinition scope=10:22..11:0 id="other-note" children=1
 │   └── Paragraph scope=10:22..10:66 children=1
 │       └── Text scope=10:22..10:66 literal="no code block here (spaces are stripped away)" children=0
 └── FootnoteDefinition scope=12:19..14:0 id="codeblock-note" children=1
-    └── CodeBlock scope=13:9..14:0 mode=standalone info=null language=null literal="this is now a code block (8 spaces indentation)\n" fenced=false closed=true children=0
+    └── CodeBlock scope=13:9..14:0 info=null language=null literal="this is now a code block (8 spaces indentation)\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 ## When a footnote is used multiple times, we insert multiple backrefs.

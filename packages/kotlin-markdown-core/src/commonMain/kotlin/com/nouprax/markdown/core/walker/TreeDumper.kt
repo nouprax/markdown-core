@@ -81,7 +81,6 @@ private class DumpVisitor : Visitor<DumpRecord> {
             node,
             fields =
                 listOf(
-                    "mode=${node.mode.token()}",
                     "info=${optionalString(node.info)}",
                     "language=${optionalString(node.language)}",
                     "literal=${jsonString(node.literal)}",
@@ -97,7 +96,7 @@ private class DumpVisitor : Visitor<DumpRecord> {
         record(
             "FormulaBlock",
             node,
-            fields = listOf("mode=${node.mode.token()}", "literal=${jsonString(node.literal)}"),
+            fields = listOf("literal=${jsonString(node.literal)}"),
         )
 
     override fun visitTable(node: Table): DumpRecord =
@@ -122,7 +121,7 @@ private class DumpVisitor : Visitor<DumpRecord> {
         record(
             "DirectiveBlock",
             node,
-            fields = directiveFields(node.mode, node.name, node.attributes, node.label?.size),
+            fields = directiveFields(node.name, node.attributes, node.label?.size),
             children = node.label.orEmpty().size + node.content.size,
         )
 
@@ -145,7 +144,7 @@ private class DumpVisitor : Visitor<DumpRecord> {
         record(
             "Code",
             node,
-            fields = listOf("mode=${node.mode.token()}", "literal=${jsonString(node.literal)}"),
+            fields = listOf("literal=${jsonString(node.literal)}"),
         )
 
     override fun visitHTML(node: HTML): DumpRecord =
@@ -193,7 +192,7 @@ private class DumpVisitor : Visitor<DumpRecord> {
         record(
             "Directive",
             node,
-            fields = directiveFields(node.mode, node.name, node.attributes, node.label?.size),
+            fields = directiveFields(node.name, node.attributes, node.label?.size),
             children = node.label.orEmpty().size,
         )
 
@@ -215,13 +214,11 @@ private fun record(
 }
 
 private fun directiveFields(
-    mode: PlacementMode,
     name: String,
     attributes: String?,
     labelCount: Int?,
 ): kotlin.collections.List<String> =
     listOf(
-        "mode=${mode.token()}",
         "name=${jsonString(name)}",
         "attributes=${optionalString(attributes)}",
         "label=${labelCount ?: "null"}",

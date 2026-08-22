@@ -67,17 +67,19 @@ so typed table boundaries do not discard source information.
   flow.
 
 Placement and AST containment are related but not interchangeable. In
-particular, `Formula` may be `standalone` while remaining inside a
-paragraph. The invariants for other nodes are:
+particular, `Formula` may be `standalone` while remaining inside a paragraph.
 
-| Type | Allowed mode |
+**`Formula` is the only kind that carries a `mode`**, because it is the only
+one whose value is a fact about the source rather than about the kind. The
+other five carried one until Step 15A.4 and every one of them was a constant:
+
+| Type | Its one value, now implied by the kind |
 | --- | --- |
 | `Directive` | `embedded` |
 | `DirectiveBlock` | `standalone` |
 | `Code` | `embedded` |
 | `CodeBlock` | `standalone` |
-| `Formula` | `embedded` or `standalone` |
-| `FormulaBlock` | `standalone` |
+| `FormulaBlock` | `standalone` — `markdown_core_extensions_set_formula_mode` refuses any other value for this kind |
 
 ### Directive attributes JSON
 
@@ -127,18 +129,18 @@ error rather than silently dropping a value.
 | `ThematicBreak` | none | leaf |
 | `List` | `flavor: ListFlavor`, `start: Int?`, `tight: Bool`, `items: [ListItem]` | `start` is non-null only for ordered lists |
 | `ListItem` | `checked: Bool?`, `content: [Markup]` | `checked == null` means not a task item; block content |
-| `CodeBlock` | `mode`, `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | mode is `standalone`; `info` is the complete raw info string; `language` is its first non-whitespace token; indented blocks have `fenced=false, closed=true` |
+| `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | `info` is the complete raw info string; `language` is its first non-whitespace token; indented blocks have `fenced=false, closed=true` |
 | `HTMLBlock` | `literal: String` | raw HTML is preserved |
-| `FormulaBlock` | `mode`, `literal: String` | mode is `standalone` |
+| `FormulaBlock` | `literal: String` | a formula block is always standalone; see the note below |
 | `Table` | `alignments: [TableAlignment]`, `header: TableRow`, `rows: [TableRow]` | one alignment per column; header is non-optional |
 | `TableRow` | `isHeader: Bool`, `cells: [TableCell]` | `isHeader` is true only for `Table.header` and false for entries in `Table.rows` |
 | `TableCell` | `content: [Markup]` | inline content |
-| `DirectiveBlock` | `mode`, `name: String`, `attributes: String?`, `label: [Markup]?`, `content: [Markup]` | attributes is normalized string-map JSON object text; mode is `standalone`; label is inline; content is block; null label and explicit empty label remain distinct |
+| `DirectiveBlock` | `name: String`, `attributes: String?`, `label: [Markup]?`, `content: [Markup]` | attributes is normalized string-map JSON object text; label is inline; content is block; null label and explicit empty label remain distinct |
 | `FootnoteDefinition` | `id: String`, `content: [Markup]` | id is non-empty; block content |
 | `Text` | `literal: String` | leaf |
 | `SoftBreak` | none | leaf |
 | `LineBreak` | none | leaf |
-| `Code` | `mode`, `literal: String` | mode is `embedded`; leaf |
+| `Code` | `literal: String` | leaf |
 | `HTML` | `literal: String` | raw HTML is preserved; leaf |
 | `Formula` | `mode`, `literal: String` | either mode; leaf |
 | `Emphasis` | `content: [Markup]` | inline content |
@@ -146,7 +148,7 @@ error rather than silently dropping a value.
 | `Strikethrough` | `content: [Markup]` | inline content |
 | `Link` | `destination: String?`, `title: String?`, `content: [Markup]` | absent and empty title remain distinct; inline content |
 | `Image` | `source: String?`, `title: String?`, `content: [Markup]` | content is parsed alt-text inline content |
-| `Directive` | `mode`, `name: String`, `attributes: String?`, `label: [Markup]?` | attributes is normalized string-map JSON object text; mode is `embedded`; null label and explicit empty label remain distinct |
+| `Directive` | `name: String`, `attributes: String?`, `label: [Markup]?` | attributes is normalized string-map JSON object text; null label and explicit empty label remain distinct |
 | `FootnoteReference` | `id: String` | id is non-empty; leaf |
 
 Every row above also has the final inherited field `scope: Scope`; it is not

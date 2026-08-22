@@ -93,7 +93,6 @@ private struct DumpVisitor: MarkupVisitor {
             "CodeBlock",
             node,
             fields: [
-                "mode=standalone",
                 "info=\(optionalString(node.info))",
                 "language=\(optionalString(node.language))",
                 "literal=\(jsonString(node.literal))",
@@ -108,11 +107,7 @@ private struct DumpVisitor: MarkupVisitor {
     }
 
     mutating func visit(_ node: FormulaBlock) -> DumpRecord {
-        record(
-            "FormulaBlock",
-            node,
-            fields: ["mode=\(node.mode.rawValue)", "literal=\(jsonString(node.literal))"]
-        )
+        record("FormulaBlock", node, fields: ["literal=\(jsonString(node.literal))"])
     }
 
     mutating func visit(_ node: Table) -> DumpRecord {
@@ -129,7 +124,7 @@ private struct DumpVisitor: MarkupVisitor {
         record(
             "DirectiveBlock",
             node,
-            fields: directiveFields(node.mode, node.name, node.attributes, node.label?.count),
+            fields: directiveFields(node.name, node.attributes, node.label?.count),
             children: (node.label?.count ?? 0) + node.content.count
         )
     }
@@ -152,7 +147,7 @@ private struct DumpVisitor: MarkupVisitor {
     mutating func visit(_ node: LineBreak) -> DumpRecord { record("LineBreak", node) }
 
     mutating func visit(_ node: Code) -> DumpRecord {
-        record("Code", node, fields: ["mode=embedded", "literal=\(jsonString(node.literal))"])
+        record("Code", node, fields: ["literal=\(jsonString(node.literal))"])
     }
 
     mutating func visit(_ node: HTML) -> DumpRecord {
@@ -204,7 +199,7 @@ private struct DumpVisitor: MarkupVisitor {
         record(
             "Directive",
             node,
-            fields: directiveFields(node.mode, node.name, node.attributes, node.label?.count),
+            fields: directiveFields(node.name, node.attributes, node.label?.count),
             children: node.label?.count ?? 0
         )
     }
@@ -240,13 +235,11 @@ private struct DumpVisitor: MarkupVisitor {
     }
 
     private func directiveFields(
-        _ mode: PlacementMode,
         _ name: String,
         _ attributes: String?,
         _ labelCount: Int?
     ) -> [String] {
         [
-            "mode=\(mode.rawValue)",
             "name=\(jsonString(name))",
             "attributes=\(optionalString(attributes))",
             "label=\(labelCount.map(String.init) ?? "null")",

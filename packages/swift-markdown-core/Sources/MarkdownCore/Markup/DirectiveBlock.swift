@@ -2,7 +2,6 @@ import MarkdownCoreC
 
 public struct DirectiveBlock: Markup {
     public let scope: Scope
-    public let mode: PlacementMode
     public let name: String
     public let attributes: String?
     /// The label's inline content, or `nil` when the source wrote no label.
@@ -19,7 +18,6 @@ extension DirectiveBlock {
         let values = DirectiveValues(from: node)
         self.init(
             scope: Self.scope(from: node),
-            mode: values.mode,
             name: values.name,
             attributes: values.attributes,
             label: Self.directiveLabel(from: node, count: values.labelCount),

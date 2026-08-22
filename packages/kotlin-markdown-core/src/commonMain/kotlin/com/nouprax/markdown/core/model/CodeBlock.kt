@@ -1,7 +1,6 @@
 package com.nouprax.markdown.core
 
 public class CodeBlock internal constructor(
-    public val mode: PlacementMode,
     public val info: String?,
     public val language: String?,
     public val literal: String,

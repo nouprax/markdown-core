@@ -1,7 +1,6 @@
 package com.nouprax.markdown.core
 
 public class Code internal constructor(
-    public val mode: PlacementMode,
     public val literal: String,
     override val scope: Scope,
 ) : Markup {

@@ -19,7 +19,7 @@ Code `$x$` and formula $x$.
 Document scope=1:1..1:27 children=1
 └── Paragraph scope=1:1..1:27 children=5
     ├── Text scope=1:1..1:5 literal="Code " children=0
-    ├── Code scope=1:7..1:9 mode=embedded literal="$x$" children=0
+    ├── Code scope=1:7..1:9 literal="$x$" children=0
     ├── Text scope=1:11..1:23 literal=" and formula " children=0
     ├── Formula scope=1:24..1:26 mode=embedded literal="x" children=0
     └── Text scope=1:27..1:27 literal="." children=0
@@ -64,7 +64,7 @@ Indented code takes precedence over formula block openers.
     $$x$$
 .
 Document scope=1:1..1:9 children=1
-└── CodeBlock scope=1:5..1:9 mode=standalone info=null language=null literal="$$x$$\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:5..1:9 info=null language=null literal="$$x$$\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 Non-`formula` fenced code remains ordinary code.
@@ -75,7 +75,7 @@ $x$
 ```
 .
 Document scope=1:1..3:3 children=1
-└── CodeBlock scope=1:1..3:3 mode=standalone info="js" language="js" literal="$x$\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..3:3 info="js" language="js" literal="$x$\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 Code spans also bind before LaTeX backslash delimiters.
@@ -86,7 +86,7 @@ Code `\\(x\\)` and formula \\(x\\).
 Document scope=1:1..1:35 children=1
 └── Paragraph scope=1:1..1:35 children=5
     ├── Text scope=1:1..1:5 literal="Code " children=0
-    ├── Code scope=1:7..1:13 mode=embedded literal="\\\\(x\\\\)" children=0
+    ├── Code scope=1:7..1:13 literal="\\\\(x\\\\)" children=0
     ├── Text scope=1:15..1:27 literal=" and formula " children=0
     ├── Formula scope=1:28..1:34 mode=embedded literal="x" children=0
     └── Text scope=1:35..1:35 literal="." children=0

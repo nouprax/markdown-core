@@ -12,7 +12,6 @@ type MarkupValue = Markup extends infer Node ? (Node extends Markup ? Omit<Node,
 type MarkupValueOf<Kind extends Markup["kind"]> = Extract<MarkupValue, { readonly kind: Kind }>;
 
 interface DirectiveFields {
-    readonly mode: PlacementMode;
     readonly name: string;
     readonly attributes: string | null;
     readonly label: readonly Markup[] | null;
@@ -104,7 +103,6 @@ export class NodeDecoder {
             case "codeBlock":
                 return {
                     ...this.base(node, kind),
-                    mode: "standalone",
                     info: this.readString(node, stringField.codeInfo),
                     language: this.readString(node, stringField.codeLanguage),
                     literal: this.requiredString(node, stringField.codeLiteral),
@@ -113,24 +111,18 @@ export class NodeDecoder {
                 };
             case "htmlBlock":
                 return { ...this.base(node, kind), literal: this.requiredString(node, stringField.literal) };
-            case "formulaBlock": {
-                const mode = this.placement(this.native.es_node_formula_mode(node));
-                if (mode !== "standalone") throw new Error("native parser returned an embedded formula block");
+            case "formulaBlock":
+                // No `mode`: a formula block is always standalone -- the engine
+                // refuses any other value for this kind -- so the assertion that
+                // used to guard the constant guarded nothing (Q29).
                 return {
                     ...this.base(node, kind),
-                    mode,
                     literal: this.requiredString(node, stringField.formulaLiteral)
                 };
-            }
             case "table":
                 return this.copyTable(node);
-            case "directiveBlock": {
-                const fields = this.directiveFields(node);
-                if (fields.mode !== "standalone") {
-                    throw new Error("native parser returned an embedded directive block");
-                }
-                return { ...this.base(node, kind), ...fields };
-            }
+            case "directiveBlock":
+                return { ...this.base(node, kind), ...this.directiveFields(node) };
             case "footnoteDefinition":
                 return {
                     ...this.base(node, kind),
@@ -146,7 +138,6 @@ export class NodeDecoder {
             case "code":
                 return {
                     ...this.base(node, kind),
-                    mode: "embedded",
                     literal: this.requiredString(node, stringField.literal)
                 };
             case "html":
@@ -179,11 +170,9 @@ export class NodeDecoder {
                 };
             case "directive": {
                 const fields = this.directiveFields(node);
-                if (fields.mode !== "embedded") throw new Error("native parser returned a standalone directive");
                 if (fields.content.length !== 0) throw new Error("inline directive contains block content");
                 return {
                     ...this.base(node, kind),
-                    mode: fields.mode,
                     name: fields.name,
                     attributes: fields.attributes,
                     label: fields.label
@@ -266,7 +255,6 @@ export class NodeDecoder {
         const label = labelCount < 0 ? null : childPointers.slice(0, labelCount).map((child) => this.copyMarkup(child));
         const contentOffset = labelCount < 0 ? 0 : labelCount;
         return {
-            mode: this.placement(this.native.es_node_directive_mode(node)),
             name: this.requiredString(node, stringField.directiveName),
             attributes: this.readString(node, stringField.directiveAttributes),
             label,

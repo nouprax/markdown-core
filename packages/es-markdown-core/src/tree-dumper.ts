@@ -82,7 +82,6 @@ const dumpVisitor: Visitor<DumpRecord> = {
         record("ListItem", node, [`checked=${node.checked ?? "null"}`], node.content.length),
     visitCodeBlock: (node: CodeBlock) =>
         record("CodeBlock", node, [
-            `mode=${node.mode}`,
             `info=${optionalString(node.info)}`,
             `language=${optionalString(node.language)}`,
             `literal=${jsonString(node.literal)}`,
@@ -91,7 +90,7 @@ const dumpVisitor: Visitor<DumpRecord> = {
         ]),
     visitHTMLBlock: (node: HTMLBlock) => record("HTMLBlock", node, [`literal=${jsonString(node.literal)}`]),
     visitFormulaBlock: (node: FormulaBlock) =>
-        record("FormulaBlock", node, [`mode=${node.mode}`, `literal=${jsonString(node.literal)}`]),
+        record("FormulaBlock", node, [`literal=${jsonString(node.literal)}`]),
     visitTable: (node: Table) =>
         record("Table", node, [`alignments=[${node.alignments.join(",")}]`], 1 + node.rows.length),
     visitTableRow: (node: TableRow) => record("TableRow", node, [`isHeader=${node.isHeader}`], node.cells.length),
@@ -100,7 +99,7 @@ const dumpVisitor: Visitor<DumpRecord> = {
         record(
             "DirectiveBlock",
             node,
-            directiveFields(node.mode, node.name, node.attributes, node.label?.length ?? null),
+            directiveFields(node.name, node.attributes, node.label?.length ?? null),
             (node.label?.length ?? 0) + node.content.length
         ),
     visitFootnoteDefinition: (node: FootnoteDefinition) =>
@@ -108,7 +107,7 @@ const dumpVisitor: Visitor<DumpRecord> = {
     visitText: (node: Text) => record("Text", node, [`literal=${jsonString(node.literal)}`]),
     visitSoftBreak: (node: SoftBreak) => record("SoftBreak", node),
     visitLineBreak: (node: LineBreak) => record("LineBreak", node),
-    visitCode: (node: Code) => record("Code", node, [`mode=${node.mode}`, `literal=${jsonString(node.literal)}`]),
+    visitCode: (node: Code) => record("Code", node, [`literal=${jsonString(node.literal)}`]),
     visitHTML: (node: HTML) => record("HTML", node, [`literal=${jsonString(node.literal)}`]),
     visitFormula: (node: Formula) =>
         record("Formula", node, [`mode=${node.mode}`, `literal=${jsonString(node.literal)}`]),
@@ -133,7 +132,7 @@ const dumpVisitor: Visitor<DumpRecord> = {
         record(
             "Directive",
             node,
-            directiveFields(node.mode, node.name, node.attributes, node.label?.length ?? null),
+            directiveFields(node.name, node.attributes, node.label?.length ?? null),
             node.label?.length ?? 0
         ),
     visitFootnoteReference: (node: FootnoteReference) =>
@@ -146,13 +145,11 @@ function record(kind: string, node: Markup, fields: readonly string[] = [], chil
 }
 
 function directiveFields(
-    mode: "embedded" | "standalone",
     name: string,
     attributes: string | null,
     labelCount: number | null
 ): readonly string[] {
     return [
-        `mode=${mode}`,
         `name=${jsonString(name)}`,
         `attributes=${optionalString(attributes)}`,
         `label=${labelCount ?? "null"}`

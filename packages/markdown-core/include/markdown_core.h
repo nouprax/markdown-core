@@ -203,8 +203,10 @@ MARKDOWN_CORE_API bool markdown_core_node_table_column_count(const markdown_core
 MARKDOWN_CORE_API bool markdown_core_node_table_alignment_at(const markdown_core_node *node, size_t index,
                                                              markdown_core_table_alignment *alignment);
 MARKDOWN_CORE_API bool markdown_core_node_table_row_is_header(const markdown_core_node *node, bool *is_header);
+/** A directive's properties. There is no `mode`: an inline `Directive` is
+ * always embedded and a `DirectiveBlock` always standalone, so the value was
+ * implied by the kind and four surfaces had to keep a constant in step (Q29). */
 MARKDOWN_CORE_API bool markdown_core_node_directive_properties(const markdown_core_node *node,
-                                                               markdown_core_placement_mode *mode,
                                                                markdown_core_string_view *name,
                                                                markdown_core_string_view *attributes, bool *has_label,
                                                                size_t *label_count);

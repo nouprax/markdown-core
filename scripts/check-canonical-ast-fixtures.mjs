@@ -4,23 +4,26 @@ import process from "node:process";
 import { TextDecoder } from "node:util";
 
 const root = process.cwd();
-const contractPath = path.join(root, "docs/specs/canonical-ast.md");
+const proseContractPath = path.join(root, "docs/specs/canonical-ast.md");
+const contractPath = path.join(root, "docs/specs/canonical-ast.json");
 const specPath = path.join(root, "specs/canonical-ast");
 const manifestPath = path.join(specPath, "manifest.json");
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
-const [contract, manifestText, entries] = await Promise.all([
+const [proseContract, contractText, manifestText, entries] = await Promise.all([
+    readFile(proseContractPath, "utf8"),
     readFile(contractPath, "utf8"),
     readFile(manifestPath, "utf8"),
     readdir(specPath)
 ]);
 const manifest = JSON.parse(manifestText);
+const contract = JSON.parse(contractText);
 const failures = [];
 const difference = (left, right) => [...left].filter((value) => !right.has(value)).sort();
 const sameArray = (left, right) => left.length === right.length && left.every((value, index) => value === right[index]);
 const set = (values) => new Set(values);
 
-const nodeTable = contract.match(/## Node inventory[\s\S]*?## ParseOptions/)?.[0];
+const nodeTable = proseContract.match(/## Node inventory[\s\S]*?## ParseOptions/)?.[0];
 if (nodeTable === undefined) throw new Error("Unable to locate the canonical node inventory");
 
 const rows = [...nodeTable.matchAll(/^\| `([A-Za-z]+)` \| ([^|]+) \|/gm)];
@@ -203,36 +206,18 @@ for (const testCase of manifest.cases ?? []) {
         for (const field of fieldsByKind[kind] ?? []) allObservedFields.add(`${kind}.${field}`);
         const lineWithoutStrings = line.replace(/"(?:\\.|[^"\\])*"/g, '""');
         const fieldNames = [...lineWithoutStrings.matchAll(/ ([A-Za-z]+)=/g)].map((field) => field[1]);
-        const dumpFields = {
-            Document: [],
-            BlockQuote: [],
-            Paragraph: [],
-            Heading: ["level"],
-            ThematicBreak: [],
-            List: ["flavor", "start", "tight"],
-            ListItem: ["checked"],
-            CodeBlock: ["mode", "info", "language", "literal", "fenced", "closed"],
-            HTMLBlock: ["literal"],
-            FormulaBlock: ["mode", "literal"],
-            Table: ["alignments"],
-            TableRow: ["isHeader"],
-            TableCell: [],
-            DirectiveBlock: ["mode", "name", "attributes", "label"],
-            FootnoteDefinition: ["id"],
-            Text: ["literal"],
-            SoftBreak: [],
-            LineBreak: [],
-            Code: ["mode", "literal"],
-            HTML: ["literal"],
-            Formula: ["mode", "literal"],
-            Emphasis: [],
-            Strong: [],
-            Strikethrough: [],
-            Link: ["destination", "title"],
-            Image: ["source", "title"],
-            Directive: ["mode", "name", "attributes", "label"],
-            FootnoteReference: ["id"]
-        };
+        // The dump's field names for a kind ARE the contract's, minus the
+        // fields that are the child structure itself. Until Step 15A this was a
+        // hand-written copy of the table -- a SEVENTH one -- and Q29 found it
+        // by deleting `mode` from the contract and watching this file disagree.
+        const dumpFields = Object.fromEntries(
+            contract.kinds.map((kind) => [
+                kind.name,
+                kind.fields
+                    .filter((field) => field.name === "label" || !/Markup|ListItem|TableRow|TableCell/.test(field.type))
+                    .map((field) => field.name)
+            ])
+        );
         const expectedFieldNames = ["scope", ...(dumpFields[kind] ?? []), "children"];
         if (!sameArray(fieldNames, expectedFieldNames)) {
             failures.push(

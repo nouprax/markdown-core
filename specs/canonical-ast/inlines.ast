@@ -10,7 +10,7 @@ Document scope=1:1..5:19 children=2
 │   ├── Strikethrough scope=1:22..1:31 children=1
 │   │   └── Text scope=1:24..1:29 literal="strike" children=0
 │   ├── Text scope=1:32..1:32 literal=" " children=0
-│   ├── Code scope=1:34..1:37 mode=embedded literal="code" children=0
+│   ├── Code scope=1:34..1:37 literal="code" children=0
 │   ├── Text scope=1:39..1:39 literal=" " children=0
 │   ├── Link scope=1:40..1:58 destination="/go" title="title" children=1
 │   │   └── Text scope=1:41..1:44 literal="link" children=0
@@ -18,7 +18,7 @@ Document scope=1:1..5:19 children=2
 │   ├── Image scope=1:60..1:85 source="/image.png" title="image" children=1
 │   │   └── Text scope=1:62..1:64 literal="alt" children=0
 │   ├── Text scope=1:86..1:86 literal=" " children=0
-│   ├── Directive scope=1:87..1:115 mode=embedded name="badge" attributes="{\"data-kind\":\"demo\"}" label=1 children=1
+│   ├── Directive scope=1:87..1:115 name="badge" attributes="{\"data-kind\":\"demo\"}" label=1 children=1
 │   │   └── Text scope=1:94..1:98 literal="label" children=0
 │   ├── Text scope=1:116..1:116 literal=" " children=0
 │   ├── Formula scope=1:117..1:119 mode=embedded literal="x" children=0
