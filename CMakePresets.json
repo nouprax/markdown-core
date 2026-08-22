@@ -79,6 +79,9 @@
             "name": "correctness-ubsan",
             "displayName": "Correctness suites under UndefinedBehaviorSanitizer (excludes timing gates)",
             "configurePreset": "ubsan",
+            "environment": {
+                "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
+            },
             "output": { "outputOnFailure": true },
             "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } }
         },

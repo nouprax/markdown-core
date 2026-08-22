@@ -4,6 +4,7 @@
 
 #include "markdown-core.h"
 #include "node.h"
+#include "buffer.h"
 #include "markdown-core-extensions.h"
 
 #include <markdown_core.h>
@@ -1099,6 +1100,57 @@ static void extension_decline_yields_turn(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
+/* A4. `bufsize_t` is int32_t, and every append went through
+ * `markdown_core_strbuf_grow(buf, buf->size + add)`. Two things were wrong and
+ * either alone is enough:
+ *
+ *   the sum is undefined behaviour past INT32_MAX, and wraps NEGATIVE;
+ *   `grow` answered a negative target with "already big enough" -- silently,
+ *   because its `assert(target_size > 0)` compiles out under NDEBUG.
+ *
+ * `put` then memmoved `add` bytes into a buffer that had not grown. Measured
+ * before the fix, by direct call: SIGSEGV, status 139, writing 1,073,741,833
+ * bytes into an eight-byte allocation.
+ *
+ * The forged `size` below is the largest a legitimate buffer may hold -- the
+ * cap is INT32_MAX/2 -- so this is the state a single 1.07 GiB line reaches
+ * through `markdown_core_parser_feed`'s `linebuf`, and the put is the next
+ * chunk. It is forged rather than fed because feeding it costs 2 GiB. */
+static void strbuf_overflow(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    markdown_core_strbuf buf;
+    unsigned char data[16] = {0};
+
+    markdown_core_strbuf_init(mem, &buf, 0);
+    markdown_core_strbuf_grow(&buf, -1);
+    INT_EQ(runner, buf.oom, 1, "a negative grow target poisons the buffer");
+    INT_EQ(runner, buf.asize, 0, "a negative grow target allocates nothing");
+    markdown_core_strbuf_free(&buf);
+
+    markdown_core_strbuf_init(mem, &buf, 0);
+    markdown_core_strbuf_grow(&buf, 0);
+    INT_EQ(runner, buf.oom, 1, "a zero grow target poisons the buffer");
+    markdown_core_strbuf_free(&buf);
+
+    /* The overflow itself. Without the fix this line does not return. */
+    markdown_core_strbuf_init(mem, &buf, 8);
+    buf.size = (bufsize_t)(INT32_MAX / 2);
+    markdown_core_strbuf_put(&buf, data, (bufsize_t)(INT32_MAX / 2) + 10);
+    INT_EQ(runner, buf.oom, 1, "an append whose length overflows the size sum poisons instead of writing");
+    INT_EQ(runner, buf.size, (bufsize_t)(INT32_MAX / 2), "the refused append moves nothing");
+    buf.size = 0;
+    markdown_core_strbuf_free(&buf);
+
+    /* And the guard is not over-tight: an ordinary large append still works. */
+    markdown_core_strbuf_init(mem, &buf, 0);
+    for (int i = 0; i < 4096; i++) {
+        markdown_core_strbuf_put(&buf, data, (bufsize_t)sizeof(data));
+    }
+    INT_EQ(runner, buf.oom, 0, "4096 ordinary appends do not poison");
+    INT_EQ(runner, buf.size, 4096 * (bufsize_t)sizeof(data), "4096 ordinary appends all landed");
+    markdown_core_strbuf_free(&buf);
+}
+
 static void source_pos(test_batch_runner *runner) {
     static const char markdown[] = "# Hi *there*.\n"
                                    "\n"
@@ -1262,6 +1314,7 @@ int main(void) {
     source_pos_inlines(runner);
     ref_source_pos(runner);
     autolink_source_pos(runner);
+    strbuf_overflow(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

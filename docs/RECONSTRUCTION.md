@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, **all of Stage 0a** (0a.0 through 0a.15), **Step 2** (§4.14.2), and **3a.1** (§4.14.3a) |
+| Landed | Steps 0 and 1, §4.0's re-ordering, **all of Stage 0a** (0a.0 through 0a.15), **Step 2** (§4.14.2), and **3a.1 + 3a.2** (§4.14.3a) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 3a**, continued: A4, then A1, then D27 with A3's half. Then §4.1's steps in the order §4.1.4 verifies: `3 3b 15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 3a**, continued: A1, then D27 with A3's half. Then §4.1's steps in the order §4.1.4 verifies: `3 3b 15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -3045,6 +3045,105 @@ format-cmake. **Zero golden rows moved.** `leaks --atExit` on the CLI reads 0
 before and 0 after: the arena CLI did not leak, it simply never freed anything
 that a leak checker could still see a root for.
 
+##### 3a.2 — A4: an int32 sum, and the guard the hardware answered about the wrong number
+
+**The defect, reproduced by direct call before anything changed.** `bufsize_t`
+is `int32_t`. Every append went through
+`S_strbuf_grow_by(buf, add)` → `markdown_core_strbuf_grow(buf, buf->size + add)`,
+and two things were wrong, either of which is enough:
+
+- the sum is **undefined behaviour** once it passes `INT32_MAX`, and it wraps
+  **negative**;
+- `markdown_core_strbuf_grow` answered a negative target with *"already big
+  enough"* — its `assert(target_size > 0)` compiles out under `NDEBUG`, and
+  `target_size < buf->asize` is then true for every negative number.
+
+`put` then `memmove`d `add` bytes into a buffer that had not grown. Measured:
+
+```
+grow(-1):     oom=0 asize=0 size=0          # accepted, silently, nothing poisoned
+put(len = INT32_MAX/2 + 10) on size = INT32_MAX/2
+                                            # SIGSEGV, status 139
+```
+
+The forged `size` is the largest a legitimate buffer may hold — the cap is
+`INT32_MAX/2` — so this is the state one 1.07 GiB line reaches through
+`markdown_core_parser_feed`'s `linebuf`, and the put is the next chunk. It is
+forged in the gate rather than fed because feeding it costs 2 GiB.
+
+**The fix is two guards, and both are needed.** `markdown_core_strbuf_grow`
+poisons on a non-positive target instead of asserting, and `S_strbuf_grow_by`
+tests `add` against the room the cap leaves **before** adding, so the sum never
+happens. No legitimate caller is affected: the five `grow` call sites all pass a
+strictly positive target, and for every non-overflowing sum the new test and the
+old cap test agree exactly.
+
+##### The half that surprised: the surviving guard did not save it, and the reason is in the machine code
+
+The obvious prediction is that guard (a) alone suffices — the sum wraps
+negative, `grow` sees `target_size <= 0`, poisons, and nothing is written.
+**Measured, that is false: with only (a) in place the Release build still
+SIGSEGVs.** The disassembly of `markdown_core_strbuf_put` says why, and it is
+not "the optimizer deleted the check":
+
+```
+53c: adds  w8, w8, w2          ; w8 = size + len, flags set
+540: b.le  <poison>            ; the `target_size <= 0` guard
+...
+560: cmp   w8, w9              ; the `target_size < buf->asize` test
+564: b.ge  <grow>
+```
+
+`adds` sets **V** on signed overflow, and AArch64's `LE` is `Z==1 || N!=V`. With
+`V=1` and `N=1` the condition is **false**, so the guard answers about the true
+33-bit sum — 2,147,483,656, which is not ≤ 0 — and does not fire. Four
+instructions later `cmp w8, w9` reads the same `w8` as an ordinary negative
+integer and concludes the buffer is already big enough. **One expression, read
+two different ways in one function**, which is what undefined behaviour buys.
+A reduced 15-line demonstration does *not* reproduce it, because with `grow`
+marked `noinline` the compiler must materialise the wrapped value and compare
+it: the bug needs the inlining that the real code has.
+
+##### A gate that printed the error and passed anyway
+
+With only guard (b) reverted, `correctness` SIGSEGVs — but the interesting
+reading is the sanitizer. `correctness-ubsan` reported
+
+```
+core/buffer.c:41:46: runtime error: signed integer overflow:
+    1073741823 + 1073741833 cannot be represented in type 'bufsize_t'
+```
+
+**and read 59/59 green.** UBSan is recoverable by default: it prints and
+continues, `ctest` shows output only on failure, so the message was never even
+displayed. Every undefined-behaviour finding in this repository's history could
+have been reported and discarded the same way.
+
+The fix is one line in `CMakePresets.json` — `UBSAN_OPTIONS =
+halt_on_error=1:print_stacktrace=1` on the `correctness-ubsan` test preset — and
+it is **measured on both sides**: the whole suite is 59/59 clean with it, and
+the same mutant now reads **58/59** with the overflow named in the failure
+output. CI runs this preset (`.github/workflows/ci.yml:976`), so the change
+reaches it. Nothing else in the repository was relying on a UBSan report being
+survivable.
+
+**Mutant kills**
+
+| mutant | result |
+|---|---|
+| restore `assert(target_size > 0)` in place of grow's poison | `correctness` **67/68**; `api_engine` fails two assertions |
+| delete `S_strbuf_grow_by`'s pre-sum test | `correctness` **SIGSEGV**; `correctness-ubsan` **58/59** naming the overflow |
+| the same, before the preset carried `halt_on_error` | `correctness-ubsan` **59/59 green**, with the error printed and swallowed |
+
+**Gates after.** `correctness` **68/68** (the api test gains four assertions,
+not a ctest entry) · `correctness-asan` **59/59** · `correctness-ubsan`
+**59/59**, now halting on error · `conformance` 2/2 · upstream parity 817/817
+with 7/7 · mdast 54/54, backlog 24/24 · fuzz-parity 300/300 · scope-sanity 14 ·
+position oracles 0 / 45 / 109 · reference-order 2 rows, still red ·
+canonical-ast 28/47/6 · public surface · special chars · attach order · plan
+graph 22/45 · source lists 27, 4 of 5 · topology · format-c · format-cmake.
+**Zero golden rows moved.**
+
 ---
 
 ### 4.3 The ordering argument
@@ -3503,7 +3602,7 @@ No new steps. Every requirement below lands on a step that already owns the file
 | **A1** | The engine has one **failure model** as well as one allocator model: an allocation failure is a fact about a transaction, not a property a buffer acquires. `markdown_core_strbuf.oom` either ceases to exist (a `reserve` becomes the only fallible buffer operation and every write after it is infallible) or gains an explicit clear. Today `markdown_core_strbuf_clear` (`core/buffer.c:78-83`) does not lift it and nothing else does — measured, one refused grow silently swallows every later line into that block **with the allocator working again**. | **3a** |
 | **A2** | No allocation path aborts. Delete `core/arena.c` and the two `markdown_core_arena_push`/`_pop` pairs at `extensions/table.c:342` and `:550`. §4.13.10. | **3a** |
 | **A3** | `parser->oom` stops being one sticky bit meaning four things. A failure is a **returned status**; a terminal "parse lost" state becomes unreachable, because after A1–A2 and the ordering discipline nothing can fail after commit begins. `markdown_core_parser_finish` stops reporting loss by freeing the root (`core/blocks.c:1697-1704`). | **3a**, surfaced by **13** |
-| **A4** | `S_strbuf_grow_by` (`core/buffer.c:34-36`) checks `add` against `INT32_MAX/2 - buf->size` **before** the sum. Today a negative target satisfies `target_size < buf->asize` at `:41` and returns without growing *and without poisoning*, after which `_put` memmoves past the end. Verified by direct call; needs a single put above ~1.07 GiB, which `append(chunk:)` makes reachable at `core/blocks.c:909`. | **3a** |
+| **A4** | `S_strbuf_grow_by` (`core/buffer.c:34-36`) checks `add` against `INT32_MAX/2 - buf->size` **before** the sum. Today a negative target satisfies `target_size < buf->asize` at `:41` and returns without growing *and without poisoning*, after which `_put` memmoves past the end. Verified by direct call; needs a single put above ~1.07 GiB, which `append(chunk:)` makes reachable at `core/blocks.c:909`. **LANDED at 3a.2, and it needed TWO guards, not one** — poisoning on a non-positive target is not enough, because the wrapped sum is compared through the overflow flag and the guard never fires (§4.14.3a). | **3a** ✅ |
 | **A5** | Hooks separate **decide** from **mutate**, and a hook reports *declined / opened / failed* as three distinct answers. §4.13.8. | **3** |
 | **A6** | Hook cadence is declared, and a hook that runs at finish is inadmissible under "append returns the document". `autolink`'s `postprocess_text` (`extensions/autolink.c:386`) is Θ(document), destructive and prefix-dependent (H8); mid-loop failure at `:529` leaves the email in the tree **twice**, because the sibling was linked at `:527` before the prefix was shrunk at `:539`. | **3** |
 | **A7** | Node lifetimes serve the transaction: `unlink` is the exact inverse of the link that made it; a staged subtree is freeable while it is in no tree and without an iterator; and **inside a transaction a node destruction is recorded, not performed** — the kill list drains at commit. `markdown_core_node_free(b)` at `core/blocks.c:393` and `markdown_core_node_replace`+`free` at `extensions/formula.c:534-535` are the two sites this rule exists for. | **5** |
