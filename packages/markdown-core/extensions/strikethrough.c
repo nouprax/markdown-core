@@ -1,8 +1,6 @@
 #include "strikethrough.h"
 #include <parser.h>
 
-markdown_core_node_type MARKDOWN_CORE_NODE_STRIKETHROUGH;
-
 static markdown_core_node *match(markdown_core_syntax_extension *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_parser *inline_parser) {
@@ -110,7 +108,6 @@ markdown_core_syntax_extension *create_strikethrough_extension(void) {
 
     markdown_core_syntax_extension_set_get_type_string_func(ext, get_type_string);
     markdown_core_syntax_extension_set_can_contain_func(ext, can_contain);
-    MARKDOWN_CORE_NODE_STRIKETHROUGH = markdown_core_syntax_extension_add_node(1);
 
     markdown_core_syntax_extension_set_match_inline_func(ext, match);
     markdown_core_syntax_extension_set_inline_from_delim_func(ext, insert);

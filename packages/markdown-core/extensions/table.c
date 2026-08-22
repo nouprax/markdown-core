@@ -13,9 +13,11 @@
 #define MAX_AUTOCOMPLETED_CELLS 0x80000
 
 // Custom node flag, initialized in `create_table_extension`.
-static markdown_core_node_internal_flags MARKDOWN_CORE_NODE__TABLE_VISITED;
-
-markdown_core_node_type MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_TABLE_ROW, MARKDOWN_CORE_NODE_TABLE_CELL;
+/* The one extension node flag, as a COMPILE-TIME CONSTANT. It used to be a
+ * zero-initialised global filled in by `markdown_core_register_node_flag`,
+ * which aborts if it is called twice and hands out bits in call order. One
+ * bit, one owner, one value known at compile time (Q16). */
+enum { MARKDOWN_CORE_NODE__TABLE_VISITED = MARKDOWN_CORE_NODE__EXTENSION_FIRST };
 
 typedef struct {
     markdown_core_strbuf *buf;
@@ -669,7 +671,6 @@ static void opaque_free(markdown_core_syntax_extension *self, markdown_core_mem 
 markdown_core_syntax_extension *create_table_extension(void) {
     markdown_core_syntax_extension *self = markdown_core_syntax_extension_new("table");
 
-    markdown_core_register_node_flag(&MARKDOWN_CORE_NODE__TABLE_VISITED);
     markdown_core_syntax_extension_set_match_block_func(self, matches);
     markdown_core_syntax_extension_set_open_block_func(self, try_opening_table_block);
     markdown_core_syntax_extension_set_get_type_string_func(self, get_type_string);
@@ -677,9 +678,6 @@ markdown_core_syntax_extension *create_table_extension(void) {
     markdown_core_syntax_extension_set_contains_inlines_func(self, contains_inlines);
     markdown_core_syntax_extension_set_opaque_alloc_func(self, opaque_alloc);
     markdown_core_syntax_extension_set_opaque_free_func(self, opaque_free);
-    MARKDOWN_CORE_NODE_TABLE = markdown_core_syntax_extension_add_node(0);
-    MARKDOWN_CORE_NODE_TABLE_ROW = markdown_core_syntax_extension_add_node(0);
-    MARKDOWN_CORE_NODE_TABLE_CELL = markdown_core_syntax_extension_add_node(0);
 
     return self;
 }

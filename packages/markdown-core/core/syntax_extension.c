@@ -34,17 +34,6 @@ markdown_core_syntax_extension *markdown_core_syntax_extension_new(const char *n
     return res;
 }
 
-markdown_core_node_type markdown_core_syntax_extension_add_node(int is_inline) {
-    markdown_core_node_type *ref = !is_inline ? &MARKDOWN_CORE_NODE_LAST_BLOCK : &MARKDOWN_CORE_NODE_LAST_INLINE;
-
-    if ((*ref & MARKDOWN_CORE_NODE_VALUE_MASK) == MARKDOWN_CORE_NODE_VALUE_MASK) {
-        assert(false);
-        return (markdown_core_node_type)0;
-    }
-
-    return *ref = (markdown_core_node_type)((int)*ref + 1);
-}
-
 void markdown_core_syntax_extension_set_emphasis(markdown_core_syntax_extension *extension, int emphasis) {
     extension->emphasis = emphasis == 1;
 }

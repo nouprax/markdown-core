@@ -5,9 +5,6 @@
 #include "node.h"
 #include "markdown-core.h"
 
-markdown_core_node_type MARKDOWN_CORE_NODE_LAST_BLOCK = MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION;
-markdown_core_node_type MARKDOWN_CORE_NODE_LAST_INLINE = MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE;
-
 int markdown_core_version(void) { return MARKDOWN_CORE_VERSION; }
 
 const char *markdown_core_version_string(void) { return MARKDOWN_CORE_VERSION_STRING; }

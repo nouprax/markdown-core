@@ -49,9 +49,10 @@ enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
     MARKDOWN_CORE_NODE__LAST_LINE_CHECKED = (1 << 2),
 
-    // Extensions can register custom flags by calling `markdown_core_register_node_flag`.
-    // This is the starting value for the custom flags.
-    MARKDOWN_CORE_NODE__REGISTER_FIRST = (1 << 3),
+    // The first bit an extension may claim. Extension flags are compile-time
+    // constants owned by the extension that uses them; there is no runtime
+    // registration and no allocator to run out of bits.
+    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 3),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -96,26 +97,6 @@ struct markdown_core_node {
         void *opaque;
     } as;
 };
-
-/**
- * Syntax extensions can use this function to register a custom node
- * flag. The flags are stored in the `flags` field of the `markdown_core_node`
- * struct. The `flags` parameter should be the address of a global variable
- * which will store the flag value.
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_register_node_flag(markdown_core_node_internal_flags *flags);
-
-/**
- * DEPRECATED.
- *
- * This function predates the Markdown Core 1.0.0 release and was
- * required to be called at program start time, which caused
- * backwards-compatibility issues in applications that use markdown-core as a
- * library. It is now a no-op.
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_init_standard_node_flags(void);
 
 static MARKDOWN_CORE_INLINE markdown_core_mem *markdown_core_node_mem(markdown_core_node *node) {
     return node->content.mem;

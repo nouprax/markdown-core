@@ -26,10 +26,6 @@ typedef struct directive_attribute {
     struct directive_attribute *next;
 } directive_attribute;
 
-markdown_core_node_type MARKDOWN_CORE_NODE_DIRECTIVE;
-markdown_core_node_type MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK;
-markdown_core_node_type MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
-
 typedef struct {
     markdown_core_chunk name;
     directive_attribute *attributes;
@@ -1488,10 +1484,6 @@ markdown_core_syntax_extension *create_directive_extension(void) {
     markdown_core_syntax_extension *ext = markdown_core_syntax_extension_new("directive");
     markdown_core_llist *special_chars = NULL;
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-
-    MARKDOWN_CORE_NODE_DIRECTIVE = markdown_core_syntax_extension_add_node(1);
-    MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK = markdown_core_syntax_extension_add_node(0);
-    MARKDOWN_CORE_NODE_DIRECTIVE_LABEL = markdown_core_syntax_extension_add_node(1);
 
     markdown_core_syntax_extension_set_match_inline_func(ext, match);
     markdown_core_syntax_extension_set_inline_from_delim_func(ext, insert_directive);

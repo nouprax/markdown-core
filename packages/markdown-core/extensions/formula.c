@@ -11,9 +11,6 @@
 
 #include "ext_scanners.h"
 
-markdown_core_node_type MARKDOWN_CORE_NODE_FORMULA;
-markdown_core_node_type MARKDOWN_CORE_NODE_FORMULA_BLOCK;
-
 #define FORMULA_DELIM_DOLLAR_INLINE 1
 #define FORMULA_DELIM_DOLLAR_DISPLAY 2
 #define FORMULA_DELIM_LATEX_BACKSLASH_INLINE 3
@@ -658,9 +655,6 @@ markdown_core_syntax_extension *create_formula_extension(void) {
     markdown_core_syntax_extension *ext = markdown_core_syntax_extension_new("formula");
     markdown_core_llist *special_chars = NULL;
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-
-    MARKDOWN_CORE_NODE_FORMULA = markdown_core_syntax_extension_add_node(1);
-    MARKDOWN_CORE_NODE_FORMULA_BLOCK = markdown_core_syntax_extension_add_node(0);
 
     markdown_core_syntax_extension_set_match_inline_func(ext, match);
     markdown_core_syntax_extension_set_match_block_func(ext, formula_block_matches);

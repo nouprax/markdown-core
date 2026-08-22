@@ -49,18 +49,30 @@ static void version(test_batch_runner *runner) {
     STR_EQ(runner, markdown_core_version_string(), MARKDOWN_CORE_VERSION_STRING, "markdown_core_version_string");
 }
 
+/* The extension types continue these two sequences, so listing them here means
+ * the existing contiguity assertions pin every one of the nine values AND make
+ * a collision or a gap impossible. Until Step 3.1 they were globals filled in
+ * by `markdown_core_syntax_extension_add_node` in whatever order
+ * `core_extensions_registration` called the `create_*` functions, and nothing
+ * in the repository asserted a single one of them. */
 static void node_type_values(test_batch_runner *runner) {
     static const markdown_core_node_type block_types[] = {
-        MARKDOWN_CORE_NODE_DOCUMENT,           MARKDOWN_CORE_NODE_BLOCK_QUOTE, MARKDOWN_CORE_NODE_LIST,
-        MARKDOWN_CORE_NODE_LIST_ITEM,          MARKDOWN_CORE_NODE_CODE_BLOCK,  MARKDOWN_CORE_NODE_HTML_BLOCK,
-        MARKDOWN_CORE_NODE_PARAGRAPH,          MARKDOWN_CORE_NODE_HEADING,     MARKDOWN_CORE_NODE_THEMATIC_BREAK,
-        MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION};
+        MARKDOWN_CORE_NODE_DOCUMENT,       MARKDOWN_CORE_NODE_BLOCK_QUOTE,
+        MARKDOWN_CORE_NODE_LIST,           MARKDOWN_CORE_NODE_LIST_ITEM,
+        MARKDOWN_CORE_NODE_CODE_BLOCK,     MARKDOWN_CORE_NODE_HTML_BLOCK,
+        MARKDOWN_CORE_NODE_PARAGRAPH,      MARKDOWN_CORE_NODE_HEADING,
+        MARKDOWN_CORE_NODE_THEMATIC_BREAK, MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION,
+        MARKDOWN_CORE_NODE_TABLE,          MARKDOWN_CORE_NODE_TABLE_ROW,
+        MARKDOWN_CORE_NODE_TABLE_CELL,     MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+        MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK};
     static const markdown_core_node_type inline_types[] = {
-        MARKDOWN_CORE_NODE_TEXT,       MARKDOWN_CORE_NODE_SOFT_BREAK,
-        MARKDOWN_CORE_NODE_LINE_BREAK, MARKDOWN_CORE_NODE_CODE,
-        MARKDOWN_CORE_NODE_HTML,       MARKDOWN_CORE_NODE_EMPHASIS,
-        MARKDOWN_CORE_NODE_STRONG,     MARKDOWN_CORE_NODE_LINK,
-        MARKDOWN_CORE_NODE_IMAGE,      MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE};
+        MARKDOWN_CORE_NODE_TEXT,          MARKDOWN_CORE_NODE_SOFT_BREAK,
+        MARKDOWN_CORE_NODE_LINE_BREAK,    MARKDOWN_CORE_NODE_CODE,
+        MARKDOWN_CORE_NODE_HTML,          MARKDOWN_CORE_NODE_EMPHASIS,
+        MARKDOWN_CORE_NODE_STRONG,        MARKDOWN_CORE_NODE_LINK,
+        MARKDOWN_CORE_NODE_IMAGE,         MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE,
+        MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_FORMULA,
+        MARKDOWN_CORE_NODE_DIRECTIVE,     MARKDOWN_CORE_NODE_DIRECTIVE_LABEL};
 
     for (size_t i = 0; i < sizeof(block_types) / sizeof(*block_types); ++i) {
         INT_EQ(runner, block_types[i] & MARKDOWN_CORE_NODE_TYPE_MASK, MARKDOWN_CORE_NODE_TYPE_BLOCK,

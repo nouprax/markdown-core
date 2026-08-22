@@ -17,28 +17,6 @@ static void S_node_unlink(markdown_core_node *node);
 
 #define NODE_MEM(node) markdown_core_node_mem(node)
 
-void markdown_core_register_node_flag(markdown_core_node_internal_flags *flags) {
-    static markdown_core_node_internal_flags nextflag = MARKDOWN_CORE_NODE__REGISTER_FIRST;
-
-    // flags should be a pointer to a global variable and this function
-    // should only be called once to initialize its value.
-    if (*flags) {
-        fprintf(stderr, "flag initialization error in markdown_core_register_node_flag\n");
-        abort();
-    }
-
-    // Check that we haven't run out of bits.
-    if (nextflag == 0) {
-        fprintf(stderr, "too many flags in markdown_core_register_node_flag\n");
-        abort();
-    }
-
-    *flags = nextflag;
-    nextflag <<= 1;
-}
-
-void markdown_core_init_standard_node_flags(void) {}
-
 bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
     if (child_type == MARKDOWN_CORE_NODE_DOCUMENT) {
         return false;

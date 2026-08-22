@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, **all of Stage 0a** (0a.0 through 0a.15), **Step 2** (§4.14.2), and **3a.1 – 3a.3** (§4.14.3a) |
+| Landed | Steps 0 and 1, §4.0's re-ordering, **all of Stage 0a** (0a.0 through 0a.15), **Step 2** (§4.14.2), and **3a.1 – 3a.3** (§4.14.3a), and **3.1** (§4.14.3) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 3**, the extension descriptor table. Step 3a is complete: A1, A2 and A4 landed with D27, and A3 is carried to 12/13 with its measurement (§4.14.3a). Then §4.1's steps in the order §4.1.4 verifies: `3 3b 15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 3**, continued: the three byte sets, then the delimiter rule, then the `static const` descriptor table. Step 3a is complete (§4.14.3a). Then §4.1's steps in the order §4.1.4 verifies: `3 3b 15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -1140,7 +1140,7 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | **Q13** | Is the cycle check unconditional — and is it a defect or a refactor by-product? | 3b | **Unconditional**, and *"the shipped library makes `b->parent == b` on request while the test that denies it flips a flag nothing else flips"* reads exactly like D1–D16. Measured cost: unmeasurable on four workloads, 10.7% on one already-pathological path the engine takes 36 seconds to parse. **The owner may re-file it into Stage 0a; that is the only change to 0a this restatement would ask for besides Q25.** |
 | **Q14** | One knob per extension, or two? | 3, 6, 7 | **One.** Attachment is the language. Delete `MARKDOWN_CORE_OPT_DIRECTIVE` and both formula delimiter options; keep formula's `dollar`/`latex` **sub-grammar** selection only if a use is stated, and today none is. |
 | **Q15** | What is the **inline** dispatch precedence? | 3 | Q9 settles the *block* order (`table` last) and says nothing about inlines — `table` has no inline hooks at all. `autolink` and `directive` both claim `':'`, and first-non-NULL wins today. **Recommend: table order is also inline order, `autolink` before `directive`** (a bare `:` far more often begins a URL), stated in the commit and pinned by a fixture. **MEASURED AT 0a.11 AND THE COLLISION HAS NO WITNESS**: moving `directive` to first or to the middle changes 0 of 12 hand-built candidates and 0 of 4,000 random `:`/URL/attribute documents (§4.2.17). The recommendation stands as a tie-break; it must not be shipped as a fix, and **a fixture cannot pin it until an input exists that distinguishes the two** — finding one, or recording that none does, is Step 3's. |
-| **Q16** | Are extension node types and node-flag bits re-assigned as fixed constants? | 3 | **Yes**, in a fixed enum decoupled from the table order. They are internal — the shipped export map is 32 read-only facade symbols — and conflating "attach order" with "type numbering" is precisely what makes today's globals order-dependent. |
+| **Q16** | Are extension node types and node-flag bits re-assigned as fixed constants? | 3 | **TAKEN at 3.1.** A fixed enum decoupled from the table order, at exactly the values the runtime allocator produced (measured both sides). The export map is 32 facade symbols and `local: *`, so renumbering was available and was declined to keep the commit structural. §4.14.3. |
 | **Q17** | Is an inline node's position a projection of a stored byte range? | 8 | **Yes**, and store the pair — two `bufsize_t` on the inline node. This is what makes D12 *unexpressible* rather than fixed, and it is the concession that makes 11b cheap. |
 | **Q18** | Which inline-math padding rule? | 6 | **micromark-extension-math's**: strip one leading and one trailing space-or-line-ending, interior untouched. Not CommonMark's code-span rule, which also converts interior line endings. No oracle example separates them; three independent reasons do (the oracle's own prose cites micromark; the mdast gate compares `Formula.literal` against remark on every corpus input; a formula body is handed to KaTeX). **And it applies to the `\(…\)` / `\[…\]` forms too** — no oracle row covers that; pin it with two new ones. |
 | **Q19** | Are directive attributes sorted in the model, or only in the dump? | 7 | **Sorted in the model.** After class-accumulation and last-value-wins the list *is* a map; source order is meaningful only inside `class`'s accumulated value, which is already a string. Two orders is how a third order appears in a binding. |
@@ -3237,6 +3237,73 @@ rows, still red · canonical-ast 28/47/6 · public surface · special chars ·
 attach order · plan graph 22/45 · source lists 27, 4 of 5 · topology · format-c
 · format-cmake. **Zero golden rows moved**, which is what an
 allocation-failure fix should move.
+
+
+---
+
+#### 4.14.3 Step 3: the extension descriptor
+
+§4.1's row is one requirement with six clauses, and they are independent
+enough to land and gate separately. Each sub-step below is one commit.
+
+##### 3.1 — Q16: node types and the one node flag are compile-time constants
+
+**What they were.** Nine `markdown_core_node_type` globals, zero-initialised
+and filled in at first use by `markdown_core_syntax_extension_add_node`, which
+post-increments one of two process-global counters
+(`MARKDOWN_CORE_NODE_LAST_BLOCK` / `_LAST_INLINE`) — so a node type's numeric
+identity was a consequence of the order in which `core_extensions_registration`
+happened to call the six `create_*` functions, in a different file, and
+**nothing in the repository asserted a single one of the nine values.** The one
+extension node flag was worse: `markdown_core_register_node_flag` hands out
+bits in call order and `abort()`s if the same global is registered twice.
+
+**What they are.** One fixed `enum` in
+`extensions/markdown-core-extensions.h`, and one file-scope `enum` in
+`extensions/table.c` for the flag. `markdown_core_syntax_extension_add_node`,
+`markdown_core_register_node_flag`, `MARKDOWN_CORE_NODE_LAST_BLOCK`,
+`MARKDOWN_CORE_NODE_LAST_INLINE` and the long-dead
+`markdown_core_init_standard_node_flags` are deleted;
+`MARKDOWN_CORE_NODE__REGISTER_FIRST` becomes `_EXTENSION_FIRST`, because
+nothing registers any more.
+
+**The values are exactly what the allocator produced**, measured on the tree
+before the change and again after:
+
+| | | | |
+|---|---|---|---|
+| `TABLE` `0x800b` | `TABLE_ROW` `0x800c` | `TABLE_CELL` `0x800d` | `FORMULA_BLOCK` `0x800e` |
+| `DIRECTIVE_BLOCK` `0x800f` | `STRIKETHROUGH` `0xc00b` | `FORMULA` `0xc00c` | `DIRECTIVE` `0xc00d` |
+| `DIRECTIVE_LABEL` `0xc00e` | | | |
+
+Renumbering was available — nothing outside the library can see a value, since
+the export map is 32 facade functions and `local: *` — and was declined, so
+that this commit is a structural change and nothing else.
+
+**The gate is the test that was already there, extended.**
+`node_type_values` in `tests/api/main.c` asserted that the core block and
+inline types are contiguous from 1. The nine extension types *continue those two
+sequences*, so appending them to the same two arrays makes the existing
+assertions pin every value and makes a collision or a gap impossible, with no
+new logic.
+
+| mutant | result |
+|---|---|
+| give `FORMULA` `DIRECTIVE`'s value | **4 failures** — `api_engine` and three fixture suites |
+| move `TABLE_CELL` out of the contiguous run to `0x8020` | **1 failure — `api_engine` alone** |
+
+The second row is the case for the gate: a value that collides shows up in the
+goldens because `get_type_string` answers with the wrong name, but a value that
+merely *moves* is invisible to every fixture in the repository, and the
+contiguity assertion is the only thing that sees it.
+
+**Gates after.** `correctness` **69/69** · `correctness-asan` **60/60** ·
+`correctness-ubsan` **60/60** · `conformance` 2/2 · upstream parity 817/817 with
+7/7 · mdast 54/54, backlog 24/24 · fuzz-parity 300/300 · scope-sanity 14 ·
+position oracles 0 / 45 / 109 · reference-order 2 rows, still red ·
+canonical-ast 28/47/6 · public surface · special chars · attach order · plan
+graph 22/45 · source lists 27, 4 of 5 · topology · format-c · format-cmake.
+**Zero golden rows moved.**
 
 
 ---

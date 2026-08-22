@@ -53,9 +53,6 @@ typedef enum {
     MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000a,
 } markdown_core_node_type;
 
-extern markdown_core_node_type MARKDOWN_CORE_NODE_LAST_BLOCK;
-extern markdown_core_node_type MARKDOWN_CORE_NODE_LAST_INLINE;
-
 typedef enum { MARKDOWN_CORE_NO_LIST, MARKDOWN_CORE_BULLET_LIST, MARKDOWN_CORE_ORDERED_LIST } markdown_core_list_type;
 
 typedef enum { MARKDOWN_CORE_NO_DELIM, MARKDOWN_CORE_PERIOD_DELIM, MARKDOWN_CORE_PAREN_DELIM } markdown_core_delim_type;

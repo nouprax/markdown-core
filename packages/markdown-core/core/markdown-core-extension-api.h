@@ -255,9 +255,6 @@ MARKDOWN_CORE_EXPORT
 markdown_core_syntax_extension *markdown_core_syntax_extension_new(const char *name);
 
 MARKDOWN_CORE_EXPORT
-markdown_core_node_type markdown_core_syntax_extension_add_node(int is_inline);
-
-MARKDOWN_CORE_EXPORT
 void markdown_core_syntax_extension_set_emphasis(markdown_core_syntax_extension *extension, int emphasis);
 
 /** See the documentation for 'markdown_core_syntax_extension'

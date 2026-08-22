@@ -10,6 +10,37 @@ extern "C" {
 #include <stdbool.h>
 #include <stdint.h>
 
+/** The node types the six core extensions add, as COMPILE-TIME CONSTANTS.
+ *
+ * They used to be `markdown_core_node_type` globals assigned by
+ * `markdown_core_syntax_extension_add_node` in whatever order
+ * `core_extensions_registration` happened to call the `create_*` functions --
+ * so a node type's numeric identity was a consequence of a call order, in a
+ * different file, that nothing checked. Attach order and type numbering are
+ * unrelated facts and conflating them is what made the old globals
+ * order-dependent (Q16).
+ *
+ * THE VALUES ARE EXACTLY THE ONES THE OLD REGISTRATION PRODUCED, measured
+ * before the change: blocks continue from `MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION`
+ * in the order table, table, table, formula, directive; inlines continue from
+ * `MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE` in the order strikethrough, formula,
+ * directive, directive. Nothing outside the library can see a value -- the
+ * export map is 32 facade functions and `local: *` -- but keeping them makes
+ * this a structural change and nothing else.
+ */
+enum {
+    MARKDOWN_CORE_NODE_TABLE = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000b,
+    MARKDOWN_CORE_NODE_TABLE_ROW = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000c,
+    MARKDOWN_CORE_NODE_TABLE_CELL = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000d,
+    MARKDOWN_CORE_NODE_FORMULA_BLOCK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000e,
+    MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000f,
+
+    MARKDOWN_CORE_NODE_STRIKETHROUGH = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000b,
+    MARKDOWN_CORE_NODE_FORMULA = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000c,
+    MARKDOWN_CORE_NODE_DIRECTIVE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000d,
+    MARKDOWN_CORE_NODE_DIRECTIVE_LABEL = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000e
+};
+
 typedef enum {
     MARKDOWN_CORE_FORMULA_MODE_NONE = 0,
     MARKDOWN_CORE_FORMULA_MODE_EMBEDDED,
