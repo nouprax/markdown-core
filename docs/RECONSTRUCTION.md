@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A) and **6** (§4.14.6) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6) and **7.1** (§4.14.7a) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 7** — directive grammar conformance, and the largest single backlog owner at **15 of 22** entries. 15A is done except its own §4.8 obligation, **Q41**, which is the owner's. Remaining: `7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 7.2 — the directive SURFACE**, the second half of Step 7. 7.1 landed the grammar (§4.14.7a); 7.2 is `attributes=[…]` sorted, `DirectiveLabel` as a visible node, `label=` deleted, the JSON round-trip gone, and the bindings, contract and manifest that project all of it — plus the **13 held-back oracle examples** and the two mutants they owe, **D4 and D7**. Then `10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -57,16 +57,16 @@ node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/audit-source-lists.mjs              # 23 sources, 4 of 5 lists, 1 registered absent
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
-node scripts/check-upstream-parity.mjs     # 828/828 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
-node scripts/check-mdast-parity.mjs        # 62/62, backlog 22/22 still diverging
-node scripts/audit-scope-sanity.mjs        # 4 unresolved rows, 5056 scanned, only-shrink holds
+node scripts/check-upstream-parity.mjs     # 846/846 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
+node scripts/check-mdast-parity.mjs        # 80/80, backlog 20/20 still diverging
+node scripts/audit-scope-sanity.mjs        # 4 unresolved rows, 5128 scanned, only-shrink holds
 
 # The three position oracles, landed at 0a.1 (§4.2.7). Each fails on a row
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
 # fails here rather than in review.
 node scripts/audit-inline-sourcepos.mjs    # 0 rows registered, 68 scanned
-node scripts/audit-scope-containment.mjs   # 45 rows registered, 4000 scanned
-node scripts/audit-position-places.mjs     # 106 rows registered, 4123 scanned
+node scripts/audit-scope-containment.mjs   # 45 rows registered, 4053 scanned
+node scripts/audit-position-places.mjs     # 106 rows registered, 4177 scanned
 
 # D9's pin. REGISTERED RED and it fails if a row STOPS reproducing, because
 # deleting the budget clears both rows and costs 204.678x output growth.
@@ -117,7 +117,7 @@ mdast backlog and D9's oracle use:
 | `scripts/format-swift.sh --check` | **NEWLY REGISTERED at 15A.2, and it was in no list.** `swift format lint --strict` exits 1 at `46e20f2` with **184** findings, all `[AllPublicDeclarationsHaveDocumentation]`; the pinned 6.3.0 matches, and `.github/workflows/ci.yml:182` runs it as a required health check. 15A.2 takes it to 170; Step 6's option deletion takes it to **163**. | **Q41** |
 | `scripts/check-generated-scanners.sh` | Added at `8926594`; the baseline build has no re2c invocation or version pin (R9). | R9's experiment, then Step 3 |
 | `node scripts/check-release-version.mjs --skip-swift` | **D17 is fixed and the 3.0.0 bump closed the rest**; what remains is **two** unexpected legacy tags — `codex-doc-pass-backup` and `pre-format-baseline` — which is repo hygiene, not engine state. Every version-drift, release-note and CHANGELOG assertion now passes. | release |
-| `node scripts/fuzz-parity.mjs --oracle mdast` | 0/3 — the mdast oracle is red on every generated input, for the same reason the backlog exists (24 entries at the baseline, 22 after Step 6). CI runs both oracles; only the upstream one was listed. | Stage 0 close |
+| `node scripts/fuzz-parity.mjs --oracle mdast` | 0/3 — the mdast oracle is red on every generated input, for the same reason the backlog exists (24 entries at the baseline, 20 after Step 7.1). CI runs both oracles; only the upstream one was listed. | Stage 0 close |
 | `pnpm audit:ci` | **TRIAGED at Step 6, and it is era skew of the purest kind.** The script was restored from `main`, where every workflow action reference is pinned to a full commit SHA; the workflows are the baseline's, where they are tag refs. It names **`benchmark.yml`, `pr-metrics.yml` and others** — `actions/checkout@v7`, `setup-java@v5`, `setup-emsdk@v16`. No engine state is involved. Pinning them is infrastructure work and the SHAs are a license-adjacent record, so it is not something a step should invent. | release / 15C |
 | `pnpm format:es:check` | **TRIAGED at Step 6: `prettier --check .` reports 100 files**, including `scripts/check-plan-graph.mjs` and `specs/upstream-parity/deltas.json`. Same skew — prettier's config came from `main`, the files did not. It is a required CI step (`ci.yml:97`). Reformatting 100 files in one commit would bury every real diff in Stage 0, and doing it per-step means each step's diff carries unrelated churn. **Q42.** | **Q42** |
 | ~~`pnpm audit:source-lists`~~ | **TRIAGED AND GREEN**, ahead of Step 3a, whose row requires it to RUN. It did not fail, it **threw** — `ENOENT` on `packages/swift-markdown-core/Package.release.swift`, a release manifest that postdates `580d10c` and arrived with Step 0's `scripts/` restore. The absence is now registered in the script with an owner and printed on every run, and the pass line says **`4 of 5 lists in agreement, 1 registered absent`** so it can never read as though all five were compared. | the absence: 15C |
@@ -167,8 +167,8 @@ through the binary before trusting a green suite.
    a step that lands without deleting its own entries fails as loudly as a new
    divergence. Zero close in Stage 0a, by design — the backlog measures distance
    to mdast's *model*, while the defects measure wrongness against the engine's
-   own intent. **24 at the baseline, 22 after Step 6**, owned by Step 7 (15),
-   Step 9b (6) and Step 10 (1). Step 6's two closed by *leaving the corpus*, not
+   own intent. **24 at the baseline, 22 after Step 6, 20 after Step 7.1**, owned by
+   Step 7 (13), Step 9b (6) and Step 10 (1). Step 6's two closed by *leaving the corpus*, not
    by agreeing, so the gate now distinguishes a settled entry from an unreachable
    one and the two are recorded in `retiredBacklog` with the reason (§4.14.6).
    **An entry that stops being exercised is not an entry that closed.**
@@ -4217,6 +4217,123 @@ owner and 100 files is a decision, so it is now **Q42**.
 2/2, every audit, `lint-c`, and all four linters. All three bindings built and
 run: ES node + conformance, Swift macOS + conformance, Kotlin JVM + macOS-arm64
 native, each with conformance.
+
+---
+
+#### 4.14.7a Step 7.1: the directive grammar, and the fallback that was not one
+
+Step 7 is the largest step in the plan and lands in two commits. **This one is
+the grammar** — what the parser accepts and what it produces. The other is the
+**surface**: `attributes=[…]`, `DirectiveLabel` as a visible node, `label=`
+deleted, the JSON round-trip gone, and the bindings that project all of it.
+
+**Where the step started.** Every one of the oracle's 50 examples was run
+against HEAD before anything was changed. With Q29's `mode=` stripped (it was
+deleted from `Directive` and `DirectiveBlock` at 15A.4, so the oracle's
+`mode=embedded` is documented staleness, not a gap), **4 passed and 47 failed**.
+Classified by first difference: 27 `label=`/`DirectiveLabel`, 13
+`attributes=[…]` spelling, and **20 that were the grammar itself**.
+
+**After this commit: 7 of the grammar's 20 are gone and the other 13 are the
+surface's.** Re-run against the same stripped oracle, the remaining 44 failures
+are 22 attribute spelling, 21 `DirectiveLabel`, and **one** that is neither:
+example 15's `SoftBreak scope=0:0..0:0`, which is D26 staleness — the oracle is
+wrong there and this engine is right.
+
+**Ten rules, each with its oracle row.**
+
+| rule | before | after |
+| --- | --- | --- |
+| a malformed attribute block leaves the directive standing | `:n{#}` was one Text node | `Directive name="n"` + `Text "{#}"` |
+| `#name` / `.name` are `id` / `class` | `:n{.a}` was text | `attributes=[class="a"]` |
+| a shorthand value ends at the next marker | — | `{.a.b}` is two classes |
+| an empty shorthand takes the block down | — | `{#}` and `{.}` are malformed |
+| `class` accumulates, everything else last-wins | `class="blue"` | `class="red green blue"` |
+| an attribute name may not BEGIN with punctuation | `{:_a}` was accepted | malformed |
+| a symbol is punctuation for that rule | `{a$b}` was accepted | malformed |
+| `.` `:` `-` `_` are name characters from the second on | `{a:b}` started a nested directive | one name, `a:b=""` |
+| an `=` promises a value | `{a=}` was `a=""` | malformed |
+| an unquoted value holds no `<` `>` `=` or backtick | `{a=b<c}` was `a="b<c"` | malformed |
+| a quoted value needs whitespace or `}` after it | `{a="x"b=1}` was two attributes | malformed |
+| a text directive's colon has no colon beside it | `x ::a y` was `x :` + a directive | text |
+| a directive name may not BEGIN with `-` or `_` | `:-a[]` was a directive named `-a` | text |
+
+**The grammar is applied to code points, and the engine already had the
+predicate.** `markdown_core_utf8proc_is_punctuation` is what "punctuation"
+means here — it answers for ASCII through `ispunct`, which is why `$`, `:`, `_`
+and `-` are all punctuation and a digit is not, and it answers for the rest of
+Unicode through its own table, which is why `{中文=1}` is a name. There is no
+second table in `directive.c`. One four-line predicate pair replaced
+`is_attr_name_char`, and `attribute_name_is_valid` — the public setter's
+validator — now *re-runs the scanner* rather than restating its rule, so the
+setter and the parser cannot drift.
+
+**`class` accumulation had to UNLINK, not deactivate.** The first cut marked the
+folded duplicates inactive and left them in the list. The duplicate normalizer
+that runs next walks the whole list and swaps the first occurrence's value for
+the last one's, so `{.a.b}` came out `class="b"` — the accumulation undone by
+the pass it was supposed to precede. The folded entries are freed and unlinked,
+and the count is decremented, so the normalizer sees one `class` and does
+nothing to it.
+
+**Two tests were asserting the old grammar, and one of them segfaulted.**
+`api_engine`'s directive test parses `:-a[]{…}` — a name that begins with a
+hyphen, which is exactly what the new rule rejects — so the directive came back
+NULL and the test dereferenced it. Renamed to `:a[]`, with the accumulated
+`class` in its expected string and two new cases for the leading `-` and `_`
+(the setter shares `scan_name`, so it got the rule for free).
+`pathological_directive_unclosed_attributes` asserted that `:x{` × 20000
+produces **zero** directives. Under the fallback rule it produces 20000, each
+followed by the prose `{`. What that case guards — 20000 unterminated blocks
+must not make the scan quadratic — is unchanged, so the shape assertion moved
+rather than went away.
+
+**The fixture was rebuilt from the oracle.** It had 22 examples and the oracle
+has 50. Rather than hand-adding rows, the fixture is now the oracle's own text
+with Q29's `mode=` removed and the expected blocks regenerated, plus **D21's
+three pins at the end** — the container-fence rows, which the oracle has not
+got. **13 of the oracle's examples are held back to the surface commit**: every
+one carries an attribute VALUE, and their only disagreement with remark is the
+spelling. That was verified rather than assumed — remark's projection renders
+`class="a  b"` and `a="b{c"` for the two hardest, matching this engine's
+semantics byte for byte, and its own sorted bracket form is what Q19 asks the
+dump to become. **41 examples, 41 passing.**
+
+**Mutants: thirteen, eleven killed, two owed and named.**
+
+| | mutant | correctness | mdast |
+| --- | --- | --- | --- |
+| D1 | degradation removed | 2 failed | killed |
+| D2 | a name may start with punctuation | 4 failed | killed |
+| D3 | `.` `:` `-` `_` are not name characters | 3 failed | survives |
+| **D4** | **a shorthand value runs past a marker** | **—** | **SURVIVES** |
+| D5 | an empty shorthand is accepted | 1 failed | killed |
+| D6 | `class` does not accumulate | 2 failed | survives |
+| **D7** | **a class separator before every value, not every non-empty one** | **—** | **SURVIVES** |
+| D8 | an `=` does not promise a value | 1 failed | killed |
+| D9 | a quoted value needs no separator | 1 failed | killed |
+| D10 | an unquoted value may hold `<` `>` `=` and a backtick | 1 failed | killed |
+| D11 | a colon run may start a directive | 1 failed | killed |
+| D12 | a name may begin with `-` or `_` | 2 failed | killed |
+
+**D4 and D7 are the two whose witnesses are in the 13 held back** — `{.a.b}`
+and `{.a class="" .b}`. They are owed to the surface commit, where those rows
+land, and they are the only thing this commit leaves unproved. D5, D8, D9, D10
+and D11 all survived everything until the 18 attribute-free oracle examples
+were adopted; that adoption is what killed them, and it is why the fixture grew
+in the same commit as the rules.
+
+**Standing rule 2: backlog 22 → 20.** Two entries closed by *agreeing* with
+remark, which the gate's new settled/unreachable split confirms: `:invalid{=value}`
+with `:open{title="value}` (the fallback rule) and `:a-[]` / `:-a[]` / `:_a[]`
+(the name rule). Step 7 owns **13** of the remaining 20.
+
+**Counts.** 18 examples added: upstream parity 828 → **846**, mdast 62 → **80**,
+scope sanity 5058 → **5128** scopes, containment 4004 → **4053**, places 4125 →
+**4177**. Every ledger count held: 4 unresolved, 45, 106, 0, 2.
+
+**Gates.** All green: correctness 69/69, ASan 60/60, UBSan 60/60, conformance
+2/2, every audit, `lint-c`, all four linters, and all three binding suites.
 
 ---
 

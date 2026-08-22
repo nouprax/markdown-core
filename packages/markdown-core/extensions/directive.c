@@ -76,8 +76,6 @@ static int ascii_is_space(unsigned char c) { return c == ' ' || c == '\t' || c =
 
 static int ascii_is_line_space(unsigned char c) { return c == ' ' || c == '\t'; }
 
-static int is_attr_name_char(unsigned char c);
-
 static int is_line_end(const unsigned char *data, bufsize_t len, bufsize_t pos) {
     return pos >= len || data[pos] == '\n' || data[pos] == '\r';
 }
@@ -96,7 +94,12 @@ static int scan_name(unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_
         return 0;
     }
 
-    if (data[pos + match_len - 1] == '-' || data[pos + match_len - 1] == '_') {
+    /* A directive name may CONTAIN a hyphen or underscore but may not begin or
+     * end with one. The generated scanner has the trailing half of that rule
+     * nowhere, and it never had the leading half either: `:-a[]` and `:_a[]`
+     * were directives named `-a` and `_a` here and are not directives at all
+     * in micromark-extension-directive. A digit may begin a name. */
+    if (data[pos] == '-' || data[pos] == '_' || data[pos + match_len - 1] == '-' || data[pos + match_len - 1] == '_') {
         return 0;
     }
 
@@ -224,17 +227,60 @@ static void free_attribute_list(markdown_core_mem *mem, directive_attribute *att
     }
 }
 
-static int attribute_name_is_valid(const unsigned char *name, bufsize_t name_len) {
-    bufsize_t i;
-    if (name_len == 0) {
-        return 0;
+/* THE GRAMMAR IS APPLIED TO CODE POINTS, not bytes (Q8's oracle says so, and
+ * `{中文=1}` is the row that proves it). An attribute name may not BEGIN with
+ * punctuation -- a symbol counts, which is why `{a$b}` is malformed and `{:_a}`
+ * is too -- and `markdown_core_utf8proc_is_punctuation` is already the
+ * engine's answer to "is this code point punctuation", so there is no second
+ * table here. From the second code point on, four punctuation marks are
+ * ordinary name characters, which is why `{a:b}` is one name and
+ * `{data-kind=ref}` is another. */
+static int attr_name_start_cp(int32_t cp) {
+    return cp > 0x20 && !markdown_core_utf8proc_is_space(cp) && !markdown_core_utf8proc_is_punctuation(cp);
+}
+
+static int attr_name_cp(int32_t cp) {
+    return attr_name_start_cp(cp) || cp == '-' || cp == '.' || cp == ':' || cp == '_';
+}
+
+/* Reads one code point at `pos`. A byte that is not valid UTF-8 decodes as
+ * itself with length 1, which keeps a malformed name malformed rather than
+ * ending the scan early on a continuation byte. */
+static bufsize_t next_cp(const unsigned char *data, bufsize_t len, bufsize_t pos, int32_t *cp) {
+    int consumed = markdown_core_utf8proc_iterate(data + pos, len - pos, cp);
+    if (consumed < 1) {
+        *cp = data[pos];
+        return 1;
     }
-    for (i = 0; i < name_len; i++) {
-        if (!is_attr_name_char(name[i])) {
-            return 0;
+    return (bufsize_t)consumed;
+}
+
+/* Scans a name from `pos`, or a SHORTHAND value when `shorthand` is set: a
+ * shorthand value ends at the next marker, so `{.a.b}` is two classes and not
+ * one class called `a.b`. */
+static bufsize_t scan_attr_name(const unsigned char *data, bufsize_t len, bufsize_t pos, int shorthand) {
+    bufsize_t start = pos;
+    int first = 1;
+    while (pos < len) {
+        int32_t cp;
+        bufsize_t width = next_cp(data, len, pos, &cp);
+        if (shorthand && cp == '.') {
+            break;
         }
+        if (first ? !attr_name_start_cp(cp) : !attr_name_cp(cp)) {
+            break;
+        }
+        first = 0;
+        pos += width;
     }
-    return 1;
+    return pos - start;
+}
+
+/* The public setter reaches append_attribute with a name nobody scanned, so
+ * the scanner's own rule is re-applied here rather than restated: a name is
+ * valid exactly when scanning it consumes all of it. */
+static int attribute_name_is_valid(const unsigned char *name, bufsize_t name_len) {
+    return name_len > 0 && scan_attr_name(name, name_len, 0, 0) == name_len;
 }
 
 static int append_attribute(markdown_core_mem *mem, directive_attribute **head, directive_attribute **tail,
@@ -267,6 +313,70 @@ static int append_attribute(markdown_core_mem *mem, directive_attribute **head, 
         *head = attr;
     }
     *tail = attr;
+    return 1;
+}
+
+/* `class` is the ONE name whose repeats accumulate, in source order, whether
+ * they were written as `.x` or as `class=x`. Every other name keeps the last
+ * value, which is what normalize_duplicate_attributes does -- so the folding
+ * happens first and leaves at most one `class` behind for it to find.
+ *
+ * The separator goes before every value once something has accumulated, an
+ * empty one included: `{.a class="" .b}` is `class="a  b"`. An empty value at
+ * the FRONT accumulates nothing, so it contributes no leading separator and
+ * `{class="" .b}` is `class="b"`. Both are oracle rows; the rule is "join what
+ * is there", not "join what was written". */
+static int accumulate_class_attributes(markdown_core_mem *mem, directive_attribute *head, size_t *count) {
+    directive_attribute *first = NULL;
+    directive_attribute *attr;
+    markdown_core_strbuf joined;
+    int changed = 0;
+
+    for (attr = head; attr; attr = attr->next) {
+        if (attr->name.len != 5 || memcmp(attr->name.data, "class", 5) != 0) {
+            continue;
+        }
+        if (!first) {
+            first = attr;
+            continue;
+        }
+        changed = 1;
+    }
+    if (!changed) {
+        return 1;
+    }
+
+    markdown_core_strbuf_init(mem, &joined, 32);
+    for (attr = first; attr; attr = attr->next) {
+        if (attr->name.len != 5 || memcmp(attr->name.data, "class", 5) != 0) {
+            continue;
+        }
+        if (joined.size > 0) {
+            markdown_core_strbuf_putc(&joined, ' ');
+        }
+        markdown_core_strbuf_put(&joined, attr->value.data, attr->value.len);
+    }
+    if (joined.oom || !replace_chunk_bytes(mem, &first->value, joined.ptr, joined.size)) {
+        markdown_core_strbuf_free(&joined);
+        return 0;
+    }
+    markdown_core_strbuf_free(&joined);
+
+    /* The folded ones are UNLINKED, not merely deactivated. The duplicate
+     * normalizer that runs next walks the whole list and swaps the first
+     * occurrence's value for the last one's; a `class` it can still see would
+     * undo the accumulation the moment there were two of them. */
+    for (attr = first; attr && attr->next;) {
+        directive_attribute *dup = attr->next;
+        if (dup->name.len == 5 && memcmp(dup->name.data, "class", 5) == 0) {
+            attr->next = dup->next;
+            dup->next = NULL;
+            free_attribute_list(mem, dup);
+            (*count)--;
+            continue;
+        }
+        attr = dup;
+    }
     return 1;
 }
 
@@ -745,8 +855,18 @@ static void directive_opaque_free(const markdown_core_syntax_extension *extensio
     mem->free(directive);
 }
 
-static int is_attr_name_char(unsigned char c) {
-    return c > 0x20 && c != '=' && c != '"' && c != '\'' && c != '<' && c != '>' && c != '/' && c != '{' && c != '}';
+/* AN `=` PROMISES A VALUE. With none before the block ends the block is
+ * malformed, because an empty value would otherwise be indistinguishable from
+ * the valueless `{a}`, which means something else. `{a=}`, `{a= }` and an `=`
+ * followed only by a line ending are all the same case.
+ *
+ * An unquoted value may not contain `<`, `>`, `=` or a backtick: reaching one
+ * does not end the value, it makes the block malformed. A quoted value must be
+ * separated from whatever follows by whitespace or the closing brace --
+ * without that rule `{a="x"b=1}` lets the block run on and swallow the rest of
+ * the paragraph. */
+static int unquoted_value_cp(unsigned char c) {
+    return !ascii_is_space(c) && c != '<' && c != '>' && c != '=' && c != '`';
 }
 
 static int parse_attr_value(const unsigned char *data, bufsize_t len, bufsize_t *pos, const unsigned char **value,
@@ -756,10 +876,8 @@ static int parse_attr_value(const unsigned char *data, bufsize_t len, bufsize_t 
     while (*pos < len && ascii_is_space(data[*pos])) {
         (*pos)++;
     }
-    if (*pos >= len || ascii_is_space(data[*pos])) {
-        *value = data + *pos;
-        *value_len = 0;
-        return 1;
+    if (*pos >= len) {
+        return 0;
     }
     if (data[*pos] == '"' || data[*pos] == '\'') {
         quote = data[(*pos)++];
@@ -773,11 +891,17 @@ static int parse_attr_value(const unsigned char *data, bufsize_t len, bufsize_t 
         *value = data + start;
         *value_len = *pos - start;
         (*pos)++;
+        if (*pos < len && !ascii_is_space(data[*pos])) {
+            return 0;
+        }
         return 1;
     }
     start = *pos;
-    while (*pos < len && !ascii_is_space(data[*pos])) {
+    while (*pos < len && unquoted_value_cp(data[*pos])) {
         (*pos)++;
+    }
+    if (*pos < len && !ascii_is_space(data[*pos])) {
+        return 0;
     }
     *value = data + start;
     *value_len = *pos - start;
@@ -804,19 +928,33 @@ static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, b
         if (pos >= len) {
             break;
         }
+        /* SHORTHAND. `#x` and `.x` are the `id` and `class` attributes
+         * written short. A marker with nothing after it is not an attribute
+         * and takes the whole block down with it, which is `{#}` and `{.}`. */
         if (data[pos] == '#' || data[pos] == '.') {
-            ok = 0;
-            break;
+            const char *shorthand_name = data[pos] == '#' ? "id" : "class";
+            bufsize_t shorthand_len;
+            pos++;
+            shorthand_len = scan_attr_name(data, len, pos, 1);
+            if (shorthand_len == 0) {
+                ok = 0;
+                break;
+            }
+            if (!append_attribute(mem, &attrs, &tail, (const unsigned char *)shorthand_name,
+                                  (bufsize_t)strlen(shorthand_name), data + pos, shorthand_len, count++, oom)) {
+                ok = 0;
+                break;
+            }
+            pos += shorthand_len;
+            continue;
         }
         start = pos;
-        while (pos < len && is_attr_name_char(data[pos])) {
-            pos++;
-        }
-        if (pos == start) {
+        name_len = scan_attr_name(data, len, pos, 0);
+        pos += name_len;
+        if (name_len == 0) {
             ok = 0;
             break;
         }
-        name_len = pos - start;
         while (pos < len && ascii_is_space(data[pos])) {
             pos++;
         }
@@ -833,6 +971,12 @@ static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, b
         }
     }
 
+    if (ok && !accumulate_class_attributes(mem, attrs, &count)) {
+        if (oom) {
+            *oom = 1;
+        }
+        ok = 0;
+    }
     if (ok && !normalize_duplicate_attributes(mem, attrs, count)) {
         if (oom) {
             *oom = 1;
@@ -1097,6 +1241,17 @@ static markdown_core_node *match_colon_directive(const markdown_core_syntax_exte
     bufsize_t name_len;
     bufsize_t pos;
 
+    /* A TEXT DIRECTIVE'S COLON MAY NOT SIT NEXT TO ANOTHER COLON, on either
+     * side. The trailing half keeps `:red:` available to emoji; the leading
+     * half keeps a run of colons whole, so `x ::a y` is text rather than
+     * `x :` plus a directive named `a`, and `x:::a` is text rather than `x::`
+     * plus one. Only the trailing half was here. `::name` and `:::name` at the
+     * start of a line are leaf and container directives and open through the
+     * block path, which this does not touch. */
+    if (offset > 0 && chunk->data[offset - 1] == ':') {
+        return NULL;
+    }
+
     if (offset + 1 >= chunk->len || chunk->data[offset + 1] == ':') {
         return NULL;
     }
@@ -1127,8 +1282,15 @@ static markdown_core_node *match_colon_directive(const markdown_core_syntax_exte
             !parse_attributes(parser->mem, chunk->data + attr_start, attr_len, &attributes, &attr_oom)) {
             if (attr_oom) {
                 parser->oom = true;
+                return NULL;
             }
-            return NULL;
+            /* DEGRADATION. A malformed attribute block does not un-write the
+             * directive: the name stands and the braces are prose, so `:n{#}`
+             * is a directive named `n` followed by the text `{#}`. Returning
+             * NULL here instead made the whole `:n{#}` one Text node, which is
+             * the one reading the grammar does not admit -- the `:name` was
+             * well-formed before the `{` was ever read. */
+            return make_name_only_directive(extension, parser, inline_parser, chunk->data + name_start, name_len, pos);
         }
         node = make_directive_node(extension, parser, chunk->data + name_start, name_len, line, column, line,
                                    column + (int)(end - offset) - 1);

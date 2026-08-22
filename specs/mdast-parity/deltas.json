@@ -222,11 +222,6 @@
             "closedBy": "Step 7 \u2014 directive grammar conformance"
         },
         {
-            "input": ":invalid{=value}\n:open{title=\"value}\n",
-            "source": "packages/markdown-core/tests/fixtures/extensions-directive.txt:81",
-            "closedBy": "Step 7 \u2014 directive grammar conformance"
-        },
-        {
             "input": ":shortcut{#identifier}\n:shortcut{.class}\n",
             "source": "packages/markdown-core/tests/fixtures/extensions-directive.txt:95",
             "closedBy": "Step 7 \u2014 directive grammar conformance"
@@ -249,11 +244,6 @@
         {
             "input": "| status |\n| --- |\n| :badge[beta] |\n",
             "source": "packages/markdown-core/tests/fixtures/extensions-directive.txt:146",
-            "closedBy": "Step 7 \u2014 directive grammar conformance"
-        },
-        {
-            "input": ":a-[]\n:-a[]\n:_a[]\n",
-            "source": "packages/markdown-core/tests/fixtures/extensions-directive.txt:187",
             "closedBy": "Step 7 \u2014 directive grammar conformance"
         },
         {

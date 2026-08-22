@@ -415,10 +415,14 @@ static void formula_extension_accessors(test_batch_runner *runner) {
 }
 
 static void directive_extension_accessors(test_batch_runner *runner) {
+    /* `:-a[]` was the input here until Step 7, and it is not a directive: a
+     * name may not BEGIN with a hyphen or underscore any more than it may end
+     * with one. `class` is also the one name whose repeats accumulate now, so
+     * the three of them are one value rather than the last one. */
     const char *source_attributes = "{\"id\":\"123\",\"muted\":\"true\",\"title\":\"My Video\","
-                                    "\"bare\":\"\",\"dup\":\"last\",\"class\":\"blue\"}";
+                                    "\"bare\":\"\",\"dup\":\"last\",\"class\":\"red green blue\"}";
     markdown_core_node *doc =
-        parse_with_directive_extension(":-a[]{id=first muted=true title=\"My Video\" bare dup=first dup=last "
+        parse_with_directive_extension(":a[]{id=first muted=true title=\"My Video\" bare dup=first dup=last "
                                        "class=red class=green class=blue id=123}\n");
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *directive = markdown_core_node_first_child(paragraph);
@@ -430,7 +434,7 @@ static void directive_extension_accessors(test_batch_runner *runner) {
     size_t i;
 
     STR_EQ(runner, markdown_core_node_get_type_string(directive), "directive", "directive inline type string");
-    STR_EQ(runner, markdown_core_extensions_get_directive_name(directive), "-a", "directive name getter");
+    STR_EQ(runner, markdown_core_extensions_get_directive_name(directive), "a", "directive name getter");
     STR_EQ(runner, markdown_core_extensions_get_directive_attributes(directive), source_attributes,
            "directive attribute list normalizes to string-map JSON");
     INT_EQ(runner, markdown_core_extensions_set_directive_name(directive, "next_name-2"), 1,
@@ -439,6 +443,10 @@ static void directive_extension_accessors(test_batch_runner *runner) {
            "directive name setter updates payload");
     INT_EQ(runner, markdown_core_extensions_set_directive_name(directive, "bad-"), 0,
            "set directive name rejects trailing hyphen");
+    INT_EQ(runner, markdown_core_extensions_set_directive_name(directive, "-bad"), 0,
+           "set directive name rejects leading hyphen");
+    INT_EQ(runner, markdown_core_extensions_set_directive_name(directive, "_bad"), 0,
+           "set directive name rejects leading underscore");
     INT_EQ(runner, markdown_core_extensions_set_directive_name(directive, "bad_"), 0,
            "set directive name rejects trailing underscore");
     INT_EQ(runner, markdown_core_extensions_set_directive_name(directive, ""), 0,

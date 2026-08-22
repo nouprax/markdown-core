@@ -555,8 +555,33 @@ static int case_directive_unclosed_labels(pc_context *context) {
     return pc_directive_literal_case(context, ":x[", 20000);
 }
 
+/* `:x{` repeated is the DEGRADATION path, not the no-directive path: the name
+ * is well-formed before the `{` is read, so each unit is a directive named `x`
+ * followed by the prose `{`. Step 7 made that true; before it the whole run was
+ * one literal, and this case asserted so. What it is really guarding is
+ * unchanged -- 20000 unterminated blocks must not make the scan quadratic --
+ * so the shape assertion moved rather than went away. */
 static int case_directive_unclosed_attributes(pc_context *context) {
-    return pc_directive_literal_case(context, ":x{", 20000);
+    char *braces;
+    int result;
+
+    if (pc_build(context, NULL, ":x{", 20000, NULL) != 0) {
+        return -1;
+    }
+    if (pc_parse(context, PC_DIRECTIVE_ONLY) != 0) {
+        return -1;
+    }
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_DIRECTIVE, 20000, "Directive") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, 0, "DirectiveBlock") != 0) {
+        return -1;
+    }
+    braces = ts_repeat("{", 20000, NULL);
+    if (!braces) {
+        return -1;
+    }
+    result = pc_expect_text(context, braces, 20000);
+    free(braces);
+    return result;
 }
 
 static int case_directive_colon_pairs(pc_context *context) { return pc_directive_literal_case(context, "::", 40000); }
