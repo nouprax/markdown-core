@@ -1,5 +1,17 @@
 # Canonical AST contract
 
+**`docs/specs/canonical-ast.json` is the contract.** This document is its prose
+companion: it carries everything a table cannot say — the core rules, the
+coordinate model, ownership, the attribute grammar — and its own kind/field
+table below is a second copy of the JSON, **checked against it by
+`scripts/audit-ast-projections.mjs` kind for kind, field for field, in order**,
+so the two cannot drift. Edit the JSON; the audit will tell you if this table
+disagrees.
+
+Until Step 15A this table WAS the contract and it lived under
+`docs/deprecated/`, which `docs/RECONSTRUCTION.md` says is archive and not
+normative, while four executable policy files read it from there.
+
 Status: frozen for Phase 5 on 2026-07-11.
 
 Phase 18 adds the executable repository-level conformance data at

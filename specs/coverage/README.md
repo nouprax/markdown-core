@@ -6,7 +6,7 @@ surface live here and nowhere else, so no platform producer can hold a second
 opinion about whether it passed.
 
 The contract this data serves is frozen in
-[`docs/deprecated/specs/test-architecture.md`](../../docs/deprecated/specs/test-architecture.md).
+[`docs/specs/test-architecture.md`](../../docs/specs/test-architecture.md).
 
 ## What this gate is for
 

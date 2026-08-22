@@ -61,7 +61,7 @@
         {
             "id": "footnote-definition-placement",
             "summary": "Both keep footnote definitions at their source position, unreferenced ones included. This is where Markdown Core follows remark rather than cmark-gfm, and it is the reason this oracle exists.",
-            "evidence": "docs/deprecated/specs/canonical-ast.md footnote semantics; verified on in-body, out-of-order, unreferenced, and dangling cases."
+            "evidence": "docs/specs/canonical-ast.md footnote semantics; verified on in-body, out-of-order, unreferenced, and dangling cases."
         },
         {
             "id": "inline-math-padding",
@@ -71,7 +71,7 @@
         {
             "id": "unresolved-footnote-reference",
             "summary": "A footnote reference whose label no document footnote defines is literal text in both, label included and unparsed. This was a registered divergence until 2026-08-02, when Markdown Core adopted the rule the two authorities already shared; it is recorded here so the corpus keeps checking that the agreement holds.",
-            "evidence": "docs/deprecated/specs/canonical-ast.md footnote semantics; specs/mdast-parity/corpus.md \"dangling[^nope] tail\"."
+            "evidence": "docs/specs/canonical-ast.md footnote semantics; specs/mdast-parity/corpus.md \"dangling[^nope] tail\"."
         }
     ],
     "expectedDivergences": [

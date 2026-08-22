@@ -1,6 +1,6 @@
 {
     "schemaVersion": 1,
-    "contract": "docs/deprecated/specs/test-architecture.md",
+    "contract": "docs/specs/test-architecture.md",
     "target": "Every branch of the parser that can change source -> canonical AST output is pinned by a golden assertion.",
     "requiredMetrics": [
         "lines",

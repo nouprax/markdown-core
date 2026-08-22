@@ -4,7 +4,7 @@ import process from "node:process";
 import { TextDecoder } from "node:util";
 
 const root = process.cwd();
-const contractPath = path.join(root, "docs/deprecated/specs/canonical-ast.md");
+const contractPath = path.join(root, "docs/specs/canonical-ast.md");
 const specPath = path.join(root, "specs/canonical-ast");
 const manifestPath = path.join(specPath, "manifest.json");
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -110,8 +110,8 @@ const orderValidators = {
 
 if (manifest.schemaVersion !== 1) failures.push("manifest schemaVersion must be 1");
 if (
-    manifest.contract !== "docs/deprecated/specs/canonical-ast.md" ||
-    manifest.dumpGrammar !== "docs/deprecated/specs/canonical-ast-dump.md"
+    manifest.contract !== "docs/specs/canonical-ast.md" ||
+    manifest.dumpGrammar !== "docs/specs/canonical-ast-dump.md"
 ) {
     failures.push("manifest contract paths drifted from the repository specifications");
 }

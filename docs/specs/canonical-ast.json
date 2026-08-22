@@ -1,0 +1,459 @@
+{
+    "schemaVersion": 1,
+    "purpose": "THE canonical AST contract, machine-readable and normative. Six projection surfaces declare this same shape again in their own language -- a Swift struct cannot be produced by a C function and neither can a Kotlin class or a TypeScript interface -- and scripts/audit-ast-projections.mjs checks every one of them against this file. The prose companion at docs/specs/canonical-ast.md carries everything a table cannot say (the core rules, coordinates, ownership, the attribute grammar) and ITS table is generated from this file and checked against it, so the two cannot drift. Until Step 15A both lived under docs/deprecated/, which docs/RECONSTRUCTION.md says is archive and not normative, while four executable policy files read them.",
+    "prose": "docs/specs/canonical-ast.md",
+    "dumpGrammar": "docs/specs/canonical-ast-dump.md",
+    "enums": {
+        "PlacementMode": [
+            "embedded",
+            "standalone"
+        ],
+        "ListFlavor": [
+            "bullet",
+            "ordered"
+        ],
+        "TableAlignment": [
+            "none",
+            "left",
+            "center",
+            "right"
+        ]
+    },
+    "inheritedField": {
+        "name": "scope",
+        "type": "Scope",
+        "optional": false
+    },
+    "kinds": [
+        {
+            "name": "Document",
+            "fields": [
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "block content"
+        },
+        {
+            "name": "BlockQuote",
+            "fields": [
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "block content"
+        },
+        {
+            "name": "Paragraph",
+            "fields": [
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "inline content"
+        },
+        {
+            "name": "Heading",
+            "fields": [
+                {
+                    "name": "level",
+                    "type": "Int",
+                    "optional": false
+                },
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "`level` is 1 through 6; inline content"
+        },
+        {
+            "name": "ThematicBreak",
+            "fields": [],
+            "invariants": "leaf"
+        },
+        {
+            "name": "List",
+            "fields": [
+                {
+                    "name": "flavor",
+                    "type": "ListFlavor",
+                    "optional": false
+                },
+                {
+                    "name": "start",
+                    "type": "Int",
+                    "optional": true
+                },
+                {
+                    "name": "tight",
+                    "type": "Bool",
+                    "optional": false
+                },
+                {
+                    "name": "items",
+                    "type": "[ListItem]",
+                    "optional": false
+                }
+            ],
+            "invariants": "`start` is non-null only for ordered lists"
+        },
+        {
+            "name": "ListItem",
+            "fields": [
+                {
+                    "name": "checked",
+                    "type": "Bool",
+                    "optional": true
+                },
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "`checked == null` means not a task item; block content"
+        },
+        {
+            "name": "CodeBlock",
+            "fields": [
+                {
+                    "name": "mode",
+                    "type": "PlacementMode",
+                    "optional": false
+                },
+                {
+                    "name": "info",
+                    "type": "String",
+                    "optional": true
+                },
+                {
+                    "name": "language",
+                    "type": "String",
+                    "optional": true
+                },
+                {
+                    "name": "literal",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "fenced",
+                    "type": "Bool",
+                    "optional": false
+                },
+                {
+                    "name": "closed",
+                    "type": "Bool",
+                    "optional": false
+                }
+            ],
+            "invariants": "mode is `standalone`; `info` is the complete raw info string; `language` is its first non-whitespace token; indented blocks have `fenced=false, closed=true`"
+        },
+        {
+            "name": "HTMLBlock",
+            "fields": [
+                {
+                    "name": "literal",
+                    "type": "String",
+                    "optional": false
+                }
+            ],
+            "invariants": "raw HTML is preserved"
+        },
+        {
+            "name": "FormulaBlock",
+            "fields": [
+                {
+                    "name": "mode",
+                    "type": "PlacementMode",
+                    "optional": false
+                },
+                {
+                    "name": "literal",
+                    "type": "String",
+                    "optional": false
+                }
+            ],
+            "invariants": "mode is `standalone`"
+        },
+        {
+            "name": "Table",
+            "fields": [
+                {
+                    "name": "alignments",
+                    "type": "[TableAlignment]",
+                    "optional": false
+                },
+                {
+                    "name": "header",
+                    "type": "TableRow",
+                    "optional": false
+                },
+                {
+                    "name": "rows",
+                    "type": "[TableRow]",
+                    "optional": false
+                }
+            ],
+            "invariants": "one alignment per column; header is non-optional"
+        },
+        {
+            "name": "TableRow",
+            "fields": [
+                {
+                    "name": "isHeader",
+                    "type": "Bool",
+                    "optional": false
+                },
+                {
+                    "name": "cells",
+                    "type": "[TableCell]",
+                    "optional": false
+                }
+            ],
+            "invariants": "`isHeader` is true only for `Table.header` and false for entries in `Table.rows`"
+        },
+        {
+            "name": "TableCell",
+            "fields": [
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "inline content"
+        },
+        {
+            "name": "DirectiveBlock",
+            "fields": [
+                {
+                    "name": "mode",
+                    "type": "PlacementMode",
+                    "optional": false
+                },
+                {
+                    "name": "name",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "attributes",
+                    "type": "String",
+                    "optional": true
+                },
+                {
+                    "name": "label",
+                    "type": "[Markup]",
+                    "optional": true
+                },
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "attributes is normalized string-map JSON object text; mode is `standalone`; label is inline; content is block; null label and explicit empty label remain distinct"
+        },
+        {
+            "name": "FootnoteDefinition",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "id is non-empty; block content"
+        },
+        {
+            "name": "Text",
+            "fields": [
+                {
+                    "name": "literal",
+                    "type": "String",
+                    "optional": false
+                }
+            ],
+            "invariants": "leaf"
+        },
+        {
+            "name": "SoftBreak",
+            "fields": [],
+            "invariants": "leaf"
+        },
+        {
+            "name": "LineBreak",
+            "fields": [],
+            "invariants": "leaf"
+        },
+        {
+            "name": "Code",
+            "fields": [
+                {
+                    "name": "mode",
+                    "type": "PlacementMode",
+                    "optional": false
+                },
+                {
+                    "name": "literal",
+                    "type": "String",
+                    "optional": false
+                }
+            ],
+            "invariants": "mode is `embedded`; leaf"
+        },
+        {
+            "name": "HTML",
+            "fields": [
+                {
+                    "name": "literal",
+                    "type": "String",
+                    "optional": false
+                }
+            ],
+            "invariants": "raw HTML is preserved; leaf"
+        },
+        {
+            "name": "Formula",
+            "fields": [
+                {
+                    "name": "mode",
+                    "type": "PlacementMode",
+                    "optional": false
+                },
+                {
+                    "name": "literal",
+                    "type": "String",
+                    "optional": false
+                }
+            ],
+            "invariants": "either mode; leaf"
+        },
+        {
+            "name": "Emphasis",
+            "fields": [
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "inline content"
+        },
+        {
+            "name": "Strong",
+            "fields": [
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "inline content"
+        },
+        {
+            "name": "Strikethrough",
+            "fields": [
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "inline content"
+        },
+        {
+            "name": "Link",
+            "fields": [
+                {
+                    "name": "destination",
+                    "type": "String",
+                    "optional": true
+                },
+                {
+                    "name": "title",
+                    "type": "String",
+                    "optional": true
+                },
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "absent and empty title remain distinct; inline content"
+        },
+        {
+            "name": "Image",
+            "fields": [
+                {
+                    "name": "source",
+                    "type": "String",
+                    "optional": true
+                },
+                {
+                    "name": "title",
+                    "type": "String",
+                    "optional": true
+                },
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "content is parsed alt-text inline content"
+        },
+        {
+            "name": "Directive",
+            "fields": [
+                {
+                    "name": "mode",
+                    "type": "PlacementMode",
+                    "optional": false
+                },
+                {
+                    "name": "name",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "attributes",
+                    "type": "String",
+                    "optional": true
+                },
+                {
+                    "name": "label",
+                    "type": "[Markup]",
+                    "optional": true
+                }
+            ],
+            "invariants": "attributes is normalized string-map JSON object text; mode is `embedded`; null label and explicit empty label remain distinct"
+        },
+        {
+            "name": "FootnoteReference",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "String",
+                    "optional": false
+                }
+            ],
+            "invariants": "id is non-empty; leaf"
+        }
+    ]
+}

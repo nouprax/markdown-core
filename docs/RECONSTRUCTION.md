@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5) and **D35** (§4.14.5a) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a) and **15A.1** (§4.14.15A) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 6** (deliverable #2), **Step 10** or **Step 9a** — all three unblocked by the graph. **Read §4.14.6 first: Step 6 is a cross-binding step, not a 60-line one.** 15A is deferred deliberately; it blocks only 7, 9b, 12 and 14. Remaining: `15A 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **15A.2** — the Swift model's typed child edges (Q30), which is the only thing `audit-ast-projections.mjs` is still red on. Then 15A.3 (the audit grows to six surfaces), 15A.4 (Q29), and Step 6. Remaining: `15A 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -3866,6 +3866,65 @@ files. Whoever takes them should read §4.1.8 and Q14, Q18 and Q29 first.
 
 Nothing about Step 6 is *harder* than the plan says. It is *wider*, and the
 width is in the bindings, which nothing landed so far has touched.
+
+
+---
+
+#### 4.14.15A Step 15A: one contract, and the surfaces that project it
+
+##### 15A.1 — the contract is machine-readable, normative, and out of the archive
+
+**Where it was.** `docs/deprecated/specs/canonical-ast.md` — a Markdown table
+parsed by a regex, in the directory this document's own first paragraph calls
+archive and *"nothing there is normative"*, read by **four executable policy
+files**.
+
+**Where it is.** `docs/specs/canonical-ast.json`: 28 kinds, 53 fields, each with
+a name, a type and a nullability bit, in canonical order, plus the three enums.
+`docs/specs/canonical-ast.md` moves out of the archive with it and becomes the
+**prose companion** — the core rules, the coordinate model, ownership, the
+attribute grammar, everything a table cannot say.
+
+**And the prose is checked.** Its kind/field table is a second copy of the
+contract, so `audit-ast-projections.mjs` now compares it against the JSON kind
+for kind, field for field, **in order**. The two cannot drift.
+
+| mutant | result |
+|---|---|
+| drop `content` from `Heading`'s row in the prose | *`Heading` reads [level] and the contract says [level, content]* |
+| swap `Text` and `SoftBreak` in the prose table | *its table names a different set or order of kinds than the JSON* |
+
+**Everything that pointed into the archive was repointed**, and doing that found
+**two citations that outlived their documents**:
+
+- `scripts/check-generated-scanners.sh` cites `docs/deprecated/specs/c-naming.md`
+  — **which is not in this repository.**
+- `scripts/audit-scope-sanity.mjs` cites two review documents under
+  `docs/deprecated/reviews/` — **that directory does not exist.**
+
+Both now say so in place rather than pointing at nothing. Fifteen files were
+repointed, including `specs/canonical-ast/manifest.json`,
+`specs/coverage/policy.json`, both parity `deltas.json`, the scope-sanity
+ledger and the Kotlin build's packaged-docs list.
+`docs/specs/test-architecture.md` moved too, because `specs/coverage/policy.json`
+names it as its contract.
+
+**What still points into `docs/deprecated/`, and why it stays.** Exactly two,
+both release plumbing and both already §4.1.5's:
+`check-release-version.mjs` and `audit-ci-policy.sh` read
+`docs/deprecated/releases/$(cat VERSION).md`, and the Android runtime's Gradle
+build packages a migration document. §4.1.5 lists the release-notes path as one
+of the seven release gates, owner **15C**. Nothing normative is left in the
+archive.
+
+**Gates after.** Every §0 gate green and unmoved, plus the three binding
+baselines this step established and can now hold: **Swift** `swift test`,
+**Kotlin** `:jvmTest` (Gradle via Android Studio's JBR, which
+`scripts/lib/discover-toolchain.sh` already finds), and **ES** node tests
+against a wasm build from the **vendored** emsdk at
+`.tools/emsdk/4.0.23`, which is not on `PATH` by default.
+`audit-ast-projections.mjs` is still red, on the Swift model alone, which is
+15A.2.
 
 
 ---

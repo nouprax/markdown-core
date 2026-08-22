@@ -2,22 +2,30 @@
 /**
  * AST-projection audit.
  *
- * `docs/deprecated/specs/canonical-ast.md` carries one table — kind, fields in
- * canonical order, invariants — and that table is the AST definition. Four
- * platforms then declare the same definition again in their own language,
- * because a Swift `Heading` cannot be produced by a C function and neither
- * can a Kotlin one or a TypeScript one. Those four declarations are not
- * duplication to be removed; they are the projection layer, and the layer's
- * whole job is to DEFINE the shape and INITIALIZE it. It derives nothing.
+ * `docs/specs/canonical-ast.json` is THE contract: kind, fields in canonical
+ * order, types, nullability. Platforms then declare the same definition again
+ * in their own language, because a Swift `Heading` cannot be produced by a C
+ * function and neither can a Kotlin one or a TypeScript one. Those
+ * declarations are not duplication to be removed; they are the projection
+ * layer, and the layer's whole job is to DEFINE the shape and INITIALIZE it.
+ * It derives nothing.
  *
- * Which is exactly why it has to be checked. Four hand-written copies of one
- * table drift the way five hand-written source lists drifted, and a
- * projection that quietly lacks a field is indistinguishable, from inside
- * that language, from a field the parser never had.
+ * Which is exactly why it has to be checked. Hand-written copies of one table
+ * drift the way five hand-written source lists drifted, and a projection that
+ * quietly lacks a field is indistinguishable, from inside that language, from
+ * a field the parser never had.
  *
- * This audit reads the table and requires every platform to declare every
- * kind with every field. It does not check types: a `level` is `Int` in the
- * table, `Int32` in Swift, `Int` in Kotlin and `number` in TypeScript, and
+ * THE PROSE IS CHECKED TOO. `docs/specs/canonical-ast.md` carries everything a
+ * table cannot say -- the core rules, coordinates, ownership, the attribute
+ * grammar -- and its own kind/field table is a SECOND copy of the contract.
+ * This audit compares it against the JSON kind for kind and field for field,
+ * so the two cannot drift apart. Until Step 15A the Markdown table WAS the
+ * contract, it lived under `docs/deprecated/`, which
+ * `docs/RECONSTRUCTION.md` says is archive and not normative, and four
+ * executable policy files read it from there.
+ *
+ * It does not check types across platforms: a `level` is `Int` in the
+ * contract, `Int32` in Swift, `Int` in Kotlin and `number` in TypeScript, and
  * pretending one spelling is canonical would be a lie the audit then has to
  * maintain.
  *
@@ -30,12 +38,24 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
-/** The kind -> fields table of the canonical AST contract. */
+const CONTRACT_PATH = "docs/specs/canonical-ast.json";
+const PROSE_PATH = "docs/specs/canonical-ast.md";
+
+/** The contract: an ordered kind -> field-name list. */
 function definition() {
-    const lines = fs.readFileSync(path.join(root, "docs/deprecated/specs/canonical-ast.md"), "utf8").split("\n");
+    const contract = JSON.parse(fs.readFileSync(path.join(root, CONTRACT_PATH), "utf8"));
+    if (!Array.isArray(contract.kinds) || contract.kinds.length === 0) {
+        throw new Error(`${CONTRACT_PATH}: no kinds`);
+    }
+    return new Map(contract.kinds.map((kind) => [kind.name, kind.fields.map((f) => f.name)]));
+}
+
+/** The same table as the prose spells it, so the two can be compared. */
+function proseDefinition() {
+    const lines = fs.readFileSync(path.join(root, PROSE_PATH), "utf8").split("\n");
     const header = lines.findIndex((line) => line.startsWith("| Kind | Fields in canonical order"));
     if (header < 0) {
-        throw new Error("canonical-ast.md: the kind/fields table is gone or renamed");
+        throw new Error(`${PROSE_PATH}: the kind/fields table is gone or renamed`);
     }
     const kinds = new Map();
     for (const line of lines.slice(header + 2)) {
@@ -47,13 +67,13 @@ function definition() {
             .map((c) => c.trim());
         if (cells.length < 2) break;
         const kind = cells[0].replace(/`/g, "");
-        // `mode` is spelled without a type in the table because the allowed
+        // `mode` is spelled without a type in the prose because the allowed
         // values are fixed per kind by the table above it.
         const fields = cells[1] === "none" ? [] : [...cells[1].matchAll(/`([A-Za-z]+)(?::[^`]*)?`/g)].map((m) => m[1]);
         kinds.set(kind, fields);
     }
     if (kinds.size === 0) {
-        throw new Error("canonical-ast.md: the kind/fields table read as empty");
+        throw new Error(`${PROSE_PATH}: the kind/fields table read as empty`);
     }
     return kinds;
 }
@@ -127,6 +147,27 @@ const projections = [
 const kinds = definition();
 let failed = false;
 
+// The prose's table is a second copy of the contract, in order.
+{
+    const prose = proseDefinition();
+    const contractOrder = [...kinds.keys()].join(",");
+    const proseOrder = [...prose.keys()].join(",");
+    if (contractOrder !== proseOrder) {
+        console.error(`${PROSE_PATH}: its table names a different set or order of kinds than ${CONTRACT_PATH}`);
+        failed = true;
+    }
+    for (const [kind, fields] of kinds) {
+        const declared = prose.get(kind);
+        if (declared === undefined) continue;
+        if (declared.join(",") !== fields.join(",")) {
+            console.error(
+                `${PROSE_PATH}: ${kind} reads [${declared.join(", ")}] and the contract says [${fields.join(", ")}]`
+            );
+            failed = true;
+        }
+    }
+}
+
 for (const { label, fieldsOf } of projections) {
     for (const [kind, expected] of kinds) {
         const declared = fieldsOf(kind);
@@ -147,4 +188,7 @@ if (failed) {
     console.error("\nAST-projection audit failed: a platform's definition layer has drifted from the contract.");
     process.exit(1);
 }
-console.log(`AST-projection audit passed: ${kinds.size} kinds declared by ${projections.length} platforms.`);
+console.log(
+    `AST-projection audit passed: ${String(kinds.size)} kinds, ` +
+        `the prose table, and ${String(projections.length)} platforms.`
+);

@@ -8,8 +8,10 @@
 # The check runs only when the pinned re2c is available; otherwise it reports
 # an explicit SKIP (it must not be read as a verified pass). ext_scanners.c is
 # not covered: its committed copy predates the raw-output policy and carries
-# hand formatting on top of the generated code (see docs/deprecated/specs/c-naming.md
-# Non-goals).
+# hand formatting on top of the generated code. That used to cite
+# docs/deprecated/specs/c-naming.md, WHICH IS NOT IN THIS REPOSITORY -- the
+# citation outlived the document, and Step 15A found it while making sure no
+# executable file points into docs/deprecated/.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

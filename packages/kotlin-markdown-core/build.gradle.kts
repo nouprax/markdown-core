@@ -531,7 +531,7 @@ afterEvaluate {
 val javadocJar =
     tasks.register<Jar>("javadocJar") {
         archiveClassifier.set("javadoc")
-        from(repositoryRoot.file("docs/deprecated/specs/canonical-ast.md"))
+        from(repositoryRoot.file("docs/specs/canonical-ast.md"))
         from(layout.projectDirectory.file("README.md"))
     }
 

@@ -252,7 +252,7 @@ if (divergent.length) {
     }
     process.stderr.write(
         "\nEach divergence is either a defect or a deliberate difference. A deliberate one is\n" +
-            "registered in specs/mdast-parity/deltas.json and written into docs/deprecated/specs/canonical-ast.md.\n"
+            "registered in specs/mdast-parity/deltas.json and written into docs/specs/canonical-ast.md.\n"
     );
     process.exit(1);
 }
