@@ -41,8 +41,6 @@ bufsize_t _ext_scan_at(bufsize_t (*scanner)(const unsigned char *), unsigned cha
   formula_latex_backslash_inline_open = [\\][\\][(];
   formula_latex_backslash_display_open = [\\][\\]"[";
 
-  directive_name_char = [A-Za-z0-9_-];
-  directive_name = directive_name_char+;
 */
 
 bufsize_t _scan_table_start(const unsigned char *p)
@@ -142,15 +140,6 @@ bufsize_t _scan_formula_latex_backslash_display_open(const unsigned char *p)
   const unsigned char *start = p;
   /*!re2c
     formula_latex_backslash_display_open { return (bufsize_t)(p - start); }
-    * { return 0; }
-  */
-}
-
-bufsize_t _scan_directive_name(const unsigned char *p)
-{
-  const unsigned char *start = p;
-  /*!re2c
-    directive_name { return (bufsize_t)(p - start); }
     * { return 0; }
   */
 }

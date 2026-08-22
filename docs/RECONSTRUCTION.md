@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1** (§4.14.7a) and **7.2** (§4.14.7b) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c** (§4.14.7a, §4.14.7b, §4.14.7c) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 7's last piece — Q14's other half**, deleting `MARKDOWN_CORE_OPT_DIRECTIVE`, and then Q19/Q20 if they are not already answered (Q19 is: the sort landed at 7.2). 7.1 landed the grammar (§4.14.7a) and 7.2 the surface (§4.14.7b). Then `10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 10** — the split-off table lead, and the last mdast backlog entry that is not Step 9b's. **Step 7 is done** (§4.14.7a/b/c): deliverable #1, Q14, Q19 and Q20 all closed, with **D36** carried under the new **Q43**. Remaining: `10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -57,16 +57,16 @@ node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/audit-source-lists.mjs              # 23 sources, 4 of 5 lists, 1 registered absent
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
-node scripts/check-upstream-parity.mjs     # 859/859 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
-node scripts/check-mdast-parity.mjs        # 93/93, backlog 7/7 still diverging
-node scripts/audit-scope-sanity.mjs        # 4 unresolved rows, 5190 scanned, only-shrink holds
+node scripts/check-upstream-parity.mjs     # 871/871 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
+node scripts/check-mdast-parity.mjs        # 105/105, backlog 7/7 still diverging
+node scripts/audit-scope-sanity.mjs        # 4 unresolved rows, 5233 scanned, only-shrink holds
 
 # The three position oracles, landed at 0a.1 (§4.2.7). Each fails on a row
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
 # fails here rather than in review.
 node scripts/audit-inline-sourcepos.mjs    # 0 rows registered, 68 scanned
-node scripts/audit-scope-containment.mjs   # 45 rows registered, 4089 scanned
-node scripts/audit-position-places.mjs     # 106 rows registered, 4224 scanned
+node scripts/audit-scope-containment.mjs   # 45 rows registered, 4114 scanned
+node scripts/audit-position-places.mjs     # 106 rows registered, 4255 scanned
 
 # D9's pin. REGISTERED RED and it fails if a row STOPS reproducing, because
 # deleting the budget clears both rows and costs 204.678x output growth.
@@ -389,7 +389,7 @@ looked at. Every one of the fourteen that Q25 put to the test was
 found **fixable on the untouched baseline**; none produced an architectural
 dependency, and D9 remains the plan's only exception.
 
-**All thirty-five are recorded here**, because a defect the plan does not name
+**All thirty-six are recorded here**, because a defect the plan does not name
 is a defect the plan will re-derive later at full price — and because a list
 split across three sections is a list nobody reads.
 
@@ -1166,13 +1166,13 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | **Q11** | Does the repository adopt `InsertBraces: true`? | 2 | **TAKEN at Step 2, and every number in this row was wrong.** Footprint ~~2,393 diff lines across 36 files, 561 of them in `core/` + `extensions/`~~ → **2,472 across 38, of which 1,700 are in `core/` + `extensions/` and 772 in `tests/`**; the old split understated the engine's share threefold. Neutrality ~~29/29 objects identical~~ → **83/83 Release objects BYTE-identical**, no normalization needed; a debug build type moves only `assert`'s `__LINE__` immediate (82 substituted instructions under `asan`, 58 under `ubsan`, **zero** added or removed). The tool is `scripts/audit-format-neutrality.sh <rev>`, and it is a measurement tool, not a standing gate — §4.14.2 says why. |
 | **Q12** | Is the arena deleted, or made parser-owned? | 3a | **Delete.** Measured: ~7% CLI-only parse win, **+10–16% peak RSS**, `abort()` on allocation failure inside a library with a careful sticky-OOM discipline, total sanitizer blindness on the binary the parity oracles drive, and a demonstrated **480-byte leak in a parser that never asked for it** (a global `A != NULL` makes an unrelated default-allocator parse take `table.c`'s retry branch). Parser-owned is impossible without a document-owned lifetime model this engine does not have. Output-neutral: 7,251 comparisons, 0 differences. |
 | **Q13** | Is the cycle check unconditional — and is it a defect or a refactor by-product? | 3b | **TAKEN at 3b: unconditional, and it was a defect** — the witness is in §4.14.3b and writing its gate found a second one, D34. The measured cost on this tree is +0.9% and +3.5% on two deep-nesting inputs and noise on two ordinary ones; the row's 10.7% is not reproduced and nothing here takes 36 seconds. The row's own reading — *"the shipped library makes `b->parent == b` on request while the test that denies it flips a flag nothing else flips"* reads exactly like D1–D16 — was exactly right. |
-| **Q14** | One knob per extension, or two? | 3, 6, 7 | **TAKEN — the formula half at Step 6.** Both delimiter options are gone from the C header, the facade, the CLI, the C tests, all three binding models and the shared manifest; `formulas` turns on `$`, `$$`, `` $`...`$ ``, `\(...\)` and `\[...\]` together, and no sub-grammar selection was stated so none was kept. The gate is live: attaching formula regardless of the option fails `spec_commonmark` and `extensions_formula_option_gates` (§4.14.6). `MARKDOWN_CORE_OPT_DIRECTIVE` is Step 7's. |
+| **Q14** | One knob per extension, or two? | 3, 6, 7 | **TAKEN — the formula half at Step 6.** Both delimiter options are gone from the C header, the facade, the CLI, the C tests, all three binding models and the shared manifest; `formulas` turns on `$`, `$$`, `` $`...`$ ``, `\(...\)` and `\[...\]` together, and no sub-grammar selection was stated so none was kept. The gate is live: attaching formula regardless of the option fails `spec_commonmark` and `extensions_formula_option_gates` (§4.14.6). `MARKDOWN_CORE_OPT_DIRECTIVE` went the same way at 7c, with `directive_enabled`; attaching the extension regardless of the option fails `spec_commonmark`, `extensions_gfm` and `extensions_directive_option_gates`. **Q14 is closed.** |
 | **Q15** | What is the **inline** dispatch precedence? | 3 | Q9 settles the *block* order (`table` last) and says nothing about inlines — `table` has no inline hooks at all. `autolink` and `directive` both claim `':'`, and first-non-NULL wins today. **Recommend: table order is also inline order, `autolink` before `directive`** (a bare `:` far more often begins a URL), stated in the commit and pinned by a fixture. **MEASURED AT 0a.11 AND THE COLLISION HAS NO WITNESS**: moving `directive` to first or to the middle changes 0 of 12 hand-built candidates and 0 of 4,000 random `:`/URL/attribute documents (§4.2.17). The recommendation stands as a tie-break; it must not be shipped as a fix, and **a fixture cannot pin it until an input exists that distinguishes the two** — finding one, or recording that none does, is Step 3's. |
 | **Q16** | Are extension node types and node-flag bits re-assigned as fixed constants? | 3 | **TAKEN at 3.1.** A fixed enum decoupled from the table order, at exactly the values the runtime allocator produced (measured both sides). The export map is 32 facade symbols and `local: *`, so renumbering was available and was declined to keep the commit structural. §4.14.3. |
 | **Q17** | Is an inline node's position a projection of a stored byte range? | 8 | **Yes**, and store the pair — two `bufsize_t` on the inline node. This is what makes D12 *unexpressible* rather than fixed, and it is the concession that makes 11b cheap. |
 | **Q18** | Which inline-math padding rule? | 6 | **TAKEN at Step 6, and this row's phrasing is what misled.** "Strip one leading and one trailing space-or-line-ending" reads as two independent strips and is not: the oracle pins `text $$ mid$$ text` as `literal=" mid"`, so it is **both or neither**. The `\(…\)` / `\[…\]` forms are covered, by two new pins. Two further corrections came out of the implementation: a **tab is not whitespace** for the all-whitespace test — `$$ \t $$` strips to `"\t"`, exactly as `` ` \t ` `` does — and the **CRLF clause is unreachable**, because the line reader hands inline content LF-only. Both measured; §4.14.6. |
 | **Q19** | Are directive attributes sorted in the model, or only in the dump? | 7 | **TAKEN at 7.2: sorted in the model**, by a linked-list merge sort that cannot fail to allocate -- the duplicate normalizer above it already degrades to a no-index path, and a sort that could fail would hand back an unsorted list with nothing to say so. remark's own projection is sorted, so the mdast oracle checks it. Originally: **Sorted in the model.** After class-accumulation and last-value-wins the list *is* a map; source order is meaningful only inside `class`'s accumulated value, which is already a string. Two orders is how a third order appears in a binding. |
-| **Q20** | Are character references decoded in directive attribute values? | 7 | **Decode** (one call to the existing `houdini_unescape_html_f`), pin `:n{a=&amp;}` → `a="&"`. If declined, it must be a *registered* divergence in `deltas.json`, not silence. |
+| **Q20** | Are character references decoded in directive attribute values? | 7 | **TAKEN at 7c, and the oracle answered it.** `mdast-util-directive` decodes in three places -- an attribute's value and the `#id` and `.class` shorthand values -- and nowhere else; a name is taken as written. This engine now decodes at the same three through `houdini_unescape_html_f`, its sixth call site. The narrower question, whether the semicolon is required, was measured exhaustively: **2125 of 2125 named references agree with the semicolon** and the whole difference is 162 semicolon-less forms, where micromark uses an HTML *attribute* rule that appears nowhere else in its own parser. This engine keeps CommonMark's rule and the difference is registered, which is what this row's own last sentence asked for. §4.14.7c. |
 | **Q21** | Does a reference definition box itself, or only its resource? | 9b | **Only its resource.** Measured on this machine: `chunk` 16, `association` 32, `definition` 64, `reference` 40, widest existing union arm (`markdown_core_code`) **40**. `{association; resource *}` is 32+8 = **40** — the union does not grow, the association stays inline and uniformly readable for all five kinds, and the label can never be lost to a failed box allocation. |
 | **Q22** | Does the content-to-source map have **one** owner? | 8, 10, 11a | **Yes, and this is the sharpest thing the restatement found.** Three steps independently proposed a mechanism for one fact: Step 10's per-line parse-time marks, Step 8's newline index, and 11a's `CONTENT` regions. **Recommend: 10 produces it, 11a retains it, 8 projects through it, 11b tiles it.** Three implementations of one fact is the disease this plan names in five other places. |
 | **Q23** | Does the document retain the normalized source? | 11a | **Yes** — one append-once buffer, 1× the input, plus 4 bytes per line of index. §6's verdict ("nothing replaces the substrate") is true of the *rope* and silently assumed the bytes survive; they do not (`parser->curline` is cleared per line, `linebuf` freed at finish, `source` borrowed). The alternative is re-implementing the normalizer — including `markdown_core_utf8proc_check`'s replacement policy — byte-identically in Swift, Kotlin and JS. **This is a §6 amendment, not just a Step 11a decision.** |
@@ -1184,6 +1184,7 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | **Q29** | Does `mode` survive on `Code`, `CodeBlock`, `Directive`, `DirectiveBlock`? | 15A | **TAKEN at 15A.4, and it is FIVE kinds, not four.** `FormulaBlock` is not "genuinely variable" either: the corpus has 12 `standalone` and zero `embedded`, and `markdown_core_extensions_set_formula_mode` REFUSES any other value for that kind (`extensions/formula.c:100`). `Formula` is the only kind whose mode is a fact about the source. 195 golden rows, twelve surfaces, and a seventh hand-written copy of the contract found and deleted. ~~**No** — delete it from those four, keep it on `Formula`/`FormulaBlock` where it is genuinely variable. Both decoders prove the point: Kotlin and ES hard-code the constant and one of them then *asserts* the constant it just synthesized, and the Kotlin wire format does not transmit it. A field whose value is implied by its type is ceremony four surfaces must keep in step.~~ **Every one of those claims was verified before acting on it, and every one was true.** |
 | **Q30** | Do the bindings spell child edges typed (`content`, `items`, `label`, `header`, `rows`, `cells`) or flat (`children`)? | 15A | **TAKEN at 15A.2: typed.** The Swift dump is byte-identical afterwards and `audit-ast-projections.mjs` is green. ~~**Typed.** Kotlin and ES already do; Swift's flat `children` is what forces `labelCount: Int?`, forces `Table.init` to filter rows by `isHeader` and `preconditionFailure` if the count is not one, and forces `children: [any Markup] = []` onto eleven leaf kinds. Two of three bindings and the contract already assume it.~~ **Every one of those was measured true at 15A.2 and every one of them is gone.** |
 | **Q42** | When does `prettier --check .` get satisfied, and by reformatting or by scoping? | 15C | **OPEN.** `ci.yml:97` runs it as a required step and it reports **100 files** at Step 6, none of them engine sources — `scripts/*.mjs`, `specs/**/*.json`, docs. Same era skew as `audit:ci`: the config came from `main` with Step 0's `scripts/` restore, the files did not. **Recommend: one deliberate `prettier --write` commit at 15C that touches nothing else**, rather than letting each step carry unrelated churn or leaving a required check red through Stage 0. Scoping prettier away from `specs/` is the alternative and is worse — those are the files a reader diffs most. |
+| **Q43** | Is a directive's label found LEXICALLY, or by the inline delimiter machinery? | 7, 8 | **OPEN, and it is the owner's**, because it is a redesign and not a repair. micromark scans the label as raw text -- `\` escapes, `[`/`]` balance, a depth cap of 32, and nothing else -- and this engine pushes a delimiter and lets the inline pass pair it, so a code span, an emphasis run or a GFM autolink that reaches the `]` first wins (**D36**). Lexical is what the reference does and what makes `:b[http://e.com]` a directive; it also means the label's end is decided before any inline construct exists, which is a different pass shape from the one Step 8 is being built around. **Recommend: lexical**, at Step 8 rather than here, so the position model and the label scan are designed together. Eleven witnesses are measured in §4.14.7c. |
 | **Q41** | Does the repository keep swift-format's `AllPublicDeclarationsHaveDocumentation`? | 15A / 15C | **OPEN, and it is the owner's.** It is a required CI health check that has been failing: 184 findings at `46e20f2`, 170 after 15A.2, 163 after Step 6, **164** after Step 7.2. Satisfying it means writing a doc comment on every public declaration in the Swift binding, and for a projection layer most of those can only restate the signature — the pass this repository rejected once already. **Recommend: scope the rule to types and functions, or turn it off**, and say so in `.swift-format` rather than leaving a required check red. Whichever way it goes, it is an owner decision and §4.8 needs an answer before Stage 0 closes. |
 | **Q38** | Does the empty `Text` node D13 removes become a registered divergence from cmark-gfm? | 0a.14 | **OPEN.** Upstream emits the node too, so removing it costs one normalizer projection, one `NORMALIZED_DELTAS` name and one `deltas.json` entry. Measured at §4.2.3. Owed by the commit that lands D13. |
 | **Q39** | `[foo]: <>` resolves to `destination=null`, not `destination=""`. Is that right, when the destination WAS written and was empty? | 0a.7 | **TAKEN 2026-08-21, at 0a.7: yes, on consistency grounds, and the limit is stated.** `markdown_core_clean_url` folds a zero-length destination to `CHUNK_EMPTY` before it ever reaches the map — the same fold `clean_title` does — so `<>` is indistinguishable from *no destination* by the time the reference path sees it, and the inline path already answers `[a](<>)` with `destination=null`. Making `chunk_clone` preserve absence made the two paths agree. **This is consistency, not correctness:** a rule that truly separates "written and empty" from "not written" requires the folds to stop, which is Step 14's structural job, and this row is the one input in the corpus that will move again there. It is one row, `spec.txt` example 169. |
@@ -1201,6 +1202,7 @@ Recorded here because §2's own rule is that a defect the plan does not name is 
 | **D20** | `strikethrough`'s `match` sets `start_column` and never `end_column`, so the calloc'd `0` survives consolidation whenever the run ends the paragraph. **Only the UNPAIRED run: `insert` derives a paired `Strikethrough`'s end from the closer's START column plus its literal length and never reads the closer's `end_column`, so no `Strikethrough` node is ever wrong.** | wrong-position | `a~~` under `--profile gfm` → `Text scope=1:1..1:0`. Three bytes, the default GFM profile, and every parity oracle blind because none compares positions. Un-consolidated witness: `` `x`~~ `` → `Text scope=1:4..1:0`. | **fixed at 0a.12** |
 | **D21** | **A container directive's closing fence does not close it.** `directive_block_matches` marks `closed` and consumes the fence but returns 1, so the container and every block open inside it stay open; the next non-blank line is taken as a lazy paragraph continuation, pulled into the container, and recorded on the wrong line. | **content-attribution loss** | `:::note⏎body⏎:::⏎after` → one `Paragraph 2:1..4:5` whose third child is `Text scope=3:1..3:5 literal="after"`. Inside a block quote it moves `after` into the quote. A blank line after the fence hides it. The formula block is unaffected (it is a leaf with no open children). | **7** |
 | **D22** | An extension that consumes an inline span containing a line ending cannot report it: `markdown_core_inline_parser_set_offset` does not advance the subject's line counter, so **every later node in the paragraph is displaced**. | wrong-position | The oracle case `:note[label]{title="one⏎two"} tail` requires `Directive 1:1..2:5`; HEAD says `1:1..1:29` and `Text 1:30..1:34` — columns that do not exist on line 1. **Blocks Step 7 outright.** | **7** lands the primitive; **8** owns the model |
+| **D36** | A directive label's closing `]` is found by the inline delimiter machinery, so any construct that consumes that `]` first takes the whole directive with it. | wrong-tree | `:b[http://e.com]` is `Text ":b["` plus a `Link` whose destination is `http://e.com]` -- GFM's autolink literal swallowed the closer and the directive is gone. `*a :b[c*]` is one `Emphasis` containing `a :b[c` and a stray `]`. `:a[b` unclosed is all text, where micromark leaves the directive standing. Found at 7c by reading micromark-extension-directive's `factory-label.js`, which finds the `]` LEXICALLY: only `\` escapes and `[`/`]` balance count, nothing else can protect a bracket, and nesting deeper than 32 kills the label. **Eleven witnesses measured, all confirmed against remark.** | **Q43** |
 | **D23** | `S_insert_emph` gives an emphasis node the start column of the **whole** delimiter run: it shortens `opener_inl->as.literal.len` from the end (`inlines.c:843`) and then assigns `emph->start_column = opener_inl->start_column` (`inlines.c:875`), while `handle_delim` had spanned the entire run. | wrong-position + overlap | On `***a**` the leftover `Text` and the `Strong` both claim the run's first byte — two nodes, one byte. Correct value: `opener_inl->start_column + opener_num_chars`. **11a's L1 gate detects it mechanically.** | **8**, gated by **11b** |
 | **D24** | `tasklist` decides `checked` by searching the **whole line**: `strstr((char *)input, "[x]") \|\| strstr((char *)input, "[X]")` (`extensions/tasklist.c:88`), while `scan_tasklist` matched only at `parser->first_nonspace`. | wrong-output | `- [ ] see [x] below` reports `checked=true`. May be the same thing as the pending upstream delta `tasklist-checked-marker` — check before re-deriving. | **3** (the descriptor rewrite touches it) |
 
@@ -1214,7 +1216,7 @@ Two further findings that are not new defects but change what an existing item m
 
 | Where | What it says | What this engine will do | Why |
 |---|---|---|---|
-| `extensions-directive-option-gates.txt` — prose | *"These examples attach the directive extension without enabling its parser option."* | Keep both inputs and both expected blocks; **rewrite the prose**. | **Vacuous as wired**: the ctest entry passes no `--option`, the examples carry no tags, and `spec_runner` starts from `ts_ast_options_none()` — so the extension is **not attached at all**. The oracle cannot distinguish "attached, option off" from "not attached", which is exactly the gap D1 lived in for eleven releases. Under Q14 there is only one knob; do not build a second to satisfy a comment. |
+| ~~`extensions-directive-option-gates.txt` — prose~~ | *"These examples attach the directive extension without enabling its parser option."* | **DONE at 7c**, with `MARKDOWN_CORE_OPT_DIRECTIVE` itself. Both inputs and both expected blocks stand; the prose says what the file shows. | **Vacuous as wired**: the ctest entry passes no `--option`, the examples carry no tags, and `spec_runner` starts from `ts_ast_options_none()` — so the extension is **not attached at all**. The oracle cannot distinguish "attached, option off" from "not attached", which is exactly the gap D1 lived in for eleven releases. Under Q14 there is only one knob; do not build a second to satisfy a comment. |
 | `extensions-directive.txt` — prose above `:shortcut{#identifier}` | *"HTML-style `#id` and `.class` shortcuts are outside this extension's generic key-value grammar and remain ordinary Markdown text."* | Implement the shorthand; **delete the sentence**. | It contradicts its own expected output, which shows both recognized. The expected block is authoritative; the sentence is a leftover from the fixture the oracle was extracted from. |
 | `extensions-directive.txt` — prose above `:ordinary[label]{…}` | *"`id` and `class` are ordinary keys. Like every repeated key, their last value wins while their first source position is retained."* | Implement `class` accumulation and last-value-wins for everything else; **delete both clauses**. | Stale on both halves. The expected output shows `class="red green blue"` — `class` is the one key that does *not* take the last value — and "first source position is retained" describes a per-attribute position that no dump field and no proposed accessor exposes. Do not build an API to justify a sentence. |
 | `extensions-formula-github.txt` — `foo$_bar_` · `extensions-directive.txt` — `foo:_bar_`, `a}_b_` | (expected output correct) | Green before Steps 6 and 7 start. | **Not stale — misattributed.** These are **D1's and D2's** rows, closed at 0a.4 by deleting three lines. Steps 6 and 7 must not claim them; if either lands before 0a.4, the row is listed as known-red naming 0a.4. |
@@ -4447,6 +4449,149 @@ three binding suites including Kotlin macOS-arm64 native.
 
 ---
 
+#### 4.14.7c Step 7 closes: Q20 answered by the oracle, Q14's other half, and 41 measured differences
+
+The last of Step 7. Two questions were open and both are settled by
+**measurement against micromark-extension-directive 4.0.0**, not by preference.
+
+**Q14's other half.** `MARKDOWN_CORE_OPT_DIRECTIVE` is gone from the header, the
+extension, the facade, the CLI and four C tests, and `directive_enabled` with
+it. The gate is live: attaching the extension regardless of `options->directives`
+fails **three** named tests — `spec_commonmark`, `extensions_gfm` and
+`extensions_directive_option_gates`. The option bit is not renumbered into;
+`gfm-extended` now differs from `gfm` only in which extensions it attaches,
+which is what Q14 says a profile is.
+
+`extensions-directive-option-gates.txt` was retitled with it. Its prose claimed
+to *"attach the directive extension without enabling its parser option"*, which
+it never could: the ctest entry passes no `--option`, the examples carry no
+tags, and the runner starts from nothing attached. §4.1.8 had that row open.
+
+---
+
+**Q20: are character references decoded in directive attribute values?**
+
+**YES, and the oracle says exactly where.** `mdast-util-directive` decodes in
+three places and three only — an attribute's value, and the `#id` and `.class`
+shorthand values — with `parseEntities(…, {attribute: true})`. A NAME is not
+decoded. This engine now decodes at the same three, through
+`houdini_unescape_html_f`: the sixth call site of the engine's one entity
+decoder, alongside a link destination, a link title and a fenced block's info
+string.
+
+Decoding runs **after** the raw scan and never during it, which is what makes
+`{a=x&#125;y}` one attribute whose value contains a `}` rather than a block
+that ended early, and `{a=b&#32;c}` one attribute rather than two.
+
+**The narrower question — is the semicolon required? — was measured
+exhaustively**, every named entity in this engine's table through both sides:
+
+| form | inputs | differ |
+| --- | ---: | ---: |
+| named, with `;` | 2125 | **0** |
+| named, without `;` | 2125 | **106** |
+| numeric, both bases, with and without `;` | 104 | 55 |
+| oddities (`&`, `&;`, `&#;`, `&AMP;`, nine digits, …) | 16 | 1 |
+
+**Zero differences on every one of the 2125 `;`-terminated named references.**
+The entire difference is the semicolon, and it comes to 162 inputs: HTML5's 106
+legacy names, the numeric forms without one, and a numeric form of more than
+eight digits.
+
+**And micromark disagrees with itself there.** Measured against remark, a
+semicolon-less `&amp` is LITERAL in ordinary text, in a link title, in a link
+destination and in a fenced block's info string, and decodes only inside a
+directive attribute value — because `mdast-util-directive` reached for an HTML
+*attribute* rule for something that looks like an HTML attribute. That rule
+appears nowhere else in its own parser.
+
+So: **this engine requires the semicolon**, which is CommonMark's rule and the
+rule at its own five other decode sites. Importing the sixth would put a second
+entity rule inside `extensions/directive.c`, disagreeing with the five that
+share one. Registered as `directive-attribute-reference-semicolon` in
+`specs/mdast-parity/deltas.json` with the measurement — which is what Q20's own
+text said to do if the semicolon half were declined.
+
+---
+
+**Then the grammar was swept against micromark's source, and it was not
+conformant.** Five independent readings — names and colon forms, attribute
+names, attribute values, labels, degradation and interaction — each probing
+both implementations on concrete inputs, and every claimed difference handed to
+a separate reader told to refute it. **41 survived refutation.** Four were
+repairs and land here.
+
+| | what micromark does | what this engine did |
+| --- | --- | --- |
+| **the directive name is code points** | any code point that is not whitespace and not punctuation, `-`/`_` from the second on | `[A-Za-z0-9_-]+`, so `:café` was a directive named `caf` and the text `é`, and `::café` was not a directive at all |
+| **an attribute name may start with `-` or `_`** | `between` ends the block on punctuation *except* those two | every punctuation start rejected |
+| **a shorthand value is not a name** | ends at `#`, `.`, `}` or whitespace; rejects `"` `'` `<` `=` `>` and a backtick; consumes everything else | reused the attribute-NAME scanner, so `{.a&b}` was malformed |
+| **an unquoted value holds no quote** | `valueUnquoted` fails on `"` and `'` as well as `<` `=` `>` and a backtick | both quotes were value characters |
+
+The name rule turned out to be the rule already here. micromark's
+`factory-name.js` is four lines, and its two states are exactly
+`name_cp` (not whitespace, not punctuation) and `attr_name_start_cp` (that plus
+`-` and `_`) — the predicates the attribute grammar was already built from at
+7.1. So the fix is a deletion: `scan_name` stops calling the generated
+`_scan_directive_name`, and that ASCII scanner, its `directive_name_char` rule
+and its declaration are gone from `ext_scanners.re`, `.c` and `.h`. **Two name
+rules became one predicate pair.**
+
+**Mutants: eleven on this commit, all killed, and two of them were re-aimed
+after surviving.**
+
+| | mutant | correctness | mdast |
+| --- | --- | --- | --- |
+| Q14 | directive attached regardless of the option | 3 failed | — |
+| E1 | attribute values are not decoded | 1 | killed |
+| N1 | the name continues byte-wise | 1 | killed |
+| N2 | the name may start with punctuation | 2 | killed |
+| N3 | the name may end with `-` or `_` | 2 | killed |
+| V1 | an unquoted value may hold a quote | 1 | killed |
+| K1a | a shorthand value rejects nothing | 1 | killed |
+| K1b | a shorthand value does not end at a marker | 1 | killed |
+| K1c | an empty shorthand value is accepted | 1 | killed |
+| K2a | a name may not start with `-` or `_` | 2 | killed |
+| K2b | `.` and `:` may start a name too | 1 | killed |
+
+**K1a survived its first run and the reason is worth keeping.** The pin was
+`{.a"b}` — and the raw brace scan tracks quoting, so that input is already
+malformed one step earlier and never reaches the reject set at all. `=`, `<`,
+`>` and the backtick are the four this rule alone decides; the pin is
+`` {.a`b} `` now. **N1 survived its first run because the mutant was nearly a
+no-op** — it made only the FIRST code point byte-wise, and a directive name's
+first character is ASCII in every pin. Re-aimed at the continuation loop it
+dies, on a pin whose witness is an en dash: one code point of punctuation and
+three bytes of none.
+
+---
+
+**The other 37, classified, none of them silent.**
+
+| class | witnesses | what it is |
+| --- | --- | --- |
+| **the label lexer** | `:b[http://e.com]`, `` :b[a`b]`c] ``, `*a :b[c*]`, `:a[b\]`, `:a[b` unclosed, 33-deep nesting, 5 more | **D36**, owned by **Q43**. micromark finds the `]` lexically; this engine pushes a delimiter and lets the inline pass pair it, so anything that reaches the bracket first wins. |
+| **whitespace class** | a tab, a form feed, U+2028 in names and values — 11 witnesses | micromark's preprocessor gives a tab the code `-2` and its `regexCheck` bails on `code > -1`, so **a tab is a name character there**. That is an artifact of its own tokenizer, not a rule anyone wrote. |
+| **C0 controls in names** | `:a\x01b`, `:n{\x01=1}` | same shape: a control is neither whitespace nor punctuation to it, so micromark takes it into a name. |
+| **the punctuation class** | `:n{a€b}` | micromark's `unicodePunctuation` covers symbols as well as punctuation; this engine's is CommonMark **0.29's**, P only — and cmark-gfm 0.29 is its pinned upstream oracle, so changing it moves the emphasis flanking rules and the whole base language with them. **Not Step 7's to change.** |
+| **container block rules** | `> :::a` with a lazy line, `  :::a` with an indented body | a lazy continuation closes the container there; the opening fence's indent is stripped from every content line. Block-level, adjacent to D21. |
+| **quoted value continuation** | `:n{a="b\n   c"}` | micromark keeps the continuation line's leading whitespace in the value. |
+| **an escaped colon** | `\::b[c]`, `\::a` | the ban on a colon beside a colon is lifted when the first came from a character escape. |
+| **a table cell's raw bytes** | a directive in a table cell whose value holds an escaped pipe | micromark hands the directive the cell's raw bytes, so GFM's escaped pipe reaches the value. |
+
+The last four are one or two witnesses each and none of them is in the mdast
+corpus, so **the gate is silent about them** — which is the reason they are
+written down here rather than left to be rediscovered.
+
+**Counts.** 9 examples added: upstream parity 859 → **871**, mdast 93 → **105**,
+scope sanity 5190 → **5233** scopes, containment 4089 → **4114**, places 4224 →
+**4255**. Every ledger count held: 4, 45, 106, 0, 2. Backlog unchanged at 7.
+
+**Gates.** All green: correctness 69/69, ASan 60/60, UBSan 60/60, conformance
+2/2, every audit, `lint-c`, all four linters, and all three binding suites.
+
+---
+
 #### 4.14.15A Step 15A: one contract, and the surfaces that project it
 
 ##### 15A.1 — the contract is machine-readable, normative, and out of the archive
@@ -5106,25 +5251,27 @@ Step 10 and says nothing about Steps 11–15. It is accepted by all of the
 following, together:
 
 **Deliverables**
-- [ ] Directive grammar conformance (Step 7) — deliverable #1
+- [x] **Directive grammar conformance (Step 7) — deliverable #1. LANDED**, §4.14.7a/b/c. Carried: **D36**, owned by **Q43**.
 - [x] **The formula fix (Step 6) — deliverable #2. LANDED, §4.14.6.**
 - [ ] CST concrete records (11a, 11b, 11c) and diagnostics (13) — deliverable #3
 - [ ] The reference model (9a, 9b) and the positions that depend on it (10)
 - [ ] The facade and its single ABI break window (12), the null/empty rule (14)
 - [ ] Bindings, specs and docs regenerated (15)
 
-**Defects** — **all thirty-five of §2** closed, or explicitly carried with a
+**Defects** — **all thirty-six of §2** closed, or explicitly carried with a
 named owner step and a registered known-red gate. ~~seventeen~~ was stale from
 the revision before D18–D25 and §4.13's four were added, and ~~thirty-two~~ was
 stale the moment Step 3.3 found **D33**. §2's own heading now says thirty-three,
-its index table carries thirty-four rows (D1–D25, D27–D35) and **D26 is the
+its index table carries thirty-five rows (D1–D25, D27–D36) and **D26 is the
 thirty-third** — measured at 0a.12, refused there, and landed at **0a.12b**
 with the ruling it needed (Q40).
 
-**Thirty-two are closed and three are carried**, and the three are D9 (Step 9a, two
-gates registered at 0a.8, one known-red), D30 (9a/11c delete it; pinned by the
-allocation-failure sweep) and D31 (Step 8; pinned as a golden row in
-`regression.txt`). D27 was the fourth and **closed at 3a.3**.
+**Thirty-two are closed and four are carried.** D9 (Step 9a, two gates
+registered at 0a.8, one known-red), D30 (9a/11c delete it; pinned by the
+allocation-failure sweep), D31 (Step 8; pinned as a golden row in
+`regression.txt`) and now **D36** (the directive label's closer, owned by
+**Q43**, found at 7c by sweeping the grammar against micromark's own source and
+measured on eleven witnesses). D27 was another and **closed at 3a.3**.
 
 **Gates**, all green and none of them vacuous:
 - [ ] `correctness`, `correctness-asan`, `correctness-ubsan` — each having

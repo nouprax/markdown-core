@@ -594,10 +594,6 @@ markdown_core_node *markdown_core_parse_file(FILE *f, int options);
  */
 #define MARKDOWN_CORE_OPT_STRIKETHROUGH_DOUBLE_TILDE (1 << 14)
 
-/** Enable directive syntax.
- */
-#define MARKDOWN_CORE_OPT_DIRECTIVE (1 << 23)
-
 /**
  * ## Version information
  */

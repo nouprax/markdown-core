@@ -280,7 +280,7 @@ static char *fb_parse_directive_attributes(const char *input, markdown_core_mem 
         fputs("directive extension is not registered\n", stderr);
         return NULL;
     }
-    parser = markdown_core_parser_new_with_mem(MARKDOWN_CORE_OPT_DIRECTIVE, mem);
+    parser = markdown_core_parser_new_with_mem(MARKDOWN_CORE_OPT_DEFAULT, mem);
     if (!parser) {
         return NULL;
     }
@@ -642,8 +642,7 @@ static const char *FB_SWEEP_EXTENSIONS[] = {"table", "strikethrough", "autolink"
  * That is why D27 -- six writes to `linebuf.oom` and no reads -- survived a
  * gate that injects a failure at every single allocation. */
 static markdown_core_node *fb_sweep_parse_chunked(markdown_core_mem *mem, size_t chunk) {
-    int options = MARKDOWN_CORE_OPT_DIRECTIVE | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_SMART |
-                  MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
+    int options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
     markdown_core_parser *parser = markdown_core_parser_new_with_mem(options, mem);
     markdown_core_node *root;
     size_t length = strlen(FB_SWEEP_CORPUS);

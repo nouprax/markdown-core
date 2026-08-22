@@ -17,7 +17,7 @@ void test_cplusplus(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 
     static const char directive_markdown[] = ":cpp{id=ordinary title=\"My Video\" muted=true}\n";
-    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DIRECTIVE);
+    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
     const markdown_core_syntax_extension *extension = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
     markdown_core_parser_attach_syntax_extension(parser, extension);
     markdown_core_parser_feed(parser, directive_markdown, sizeof(directive_markdown) - 1);

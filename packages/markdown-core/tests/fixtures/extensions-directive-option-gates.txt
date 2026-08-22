@@ -1,15 +1,22 @@
 ---
-title: Directive option gate extension test
+title: Directive extension not attached
 author: Dongyu Zhao
 version: 0.1
 date: '2026-06-22'
 license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
 ...
 
-## Directive option gates
+## The directive extension is not attached
 
-These examples attach the directive extension without enabling its
-parser option. The extension syntax remains ordinary Markdown.
+These examples run with NO extension attached, and attachment is the only gate
+there is (Q14): the parser option this file was named after does not exist any
+more. The extension's syntax is ordinary Markdown here.
+
+The title said "attach the extension without enabling its parser option", which
+this file could never have shown -- the ctest entry passes no `--option`, the
+examples carry no tags, and the runner starts from nothing attached. An oracle
+that cannot tell "attached, option off" from "not attached" is the gap D1 lived
+in for eleven releases.
 
 ```````````````````````````````` example
 Use :cite[smith04] here.

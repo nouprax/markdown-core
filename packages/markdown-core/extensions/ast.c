@@ -102,9 +102,6 @@ markdown_core_document *markdown_core_document_parse(const uint8_t *source, size
     if (options->strip_html_comments) {
         native_options |= MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
     }
-    if (options->directives) {
-        native_options |= MARKDOWN_CORE_OPT_DIRECTIVE;
-    }
 
     parser = markdown_core_parser_new(native_options);
     if (!parser) {

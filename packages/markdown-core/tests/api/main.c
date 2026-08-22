@@ -293,7 +293,7 @@ static markdown_core_node *parse_with_dollar_formula_extension(const char *markd
 
 static markdown_core_node *parse_with_directive_extension(const char *markdown) {
 
-    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_DIRECTIVE);
+    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
     const markdown_core_syntax_extension *directive = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
 
     if (directive) {
@@ -1108,7 +1108,7 @@ static void test_facade_dump(test_batch_runner *runner, const char *markdown, in
 static void extension_decline_yields_turn(test_batch_runner *runner) {
     static const char *const markdown = "text\n:::note\nbody\n:::\n";
 
-    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_DIRECTIVE);
+    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
     const markdown_core_syntax_extension *table = &MARKDOWN_CORE_EXTENSION_TABLE;
     const markdown_core_syntax_extension *directive = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
 

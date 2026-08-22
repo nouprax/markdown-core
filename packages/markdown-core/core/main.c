@@ -44,7 +44,6 @@ void print_usage(void) {
     printf("  --list-extensions               List available extensions and quit\n");
     printf("  --strikethrough-double-tilde    Only parse strikethrough (if enabled)\n");
     printf("                                  with two tildes\n");
-    printf("  --directive                    Enable directive syntax.\n");
     printf("  --help, -h       Print usage information\n");
     printf("  --version        Print version\n");
 }
@@ -86,7 +85,7 @@ int main(int argc, char *argv[]) {
     size_t bytes;
     markdown_core_node *document = NULL;
     int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS |
-                  MARKDOWN_CORE_OPT_DIRECTIVE | MARKDOWN_CORE_OPT_VALIDATE_UTF8;
+                  MARKDOWN_CORE_OPT_VALIDATE_UTF8;
     int res = 1;
 
 #ifdef USE_PLEDGE
@@ -141,7 +140,10 @@ int main(int argc, char *argv[]) {
                 gfm_profile = true;
                 options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_SMART;
             } else if (strcmp(argv[i], "gfm-extended") == 0) {
-                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_DIRECTIVE;
+                /* `gfm_profile` stays false, and that is what attaches this
+                 * repository's own two extensions below -- there is no option
+                 * bit left to spell it with (Q14). */
+                options = MARKDOWN_CORE_OPT_FOOTNOTES;
             } else if (strcmp(argv[i], "default") != 0) {
                 fprintf(stderr, "Unknown profile %s\n", argv[i]);
                 goto failure;
@@ -149,8 +151,6 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(argv[i], "--list-extensions") == 0) {
             print_extensions();
             goto success;
-        } else if (strcmp(argv[i], "--directive") == 0) {
-            options |= MARKDOWN_CORE_OPT_DIRECTIVE;
         } else if (strcmp(argv[i], "--strikethrough-double-tilde") == 0) {
             options |= MARKDOWN_CORE_OPT_STRIKETHROUGH_DOUBLE_TILDE;
         } else if (strcmp(argv[i], "--smart") == 0) {
@@ -212,9 +212,6 @@ int main(int argc, char *argv[]) {
                  MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK | MARKDOWN_CORE_CORE_EXTENSION_TASKLIST;
     if (!gfm_profile) {
         extensions |= MARKDOWN_CORE_CORE_EXTENSION_FORMULA | MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE;
-    }
-    if (options & MARKDOWN_CORE_OPT_DIRECTIVE) {
-        extensions |= MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE;
     }
     extensions |= requested_extensions;
 

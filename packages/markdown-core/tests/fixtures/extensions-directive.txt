@@ -239,6 +239,54 @@ Document scope=1:1..1:5 children=1
         └── DirectiveLabel scope=1:4..1:5 children=0
 ````````````````````````````````
 
+A name is CODE POINTS, like every other name in this grammar. `:café` is one
+directive, not a directive called `caf` followed by the letter `é`, and the
+block forms read the same names the inline form does.
+
+```````````````````````````````` example
+:café[x]
+.
+Document scope=1:1..1:9 children=1
+└── Paragraph scope=1:1..1:9 children=1
+    └── Directive scope=1:1..1:9 name="café" attributes=null children=1
+        └── DirectiveLabel scope=1:7..1:9 children=1
+            └── Text scope=1:8..1:8 literal="x" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+::naïve{a=1}
+.
+Document scope=1:1..1:13 children=1
+└── DirectiveBlock scope=1:1..1:13 name="naïve" attributes=[a="1"] children=0
+````````````````````````````````
+
+And punctuation ends a name whatever its width, which is the half a byte-wise
+scan gets wrong in the other direction: an en dash is one code point of
+punctuation and three bytes of none.
+
+```````````````````````````````` example
+a :b–c d
+.
+Document scope=1:1..1:10 children=1
+└── Paragraph scope=1:1..1:10 children=3
+    ├── Text scope=1:1..1:2 literal="a " children=0
+    ├── Directive scope=1:3..1:4 name="b" attributes=null children=0
+    └── Text scope=1:5..1:10 literal="–c d" children=0
+````````````````````````````````
+
+An unquoted value may hold no quote of either kind, alongside the four it may
+hold no `<`, `>`, `=` or backtick. Reaching one does not end the value, it
+makes the block malformed.
+
+```````````````````````````````` example
+:n{a=b"c"}
+.
+Document scope=1:1..1:10 children=1
+└── Paragraph scope=1:1..1:10 children=2
+    ├── Directive scope=1:1..1:2 name="n" attributes=null children=0
+    └── Text scope=1:3..1:10 literal="{a=b\"c\"}" children=0
+````````````````````````````````
+
 An underscore may not end a name either, the same as a hyphen.
 
 ```````````````````````````````` example
@@ -529,6 +577,105 @@ Document scope=1:1..1:12 children=1
 Document scope=1:1..1:10 children=1
 └── Paragraph scope=1:1..1:10 children=1
     └── Directive scope=1:1..1:10 name="x" attributes=[a:b="" class="c"] children=0
+````````````````````````````````
+
+A name may begin with a hyphen or an underscore, unlike a DIRECTIVE name, which
+may not. Every other punctuation mark still ends the block.
+
+```````````````````````````````` example
+:n{-a=1 _b=2}
+.
+Document scope=1:1..1:13 children=1
+└── Paragraph scope=1:1..1:13 children=1
+    └── Directive scope=1:1..1:13 name="n" attributes=[-a="1" _b="2"] children=0
+````````````````````````````````
+
+A shorthand value is not a name. It ends at the next marker, at the block's end
+or at whitespace, and six characters -- a quote of either kind, `<`, `=`, `>`
+and a backtick -- reject it outright and take the block with them. Everything
+else is a value character, so a class may contain an ampersand.
+
+```````````````````````````````` example
+:n{.a&b .c$d}
+.
+Document scope=1:1..1:13 children=1
+└── Paragraph scope=1:1..1:13 children=1
+    └── Directive scope=1:1..1:13 name="n" attributes=[class="a&b c$d"] children=0
+````````````````````````````````
+
+```````````````````````````````` example
+:n{.a=b}
+.
+Document scope=1:1..1:8 children=1
+└── Paragraph scope=1:1..1:8 children=2
+    ├── Directive scope=1:1..1:2 name="n" attributes=null children=0
+    └── Text scope=1:3..1:8 literal="{.a=b}" children=0
+````````````````````````````````
+
+The two quotes are the same rule, but they never reach it: the raw scan of the
+block tracks quoting, so `{.a"b}` has no closing brace outside a quote and is
+malformed one step earlier. `=`, `<`, `>` and the backtick are the four that
+this rule alone decides -- a pin on a quote proves nothing here, which a mutant
+that deleted the whole reject set and survived is what said so.
+
+```````````````````````````````` example
+:n{.a`b}
+.
+Document scope=1:1..1:8 children=1
+└── Paragraph scope=1:1..1:8 children=2
+    ├── Directive scope=1:1..1:2 name="n" attributes=null children=0
+    └── Text scope=1:3..1:8 literal="{.a`b}" children=0
+````````````````````````````````
+
+Character references are decoded in an attribute's value, and in a shorthand's
+value, and nowhere else in the attribute block: a name is taken as written
+(Q20). An unknown reference is not a reference and stays as written.
+
+```````````````````````````````` example
+:n{a=&amp; b="&amp; &#65; &#x41;" .&amp; c=&notreal;}
+.
+Document scope=1:1..1:53 children=1
+└── Paragraph scope=1:1..1:53 children=1
+    └── Directive scope=1:1..1:53 name="n" attributes=[a="&" b="& A A" c="&notreal;" class="&"] children=0
+````````````````````````````````
+
+The decoding happens after the block has been scanned, never during it, so a
+reference cannot produce a character that changes where the block ends or where
+one attribute stops and the next begins.
+
+```````````````````````````````` example
+:n{a=x&#125;y b=p&#32;q}
+.
+Document scope=1:1..1:24 children=1
+└── Paragraph scope=1:1..1:24 children=1
+    └── Directive scope=1:1..1:24 name="n" attributes=[a="x}y" b="p q"] children=0
+````````````````````````````````
+
+A reference in a NAME is not decoded, so `&` is what the name starts with, and
+that is punctuation: the block is malformed and its source stays text -- where
+the ordinary inline rules do decode it.
+
+```````````````````````````````` example
+:n{&#97;=v}
+.
+Document scope=1:1..1:11 children=1
+└── Paragraph scope=1:1..1:11 children=2
+    ├── Directive scope=1:1..1:2 name="n" attributes=null children=0
+    └── Text scope=1:3..1:11 literal="{a=v}" children=0
+````````````````````````````````
+
+**This engine requires the semicolon**, as CommonMark does and as it does at
+every other place a reference is decoded -- a link destination, a link title, a
+fenced block's info string. micromark-extension-directive does not, in this one
+construct and nowhere else in its own parser; the difference is registered in
+specs/mdast-parity/deltas.json and measured there.
+
+```````````````````````````````` example
+:n{a=&amp b=&#65}
+.
+Document scope=1:1..1:17 children=1
+└── Paragraph scope=1:1..1:17 children=1
+    └── Directive scope=1:1..1:17 name="n" attributes=[a="&amp" b="&#65"] children=0
 ````````````````````````````````
 
 A leaf directive is a single line: the next line starts new content rather than

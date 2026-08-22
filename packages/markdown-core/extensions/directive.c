@@ -13,6 +13,7 @@
 #include <map.h>
 #include <node.h>
 #include <parser.h>
+#include <houdini.h>
 #include <utf8.h>
 
 #include "ext_scanners.h"
@@ -69,8 +70,6 @@ static node_directive *get_directive(markdown_core_node *node) {
     return (node_directive *)node->as.opaque;
 }
 
-static int directive_enabled(markdown_core_parser *parser) { return parser->options & MARKDOWN_CORE_OPT_DIRECTIVE; }
-
 static int ascii_is_space(unsigned char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'; }
 
 static int ascii_is_line_space(unsigned char c) { return c == ' ' || c == '\t'; }
@@ -87,23 +86,72 @@ static int has_only_spaces_until_line_end(const unsigned char *data, bufsize_t l
     return is_line_end(data, len, pos);
 }
 
+/* THE GRAMMAR IS APPLIED TO CODE POINTS, not bytes (Q8's oracle says so, and
+ * `{中文=1}` is the row that proves it). An attribute name may not BEGIN with
+ * punctuation -- a symbol counts, which is why `{a$b}` is malformed and `{:_a}`
+ * is too -- and `markdown_core_utf8proc_is_punctuation` is already the
+ * engine's answer to "is this code point punctuation", so there is no second
+ * table here. From the second code point on, four punctuation marks are
+ * ordinary name characters, which is why `{a:b}` is one name and
+ * `{data-kind=ref}` is another. */
+static int name_cp(int32_t cp) {
+    return cp > 0x20 && !markdown_core_utf8proc_is_space(cp) && !markdown_core_utf8proc_is_punctuation(cp);
+}
+
+static int attr_name_start_cp(int32_t cp) { return name_cp(cp) || cp == '-' || cp == '_'; }
+
+static int attr_name_cp(int32_t cp) { return attr_name_start_cp(cp) || cp == '.' || cp == ':'; }
+
+/* Reads one code point at `pos`. A byte that is not valid UTF-8 decodes as
+ * itself with length 1, which keeps a malformed name malformed rather than
+ * ending the scan early on a continuation byte. */
+static bufsize_t next_cp(const unsigned char *data, bufsize_t len, bufsize_t pos, int32_t *cp) {
+    int consumed = markdown_core_utf8proc_iterate(data + pos, len - pos, cp);
+    if (consumed < 1) {
+        *cp = data[pos];
+        return 1;
+    }
+    return (bufsize_t)consumed;
+}
+
+/* A DIRECTIVE NAME IS CODE POINTS, not bytes -- the same sentence the
+ * attribute grammar is written to, and the reason `scan_directive_name` is no
+ * longer called. That generated scanner is `[A-Za-z0-9_-]+`, so `:café` was a
+ * directive named `caf` followed by the text `é` and `::café` was not a
+ * directive at all, while micromark reads both names whole. Its rule is one
+ * line: a name character is any code point that is not whitespace and not
+ * punctuation, plus `-` and `_` from the second on -- which is `name_cp` and
+ * `attr_name_start_cp`, already here for attribute names.
+ *
+ * A name may CONTAIN a hyphen or underscore but may not begin or end with one.
+ * The generated scanner had the trailing half nowhere and never had the
+ * leading half: `:-a[]` and `:_a[]` were directives named `-a` and `_a`. */
 static int scan_name(unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *name_start, bufsize_t *name_len) {
-    bufsize_t match_len = scan_directive_name(data, len, pos);
-    if (match_len == 0) {
+    bufsize_t start = pos;
+    int32_t cp;
+    bufsize_t width;
+
+    if (pos >= len) {
+        return 0;
+    }
+    width = next_cp(data, len, pos, &cp);
+    if (!name_cp(cp)) {
+        return 0;
+    }
+    pos += width;
+    while (pos < len) {
+        width = next_cp(data, len, pos, &cp);
+        if (!attr_name_start_cp(cp)) {
+            break;
+        }
+        pos += width;
+    }
+    if (data[pos - 1] == '-' || data[pos - 1] == '_') {
         return 0;
     }
 
-    /* A directive name may CONTAIN a hyphen or underscore but may not begin or
-     * end with one. The generated scanner has the trailing half of that rule
-     * nowhere, and it never had the leading half either: `:-a[]` and `:_a[]`
-     * were directives named `-a` and `_a` here and are not directives at all
-     * in micromark-extension-directive. A digit may begin a name. */
-    if (data[pos] == '-' || data[pos] == '_' || data[pos + match_len - 1] == '-' || data[pos + match_len - 1] == '_') {
-        return 0;
-    }
-
-    *name_start = pos;
-    *name_len = match_len;
+    *name_start = start;
+    *name_len = pos - start;
     return 1;
 }
 
@@ -222,46 +270,13 @@ static void free_attribute_list(markdown_core_mem *mem, directive_attribute *att
     }
 }
 
-/* THE GRAMMAR IS APPLIED TO CODE POINTS, not bytes (Q8's oracle says so, and
- * `{中文=1}` is the row that proves it). An attribute name may not BEGIN with
- * punctuation -- a symbol counts, which is why `{a$b}` is malformed and `{:_a}`
- * is too -- and `markdown_core_utf8proc_is_punctuation` is already the
- * engine's answer to "is this code point punctuation", so there is no second
- * table here. From the second code point on, four punctuation marks are
- * ordinary name characters, which is why `{a:b}` is one name and
- * `{data-kind=ref}` is another. */
-static int attr_name_start_cp(int32_t cp) {
-    return cp > 0x20 && !markdown_core_utf8proc_is_space(cp) && !markdown_core_utf8proc_is_punctuation(cp);
-}
-
-static int attr_name_cp(int32_t cp) {
-    return attr_name_start_cp(cp) || cp == '-' || cp == '.' || cp == ':' || cp == '_';
-}
-
-/* Reads one code point at `pos`. A byte that is not valid UTF-8 decodes as
- * itself with length 1, which keeps a malformed name malformed rather than
- * ending the scan early on a continuation byte. */
-static bufsize_t next_cp(const unsigned char *data, bufsize_t len, bufsize_t pos, int32_t *cp) {
-    int consumed = markdown_core_utf8proc_iterate(data + pos, len - pos, cp);
-    if (consumed < 1) {
-        *cp = data[pos];
-        return 1;
-    }
-    return (bufsize_t)consumed;
-}
-
-/* Scans a name from `pos`, or a SHORTHAND value when `shorthand` is set: a
- * shorthand value ends at the next marker, so `{.a.b}` is two classes and not
- * one class called `a.b`. */
-static bufsize_t scan_attr_name(const unsigned char *data, bufsize_t len, bufsize_t pos, int shorthand) {
+/* Scans an attribute name from `pos`. */
+static bufsize_t scan_attr_name(const unsigned char *data, bufsize_t len, bufsize_t pos) {
     bufsize_t start = pos;
     int first = 1;
     while (pos < len) {
         int32_t cp;
         bufsize_t width = next_cp(data, len, pos, &cp);
-        if (shorthand && cp == '.') {
-            break;
-        }
         if (first ? !attr_name_start_cp(cp) : !attr_name_cp(cp)) {
             break;
         }
@@ -271,17 +286,45 @@ static bufsize_t scan_attr_name(const unsigned char *data, bufsize_t len, bufsiz
     return pos - start;
 }
 
+/* A SHORTHAND VALUE IS NOT A NAME, and reusing the name scanner for it was
+ * wrong: `{.a&b}` is one class called `a&b`. The value ENDS at the next marker
+ * or the block's end -- which is what makes `{.a.b}` two classes rather than
+ * one called `a.b` -- and six characters REJECT it outright, taking the whole
+ * block down with them, because a quote or an `=` there means the source meant
+ * something else. Everything not in either set is a value character.
+ *
+ * Returns the length, or -1 for a malformed block. An empty value is malformed
+ * too, which is `{#}` and `{.}`. */
+static int shorthand_value_rejects(unsigned char c) {
+    return c == '"' || c == '\'' || c == '<' || c == '=' || c == '>' || c == '`';
+}
+
+static int shorthand_value_ends(unsigned char c) { return c == '#' || c == '.' || c == '}' || ascii_is_space(c); }
+
+static bufsize_t scan_shorthand_value(const unsigned char *data, bufsize_t len, bufsize_t pos) {
+    bufsize_t start = pos;
+    while (pos < len && !shorthand_value_ends(data[pos])) {
+        if (shorthand_value_rejects(data[pos])) {
+            return -1;
+        }
+        pos++;
+    }
+    return pos == start ? -1 : pos - start;
+}
+
 /* The public setter reaches append_attribute with a name nobody scanned, so
  * the scanner's own rule is re-applied here rather than restated: a name is
  * valid exactly when scanning it consumes all of it. */
 static int attribute_name_is_valid(const unsigned char *name, bufsize_t name_len) {
-    return name_len > 0 && scan_attr_name(name, name_len, 0, 0) == name_len;
+    return name_len > 0 && scan_attr_name(name, name_len, 0) == name_len;
 }
 
 static int append_attribute(markdown_core_mem *mem, directive_attribute **head, directive_attribute **tail,
                             const unsigned char *name, bufsize_t name_len, const unsigned char *value,
                             bufsize_t value_len, size_t index, int *oom) {
     directive_attribute *attr;
+    markdown_core_strbuf decoded;
+    int stored;
     if (!attribute_name_is_valid(name, name_len)) {
         return 0;
     }
@@ -292,8 +335,22 @@ static int append_attribute(markdown_core_mem *mem, directive_attribute **head, 
         }
         return 0;
     }
-    if (!replace_chunk_bytes(mem, &attr->name, name, name_len) ||
-        !replace_chunk_bytes(mem, &attr->value, value, value_len)) {
+    /* Q20: A VALUE IS DECODED, A NAME IS NOT. mdast-util-directive decodes
+     * exactly three things -- an attribute's value and the `#id` and `.class`
+     * shorthand values -- and this is where all three arrive. The decoder is
+     * the engine's one entity decoder, the same call a link destination, a
+     * link title and a code fence's info string already make; the alternative
+     * was a second entity rule living in this file (§4.14.7c).
+     *
+     * It runs AFTER the raw scan, never during it, which is what makes
+     * `{a=x&#125;y}` one attribute whose value contains a `}` rather than a
+     * block that ended early. */
+    markdown_core_strbuf_init(mem, &decoded, value_len + 1);
+    houdini_unescape_html_f(&decoded, value, value_len);
+    stored = !decoded.oom && replace_chunk_bytes(mem, &attr->name, name, name_len) &&
+             replace_chunk_bytes(mem, &attr->value, decoded.ptr, decoded.size);
+    markdown_core_strbuf_free(&decoded);
+    if (!stored) {
         if (oom) {
             *oom = 1;
         }
@@ -686,7 +743,7 @@ static void directive_opaque_free(const markdown_core_syntax_extension *extensio
  * without that rule `{a="x"b=1}` lets the block run on and swallow the rest of
  * the paragraph. */
 static int unquoted_value_cp(unsigned char c) {
-    return !ascii_is_space(c) && c != '<' && c != '>' && c != '=' && c != '`';
+    return !ascii_is_space(c) && c != '"' && c != '\'' && c != '<' && c != '>' && c != '=' && c != '`';
 }
 
 static int parse_attr_value(const unsigned char *data, bufsize_t len, bufsize_t *pos, const unsigned char **value,
@@ -755,8 +812,8 @@ static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, b
             const char *shorthand_name = data[pos] == '#' ? "id" : "class";
             bufsize_t shorthand_len;
             pos++;
-            shorthand_len = scan_attr_name(data, len, pos, 1);
-            if (shorthand_len == 0) {
+            shorthand_len = scan_shorthand_value(data, len, pos);
+            if (shorthand_len < 0) {
                 ok = 0;
                 break;
             }
@@ -769,7 +826,7 @@ static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, b
             continue;
         }
         start = pos;
-        name_len = scan_attr_name(data, len, pos, 0);
+        name_len = scan_attr_name(data, len, pos);
         pos += name_len;
         if (name_len == 0) {
             ok = 0;
@@ -1174,10 +1231,6 @@ static markdown_core_node *match(const markdown_core_syntax_extension *extension
     markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
     bufsize_t offset = (bufsize_t)markdown_core_inline_parser_get_offset(inline_parser);
 
-    if (!directive_enabled(parser)) {
-        return NULL;
-    }
-
     if (character == ':') {
         return match_colon_directive(extension, parser, inline_parser, chunk, offset);
     }
@@ -1206,7 +1259,7 @@ static markdown_core_node *open_directive_block(const markdown_core_syntax_exten
     markdown_core_node *node;
     node_directive *directive;
 
-    if (!directive_enabled(parser) || indented) {
+    if (indented) {
         return NULL;
     }
 
