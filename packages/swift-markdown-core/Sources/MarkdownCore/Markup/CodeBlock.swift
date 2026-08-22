@@ -2,12 +2,12 @@ import MarkdownCoreC
 
 public struct CodeBlock: Markup {
     public let scope: Scope
-    public let children: [any Markup] = []
+    public let mode: PlacementMode
     public let info: String?
     public let language: String?
     public let literal: String
-    public let isFenced: Bool
-    public let isClosed: Bool
+    public let fenced: Bool
+    public let closed: Bool
 
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
@@ -29,11 +29,12 @@ extension CodeBlock {
         )
         self.init(
             scope: Self.scope(from: node),
+            mode: .standalone,
             info: info.optionalString,
             language: language.optionalString,
             literal: literal.requiredString,
-            isFenced: fenced,
-            isClosed: closed
+            fenced: fenced,
+            closed: closed
         )
     }
 }

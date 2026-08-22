@@ -47,19 +47,19 @@ private struct DumpRecord {
 
 private struct DumpVisitor: MarkupVisitor {
     mutating func visit(_ node: Document) -> DumpRecord {
-        record("Document", node, children: node.children.count)
+        record("Document", node, children: node.content.count)
     }
 
     mutating func visit(_ node: BlockQuote) -> DumpRecord {
-        record("BlockQuote", node, children: node.children.count)
+        record("BlockQuote", node, children: node.content.count)
     }
 
     mutating func visit(_ node: Paragraph) -> DumpRecord {
-        record("Paragraph", node, children: node.children.count)
+        record("Paragraph", node, children: node.content.count)
     }
 
     mutating func visit(_ node: Heading) -> DumpRecord {
-        record("Heading", node, fields: ["level=\(node.level)"], children: node.children.count)
+        record("Heading", node, fields: ["level=\(node.level)"], children: node.content.count)
     }
 
     mutating func visit(_ node: ThematicBreak) -> DumpRecord {
@@ -73,9 +73,9 @@ private struct DumpVisitor: MarkupVisitor {
             fields: [
                 "flavor=\(node.flavor.rawValue)",
                 "start=\(node.start.map(String.init) ?? "null")",
-                "tight=\(boolean(node.isTight))",
+                "tight=\(boolean(node.tight))",
             ],
-            children: node.children.count
+            children: node.items.count
         )
     }
 
@@ -83,8 +83,8 @@ private struct DumpVisitor: MarkupVisitor {
         record(
             "ListItem",
             node,
-            fields: ["checked=\(node.isChecked.map(boolean) ?? "null")"],
-            children: node.children.count
+            fields: ["checked=\(node.checked.map(boolean) ?? "null")"],
+            children: node.content.count
         )
     }
 
@@ -97,8 +97,8 @@ private struct DumpVisitor: MarkupVisitor {
                 "info=\(optionalString(node.info))",
                 "language=\(optionalString(node.language))",
                 "literal=\(jsonString(node.literal))",
-                "fenced=\(boolean(node.isFenced))",
-                "closed=\(boolean(node.isClosed))",
+                "fenced=\(boolean(node.fenced))",
+                "closed=\(boolean(node.closed))",
             ]
         )
     }
@@ -129,8 +129,8 @@ private struct DumpVisitor: MarkupVisitor {
         record(
             "DirectiveBlock",
             node,
-            fields: directiveFields(node.mode, node.name, node.attributes, node.labelCount),
-            children: node.children.count
+            fields: directiveFields(node.mode, node.name, node.attributes, node.label?.count),
+            children: (node.label?.count ?? 0) + node.content.count
         )
     }
 
@@ -139,7 +139,7 @@ private struct DumpVisitor: MarkupVisitor {
             "FootnoteDefinition",
             node,
             fields: ["id=\(jsonString(node.id))"],
-            children: node.children.count
+            children: node.content.count
         )
     }
 
@@ -168,15 +168,15 @@ private struct DumpVisitor: MarkupVisitor {
     }
 
     mutating func visit(_ node: Emphasis) -> DumpRecord {
-        record("Emphasis", node, children: node.children.count)
+        record("Emphasis", node, children: node.content.count)
     }
 
     mutating func visit(_ node: Strong) -> DumpRecord {
-        record("Strong", node, children: node.children.count)
+        record("Strong", node, children: node.content.count)
     }
 
     mutating func visit(_ node: Strikethrough) -> DumpRecord {
-        record("Strikethrough", node, children: node.children.count)
+        record("Strikethrough", node, children: node.content.count)
     }
 
     mutating func visit(_ node: Link) -> DumpRecord {
@@ -187,7 +187,7 @@ private struct DumpVisitor: MarkupVisitor {
                 "destination=\(optionalString(node.destination))",
                 "title=\(optionalString(node.title))",
             ],
-            children: node.children.count
+            children: node.content.count
         )
     }
 
@@ -196,7 +196,7 @@ private struct DumpVisitor: MarkupVisitor {
             "Image",
             node,
             fields: ["source=\(optionalString(node.source))", "title=\(optionalString(node.title))"],
-            children: node.children.count
+            children: node.content.count
         )
     }
 
@@ -204,8 +204,8 @@ private struct DumpVisitor: MarkupVisitor {
         record(
             "Directive",
             node,
-            fields: directiveFields(node.mode, node.name, node.attributes, node.labelCount),
-            children: node.children.count
+            fields: directiveFields(node.mode, node.name, node.attributes, node.label?.count),
+            children: node.label?.count ?? 0
         )
     }
 

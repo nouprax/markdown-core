@@ -24,19 +24,19 @@ public struct Walker: Sendable {
 }
 
 private struct ChildrenVisitor: MarkupVisitor {
-    mutating func visit(_ node: Document) -> [any Markup] { node.children }
+    mutating func visit(_ node: Document) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: BlockQuote) -> [any Markup] { node.children }
+    mutating func visit(_ node: BlockQuote) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: Paragraph) -> [any Markup] { node.children }
+    mutating func visit(_ node: Paragraph) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: Heading) -> [any Markup] { node.children }
+    mutating func visit(_ node: Heading) -> [any Markup] { node.content }
 
     mutating func visit(_: ThematicBreak) -> [any Markup] { [] }
 
-    mutating func visit(_ node: List) -> [any Markup] { node.children }
+    mutating func visit(_ node: List) -> [any Markup] { node.items }
 
-    mutating func visit(_ node: ListItem) -> [any Markup] { node.children }
+    mutating func visit(_ node: ListItem) -> [any Markup] { node.content }
 
     mutating func visit(_: CodeBlock) -> [any Markup] { [] }
 
@@ -46,9 +46,11 @@ private struct ChildrenVisitor: MarkupVisitor {
 
     mutating func visit(_ node: Table) -> [any Markup] { [node.header] + node.rows }
 
-    mutating func visit(_ node: DirectiveBlock) -> [any Markup] { node.children }
+    // Label first, then content: they are two runs of one C child list, and
+    // the dump's `children=` counts both.
+    mutating func visit(_ node: DirectiveBlock) -> [any Markup] { (node.label ?? []) + node.content }
 
-    mutating func visit(_ node: FootnoteDefinition) -> [any Markup] { node.children }
+    mutating func visit(_ node: FootnoteDefinition) -> [any Markup] { node.content }
 
     mutating func visit(_: Text) -> [any Markup] { [] }
 
@@ -62,17 +64,17 @@ private struct ChildrenVisitor: MarkupVisitor {
 
     mutating func visit(_: Formula) -> [any Markup] { [] }
 
-    mutating func visit(_ node: Emphasis) -> [any Markup] { node.children }
+    mutating func visit(_ node: Emphasis) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: Strong) -> [any Markup] { node.children }
+    mutating func visit(_ node: Strong) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: Strikethrough) -> [any Markup] { node.children }
+    mutating func visit(_ node: Strikethrough) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: Link) -> [any Markup] { node.children }
+    mutating func visit(_ node: Link) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: Image) -> [any Markup] { node.children }
+    mutating func visit(_ node: Image) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: Directive) -> [any Markup] { node.children }
+    mutating func visit(_ node: Directive) -> [any Markup] { node.label ?? [] }
 
     mutating func visit(_: FootnoteReference) -> [any Markup] { [] }
 

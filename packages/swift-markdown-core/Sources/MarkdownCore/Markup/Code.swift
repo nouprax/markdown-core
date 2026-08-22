@@ -2,7 +2,7 @@ import MarkdownCoreC
 
 public struct Code: Markup {
     public let scope: Scope
-    public let children: [any Markup] = []
+    public let mode: PlacementMode
     public let literal: String
 
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -12,6 +12,6 @@ extension Code {
     init(from node: OpaquePointer) {
         var literal = markdown_core_string_view()
         markdown_core_node_literal(node, &literal)
-        self.init(scope: Self.scope(from: node), literal: literal.requiredString)
+        self.init(scope: Self.scope(from: node), mode: .embedded, literal: literal.requiredString)
     }
 }

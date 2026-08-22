@@ -2,7 +2,7 @@ import MarkdownCoreC
 
 public struct Image: Markup {
     public let scope: Scope
-    public let children: [any Markup]
+    public let content: [any Markup]
     public let source: String?
     public let title: String?
 
@@ -16,7 +16,7 @@ extension Image {
         markdown_core_node_image_properties(node, &source, &title)
         self.init(
             scope: Self.scope(from: node),
-            children: Self.children(from: node),
+            content: Self.children(from: node),
             source: source.optionalString,
             title: title.optionalString
         )

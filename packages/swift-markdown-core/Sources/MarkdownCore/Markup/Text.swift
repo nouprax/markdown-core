@@ -2,7 +2,6 @@ import MarkdownCoreC
 
 public struct Text: Markup {
     public let scope: Scope
-    public let children: [any Markup] = []
     public let literal: String
 
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }

@@ -2,7 +2,7 @@ import MarkdownCoreC
 
 public struct FootnoteDefinition: Markup {
     public let scope: Scope
-    public let children: [any Markup]
+    public let content: [any Markup]
     public let id: String
 
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -14,7 +14,7 @@ extension FootnoteDefinition {
         markdown_core_node_footnote_id(node, &id)
         self.init(
             scope: Self.scope(from: node),
-            children: Self.children(from: node),
+            content: Self.children(from: node),
             id: id.requiredString
         )
     }
@@ -22,7 +22,6 @@ extension FootnoteDefinition {
 
 public struct FootnoteReference: Markup {
     public let scope: Scope
-    public let children: [any Markup] = []
     public let id: String
 
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }

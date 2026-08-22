@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a) and **15A.1** (§4.14.15A) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a) and **15A.1 – 15A.2** (§4.14.15A) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **15A.2** — the Swift model's typed child edges (Q30), which is the only thing `audit-ast-projections.mjs` is still red on. Then 15A.3 (the audit grows to six surfaces), 15A.4 (Q29), and Step 6. Remaining: `15A 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **15A.3** — the audit grows from three model surfaces to the six §4.1 names. Then 15A.4 (Q29) and Step 6. Remaining: `15A 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -106,7 +106,8 @@ mdast backlog and D9's oracle use:
 
 | Check | Why red | Owner |
 |---|---|---|
-| `scripts/audit-ast-projections.mjs` | Added at `26045be`; audits a kind/field table the baseline engine does not have. | Step 15 |
+| ~~`scripts/audit-ast-projections.mjs`~~ | **GREEN at 15A.2.** It was never era skew — §4.1.2 measured it as one binding a full era behind the other two, and Q30's typed child edges closed all sixteen Swift-only failures. | — |
+| `scripts/format-swift.sh --check` | **NEWLY REGISTERED at 15A.2, and it was in no list.** `swift format lint --strict` exits 1 at `46e20f2` with **184** findings, all `[AllPublicDeclarationsHaveDocumentation]`; the pinned 6.3.0 matches, and `.github/workflows/ci.yml:182` runs it as a required health check. 15A.2 takes it to 170. | **Q41** |
 | `scripts/check-generated-scanners.sh` | Added at `8926594`; the baseline build has no re2c invocation or version pin (R9). | R9's experiment, then Step 3 |
 | `node scripts/check-release-version.mjs --skip-swift` | **D17 is fixed and the 3.0.0 bump closed the rest**; what remains is **two** unexpected legacy tags — `codex-doc-pass-backup` and `pre-format-baseline` — which is repo hygiene, not engine state. Every version-drift, release-note and CHANGELOG assertion now passes. | release |
 | `node scripts/fuzz-parity.mjs --oracle mdast` | 0/3 — the mdast oracle is red on every generated input, for the same reason the 23-entry backlog exists. CI runs both oracles; only the upstream one was listed. | Stage 0 close |
@@ -1157,7 +1158,8 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | **Q27** | Does `VERSION` move to 1.0.4 at all? | 15C | **SETTLED 2026-08-21: no — it went to `3.0.0` early**, the second of the two options this row offered. Measured: the ordering assertion in `check-release-version.mjs` passes at `3.0.0` and **fails at `1.0.4`**, because `v2.0.0` exists and the script requires every tag to be strictly less than `VERSION`. `3.0.0-dev` fails the `stableSemver` assert. The stated cost — a release-notes file from that commit — was paid; see §4.10. |
 | **Q28** | Is `markdown_core_parser_feed_reentrant` deleted? | 11a | **Yes.** Zero in-tree callers, and it re-enters line processing with bytes that are in no source line — unrepresentable under L1. Keeping an entry point whose only purpose is to inject bytes no position can name, in the step that establishes that every byte has a position, is carrying a contradiction forward for no consumer. |
 | **Q29** | Does `mode` survive on `Code`, `CodeBlock`, `Directive`, `DirectiveBlock`? | 15A | **No** — delete it from those four, keep it on `Formula`/`FormulaBlock` where it is genuinely variable. Both decoders prove the point: Kotlin and ES hard-code the constant and one of them then *asserts* the constant it just synthesized, and the Kotlin wire format does not transmit it. A field whose value is implied by its type is ceremony four surfaces must keep in step. |
-| **Q30** | Do the bindings spell child edges typed (`content`, `items`, `label`, `header`, `rows`, `cells`) or flat (`children`)? | 15A | **Typed.** Kotlin and ES already do; Swift's flat `children` is what forces `labelCount: Int?`, forces `Table.init` to filter rows by `isHeader` and `preconditionFailure` if the count is not one, and forces `children: [any Markup] = []` onto eleven leaf kinds. Two of three bindings and the contract already assume it. |
+| **Q30** | Do the bindings spell child edges typed (`content`, `items`, `label`, `header`, `rows`, `cells`) or flat (`children`)? | 15A | **TAKEN at 15A.2: typed.** The Swift dump is byte-identical afterwards and `audit-ast-projections.mjs` is green. ~~**Typed.** Kotlin and ES already do; Swift's flat `children` is what forces `labelCount: Int?`, forces `Table.init` to filter rows by `isHeader` and `preconditionFailure` if the count is not one, and forces `children: [any Markup] = []` onto eleven leaf kinds. Two of three bindings and the contract already assume it.~~ **Every one of those was measured true at 15A.2 and every one of them is gone.** |
+| **Q41** | Does the repository keep swift-format's `AllPublicDeclarationsHaveDocumentation`? | 15A / 15C | **OPEN, and it is the owner's.** It is a required CI health check that has been failing: 184 findings at `46e20f2`, 170 after 15A.2. Satisfying it means writing a doc comment on every public declaration in the Swift binding, and for a projection layer most of those can only restate the signature — the pass this repository rejected once already. **Recommend: scope the rule to types and functions, or turn it off**, and say so in `.swift-format` rather than leaving a required check red. Whichever way it goes, it is an owner decision and §4.8 needs an answer before Stage 0 closes. |
 | **Q38** | Does the empty `Text` node D13 removes become a registered divergence from cmark-gfm? | 0a.14 | **OPEN.** Upstream emits the node too, so removing it costs one normalizer projection, one `NORMALIZED_DELTAS` name and one `deltas.json` entry. Measured at §4.2.3. Owed by the commit that lands D13. |
 | **Q39** | `[foo]: <>` resolves to `destination=null`, not `destination=""`. Is that right, when the destination WAS written and was empty? | 0a.7 | **TAKEN 2026-08-21, at 0a.7: yes, on consistency grounds, and the limit is stated.** `markdown_core_clean_url` folds a zero-length destination to `CHUNK_EMPTY` before it ever reaches the map — the same fold `clean_title` does — so `<>` is indistinguishable from *no destination* by the time the reference path sees it, and the inline path already answers `[a](<>)` with `destination=null`. Making `chunk_clone` preserve absence made the two paths agree. **This is consistency, not correctness:** a rule that truly separates "written and empty" from "not written" requires the folds to stop, which is Step 14's structural job, and this row is the one input in the corpus that will move again there. It is one row, `spec.txt` example 169. |
 
@@ -3827,6 +3829,70 @@ position oracles 0 / 45 / **106** · reference-order 2 rows, still red ·
 canonical-ast 28/47/6 · public surface · special chars · attach order · plan
 graph 22/45 · source lists 23, 4 of 5 · topology · format-c · format-cmake.
 Neither parity oracle moves: neither compares positions.
+
+
+##### 15A.2 — Q30: the Swift model's child edges are typed, and `audit-ast-projections` is GREEN
+
+**The drift was one shape repeated sixteen times.** Every Swift kind declared a
+flat `children: [any Markup]`, and eleven leaves declared
+`children: [any Markup] = []` — a field that is always empty. The contract names
+the edge per kind: `content`, `items`, `label`, `header`, `rows`, `cells`. Kotlin
+and ES already did; Swift was one binding behind, which is §4.1.2's whole point
+about why deferring the bindings is how the drift happened.
+
+| was | is |
+|---|---|
+| `children: [any Markup]` on twelve kinds | `content: [any Markup]` |
+| `children: [any Markup] = []` on nine leaves | **deleted** |
+| `List.children` | `List.items: [ListItem]` — a list owns list items and the type now says so |
+| `List.isTight`, `ListItem.isChecked` | `tight`, `checked` |
+| `CodeBlock.isFenced`, `isClosed` | `fenced`, `closed` |
+| `Code`, `CodeBlock` had **no** `mode` | `mode: PlacementMode` |
+| `Directive.labelCount: Int?`, `DirectiveBlock.labelCount: Int?` | `label: [any Markup]?`, and `DirectiveBlock` gains `content` |
+
+**`labelCount` was the tell.** The contract says `label: [Markup]?` and the
+Swift model kept an `Int`, because with one flat child list there was nowhere
+to put the nodes. The C facade has named the two runs since 1.0 —
+`markdown_core_node_directive_first_label_child` and `_first_content_child` —
+and nothing used them. Now `Markup.directiveLabel(from:count:)` and
+`directiveContent(from:)` do, and a written-but-empty label stays `[]`,
+distinct from `nil`, which is what the contract requires and an `Int?` could
+only encode by accident.
+
+`Table.init` and `TableRow.init` lose their hand-written `as? TableRow` /
+`as? TableCell` loops to one generic `Markup.typedChildren(from:)`.
+
+**The dump is byte-identical**, and that is what the conformance suite proves:
+`MarkdownCoreConformanceTests` compares Swift's `TreeDumper` output against
+`specs/canonical-ast/*.ast`, the same goldens the C dump is checked against, and
+it passes unchanged. The walker had to learn the same child order Kotlin's
+already had — for a `DirectiveBlock`, **label first, then content**, because the
+dump's `children=` counts both.
+
+| mutant | result |
+|---|---|
+| rename Swift's `List.items` back to `children` | *Swift: List does not declare items* |
+| rename Kotlin's `ListItem.checked` to `isChecked` | *Kotlin: ListItem does not declare checked* |
+
+**`scripts/audit-ast-projections.mjs` is green.** It was one of §0's two
+known-red rows and one of §4.8's named gates, and §4.1.2 is vindicated in
+detail: it reported *"16 Swift-only failures and zero Kotlin or ES failures"*,
+which is not era skew but one binding a full era behind the other two.
+
+##### A required CI health check that fails at HEAD and is in nobody's list
+
+`scripts/format-swift.sh --check` runs `swift format lint --strict` and
+**exits 1 at `46e20f2`**, with **184** findings, every one of them
+`[AllPublicDeclarationsHaveDocumentation]`. The pinned version matches
+(`6.3.0`), so it is not toolchain skew; `.github/workflows/ci.yml:182` runs it
+as an unconditional step of the required *Health Check - Swift* job. §0's
+known-red table does not name it, §4.8 says "formatters, linters, repository
+audits" must be green, and no step owns it.
+
+15A.2 takes it **184 → 170** — the eleven leaves lost a public field each — and
+does not try to close it, because closing it means writing 170 doc comments and
+most of them can only restate the signature. That is exactly the pass this
+repository has already rejected once. It is **Q41**.
 
 
 ---

@@ -2,7 +2,7 @@ import MarkdownCoreC
 
 public struct Link: Markup {
     public let scope: Scope
-    public let children: [any Markup]
+    public let content: [any Markup]
     public let destination: String?
     public let title: String?
 
@@ -16,7 +16,7 @@ extension Link {
         markdown_core_node_link_properties(node, &destination, &title)
         self.init(
             scope: Self.scope(from: node),
-            children: Self.children(from: node),
+            content: Self.children(from: node),
             destination: destination.optionalString,
             title: title.optionalString
         )

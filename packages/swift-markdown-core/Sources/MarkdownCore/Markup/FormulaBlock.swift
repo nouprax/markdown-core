@@ -2,7 +2,6 @@ import MarkdownCoreC
 
 public struct FormulaBlock: Markup {
     public let scope: Scope
-    public let children: [any Markup] = []
     public let mode: PlacementMode
     public let literal: String
 

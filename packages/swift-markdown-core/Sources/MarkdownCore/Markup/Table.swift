@@ -25,12 +25,7 @@ extension Table {
             markdown_core_node_table_alignment_at(node, index, &alignment)
             return TableAlignment(from: alignment)
         }
-        let rows = Self.children(from: node).map { child -> TableRow in
-            guard let row = child as? TableRow else {
-                preconditionFailure("table contains a non-row node")
-            }
-            return row
-        }
+        let rows: [TableRow] = Self.typedChildren(from: node)
         let headers = rows.filter(\.isHeader)
         precondition(headers.count == 1, "table must contain exactly one header row")
         self.init(
@@ -54,12 +49,7 @@ extension TableRow {
     init(from node: OpaquePointer) {
         var header = false
         markdown_core_node_table_row_is_header(node, &header)
-        let cells = Self.children(from: node).map { child -> TableCell in
-            guard let cell = child as? TableCell else {
-                preconditionFailure("table row contains a non-cell node")
-            }
-            return cell
-        }
+        let cells: [TableCell] = Self.typedChildren(from: node)
         self.init(
             isHeader: header,
             cells: cells,

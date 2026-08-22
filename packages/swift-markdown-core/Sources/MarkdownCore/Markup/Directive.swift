@@ -2,11 +2,12 @@ import MarkdownCoreC
 
 public struct Directive: Markup {
     public let scope: Scope
-    public let children: [any Markup]
     public let mode: PlacementMode
     public let name: String
     public let attributes: String?
-    public let labelCount: Int?
+    /// The label's inline content, or `nil` when the source wrote no label.
+    /// A written-but-empty label is `[]` and stays distinct from `nil`.
+    public let label: [any Markup]?
 
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
@@ -16,11 +17,10 @@ extension Directive {
         let values = DirectiveValues(from: node)
         self.init(
             scope: Self.scope(from: node),
-            children: Self.children(from: node),
             mode: values.mode,
             name: values.name,
             attributes: values.attributes,
-            labelCount: values.labelCount
+            label: Self.directiveLabel(from: node, count: values.labelCount)
         )
     }
 }
