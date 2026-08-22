@@ -237,6 +237,7 @@ if(MARKDOWN_CORE_STATIC)
         map_prepare_oom
         constructor_oom
         oom_sweep
+        oom_sweep_chunked
         formula_literal_borrow)
     foreach(case IN LISTS MARKDOWN_CORE_FALLBACK_CASES)
         markdown_core_add_test(regression_fallback_${case} regression 240 fallback_runner --case ${case})

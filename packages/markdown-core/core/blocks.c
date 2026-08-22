@@ -9,6 +9,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <limits.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "markdown_core_ctype.h"
@@ -953,6 +954,35 @@ void markdown_core_parser_feed_reentrant(markdown_core_parser *parser, const cha
     markdown_core_strbuf_free(&saved_linebuf);
 }
 
+/* One reservation for the whole of this chunk's contribution to the held
+ * partial line, and then a test.
+ *
+ * `parser->linebuf.oom` was written at six sites and read at NONE (D27). A
+ * refused growth made `markdown_core_strbuf_put` a no-op, and the accumulated
+ * PREFIX was then handed to `S_process_line` as though it were a whole line and
+ * committed -- with `parser->oom` clear, so `finish` returned a document.
+ * Measured on a 279-byte document fed in 32-byte chunks: refusing allocation 6
+ * of 25 leaves 55 of 275 text bytes and reports success.
+ *
+ * Reserving first is what makes the refusal atomic: the NUL path writes twice,
+ * and a failure between the two writes leaves a line that is neither the old
+ * one nor the new one. The arithmetic is done in 64 bits because `bufsize_t` is
+ * int32_t and `size + add` is exactly the overflow A4 closed one level down. */
+static bool S_linebuf_reserve(markdown_core_parser *parser, int64_t add) {
+    int64_t target = (int64_t)parser->linebuf.size + add;
+
+    if (add < 0 || target > (int64_t)(INT32_MAX / 2)) {
+        parser->linebuf.oom = 1;
+    } else if (add > 0) {
+        markdown_core_strbuf_grow(&parser->linebuf, (bufsize_t)target);
+    }
+    if (parser->linebuf.oom) {
+        parser->oom = true;
+        return false;
+    }
+    return true;
+}
+
 static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buffer, size_t len, bool eof) {
     const unsigned char *end = buffer + len;
     static const uint8_t repl[] = {239, 191, 189};
@@ -988,6 +1018,9 @@ static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buf
         chunk_len = (bufsize_t)(eol - buffer);
         if (process) {
             if (parser->linebuf.size > 0) {
+                if (!S_linebuf_reserve(parser, chunk_len)) {
+                    return;
+                }
                 markdown_core_strbuf_put(&parser->linebuf, buffer, chunk_len);
                 S_process_line(parser, parser->linebuf.ptr, parser->linebuf.size);
                 markdown_core_strbuf_clear(&parser->linebuf);
@@ -996,11 +1029,16 @@ static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buf
             }
         } else {
             if (eol < end && *eol == '\0') {
-                // omit NULL byte
+                // omit NULL byte, add replacement character
+                if (!S_linebuf_reserve(parser, (int64_t)chunk_len + 3)) {
+                    return;
+                }
                 markdown_core_strbuf_put(&parser->linebuf, buffer, chunk_len);
-                // add replacement character
                 markdown_core_strbuf_put(&parser->linebuf, repl, 3);
             } else {
+                if (!S_linebuf_reserve(parser, chunk_len)) {
+                    return;
+                }
                 markdown_core_strbuf_put(&parser->linebuf, buffer, chunk_len);
             }
         }
@@ -1807,7 +1845,12 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
         return NULL;
     }
 
-    if (parser->linebuf.size) {
+    /* The held partial line is the last thing the stream said. If its buffer
+     * lost bytes, what is here is a PREFIX, and processing it would commit a
+     * line the author did not write. */
+    if (parser->linebuf.oom) {
+        parser->oom = true;
+    } else if (parser->linebuf.size) {
         S_process_line(parser, parser->linebuf.ptr, parser->linebuf.size);
         markdown_core_strbuf_clear(&parser->linebuf);
     }

@@ -570,12 +570,20 @@ static const char FB_SWEEP_CORPUS[] =
 
 static const char *FB_SWEEP_EXTENSIONS[] = {"table", "strikethrough", "autolink", "tasklist", "formula", "directive"};
 
-static markdown_core_node *fb_sweep_parse(markdown_core_mem *mem) {
+/* `chunk == 0` feeds the corpus in one call; anything else splits it, which is
+ * the only way `parser->linebuf` is ever written. THE ONE-CALL SWEEP CANNOT SEE
+ * THAT BUFFER AT ALL: every line arrives whole, `parser->linebuf.size` is 0 at
+ * every decision, and the branch that accumulates a partial line never runs.
+ * That is why D27 -- six writes to `linebuf.oom` and no reads -- survived a
+ * gate that injects a failure at every single allocation. */
+static markdown_core_node *fb_sweep_parse_chunked(markdown_core_mem *mem, size_t chunk) {
     int options = MARKDOWN_CORE_OPT_DIRECTIVE | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_SMART |
                   MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS | MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS |
                   MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS;
     markdown_core_parser *parser = markdown_core_parser_new_with_mem(options, mem);
     markdown_core_node *root;
+    size_t length = strlen(FB_SWEEP_CORPUS);
+    size_t at;
     size_t i;
 
     if (!parser) {
@@ -588,11 +596,20 @@ static markdown_core_node *fb_sweep_parse(markdown_core_mem *mem) {
             return NULL;
         }
     }
-    markdown_core_parser_feed(parser, FB_SWEEP_CORPUS, strlen(FB_SWEEP_CORPUS));
+    if (chunk == 0) {
+        markdown_core_parser_feed(parser, FB_SWEEP_CORPUS, length);
+    } else {
+        for (at = 0; at < length; at += chunk) {
+            size_t take = length - at < chunk ? length - at : chunk;
+            markdown_core_parser_feed(parser, FB_SWEEP_CORPUS + at, take);
+        }
+    }
     root = markdown_core_parser_finish(parser);
     markdown_core_parser_free(parser);
     return root;
 }
+
+static markdown_core_node *fb_sweep_parse(markdown_core_mem *mem) { return fb_sweep_parse_chunked(mem, 0); }
 
 /* Allocation-free comparison: the sweep allocator is still armed while
  * comparing, so the comparator must not allocate (public literal accessors
@@ -663,7 +680,7 @@ static int fb_tree_equal(markdown_core_node *a, markdown_core_node *b) {
  * performs.  The unified contract: each injected failure must either surface
  * as a failed parse (NULL document) or leave the output byte-identical to
  * the control -- lossless fallbacks are the only path allowed to succeed. */
-static int case_oom_sweep(void) {
+static int fb_run_oom_sweep(size_t chunk) {
     markdown_core_node *control;
     unsigned long total;
     unsigned long k;
@@ -671,6 +688,8 @@ static int case_oom_sweep(void) {
 
     markdown_core_core_extensions_ensure_registered();
 
+    /* The control is always the ONE-CALL parse, so this also asserts that
+     * chunking the same bytes builds the same document. */
     control = fb_sweep_parse(markdown_core_get_default_mem_allocator());
     if (!control) {
         fputs("control parse failed\n", stderr);
@@ -680,7 +699,7 @@ static int case_oom_sweep(void) {
     fb_sweep_count = 0;
     fb_sweep_fail_at = 0;
     {
-        markdown_core_node *counted = fb_sweep_parse(&fb_sweep_mem);
+        markdown_core_node *counted = fb_sweep_parse_chunked(&fb_sweep_mem, chunk);
         if (!counted || !fb_tree_equal(control, counted)) {
             fputs("counting parse diverged from control\n", stderr);
             if (counted) {
@@ -701,10 +720,11 @@ static int case_oom_sweep(void) {
         fb_sweep_count = 0;
         fb_sweep_fail_at = k;
         fb_sweep_fired = 0;
-        doc = fb_sweep_parse(&fb_sweep_mem);
+        doc = fb_sweep_parse_chunked(&fb_sweep_mem, chunk);
         if (doc) {
             if (fb_sweep_fired && !fb_tree_equal(control, doc)) {
-                fprintf(stderr, "allocation %lu / %lu: lossy document reported as success\n", k, total);
+                fprintf(stderr, "allocation %lu / %lu (chunk %lu): lossy document reported as success\n", k, total,
+                        (unsigned long)chunk);
                 markdown_core_node_free(doc);
                 goto done;
             }
@@ -717,6 +737,17 @@ done:
     markdown_core_node_free(control);
     return result;
 }
+
+static int case_oom_sweep(void) { return fb_run_oom_sweep(0); }
+
+/* The same contract over the buffer the one-call sweep cannot reach. Seven is
+ * chosen because it is coprime with nothing in the corpus: every line is split,
+ * most of them more than once, so `parser->linebuf` accumulates on the great
+ * majority of lines and its growth is a real allocation the sweep can refuse.
+ *
+ * Reverting D27's flag test makes this case report "lossy document reported as
+ * success"; `oom_sweep` stays green, because it never writes that buffer. */
+static int case_oom_sweep_chunked(void) { return fb_run_oom_sweep(7); }
 
 /* The generic sweep above compares trees with an allocation-free comparator, so
  * it never touches an EXTENSION payload -- and a formula's literal is exactly
@@ -859,6 +890,7 @@ static const fb_case_entry FB_CASES[] = {
     {"map_prepare_oom", case_map_prepare_oom},
     {"constructor_oom", case_constructor_oom},
     {"oom_sweep", case_oom_sweep},
+    {"oom_sweep_chunked", case_oom_sweep_chunked},
     {"formula_literal_borrow", case_formula_literal_borrow},
 };
 

@@ -98,6 +98,14 @@ void markdown_core_strbuf_free(markdown_core_strbuf *buf) {
 void markdown_core_strbuf_clear(markdown_core_strbuf *buf) {
     buf->size = 0;
 
+    /* An allocation failure is a fact about the write that failed, not a
+     * property the buffer keeps. `oom` says "content was lost"; after a clear
+     * there is no content, so there is nothing left for it to say. It used to
+     * survive here, and `markdown_core_strbuf_detach` was the only operation
+     * that lifted it -- so a buffer cleared and reused across lines silently
+     * dropped every later write with the allocator working again. */
+    buf->oom = 0;
+
     if (buf->asize > 0) {
         buf->ptr[0] = '\0';
     }

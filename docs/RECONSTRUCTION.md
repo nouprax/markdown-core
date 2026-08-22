@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps 0 and 1, §4.0's re-ordering, **all of Stage 0a** (0a.0 through 0a.15), **Step 2** (§4.14.2), and **3a.1 + 3a.2** (§4.14.3a) |
+| Landed | Steps 0 and 1, §4.0's re-ordering, **all of Stage 0a** (0a.0 through 0a.15), **Step 2** (§4.14.2), and **3a.1 – 3a.3** (§4.14.3a) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 3a**, continued: A1, then D27 with A3's half. Then §4.1's steps in the order §4.1.4 verifies: `3 3b 15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 3**, the extension descriptor table. Step 3a is complete: A1, A2 and A4 landed with D27, and A3 is carried to 12/13 with its measurement (§4.14.3a). Then §4.1's steps in the order §4.1.4 verifies: `3 3b 15A 5 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -46,9 +46,9 @@ cmake --preset default && cmake --build --preset default --parallel
 cmake --preset asan    && cmake --build --preset asan    --parallel
 cmake --preset ubsan   && cmake --build --preset ubsan   --parallel
 
-ctest --preset correctness -j 8            # 68/68
-ctest --preset correctness-asan -j 8       # 59/59 — SEE THE WARNING BELOW
-ctest --preset correctness-ubsan -j 8      # 59/59 — SEE THE WARNING BELOW
+ctest --preset correctness -j 8            # 69/69
+ctest --preset correctness-asan -j 8       # 60/60 — SEE THE WARNING BELOW
+ctest --preset correctness-ubsan -j 8      # 60/60 — SEE THE WARNING BELOW
 node scripts/check-canonical-ast-fixtures.mjs   # 28 kinds, 47 fields, 6 cases
 bash scripts/audit-public-surface.sh
 node scripts/audit-extension-special-chars.mjs   # 4 extensions, 5 sentinels
@@ -90,7 +90,7 @@ than trust the row — that is how D17 was found.
 **A sanitizer preset with no build reports GREEN having run nothing.** With
 `build/asan` absent, `ctest --preset correctness-asan` prints
 `No tests were found!!!` and **exits 0**. Run the configure and build lines above
-first, and treat a sanitizer run that does not report `58/58` as a failure
+first, and treat a sanitizer run that does not report `60/60` as a failure
 however it exited. This is a gate that cannot fail, which is worse than a gate
 that is missing.
 
@@ -402,7 +402,7 @@ ones whose witness is stated in this section rather than in the row.
 | D24 | `tasklist` decides `checked` by `strstr` over the whole line | wrong-output | **fixed at 0a.11** | `- [ ] see [x] below` → `checked=true` |
 | D25 | a `FootnoteReference` label can be a **dangling pointer**, read on every lookup | **use-after-free** | **fixed at 0a.2** | ASan: `heap-use-after-free`, READ of size 1 in `markdown_core_map_lookup (map.c:279)`, freed by `handle_close_bracket (inlines.c:1384)` |
 | D26 | `handle_newline` and `handle_backslash` give `SoftBreak` and `LineBreak` no position at all | wrong-position | **fixed at 0a.12b** | proposed in §4.2.5 with every quantity wrong; measured at 0a.12 (153 rows, two sites, +22/−4), refused there because both available spellings trade one not-a-place class for another, and landed at 0a.12b once **Q40** decided that a line ending is a place for a node that IS one |
-| D27 | `parser->linebuf.oom` written at six sites and read at none | silent truncation (allocation failure only) | 3a, with A1 | §4.13.11, measured: 244 input bytes become 102 with `parser->oom == 0` |
+| D27 | `parser->linebuf.oom` written at six sites and read at none | silent truncation (allocation failure only) | **fixed at 3a.3**, with A1 | §4.13.11, measured: 244 input bytes become 102 with `parser->oom == 0`; re-measured at 3a.3 on a 279-byte document in 32-byte chunks — refusing allocation 6 of 25 leaves 55 of 275 text bytes |
 | D28 | `extensions/formula.c` ignores `markdown_core_chunk_to_cstr`'s failure and keeps a **borrowed** pointer | **use-after-free** | **fixed at 0a.15** | §4.13.11, ASan: `heap-use-after-free`, READ of size 5 in `markdown_core_extensions_get_formula_literal` |
 | D29 | `extensions/table.c:297` does not check `markdown_core_node_new_with_mem`, and `:305` dereferences NULL | **crash** | **fixed at 0a.15** | §4.13.11, SIGSEGV on `lead text⏎x | y` / `--|--` |
 | D30 | `markdown_core_reference_create` commits an entry whose url or title was lost | wrong-document (allocation failure only) | 9a/11c delete it; §4.13.9 pins it | §4.13.11, measured on four refused allocations |
@@ -3144,6 +3144,101 @@ canonical-ast 28/47/6 · public surface · special chars · attach order · plan
 graph 22/45 · source lists 27, 4 of 5 · topology · format-c · format-cmake.
 **Zero golden rows moved.**
 
+##### 3a.3 — A1 and D27: the failure model, and the buffer the allocation sweep could not reach
+
+**D27, reproduced before anything changed.** `parser->linebuf.oom` was written
+at six sites and read at **none**. A refused growth makes
+`markdown_core_strbuf_put` a no-op, and `S_parser_feed` then hands the
+accumulated **prefix** to `S_process_line` as though it were a whole line and
+commits it — with `parser->oom` clear, so `finish` returns a document. Measured
+on a 279-byte document fed in 32-byte chunks: refusing allocation **6 of 25**
+leaves **55 of 275** text bytes and reports success; refusing 7 leaves 80.
+§4.13.11's own numbers were 244 → 102 on a different input; the shape is
+identical.
+
+**The fix is a reservation and a test.** `S_linebuf_reserve` grows the held
+partial line to its full new size in **one** call and then reads the flag: a
+refusal sets `parser->oom` and `S_parser_feed` returns without processing
+anything. `markdown_core_parser_finish` tests it too, before processing the
+held final line — what is in the buffer after a refusal is a prefix, and
+committing it would invent a line the author did not write. The arithmetic is
+64-bit, because `linebuf.size + chunk_len` is exactly the int32 overflow 3a.2
+closed one level down, and the NUL-replacement path is the one that writes
+twice, so reserving first is what makes the refusal atomic rather than partial.
+
+**A1: `markdown_core_strbuf_clear` lifts the failure bit.** An allocation
+failure is a fact about the write that failed, not a property the buffer keeps.
+`oom` says *"content was lost"*; after a clear there is no content, so there is
+nothing left for it to say. Before this, `markdown_core_strbuf_detach` was the
+**only** operation in the engine that lifted it — which is why
+`consolidate_text_nodes` recovers per run and a cleared-and-reused buffer did
+not.
+
+##### The mutant that kills nothing, and the gate it earned
+
+**Reverting A1's lift alone leaves `correctness` at 69/69 and both
+allocation-failure sweeps green.** The two engine buffers that are cleared and
+reused are `parser->curline` — whose `oom` was already tested at
+`S_process_line`'s head — and `parser->linebuf`, which this same commit taught
+to report. With both reporting at the transaction, the poison never survives to
+be reused, so the lift removes the class **by construction** and no parse can
+show it.
+
+So it gets a property test rather than a parse test:
+`strbuf_failure_is_a_transaction` in `tests/api/main.c` refuses one growth
+through a test allocator, asserts the poison, clears, and asserts that the next
+write lands intact with the allocator working again. Reverting the lift fails
+**four** of its assertions.
+
+##### The chunked sweep, and why the old one was structurally blind
+
+§4.13.11 said it and it is exactly right: `case_oom_sweep` feeds its corpus in
+**one call**, so `parser->linebuf.size` is 0 at every decision, the branch that
+accumulates a partial line never runs, and the buffer is never written during
+the entire sweep. A gate that injects a failure at **every single allocation**
+could not see six unread flag writes.
+
+`oom_sweep_chunked` is the same contract over the same corpus fed **7 bytes at a
+time** — every line split, most of them more than once — and its control is
+still the one-call parse, so it also asserts that chunking the same bytes builds
+the same document. It costs **433** injected failures where the one-call sweep
+costs 429.
+
+| mutant | `oom_sweep` | `oom_sweep_chunked` |
+|---|---|---|
+| drop D27's flag test, keep the hoist | **PASSED** | **FAILED** — *allocation 19 / 433 (chunk 7): lossy document reported as success*, `Paragraph with ` → `Paragraph w` |
+| revert A1's lift | PASSED | PASSED — and `correctness` 69/69; see above |
+
+##### A3 is half already true, and its other half is not 3a-shaped
+
+§4.13.7 assigns A3 to *"3a, surfaced by 13"*: *"`parser->oom` stops being one
+sticky bit meaning four things"*. **Measured: it means one thing.** There are 70
+write sites across `core/` and `extensions/` and exactly **three** reads
+(`core/blocks.c:1762`, `:1818`, `:1894`), and all three mean the same thing —
+*the document lost bytes, abandon*. The "four things" is a description of the
+session/streaming era's parser, which no longer exists; §11.8's split was
+written against that engine.
+
+What is left of A3 is *"a failure is a **returned status**"*, and 3a cannot land
+it: `markdown_core_parser_finish` reports loss by freeing the root and returning
+NULL because NULL is the only vocabulary the surface has. Giving it another one
+is `markdown_core_error` and the diagnostics contract — **Step 13**, with the
+facade half at **12**. A3 is carried, and the owner column is corrected to say
+so rather than to say 3a.
+
+##### Gates after
+
+`correctness` **69/69** · `correctness-asan` **60/60** · `correctness-ubsan`
+**60/60** — each **+1**, the new `regression_fallback_oom_sweep_chunked` entry;
+the two new api-test functions add assertions, not entries · `conformance` 2/2 ·
+upstream parity 817/817 with 7/7 · mdast 54/54, backlog 24/24 · fuzz-parity
+300/300 · scope-sanity 14 · position oracles 0 / 45 / 109 · reference-order 2
+rows, still red · canonical-ast 28/47/6 · public surface · special chars ·
+attach order · plan graph 22/45 · source lists 27, 4 of 5 · topology · format-c
+· format-cmake. **Zero golden rows moved**, which is what an
+allocation-failure fix should move.
+
+
 ---
 
 ### 4.3 The ordering argument
@@ -3599,9 +3694,9 @@ No new steps. Every requirement below lands on a step that already owns the file
 
 | id | Requirement | Step |
 |---|---|---|
-| **A1** | The engine has one **failure model** as well as one allocator model: an allocation failure is a fact about a transaction, not a property a buffer acquires. `markdown_core_strbuf.oom` either ceases to exist (a `reserve` becomes the only fallible buffer operation and every write after it is infallible) or gains an explicit clear. Today `markdown_core_strbuf_clear` (`core/buffer.c:78-83`) does not lift it and nothing else does — measured, one refused grow silently swallows every later line into that block **with the allocator working again**. | **3a** |
-| **A2** | No allocation path aborts. Delete `core/arena.c` and the two `markdown_core_arena_push`/`_pop` pairs at `extensions/table.c:342` and `:550`. §4.13.10. | **3a** |
-| **A3** | `parser->oom` stops being one sticky bit meaning four things. A failure is a **returned status**; a terminal "parse lost" state becomes unreachable, because after A1–A2 and the ordering discipline nothing can fail after commit begins. `markdown_core_parser_finish` stops reporting loss by freeing the root (`core/blocks.c:1697-1704`). | **3a**, surfaced by **13** |
+| **A1** | The engine has one **failure model** as well as one allocator model: an allocation failure is a fact about a transaction, not a property a buffer acquires. `markdown_core_strbuf.oom` either ceases to exist (a `reserve` becomes the only fallible buffer operation and every write after it is infallible) or gains an explicit clear. Today `markdown_core_strbuf_clear` (`core/buffer.c:78-83`) does not lift it and nothing else does — measured, one refused grow silently swallows every later line into that block **with the allocator working again**. **LANDED at 3a.3** as the explicit lift, and it kills no mutant on its own — §4.14.3a says why, and what gate it earned instead. | **3a** ✅ |
+| **A2** | No allocation path aborts. Delete `core/arena.c` and the two `markdown_core_arena_push`/`_pop` pairs at `extensions/table.c:342` and `:550`. §4.13.10. **LANDED at 3a.1**, together with the re-parse retry the pop implied and the CLI's `#if DEBUG`. | **3a** ✅ |
+| **A3** | ~~`parser->oom` stops being one sticky bit meaning four things.~~ **Measured at 3a.3: it means ONE thing** — 70 write sites, three reads, and all three mean *the document lost bytes, abandon*. The "four things" described the session/streaming parser, which no longer exists. What remains is *a failure is a **returned status***, and 3a cannot land it: `markdown_core_parser_finish` reports loss by freeing the root because NULL is the only vocabulary the surface has. **CARRIED.** | ~~3a~~ **13**, facade half at **12** |
 | **A4** | `S_strbuf_grow_by` (`core/buffer.c:34-36`) checks `add` against `INT32_MAX/2 - buf->size` **before** the sum. Today a negative target satisfies `target_size < buf->asize` at `:41` and returns without growing *and without poisoning*, after which `_put` memmoves past the end. Verified by direct call; needs a single put above ~1.07 GiB, which `append(chunk:)` makes reachable at `core/blocks.c:909`. **LANDED at 3a.2, and it needed TWO guards, not one** — poisoning on a non-positive target is not enough, because the wrapped sum is compared through the overflow flag and the guard never fires (§4.14.3a). | **3a** ✅ |
 | **A5** | Hooks separate **decide** from **mutate**, and a hook reports *declined / opened / failed* as three distinct answers. §4.13.8. | **3** |
 | **A6** | Hook cadence is declared, and a hook that runs at finish is inadmissible under "append returns the document". `autolink`'s `postprocess_text` (`extensions/autolink.c:386`) is Θ(document), destructive and prefix-dependent (H8); mid-loop failure at `:529` leaves the email in the tree **twice**, because the sibling was linked at `:527` before the prefix was shrunk at `:539`. | **3** |

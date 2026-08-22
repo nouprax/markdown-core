@@ -1100,6 +1100,56 @@ static void extension_decline_yields_turn(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
+/* A1. An allocation failure is a fact about the write that failed, not a
+ * property the buffer keeps. `markdown_core_strbuf_clear` used not to lift
+ * `oom`, and `markdown_core_strbuf_detach` was the only operation in the engine
+ * that did -- so a buffer cleared and reused went on silently dropping every
+ * later write WITH THE ALLOCATOR WORKING AGAIN.
+ *
+ * This is a property test rather than a parse test on purpose. Measured at
+ * 3a.3: reverting the lift alone leaves `correctness` at 69/69 and both
+ * allocation-failure sweeps green, because the two engine buffers that are
+ * cleared and reused -- `parser->curline` and `parser->linebuf` -- now both
+ * report at the transaction and abandon the parse before the reuse. The lift
+ * removes the class by construction, and nothing else can see it. */
+static int strbuf_refuse_next;
+static void *strbuf_test_calloc(size_t n, size_t size) {
+    if (strbuf_refuse_next) {
+        strbuf_refuse_next = 0;
+        return NULL;
+    }
+    return calloc(n, size);
+}
+static void *strbuf_test_realloc(void *pointer, size_t size) {
+    if (strbuf_refuse_next) {
+        strbuf_refuse_next = 0;
+        return NULL;
+    }
+    return realloc(pointer, size);
+}
+static void strbuf_test_free(void *pointer) { free(pointer); }
+static markdown_core_mem strbuf_test_mem = {strbuf_test_calloc, strbuf_test_realloc, strbuf_test_free};
+
+static void strbuf_failure_is_a_transaction(test_batch_runner *runner) {
+    markdown_core_strbuf buf;
+
+    markdown_core_strbuf_init(&strbuf_test_mem, &buf, 0);
+    strbuf_refuse_next = 1;
+    markdown_core_strbuf_put(&buf, (const unsigned char *)"hello", 5);
+    INT_EQ(runner, buf.oom, 1, "a refused growth poisons the buffer");
+    INT_EQ(runner, buf.size, 0, "a refused growth writes nothing");
+
+    markdown_core_strbuf_clear(&buf);
+    INT_EQ(runner, buf.oom, 0, "clearing the buffer lifts the failure with the content it described");
+
+    markdown_core_strbuf_put(&buf, (const unsigned char *)"world", 5);
+    INT_EQ(runner, buf.oom, 0, "the next write succeeds with the allocator working again");
+    INT_EQ(runner, buf.size, 5, "the next write lands");
+    STR_EQ(runner, markdown_core_strbuf_cstr(&buf), "world", "and it lands intact");
+
+    markdown_core_strbuf_free(&buf);
+}
+
 /* A4. `bufsize_t` is int32_t, and every append went through
  * `markdown_core_strbuf_grow(buf, buf->size + add)`. Two things were wrong and
  * either alone is enough:
@@ -1315,6 +1365,7 @@ int main(void) {
     ref_source_pos(runner);
     autolink_source_pos(runner);
     strbuf_overflow(runner);
+    strbuf_failure_is_a_transaction(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;
