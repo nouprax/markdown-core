@@ -320,10 +320,6 @@ int ts_ast_enable(markdown_core_parse_options *options, const char *name) {
         options->task_lists = true;
     } else if (strcmp(name, "formula") == 0 || strcmp(name, "formulas") == 0) {
         options->formulas = true;
-    } else if (strcmp(name, "dollar-formula-delimiters") == 0) {
-        options->dollar_formula_delimiters = true;
-    } else if (strcmp(name, "latex-formula-delimiters") == 0) {
-        options->latex_formula_delimiters = true;
     } else if (strcmp(name, "directive") == 0 || strcmp(name, "directives") == 0) {
         options->directives = true;
     } else {

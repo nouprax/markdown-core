@@ -4,6 +4,9 @@ import tseslint from "typescript-eslint";
 
 export default defineConfig(
     globalIgnores([
+        // Agent scratch worktrees. Git ignores them; eslint walks them anyway,
+        // and a checkout of an unrelated commit lints as 699 errors nobody owns.
+        "**/.claude/**",
         "**/.build/**",
         "**/.gradle/**",
         "**/.tools/**",

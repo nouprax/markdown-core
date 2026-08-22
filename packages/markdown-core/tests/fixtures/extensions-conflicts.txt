@@ -60,7 +60,7 @@ this one. Under the old facade order both examples below parse as table rows:
 the fence becomes `Text "::"` plus an inline `Directive` in an autocompleted
 two-cell row, and the formula block becomes three rows of one cell.
 
-```````````````````````````````` example formula dollar-formula-delimiters table
+```````````````````````````````` example formula table
 text
 $$
 x
@@ -86,7 +86,7 @@ Document scope=1:1..4:3 children=2
         └── Text scope=3:1..3:4 literal="body" children=0
 ````````````````````````````````
 
-```````````````````````````````` example formula dollar-formula-delimiters table
+```````````````````````````````` example formula table
 | a | b |
 | - | - |
 $$

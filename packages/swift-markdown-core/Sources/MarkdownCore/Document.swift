@@ -9,8 +9,6 @@ public struct ParseOptions: Sendable, Hashable {
     public let autolinks: Bool
     public let taskLists: Bool
     public let formulas: Bool
-    public let dollarFormulaDelimiters: Bool
-    public let latexFormulaDelimiters: Bool
     public let directives: Bool
 
     public init(
@@ -22,8 +20,6 @@ public struct ParseOptions: Sendable, Hashable {
         autolinks: Bool = true,
         taskLists: Bool = true,
         formulas: Bool = true,
-        dollarFormulaDelimiters: Bool = true,
-        latexFormulaDelimiters: Bool = true,
         directives: Bool = true
     ) {
         self.smartPunctuation = smartPunctuation
@@ -34,8 +30,6 @@ public struct ParseOptions: Sendable, Hashable {
         self.autolinks = autolinks
         self.taskLists = taskLists
         self.formulas = formulas
-        self.dollarFormulaDelimiters = dollarFormulaDelimiters
-        self.latexFormulaDelimiters = latexFormulaDelimiters
         self.directives = directives
     }
 }
@@ -70,8 +64,6 @@ public struct Document: Markup {
             autolinks: options.autolinks,
             task_lists: options.taskLists,
             formulas: options.formulas,
-            dollar_formula_delimiters: options.dollarFormulaDelimiters,
-            latex_formula_delimiters: options.latexFormulaDelimiters,
             directives: options.directives
         )
         var nativeError: OpaquePointer?

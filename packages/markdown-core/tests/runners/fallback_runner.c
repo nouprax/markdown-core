@@ -578,8 +578,7 @@ static const char *FB_SWEEP_EXTENSIONS[] = {"table", "strikethrough", "autolink"
  * gate that injects a failure at every single allocation. */
 static markdown_core_node *fb_sweep_parse_chunked(markdown_core_mem *mem, size_t chunk) {
     int options = MARKDOWN_CORE_OPT_DIRECTIVE | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_SMART |
-                  MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS | MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS |
-                  MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS;
+                  MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
     markdown_core_parser *parser = markdown_core_parser_new_with_mem(options, mem);
     markdown_core_node *root;
     size_t length = strlen(FB_SWEEP_CORPUS);
@@ -769,8 +768,7 @@ static const char FB_FORMULA_CORPUS[] = "```formula\n"
                                         "$$\n";
 
 static markdown_core_node *fb_formula_parse(markdown_core_mem *mem) {
-    markdown_core_parser *parser = markdown_core_parser_new_with_mem(
-        MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS | MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS, mem);
+    markdown_core_parser *parser = markdown_core_parser_new_with_mem(MARKDOWN_CORE_OPT_DEFAULT, mem);
     const markdown_core_syntax_extension *extension;
     markdown_core_node *root;
 

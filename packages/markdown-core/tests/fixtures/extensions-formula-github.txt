@@ -9,9 +9,8 @@ license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
 ## GitHub formula compatibility
 
 These examples define the GitHub Docs dollar formula-expression surface
-supported by the `formula` extension when `--dollar-formula-delimiters` is
-enabled. The HTML wrapper is markdown-core's stable representation; the wrapped
-delimiter/body text is the payload handed to LaTeX/KaTeX.
+recognized by the `formula` extension. The wrapped delimiter/body text is the
+payload handed to LaTeX/KaTeX.
 
 ```````````````````````````````` example
 Inline $x+y$ end.
@@ -109,24 +108,6 @@ Document scope=1:1..3:2 children=1
 └── FormulaBlock scope=1:1..3:2 literal="x+y" children=0
 ````````````````````````````````
 
-Backslash formula delimiters are not enabled by default.
-
-```````````````````````````````` example
-Inline \\(x+y\\) and \(a+b\).
-.
-Document scope=1:1..1:29 children=1
-└── Paragraph scope=1:1..1:29 children=1
-    └── Text scope=1:1..1:29 literal="Inline \\(x+y\\) and (a+b)." children=0
-````````````````````````````````
-
-```````````````````````````````` example
-Display \\[x+y\\] and \[a+b\].
-.
-Document scope=1:1..1:30 children=1
-└── Paragraph scope=1:1..1:30 children=1
-    └── Text scope=1:1..1:30 literal="Display \\[x+y\\] and [a+b]." children=0
-````````````````````````````````
-
 GitHub's ```formula fenced-code form is a formula block; the fence delimiters and
 `formula` info string are not part of the formula body.
 
@@ -137,4 +118,140 @@ x+y
 .
 Document scope=1:1..3:3 children=1
 └── FormulaBlock scope=1:1..3:3 literal="x+y" children=0
+````````````````````````````````
+
+An unpaired dollar is ordinary punctuation for emphasis flanking: the
+underscore after it still opens emphasis exactly as reference CommonMark
+requires.
+
+```````````````````````````````` example
+foo$_bar_
+.
+Document scope=1:1..1:9 children=1
+└── Paragraph scope=1:1..1:9 children=2
+    ├── Text scope=1:1..1:4 literal="foo$" children=0
+    └── Emphasis scope=1:5..1:9 children=1
+        └── Text scope=1:6..1:8 literal="bar" children=0
+````````````````````````````````
+
+Inline math carries the code-span padding rule: when the content both begins
+and ends with a space and is not entirely spaces, one space is removed from
+each end, so `$$ x $$` and `$$x$$` mean the same expression. The rule is
+micromark-extension-math's, and it is the same one CommonMark applies to code
+spans, which this parser already implemented there.
+
+```````````````````````````````` example
+text $$ mid $$ text
+.
+Document scope=1:1..1:19 children=1
+└── Paragraph scope=1:1..1:19 children=3
+    ├── Text scope=1:1..1:5 literal="text " children=0
+    ├── Formula scope=1:6..1:14 mode=standalone literal="mid" children=0
+    └── Text scope=1:15..1:19 literal=" text" children=0
+````````````````````````````````
+
+Only one space is removed from each end, so interior padding is content.
+
+```````````````````````````````` example
+text $$  x  $$ text
+.
+Document scope=1:1..1:19 children=1
+└── Paragraph scope=1:1..1:19 children=3
+    ├── Text scope=1:1..1:5 literal="text " children=0
+    ├── Formula scope=1:6..1:14 mode=standalone literal=" x " children=0
+    └── Text scope=1:15..1:19 literal=" text" children=0
+````````````````````````````````
+
+Content that is entirely spaces keeps them: the rule requires a non-space.
+
+```````````````````````````````` example
+text $$ $$ text
+.
+Document scope=1:1..1:15 children=1
+└── Paragraph scope=1:1..1:15 children=3
+    ├── Text scope=1:1..1:5 literal="text " children=0
+    ├── Formula scope=1:6..1:10 mode=standalone literal=" " children=0
+    └── Text scope=1:11..1:15 literal=" text" children=0
+````````````````````````````````
+
+Two spaces are still entirely spaces, so neither is removed. This is the case
+the rule's non-space requirement exists for: without it, padding would eat the
+content of a formula that is deliberately blank.
+
+```````````````````````````````` example
+text $$  $$ text
+.
+Document scope=1:1..1:16 children=1
+└── Paragraph scope=1:1..1:16 children=3
+    ├── Text scope=1:1..1:5 literal="text " children=0
+    ├── Formula scope=1:6..1:11 mode=standalone literal="  " children=0
+    └── Text scope=1:12..1:16 literal=" text" children=0
+````````````````````````````````
+
+A tab is not padding, so it is never the byte that gets stripped -- but it is
+also not whitespace for the all-whitespace test, exactly as it is not for the
+code span this rule is worded after. A body of spaces around a tab therefore
+has content, and one space comes off each end.
+
+```````````````````````````````` example
+text $$ 	 $$ text
+.
+Document scope=1:1..1:17 children=1
+└── Paragraph scope=1:1..1:17 children=3
+    ├── Text scope=1:1..1:5 literal="text " children=0
+    ├── Formula scope=1:6..1:12 mode=standalone literal="\t" children=0
+    └── Text scope=1:13..1:17 literal=" text" children=0
+````````````````````````````````
+
+The backtick form strips its backticks first, then the same rule applies.
+
+```````````````````````````````` example
+text $`  k  `$ text
+.
+Document scope=1:1..1:19 children=1
+└── Paragraph scope=1:1..1:19 children=3
+    ├── Text scope=1:1..1:5 literal="text " children=0
+    ├── Formula scope=1:6..1:14 mode=embedded literal=" k " children=0
+    └── Text scope=1:15..1:19 literal=" text" children=0
+````````````````````````````````
+
+Content shorter than two characters cannot be padded on both sides, so it is
+left alone.
+
+```````````````````````````````` example
+text $$x$$ text
+.
+Document scope=1:1..1:15 children=1
+└── Paragraph scope=1:1..1:15 children=3
+    ├── Text scope=1:1..1:5 literal="text " children=0
+    ├── Formula scope=1:6..1:10 mode=standalone literal="x" children=0
+    └── Text scope=1:11..1:15 literal=" text" children=0
+````````````````````````````````
+
+A line ending counts as a space for the rule, so inline math written across
+lines carries the same expression as the single-line form.
+
+```````````````````````````````` example
+text $$
+x
+$$ text
+.
+Document scope=1:1..3:7 children=1
+└── Paragraph scope=1:1..3:7 children=3
+    ├── Text scope=1:1..1:5 literal="text " children=0
+    ├── Formula scope=1:6..3:2 mode=standalone literal="x" children=0
+    └── Text scope=3:3..3:7 literal=" text" children=0
+````````````````````````````````
+
+Padding is removed only when it is present on both sides, so a space on one
+side alone is content.
+
+```````````````````````````````` example
+text $$ mid$$ text
+.
+Document scope=1:1..1:18 children=1
+└── Paragraph scope=1:1..1:18 children=3
+    ├── Text scope=1:1..1:5 literal="text " children=0
+    ├── Formula scope=1:6..1:13 mode=standalone literal=" mid" children=0
+    └── Text scope=1:14..1:18 literal=" text" children=0
 ````````````````````````````````

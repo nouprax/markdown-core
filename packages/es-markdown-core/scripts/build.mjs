@@ -89,8 +89,12 @@ const result = spawnSync(
     }
 );
 if (result.status !== 0) {
-    process.stderr.write(result.stdout);
-    process.stderr.write(result.stderr);
+    // A spawn that never started has no status and no output; without this the
+    // failure prints as an ERR_INVALID_ARG_TYPE from the stream, which names
+    // the wrong thing entirely. The usual cause is emcc not being on PATH.
+    if (result.error) process.stderr.write(`emcc could not be run: ${String(result.error)}\n`);
+    process.stderr.write(result.stdout ?? "");
+    process.stderr.write(result.stderr ?? "");
     process.exit(result.status ?? 1);
 }
 const typescript = spawnSync(

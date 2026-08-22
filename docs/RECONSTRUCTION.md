@@ -24,17 +24,17 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a) and **15A.1 – 15A.4** (§4.14.15A) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A) and **6** (§4.14.6) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 6** — deliverable #2. 15A is done except its own §4.8 obligation, **Q41**, which is the owner's. §4.14.6 sizes Step 6; the three binding toolchains all run here and §4.14.15A says how. Remaining: `15A 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 7** — directive grammar conformance, and the largest single backlog owner at **15 of 22** entries. 15A is done except its own §4.8 obligation, **Q41**, which is the owner's. Remaining: `7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
 repository's own two extensions off so a parity run compares one language,
-`gfm-extended` turns them on with the formula delimiters enabled. No existing
-invocation parses differently, and the extension attach ORDER is deliberately
-untouched — reordering `table` is a behaviour change that belongs to Step 3.
+`gfm-extended` turns them on. No existing invocation parses differently, and
+the extension attach ORDER is deliberately untouched — reordering `table` is a
+behaviour change that belongs to Step 3.
 
 ### Every gate, and how to run it
 
@@ -51,22 +51,22 @@ ctest --preset correctness-asan -j 8       # 60/60 — SEE THE WARNING BELOW
 ctest --preset correctness-ubsan -j 8      # 60/60 — SEE THE WARNING BELOW
 node scripts/check-canonical-ast-fixtures.mjs   # 28 kinds, 47 fields, 6 cases
 bash scripts/audit-public-surface.sh
-node scripts/audit-extension-special-chars.mjs   # 4 extensions, 5 sentinels
+node scripts/audit-extension-special-chars.mjs   # 6 descriptors read, every byte dispatched
 node scripts/audit-extension-attach-order.mjs    # one attach site, table last (D15, added 0a.11)
 node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/audit-source-lists.mjs              # 23 sources, 4 of 5 lists, 1 registered absent
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
-node scripts/check-upstream-parity.mjs     # 817/817 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
-node scripts/check-mdast-parity.mjs        # 54/54, backlog 24/24 still diverging
-node scripts/audit-scope-sanity.mjs        # 14 rows, only-shrink holds
+node scripts/check-upstream-parity.mjs     # 828/828 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
+node scripts/check-mdast-parity.mjs        # 62/62, backlog 22/22 still diverging
+node scripts/audit-scope-sanity.mjs        # 4 unresolved rows, 5056 scanned, only-shrink holds
 
 # The three position oracles, landed at 0a.1 (§4.2.7). Each fails on a row
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
 # fails here rather than in review.
 node scripts/audit-inline-sourcepos.mjs    # 0 rows registered, 68 scanned
-node scripts/audit-scope-containment.mjs   # 45 rows registered, 3941 scanned
-node scripts/audit-position-places.mjs     # 109 rows registered, 4073 scanned
+node scripts/audit-scope-containment.mjs   # 45 rows registered, 4000 scanned
+node scripts/audit-position-places.mjs     # 106 rows registered, 4123 scanned
 
 # D9's pin. REGISTERED RED and it fails if a row STOPS reproducing, because
 # deleting the budget clears both rows and costs 204.678x output growth.
@@ -79,6 +79,13 @@ node scripts/audit-reference-order-independence.mjs  # 2 rows, must stay red
 sh scripts/format-c.sh --check
 sh scripts/format-cmake.sh --check
 bash scripts/audit-test-topology.sh
+
+# The -Werror build. NOT one of the presets above: `lint:c` configures its own
+# Debug tree with MARKDOWN_CORE_WARNINGS_AS_ERRORS=ON, and it catches what a
+# Release build does not. It was missing from this list until Step 6, where it
+# was red on a Step 3b leftover nothing else could see (§4.14.6).
+scripts/lint-c.sh
+pnpm -w run lint                # lint:c + lint:swift + lint:kotlin + lint:es
 ```
 
 **`22 steps, 42 edges` was stale**, and it is the second number in this table to
@@ -101,17 +108,18 @@ pin recorded with `--cases` measured the default and means nothing.
 The upstream oracle needs a built cmark-gfm:
 `scripts/init-environment.sh --install upstream-cmark`.
 
-**Two checks are KNOWN-RED and owned, not forgotten** — the same pattern the
+**Six checks are KNOWN-RED and owned, not forgotten** — the same pattern the
 mdast backlog and D9's oracle use:
 
 | Check | Why red | Owner |
 |---|---|---|
 | ~~`scripts/audit-ast-projections.mjs`~~ | **GREEN at 15A.2.** It was never era skew — §4.1.2 measured it as one binding a full era behind the other two, and Q30's typed child edges closed all sixteen Swift-only failures. | — |
-| `scripts/format-swift.sh --check` | **NEWLY REGISTERED at 15A.2, and it was in no list.** `swift format lint --strict` exits 1 at `46e20f2` with **184** findings, all `[AllPublicDeclarationsHaveDocumentation]`; the pinned 6.3.0 matches, and `.github/workflows/ci.yml:182` runs it as a required health check. 15A.2 takes it to 170. | **Q41** |
+| `scripts/format-swift.sh --check` | **NEWLY REGISTERED at 15A.2, and it was in no list.** `swift format lint --strict` exits 1 at `46e20f2` with **184** findings, all `[AllPublicDeclarationsHaveDocumentation]`; the pinned 6.3.0 matches, and `.github/workflows/ci.yml:182` runs it as a required health check. 15A.2 takes it to 170; Step 6's option deletion takes it to **163**. | **Q41** |
 | `scripts/check-generated-scanners.sh` | Added at `8926594`; the baseline build has no re2c invocation or version pin (R9). | R9's experiment, then Step 3 |
 | `node scripts/check-release-version.mjs --skip-swift` | **D17 is fixed and the 3.0.0 bump closed the rest**; what remains is **two** unexpected legacy tags — `codex-doc-pass-backup` and `pre-format-baseline` — which is repo hygiene, not engine state. Every version-drift, release-note and CHANGELOG assertion now passes. | release |
-| `node scripts/fuzz-parity.mjs --oracle mdast` | 0/3 — the mdast oracle is red on every generated input, for the same reason the 23-entry backlog exists. CI runs both oracles; only the upstream one was listed. | Stage 0 close |
-| `pnpm audit:ci`, `audit:ast-projections`, `format:es:check` | Not yet triaged by era (§0's rule). | 0a.0 item 5 |
+| `node scripts/fuzz-parity.mjs --oracle mdast` | 0/3 — the mdast oracle is red on every generated input, for the same reason the backlog exists (24 entries at the baseline, 22 after Step 6). CI runs both oracles; only the upstream one was listed. | Stage 0 close |
+| `pnpm audit:ci` | **TRIAGED at Step 6, and it is era skew of the purest kind.** The script was restored from `main`, where every workflow action reference is pinned to a full commit SHA; the workflows are the baseline's, where they are tag refs. It names **`benchmark.yml`, `pr-metrics.yml` and others** — `actions/checkout@v7`, `setup-java@v5`, `setup-emsdk@v16`. No engine state is involved. Pinning them is infrastructure work and the SHAs are a license-adjacent record, so it is not something a step should invent. | release / 15C |
+| `pnpm format:es:check` | **TRIAGED at Step 6: `prettier --check .` reports 100 files**, including `scripts/check-plan-graph.mjs` and `specs/upstream-parity/deltas.json`. Same skew — prettier's config came from `main`, the files did not. It is a required CI step (`ci.yml:97`). Reformatting 100 files in one commit would bury every real diff in Stage 0, and doing it per-step means each step's diff carries unrelated churn. **Q42.** | **Q42** |
 | ~~`pnpm audit:source-lists`~~ | **TRIAGED AND GREEN**, ahead of Step 3a, whose row requires it to RUN. It did not fail, it **threw** — `ENOENT` on `packages/swift-markdown-core/Package.release.swift`, a release manifest that postdates `580d10c` and arrived with Step 0's `scripts/` restore. The absence is now registered in the script with an owner and printed on every run, and the pass line says **`4 of 5 lists in agreement, 1 registered absent`** so it can never read as though all five were compared. | the absence: 15C |
 
 **`scripts/` IS NOT ONE THING, and Step 0 got this wrong.** It was restored
@@ -128,6 +136,18 @@ red, ask which ERA it belongs to before assuming the engine is at fault.**
 `timeout` is not on the macOS PATH; guard long runs with a background job and a
 `kill`.
 
+**A preset that builds clean is not the preset CI runs.** `default`, `asan` and
+`ubsan` are Release or sanitizer builds; `scripts/lint-c.sh` configures its own
+Debug tree with `-Werror`, and it is the only one that fails on a discarded
+qualifier or an unused result. Step 6 found it red on a Step 3b leftover, having
+been green in all three presets for four steps (§4.14.6). Run `pnpm -w run lint`
+before believing a C change is finished — it covers Swift, Kotlin and ES too.
+
+**`eslint` walks git-ignored directories.** If any agent worktrees are left
+under `.claude/worktrees/`, they are checkouts of the closed history and lint as
+hundreds of errors nobody owns. `eslint.config.js` ignores that path as of Step
+6; if a new scratch directory appears, add it rather than reading the errors.
+
 **The make-3.81 same-second mtime trap bites during MUTANT TESTING, not only on
 a fresh checkout, and §2's `rm -rf build/` warning does not cover it.** Editing
 a source file and rebuilding within the same second leaves the old object in
@@ -142,12 +162,16 @@ through the binary before trusting a green suite.
 1. **No commit may leave `spec_commonmark` failing.** It is the cheapest oracle
    in this repository, and the previous attempt failed precisely because it
    broke the one-shot and then had nothing left to measure streaming against.
-2. **The mdast backlog only shrinks, and only on purpose.** Its 23 entries each
+2. **The mdast backlog only shrinks, and only on purpose.** Its entries each
    name the step that closes them; the gate requires each to *still* diverge, so
    a step that lands without deleting its own entries fails as loudly as a new
-   divergence. Zero of the 23 close in Stage 0a, by design — the backlog
-   measures distance to mdast's *model*, while the defects measure wrongness
-   against the engine's own intent.
+   divergence. Zero close in Stage 0a, by design — the backlog measures distance
+   to mdast's *model*, while the defects measure wrongness against the engine's
+   own intent. **24 at the baseline, 22 after Step 6**, owned by Step 7 (15),
+   Step 9b (6) and Step 10 (1). Step 6's two closed by *leaving the corpus*, not
+   by agreeing, so the gate now distinguishes a settled entry from an unreachable
+   one and the two are recorded in `retiredBacklog` with the reason (§4.14.6).
+   **An entry that stops being exercised is not an entry that closed.**
 3. **A behaviour change regenerates its goldens in the same commit**, and every
    moved row is reviewed by hand and named in the commit message.
 
@@ -1142,11 +1166,11 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | **Q11** | Does the repository adopt `InsertBraces: true`? | 2 | **TAKEN at Step 2, and every number in this row was wrong.** Footprint ~~2,393 diff lines across 36 files, 561 of them in `core/` + `extensions/`~~ → **2,472 across 38, of which 1,700 are in `core/` + `extensions/` and 772 in `tests/`**; the old split understated the engine's share threefold. Neutrality ~~29/29 objects identical~~ → **83/83 Release objects BYTE-identical**, no normalization needed; a debug build type moves only `assert`'s `__LINE__` immediate (82 substituted instructions under `asan`, 58 under `ubsan`, **zero** added or removed). The tool is `scripts/audit-format-neutrality.sh <rev>`, and it is a measurement tool, not a standing gate — §4.14.2 says why. |
 | **Q12** | Is the arena deleted, or made parser-owned? | 3a | **Delete.** Measured: ~7% CLI-only parse win, **+10–16% peak RSS**, `abort()` on allocation failure inside a library with a careful sticky-OOM discipline, total sanitizer blindness on the binary the parity oracles drive, and a demonstrated **480-byte leak in a parser that never asked for it** (a global `A != NULL` makes an unrelated default-allocator parse take `table.c`'s retry branch). Parser-owned is impossible without a document-owned lifetime model this engine does not have. Output-neutral: 7,251 comparisons, 0 differences. |
 | **Q13** | Is the cycle check unconditional — and is it a defect or a refactor by-product? | 3b | **TAKEN at 3b: unconditional, and it was a defect** — the witness is in §4.14.3b and writing its gate found a second one, D34. The measured cost on this tree is +0.9% and +3.5% on two deep-nesting inputs and noise on two ordinary ones; the row's 10.7% is not reproduced and nothing here takes 36 seconds. The row's own reading — *"the shipped library makes `b->parent == b` on request while the test that denies it flips a flag nothing else flips"* reads exactly like D1–D16 — was exactly right. |
-| **Q14** | One knob per extension, or two? | 3, 6, 7 | **One.** Attachment is the language. Delete `MARKDOWN_CORE_OPT_DIRECTIVE` and both formula delimiter options; keep formula's `dollar`/`latex` **sub-grammar** selection only if a use is stated, and today none is. |
+| **Q14** | One knob per extension, or two? | 3, 6, 7 | **TAKEN — the formula half at Step 6.** Both delimiter options are gone from the C header, the facade, the CLI, the C tests, all three binding models and the shared manifest; `formulas` turns on `$`, `$$`, `` $`...`$ ``, `\(...\)` and `\[...\]` together, and no sub-grammar selection was stated so none was kept. The gate is live: attaching formula regardless of the option fails `spec_commonmark` and `extensions_formula_option_gates` (§4.14.6). `MARKDOWN_CORE_OPT_DIRECTIVE` is Step 7's. |
 | **Q15** | What is the **inline** dispatch precedence? | 3 | Q9 settles the *block* order (`table` last) and says nothing about inlines — `table` has no inline hooks at all. `autolink` and `directive` both claim `':'`, and first-non-NULL wins today. **Recommend: table order is also inline order, `autolink` before `directive`** (a bare `:` far more often begins a URL), stated in the commit and pinned by a fixture. **MEASURED AT 0a.11 AND THE COLLISION HAS NO WITNESS**: moving `directive` to first or to the middle changes 0 of 12 hand-built candidates and 0 of 4,000 random `:`/URL/attribute documents (§4.2.17). The recommendation stands as a tie-break; it must not be shipped as a fix, and **a fixture cannot pin it until an input exists that distinguishes the two** — finding one, or recording that none does, is Step 3's. |
 | **Q16** | Are extension node types and node-flag bits re-assigned as fixed constants? | 3 | **TAKEN at 3.1.** A fixed enum decoupled from the table order, at exactly the values the runtime allocator produced (measured both sides). The export map is 32 facade symbols and `local: *`, so renumbering was available and was declined to keep the commit structural. §4.14.3. |
 | **Q17** | Is an inline node's position a projection of a stored byte range? | 8 | **Yes**, and store the pair — two `bufsize_t` on the inline node. This is what makes D12 *unexpressible* rather than fixed, and it is the concession that makes 11b cheap. |
-| **Q18** | Which inline-math padding rule? | 6 | **micromark-extension-math's**: strip one leading and one trailing space-or-line-ending, interior untouched. Not CommonMark's code-span rule, which also converts interior line endings. No oracle example separates them; three independent reasons do (the oracle's own prose cites micromark; the mdast gate compares `Formula.literal` against remark on every corpus input; a formula body is handed to KaTeX). **And it applies to the `\(…\)` / `\[…\]` forms too** — no oracle row covers that; pin it with two new ones. |
+| **Q18** | Which inline-math padding rule? | 6 | **TAKEN at Step 6, and this row's phrasing is what misled.** "Strip one leading and one trailing space-or-line-ending" reads as two independent strips and is not: the oracle pins `text $$ mid$$ text` as `literal=" mid"`, so it is **both or neither**. The `\(…\)` / `\[…\]` forms are covered, by two new pins. Two further corrections came out of the implementation: a **tab is not whitespace** for the all-whitespace test — `$$ \t $$` strips to `"\t"`, exactly as `` ` \t ` `` does — and the **CRLF clause is unreachable**, because the line reader hands inline content LF-only. Both measured; §4.14.6. |
 | **Q19** | Are directive attributes sorted in the model, or only in the dump? | 7 | **Sorted in the model.** After class-accumulation and last-value-wins the list *is* a map; source order is meaningful only inside `class`'s accumulated value, which is already a string. Two orders is how a third order appears in a binding. |
 | **Q20** | Are character references decoded in directive attribute values? | 7 | **Decode** (one call to the existing `houdini_unescape_html_f`), pin `:n{a=&amp;}` → `a="&"`. If declined, it must be a *registered* divergence in `deltas.json`, not silence. |
 | **Q21** | Does a reference definition box itself, or only its resource? | 9b | **Only its resource.** Measured on this machine: `chunk` 16, `association` 32, `definition` 64, `reference` 40, widest existing union arm (`markdown_core_code`) **40**. `{association; resource *}` is 32+8 = **40** — the union does not grow, the association stays inline and uniformly readable for all five kinds, and the label can never be lost to a failed box allocation. |
@@ -1159,7 +1183,8 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | **Q28** | Is `markdown_core_parser_feed_reentrant` deleted? | 11a | **Yes.** Zero in-tree callers, and it re-enters line processing with bytes that are in no source line — unrepresentable under L1. Keeping an entry point whose only purpose is to inject bytes no position can name, in the step that establishes that every byte has a position, is carrying a contradiction forward for no consumer. |
 | **Q29** | Does `mode` survive on `Code`, `CodeBlock`, `Directive`, `DirectiveBlock`? | 15A | **TAKEN at 15A.4, and it is FIVE kinds, not four.** `FormulaBlock` is not "genuinely variable" either: the corpus has 12 `standalone` and zero `embedded`, and `markdown_core_extensions_set_formula_mode` REFUSES any other value for that kind (`extensions/formula.c:100`). `Formula` is the only kind whose mode is a fact about the source. 195 golden rows, twelve surfaces, and a seventh hand-written copy of the contract found and deleted. ~~**No** — delete it from those four, keep it on `Formula`/`FormulaBlock` where it is genuinely variable. Both decoders prove the point: Kotlin and ES hard-code the constant and one of them then *asserts* the constant it just synthesized, and the Kotlin wire format does not transmit it. A field whose value is implied by its type is ceremony four surfaces must keep in step.~~ **Every one of those claims was verified before acting on it, and every one was true.** |
 | **Q30** | Do the bindings spell child edges typed (`content`, `items`, `label`, `header`, `rows`, `cells`) or flat (`children`)? | 15A | **TAKEN at 15A.2: typed.** The Swift dump is byte-identical afterwards and `audit-ast-projections.mjs` is green. ~~**Typed.** Kotlin and ES already do; Swift's flat `children` is what forces `labelCount: Int?`, forces `Table.init` to filter rows by `isHeader` and `preconditionFailure` if the count is not one, and forces `children: [any Markup] = []` onto eleven leaf kinds. Two of three bindings and the contract already assume it.~~ **Every one of those was measured true at 15A.2 and every one of them is gone.** |
-| **Q41** | Does the repository keep swift-format's `AllPublicDeclarationsHaveDocumentation`? | 15A / 15C | **OPEN, and it is the owner's.** It is a required CI health check that has been failing: 184 findings at `46e20f2`, 170 after 15A.2. Satisfying it means writing a doc comment on every public declaration in the Swift binding, and for a projection layer most of those can only restate the signature — the pass this repository rejected once already. **Recommend: scope the rule to types and functions, or turn it off**, and say so in `.swift-format` rather than leaving a required check red. Whichever way it goes, it is an owner decision and §4.8 needs an answer before Stage 0 closes. |
+| **Q42** | When does `prettier --check .` get satisfied, and by reformatting or by scoping? | 15C | **OPEN.** `ci.yml:97` runs it as a required step and it reports **100 files** at Step 6, none of them engine sources — `scripts/*.mjs`, `specs/**/*.json`, docs. Same era skew as `audit:ci`: the config came from `main` with Step 0's `scripts/` restore, the files did not. **Recommend: one deliberate `prettier --write` commit at 15C that touches nothing else**, rather than letting each step carry unrelated churn or leaving a required check red through Stage 0. Scoping prettier away from `specs/` is the alternative and is worse — those are the files a reader diffs most. |
+| **Q41** | Does the repository keep swift-format's `AllPublicDeclarationsHaveDocumentation`? | 15A / 15C | **OPEN, and it is the owner's.** It is a required CI health check that has been failing: 184 findings at `46e20f2`, 170 after 15A.2, **163** after Step 6. Satisfying it means writing a doc comment on every public declaration in the Swift binding, and for a projection layer most of those can only restate the signature — the pass this repository rejected once already. **Recommend: scope the rule to types and functions, or turn it off**, and say so in `.swift-format` rather than leaving a required check red. Whichever way it goes, it is an owner decision and §4.8 needs an answer before Stage 0 closes. |
 | **Q38** | Does the empty `Text` node D13 removes become a registered divergence from cmark-gfm? | 0a.14 | **OPEN.** Upstream emits the node too, so removing it costs one normalizer projection, one `NORMALIZED_DELTAS` name and one `deltas.json` entry. Measured at §4.2.3. Owed by the commit that lands D13. |
 | **Q39** | `[foo]: <>` resolves to `destination=null`, not `destination=""`. Is that right, when the destination WAS written and was empty? | 0a.7 | **TAKEN 2026-08-21, at 0a.7: yes, on consistency grounds, and the limit is stated.** `markdown_core_clean_url` folds a zero-length destination to `CHUNK_EMPTY` before it ever reaches the map — the same fold `clean_title` does — so `<>` is indistinguishable from *no destination* by the time the reference path sees it, and the inline path already answers `[a](<>)` with `destination=null`. Making `chunk_clone` preserve absence made the two paths agree. **This is consistency, not correctness:** a rule that truly separates "written and empty" from "not written" requires the folds to stop, which is Step 14's structural job, and this row is the one input in the corpus that will move again there. It is one row, `spec.txt` example 169. |
 
@@ -1193,13 +1218,13 @@ Two further findings that are not new defects but change what an existing item m
 | `extensions-directive.txt` — prose above `:shortcut{#identifier}` | *"HTML-style `#id` and `.class` shortcuts are outside this extension's generic key-value grammar and remain ordinary Markdown text."* | Implement the shorthand; **delete the sentence**. | It contradicts its own expected output, which shows both recognized. The expected block is authoritative; the sentence is a leftover from the fixture the oracle was extracted from. |
 | `extensions-directive.txt` — prose above `:ordinary[label]{…}` | *"`id` and `class` are ordinary keys. Like every repeated key, their last value wins while their first source position is retained."* | Implement `class` accumulation and last-value-wins for everything else; **delete both clauses**. | Stale on both halves. The expected output shows `class="red green blue"` — `class` is the one key that does *not* take the last value — and "first source position is retained" describes a per-attribute position that no dump field and no proposed accessor exposes. Do not build an API to justify a sentence. |
 | `extensions-formula-github.txt` — `foo$_bar_` · `extensions-directive.txt` — `foo:_bar_`, `a}_b_` | (expected output correct) | Green before Steps 6 and 7 start. | **Not stale — misattributed.** These are **D1's and D2's** rows, closed at 0a.4 by deleting three lines. Steps 6 and 7 must not claim them; if either lands before 0a.4, the row is listed as known-red naming 0a.4. |
-| `extensions-formula-github.txt` — prose | frames the dollar and fenced forms as *"a surface recognized by the `formula` extension"* | Add one sentence: **attachment is the only gate**. | Cosmetic, but under Q14 the two delimiter options cease to exist and the prose currently implies otherwise. |
-| `extensions-formula-option-gates.txt` — title and framing | written against two option knobs | Retitle to *"the formula extension is not attached"*; the five expected blocks stand **unchanged** (measured byte-identical with no options). | Same one-knob correction. Note that `extensions-formula-conflicts.txt` is *not* affected and `extensions-formula-github.txt`'s attached-but-inert case is genuinely distinct — do not collapse them. |
+| ~~`extensions-formula-github.txt` — prose~~ | frames the dollar and fenced forms as *"a surface recognized by the `formula` extension"* | **DONE at Step 6.** The fixture is at its oracle content plus one new pin (§4.14.6). | Cosmetic, but under Q14 the two delimiter options cease to exist and the prose currently implied otherwise. |
+| ~~`extensions-formula-option-gates.txt` — title and framing~~ | written against two option knobs | **DONE at Step 6**, at the oracle's content: the file now holds the two LaTeX rows the baseline had filed under the github fixture, and it runs with no `--option` at all. | Same one-knob correction. `extensions-formula-conflicts.txt` was not affected and `extensions-formula-github.txt`'s attached-but-inert case stayed distinct. |
 | All six files — positions | positions reflect fixes scheduled separately | Derive positions from this engine at each step; the oracle's positions are a **cross-check**, not a golden. | The README says so, and two specific classes prove it: the directive's `Directive 1:1..2:5` needs **D22**, and `DirectiveLabel scope` spanning brackets inclusive needs the label node to be visible — the baseline's hidden label spans the content only and its empty form is a *negative* range. |
 | `extensions-directive.txt` — the 18 spelling-only rows (`attributes=[…]`, `DirectiveLabel`) | new dump vocabulary | **Adopt them verbatim.** | **Not stale.** They are the surface change, and `scripts/lib/mdast-oracle.mjs` already sorts remark's attributes and compares the rendered bracket form — the gate was written against that exact spelling before this branch existed. |
 | `extensions-directive.txt` — the `:a-[]` / `:-a[]` / `:_a[]` prose | records that an earlier version of the example was wrong and how it was found | **Keep verbatim.** | It is the only place where the leading-`-`/`_` rule's provenance is written down, and the rule reverses baseline behaviour (which produces directives named `-a` and `_a`). |
 
-**One oracle-adjacent gate must move with Step 6 and is easy to miss:** `scripts/check-mdast-parity.mjs`'s self-test canary currently asserts `literal=" mid "` — the *unpadded* answer — with a comment naming Step 6 as the flip. An oracle whose canary asserts the defect is an oracle that has been told to expect it. Step 6 flips the assertion, moves `github-backtick-math-padding` and `inline-display-math-across-lines` from `pendingExpectedDivergences` back into `expectedDivergences`, and **deletes** the two `baselineBacklog` entries that close by leaving the mdast corpus — the gate fails loudly on a backlog entry that stops diverging.
+**~~One oracle-adjacent gate must move with Step 6 and is easy to miss~~ — DONE (§4.14.6):** `scripts/check-mdast-parity.mjs`'s self-test canary asserted `literal=" mid "` — the *unpadded* answer — with a comment naming Step 6 as the flip. An oracle whose canary asserts the defect is an oracle that has been told to expect it. Step 6 flipped the assertion, moved `github-backtick-math-padding` and `inline-display-math-across-lines` from `pendingExpectedDivergences` into `expectedDivergences` (both reproduce), and retired the two `baselineBacklog` entries that close by leaving the mdast corpus. **This paragraph was right about the mechanism and the gate was not** — it reported both as having come to agree with remark, so the gate now distinguishes a settled entry from an unreachable one and the retirement is recorded in `retiredBacklog` rather than deleted.
 
 ---
 
@@ -4025,42 +4050,173 @@ verified.**
 
 ---
 
-#### 4.14.6 Step 6 surveyed, not started: it is a cross-binding step
+#### 4.14.6 Step 6 landed: a mutant that was the correct code, and a backlog entry that closed for the wrong reason
 
-§4.1 sizes Step 6 at *"~60 · deletions across 18 files"*. Measured before
-starting it, the option deletion alone reaches **22 tracked files**, and they
-include **all three bindings**:
+**Footprint.** §4.1 sizes Step 6 at *"~60 · deletions across 18 files"*. It is
+**34 files, +400/-266**. The survey that preceded it predicted 22 files for the
+option deletion alone and was right about the shape: the width is in the
+bindings, and all three had to be built and run.
 
-```
-packages/es-markdown-core/src/parse-options.ts, src/runtime/parser.ts
-packages/kotlin-markdown-core/build.gradle.kts,
-    src/commonMain/.../model/ParseOptions.kt
-packages/swift-markdown-core/Sources/MarkdownCore/Document.swift,
-    Tests/MarkdownCoreConformanceTests/ConformanceSuite.swift,
-    Tools/CanonicalASTResourceGenerator/...
-specs/canonical-ast/manifest.json, scripts/check-canonical-ast-fixtures.mjs
-core/main.c, core/markdown-core.h, extensions/ast.c, extensions/formula.c,
-    tests/CMakeLists.txt, tests/api/main.c, tests/support/test_support.{c,h},
-    tests/runners/{fallback,pathological}_runner.c, and two fixtures
-```
+| | §4.1 says | measured |
+| --- | --- | --- |
+| files | 18 | 34 |
+| lines | ~60 deletions | +400 / -266 |
 
-**And the four formula fixtures have to be rewritten to their oracles.** Three
-of the four differ from `specs/oracles/` today, and the differences are not
-cosmetic: `extensions-formula-option-gates.txt` currently means *"attached, the
-dollar option off"* and the oracle means *"not attached at all"*, so its
-examples change identity; `extensions-formula-github.txt` gains the fenced
-formula form and D1's `foo$_bar_` row, and loses two backslash rows to the
-option-gates file. §4.1.8 already rules on every one of those; what it does not
-say is that the fixture edits are a rewrite rather than a prose fix.
+**What the step is.** Three rulings, one step. Q14 says attachment is the only
+gate, so `MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS` and
+`_LATEX_FORMULA_DELIMITERS` are deleted rather than defaulted: `formulas` turns
+on `$`, `$$`, `` $`...`$ ``, `\(...\)` and `\[...\]` together. Q18 says a
+formula body that begins and ends with a space or line ending, and is not all
+whitespace, loses one from each end. Q29's `mode` deletion had already moved
+these same fixtures at 15A.
 
-**Step 6 therefore needs the Swift, Kotlin and ES toolchains to verify**, the
-same as 15A, and the two should probably be done together — 15A's whole subject
-is those surfaces, and Q29 (delete `mode` from four kinds) moves the same
-files. Whoever takes them should read §4.1.8 and Q14, Q18 and Q29 first.
+The option deletion reaches the C header, the facade, the CLI, the C tests, all
+three binding models, the shared manifest and two audit scripts. The bit
+positions in the ES and Kotlin masks were renumbered rather than left as a hole
+at 8 and 9: both sides of each mask live in this repository, and a reserved gap
+that nothing can explain is worse than a renumber nothing can observe.
 
-Nothing about Step 6 is *harder* than the plan says. It is *wider*, and the
-width is in the bindings, which nothing landed so far has touched.
+**Q18's phrasing is what misled.** "Strip one leading and one trailing
+space-or-line-ending" reads as two independent strips. It is not:
+`extensions-formula-github.txt` pins `text $$ mid$$ text` as `literal=" mid"`,
+which only the both-or-neither reading gives. The oracle row is what settled
+it, and the implementation comment now says so at the function.
 
+**A mutant that turned out to be the correct code.** The first cut of Q18's
+all-whitespace test read `if (!formula_pad_byte(data[i]) && data[i] != '\t')`
+— a tab did not make a body count as having content. Mutant **M7** deleted the
+tab clause and **survived every gate**, so a pin was written for `$$ \t $$`,
+regenerated from the engine, and pinned `literal=" \t "`. The mdast gate then
+went red: remark says `literal="\t"`. So does this engine's own CommonMark code
+span — `` ` \t ` `` gives `literal="\t"`, because CommonMark's test is
+"consists entirely of spaces or line endings" and a tab is neither. **The
+mutant was the fix.** The clause is gone, the pin says `"\t"`, and the comment
+records that a code span and a formula answer this identically.
+
+This is the case the method exists for. The mutant did not prove a gate gap; it
+proved the code wrong, and only because the pin it motivated was checked
+against two oracles rather than regenerated and believed.
+
+**Two arms deleted for being unreachable, one predicate kept for stating the
+rule.** Q18 words its rule over line endings, and a CRLF is one — so the first
+cut collapsed a CRLF to one byte at each end. Measured: with **both** arms
+disabled, `text $$\r\nx\r\n$$ text` is byte-identical, and so is a lone-CR
+document and the block form. The line reader hands inline content LF-only. The
+arms are deleted, because no fixture can reach them to keep them honest.
+`formula_pad_byte` keeps its `'\r'`: it states the rule rather than an
+algorithm, and the comment says which is which and what has to come back if the
+feed ever stops normalising.
+
+**Mutants.** Seven on the padding rule, six killed, one proved equivalent.
+
+| | mutant | correctness | mdast |
+| --- | --- | --- | --- |
+| M1 | both-or-neither → either-side | 1 failed | killed |
+| M2 | all-whitespace exemption deleted | 1 failed | killed |
+| M5 | a line ending is not padding | 2 failed | survives |
+| M6 | the backslash form does no stripping | 1 failed | survives |
+| M8 | the tab clause put back | 1 failed | killed |
+| M9 | `size < 2` → `size < 1` | — | survives |
+| M10 | one end stripped, not two | 2 failed | killed |
+
+**M9 is equivalent, not a gap.** A one-byte body that passes the first guard is
+a single pad byte, which the all-whitespace test then catches; `size < 2` and
+`size < 1` cannot differ. **M5 and M6 survive the mdast gate and that is
+correct**: M6 only touches the backslash forms, and the mdast corpus
+deliberately excludes LaTeX-delimiter rows because remark has no opinion there.
+Correctness kills both.
+
+Q14's own gate is live too: attaching formula regardless of the option
+(`if (1 || options->formulas)`) fails **two** tests by name —
+`spec_commonmark` and `extensions_formula_option_gates`.
+
+**Standing rule 2, and a gate that reported the wrong reason.** §4.1.8 called
+this correctly: Step 6's two `baselineBacklog` entries *"close by leaving the
+mdast corpus"*. Their inputs are the two LaTeX rows that the 1.0 baseline filed
+under `extensions-formula-github.txt`, which the corpus reads;
+`specs/oracles/` files them under `extensions-formula-option-gates.txt`, which
+it does not. They still diverge from remark and would still diverge if
+restored.
+
+**The gate did not say that.** It said *"backlog entry now AGREES with
+remark"* — for both — and it had no way to tell the two cases apart: the
+`unreachable` branch existed for registered divergences and not for backlog
+entries, so an entry that left the corpus was reported as one that settled. A
+plan that says "closes by leaving the corpus" and a gate that says "now agrees"
+are two different claims, and only the plan's was true. It does now:
+
+- an entry whose input is still in the corpus and no longer diverges reports as
+  settled, as before;
+- an entry whose input **left** the corpus reports as unreachable, and says
+  that retiring it is a decision to record rather than a silence to accept.
+
+The two are recorded in `retiredBacklog` with the reason, and a new check fails
+if a retired input ever comes back into the corpus. **That check kills no
+mutant** — measured: with the check deleted and one retired input pasted back
+into `corpus.md`, the gate still fails, because the input is in neither
+`expectedDivergences` nor `baselineBacklog` and lands in `divergent` as an
+unregistered difference. What the check adds is the *name* of the cause. The
+split between settled and unreachable adds no kill either, for the same reason:
+both branches fail. Both are recorded here as reporting improvements, not as
+gates.
+
+Backlog: **24 → 22**, and all 22 remaining still diverge.
+
+**Fixture rows that moved.** Three fixtures were already at their oracle
+content from the survey; this step added three pins beyond the oracle and
+regenerated one row.
+
+- `extensions-formula-github.txt`: **one new example** (`text $$ \t $$ text`),
+  written with a placeholder and regenerated by `spec_runner --rewrite`. Exactly
+  one row moved, twice: first to `literal=" \t "` from the defective engine,
+  then to `literal="\t"` after the tab clause came out. No other row moved.
+- `extensions-formula-latex.txt`: **two new examples** pinning Q18's rule on the
+  backslash forms, which no oracle row covered.
+- `extensions-conflicts.txt`: two examples lost the now-unknown
+  `dollar-formula-delimiters` tag.
+
+Every other difference from `specs/oracles/` is one of the two staleness classes
+§4.1.8 already names: Q29's `mode=` removal, and D26's `SoftBreak scope=0:0..0:0`.
+
+The counts that moved with the one added example: upstream parity 827 → **828**,
+mdast 61 → **62**, scope sanity 5051 → **5056** scopes, containment 3995 →
+**4000**, places 4119 → **4123**. Every ledger count held: 4 unresolved, 45
+containment rows, 106 place rows, 0 inline-sourcepos rows, 2 reference-order
+rows.
+
+**Three things found on the way that are not Step 6.**
+
+1. **`lint:c` was not in my gate loop, and it was red.** `scripts/lint-c.sh` is
+   a `-Werror` Debug build, and Step 3b's `static const` descriptors made
+   `S_llist_append_checked` discard qualifiers — two errors, invisible to the
+   default, ASan and UBSan presets. Fixed by typing the helper
+   (`S_extension_list_append`) so the one unavoidable cast sits on one line with
+   the reason. **The gate is now in the loop.** It is the fifth trap: a preset
+   that builds clean is not the preset CI runs.
+2. **`eslint` walked `.claude/worktrees/`** — 20 leftover agent worktrees, 1.8
+   GB, checkouts of commits from the closed history — and reported **699 errors**
+   nobody owns. Git ignores that directory; eslint did not. Added to
+   `globalIgnores`. The worktrees themselves were left alone.
+3. **`packages/es-markdown-core/scripts/build.mjs` hid its own failure.** When
+   `emcc` is not on `PATH` the spawn never starts, so `status` is `null` and
+   `stdout` is `undefined`, and the script died inside `process.stderr.write`
+   with `ERR_INVALID_ARG_TYPE` — naming the stream, not the missing compiler. It
+   now prints `result.error`.
+
+**Q41 moved, and the last two untriaged checks were triaged.**
+`scripts/format-swift.sh --check` is at **163**
+`AllPublicDeclarationsHaveDocumentation` findings, down from 170; no other rule
+fires. Still red, still registered. `pnpm audit:ci` and `pnpm format:es:check`
+— the two §0 listed as *"not yet triaged by era"* — are both era skew, measured:
+the first wants every workflow action pinned to a commit SHA and the baseline's
+workflows use tag refs; the second reports **100 files**, none of them engine
+sources. Neither is engine state. The second is a required CI step with no
+owner and 100 files is a decision, so it is now **Q42**.
+
+**Gates.** All green: correctness 69/69, ASan 60/60, UBSan 60/60, conformance
+2/2, every audit, `lint-c`, and all four linters. All three bindings built and
+run: ES node + conformance, Swift macOS + conformance, Kotlin JVM + macOS-arm64
+native, each with conformance.
 
 ---
 
@@ -4724,7 +4880,7 @@ following, together:
 
 **Deliverables**
 - [ ] Directive grammar conformance (Step 7) — deliverable #1
-- [ ] The formula fix (Step 6) — deliverable #2
+- [x] **The formula fix (Step 6) — deliverable #2. LANDED, §4.14.6.**
 - [ ] CST concrete records (11a, 11b, 11c) and diagnostics (13) — deliverable #3
 - [ ] The reference model (9a, 9b) and the positions that depend on it (10)
 - [ ] The facade and its single ABI break window (12), the null/empty rule (14)
@@ -4750,9 +4906,10 @@ allocation-failure sweep) and D31 (Step 8; pinned as a golden row in
 - [ ] upstream parity, and **both** fuzz oracles
 - [ ] mdast parity with an EMPTY backlog
 - [ ] scope-sanity, having only shrunk
-- [ ] `check-canonical-ast-fixtures`, `audit-public-surface`,
-      `audit-ast-projections`, `check-generated-scanners` — the last two are
-      known-red today and must be green or re-owned by close
+- [x] `check-canonical-ast-fixtures`, `audit-public-surface`,
+      `audit-ast-projections` — all three green; the third since 15A.2
+- [ ] `check-generated-scanners` — known-red, owned by R9 then Step 3, and must
+      be green or re-owned by close
 - [ ] `pnpm check:contracts`, formatters, linters, repository audits
 - [ ] `check-release-version` — including the legacy-tag condition
 

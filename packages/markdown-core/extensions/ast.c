@@ -71,8 +71,6 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
     options->autolinks = true;
     options->task_lists = true;
     options->formulas = true;
-    options->dollar_formula_delimiters = true;
-    options->latex_formula_delimiters = true;
     options->directives = true;
 }
 
@@ -103,12 +101,6 @@ markdown_core_document *markdown_core_document_parse(const uint8_t *source, size
     }
     if (options->strip_html_comments) {
         native_options |= MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
-    }
-    if (options->formulas && options->dollar_formula_delimiters) {
-        native_options |= MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS;
-    }
-    if (options->formulas && options->latex_formula_delimiters) {
-        native_options |= MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS;
     }
     if (options->directives) {
         native_options |= MARKDOWN_CORE_OPT_DIRECTIVE;

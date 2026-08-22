@@ -201,14 +201,13 @@ static int has_only_spaces_until_line_end(const unsigned char *data, bufsize_t l
     return is_line_end(data, len, pos);
 }
 
-static int scan_formula_block_open(const unsigned char *data, bufsize_t len, bufsize_t pos,
-                                   int latex_formula_delimiters, int dollar_formula_delimiters) {
-    if (latex_formula_delimiters && pos + 3 <= len && data[pos] == '\\' && data[pos + 1] == '\\' &&
-        data[pos + 2] == '[' && has_only_spaces_until_line_end(data, len, pos + 3)) {
+static int scan_formula_block_open(const unsigned char *data, bufsize_t len, bufsize_t pos) {
+    if (pos + 3 <= len && data[pos] == '\\' && data[pos + 1] == '\\' && data[pos + 2] == '[' &&
+        has_only_spaces_until_line_end(data, len, pos + 3)) {
         return FORMULA_BLOCK_DELIM_LATEX_BACKSLASH;
     }
 
-    if (dollar_formula_delimiters && pos + 2 <= len && data[pos] == '$' && data[pos + 1] == '$' &&
+    if (pos + 2 <= len && data[pos] == '$' && data[pos + 1] == '$' &&
         has_only_spaces_until_line_end(data, len, pos + 2)) {
         return FORMULA_BLOCK_DELIM_DOLLAR;
     }
@@ -242,9 +241,7 @@ static markdown_core_node *try_opening_formula_block(const markdown_core_syntax_
         return NULL;
     }
 
-    block_delim = scan_formula_block_open(input, (bufsize_t)len, (bufsize_t)first_nonspace,
-                                          parser->options & MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS,
-                                          parser->options & MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS);
+    block_delim = scan_formula_block_open(input, (bufsize_t)len, (bufsize_t)first_nonspace);
     if (block_delim == FORMULA_BLOCK_DELIM_NONE) {
         return NULL;
     }
@@ -354,14 +351,6 @@ static bufsize_t scan_backslash_close(const unsigned char *data, bufsize_t len, 
     return 0;
 }
 
-static int latex_formula_delimiters_enabled(markdown_core_parser *parser) {
-    return parser->options & MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS;
-}
-
-static int dollar_formula_delimiters_enabled(markdown_core_parser *parser) {
-    return parser->options & MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS;
-}
-
 static markdown_core_node *match(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_parser *inline_parser) {
@@ -372,10 +361,6 @@ static markdown_core_node *match(const markdown_core_syntax_extension *extension
     bufsize_t closer_len;
 
     if (character == '$') {
-        if (!dollar_formula_delimiters_enabled(parser)) {
-            return NULL;
-        }
-
         if (scan_formula_dollar_display_open(chunk->data, len, offset)) {
             return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_DOLLAR_DISPLAY, 2, 1, 1);
         }
@@ -386,32 +371,28 @@ static markdown_core_node *match(const markdown_core_syntax_extension *extension
                                            dollar_inline_can_close(chunk, (bufsize_t)offset));
         }
     } else if (character == '\\') {
-        if (latex_formula_delimiters_enabled(parser)) {
-            opener_len = scan_formula_latex_backslash_display_open(chunk->data, len, offset);
-            if (opener_len) {
-                return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
-                                               opener_len, 1, 0);
-            }
-
-            opener_len = scan_formula_latex_backslash_inline_open(chunk->data, len, offset);
-            if (opener_len) {
-                return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
-                                               opener_len, 1, 0);
-            }
+        opener_len = scan_formula_latex_backslash_display_open(chunk->data, len, offset);
+        if (opener_len) {
+            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
+                                           opener_len, 1, 0);
         }
 
-        if (latex_formula_delimiters_enabled(parser)) {
-            closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ']', 2);
-            if (closer_len) {
-                return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
-                                               closer_len, 0, 1);
-            }
+        opener_len = scan_formula_latex_backslash_inline_open(chunk->data, len, offset);
+        if (opener_len) {
+            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
+                                           opener_len, 1, 0);
+        }
 
-            closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ')', 2);
-            if (closer_len) {
-                return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
-                                               closer_len, 0, 1);
-            }
+        closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ']', 2);
+        if (closer_len) {
+            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
+                                           closer_len, 0, 1);
+        }
+
+        closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ')', 2);
+        if (closer_len) {
+            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
+                                           closer_len, 0, 1);
         }
     }
 
@@ -453,6 +434,57 @@ static void free_nodes_through(markdown_core_node *first, markdown_core_node *la
     }
 }
 
+/* micromark-extension-math's padding rule (Q18): when a body BEGINS AND ENDS
+ * with a space or line ending and is not all whitespace, strip one from each
+ * end. Both or neither -- `$$ mid$$` keeps its leading space.
+ *
+ * Q18's own phrasing, "strip one leading and one trailing space-or-line-ending",
+ * reads as two independent strips and is not: `extensions-formula-github.txt`
+ * pins `text $$ mid$$ text` as `literal=" mid"`, and the independent reading
+ * gives `"mid"`. What separates this rule from CommonMark's code span is only
+ * that the code span ALSO converts interior line endings to spaces; this one
+ * leaves the interior exactly as written, which is why `$$  x  $$` keeps one
+ * space on each side and `$$\nx\n$$` keeps none.
+ *
+ * `$$ $$` and `$$  $$` are all whitespace and keep every byte: there is no body
+ * to pad, only padding. A TAB is not whitespace for that test, exactly as it is
+ * not for the code span CommonMark words this after: `$$ \t $$` strips to
+ * `"\t"`, and so does `` ` \t ` ``. This engine got that wrong until a mutant
+ * that deleted the tab exemption turned out to be the correct code.
+ *
+ * `\r` counts as padding because the rule says a line ending does, not because
+ * one can arrive: the line reader hands inline content LF-only, for a lone CR as
+ * well as for a CRLF. Measured, not assumed -- disabling the arms that used to
+ * collapse a CRLF to one byte left a `$$\r\nx\r\n$$` document byte-identical,
+ * which is why those arms are gone and this one is not. A fixture cannot reach
+ * either; the difference is that this one states the rule and they stated an
+ * algorithm. If the feed ever stops normalising, they have to come back. */
+static bool formula_pad_byte(unsigned char c) { return c == ' ' || c == '\n' || c == '\r'; }
+
+static void strip_formula_padding(const unsigned char **literal, bufsize_t *len) {
+    const unsigned char *data = *literal;
+    bufsize_t size = *len;
+    bufsize_t i;
+
+    if (size < 2 || !formula_pad_byte(data[0]) || !formula_pad_byte(data[size - 1])) {
+        return;
+    }
+    for (i = 0; i < size; i++) {
+        if (!formula_pad_byte(data[i])) {
+            break;
+        }
+    }
+    if (i == size) {
+        return;
+    }
+
+    data++;
+    size--;
+    size--;
+    *literal = data;
+    *len = size;
+}
+
 static markdown_core_node *make_backslash_delimited_formula(const markdown_core_syntax_extension *extension,
                                                             markdown_core_parser *parser,
                                                             markdown_core_formula_mode mode, const unsigned char *data,
@@ -461,6 +493,8 @@ static markdown_core_node *make_backslash_delimited_formula(const markdown_core_
     markdown_core_strbuf literal;
     bufsize_t i = body_start;
     markdown_core_node *node;
+    const unsigned char *body;
+    bufsize_t body_len;
 
     markdown_core_strbuf_init(parser->mem, &literal, 0);
 
@@ -475,7 +509,13 @@ static markdown_core_node *make_backslash_delimited_formula(const markdown_core_
         i++;
     }
 
-    node = make_formula_node(extension, parser, MARKDOWN_CORE_NODE_FORMULA, mode, literal.ptr, literal.size);
+    /* The same padding rule as the dollar forms: Q18 says it applies to
+     * `\(...\)` and `\[...\]` too, and no oracle row covered that until this
+     * step added two. */
+    body = literal.ptr;
+    body_len = literal.size;
+    strip_formula_padding(&body, &body_len);
+    node = make_formula_node(extension, parser, MARKDOWN_CORE_NODE_FORMULA, mode, body, body_len);
     markdown_core_strbuf_free(&literal);
     return node;
 }
@@ -516,6 +556,7 @@ static delimiter *insert_formula(const markdown_core_syntax_extension *extension
         formula = make_backslash_delimited_formula(extension, parser, mode, chunk->data, body_start, body_end, 2,
                                                    mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE ? ']' : ')');
     } else {
+        strip_formula_padding(&literal, &literal_len);
         formula = make_formula_node(extension, parser, MARKDOWN_CORE_NODE_FORMULA, mode, literal, literal_len);
     }
 

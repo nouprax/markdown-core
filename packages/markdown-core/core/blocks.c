@@ -149,14 +149,21 @@ static markdown_core_node *make_document(markdown_core_mem *mem) {
 }
 
 /* Appends and reports failure directly instead of relying on llist_append's
- * silent-drop behavior. */
-static int S_llist_append_checked(markdown_core_mem *mem, markdown_core_llist **head, void *data) {
+ * silent-drop behavior.
+ *
+ * Both extension lists hold pointers to the `static const` descriptors that
+ * Step 3b made read-only, and every reader casts `data` straight back to a
+ * `const markdown_core_syntax_extension *`. The const is discarded here and
+ * nowhere else because markdown_core_llist is a generic list that cannot
+ * carry it; typing the parameter keeps the cast to this one line. */
+static int S_extension_list_append(markdown_core_mem *mem, markdown_core_llist **head,
+                                   const markdown_core_syntax_extension *extension) {
     markdown_core_llist *node = (markdown_core_llist *)mem->calloc(1, sizeof(*node));
     markdown_core_llist *tail;
     if (!node) {
         return 0;
     }
-    node->data = data;
+    node->data = (void *)(uintptr_t)extension;
     node->next = NULL;
     if (!*head) {
         *head = node;
@@ -170,11 +177,11 @@ static int S_llist_append_checked(markdown_core_mem *mem, markdown_core_llist **
 
 int markdown_core_parser_attach_syntax_extension(markdown_core_parser *parser,
                                                  const markdown_core_syntax_extension *extension) {
-    if (!S_llist_append_checked(parser->mem, &parser->syntax_extensions, extension)) {
+    if (!S_extension_list_append(parser->mem, &parser->syntax_extensions, extension)) {
         return 0;
     }
     if (extension->match_inline || extension->insert_inline_from_delim) {
-        if (!S_llist_append_checked(parser->mem, &parser->inline_syntax_extensions, extension)) {
+        if (!S_extension_list_append(parser->mem, &parser->inline_syntax_extensions, extension)) {
             return 0;
         }
     }

@@ -19,9 +19,7 @@ const options = [
     { name: "autolinks", defaultValue: true, mask: 1 << 5 },
     { name: "taskLists", defaultValue: true, mask: 1 << 6 },
     { name: "formulas", defaultValue: true, mask: 1 << 7 },
-    { name: "dollarFormulaDelimiters", defaultValue: true, mask: 1 << 8 },
-    { name: "latexFormulaDelimiters", defaultValue: true, mask: 1 << 9 },
-    { name: "directives", defaultValue: true, mask: 1 << 10 }
+    { name: "directives", defaultValue: true, mask: 1 << 8 }
 ] as const satisfies readonly OptionDescriptor[];
 
 const utf8Encoder = new TextEncoder();

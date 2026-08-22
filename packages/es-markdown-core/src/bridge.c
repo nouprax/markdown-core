@@ -36,9 +36,7 @@ markdown_core_document *es_document_parse(const uint8_t *source, size_t length, 
     options.autolinks = (flags & (1u << 5)) != 0;
     options.task_lists = (flags & (1u << 6)) != 0;
     options.formulas = (flags & (1u << 7)) != 0;
-    options.dollar_formula_delimiters = (flags & (1u << 8)) != 0;
-    options.latex_formula_delimiters = (flags & (1u << 9)) != 0;
-    options.directives = (flags & (1u << 10)) != 0;
+    options.directives = (flags & (1u << 8)) != 0;
     return markdown_core_document_parse(source, length, &options, error);
 }
 

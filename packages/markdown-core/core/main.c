@@ -44,10 +44,6 @@ void print_usage(void) {
     printf("  --list-extensions               List available extensions and quit\n");
     printf("  --strikethrough-double-tilde    Only parse strikethrough (if enabled)\n");
     printf("                                  with two tildes\n");
-    printf("  --dollar-formula-delimiters     Enable formula $...$ and $$...$$\n"
-           "                                  delimiters when formula is enabled.\n");
-    printf("  --latex-formula-delimiters         Enable LaTeX formula \\\\(...\\\\) and\n"
-           "                                  \\\\[...\\\\] delimiters when formula is enabled.\n");
     printf("  --directive                    Enable directive syntax.\n");
     printf("  --help, -h       Print usage information\n");
     printf("  --version        Print version\n");
@@ -90,7 +86,6 @@ int main(int argc, char *argv[]) {
     size_t bytes;
     markdown_core_node *document = NULL;
     int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS |
-                  MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS | MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS |
                   MARKDOWN_CORE_OPT_DIRECTIVE | MARKDOWN_CORE_OPT_VALIDATE_UTF8;
     int res = 1;
 
@@ -130,9 +125,7 @@ int main(int argc, char *argv[]) {
              * one language without knowing which flags spell it. `gfm` is the
              * subset shared with upstream cmark-gfm — this repository's own
              * extensions off, so a parity run compares one language and not
-             * two. `gfm-extended` is that plus this repository's own, with the
-             * formula delimiters on because a formula extension with both
-             * delimiter sets off parses no formulas at all.
+             * two. `gfm-extended` is that plus this repository's own.
              *
              * Every existing invocation is unaffected: without this flag the
              * parser is built exactly as before. */
@@ -148,8 +141,7 @@ int main(int argc, char *argv[]) {
                 gfm_profile = true;
                 options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_SMART;
             } else if (strcmp(argv[i], "gfm-extended") == 0) {
-                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_DIRECTIVE |
-                          MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS | MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS;
+                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_DIRECTIVE;
             } else if (strcmp(argv[i], "default") != 0) {
                 fprintf(stderr, "Unknown profile %s\n", argv[i]);
                 goto failure;
@@ -157,10 +149,6 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(argv[i], "--list-extensions") == 0) {
             print_extensions();
             goto success;
-        } else if (strcmp(argv[i], "--dollar-formula-delimiters") == 0) {
-            options |= MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS;
-        } else if (strcmp(argv[i], "--latex-formula-delimiters") == 0) {
-            options |= MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS;
         } else if (strcmp(argv[i], "--directive") == 0) {
             options |= MARKDOWN_CORE_OPT_DIRECTIVE;
         } else if (strcmp(argv[i], "--strikethrough-double-tilde") == 0) {

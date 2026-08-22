@@ -57,7 +57,7 @@ void ts_spec_free(ts_spec_file *file);
 void ts_ast_options_none(markdown_core_parse_options *options);
 
 /* Enables the option named by a fixture/suite tag ("table", "smart",
- * "dollar-formula-delimiters", ...).  Returns 0 on success, -1 for unknown
+ * "directive", ...).  Returns 0 on success, -1 for unknown
  * names. */
 int ts_ast_enable(markdown_core_parse_options *options, const char *name);
 

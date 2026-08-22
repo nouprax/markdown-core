@@ -144,6 +144,20 @@
             "authority": "GFM specification, and cmark-gfm",
             "summary": "A body row with more cells than the header keeps all of them in remark; the excess is dropped here.",
             "why": "The GFM specification says of a row's cells: \"If there are greater, the excess is ignored.\" cmark-gfm does exactly that, and so does this parser. remark keeps the extra cell, which is the deviation."
+        },
+        {
+            "id": "github-backtick-math-padding",
+            "input": "text $`  k  `$ text\n",
+            "authority": "GitHub",
+            "summary": "As above, with padding inside the backticks.",
+            "why": "See github-backtick-math."
+        },
+        {
+            "id": "inline-display-math-across-lines",
+            "input": "text $$\nx\n$$ text\n",
+            "authority": "GitHub",
+            "summary": "`$$` opened and closed inside a paragraph is inline math spanning the lines; remark requires the delimiters to own their lines and leaves the text alone.",
+            "why": "Follows from `$$` being usable inline at all, which the padding rule and github-display-math-block already establish."
         }
     ],
     "baselineBacklog": [
@@ -253,16 +267,6 @@
             "closedBy": "Step 7 \u2014 directive grammar conformance"
         },
         {
-            "input": "Inline \\\\(x+y\\\\) and \\(a+b\\).\n",
-            "source": "packages/markdown-core/tests/fixtures/extensions-formula-github.txt:114",
-            "closedBy": "Step 6 \u2014 formula"
-        },
-        {
-            "input": "Display \\\\[x+y\\\\] and \\[a+b\\].\n",
-            "source": "packages/markdown-core/tests/fixtures/extensions-formula-github.txt:122",
-            "closedBy": "Step 6 \u2014 formula"
-        },
-        {
             "input": ":note[label]{title=\"one\ntwo\"} tail\n",
             "source": "packages/markdown-core/tests/fixtures/extensions-directive.txt:333",
             "closedBy": "Step 7 \u2014 directive grammar conformance",
@@ -270,22 +274,17 @@
         }
     ],
     "baselineBacklogNote": "Pinned against the untouched 1.0 baseline (580d10c) on 2026-08-20. These are the inputs where this engine does not yet agree with remark, and every one is attributable to a reconstruction step that has not landed. They are NOT deliberate divergences: each is a gap the reconstruction closes. The gate treats them as known so it can still catch a NEW divergence, and each step must delete its own entries \u2014 an entry that stops diverging while still listed here fails the gate, exactly as a registered divergence does. When this list is empty, Stage 0 is done.",
-    "pendingExpectedDivergences": [
+    "retiredBacklog": [
         {
-            "id": "github-backtick-math-padding",
-            "input": "text $`  k  `$ text\n",
-            "authority": "GitHub",
-            "summary": "As above, with padding inside the backticks.",
-            "why": "See github-backtick-math.",
-            "note": "  NOT ACTIVE at the 1.0 baseline: this entry's canary input lives in fixture rows that the baseline's extensions-formula-github.txt does not have. Step 6 adds those rows; this entry returns to `expectedDivergences` in that same commit."
+            "input": "Inline \\\\(x+y\\\\) and \\(a+b\\).\n",
+            "source": "packages/markdown-core/tests/fixtures/extensions-formula-option-gates.txt",
+            "closedBy": "Step 6 \u2014 formula"
         },
         {
-            "id": "inline-display-math-across-lines",
-            "input": "text $$\nx\n$$ text\n",
-            "authority": "GitHub",
-            "summary": "`$$` opened and closed inside a paragraph is inline math spanning the lines; remark requires the delimiters to own their lines and leaves the text alone.",
-            "why": "Follows from `$$` being usable inline at all, which the padding rule and github-display-math-block already establish.",
-            "note": "  NOT ACTIVE at the 1.0 baseline: this entry's canary input lives in fixture rows that the baseline's extensions-formula-github.txt does not have. Step 6 adds those rows; this entry returns to `expectedDivergences` in that same commit."
+            "input": "Display \\\\[x+y\\\\] and \\[a+b\\].\n",
+            "source": "packages/markdown-core/tests/fixtures/extensions-formula-option-gates.txt",
+            "closedBy": "Step 6 \u2014 formula"
         }
-    ]
+    ],
+    "retiredBacklogNote": "Retired by Step 6, not by agreement. Both inputs are LaTeX-delimiter rows that the 1.0 baseline had filed under extensions-formula-github.txt, where the corpus reads them; specs/oracles/ files them under extensions-formula-option-gates.txt, which the corpus does not read. Two clauses of notAnAuthorityFor already cover them: remark has no opinion on `\\(x\\)` and `\\[x\\]`, and this gate runs one profile so it cannot judge a row whose whole assertion is what happens with the extension off. Under Q14 that is what these rows assert. They diverge from remark today and would still diverge if restored \u2014 which is why they are recorded here rather than deleted, and why the gate re-checks that they stay out."
 }

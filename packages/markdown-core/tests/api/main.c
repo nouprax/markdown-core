@@ -288,8 +288,7 @@ static markdown_core_node *parse_with_formula_extension(const char *markdown) {
 }
 
 static markdown_core_node *parse_with_dollar_formula_extension(const char *markdown) {
-    return parse_with_formula_extension_options(markdown, MARKDOWN_CORE_OPT_DEFAULT |
-                                                              MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS);
+    return parse_with_formula_extension_options(markdown, MARKDOWN_CORE_OPT_DEFAULT);
 }
 
 static markdown_core_node *parse_with_directive_extension(const char *markdown) {
@@ -308,15 +307,29 @@ static markdown_core_node *parse_with_directive_extension(const char *markdown) 
     return doc;
 }
 
+/* ATTACHING THE EXTENSION IS THE ONLY GATE (Q14, Step 6). These two assertions
+ * used to say the opposite -- "dollar formula delimiters require opt-in" -- and
+ * they passed because `MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS` existed and
+ * this parser did not set it. There is no such option now, so a parser with the
+ * extension attached parses the syntax and a parser without it does not, and
+ * nothing in between is expressible. */
 static void formula_extension_accessors(test_batch_runner *runner) {
-    markdown_core_node *doc = parse_with_formula_extension("Inline $x+y$ end.\n");
+    markdown_core_node *doc = markdown_core_parse_document("Inline $x+y$ end.\n", 18, MARKDOWN_CORE_OPT_DEFAULT);
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *text = markdown_core_node_first_child(paragraph);
 
     INT_EQ(runner, markdown_core_node_get_type(text), MARKDOWN_CORE_NODE_TEXT,
-           "dollar formula delimiters require opt-in");
+           "without the extension attached, dollar syntax is ordinary text");
     STR_EQ(runner, markdown_core_node_get_literal(text), "Inline $x+y$ end.",
-           "dollar formula delimiter text remains literal without opt-in");
+           "and the text keeps every byte the author wrote");
+    markdown_core_node_free(doc);
+
+    doc = parse_with_formula_extension("Inline $x+y$ end.\n");
+    paragraph = markdown_core_node_first_child(doc);
+    OK(runner,
+       markdown_core_node_get_type(markdown_core_node_next(markdown_core_node_first_child(paragraph))) ==
+           MARKDOWN_CORE_NODE_FORMULA,
+       "attaching the extension is the whole gate");
     markdown_core_node_free(doc);
 
     doc = parse_with_dollar_formula_extension("Inline $x+y$ end.\n");
@@ -362,8 +375,7 @@ static void formula_extension_accessors(test_batch_runner *runner) {
            "formula inline mode is standalone");
     markdown_core_node_free(doc);
 
-    doc = parse_with_formula_extension_options("Inline \\\\(x+y\\\\) end.\n",
-                                               MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS);
+    doc = parse_with_formula_extension_options("Inline \\\\(x+y\\\\) end.\n", MARKDOWN_CORE_OPT_DEFAULT);
     paragraph = markdown_core_node_first_child(doc);
     formula = markdown_core_node_next(markdown_core_node_first_child(paragraph));
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula", "LaTeX embedded formula inline type string");
@@ -373,8 +385,7 @@ static void formula_extension_accessors(test_batch_runner *runner) {
            "LaTeX formula inline mode is embedded");
     markdown_core_node_free(doc);
 
-    doc = parse_with_formula_extension_options("Display \\\\[x+y\\\\] end.\n",
-                                               MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS);
+    doc = parse_with_formula_extension_options("Display \\\\[x+y\\\\] end.\n", MARKDOWN_CORE_OPT_DEFAULT);
     paragraph = markdown_core_node_first_child(doc);
     formula = markdown_core_node_next(markdown_core_node_first_child(paragraph));
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula",
@@ -385,8 +396,7 @@ static void formula_extension_accessors(test_batch_runner *runner) {
            "LaTeX formula inline mode is standalone");
     markdown_core_node_free(doc);
 
-    doc = parse_with_formula_extension_options("\\\\[x+y\\\\]\n",
-                                               MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS);
+    doc = parse_with_formula_extension_options("\\\\[x+y\\\\]\n", MARKDOWN_CORE_OPT_DEFAULT);
     formula = markdown_core_node_first_child(doc);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
            "LaTeX standalone formula block type string");

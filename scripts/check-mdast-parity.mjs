@@ -115,15 +115,14 @@ function compare(input) {
 // form, `literal="mid"`, because the engine it was written against strips the
 // padding. The reset baseline does not: `strip_inline_math_padding` is Step 6a
 // of the reconstruction and has not been re-applied, so this engine emits
-// `literal=" mid "` and remark emits the stripped form. The canary therefore
-// asserts the unstripped literal, which serves the identical purpose — the
-// comparison can still see this field, and the difference it can see is a real
-// one this engine currently has. Step 6a flips this assertion back to
-// `literal="mid"`, and that flip is part of what proves Step 6a landed.
+// `literal="mid"` and so does remark. Until Step 6 this engine kept the padding
+// and the canary asserted the UNSTRIPPED form -- an oracle whose canary asserts
+// the defect, with a comment naming the step that would flip it. Step 6 landed
+// Q18's padding rule, and this is the flip.
 const selfTest = compare("text $$ mid $$ text\n");
-if (!selfTest.ours.includes('literal=" mid "')) {
+if (!selfTest.ours.includes('literal="mid"')) {
     process.stderr.write(
-        "mdast parity: the self-test input no longer produces the padded-and-stripped form.\n" +
+        "mdast parity: the self-test input no longer produces the padding-stripped form.\n" +
             "The comparison may be projecting away the field it is supposed to check.\n"
     );
     process.exit(1);
@@ -202,8 +201,24 @@ if (backlog.size) {
     for (const [step, count] of [...byStep].sort()) {
         process.stdout.write(`      ${String(count).padStart(2)}  ${step}\n`);
     }
+    // A backlog entry stops being exercised for two different reasons, and
+    // only one of them is progress. Either the input still runs and the two
+    // now agree, or the input left the corpus — in which case nothing was
+    // proved and the entry must be retired on the record, not on a silence.
+    const corpusInputs = new Set(cases.map((testCase) => testCase.input));
+    // A retired entry left the backlog without ever agreeing. Nothing stops a
+    // later step from putting its input back into the corpus, where it would
+    // read as a NEW divergence with no owner -- so the retirement is checked,
+    // not merely written down.
+    for (const entry of policy.retiredBacklog ?? []) {
+        if (corpusInputs.has(entry.input)) {
+            divergent.push({ source: policyPath, input: entry.input, revivedBacklog: entry });
+        }
+    }
     for (const [input, entry] of backlog) {
-        if (!backlogSeen.has(input)) divergent.push({ source: policyPath, input, settledBacklog: entry });
+        if (backlogSeen.has(input)) continue;
+        const key = corpusInputs.has(input) ? "settledBacklog" : "unreachableBacklog";
+        divergent.push({ source: policyPath, input, [key]: entry });
     }
 }
 
@@ -227,6 +242,22 @@ if (divergent.length) {
             process.stderr.write(
                 `    backlog entry now AGREES with remark. ${entry.settledBacklog.closedBy} has landed;\n` +
                     "    delete this entry from specs/mdast-parity/deltas.json in that same commit.\n"
+            );
+            continue;
+        }
+        if (entry.revivedBacklog) {
+            process.stderr.write(
+                `    retired backlog entry is back in the corpus. It was retired by\n` +
+                    `    ${entry.revivedBacklog.closedBy} on the record that it stays out; either take it out again\n` +
+                    "    or move it into expectedDivergences with an authority.\n"
+            );
+            continue;
+        }
+        if (entry.unreachableBacklog) {
+            process.stderr.write(
+                `    backlog entry is no longer in the corpus, so nothing checks whether it still\n` +
+                    `    diverges. ${entry.unreachableBacklog.closedBy} either moved the input out or must restore it;\n` +
+                    "    retiring the entry is a decision to record, not a silence to accept.\n"
             );
             continue;
         }

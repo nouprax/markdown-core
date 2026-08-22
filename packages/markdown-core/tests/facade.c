@@ -40,17 +40,10 @@ static uint8_t *read_file(const char *path, size_t *length) {
 }
 
 static int parse_option_mask(const char *mask, markdown_core_parse_options *options) {
-    bool *fields[] = {&options->smart_punctuation,
-                      &options->footnotes,
-                      &options->strip_html_comments,
-                      &options->tables,
-                      &options->strikethrough,
-                      &options->autolinks,
-                      &options->task_lists,
-                      &options->formulas,
-                      &options->dollar_formula_delimiters,
-                      &options->latex_formula_delimiters,
-                      &options->directives};
+    bool *fields[] = {
+        &options->smart_punctuation, &options->footnotes, &options->strip_html_comments, &options->tables,
+        &options->strikethrough,     &options->autolinks, &options->task_lists,          &options->formulas,
+        &options->directives};
     size_t i;
     if (strlen(mask) != sizeof(fields) / sizeof(fields[0])) {
         return 0;
@@ -180,7 +173,7 @@ static void check_api(void) {
     markdown_core_parse_options_init(&options);
     check(options.smart_punctuation && options.footnotes && options.strip_html_comments && options.tables &&
               options.strikethrough && options.autolinks && options.task_lists && options.formulas &&
-              options.dollar_formula_delimiters && options.latex_formula_delimiters && options.directives,
+              options.directives,
           "parse option defaults are explicit and complete");
 
     document = markdown_core_document_parse(source, sizeof(source) - 1, &options, &error);
