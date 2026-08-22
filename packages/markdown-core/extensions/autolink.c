@@ -241,7 +241,13 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
         return NULL;
     }
 
-    while (link_end < size && !markdown_core_isspace(data[link_end]) && data[link_end] != '<') {
+    /* A URL literal runs to whitespace or `<` -- or to a byte something else
+     * is holding open. Without the third clause `:b[http://e.com]` swallowed
+     * the `]` that closes the directive's label, and the directive went with
+     * it (D36). `markdown_core_inline_parser_byte_is_protected` is the core's
+     * question; this extension does not know whose byte it is. */
+    while (link_end < size && !markdown_core_isspace(data[link_end]) && data[link_end] != '<' &&
+           !markdown_core_inline_parser_byte_is_protected(inline_parser, data[link_end])) {
         link_end++;
     }
 
@@ -319,7 +325,8 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     }
 
     link_end += domain_len;
-    while (link_end < size && !markdown_core_isspace(data[link_end]) && data[link_end] != '<') {
+    while (link_end < size && !markdown_core_isspace(data[link_end]) && data[link_end] != '<' &&
+           !markdown_core_inline_parser_byte_is_protected(inline_parser, data[link_end])) {
         link_end++;
     }
 

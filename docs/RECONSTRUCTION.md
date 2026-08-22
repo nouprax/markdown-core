@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c** (§4.14.7a, §4.14.7b, §4.14.7c) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d** (§4.14.7a–d) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 10** — the split-off table lead, and the last mdast backlog entry that is not Step 9b's. **Step 7 is done** (§4.14.7a/b/c): deliverable #1, Q14, Q19 and Q20 all closed, with **D36** carried under the new **Q43**. Remaining: `10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 10** — the split-off table lead, and the last mdast backlog entry that is not Step 9b's. **Step 7 is done** (§4.14.7a–d): deliverable #1, Q14, Q19 and Q20 all closed, with **D36** carried under **Q43** and its autolink witness already closed. Remaining: `10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -57,16 +57,16 @@ node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/audit-source-lists.mjs              # 23 sources, 4 of 5 lists, 1 registered absent
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
-node scripts/check-upstream-parity.mjs     # 871/871 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
+node scripts/check-upstream-parity.mjs     # 877/877 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
 node scripts/check-mdast-parity.mjs        # 105/105, backlog 7/7 still diverging
-node scripts/audit-scope-sanity.mjs        # 4 unresolved rows, 5233 scanned, only-shrink holds
+node scripts/audit-scope-sanity.mjs        # 4 unresolved rows, 5274 scanned, only-shrink holds
 
 # The three position oracles, landed at 0a.1 (§4.2.7). Each fails on a row
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
 # fails here rather than in review.
 node scripts/audit-inline-sourcepos.mjs    # 0 rows registered, 68 scanned
-node scripts/audit-scope-containment.mjs   # 45 rows registered, 4114 scanned
-node scripts/audit-position-places.mjs     # 106 rows registered, 4255 scanned
+node scripts/audit-scope-containment.mjs   # 45 rows registered, 4151 scanned
+node scripts/audit-position-places.mjs     # 106 rows registered, 4290 scanned
 
 # D9's pin. REGISTERED RED and it fails if a row STOPS reproducing, because
 # deleting the budget clears both rows and costs 204.678x output growth.
@@ -135,6 +135,14 @@ red, ask which ERA it belongs to before assuming the engine is at fault.**
 
 `timeout` is not on the macOS PATH; guard long runs with a background job and a
 `kill`.
+
+**`rm -rf build/<preset>` before any measurement that spans a `git stash`.**
+Two stash cycles at 7d left objects newer than the restored sources, so a build
+that reported success ran the OLD code: the timings taken from it were
+meaningless and the correctness probe silently showed the old tree. Read the
+BEHAVIOUR after a rebuild, not just the exit code. This is §0's mtime trap
+wearing different clothes, and it is the second time it has cost a wrong
+reading.
 
 **A preset that builds clean is not the preset CI runs.** `default`, `asan` and
 `ubsan` are Release or sanitizer builds; `scripts/lint-c.sh` configures its own
@@ -1186,9 +1194,9 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | **Q42** | When does `prettier --check .` get satisfied, and by reformatting or by scoping? | 15C | **OPEN.** `ci.yml:97` runs it as a required step and it reports **100 files** at Step 6, none of them engine sources — `scripts/*.mjs`, `specs/**/*.json`, docs. Same era skew as `audit:ci`: the config came from `main` with Step 0's `scripts/` restore, the files did not. **Recommend: one deliberate `prettier --write` commit at 15C that touches nothing else**, rather than letting each step carry unrelated churn or leaving a required check red through Stage 0. Scoping prettier away from `specs/` is the alternative and is worse — those are the files a reader diffs most. |
 | **Q43** | Is a directive's label found LEXICALLY, or by the inline delimiter machinery? | 7, 8 | **OPEN, and it is the owner's**, because it is a redesign and not a repair. micromark scans the label as raw text -- `\` escapes, `[`/`]` balance, a depth cap of 32, and nothing else -- and this engine pushes a delimiter and lets the inline pass pair it, so a code span, an emphasis run or a GFM autolink that reaches the `]` first wins (**D36**). Lexical is what the reference does and what makes `:b[http://e.com]` a directive; it also means the label's end is decided before any inline construct exists, which is a different pass shape from the one Step 8 is being built around. **Recommend: lexical**, at Step 8 rather than here, so the position model and the label scan are designed together. Eleven witnesses are measured in §4.14.7c.
 
-**Two cheaper fixes were proposed for the autolink witness and BOTH ARE MEASURED DEAD.** First, *move `autolink` to the end of the attach order*: the two orders are **byte-identical** on `:b[http://e.com]`, `[http://e.com]`, `[http://e.com](/x)` and `:b[a http://e.com b]`. Order cannot reach it, because the two extensions are never consulted at the same byte -- `autolink` wins at the `:` of `http://`, where `directive` declines for want of a name, and having won it consumes through the `]`, which is therefore never dispatched at all. Second, *extend the `in_bracket` guard*: `autolink`'s `match` already declines inside a link or image bracket, and a directive label is a delimiter rather than a bracket, so making the guard see an open label is the obvious narrow repair. Measured, it fixes `:b[http://e.com]` **and breaks `:b[a http://e.com b]`**, where the URL inside the label must still become a `Link` -- remark produces one, and so did this engine before the guard.
+**THE AUTOLINK WITNESS IS CLOSED at 7d and this row is now about the other ten.** Two cheaper fixes were proposed for it and both are measured dead; the third, which they led to, works and landed. The two dead ones first, because they are what a reader would try next. First, *move `autolink` to the end of the attach order*: the two orders are **byte-identical** on `:b[http://e.com]`, `[http://e.com]`, `[http://e.com](/x)` and `:b[a http://e.com b]`. Order cannot reach it, because the two extensions are never consulted at the same byte -- `autolink` wins at the `:` of `http://`, where `directive` declines for want of a name, and having won it consumes through the `]`, which is therefore never dispatched at all. Second, *extend the `in_bracket` guard*: `autolink`'s `match` already declines inside a link or image bracket, and a directive label is a delimiter rather than a bracket, so making the guard see an open label is the obvious narrow repair. Measured, it fixes `:b[http://e.com]` **and breaks `:b[a http://e.com b]`**, where the URL inside the label must still become a `Link` -- remark produces one, and so did this engine before the guard.
 
-**That pair is the argument for Q43.** The requirement is contradictory for a single pass: a label's contents must be inline-parsed, autolinks included, while the label's terminator must already be known. Nothing that decides the end DURING the inline pass can satisfy both; deciding it lexically, before inlines run, is the only shape that does. (A control worth keeping: `[http://e.com]` in plain brackets is all text here and a `Link` in remark, because `in_bracket` is **cmark-gfm's** guard, not this repository's -- upstream parity pins it.) |
+**That pair says what the fix has to do, and the third proposal does it.** The requirement looked contradictory -- a label's contents must be inline-parsed, autolinks included, while the label's terminator must already be known -- but only the SCAN needs bounding, not the parse. A delimiter rule may declare its closer STRUCTURAL, and a forward scan asks the core `markdown_core_inline_parser_byte_is_protected` before crossing a byte. The label's contents are still parsed normally; the autolink's URL simply stops at the `]`. That landed at 7d, and it closes the autolink witness only: **emphasis pairing across a label and a code span protecting a `]` are different mechanisms, and they are what remains of Q43.** (A control worth keeping: `[http://e.com]` in plain brackets is all text here and a `Link` in remark, because `in_bracket` is **cmark-gfm's** guard, not this repository's -- upstream parity pins it.) |
 | **Q41** | Does the repository keep swift-format's `AllPublicDeclarationsHaveDocumentation`? | 15A / 15C | **OPEN, and it is the owner's.** It is a required CI health check that has been failing: 184 findings at `46e20f2`, 170 after 15A.2, 163 after Step 6, **164** after Step 7.2. Satisfying it means writing a doc comment on every public declaration in the Swift binding, and for a projection layer most of those can only restate the signature — the pass this repository rejected once already. **Recommend: scope the rule to types and functions, or turn it off**, and say so in `.swift-format` rather than leaving a required check red. Whichever way it goes, it is an owner decision and §4.8 needs an answer before Stage 0 closes. |
 | **Q38** | Does the empty `Text` node D13 removes become a registered divergence from cmark-gfm? | 0a.14 | **OPEN.** Upstream emits the node too, so removing it costs one normalizer projection, one `NORMALIZED_DELTAS` name and one `deltas.json` entry. Measured at §4.2.3. Owed by the commit that lands D13. |
 | **Q39** | `[foo]: <>` resolves to `destination=null`, not `destination=""`. Is that right, when the destination WAS written and was empty? | 0a.7 | **TAKEN 2026-08-21, at 0a.7: yes, on consistency grounds, and the limit is stated.** `markdown_core_clean_url` folds a zero-length destination to `CHUNK_EMPTY` before it ever reaches the map — the same fold `clean_title` does — so `<>` is indistinguishable from *no destination* by the time the reference path sees it, and the inline path already answers `[a](<>)` with `destination=null`. Making `chunk_clone` preserve absence made the two paths agree. **This is consistency, not correctness:** a rule that truly separates "written and empty" from "not written" requires the folds to stop, which is Step 14's structural job, and this row is the one input in the corpus that will move again there. It is one row, `spec.txt` example 169. |
@@ -1206,7 +1214,7 @@ Recorded here because §2's own rule is that a defect the plan does not name is 
 | **D20** | `strikethrough`'s `match` sets `start_column` and never `end_column`, so the calloc'd `0` survives consolidation whenever the run ends the paragraph. **Only the UNPAIRED run: `insert` derives a paired `Strikethrough`'s end from the closer's START column plus its literal length and never reads the closer's `end_column`, so no `Strikethrough` node is ever wrong.** | wrong-position | `a~~` under `--profile gfm` → `Text scope=1:1..1:0`. Three bytes, the default GFM profile, and every parity oracle blind because none compares positions. Un-consolidated witness: `` `x`~~ `` → `Text scope=1:4..1:0`. | **fixed at 0a.12** |
 | **D21** | **A container directive's closing fence does not close it.** `directive_block_matches` marks `closed` and consumes the fence but returns 1, so the container and every block open inside it stay open; the next non-blank line is taken as a lazy paragraph continuation, pulled into the container, and recorded on the wrong line. | **content-attribution loss** | `:::note⏎body⏎:::⏎after` → one `Paragraph 2:1..4:5` whose third child is `Text scope=3:1..3:5 literal="after"`. Inside a block quote it moves `after` into the quote. A blank line after the fence hides it. The formula block is unaffected (it is a leaf with no open children). | **7** |
 | **D22** | An extension that consumes an inline span containing a line ending cannot report it: `markdown_core_inline_parser_set_offset` does not advance the subject's line counter, so **every later node in the paragraph is displaced**. | wrong-position | The oracle case `:note[label]{title="one⏎two"} tail` requires `Directive 1:1..2:5`; HEAD says `1:1..1:29` and `Text 1:30..1:34` — columns that do not exist on line 1. **Blocks Step 7 outright.** | **7** lands the primitive; **8** owns the model |
-| **D36** | A directive label's closing `]` is found by the inline delimiter machinery, so any construct that consumes that `]` first takes the whole directive with it. | wrong-tree | `:b[http://e.com]` is `Text ":b["` plus a `Link` whose destination is `http://e.com]` -- GFM's autolink literal swallowed the closer and the directive is gone. `*a :b[c*]` is one `Emphasis` containing `a :b[c` and a stray `]`. `:a[b` unclosed is all text, where micromark leaves the directive standing. Found at 7c by reading micromark-extension-directive's `factory-label.js`, which finds the `]` LEXICALLY: only `\` escapes and `[`/`]` balance count, nothing else can protect a bracket, and nesting deeper than 32 kills the label. **Eleven witnesses measured, all confirmed against remark.** **TWO CHEAPER FIXES WERE PROPOSED AND BOTH ARE MEASURED DEAD** -- see Q43. | **Q43** |
+| **D36** | A directive label's closing `]` is found by the inline delimiter machinery, so any construct that consumes that `]` first takes the whole directive with it. | wrong-tree | `:b[http://e.com]` is `Text ":b["` plus a `Link` whose destination is `http://e.com]` -- GFM's autolink literal swallowed the closer and the directive is gone. `*a :b[c*]` is one `Emphasis` containing `a :b[c` and a stray `]`. `:a[b` unclosed is all text, where micromark leaves the directive standing. Found at 7c by reading micromark-extension-directive's `factory-label.js`, which finds the `]` LEXICALLY: only `\` escapes and `[`/`]` balance count, nothing else can protect a bracket, and nesting deeper than 32 kills the label. **Eleven witnesses measured, all confirmed against remark.** **THE AUTOLINK WITNESS IS CLOSED at 7d** by a third proposal the first two led to -- an inline scan may not cross another extension's structural closer (§4.14.7d). The emphasis and code-span witnesses remain, and they are what Q43 is now about. | **Q43** |
 | **D23** | `S_insert_emph` gives an emphasis node the start column of the **whole** delimiter run: it shortens `opener_inl->as.literal.len` from the end (`inlines.c:843`) and then assigns `emph->start_column = opener_inl->start_column` (`inlines.c:875`), while `handle_delim` had spanned the entire run. | wrong-position + overlap | On `***a**` the leftover `Text` and the `Strong` both claim the run's first byte — two nodes, one byte. Correct value: `opener_inl->start_column + opener_num_chars`. **11a's L1 gate detects it mechanically.** | **8**, gated by **11b** |
 | **D24** | `tasklist` decides `checked` by searching the **whole line**: `strstr((char *)input, "[x]") \|\| strstr((char *)input, "[X]")` (`extensions/tasklist.c:88`), while `scan_tasklist` matched only at `parser->first_nonspace`. | wrong-output | `- [ ] see [x] below` reports `checked=true`. May be the same thing as the pending upstream delta `tasklist-checked-marker` — check before re-deriving. | **3** (the descriptor rewrite touches it) |
 
@@ -4596,6 +4604,99 @@ scope sanity 5190 → **5233** scopes, containment 4089 → **4114**, places 422
 
 ---
 
+#### 4.14.7d D36's autolink witness, closed by the third proposal
+
+The owner read D36 and said the label case should be fixed by **moving
+`autolink` to the end of the attach order**. It is not, and measuring why led
+to a fix that is.
+
+**Proposal 1 -- attach order. Measured dead.** With `autolink` last instead of
+first, four probes are **byte-identical**: `:b[http://e.com]`,
+`[http://e.com]`, `[http://e.com](/x)`, `:b[a http://e.com b]`. The two
+extensions are never consulted at the same byte. `autolink` wins at the `:` of
+`http://`, where `directive` is offered the byte and declines for want of a
+name after `//`; having won, it consumes through the `]`, so the byte that
+would have closed the label is never dispatched to anyone. Order decides who
+gets a *contested* byte, and this is not a contest.
+
+Isolating it does confirm the cause: with the directive extension attached
+ALONE, `:b[http://e.com]` is a proper directive.
+
+**Proposal 2 -- the `in_bracket` guard. Measured dead, and it looked right.**
+`autolink`'s `match` already declines inside a link or image bracket; a
+directive label is a delimiter rather than a bracket, so teaching the guard to
+see an open label is the obvious narrow repair. It fixes `:b[http://e.com]`
+**and breaks `:b[a http://e.com b]`**, where the URL inside the label must
+still become a `Link` — remark produces one, and so did this engine before the
+guard.
+
+**Proposal 3 -- bound the SCAN, not the match.** The pair above looked
+contradictory: the label's contents must be inline-parsed, autolinks included,
+while its terminator must already be known. But only the *scan* needs bounding.
+A delimiter rule may declare its closer **structural**, and a forward scan asks
+the core before crossing a byte:
+
+```c
+int markdown_core_inline_parser_byte_is_protected(markdown_core_inline_parser *, unsigned char);
+```
+
+`autolink`'s two URL scans stop at whitespace, at `<`, **or at a byte something
+else is holding open** — and never learn whose byte it is. Which rules have a
+structural closer is decided in the core, next to the rule list that already
+names `MARKDOWN_CORE_DELIM_RULE_DIRECTIVE_LABEL`, so no extension knows
+another's answer. Six probes, all matching remark exactly:
+
+| input | before | after (= remark) |
+| --- | --- | --- |
+| `:b[http://e.com]` | `Text ":b["` + `Link "http://e.com]"` | `Directive` > label > `Link` |
+| `:b[a http://e.com b]` | already right | unchanged |
+| `:b[a www.e.com]` | already right | unchanged |
+| `:b[x] then http://e.com/a]b` | already right | unchanged |
+| `~~a http://e.com/x]y~~` | already right | unchanged |
+| `see http://e.com/a]b now` | already right | unchanged |
+
+**Two things went wrong on the way and both are worth keeping.**
+
+**It was QUADRATIC, and the first measurement of that was against a stale
+binary.** The obvious implementation walks the delimiter stack per byte asked.
+On `*a ` × N beside a URL of length N: **0.04 / 0.13 / 0.58 s** at N = 5000 /
+10000 / 20000, against a flat **0.00** before — 4.5× per doubling. The subject
+now counts structural-closer delimiters per rule, so the query is O(rules) and
+the same inputs are flat to N = 80000. §3's rule is that anything re-walking
+work proportional to the input is off-model however correct, and this was.
+
+The stale binary matters more than the number. Two `git stash` cycles left
+objects newer than the restored sources, so a build that reported success ran
+the old code; the timings taken from it were meaningless and the correctness
+probe silently showed the OLD tree. **`rm -rf build/<preset>` before any
+measurement that spans a stash**, and read the behaviour, not just the exit
+code. This is §0's mtime trap wearing different clothes.
+
+**The count has to track the SCAN, not the stack.** Counting delimiters still
+pushed leaves a label's `]` protected for the rest of the paragraph, because
+the stack is not emptied until `process_emphasis` runs — after the whole
+subject has been read. `:b[x] then http://e.com/a]b` lost the `]b` from its
+URL. Openers seen minus closers seen is what the question means, and the scan
+is strictly forward, so seeing the closer is the answer.
+
+**That defect existed for one build and no gate caught it**, which is what the
+mutants then said: three of five survived the first pin set. The witnesses they
+asked for are the three rows above that read "already right" — the closed
+label, the `www.` scan (a second, identical scan site the first pins never
+reached), and strikethrough as the control that only a LABEL's closer is
+structural. Five mutants, five dead.
+
+**Counts.** 6 examples added to `extensions-conflicts.txt`: upstream parity 871
+→ **877**, scope sanity 5233 → **5274** scopes, containment 4114 → **4151**,
+places 4255 → **4290**. mdast unchanged at 105 and the backlog at 7 — the
+fixture is not in that corpus. Every ledger count held: 4, 45, 106, 0, 2.
+
+**Gates.** All green from a clean rebuild of all three presets: correctness
+69/69, ASan 60/60, UBSan 60/60, conformance 2/2, every audit, `lint-c`, all
+four linters, and all three binding suites.
+
+---
+
 #### 4.14.15A Step 15A: one contract, and the surfaces that project it
 
 ##### 15A.1 — the contract is machine-readable, normative, and out of the archive
@@ -5270,12 +5371,13 @@ its index table carries thirty-five rows (D1–D25, D27–D36) and **D26 is the
 thirty-third** — measured at 0a.12, refused there, and landed at **0a.12b**
 with the ruling it needed (Q40).
 
-**Thirty-two are closed and four are carried.** D9 (Step 9a, two gates
+**Thirty-two are closed and four are carried**, one of them now partly. D9 (Step 9a, two gates
 registered at 0a.8, one known-red), D30 (9a/11c delete it; pinned by the
 allocation-failure sweep), D31 (Step 8; pinned as a golden row in
 `regression.txt`) and now **D36** (the directive label's closer, owned by
 **Q43**, found at 7c by sweeping the grammar against micromark's own source and
-measured on eleven witnesses). D27 was another and **closed at 3a.3**.
+measured on eleven witnesses -- its **autolink** witness closed at 7d, the
+emphasis and code-span ones still open). D27 was another and **closed at 3a.3**.
 
 **Gates**, all green and none of them vacuous:
 - [ ] `correctness`, `correctness-asan`, `correctness-ubsan` — each having

@@ -60,6 +60,13 @@ typedef struct subject {
     int column_offset;
     markdown_core_map *refmap;
     delimiter *last_delim;
+    /* How many delimiters with a STRUCTURAL closer are open, per rule. A
+     * forward scan asks "is this byte protected" once per byte, and walking
+     * the delimiter stack to answer made that quadratic in a paragraph:
+     * measured 0.04s / 0.13s / 0.58s on 5000 / 10000 / 20000 open delimiters
+     * beside a URL of the same length, against a flat 0.00s before. Counting
+     * on push and pop makes the answer O(rules), which is O(1) in the input. */
+    int protected_open[MARKDOWN_CORE_DELIM_RULE_COUNT];
     bracket *last_bracket;
     bufsize_t backticks[MAXBACKTICKS + 1];
     bool scanned_for_backticks;
@@ -266,6 +273,9 @@ static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *me
     e->refmap = refmap;
     e->last_delim = NULL;
     e->last_bracket = NULL;
+    for (i = 0; i < MARKDOWN_CORE_DELIM_RULE_COUNT; i++) {
+        e->protected_open[i] = 0;
+    }
     for (i = 0; i <= MAXBACKTICKS; i++) {
         e->backticks[i] = 0;
     }
@@ -584,6 +594,22 @@ static void print_delimiters(subject *subj)
 }
 */
 
+/* A delimiter whose CLOSER IS STRUCTURAL: while it is open, no inline scan may
+ * run past that byte. A directive label's `]` is the only one, and the reason
+ * is that crossing it does not mis-read a character -- it DELETES the
+ * directive. GFM's autolink literal runs to whitespace, so
+ * `:b[http://e.com]` used to be `Text ":b["` plus a link whose destination
+ * ended in `]`, with the directive gone (D36).
+ *
+ * Emphasis, strikethrough and the formula rules declare nothing here, and that
+ * is deliberate: their closers are ordinary content whenever they do not pair,
+ * so a URL that runs through a `~` or a `$` is still the URL the author wrote.
+ * Only a rule whose closer decides where a CONTAINER ends belongs in this
+ * function, and adding one is a language decision, not a tidy-up. */
+static unsigned char delimiter_structural_closer(markdown_core_delimiter_rule rule) {
+    return rule == MARKDOWN_CORE_DELIM_RULE_DIRECTIVE_LABEL ? ']' : 0;
+}
+
 static void remove_delimiter(subject *subj, delimiter *delim) {
     if (delim == NULL) {
         return;
@@ -664,6 +690,20 @@ static void push_delimiter(subject *subj, const markdown_core_syntax_extension *
         delim->previous->next = delim;
     }
     subj->last_delim = delim;
+    /* OPENERS SEEN MINUS CLOSERS SEEN, counted as the forward scan pushes
+     * them -- not openers still on the stack. The stack is not emptied until
+     * `process_emphasis`, which runs after the whole subject has been read, so
+     * a count of what is still pushed leaves a label's `]` protected for the
+     * rest of the paragraph: `:b[x] then http://e.com/a]b` lost the `]b` from
+     * its URL. What the question means is "is a label open AT THIS POINT",
+     * and the scan is strictly forward, so seeing the closer is the answer. */
+    if (delimiter_structural_closer(rule)) {
+        if (can_open) {
+            subj->protected_open[rule]++;
+        } else if (can_close && subj->protected_open[rule] > 0) {
+            subj->protected_open[rule]--;
+        }
+    }
 }
 
 static void push_bracket(subject *subj, bool image, markdown_core_node *inl_text) {
@@ -2231,6 +2271,22 @@ void markdown_core_node_unput(markdown_core_node *node, int n) {
 
 delimiter *markdown_core_inline_parser_get_last_delimiter(markdown_core_inline_parser *parser) {
     return parser->last_delim;
+}
+
+/* Asked once per byte by a forward scan, so it counts rules and never walks
+ * the delimiter stack -- `protected_open` is what makes that possible, and the
+ * comment on that field says what the walk cost. */
+int markdown_core_inline_parser_byte_is_protected(markdown_core_inline_parser *parser, unsigned char c) {
+    int rule;
+    if (!parser || c == 0) {
+        return 0;
+    }
+    for (rule = MARKDOWN_CORE_DELIM_RULE_NONE + 1; rule < MARKDOWN_CORE_DELIM_RULE_COUNT; rule++) {
+        if (parser->protected_open[rule] > 0 && delimiter_structural_closer((markdown_core_delimiter_rule)rule) == c) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 int markdown_core_inline_parser_get_line(markdown_core_inline_parser *parser) { return parser->line; }
