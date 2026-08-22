@@ -24,7 +24,7 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a) **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b) **5** (§4.14.5) and **D35** (§4.14.5a) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5) and **D35** (§4.14.5a) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
 | Next action | **Step 6** (deliverable #2), **Step 10** or **Step 9a** — all three unblocked by the graph. **Read §4.14.6 first: Step 6 is a cross-binding step, not a 60-line one.** 15A is deferred deliberately; it blocks only 7, 9b, 12 and 14. Remaining: `15A 6 7 10 9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
@@ -3758,7 +3758,7 @@ closes the `ENTER` it belongs to, and the walk ends with nothing open.
   and §4.14.5a lands it.
 
 
-##### 4.14.5a D35: an HTML block that ends one line before it starts
+#### 4.14.5a D35: an HTML block that ends one line before it starts
 
 **Found by reading the eleven negative rows in
 `specs/scope-sanity/ledger.json` for an owner.** They had none — the ledger
