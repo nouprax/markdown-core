@@ -83,15 +83,18 @@ const ORACLES = {
         // the corpus gate, which reads the fixtures unrecombined. `"title" ok`
         // is the corpus's one title-then-junk line: recombined under any
         // definition line it reproduces `refdef-title-rewind` wherever that
-        // the corpus gate, which reads the fixtures unrecombined. `"title" ok`
-        // is the corpus's one title-then-junk line: recombined under any
-        // definition line it reproduces `refdef-title-rewind` wherever that
         // label is also referenced. `\\|` is the same shape for
         // `table-split-lead-spelling`: any fragment carrying an escaped
         // backslash before a pipe diverges the moment recombination parks it
         // above a header and delimiter row. A single `\|` decodes identically
-        // on both sides and stays in the pool.
-        excludeFragments: ["[x]", "[X]", '"title" ok', "\\\\|"]
+        // on both sides and stays in the pool. `[^` is the newest and it is the
+        // mdast oracle's reason arriving here: whether a footnote call resolves
+        // depends on a definition elsewhere in the document, and since Step 9a
+        // an UNRESOLVED call keeps its interior where upstream flattens it
+        // (`footnote-failed-call-interior`). Recombination separates a call
+        // from its definition by construction, so any line carrying one
+        // diverges. Both sides are exercised unrecombined by the corpus gate.
+        excludeFragments: ["[x]", "[X]", '"title" ok', "\\\\|", "[^"]
     },
     mdast: {
         policy: "specs/mdast-parity/deltas.json",

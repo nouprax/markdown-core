@@ -63,3 +63,50 @@ void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk 
 markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem) {
     return markdown_core_map_new(mem, reference_free);
 }
+
+static void footnote_definition_free(markdown_core_map *map, markdown_core_map_entry *entry) {
+    if (entry != NULL) {
+        map->mem->free(entry->label);
+        map->mem->free(entry);
+    }
+}
+
+markdown_core_map *markdown_core_footnote_definition_map_new(markdown_core_mem *mem) {
+    return markdown_core_map_new(mem, footnote_definition_free);
+}
+
+void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label) {
+    markdown_core_map_entry *entry;
+    unsigned char *reflabel;
+    int lost = 0;
+
+    if (map == NULL) {
+        return;
+    }
+
+    reflabel = normalize_map_label(map->mem, label, &lost);
+    /* An empty label, or one that is all whitespace, defines nothing. */
+    if (reflabel == NULL) {
+        if (lost) {
+            map->oom = 1;
+        }
+        return;
+    }
+
+    assert(!map->prepared);
+
+    entry = (markdown_core_map_entry *)map->mem->calloc(1, sizeof(*entry));
+    if (!entry) {
+        map->oom = 1;
+        map->mem->free(reflabel);
+        return;
+    }
+    entry->label = reflabel;
+    entry->age = map->size;
+    entry->next = map->refs;
+    /* `size` is what the reference-expansion budget charges against, and a
+     * definition set carries no resource to charge. Left at calloc's zero. */
+
+    map->refs = entry;
+    map->size++;
+}

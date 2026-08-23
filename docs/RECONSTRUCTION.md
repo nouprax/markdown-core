@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 9a**, continuing — **9a.1 is landed** (§4.14.9a1, the anchor rule); what is left is retention, the post-pass deletion and the call rule. **Step 10 is done** (§4.14.10): the content-to-source map exists, five consumers read it, and the mdast backlog is down to Step 9b's six. It carries **Q44** — an autocompleted table cell has no source bytes and no coordinate pair can say so — owned by 11a. Remaining: `9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 11a** — the concrete record set, and the fourth law §11.5/11.7 owes it. **Step 9a is done** (§4.14.9a1–9a2): the anchor rule, definition retention, the post-pass deleted, the call rule gated on definedness, and the mdast backlog down to Step 9b's five. It carries **D9 re-attributed to 9b** with the reasoning measured, and **D30** unchanged. Remaining: `11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog | **Step 10 is done** (§4.14.10): the content-to-source map exists, five consumers read it, and the mdast backlog is down to Step 9b's six. It carries **Q44** — an autocompleted table cell has no source bytes and no coordinate pair can say so — owned by 11a. Remaining: `9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -60,7 +60,7 @@ bash scripts/audit-public-surface.sh
 node scripts/audit-extension-special-chars.mjs   # 6 descriptors read, every byte dispatched
 node scripts/audit-extension-attach-order.mjs    # one attach site, table last (D15, added 0a.11)
 node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
-node scripts/audit-source-lists.mjs              # 23 sources, 4 of 5 lists, 1 registered absent
+node scripts/audit-source-lists.mjs              # 22 sources, 4 of 5 lists, 1 registered absent
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
 node scripts/check-upstream-parity.mjs     # 882/882 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
@@ -188,7 +188,7 @@ through the binary before trusting a green suite.
    divergence. Zero close in Stage 0a, by design — the backlog measures distance
    to mdast's *model*, while the defects measure wrongness against the engine's
    own intent. **24 at the baseline, 22 after Step 6, 20 after 7.1, 7 after 7.2, 6 after
-   Step 10** — and the six are all Step 9b's. Step 6's two closed by *leaving the corpus*, not
+   Step 10, 5 after 9a.2** — and the five are all Step 9b's. Step 6's two closed by *leaving the corpus*, not
    by agreeing, so the gate now distinguishes a settled entry from an unreachable
    one and the two are recorded in `retiredBacklog` with the reason (§4.14.6).
    **An entry that stops being exercised is not an entry that closed.**
@@ -330,15 +330,17 @@ it, and the gate requires each to *still* diverge — so a step that lands witho
 deleting its own entries fails as loudly as a new divergence.
 
 ```
-     6  Step 9b  — the reference node model
+     5  Step 9b  — the reference node model
     --
-     6  remaining
+     5  remaining
 ```
 
 **It was 24 at the baseline and the whole of the difference is recorded.** Step
-6 retired two by leaving the corpus, 7.1 closed two, 7.2 closed thirteen, and
-**Step 10 closed the last one that was not Step 9b's** — `pre \| lead` above a
-table, where the lead kept a spelling the author did not write (§4.14.10).
+6 retired two by leaving the corpus, 7.1 closed two, 7.2 closed thirteen, Step
+10 closed `pre \| lead` above a table — where the lead kept a spelling the
+author did not write (§4.14.10) — and **9a.2 closed `[^orphan]`, which the JSON
+had filed under Step 9b and §4.6 had said was 9a's.** §4.6 was right, and the
+entry proved it by closing there.
 
 **This started at 23 and the one growth is recorded.** 0a.10 added D22's pin to
 `extensions-directive.txt`, which is also mdast corpus, and the input diverges
@@ -431,7 +433,7 @@ ones whose witness is stated in this section rather than in the row.
 | D6 | `make_autolink` writes `title = ""` where nothing was written | wrong-output | **fixed at 0a.7** | built & reverted |
 | D7 | `make_autolink` omits `column_offset + block_offset` | wrong-position | **fixed at 0a.6** | built & reverted |
 | D8 | `try_opening_table_header` returns the parent on ~~eleven~~ **ten** non-opening paths | wrong-output | **fixed at 0a.5**; one of the ten went with the arena at 3a.1 (R14) | built & reverted |
-| D9 | reference resolution is order-dependent | wrong-output | **9a only** | 200 refs → 99 resolve, 101 do not |
+| D9 | reference resolution is order-dependent | wrong-output | **9b** (~~9a only~~, re-attributed at 9a.2 by measurement — §4.14.9a2) | 200 refs → 99 resolve, 101 do not |
 | D10 | an undefined footnote call **loses source bytes** | data-loss | **fixed at 0a.2** | `x[^a⏎b] tail` → `"x[^] tail"` |
 | D11 | a nested duplicate definition **deletes a paragraph** | data-loss | **fixed at 0a.2** | `"OUTER opens first"` in no node |
 | D12 | `consolidate_text_nodes` drops `end_line` | wrong-position | **fixed at 0a.14** | built & reverted |
@@ -532,7 +534,7 @@ defect commit re-pins the citations that remain.**
 | D6 | autolink writes `title=""` where nothing was written | wrong-output | yes — **−1 line** | 18 + 1 assertion | **no** — all three parity oracles fold `""` to `null` | 0a.7 |
 | D7 | `make_autolink` omits `column_offset + block_offset` | wrong-position | yes — **2 lines** | 0 | **no** — and upstream carries the same bug | 0a.6 |
 | D8 | table's block opener swallows every later extension's | wrong-output | yes — **6 lines** | 0 | **no** — the corpus never co-enables two extensions | 0a.5 |
-| D9 | the reference budget makes resolution order-dependent | wrong-output | **NO — genuinely blocked** | — | **no** | 9a; **pinned by two gates in 0a.8** |
+| D9 | the reference budget makes resolution order-dependent | wrong-output | **NO — genuinely blocked** | — | **no** | **9b** (~~9a~~, §4.14.9a2); **pinned by two gates in 0a.8** |
 | D10 | an undefined footnote call loses source bytes | **data-loss + memory-unsafety** | yes — **~10 lines** | 1 + 1 ledger | half, **and the fixture pins the defect** | 0a.2 |
 | D11 | a nested duplicate footnote definition deletes a paragraph | **data-loss** | yes — **~9 lines** | 0 | **no** | 0a.2 |
 | D12 | text consolidation carries `end_column` but not `end_line` | wrong-position | blocked by D13 | unmeasured | no | 5 |
@@ -1000,8 +1002,12 @@ on a 1 MiB adversarial input:
 input. Three local alternatives were built and all fail: a per-entry constant
 cap is order-independent but admits the same bomb; charging each entry once is
 unbounded; interning the destination has no owner at the baseline that outlives
-the refmap. **D9 is fixed by deleting the copy, which is Step 9a's model
-change, and by nothing smaller.**
+the refmap. **D9 is fixed by deleting the copy, which is Step 9b's model
+change, and by nothing smaller.** ~~Step 9a's~~ — this said 9a while Step 9 was
+one step, and the 9a/9b split left it stale; §4.14.9a2 re-derives it from the
+sentence above. The refmap dies with the parser and the document holds only
+`root`, so a `Link` that borrows a map entry's destination dangles; giving the
+map a new owner is work 9b then deletes.
 
 **D9's interim mitigation, which is not "leave it bleeding":** step 0a.8 lands
 its two missing gates *while the defect is still live*, so the damage is stated,
@@ -1039,7 +1045,7 @@ Seven defects that this restatement found by measurement are numbered **D18–D2
 | **6** | **Deliverable #2.** Attaching `formula` is the *only* gate — the two delimiter options do not exist. Five inline forms, four block forms, and one padding rule: one leading and one trailing space-or-line-ending is stripped from an inline formula's body when the body is not all whitespace. | ~60 · deletions across 18 files | 3. D1 fixed (0a.4), else one oracle row stays red and must be named as 0a.4's. |
 | **7** | **Deliverable #1.** The directive grammar of micromark-extension-directive 4.0.0 and mdast-util-directive 3.1.0, applied to **code points**: name rules, one/two/three-colon forms, `#`/`.` shorthand, `class` accumulation, last-value-wins elsewhere, and **degradation** — a malformed label or attribute block leaves the directive standing and the punctuation as prose. `DirectiveLabel` is a visible node whose scope spans its brackets. A container's closing fence **closes it and every block open inside it** (D21). A directive that consumes a span containing a line ending leaves the subject's position honest (D22). Attributes are an ordered key/value sequence; the JSON round-trip is deleted. | ~530 written · **+150 net** | 3. 15A (this is the first step that changes the node inventory). 0a.6's newline-adjust mechanism is live, or Step 7 lands it (D22). |
 | ✅ **10** | For any block node with a content buffer and any byte offset within it, the engine can name the **source line and column** of that byte. Every node synthesized from a content offset carries a position that is a place: the split-off table lead, its inline children, the recovered header row and cells, and any paragraph whose front was consumed (D18). The lead keeps its authored spelling. | ~110 | **Nothing.** Every mechanism exists at the baseline; both consumers run while the marks would be live. |
-| **9a** | A footnote definition is a block node at the byte where its `[` was written, in the container it was written in, and it **stays there**. No pass runs after the parse that moves, reorders, drops or re-parents any node. Every definition the author wrote is in the tree. The reference map never owns a node. A reference carries **the label the author wrote**; numbering is derived, not stored. A `[…]` is a footnote call only if it opens with a **raw** `^` and the document defines that label; otherwise the brackets take the ordinary unmatched-`[` path and nothing frees children core already built. | **+90 / −290** | 0a.2's D10 fix, so a reference's label is sliced from the parser's own buffer. |
+| ✅ **9a** | A footnote definition is a block node at the byte where its `[` was written, in the container it was written in, and it **stays there**. No pass runs after the parse that moves, reorders, drops or re-parents any node. Every definition the author wrote is in the tree. The reference map never owns a node. A reference carries **the label the author wrote**; numbering is derived, not stored. A `[…]` is a footnote call only if it opens with a **raw** `^` and the document defines that label; otherwise the brackets take the ordinary unmatched-`[` path and nothing frees children core already built. | **+90 / −290** | 0a.2's D10 fix, so a reference's label is sliced from the parser's own buffer. |
 | **11a** | A parse produces, beside the tree, a **concrete record set** in which every block-level byte of the normalized source is owned by exactly one node, in exactly one of three roles (`MARKER`, `CONTENT`, `DISCARDED`). Three laws hold over every corpus: **L1** the regions on a line tile it exactly; **L2** every region lies inside its owner's scope and descendants lie inside their ancestor's `CONTENT`; **L3** concatenating the regions in order reproduces the normalized source byte for byte. The document **retains** that normalized source and its line index. A region may be *refined* — split, never moved, never deleted — which is how extensions capture without breaking L1. | ~600 + ~350 gate | 0a (an L3 gate written over the unfixed engine would encode D10/D11's loss as expected). 5 (no node without source bytes). 10 (the content-to-source marks 11a retains — **Q22**). |
 | **8** | **The inline position model.** An inline node's position is a *projection* of the byte range it covers, not a counter each handler maintains: one `seek` primitive, one newline index, offsets stored on the node, and one constructor for a delimiter run. `adjust_subj_node_newlines`, `count_newlines`, `subj->column_offset`, `subj->block_offset` and the three hand-written `make_delimiter_text` copies cease to exist. Subsumes D3, D7, D12 and D19/D20/D23 by construction. | **+330 / −245** | 3 (rules exist). 6, 7 (the grammars are settled, so the extensions are rewritten once). 11a (the retained `CONTENT` records are what make the projection exact on continuation lines). |
 | **9b** | One reference model for both kinds. A link reference definition is a **node** at the byte where its `[` was written. Five kinds carry an **association**: `label` as authored, `identifier` as the match key, neither derivable from the other. A reference holds **no destination** — resolution is the consumer's, and is derivable as "group by identifier, first in document order". The map holds no resource, so D9's expansion budget has nothing to charge and is deleted. The dump and the facade speak one vocabulary (`label=`, not `id=`). | **+450 / −180** C | 9a (the tree is source-ordered and the winner is derivable from it). 10 (a harvested definition needs a source position and the surviving paragraph needs rebasing). 15A. |
@@ -1267,7 +1273,7 @@ Scratch artifacts (outside the repository): `/private/tmp/claude-501/-Users-donz
 
 The ruling was executed, not paraphrased. The fourteen defects §2 had assigned to Steps 3, 5, 7, 8, 9a, 10 and 14 — D12, D13, D14, D15, D16, D18, D19, D20, D21, D22, D23, D24, D25 — were each put to the test that settled the first ten: **applied to the untouched baseline with no other step landed, built, run against every gate in the repository, and reverted.**
 
-**Fourteen tested. Fourteen fixable. Zero produced an architectural dependency.** D9 remains the only exception in the plan, and its exemption is still the measured one: its budget is the only thing between a resolved reference and 68.7 GB of output from 1 MiB of input, because resolving a reference copies the destination into the node; it is fixed by deleting the copy, which is Step 9a's model change, and by nothing smaller. It is pinned, not fixed, at 0a.8.
+**Fourteen tested. Fourteen fixable. Zero produced an architectural dependency.** D9 remains the only exception in the plan, and its exemption is still the measured one: its budget is the only thing between a resolved reference and 68.7 GB of output from 1 MiB of input, because resolving a reference copies the destination into the node; it is fixed by deleting the copy, which is **Step 9b's** model change (§4.14.9a2), and by nothing smaller. It is pinned, not fixed, at 0a.8.
 
 Two of the fourteen *looked* like dependencies in §2 and were not. **D12 "blocked by D13"** is a sequencing constraint between two defects that are now both inside this stage — not a step dependency, and the two land in one commit. **D22 "7 lands the primitive, 8 owns the model"** was an ownership label, not a blocker: the primitive is twenty lines in `core/inlines.c` and needs nothing Step 7 provides. Two more — **D14 "that is a policy move, not a repair"** and **D16 "the rule has to become structural"** — were arguments about *desirability*, and the ruling is precisely a decision about desirability. Both are now measured to be repairs: see the verdict rows.
 
@@ -5134,6 +5140,141 @@ it cleared and the seven it re-registers at the old coordinates.
 conformance 2/2, upstream 885/885 with 8/8, mdast 110/110 with a 6/6 backlog,
 scope-sanity 1, containment 31, places 79, inline-sourcepos 0.
 
+
+#### 4.14.9a2 Step 9a.2: the definition stays where it was written, and a registry entry nobody read
+
+**Four behaviours changed and they are one rule.** A footnote definition is a
+block node where its `[` was written, in the container it was written in, and
+nothing runs after the parse that moves, reorders, drops or re-parents it.
+`core/blocks.c` loses `process_footnotes` — all three passes, 168 lines — and
+`core/footnotes.c` and `.h` are deleted outright. **+144 / −316 across `core/`
+and `extensions/`.**
+
+| input | before | after |
+|---|---|---|
+| `> a[^n] b`, blank, `> [^n]: note`, blank, `tail` | the definition is **hoisted to the document root**, after `tail`, while its own scope still says line 3 | it stays inside the block quote, in document order |
+| `[^orphan]: still a definition` | **`Document children=0`** — the whole definition is dropped | a `FootnoteDefinition` with its paragraph |
+| `x[^*y*] tail` | one flat `Text "x[^*y*] tail"`; the `Emphasis` the core parser built is **freed** | `Text "x[^"`, `Emphasis`, `Text "] tail"` |
+| `[^a]: one` … `[^a]: two` … `see [^a]` | both kept, but emitted in **first-reference order**, so the tree runs 3:1, 5:1, 1:1 | both kept, in source order |
+
+**The map is a set of labels and owns nothing.** `parser->footnote_defs` holds
+normalized labels and no nodes, which is the whole difference between it and
+the map `process_footnotes` built: that one owned a node per entry and used
+registration order as the tie-break for a repeated label, so on `EXIT` a
+definition nested inside another closed first, won the label, and the outer one
+was freed with everything written in it (D11). **A consequence worth measuring
+rather than asserting: registration order now decides nothing.** Moving the
+`create` call from the block opener into `finalize` — from open to close, the
+exact question D11 turned on — leaves **every suite and every oracle green**.
+The code comment says that, instead of implying a gate watches it.
+
+**The call rule is the other half, and it is what makes the failure path
+ordinary.** A `[…]` is a footnote call only if it opens with a raw `^` **and
+the document defines that label**; the definition set is complete before any
+inline is parsed, so "defines" is answered over the whole document. An
+undefined label is then an unmatched `[`, which CommonMark specifies
+normatively — remove the delimiter-stack entry, emit a literal `]`, touch
+nothing inside. §5.7 has the argument and Q2 is the ruling.
+
+**Two golden files moved, 33 rows, and the claim is mechanised.** 25 rows in
+`regression.txt`, 8 in `extensions.txt`. The mechanical statement is **document
+order**: for every pair of consecutive siblings in every dumped tree, the
+second must not start before the first. Over `regression.txt` and
+`extensions.txt` that goes **10 violations → 6**, and all four that cleared are
+`FootnoteDefinition`. The six that remain are autocompleted table cells at
+column 0 — **Q44's family, already carried** — and `spec.txt`'s two are the
+same. Nothing else in the repository is out of document order.
+
+**An allocation-failure defect, found by the sweep and fixed here.** The new
+definition set is the second map in the engine with a sticky `oom` flag, and
+nothing folded it into `parser->oom`. A normalization it could not allocate
+answers *"this label is not defined"*, which degrades a footnote call to prose
+— and the parse reports success. `regression_fallback_oom_sweep` caught it at
+allocation 201 of 431: `quote with footnote` came back as
+`quote with footnote[^fn] and `. One `if` at the convergence point in
+`markdown_core_parser_finish`, beside the `refmap` one it belongs with.
+
+##### A registry entry nobody read, and the gate that now reads it
+
+**Step 10 registered a second entry for a divergence this repository had
+already written down, and every gate stayed green.**
+`specs/upstream-parity/deltas.json` carries `pendingDeltas` and
+`pendingExpectedDivergences`: entries describing a divergence a reconstruction
+step has not created yet, each naming its `pendingStep`, each saying *"that step
+is not done until this entry is back and reproducing"*. §4.6 tracks the count.
+One of them was `table-split-lead-spelling`, `pendingStep: Step 10`, keyed to
+the exact input `pre \\| lead` — and Step 10 did not look, invented
+`table-lead-authored-spelling` for the same difference, and left the pending
+entry in place. The registry then described one divergence twice.
+
+**Nothing read `pendingDeltas`.** Not `check-upstream-parity.mjs`, not
+`check-mdast-parity.mjs`, not `fuzz-parity.mjs` — it was prose. So the gate now
+reads it: a pending input that has **started** diverging fails, naming the step
+that owes the activation. Verified by putting the entry back into
+`pendingDeltas` and re-running — the gate reports
+`PENDING divergence ... has started reproducing, so the step that creates it has
+landed: Step 10`. The duplicate is deleted, the original entry is activated
+under its own id, and its `landed` note records what happened.
+
+**`scripts/fuzz-parity.mjs` needed a fragment exclusion, and its comment was
+already carrying two defects.** The upstream oracle's `excludeFragments` gains
+`"[^"`, for the reason the mdast oracle's list has carried it all along:
+whether a footnote call resolves depends on a definition elsewhere in the
+document, recombination separates the two by construction, and since this
+sub-step an unresolved call keeps its interior where upstream flattens it. The
+three fuzz divergences this caused were all that one class. While editing that
+comment: a four-line block in it was **duplicated verbatim**, and its `\\|`
+clause named `table-split-lead-spelling` — which was, at the time it was
+written, a delta this repository did not have. Both corrected.
+
+##### Mutants
+
+| mutant | what went red |
+|---|---|
+| M11 a call opens on the caret alone, defined or not | `regression_commonmark`, `extensions_gfm`; upstream **884/885**; mdast **109/110** |
+| M12 a definition registers when it CLOSES, not when it opens | **NOTHING**, and that is the finding above |
+| M13 the definition set's allocation loss does not converge | `regression_fallback_oom_sweep` and `..._chunked` |
+| M10 (9a.1) the definition starts after its own marker | `regression_commonmark`, `extensions_gfm`, `conformance` 0/2, places 14 rows |
+
+##### What 9a does NOT close, and one re-attribution
+
+**D9 moves to Step 9b, and this is a correction to this document rather than a
+deferral.** Four places say 9a — §2's index, §4.8, §4.0's *"which is Step 9a's
+model change"* and the 25-line comment at `core/map.c` — and two say 9b: the
+requirement row (*"The map holds no resource, so D9's expansion budget has
+nothing to charge and is deleted"*) and §4.12's paragraph on the discard-and-retry
+double charge. **The two are right, and the reason is in §4.0's own sentence:**
+*interning the destination has no owner at the baseline that outlives the
+refmap.* The refmap is freed in `markdown_core_parser_dispose`; the document
+outlives it and holds only `root`; so a `Link` that borrows its destination
+from a map entry dangles. Deleting the copy therefore requires either giving
+the map a new owner — which 9b then deletes — or the reference holding **no**
+destination, which is 9b's `LinkReference`. There is no 9a-shaped fix, and
+building the ownership transfer would be two implementations of one fact, which
+is the disease Q22 names. Both of D9's gates stay exactly as 0a.8 left them:
+`audit-reference-order-independence.mjs` registered red with two rows, and
+`reference_expansion_bound` green at 0.999x.
+
+**D30 stays carried and its owner is unchanged** (9b/11c delete the mechanism;
+the §4.13.9 allocation sweep pins it). It is worth noting that the sweep is not
+a formality: it is what caught the new defect above, in the same run.
+
+##### Standing rule 2
+
+**Backlog 6 → 5, and the entry that closed was filed under the wrong step.**
+`specs/mdast-parity/corpus.md:69` — `[^orphan]: still a definition` — was
+registered `closedBy: Step 9b`. §4.6 said it belonged to 9a and §2's progress
+meter said the JSON was right. **§4.6 was right**, which the entry proved by
+closing here. The five that remain are all Step 9b's.
+
+**Gates.** correctness 69/69, asan 60/60, ubsan 60/60 (three presets rebuilt
+from scratch), conformance 2/2, upstream 885/885 with **10/10** divergences,
+mdast 110/110 with a 5/5 backlog, fuzz 300/300, scope-sanity 1,
+inline-sourcepos 0, containment 31, places 79, reference-order 2 (still red,
+still 9b's now), plan graph 22/45, source lists **22 sources** (was 23;
+`footnotes.c` is gone from all four live lists), `leaks --atExit` 0, `pnpm -w
+run lint` clean, and the Swift, Kotlin and ES binding suites green.
+
 ---
 
 ### 4.3 The ordering argument
@@ -5751,9 +5892,10 @@ its index table carries thirty-five rows (D1–D25, D27–D36) and **D26 is the
 thirty-third** — measured at 0a.12, refused there, and landed at **0a.12b**
 with the ruling it needed (Q40).
 
-**Thirty-three are closed and three are carried.** D9 (Step 9a, two gates
-registered at 0a.8, one known-red), D30 (9a/11c delete it; pinned by the
-allocation-failure sweep) and D31 (Step 8; pinned as a golden row in
+**Thirty-three are closed and three are carried.** D9 (**Step 9b**, two gates
+registered at 0a.8, one known-red; the owner was 9a until 9a.2 measured that
+there is no 9a-shaped fix — §4.14.9a2), D30 (9b/11c delete it; pinned by the
+allocation-failure sweep, which is what caught 9a.2's own new defect) and D31 (Step 8; pinned as a golden row in
 `regression.txt`). **D36** was the fourth for three commits: found at 7c by
 sweeping the grammar against micromark's own source, and **closed at 7e** once
 the owner named the layer -- the defect was in STARTING a directive, not in
@@ -5791,7 +5933,7 @@ reverting the fix and watching the gate go red.
 | D6 | the 18 moved golden rows, strongest at `extensions.txt:667` (both spellings of one construct, three columns apart on one line) | existing | the goldens are the gate | **none.** `scripts/lib/upstream-cmark.mjs:174` folds `title:""` to `"null"` before comparing, for all three parity oracles |
 | D7 | 2 examples in `regression.txt` (blockquote pins `block_offset`, continuation line pins `column_offset`) **+ the new scope-containment invariant** | **both new** | **LANDED 0a.6, measured**: reverting the two lines makes `regression_commonmark` FAIL *and* `audit-scope-containment.mjs` report five rows appearing | **none, and upstream cannot be the oracle** — cmark-gfm reports the same wrong columns |
 | D8 | new `tests/fixtures/extensions-conflicts.txt`, 2 examples, framed as *enabling `table` must not change another extension's block opener* | **new** | yes — 0/2 at baseline, 2/2 with the fix | **none.** The corpus tests one extension at a time: 761 of 798 examples enable nothing, and no example ever co-enables `table` with `formula` or `directive` |
-| D9 | order-independence oracle (**registered red**, names Step 9a) + output-size bound in `complexity_runner.c` (green) | **both new** | n/a — the fix is Step 9a | **none.** With the budget deleted, every existing gate stays green while 1 MiB of input produces 68.7 GB of output |
+| D9 | order-independence oracle (**registered red**, names Step 9a in its own text; the owner is **9b** since §4.14.9a2) + output-size bound in `complexity_runner.c` (green) | **both new** | n/a — the fix is Step 9b | **none.** With the budget deleted, every existing gate stays green while 1 MiB of input produces 68.7 GB of output |
 | D10 | position half: `regression.txt` example 24 **already exists and pins the defect** — unpinning it is the gate. Byte half: new example `x[^a\nb] tail` + an `expectedDivergence` | half new | yes, both halves | **half.** No corpus input loses bytes here, and upstream loses the same bytes |
 | D11 | new `regression.txt` example (the nested-duplicate reproducer) + an upstream **model** delta; sanitizers and `leaks --atExit` gate the ownership half | **new** | the minimal fix moves zero goldens, so the example is mandatory | **none.** Nothing in the corpus has a nested duplicate label |
 | D15 | 2 order witnesses in `extensions-conflicts.txt` (a `:::note` and a `$$` block after an OPEN table) **+ the new `scripts/audit-extension-attach-order.mjs`** | **both new** | **LANDED 0a.11, measured**: putting `table` first takes the fixture 4/4 → 2 passed / 2 failed; a second attach site in `markdown_core_document_parse` is caught by **the audit alone**, with `correctness` 67/67 and `conformance` 2/2 | **none, and no corpus can be**: every fixture runs through the facade, so no fixture can compare the two attach orders. `conformance` runs the CLI and the facade against the same six canonical goldens but none of the six inputs is order-sensitive |
@@ -5872,6 +6014,11 @@ The upstream policy file moves in Stage 0a even though the mdast backlog does
 not: `pendingDeltas` goes 3 → 2 (`refdef-title-rewind` activates at 0a.7;
 `tasklist-checked-marker` and `table-split-lead-spelling` stay pending for their
 steps), `deltas` goes 4 → 5, and `applyUpstreamFootnoteModel` gains D11's rule.
+**`pendingDeltas` reached 0 at 9a.2**, and the list only ever worked because a
+reader looked: nothing in the repository read it, Step 10 landed its fix and
+left `table-split-lead-spelling` pending while registering a second id for the
+same difference, and every gate stayed green. `check-upstream-parity.mjs` now
+fails a pending input that has started diverging (§4.14.9a2).
 
 ### 4.7 Notes that change the order or the risk
 
@@ -6611,7 +6758,7 @@ Ranked by how badly each blocks Stage 1. The first six are blockers: Stage 1 can
 
 **H1 · `markdown_core_parser_finish` is the only path to a finished tree, and it destroys the parser.** `core/blocks.c:1654-1710`: it frees `curline` and `linebuf`, runs `finalize_document`, consolidation, every `postprocess_func` and the HTML-comment strip, hands `root` to the caller, and then calls `markdown_core_parser_reset` (`core/blocks.c:180-210`), which `memset`s the struct and installs a **fresh empty DOCUMENT**. Measured: pre-finish `root` has 2 children; post-finish `root` is a different node with 0 children, `line_number=0`, `total_size=0`, and a second `finish` returns that empty document rather than NULL — so the "already finished" guard at `core/blocks.c:1659` is unreachable. *Unclassifiable because:* it is not a read, it is the only write that converts open state into finished state, and it does so by deleting the open state. *At a pause:* there is no non-destructive exit; a snapshot cannot be a call to `finish`. *Smallest change:* a separate non-destructive entry point, and `reset` must stop dropping `backslash_ispunct` (C13) — measured `0x1` before finish, `0x0` after.
 
-**H2 · The reference-expansion budget makes the parse of lines 1…*i* a function of lines *i+1*…** `max_ref_size = max(100000, total_size)` is set at `core/blocks.c:801-806` from a number only the last line knows, and spent monotonically at `core/map.c:307-309`. Measured twice, independently: a 4 248-byte document with 60 references to one definition resolves **24** of them; the same 62 lines followed by 303 001 bytes of unrelated filler resolves **60**. Separately, appending 368 890 bytes *after* a paragraph flips that paragraph from `Text "[b]"` to `Link "/short"`. *Unclassifiable because:* `total_size` is carried, but the value it feeds does not exist until the stream ends. *At a pause:* prefix equality is not merely expensive, it is **unattainable** — no carried state can supply a number that has not been fed. *Smallest change:* delete `ref_size`, `max_ref_size` and `entry.size` (Step 9a). **This upgrades D9 from "wrong output, pinned by two gates" to a Stage 1 prerequisite.**
+**H2 · The reference-expansion budget makes the parse of lines 1…*i* a function of lines *i+1*…** `max_ref_size = max(100000, total_size)` is set at `core/blocks.c:801-806` from a number only the last line knows, and spent monotonically at `core/map.c:307-309`. Measured twice, independently: a 4 248-byte document with 60 references to one definition resolves **24** of them; the same 62 lines followed by 303 001 bytes of unrelated filler resolves **60**. Separately, appending 368 890 bytes *after* a paragraph flips that paragraph from `Text "[b]"` to `Link "/short"`. *Unclassifiable because:* `total_size` is carried, but the value it feeds does not exist until the stream ends. *At a pause:* prefix equality is not merely expensive, it is **unattainable** — no carried state can supply a number that has not been fed. *Smallest change:* delete `ref_size`, `max_ref_size` and `entry.size` (**Step 9b**; §4.14.9a2 says why not 9a). **This upgrades D9 from "wrong output, pinned by two gates" to a Stage 1 prerequisite.**
 
 **H3 · The refmap is build-once-then-freeze, and the freeze is one-way.** First `markdown_core_map_lookup` prepares the map (`core/map.c:287`, setting `prepared` at `:218,:261`); `markdown_core_reference_create` then hits `assert(!map->prepared)` (`core/references.c:38`, and `core/footnotes.c:35`). The `default` preset is Release with `NDEBUG`, so **the assert is gone in every shipping build** and the definition is appended to `refs` but never indexed — silently invisible. Measured both ways: Release loses `[b]: /bbb`, ASan aborts. Three further faults ride along: `index_map` re-`memset`s the index without freeing `slots` (`core/map.c:69`), so re-preparing leaks the whole table; `map->size` means *entries inserted* before preparation and *unique labels* after (`core/references.c:57` vs `core/map.c:217,260`), and `entry.age` is seeded from it, so a post-preparation insert collides with an existing age and corrupts first-wins; and `markdown_core_map_lookup` mutates the map, so it is not a query. *Smallest change:* delete `prepared`/`indexed`/`sorted`, the lazy-prepare branch and both asserts; maintain the index incrementally on insert; separate the two counters.
 

@@ -573,18 +573,16 @@ bool markdown_core_node_image_properties(const markdown_core_node *node, markdow
 }
 
 bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string_view *id) {
-    const markdown_core_node *definition;
     if (!node || !id ||
         (node->type != MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION && node->type != MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE)) {
         return false;
     }
-    definition = node->type == MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE ? node->parent_footnote_def : node;
-    if (!definition) {
-        id->data = NULL;
-        id->length = 0;
-        return false;
-    }
-    view_chunk(id, &definition->as.literal);
+    /* Both kinds carry the label the author wrote, so both answer from
+     * themselves. A reference used to answer through a back-pointer to its
+     * definition, because a post-pass had overwritten the reference's own
+     * label with a decimal index -- so the one field the author wrote was
+     * recoverable only through a pointer the same pass installed. */
+    view_chunk(id, &node->as.literal);
     return true;
 }
 

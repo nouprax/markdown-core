@@ -15,7 +15,6 @@ set(HEADERS
     iterator.h
     chunk.h
     references.h
-    footnotes.h
     map.h
     utf8.h
     scanners.h
@@ -35,7 +34,6 @@ set(LIBRARY_SOURCES
     utf8.c
     buffer.c
     references.c
-    footnotes.c
     map.c
     houdini_html_u.c
     markdown_core_ctype.c

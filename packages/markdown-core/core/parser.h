@@ -39,6 +39,10 @@ struct markdown_core_parser {
     struct markdown_core_mem *mem;
     /* A hashtable of urls in the current document for cross-references */
     struct markdown_core_map *refmap;
+    /* The labels this document defines footnotes for (see references.h). The
+     * block phase fills it as each definition opens; the inline phase reads it
+     * to decide whether a `[^label]` is a call at all. */
+    struct markdown_core_map *footnote_defs;
     /* The root node of the parser, always a MARKDOWN_CORE_NODE_DOCUMENT */
     struct markdown_core_node *root;
     /* The last open block after a line is fully processed */

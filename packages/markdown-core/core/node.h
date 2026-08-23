@@ -85,13 +85,6 @@ struct markdown_core_node {
     const markdown_core_syntax_extension *extension;
 
     union {
-        int ref_ix;
-        int def_count;
-    } footnote;
-
-    markdown_core_node *parent_footnote_def;
-
-    union {
         markdown_core_chunk literal;
         markdown_core_list list;
         markdown_core_code code;

@@ -1398,6 +1398,28 @@ static bufsize_t manual_scan_link_url(markdown_core_chunk *input, bufsize_t offs
     return i - offset;
 }
 
+// Is the label between `[^` and `]` one the document defines?
+//
+// The span is the same one the reference node's literal is cut from, so the
+// question is asked of exactly the bytes that would become the label. The map
+// normalizes -- fold, trim, collapse -- on both sides, which is what makes
+// `[^Foo Bar]` find `[^foo   bar]`.
+static bool S_footnote_label_is_defined(markdown_core_parser *parser, subject *subj, bufsize_t label_start,
+                                        bufsize_t after_close) {
+    markdown_core_chunk label;
+    bool defined;
+
+    if (after_close - label_start < 2) {
+        return false;
+    }
+    /* A borrowed slice of the block's own content: `markdown_core_chunk_dup`
+     * aliases, so the only allocation in here is the map's own normalization,
+     * and that one reports itself through the map's sticky flag. */
+    label = markdown_core_chunk_dup(&subj->input, label_start + 1, after_close - label_start - 2);
+    defined = markdown_core_map_lookup(parser->footnote_defs, &label) != NULL;
+    return defined;
+}
+
 // Return a link, an image, or a literal close bracket.
 static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, subject *subj) {
     bufsize_t initial_pos, after_link_text_pos;
@@ -1526,11 +1548,25 @@ noMatch:
         // kills it, measured; it is kept because a reader should not have to
         // reconstruct that argument before touching the line.
         //
-        // This is half of Step 9a's rule. The other half — "and the document
-        // defines that label" — is a model question about what a failed call
-        // becomes, and stays there (§5.7, Q2).
+        // AND THE DOCUMENT DEFINES THAT LABEL. Both halves of Step 9a's rule
+        // are here now, and the second one is what makes the failure path
+        // ordinary: a `[^label]` nothing defines is not a footnote call, so it
+        // is an unmatched `[`, which CommonMark specifies -- remove the
+        // delimiter-stack entry, emit a literal `]`, and leave the interior
+        // alone. Every one of its three failure branches says NOT re-parenting
+        // is what failure means, and the interior nodes exist because core
+        // inline parsing built them before any footnote code ran (§5.7, Q2).
+        // What used to happen instead was that the call succeeded on the caret
+        // alone, and the post-pass that could not resolve it replaced the whole
+        // span with one flat literal -- freeing nodes core had already built,
+        // for a construct that turned out not to exist.
+        //
+        // The definition set is filled by the block phase, which has finished
+        // by the time any inline is parsed, so "defines" is answered over the
+        // WHOLE document here and not over a prefix of it.
         if (opener->position < subj->input.len && subj->input.data[opener->position] == '^' &&
-            (literal->len > 1 || opener->inl_text->next->next)) {
+            (literal->len > 1 || opener->inl_text->next->next) &&
+            S_footnote_label_is_defined(parser, subj, opener->position, initial_pos)) {
 
             // Before we got this far, the `handle_close_bracket` function may have
             // advanced the current state beyond our footnote's actual closing

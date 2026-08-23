@@ -24,7 +24,6 @@
 #include "inlines.h"
 #include "houdini.h"
 #include "buffer.h"
-#include "footnotes.h"
 #include "iterator.h"
 
 #define CODE_INDENT 4
@@ -198,6 +197,14 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
         markdown_core_map_free(parser->refmap);
     }
 
+    /* The definition set holds labels and no nodes, so freeing it here cannot
+     * reach the tree -- which is the whole difference between it and the map
+     * `process_footnotes` used to build (D11). */
+    if (parser->footnote_defs) {
+        markdown_core_map_free(parser->footnote_defs);
+        parser->footnote_defs = NULL;
+    }
+
     /* The content-to-source map outlives every block that indexes it and
      * nothing else does, so it is released here rather than with the node. */
     parser->mem->free(parser->line_marks);
@@ -223,6 +230,7 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
     markdown_core_node *document = make_document(parser->mem);
 
     parser->refmap = markdown_core_reference_map_new(parser->mem);
+    parser->footnote_defs = markdown_core_footnote_definition_map_new(parser->mem);
     parser->root = document;
     parser->current = document;
 
@@ -232,7 +240,7 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
 
     /* A reset that could not rebuild its structures poisons the parser: feed
      * becomes a no-op and finish reports failure. */
-    if (!parser->root || !parser->refmap || parser->curline.oom) {
+    if (!parser->root || !parser->refmap || !parser->footnote_defs || parser->curline.oom) {
         parser->oom = true;
     }
 
@@ -766,180 +774,6 @@ static void process_inlines(markdown_core_parser *parser, markdown_core_map *ref
     markdown_core_iter_free(iter);
 }
 
-static int sort_footnote_by_ix(const void *_a, const void *_b) {
-    markdown_core_footnote *a = *(markdown_core_footnote **)_a;
-    markdown_core_footnote *b = *(markdown_core_footnote **)_b;
-    return (int)a->ix - (int)b->ix;
-}
-
-static void process_footnotes(markdown_core_parser *parser) {
-    // * Collect definitions in a map.
-    // * Iterate the references in the document in order, assigning indices to
-    //   definitions in the order they're seen.
-    // * Write out the footnotes at the bottom of the document in index order.
-
-    markdown_core_map *map = markdown_core_footnote_map_new(parser->mem);
-    if (!map) {
-        parser->oom = true;
-        return;
-    }
-
-    markdown_core_iter *iter = markdown_core_iter_new(parser->root);
-    markdown_core_node *cur;
-    markdown_core_event_type ev_type;
-
-    if (!iter) {
-        parser->oom = true;
-        markdown_core_map_free(map);
-        return;
-    }
-
-    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        cur = markdown_core_iter_get_node(iter);
-        /* Registration order is the map's tie-break for a repeated label
-         * (`age`, map.c), so it decides which of two definitions of one label
-         * wins. On EXIT that order is close order, and a definition nested
-         * inside another closes FIRST -- so the inner one won and the outer
-         * one, with everything written in it, was destroyed. ENTER is document
-         * order, which is the order a reader resolves them in and the order
-         * two definitions at the same level already resolved in. */
-        if (ev_type == MARKDOWN_CORE_EVENT_ENTER && cur->type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION) {
-            markdown_core_footnote_create(map, cur);
-        }
-    }
-
-    markdown_core_iter_free(iter);
-    iter = markdown_core_iter_new(parser->root);
-    unsigned int ix = 0;
-
-    if (!iter) {
-        parser->oom = true;
-        markdown_core_unlink_footnotes_map(map);
-        markdown_core_map_free(map);
-        return;
-    }
-
-    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        cur = markdown_core_iter_get_node(iter);
-        if (ev_type == MARKDOWN_CORE_EVENT_EXIT && cur->type == MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE) {
-            markdown_core_footnote *footnote =
-                (markdown_core_footnote *)markdown_core_map_lookup(map, &cur->as.literal);
-            if (footnote) {
-                if (!footnote->ix) {
-                    footnote->ix = ++ix;
-                }
-
-                // store a reference to this footnote reference's footnote definition
-                // this is used by renderers when generating label ids
-                cur->parent_footnote_def = footnote->node;
-
-                // keep track of a) count of how many times this footnote def has been
-                // referenced, and b) which reference index this footnote ref is at.
-                // this is used by renderers when generating links and backreferences.
-                cur->footnote.ref_ix = ++footnote->node->footnote.def_count;
-
-                char n[32];
-                snprintf(n, sizeof(n), "%d", footnote->ix);
-                markdown_core_chunk_free(parser->mem, &cur->as.literal);
-                markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(parser->mem);
-                markdown_core_strbuf_puts(&buf, n);
-
-                cur->as.literal = markdown_core_chunk_buf_detach(&buf);
-            } else {
-                markdown_core_node *text = (markdown_core_node *)parser->mem->calloc(1, sizeof(*text));
-                /* On allocation failure keep the unresolved reference node
-                 * and report the loss. */
-                if (text) {
-                    markdown_core_strbuf_init(parser->mem, &text->content, 0);
-                    text->type = (uint16_t)MARKDOWN_CORE_NODE_TEXT;
-
-                    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(parser->mem);
-                    markdown_core_strbuf_puts(&buf, "[^");
-                    markdown_core_strbuf_put(&buf, cur->as.literal.data, cur->as.literal.len);
-                    markdown_core_strbuf_putc(&buf, ']');
-
-                    text->as.literal = markdown_core_chunk_buf_detach(&buf);
-                    if (!text->as.literal.data) {
-                        parser->oom = true;
-                    }
-                    /* The replacement stands exactly where the call it replaces
-                     * did. Left at calloc's zeroes it reports line zero, which
-                     * is not a place, and consolidation then merges it with the
-                     * text after it and keeps the zero start. */
-                    text->start_line = cur->start_line;
-                    text->start_column = cur->start_column;
-                    text->end_line = cur->end_line;
-                    text->end_column = cur->end_column;
-                    markdown_core_node_insert_after(cur, text);
-                    markdown_core_node_free(cur);
-                } else {
-                    parser->oom = true;
-                }
-            }
-        }
-    }
-
-    markdown_core_iter_free(iter);
-
-    if (map->prepared) {
-        markdown_core_map_entry **footnotes = map->sorted;
-        if (map->indexed) {
-            footnotes = (markdown_core_map_entry **)parser->mem->calloc(map->size, sizeof(*footnotes));
-            if (!footnotes) {
-                parser->oom = true;
-            }
-            if (footnotes) {
-                size_t slot;
-                size_t count = 0;
-                for (slot = 0; slot < map->index.capacity; slot++) {
-                    if (map->index.slots[slot].key) {
-                        footnotes[count++] = (markdown_core_map_entry *)map->index.slots[slot].value;
-                    }
-                }
-                assert(count == map->size);
-            }
-        }
-        /* When the collection array cannot be allocated, skip emission; the
-         * definitions are then unlinked and freed with the map below. */
-        if (footnotes) {
-            qsort(footnotes, map->size, sizeof(markdown_core_map_entry *), sort_footnote_by_ix);
-            for (unsigned int i = 0; i < map->size; ++i) {
-                markdown_core_footnote *footnote = (markdown_core_footnote *)footnotes[i];
-                if (!footnote->ix) {
-                    markdown_core_node_unlink(footnote->node);
-                    continue;
-                }
-                markdown_core_node_append_child(parser->root, footnote->node);
-                footnote->node = NULL;
-            }
-            if (map->indexed) {
-                parser->mem->free(footnotes);
-            }
-        }
-
-        /* The loser of a repeated label is deduped out of the array above and
-         * never reaches emission, so it is still parented where the author
-         * wrote it -- and the map, which frees every node it still names, would
-         * take that content with it. Hand ownership back for anything the tree
-         * still holds. What is left named is what emission unlinked, and
-         * freeing that is what drops an unreferenced definition, which is a
-         * separate decision and not this one's to make. */
-        for (markdown_core_map_entry *ref = map->refs; ref; ref = ref->next) {
-            markdown_core_footnote *retained = (markdown_core_footnote *)ref;
-            if (retained->node && retained->node->parent) {
-                retained->node = NULL;
-            }
-        }
-    }
-
-    if (map->oom) {
-        parser->oom = true;
-    }
-
-    markdown_core_unlink_footnotes_map(map);
-    markdown_core_map_free(map);
-}
-
 // Attempts to parse a list item marker (bullet or enumerated).
 // On success, returns length of the marker, and populates
 // data with the details.  On failure, returns 0.
@@ -1063,9 +897,6 @@ static markdown_core_node *finalize_document(markdown_core_parser *parser) {
     }
 
     process_inlines(parser, parser->refmap, parser->options);
-    if (parser->options & MARKDOWN_CORE_OPT_FOOTNOTES) {
-        process_footnotes(parser);
-    }
 
     return parser->root;
 }
@@ -1710,6 +1541,21 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             }
             (*container)->as.literal = c;
 
+            /* The document defines this label from here on.
+             *
+             * Registered where the label is READ, which is here. Whether it is
+             * registered at open or at close is NOT observable and that was
+             * measured, not assumed: moving this call into `finalize` leaves
+             * every suite and every oracle green. It used to matter, and the
+             * reason it stopped is the shape rather than the timing -- the map
+             * this replaced held a NODE per entry and used registration order
+             * as the tie-break for a repeated label, so on EXIT a definition
+             * nested inside another closed first, won the label, and the outer
+             * one was freed with everything written in it (D11). A set of
+             * labels owns no node and picks no winner, so order decides
+             * nothing left to get wrong. */
+            markdown_core_footnote_definition_create(parser->footnote_defs, &(*container)->as.literal);
+
             (*container)->internal_offset = matched;
         } else if ((!indented || cont_type == MARKDOWN_CORE_NODE_LIST) && parser->indent < 4 &&
                    depth < MAX_LIST_DEPTH &&
@@ -2059,6 +1905,15 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
     /* All allocation-loss routes converge here: block/inline structures set
      * parser->oom directly, definition maps carry their own sticky flag. */
     if (parser->refmap && parser->refmap->oom) {
+        parser->oom = true;
+    }
+    /* The definition set is the second such map and it converges here for the
+     * same reason: a normalization it could not allocate answers "this label is
+     * not defined", which degrades a footnote call to text and looks exactly
+     * like a document that never had one. The allocation-failure sweep caught
+     * it -- `quote with footnote[^fn] and ` came back as prose with the parse
+     * reporting success. */
+    if (parser->footnote_defs && parser->footnote_defs->oom) {
         parser->oom = true;
     }
     if (parser->oom) {

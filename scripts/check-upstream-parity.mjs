@@ -151,6 +151,16 @@ for (const delta of policy.deltas) {
 const expected = new Map((policy.expectedDivergences ?? []).map((entry) => [entry.input, entry]));
 const reproduced = new Set();
 
+// A PENDING entry describes a divergence a reconstruction step has not created
+// yet: this engine agrees with upstream where the entry expects it to differ,
+// and the entry moves into `deltas` in the step its `pendingStep` names. That
+// was documented and nothing read it, so a step could land its fix, leave its
+// entry pending and register a second id for the same difference with every
+// gate green -- which is what Step 10 did. A pending input that has started
+// diverging now fails here, naming the step that owes the activation.
+const pending = new Map((policy.pendingExpectedDivergences ?? []).map((entry) => [entry.input, entry]));
+const pendingStep = new Map((policy.pendingDeltas ?? []).map((delta) => [delta.id, delta.pendingStep]));
+
 const cases = corpus().slice(0, limit);
 const divergent = [];
 const unmappedKinds = new Set();
@@ -164,8 +174,10 @@ for (const testCase of cases) {
     }
     for (const kind of result.unmapped) unmappedKinds.add(kind);
     const registered = expected.get(testCase.input);
+    const owed = pending.get(testCase.input);
     if (result.upstream !== result.ours) {
         if (registered) reproduced.add(testCase.input);
+        else if (owed) divergent.push({ ...testCase, activate: owed, ...result });
         else divergent.push({ ...testCase, ...result });
     } else if (registered) {
         divergent.push({ ...testCase, settled: registered, ...result });
@@ -221,6 +233,15 @@ if (divergent.length) {
             process.stderr.write(
                 `    registered divergence \`${entry.unreachable.id}\` is no longer in the corpus, so\n` +
                     "    nothing checks that it still reproduces. Restore the input or retire the entry.\n"
+            );
+            continue;
+        }
+        if (entry.activate) {
+            process.stderr.write(
+                `    PENDING divergence \`${entry.activate.id}\` has started reproducing, so the step that\n` +
+                    `    creates it has landed: ${pendingStep.get(entry.activate.id) ?? "step unnamed"}.\n` +
+                    "    Move it from `pendingDeltas`/`pendingExpectedDivergences` into `deltas`/`expectedDivergences`\n" +
+                    "    in that step's commit. Do not register a second entry for the same difference.\n"
             );
             continue;
         }

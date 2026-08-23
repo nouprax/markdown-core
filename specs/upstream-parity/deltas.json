@@ -95,16 +95,28 @@
             "landed": "0a.14, and this entry IS Q38. The question was owed by that sub-step and the answer is the projection rather than eleven `expectedDivergences` rows. specs/mdast-parity/deltas.json carries the same id and its note is amended in the same commit, because the sentence that classified this as a shape delta rather than a defect became history here."
         },
         {
-            "id": "table-lead-authored-spelling",
+            "id": "footnote-failed-call-interior",
             "kind": "deliberate-difference",
-            "summary": "When a table is split out of a paragraph, upstream runs the LEAD it leaves behind through the same pipe-unescaping it applies to a cell, so `\\\\|` in the lead loses one of its two backslashes before the inline phase ever sees it. The lead is not a cell, and Markdown Core hands it the bytes the author wrote.",
-            "example": "pre \\\\| lead",
+            "summary": "When `[^label]` names a footnote nothing defines, upstream still opens a call on the caret alone and its resolution pass then replaces the whole span with ONE FLAT LITERAL, freeing the inline nodes the core parser had already built. Markdown Core recognizes a call only when the document defines the label, so an undefined one is an ordinary unmatched `[` and its interior is left exactly as CommonMark parsed it.",
+            "example": "[^~~is~~1]",
+            "upstream": "Text literal=\"[^~~is~~1]\"",
+            "ours": "Text \"[^\" + Strikethrough(\"is\") + Text \"1]\"",
+            "rationale": "CommonMark specifies the failing construct -- an unmatched `[` -- normatively, and all three of its failure branches remove the delimiter-stack entry, return a literal `]`, and touch nothing inside. Failure is DEFINED as not re-parenting. Nothing authorizes an extension to reach backwards and free nodes the core parser built for a construct that turned out not to exist: GitHub's GFM specification never uses the word footnote, and micromark-extension-gfm-footnote's own README says it matches github.com except for its bugs. cmark-gfm is also alone against ITSELF here -- remove `-e footnotes` and the same bytes through the same core parser give the parsed interior back. remark agrees with this side. And the flattening is not merely less structured, it is lossy: it is the mechanism of D10.",
+            "handling": "Keyed to two inputs rather than projected: flattening our interior in the normalizer would blind the gate to every real inline-structure difference inside brackets. REGISTERED at Step 9a.2, which is where the rule landed. Section 5.7 carries the argument and Q2 is the ruling.",
+            "evidence": "packages/markdown-core/core/inlines.c, handle_close_bracket's noMatch footnote branch, and the deleted process_footnotes pass in core/blocks.c. Still present in upstream 0.29.0.gfm.13.",
+            "landed": "Step 9a.2, together with definition retention and the deletion of the post-parse footnote pass."
+        },
+        {
+            "id": "table-split-lead-spelling",
+            "kind": "deliberate-difference",
+            "summary": "When a table's header row is recovered from a multi-line paragraph, upstream runs the split-off lead through the cell pipe-unescape before inline parsing, so the lead's escapes are processed twice: a `\\\\|` renders as `|`. Markdown Core keeps the lead's authored spelling and lets the inline pass read it as any other paragraph \u2014 `\\\\|` is an escaped backslash and a literal pipe.",
+            "example": "pre \\\\| lead, above a two-column table",
             "upstream": "Text literal=\"pre | lead\"",
             "ours": "Text literal=\"pre \\\\| lead\"",
-            "rationale": "Unescaping a pipe is what makes a CELL's text mean what the author meant, because a pipe is the cell delimiter. Nothing delimits the lead, so the same rewrite there is a rewrite of source the author wrote: `pre \\\\| lead` reaches the inline phase as `pre \\| lead`, whose backslash then escapes the pipe, and the paragraph comes out one character short of what was written.",
-            "handling": "Keyed to one input rather than projected: the rewrite is one call in upstream's table opener applied to a node that is not a cell, not a model this side could apply to a tree, and erasing backslashes in the normalizer would blind the gate to every real escape difference. REGISTERED at Step 10, which is where the fix landed. remark agrees with this side, and the same input is the mdast backlog's last entry that was not Step 9b's (specs/mdast-parity/corpus.md:207).",
-            "evidence": "packages/markdown-core/extensions/table.c, try_inserting_table_header_paragraph. Still present in upstream 0.29.0.gfm.13.",
-            "landed": "Step 10, with requirement 10's content-to-source map. Activating it needed a CORPUS ADDITION and not a JSON edit: check-upstream-parity.mjs keys expectedDivergences by input and fails any entry the corpus never reaches, and no fixture had an escaped pipe in a split-off lead."
+            "rationale": "The lead is not table content; a single `\\|` converges either way, and the double-processed `\\\\|` diverges from what the same bytes mean in every plain paragraph. micromark parses the lead as a plain paragraph and agrees \u2014 the twin agreement inputs are in specs/mdast-parity/corpus.md.",
+            "handling": "Keyed to one input rather than projected: upstream's unescape of the lead is one call in its table opener applied to a node that is not a cell, not a model this side could apply to a tree, and erasing backslashes in the normalizer would blind the gate to every real escape difference. REGISTERED at Step 10, which is where the fix landed. remark agrees with this side, and the same input is the mdast backlog entry specs/mdast-parity/corpus.md:207.",
+            "evidence": "packages/markdown-core/extensions/table.c, try_inserting_table_header_paragraph; upstream extensions/table.c:283-301 (unescape_pipes on the lead).",
+            "landed": "Step 10, with requirement 10's content-to-source map. Activating it needed a CORPUS ADDITION and not a JSON edit: check-upstream-parity.mjs keys expectedDivergences by input and fails any entry the corpus never reaches, and no fixture had an escaped pipe in a split-off lead. THIS ENTRY WAS ALREADY WRITTEN, in pendingDeltas, naming Step 10 as the step that would activate it; Step 10 did not look and invented a second id for the same divergence, and Step 9a.2 is where that was found and merged back. Nothing read pendingDeltas, which is why the duplicate passed every gate -- so the gate now reads it."
         }
     ],
     "expectedDivergences": [
@@ -144,9 +156,19 @@
             "note": "Keyed to an input rather than projected: upstream's substring search is a bug in one function, not a model this side could apply to a tree. Erasing `checked` in the normalizer would blind the gate to every real checked-state difference. ACTIVE as of 0a.11."
         },
         {
-            "id": "table-lead-authored-spelling",
+            "id": "footnote-failed-call-interior",
+            "input": "|Tot.....[^_a_]|\n",
+            "note": "Emphasis inside an undefined call. ACTIVE as of Step 9a.2."
+        },
+        {
+            "id": "footnote-failed-call-interior",
+            "input": "[^~~is~~1]\n",
+            "note": "Strikethrough inside an undefined call, and the input the corpus already carried as a use-after-free regression. ACTIVE as of Step 9a.2."
+        },
+        {
+            "id": "table-split-lead-spelling",
             "input": "pre \\\\| lead\n| a | b |\n| - | - |\n",
-            "note": "Keyed to an input rather than projected: upstream's unescape of the lead is one call in its table opener, not a model. Erasing escapes in the normalizer would blind the gate to every real escape difference. ACTIVE as of Step 10."
+            "note": "Keyed to an input rather than projected: upstream's double unescape is one call in its table extension, not a model. Only a `\\\\|` in a split-off lead diverges -- a single `\\|` decodes to `|` on both sides. ACTIVE as of Step 10."
         }
     ],
     "notDeltas": [],
@@ -171,25 +193,7 @@
         }
     ],
     "corpusNote": "Every golden fixture cmark-gfm can judge. The spec and regression files are the base language. The extension files are here for the negative property: this repository's own syntax is off under --profile gfm, so those inputs must parse exactly as upstream parses them \u2014 which is what proves the extensions are additive rather than a change to the shared language. A golden that quietly encoded a divergence would be caught here; a golden no oracle ever reads is only a record that the output has not changed.\n\nRe-pinned against the untouched 1.0 baseline (580d10c) on 2026-08-20. Two cross-link/embed fixtures left the corpus with the feature. Three registered divergences moved to `pendingDeltas`: each describes a fix the reconstruction has not made yet, so at the baseline this engine AGREES with upstream where the entry expects it to differ. Do not restore them by hand \u2014 each returns as part of the step named in its `pendingStep`.",
-    "pendingDeltas": [
-        {
-            "id": "table-split-lead-spelling",
-            "kind": "deliberate-difference",
-            "summary": "When a table's header row is recovered from a multi-line paragraph, upstream runs the split-off lead through the cell pipe-unescape before inline parsing, so the lead's escapes are processed twice: a `\\\\|` renders as `|`. Markdown Core keeps the lead's authored spelling and lets the inline pass read it as any other paragraph \u2014 `\\\\|` is an escaped backslash and a literal pipe.",
-            "example": "pre \\\\| lead, above a two-column table",
-            "upstream": "Text literal=\"pre | lead\"",
-            "ours": "Text literal=\"pre \\\\| lead\"",
-            "rationale": "The lead is not table content; a single `\\|` converges either way, and the double-processed `\\\\|` diverges from what the same bytes mean in every plain paragraph. micromark parses the lead as a plain paragraph and agrees \u2014 the twin agreement inputs are in specs/mdast-parity/corpus.md.",
-            "handling": "NOT YET REGISTERED. This divergence exists because a fix that has not been re-applied to the 1.0 baseline. The baseline agrees with upstream here, which is the defect. It returns to `deltas` in the step named by `pendingStep`, and that step is not done until this entry is back and reproducing.",
-            "evidence": "packages/markdown-core/extensions/table.c, try_inserting_table_header_paragraph; upstream extensions/table.c:283-301 (unescape_pipes on the lead).",
-            "pendingStep": "Step 10 \u2014 the split-off table lead"
-        }
-    ],
-    "pendingExpectedDivergences": [
-        {
-            "id": "table-split-lead-spelling",
-            "input": "pre \\\\| lead\n| a | b |\n| - | - |\n",
-            "note": "Keyed to an input rather than projected: upstream's double unescape is one call in its table extension, not a model. Only a `\\\\|` in a split-off lead diverges \u2014 a single `\\|` decodes to `|` on both sides.  NOT ACTIVE at the 1.0 baseline: the fix that creates this divergence has not been re-applied, so this engine currently AGREES with upstream here \u2014 which is the defect. See `pendingDeltas` for the step that restores it."
-        }
-    ]
+    "pendingDeltas": [],
+    "pendingExpectedDivergences": [],
+    "pendingNote": "A pending entry describes a divergence a step has not created yet: this engine AGREES with upstream where the entry expects it to differ, and the entry returns to `deltas` in the step its `pendingStep` names. check-upstream-parity.mjs now CHECKS that -- a pending input that has started diverging fails the gate, naming the step that owes the activation. It did not before, and Step 10 landed its fix, left `table-split-lead-spelling` pending and registered a second id for the same difference; every gate stayed green. An entry nothing reads is prose, not a rule."
 }

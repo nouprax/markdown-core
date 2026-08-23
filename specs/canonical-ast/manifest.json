@@ -118,7 +118,8 @@
                     "List",
                     "ListItem",
                     "CodeBlock",
-                    "HTMLBlock"
+                    "HTMLBlock",
+                    "FootnoteDefinition"
                 ],
                 "states": [
                     "list.flavor.bullet",

@@ -162,11 +162,6 @@
     ],
     "baselineBacklog": [
         {
-            "input": "no references here\n\n[^orphan]: still a definition\n",
-            "source": "specs/mdast-parity/corpus.md:69",
-            "closedBy": "Step 9b \u2014 one reference model, the node model"
-        },
-        {
             "input": "[ref]: /r \"T\"\n\nSee [link][ref].\n",
             "source": "specs/mdast-parity/corpus.md:91",
             "closedBy": "Step 9b \u2014 one reference model, the node model"

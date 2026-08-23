@@ -2,7 +2,7 @@
 /**
  * D9: whether a reference resolves must not depend on how many resolved first.
  *
- * **This gate is REGISTERED RED and must stay red until Step 9a.** It is the
+ * **This gate is REGISTERED RED and must stay red until Step 9b.** It is the
  * mdast backlog's shape: the ledger names what is wrong, and the gate fails
  * both when a registered row stops reproducing and when a new one appears. A
  * row clearing here means the model changed, which is a thing to announce, not
@@ -27,7 +27,11 @@
  * `complexity_runner.c` measures 204.678x — 656 KB of input producing 134 MB of
  * copied destinations. The budget buys a linear output bound by breaking
  * resolution. A reference that NAMES its definition instead of copying it buys
- * both, and that is Step 9a's model change and nothing smaller.
+ * both, and that is Step 9b's model change and nothing smaller. It said 9a
+ * until Step 9a.2 measured that there is no 9a-shaped fix: the reference map
+ * is freed with the parser and the document holds only the root, so a Link
+ * that borrows a map entry's destination dangles. Deleting the copy IS the
+ * node model.
  *
  *   node scripts/audit-reference-order-independence.mjs [--update] [--verbose]
  */

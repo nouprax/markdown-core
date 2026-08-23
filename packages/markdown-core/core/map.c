@@ -359,9 +359,15 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
          * Both halves are gated. scripts/audit-reference-order-independence.mjs
          * is REGISTERED RED and fails if either row stops reproducing;
          * `reference_expansion_bound` in the complexity runner is green and
-         * must stay green. Step 9a satisfies both at once by letting a
+         * must stay green. Step 9b satisfies both at once by letting a
          * reference NAME its definition instead of copying it, which removes
-         * the reason for a budget rather than the budget. */
+         * the reason for a budget rather than the budget.
+         *
+         * This said Step 9a until 9a.2 measured it. There is no 9a-shaped fix:
+         * the refmap is freed with the parser and the document holds only the
+         * root, so a Link that borrows a map entry's destination dangles, and
+         * giving the map an owner that outlives the document is work 9b then
+         * deletes. Deleting the copy IS the node model. */
         if (r->size > map->max_ref_size - map->ref_size) {
             return NULL;
         }

@@ -310,14 +310,6 @@ markdown_core_node *markdown_core_node_last_child(markdown_core_node *node) {
     }
 }
 
-markdown_core_node *markdown_core_node_parent_footnote_def(markdown_core_node *node) {
-    if (node == NULL) {
-        return NULL;
-    } else {
-        return node->parent_footnote_def;
-    }
-}
-
 void *markdown_core_node_get_user_data(markdown_core_node *node) {
     if (node == NULL) {
         return NULL;

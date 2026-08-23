@@ -99,37 +99,7 @@
             "input": "This is some text![^1]. Other text.[^footnote].\n\nHere's a thing[^other-note].\n\nAnd another thing[^codeblock-note].\n\nThis doesn't have a referent[^nope].\n\n\n[^other-note]:       no code block here (spaces are stripped away)\n\n[^codeblock-note]:\n        this is now a code block (8 spaces indentation)\n\n[^1]: Some *bolded* footnote definition.\n\nHi!\n\n[^footnote]:\n    > Blockquotes can be in a footnote.\n\n        as well as code blocks\n\n    or, naturally, simple paragraphs.\n\n[^unused]: This is unused.\n",
             "findings": [
                 {
-                    "nodePath": "0.5",
-                    "kind": "FootnoteDefinition",
-                    "phase": "block",
-                    "scope": "15:1..16:0",
-                    "start": "place",
-                    "end": "zero-column",
-                    "closedBy": "unassigned",
-                    "class": "end-at-line-ending"
-                },
-                {
-                    "nodePath": "0.6",
-                    "kind": "FootnoteDefinition",
-                    "phase": "block",
-                    "scope": "19:1..25:0",
-                    "start": "place",
-                    "end": "zero-column",
-                    "closedBy": "unassigned",
-                    "class": "end-at-line-ending"
-                },
-                {
-                    "nodePath": "0.6.1",
-                    "kind": "CodeBlock",
-                    "phase": "block",
-                    "scope": "22:9..23:0",
-                    "start": "place",
-                    "end": "zero-column",
-                    "class": "end-at-line-ending",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.7",
+                    "nodePath": "0.4",
                     "kind": "FootnoteDefinition",
                     "phase": "block",
                     "scope": "10:1..11:0",
@@ -139,7 +109,7 @@
                     "class": "end-at-line-ending"
                 },
                 {
-                    "nodePath": "0.8",
+                    "nodePath": "0.5",
                     "kind": "FootnoteDefinition",
                     "phase": "block",
                     "scope": "12:1..14:0",
@@ -149,19 +119,49 @@
                     "class": "end-at-line-ending"
                 },
                 {
-                    "nodePath": "0.8.0",
+                    "nodePath": "0.5.0",
                     "kind": "CodeBlock",
                     "phase": "block",
                     "scope": "13:9..14:0",
                     "start": "place",
                     "end": "zero-column",
-                    "class": "end-at-line-ending",
-                    "closedBy": "unassigned"
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.6",
+                    "kind": "FootnoteDefinition",
+                    "phase": "block",
+                    "scope": "15:1..16:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.8",
+                    "kind": "FootnoteDefinition",
+                    "phase": "block",
+                    "scope": "19:1..25:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
+                },
+                {
+                    "nodePath": "0.8.1",
+                    "kind": "CodeBlock",
+                    "phase": "block",
+                    "scope": "22:9..23:0",
+                    "start": "place",
+                    "end": "zero-column",
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
                 }
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/extensions.txt:1107",
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:1110",
             "input": "- [x] foo\n  - [ ] bar\n  - [x] baz\n- [ ] bim\n\nShow a regular (non task) list to show that it has the same structure\n- [@] foo\n  - [@] bar\n  - [@] baz\n- [@] bim\n",
             "findings": [
                 {
@@ -187,7 +187,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/extensions.txt:1154",
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:1157",
             "input": "- [x] foo\n    - [ ] bar\n    - [x] baz\n- [ ] bim\n\nShow a regular (non task) list to show that it has the same structure\n- [@] foo\n    - [@] bar\n    - [@] baz\n- [@] bim\n",
             "findings": [
                 {
@@ -217,7 +217,7 @@
             "input": "This is some text. It has a citation.[^citation]\n\n[^another-citation]: My second citation.\n\n[^citation]: This is a long winded parapgraph that also has another citation.[^another-citation]\n",
             "findings": [
                 {
-                    "nodePath": "0.2",
+                    "nodePath": "0.1",
                     "kind": "FootnoteDefinition",
                     "phase": "block",
                     "scope": "3:1..4:0",
@@ -239,8 +239,8 @@
                     "scope": "3:1..4:0",
                     "start": "place",
                     "end": "zero-column",
-                    "closedBy": "unassigned",
-                    "class": "end-at-line-ending"
+                    "class": "end-at-line-ending",
+                    "closedBy": "unassigned"
                 }
             ]
         },
@@ -249,7 +249,7 @@
             "input": "This is some text. Sometimes the autolinker splits up text into multiple nodes, hoping it will find a hyperlink, so this text has a footnote whose reference label begins with a `w`.[^widely-cited]\n\nIt has another footnote that contains many different characters (the autolinker was also breaking on `_`).[^sphinx-of-black-quartz_judge-my-vow-0123456789]\n\n[^sphinx-of-black-quartz_judge-my-vow-0123456789]: so does this.\n\n[^widely-cited]: this renders properly.\n",
             "findings": [
                 {
-                    "nodePath": "0.3",
+                    "nodePath": "0.2",
                     "kind": "FootnoteDefinition",
                     "phase": "block",
                     "scope": "5:1..6:0",
