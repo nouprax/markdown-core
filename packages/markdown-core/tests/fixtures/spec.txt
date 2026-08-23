@@ -1845,7 +1845,7 @@ foo
 .
 Document scope=1:1..3:2 children=1
 └── Paragraph scope=1:1..3:2 children=1
-    └── Code scope=1:3..3:0 literal="foo" children=0
+    └── Code scope=1:3..2:4 literal="foo" children=0
 ````````````````````````````````
 
 The closing code fence must use the same character as the opening
@@ -6709,7 +6709,7 @@ baz
 .
 Document scope=1:1..5:2 children=1
 └── Paragraph scope=1:1..5:2 children=1
-    └── Code scope=1:3..5:0 literal="foo bar   baz" children=0
+    └── Code scope=1:3..4:4 literal="foo bar   baz" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -6719,7 +6719,7 @@ foo
 .
 Document scope=1:1..3:2 children=1
 └── Paragraph scope=1:1..3:2 children=1
-    └── Code scope=1:3..3:0 literal="foo " children=0
+    └── Code scope=1:3..2:5 literal="foo " children=0
 ````````````````````````````````
 
 
@@ -8930,7 +8930,7 @@ bar>)
 Document scope=1:1..2:5 children=1
 └── Paragraph scope=1:1..2:5 children=3
     ├── Text scope=1:1..1:7 literal="[link](" children=0
-    ├── HTML scope=1:8..2:3 literal="<foo\nbar>" children=0
+    ├── HTML scope=1:8..2:4 literal="<foo\nbar>" children=0
     └── Text scope=2:5..2:5 literal=")" children=0
 ````````````````````````````````
 
@@ -11030,7 +11030,7 @@ data="foo" >
 Document scope=1:1..2:12 children=1
 └── Paragraph scope=1:1..2:12 children=2
     ├── HTML scope=1:1..1:6 literal="<a  />" children=0
-    └── HTML scope=1:7..2:11 literal="<b2\ndata=\"foo\" >" children=0
+    └── HTML scope=1:7..2:12 literal="<b2\ndata=\"foo\" >" children=0
 ````````````````````````````````
 
 
@@ -11042,7 +11042,7 @@ _boolean zoop:33=zoop:33 />
 .
 Document scope=1:1..2:27 children=1
 └── Paragraph scope=1:1..2:27 children=1
-    └── HTML scope=1:1..2:26 literal="<a foo=\"bar\" bam = 'baz <em>\"</em>'\n_boolean zoop:33=zoop:33 />" children=0
+    └── HTML scope=1:1..2:27 literal="<a foo=\"bar\" bam = 'baz <em>\"</em>'\n_boolean zoop:33=zoop:33 />" children=0
 ````````````````````````````````
 
 
@@ -11154,7 +11154,7 @@ comment - with hyphens -->
 Document scope=1:1..2:26 children=1
 └── Paragraph scope=1:1..2:26 children=2
     ├── Text scope=1:1..1:4 literal="foo " children=0
-    └── HTML scope=1:5..2:25 literal="<!-- this is a --\ncomment - with hyphens -->" children=0
+    └── HTML scope=1:5..2:26 literal="<!-- this is a --\ncomment - with hyphens -->" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -11403,7 +11403,7 @@ bar">
 .
 Document scope=1:1..2:5 children=1
 └── Paragraph scope=1:1..2:5 children=1
-    └── HTML scope=1:1..2:4 literal="<a href=\"foo  \nbar\">" children=0
+    └── HTML scope=1:1..2:5 literal="<a href=\"foo  \nbar\">" children=0
 ````````````````````````````````
 
 
@@ -11413,7 +11413,7 @@ bar">
 .
 Document scope=1:1..2:5 children=1
 └── Paragraph scope=1:1..2:5 children=1
-    └── HTML scope=1:1..2:4 literal="<a href=\"foo\\\nbar\">" children=0
+    └── HTML scope=1:1..2:5 literal="<a href=\"foo\\\nbar\">" children=0
 ````````````````````````````````
 
 

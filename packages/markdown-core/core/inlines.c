@@ -103,6 +103,47 @@ static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *me
                              subject *e, markdown_core_chunk *buffer, markdown_core_map *refmap);
 static bufsize_t subject_find_special_char(subject *subj, int options);
 
+/* Give `node` the source extent of the content bytes [from, to].
+ *
+ * THIS IS THE WHOLE OF THE INLINE POSITION MODEL: a position is a PROJECTION
+ * of the byte range a node covers, asked of requirement 10's content-to-source
+ * map, and not a counter each handler keeps in step. The two arguments every
+ * maker already took were byte offsets into the block's content buffer and
+ * were being turned into columns by addition -- which is right only while the
+ * whole block is one line that starts where the block does. Everything the old
+ * arithmetic needed a correction term for -- a span that crosses a line
+ * ending, a continuation line with a different stripped prefix, a construct
+ * whose end is on a later line than its start -- is answered by asking twice.
+ *
+ * The fallback is the old arithmetic and it is reached by a block whose
+ * content was SET rather than fed: a table cell, the paragraph a table was
+ * split out of, a reference definition parsed straight out of a chunk. Those
+ * have no marks to project through, and Step 8's second half is where they get
+ * them. */
+static MARKDOWN_CORE_INLINE bool S_projects(subject *subj) {
+    int line, column;
+    return markdown_core_parser_content_place(subj->owner_parser, subj->owner, 0, &line, &column) != 0;
+}
+
+static MARKDOWN_CORE_INLINE void S_place_inline(subject *subj, markdown_core_node *node, int from, int to) {
+    int line, column;
+
+    if (markdown_core_parser_content_place(subj->owner_parser, subj->owner, from, &line, &column)) {
+        node->start_line = line;
+        node->start_column = column;
+    } else {
+        node->start_line = subj->line;
+        node->start_column = from + 1 + subj->column_offset + subj->block_offset;
+    }
+    if (markdown_core_parser_content_place(subj->owner_parser, subj->owner, to, &line, &column)) {
+        node->end_line = line;
+        node->end_column = column;
+    } else {
+        node->end_line = subj->line;
+        node->end_column = to + 1 + subj->column_offset + subj->block_offset;
+    }
+}
+
 // Create an inline with a literal string value.
 static MARKDOWN_CORE_INLINE markdown_core_node *make_literal(subject *subj, markdown_core_node_type t, int start_column,
                                                              int end_column, markdown_core_chunk s) {
@@ -116,10 +157,7 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_literal(subject *subj, mark
     markdown_core_strbuf_init(subj->mem, &e->content, 0);
     e->type = (uint16_t)t;
     e->as.literal = s;
-    e->start_line = e->end_line = subj->line;
-    // columns are 1 based.
-    e->start_column = start_column + 1 + subj->column_offset + subj->block_offset;
-    e->end_column = end_column + 1 + subj->column_offset + subj->block_offset;
+    S_place_inline(subj, e, start_column, end_column);
     return e;
 }
 
@@ -243,13 +281,12 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(subject *subj, int
     // left as `make_simple` calloc'd it, which is absence. It used to be set to
     // an empty title, and `extensions.txt` records both spellings of one
     // construct on one line disagreeing about it three columns apart.
-    link->start_line = link->end_line = subj->line;
+
     // Both offsets, like every other column in this file. This was the one site
     // that turned a raw subject-buffer offset into a column without them, so an
     // autolink inside a block quote, or on any line but the first of its
     // paragraph, produced a Link that did not contain its own Text.
-    link->start_column = start_column + 1 + subj->column_offset + subj->block_offset;
-    link->end_column = end_column + 1 + subj->column_offset + subj->block_offset;
+    S_place_inline(subj, link, start_column, end_column);
     text = make_str_with_entities(subj, start_column + 1, end_column - 1, &url);
     if (text) {
         append_child(link, text);
@@ -423,8 +460,16 @@ static void adjust_subj_node_newlines(subject *subj, markdown_core_node *node, i
     if (newlines) {
         bufsize_t line_start = subj->pos - since_newline - extra;
         subj->line += newlines;
-        node->end_line += newlines;
-        node->end_column = S_line_start_column(subj, line_start) + since_newline - 1;
+        /* The NODE is only repaired where the projection could not answer.
+         * Where it could, the node already ends where its last byte is and
+         * adding the newlines again would count them twice -- measured, and it
+         * is what a code span spanning two lines reported the moment
+         * `make_literal` started projecting. What is left here is the SUBJECT's
+         * own line and column origin, which only the fallback still reads. */
+        if (!S_projects(subj)) {
+            node->end_line += newlines;
+            node->end_column = S_line_start_column(subj, line_start) + since_newline - 1;
+        }
         S_reseat_column_origin(subj, line_start);
     }
 }
@@ -525,6 +570,17 @@ static markdown_core_node *handle_backticks(subject *subj, int options) {
             subj->oom = 1;
         }
 
+        /* The extent is the code span's CONTENT and not the construct, which
+         * is what upstream reports and is why `` ``foo`` `` starts at the byte
+         * after its opening ticks -- a column that does not exist on a
+         * two-byte line, and nine rows of `unmatched-code-span-literal` in
+         * specs/positions/places.json. Covering the ticks was BUILT AND
+         * MEASURED here: it clears three places rows and every one of the nine,
+         * and it moves thirteen rows in specs/positions/inline-sourcepos.json,
+         * because upstream reports the content extent for every code span and
+         * not only the multi-line ones. That is a ruling about what a node
+         * covers, in the shape Q40 took, and it is Q45's -- not a side effect
+         * of the projection. */
         markdown_core_node *node =
             make_code(subj, startpos, endpos - openticks.len - 1, markdown_core_chunk_buf_detach(&buf));
         if (!node) {
@@ -1093,11 +1149,16 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
         // before this, so the break is not taking it from anyone.
         markdown_core_node *hard = make_simple_subj(subj, MARKDOWN_CORE_NODE_LINE_BREAK);
         if (hard) {
-            hard->start_line = hard->end_line = escape_line;
-            hard->start_column = start + 1 + escape_column_offset + subj->block_offset;
-            /* subj->pos is one past the line ending's last byte, so that byte's
-             * column is subj->pos + offset -- CR, LF or CRLF alike. */
-            hard->end_column = subj->pos + escape_column_offset + subj->block_offset;
+            /* The break's extent is the backslash and the line ending it
+             * escapes; `subj->pos` is one past that ending's last byte, CR, LF
+             * or CRLF alike. Projected from the two offsets, so the frame
+             * captured before the consume is only the fallback's. */
+            S_place_inline(subj, hard, start, subj->pos - 1);
+            if (!S_projects(subj)) {
+                hard->start_line = hard->end_line = escape_line;
+                hard->start_column = start + 1 + escape_column_offset + subj->block_offset;
+                hard->end_column = subj->pos + escape_column_offset + subj->block_offset;
+            }
         }
         ++subj->line;
         S_reseat_column_origin(subj, subj->pos);
@@ -1673,8 +1734,9 @@ match:
     // Text at 1:2 -- a node that begins after its own first child.
     inl->start_line = opener->inl_text->start_line;
     inl->start_column = opener->inl_text->start_column;
-    inl->end_line = subj->line;
-    inl->end_column = subj->pos + subj->column_offset + subj->block_offset;
+    S_place_inline(subj, inl, opener->position - 1, subj->pos - 1);
+    inl->start_line = opener->inl_text->start_line;
+    inl->start_column = opener->inl_text->start_column;
     // And the destination and title are scanned by manual_scan_link_url and
     // scan_link_title, which move subj->pos without ever passing through
     // handle_newline -- so a line ending inside `(...)` is invisible to the
@@ -1745,8 +1807,11 @@ static markdown_core_node *handle_newline(subject *subj) {
     if (brk) {
         // The two spaces of a hard break stay with the text they follow, as
         // upstream also has them, so both forms own exactly the line ending.
-        brk->start_line = brk->end_line = break_line;
-        brk->start_column = brk->end_column = break_column;
+        S_place_inline(subj, brk, nlpos, nlpos);
+        if (!S_projects(subj)) {
+            brk->start_line = brk->end_line = break_line;
+            brk->start_column = brk->end_column = break_column;
+        }
     }
     return brk;
 }
