@@ -41,6 +41,12 @@ behaviour change that belongs to Step 3.
 The sanitizer presets have their OWN configure and build; building `default`
 does not prepare them.
 
+**`sh scripts/dev/gates.sh` runs every one of the following and prints the
+number each produces**, which is how the stale rows below were found. It builds
+nothing -- the three configures come first, or the sanitizer rows report GREEN
+having run nothing. The binding suites are not in it; they are listed in its
+header.
+
 ```
 cmake --preset default && cmake --build --preset default --parallel
 cmake --preset asan    && cmake --build --preset asan    --parallel
