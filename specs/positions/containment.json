@@ -2,7 +2,7 @@
     "schemaVersion": 1,
     "script": "scripts/audit-scope-containment.mjs",
     "subject": "Two geometric invariants over every fixture example: a child's extent lies inside its parent's, and no two siblings claim the same byte.",
-    "purpose": "Thirty-one rows, three causes, and the sibling half is what earns this oracle. WAS FORTY-FIVE, and 58 before 0a.13: Step 10 cleared FOURTEEN by making the inline phase read requirement 10's content-to-source map, so a continuation line's inline children stop being measured from the block's first-line column and stop reaching outside their own parent. 0a.13 cleared the fourteen that were the emphasis defect, which is the cause the sibling half was written for. Containment alone cannot see the emphasis defect: ***a** gives a Text spanning columns 1..3 and a Strong starting at column 1, and both sit inside their paragraph, so the only statement that catches it is that two nodes claim one byte. That is exactly what it caught, and what 0a.13 then cleared: reverting the emphasis fix makes fourteen rows reappear here, and reverting only the ONE-LINE form of it that the plan originally named leaves SEVEN of the fourteen standing. Measured both ways. This cannot be an upstream comparison either - cmark-gfm re-parents emphasis the same way and takes a link's start from the closing bracket the same way, so it would return agreement on exactly the rows that are wrong. Nodes with no position are skipped, not judged; the 0:0..0:0 sentinel and line zero are scripts/audit-scope-sanity.mjs's subject, and two ratchets that claim the same row can each be satisfied by it moving to the other - which is why the run now reports ZERO skipped child relations where it used to skip the split-off table lead's. Every row's closedBy names the step that is expected to clear it; the three H14 rows name no step because none exists yet, and that is the honest state rather than a guess. EIGHTEEN of the thirty-one are one thing - an autocompleted table cell, which has no source bytes at all - and Step 10 measured both coordinate spellings for it before carrying it rather than taking one: see the recovered-table-cell family in specs/positions/places.json, and Q44.",
+    "purpose": "Twenty-one rows, two causes, and EIGHTEEN OF THE TWENTY-ONE ARE ONE THING. It was 58 before 0a.13, 45 before Step 10, 31 after it and 21 after 8.3.\n\n  18  an autocompleted table cell, which has no source bytes at all. Step 10 measured both coordinate spellings for it before carrying it rather than taking one: see the recovered-table-cell family in specs/positions/places.json, and Q44.\n   3  H14 (section 11.4) -- finalize reads an empty curline as end-of-input. Unowned by any step, and that is the honest state rather than a guess.\n\nThe sibling half is what earns this oracle. Containment alone cannot see the emphasis defect: ***a** gives a Text spanning columns 1..3 and a Strong starting at column 1, and both sit inside their paragraph, so the only statement that catches it is that two nodes claim one byte. That is exactly what it caught, and what 0a.13 then cleared: reverting the emphasis fix makes fourteen rows reappear here, and reverting only the ONE-LINE form of it that the plan originally named leaves SEVEN of the fourteen standing. Measured both ways. This cannot be an upstream comparison either -- cmark-gfm re-parents emphasis the same way and takes a link's start from the closing bracket the same way, so it would return agreement on exactly the rows that are wrong.\n\nNodes with no position are skipped, not judged; the 0:0..0:0 sentinel and line zero are scripts/audit-scope-sanity.mjs's subject. The run now reports ZERO skipped child relations, where it used to skip the split-off table lead's.\n\nStep 10 cleared fourteen by making the inline phase read the content-to-source map, so a continuation line's inline children stop being measured from the block's first-line column. 8.3 cleared ten more, all of them a text run that began or ended with a backtick and reached one column past its own last byte, which put it outside its own paragraph. Every row's closedBy names the step that is expected to clear it.",
     "corpus": "every example in packages/markdown-core/tests/fixtures/*.txt",
     "profile": "gfm-extended",
     "expected": [
@@ -151,36 +151,6 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:512",
-            "input": "- `one\n- two`\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.0.0",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "2:3..2:7",
-                    "parentKind": "Paragraph",
-                    "parentScope": "2:3..2:6",
-                    "closedBy": "Step 8 \u2014 the inline position model; an unmatched code-span literal is placed one column right (\u00a74.1.3)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:1296",
-            "input": "`Foo\n----\n`\n\n<a title=\"a lot\n---\nof dashes\"/>\n",
-            "findings": [
-                {
-                    "nodePath": "0.1.0",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "3:2..3:2",
-                    "parentKind": "Paragraph",
-                    "parentScope": "3:1..3:1",
-                    "closedBy": "Step 8 \u2014 the inline position model; an unmatched code-span literal is placed one column right (\u00a74.1.3)"
-                }
-            ]
-        },
-        {
             "source": "packages/markdown-core/tests/fixtures/spec.txt:1922",
             "input": "> ```\n> aaa\n\nbbb\n",
             "findings": [
@@ -270,126 +240,6 @@
                     "previousKind": "Heading",
                     "previousScope": "2:3..4:5",
                     "closedBy": "H14 (\u00a711.4) \u2014 finalize reads an empty curline as end-of-input; unowned by any step"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:6178",
-            "input": "`hi`lo`\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "1:5..1:8",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:1..1:7",
-                    "closedBy": "Step 8 \u2014 the inline position model; an unmatched code-span literal is placed one column right (\u00a74.1.3)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:6219",
-            "input": "\\*not emphasized*\n\\<br/> not a tag\n\\[not a link](/foo)\n\\`not code`\n1\\. not a list\n\\* not a list\n\\# not a heading\n\\[foo]: /url \"not a reference\"\n\\&ouml; not a character entity\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.7",
-                    "violation": "sibling-overlap",
-                    "kind": "SoftBreak",
-                    "scope": "4:12..4:12",
-                    "previousKind": "Text",
-                    "previousScope": "4:1..4:12",
-                    "closedBy": "Step 8 - the break is at its line's true ending; the Text it overlaps reaches one column too far because an escape is two source bytes and one content byte. Registered at 0a.12b when D26 gave breaks a position; re-attributed at Step 10, which cleared every other row that carried the Q22 label and left this one standing, which is what named its real cause."
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:6747",
-            "input": "`foo\\`bar`\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "1:7..1:11",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:1..1:10",
-                    "closedBy": "Step 8 \u2014 the inline position model; an unmatched code-span literal is placed one column right (\u00a74.1.3)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:6809",
-            "input": "`<a href=\"`\">`\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "1:12..1:15",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:1..1:14",
-                    "closedBy": "Step 8 \u2014 the inline position model; an unmatched code-span literal is placed one column right (\u00a74.1.3)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:6821",
-            "input": "<a href=\"`\">`\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "1:14..1:14",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:1..1:13",
-                    "closedBy": "Step 8 \u2014 the inline position model; an unmatched code-span literal is placed one column right (\u00a74.1.3)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:6833",
-            "input": "`<http://foo.bar.`baz>`\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "1:19..1:24",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:1..1:23",
-                    "closedBy": "Step 8 \u2014 the inline position model; an unmatched code-span literal is placed one column right (\u00a74.1.3)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:6845",
-            "input": "<http://foo.bar.`baz>`\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "1:23..1:23",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:1..1:22",
-                    "closedBy": "Step 8 \u2014 the inline position model; an unmatched code-span literal is placed one column right (\u00a74.1.3)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:6859",
-            "input": "```foo``\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "1:4..1:9",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:1..1:8",
-                    "closedBy": "Step 8 \u2014 the inline position model; an unmatched code-span literal is placed one column right (\u00a74.1.3)"
                 }
             ]
         }

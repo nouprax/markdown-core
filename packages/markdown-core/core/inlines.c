@@ -468,7 +468,13 @@ static markdown_core_node *handle_backticks(subject *subj, int options) {
 
     if (endpos == 0) {        // not found
         subj->pos = startpos; // rewind
-        return make_str(subj, subj->pos, subj->pos, openticks);
+        /* The run stands as its own literal, so it covers ITS OWN BYTES:
+         * `startpos` is one past the last of them and the run is
+         * `openticks.len` long. Both offsets used to be `subj->pos`, one past
+         * the run, so the literal was placed one column right -- and
+         * consolidation then carried that end onto the whole merged text run:
+         * `hi`lo` reported Text 1:5..1:8 inside a seven-byte paragraph. */
+        return make_str(subj, subj->pos - openticks.len, subj->pos - 1, openticks);
     } else {
         markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(subj->mem);
 
@@ -481,14 +487,20 @@ static markdown_core_node *handle_backticks(subject *subj, int options) {
         /* The extent is the code span's CONTENT and not the construct, which
          * is what upstream reports and is why `` ``foo`` `` starts at the byte
          * after its opening ticks -- a column that does not exist on a
-         * two-byte line, and nine rows of `unmatched-code-span-literal` in
-         * specs/positions/places.json. Covering the ticks was BUILT AND
-         * MEASURED here: it clears three places rows and every one of the nine,
-         * and it moves thirteen rows in specs/positions/inline-sourcepos.json,
-         * because upstream reports the content extent for every code span and
-         * not only the multi-line ones. That is a ruling about what a node
-         * covers, in the shape Q40 took, and it is Q45's -- not a side effect
-         * of the projection. */
+         * two-byte line. Emphasis covers its asterisks, a link covers its
+         * brackets, and this is the one construct that does not cover its own
+         * delimiters.
+         *
+         * Covering them was BUILT AND MEASURED, twice, and the second reading
+         * corrected the first: it clears THREE rows in
+         * specs/positions/places.json -- the multi-line code spans, and none of
+         * the nine `unmatched-code-span-literal` rows, which are Text nodes and
+         * were a different defect, closed at 8.3 -- and it moves THIRTY-SEVEN
+         * rows in specs/positions/inline-sourcepos.json, because upstream
+         * reports the content extent for every code span and not only the ones
+         * that cross a line ending. That is a ruling about what a node covers,
+         * in the shape Q40 took, and it is Q45's -- not a side effect of the
+         * projection. */
         markdown_core_node *node =
             make_code(subj, startpos, endpos - openticks.len - 1, markdown_core_chunk_buf_detach(&buf));
         if (!node) {
