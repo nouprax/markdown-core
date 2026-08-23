@@ -75,6 +75,10 @@ internal fun WireReader.markup(): Markup {
             FootnoteDefinition(requiredString(), markupList(), nodeScope)
         }
 
+        WireKind.REFERENCE_DEFINITION -> {
+            ReferenceDefinition(requiredString(), requiredString(), string(), nodeScope)
+        }
+
         WireKind.TEXT -> {
             Text(requiredString(), nodeScope)
         }

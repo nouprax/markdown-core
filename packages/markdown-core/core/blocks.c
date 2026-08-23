@@ -837,16 +837,304 @@ static bool S_ends_with_blank_line(markdown_core_node *node) {
     }
 }
 
+/* The source offset a block's content offset was written at, or -1 when the
+ * content-to-source map cannot answer -- which happens only where a mark was
+ * lost to allocation failure, and that has already failed the parse. */
+static bufsize_t S_content_source_offset(markdown_core_parser *parser, markdown_core_node *b,
+                                         bufsize_t content_offset) {
+    int line, column;
+    if (!markdown_core_parser_content_place(parser, b, content_offset, &line, &column)) {
+        return -1;
+    }
+    if (line < 1 || line > parser->line_starts_size) {
+        return -1;
+    }
+    return parser->line_starts[line - 1] + column - 1;
+}
+
+/* THE DEFINITION IS A NODE (the rule above `markdown_core_definition`).
+ *
+ * A link reference definition read off the front of `b`'s content becomes a
+ * `ReferenceDefinition` spliced in ahead of `b`, at the byte where its opening
+ * bracket was written, owning every byte it read. Upstream drops those bytes
+ * into a parser-private map and frees the paragraph that held them; keeping
+ * them is what makes the block partition total for a definition-bearing
+ * document, and it is why nothing here has to remember that a node was
+ * destroyed.
+ *
+ * `from` and `upto` are offsets into `b`'s content, read BEFORE the harvest
+ * drops it, so the content-to-source map still describes them.
+ *
+ * Q7 and Q26: the destination is REQUIRED. An allocation that loses it fails
+ * the parse rather than producing a definition that lies about where it points.
+ */
+static markdown_core_node *S_new_reference_definition(markdown_core_parser *parser, markdown_core_node *b,
+                                                      bufsize_t from, bufsize_t upto,
+                                                      const markdown_core_reference_parts *parts) {
+    markdown_core_node *node;
+    markdown_core_definition *definition;
+    markdown_core_chunk url = parts->url;
+    markdown_core_chunk title = parts->title;
+    int start_line, start_column, end_line, end_column;
+    bufsize_t last = upto;
+    int lost = 0;
+
+    /* The scope ends at the last byte the definition read that is not a line
+     * ending: a definition consumes the line ending that terminates it, and a
+     * block's end names its last byte the way every other block's does. */
+    while (last > from && S_is_line_end_char(b->content.ptr[last - 1])) {
+        last--;
+    }
+    /* Both refusals below FAIL THE PARSE rather than dropping the definition
+     * quietly. The harvest consumes these bytes either way, so a definition
+     * that could not be placed is a document missing source the author wrote
+     * while the reference map still resolves the label -- which is D30's shape
+     * exactly: a wrong document with the failure bit clear. Neither is
+     * reachable except through a lost content mark, and that already sets the
+     * bit; saying so here is what keeps it true when the map changes. */
+    if (last == from) {
+        parser->oom = true;
+        return NULL;
+    }
+    if (!markdown_core_parser_content_place(parser, b, from, &start_line, &start_column) ||
+        !markdown_core_parser_content_place(parser, b, last - 1, &end_line, &end_column)) {
+        parser->oom = true;
+        return NULL;
+    }
+
+    node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, parser->mem);
+    if (!node) {
+        parser->oom = true;
+        return NULL;
+    }
+    definition = (markdown_core_definition *)parser->mem->calloc(1, sizeof(*definition));
+    if (!definition) {
+        parser->oom = true;
+        markdown_core_node_free(node);
+        return NULL;
+    }
+    node->as.definition = definition;
+    node->start_line = start_line;
+    node->start_column = start_column;
+    node->end_line = end_line;
+    node->end_column = end_column;
+
+    definition->label = markdown_core_chunk_dup(&parts->label, 0, parts->label.len);
+    if (!markdown_core_chunk_to_cstr(parser->mem, &definition->label)) {
+        /* The label would keep borrowing the content buffer the harvest drops. */
+        parser->oom = true;
+        markdown_core_node_free(node);
+        return NULL;
+    }
+    definition->url = markdown_core_clean_url(parser->mem, &url, &lost);
+    definition->title = markdown_core_clean_title(parser->mem, &title, &lost);
+    if (lost) {
+        parser->oom = true;
+        markdown_core_node_free(node);
+        return NULL;
+    }
+
+    if (!markdown_core_node_insert_before(b, node)) {
+        parser->oom = true;
+        markdown_core_node_free(node);
+        return NULL;
+    }
+    return node;
+}
+
+/* The owner of source byte `at`, and where that owner's run ends.
+ *
+ * Over [`from`, `upto`) the definitions tile the bytes in order, each from its
+ * own opening bracket to the end of the last line it read. What is left
+ * between one definition's last line ending and the next one's bracket is that
+ * line's indentation, and it goes to `parent` -- which is where the FIRST
+ * line's indentation already went, before `b` existed to claim it. */
+static markdown_core_node *S_definition_run(markdown_core_parser *parser, markdown_core_node **cursor, int *remaining,
+                                            markdown_core_node *parent, bufsize_t at, bufsize_t upto,
+                                            bufsize_t *run_end) {
+    while (*remaining > 0) {
+        markdown_core_node *definition = *cursor;
+        bufsize_t start = parser->line_starts[definition->start_line - 1] + definition->start_column - 1;
+        bufsize_t stop = *remaining > 1 ? parser->line_starts[definition->next->start_line - 1] : upto;
+        if (at < start) {
+            *run_end = start;
+            return parent;
+        }
+        if (at < stop) {
+            *run_end = stop;
+            return definition;
+        }
+        *cursor = definition->next;
+        (*remaining)--;
+    }
+    *run_end = upto;
+    return parent;
+}
+
+/* Re-attribute the source bytes a run of link reference definitions read.
+ *
+ * ROLES ARE PRESERVED, and that is not a stylistic choice -- L4 forces it. A
+ * prefix of the document that stops before the destination reads `[foo]:` as
+ * ordinary paragraph CONTENT; the whole document reads the same bytes as a
+ * definition. If becoming a definition changed the role, every such prefix
+ * would attribute those bytes differently from the whole document, which is
+ * exactly what the completeness law forbids. What changes is the OWNER.
+ *
+ * ONE PASS AND ONE MOVE. A run of unindented definitions is a SINGLE region --
+ * `S_claim_region` extends rather than appends when owner, role and cursor all
+ * line up -- so that region has to be cut into as many pieces as there are
+ * definitions. Cutting it once per definition would move the tail of the
+ * region array once per definition, which is quadratic in a paragraph with
+ * many definitions and many regions after them. So the pieces are counted, the
+ * array is grown once, the surviving rows are right-aligned inside the window
+ * they will occupy, and the pieces are written forward over them. The write
+ * pointer can never overtake the read pointer because every source row
+ * produces at least one piece. */
+static void S_partition_definition_regions(markdown_core_parser *parser, markdown_core_node *b,
+                                           markdown_core_node *first, int count, bufsize_t from, bufsize_t upto) {
+    markdown_core_node *parent = b->parent ? b->parent : parser->root;
+    markdown_core_node *cursor;
+    bufsize_t lo = 0, hi, i, produced = 0, delta, read, write;
+    int remaining;
+
+    if (count <= 0 || from < 0 || upto <= from) {
+        return;
+    }
+
+    /* The rows the run touches: [lo, hi), with the last free to run past
+     * `upto` -- the paragraph's surviving content shares a row with its
+     * definitions whenever nothing broke the run. Found by bisection, because
+     * scanning from row zero would cost the whole document on every paragraph
+     * that opens with a definition. */
+    hi = parser->regions_size;
+    while (lo < hi) {
+        bufsize_t mid = lo + (hi - lo) / 2;
+        if (parser->regions[mid].start + parser->regions[mid].length <= from) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    hi = lo;
+    while (hi < parser->regions_size && parser->regions[hi].start < upto) {
+        hi++;
+    }
+    if (lo == hi) {
+        return;
+    }
+
+    cursor = first;
+    remaining = count;
+    for (i = lo; i < hi; i++) {
+        bufsize_t at = parser->regions[i].start;
+        bufsize_t end = at + parser->regions[i].length;
+        if (parser->regions[i].owner != b) {
+            produced++;
+            continue;
+        }
+        while (at < end) {
+            bufsize_t run_end;
+            if (at >= upto) {
+                produced++;
+                break;
+            }
+            S_definition_run(parser, &cursor, &remaining, parent, at, upto, &run_end);
+            produced++;
+            at = run_end < end ? run_end : end;
+        }
+    }
+
+    delta = produced - (hi - lo);
+    if (delta > 0) {
+        bufsize_t alloc = parser->regions_alloc ? parser->regions_alloc : 256;
+        while (parser->regions_size + delta > alloc) {
+            if (alloc > (bufsize_t)(INT32_MAX / 2)) {
+                parser->oom = true;
+                return;
+            }
+            alloc *= 2;
+        }
+        if (alloc != parser->regions_alloc) {
+            markdown_core_region *grown =
+                (markdown_core_region *)parser->mem->realloc(parser->regions, (size_t)alloc * sizeof(*grown));
+            if (!grown) {
+                parser->oom = true;
+                return;
+            }
+            parser->regions = grown;
+            parser->regions_alloc = alloc;
+        }
+    }
+
+    memmove(&parser->regions[lo + produced], &parser->regions[hi],
+            (size_t)(parser->regions_size - hi) * sizeof(*parser->regions));
+    memmove(&parser->regions[lo + delta], &parser->regions[lo], (size_t)(hi - lo) * sizeof(*parser->regions));
+
+    cursor = first;
+    remaining = count;
+    read = lo + delta;
+    write = lo;
+    for (i = 0; i < hi - lo; i++) {
+        markdown_core_region source = parser->regions[read++];
+        bufsize_t at = source.start;
+        bufsize_t end = at + source.length;
+        if (source.owner != b) {
+            parser->regions[write++] = source;
+            continue;
+        }
+        while (at < end) {
+            bufsize_t run_end;
+            markdown_core_node *owner;
+            if (at >= upto) {
+                owner = b;
+                run_end = end;
+            } else {
+                owner = S_definition_run(parser, &cursor, &remaining, parent, at, upto, &run_end);
+            }
+            if (run_end > end) {
+                run_end = end;
+            }
+            parser->regions[write] = source;
+            parser->regions[write].start = at;
+            parser->regions[write].length = run_end - at;
+            parser->regions[write].owner = owner;
+            write++;
+            at = run_end;
+        }
+    }
+    assert(write == lo + produced);
+    parser->regions_size += delta;
+}
+
 // returns true if content remains after link defs are resolved.
 static bool resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
     bufsize_t pos;
     markdown_core_strbuf *node_content = &b->content;
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
+    markdown_core_reference_parts parts;
+    markdown_core_node *first = NULL;
+    bufsize_t consumed = 0;
+    bufsize_t span_from = -1;
+    int count = 0;
     while (chunk.len && chunk.data[0] == '[' &&
-           (pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap))) {
-
+           (pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap, &parts))) {
+        markdown_core_node *definition = S_new_reference_definition(parser, b, consumed, consumed + pos, &parts);
+        if (definition) {
+            if (!first) {
+                first = definition;
+                span_from = S_content_source_offset(parser, b, consumed);
+            }
+            count++;
+        }
+        consumed += pos;
         chunk.data += pos;
         chunk.len -= pos;
+    }
+    if (count > 0 && span_from >= 0) {
+        bufsize_t span_upto = S_content_source_offset(parser, b, consumed - 1);
+        if (span_upto >= 0) {
+            S_partition_definition_regions(parser, b, first, count, span_from, span_upto + 1);
+        }
     }
     // The definitions are dropped off the FRONT of the block's content, so what
     // is left starts further down the source than the block was told it did.

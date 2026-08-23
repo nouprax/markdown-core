@@ -251,6 +251,12 @@ static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
         markdown_core_node_footnote_id(node, &first);
         put_string(buffer, first, true);
         break;
+    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
+        markdown_core_node_definition_properties(node, &first, &second, &third);
+        put_string(buffer, first, true);
+        put_string(buffer, second, true);
+        put_string(buffer, third, third.data != NULL);
+        break;
     case MARKDOWN_CORE_KIND_LINK:
         markdown_core_node_link_properties(node, &first, &second);
         put_string(buffer, first, first.data != NULL);

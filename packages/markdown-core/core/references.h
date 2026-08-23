@@ -15,6 +15,19 @@ struct markdown_core_reference {
 
 typedef struct markdown_core_reference markdown_core_reference;
 
+/* What a link reference definition was WRITTEN as: borrowed views into the
+ * block content it was read from, valid until that content is dropped.
+ *
+ * The map stores a cleaned, folded, owned copy because that is what a lookup
+ * needs. The node stores what the author typed, because that is what a
+ * document is. Both are made from these three chunks, which is why the parse
+ * hands them out rather than each caller re-scanning the line. */
+typedef struct {
+    markdown_core_chunk label;
+    markdown_core_chunk url;
+    markdown_core_chunk title;
+} markdown_core_reference_parts;
+
 void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label, markdown_core_chunk *url,
                                     markdown_core_chunk *title);
 markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem);

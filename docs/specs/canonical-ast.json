@@ -277,6 +277,27 @@
             "invariants": "id is non-empty; block content"
         },
         {
+            "name": "ReferenceDefinition",
+            "fields": [
+                {
+                    "name": "label",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "destination",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "title",
+                    "type": "String",
+                    "optional": true
+                }
+            ],
+            "invariants": "label is the bytes between the brackets as written, delimiters excluded, escapes and character references unresolved, whitespace uncollapsed, case unfolded; destination is never absent, because a definition that could not build one is not produced at all; absent and empty title remain distinct; leaf"
+        },
+        {
             "name": "Text",
             "fields": [
                 {

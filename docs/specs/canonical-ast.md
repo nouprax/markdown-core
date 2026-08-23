@@ -137,6 +137,7 @@ error rather than silently dropping a value.
 | `DirectiveBlock` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes is an ordered sequence of name/value pairs sorted by name; label is a node whose scope spans its brackets; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
 | `DirectiveLabel` | `content: [Markup]` | inline content; the scope spans the brackets, so an empty label is still a place |
 | `FootnoteDefinition` | `id: String`, `content: [Markup]` | id is non-empty; block content |
+| `ReferenceDefinition` | `label: String`, `destination: String`, `title: String?` | `label` is the bytes between the brackets as written, delimiters excluded, escapes and character references unresolved, whitespace uncollapsed, case unfolded; `destination` is never absent, because a definition that could not build one is not produced at all; absent and empty title remain distinct; leaf |
 | `Text` | `literal: String` | leaf |
 | `SoftBreak` | none | leaf |
 | `LineBreak` | none | leaf |

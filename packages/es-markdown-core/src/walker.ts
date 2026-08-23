@@ -57,6 +57,7 @@ function children(node: Markup): readonly Markup[] {
             return node.content;
         case "directive":
             return node.label === null ? [] : [node.label];
+        case "referenceDefinition":
         case "thematicBreak":
         case "codeBlock":
         case "htmlBlock":

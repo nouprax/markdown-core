@@ -17,7 +17,10 @@ enum es_string_field {
     ES_STRING_IMAGE_SOURCE,
     ES_STRING_IMAGE_TITLE,
     ES_STRING_FOOTNOTE_ID,
-    ES_STRING_ERROR_MESSAGE
+    ES_STRING_ERROR_MESSAGE,
+    ES_STRING_DEFINITION_LABEL,
+    ES_STRING_DEFINITION_DESTINATION,
+    ES_STRING_DEFINITION_TITLE
 };
 
 static void es_write_view(markdown_core_string_view view, uintptr_t *data, size_t *length) {
@@ -205,6 +208,14 @@ void es_string(const void *object, int32_t field, uintptr_t *data, size_t *lengt
         break;
     case ES_STRING_FOOTNOTE_ID:
         markdown_core_node_footnote_id(node, &first);
+        break;
+    case ES_STRING_DEFINITION_LABEL:
+    case ES_STRING_DEFINITION_DESTINATION:
+    case ES_STRING_DEFINITION_TITLE:
+        markdown_core_node_definition_properties(node, &first, &second, &third);
+        first = field == ES_STRING_DEFINITION_LABEL         ? first
+                : field == ES_STRING_DEFINITION_DESTINATION ? second
+                                                            : third;
         break;
     case ES_STRING_ERROR_MESSAGE:
         first = markdown_core_error_get_message((const markdown_core_error *)object);

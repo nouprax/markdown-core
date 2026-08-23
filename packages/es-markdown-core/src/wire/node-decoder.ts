@@ -34,7 +34,10 @@ const stringField = {
     imageSource: 11,
     imageTitle: 12,
     footnoteID: 13,
-    errorMessage: 14
+    errorMessage: 14,
+    definitionLabel: 15,
+    definitionDestination: 16,
+    definitionTitle: 17
 } as const;
 
 export class NodeDecoder {
@@ -131,6 +134,13 @@ export class NodeDecoder {
                     ...this.base(node, kind),
                     id: this.requiredString(node, stringField.footnoteID),
                     content: this.content(node)
+                };
+            case "referenceDefinition":
+                return {
+                    ...this.base(node, kind),
+                    label: this.requiredString(node, stringField.definitionLabel),
+                    destination: this.requiredString(node, stringField.definitionDestination),
+                    title: this.readString(node, stringField.definitionTitle)
                 };
             case "text":
                 return { ...this.base(node, kind), literal: this.requiredString(node, stringField.literal) };

@@ -26,6 +26,7 @@
             "DirectiveBlock",
             "DirectiveLabel",
             "FootnoteDefinition",
+            "ReferenceDefinition",
             "Text",
             "SoftBreak",
             "LineBreak",
@@ -119,7 +120,8 @@
                     "ListItem",
                     "CodeBlock",
                     "HTMLBlock",
-                    "FootnoteDefinition"
+                    "FootnoteDefinition",
+                    "ReferenceDefinition"
                 ],
                 "states": [
                     "list.flavor.bullet",

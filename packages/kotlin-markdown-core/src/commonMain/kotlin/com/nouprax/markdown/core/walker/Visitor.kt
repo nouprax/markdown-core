@@ -33,6 +33,8 @@ public interface Visitor<Result> {
 
     public fun visitFootnoteDefinition(node: FootnoteDefinition): Result
 
+    public fun visitReferenceDefinition(node: ReferenceDefinition): Result
+
     public fun visitText(node: Text): Result
 
     public fun visitSoftBreak(node: SoftBreak): Result

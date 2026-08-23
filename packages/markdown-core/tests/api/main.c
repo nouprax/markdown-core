@@ -18,17 +18,29 @@
 
 #define UTF8_REPL "\xEF\xBF\xBD"
 
-static const markdown_core_node_type node_types[] = {
-    MARKDOWN_CORE_NODE_DOCUMENT,  MARKDOWN_CORE_NODE_BLOCK_QUOTE, MARKDOWN_CORE_NODE_LIST,
-    MARKDOWN_CORE_NODE_LIST_ITEM, MARKDOWN_CORE_NODE_CODE_BLOCK,  MARKDOWN_CORE_NODE_HTML_BLOCK,
-    MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_HEADING,     MARKDOWN_CORE_NODE_THEMATIC_BREAK,
-    MARKDOWN_CORE_NODE_TEXT,      MARKDOWN_CORE_NODE_SOFT_BREAK,  MARKDOWN_CORE_NODE_LINE_BREAK,
-    MARKDOWN_CORE_NODE_CODE,      MARKDOWN_CORE_NODE_HTML,        MARKDOWN_CORE_NODE_EMPHASIS,
-    MARKDOWN_CORE_NODE_STRONG,    MARKDOWN_CORE_NODE_LINK,        MARKDOWN_CORE_NODE_IMAGE};
-static const char *const node_type_names[] = {"document",   "block_quote", "list",    "list_item",      "code_block",
-                                              "html_block", "paragraph",   "heading", "thematic_break", "text",
-                                              "soft_break", "line_break",  "code",    "html",           "emphasis",
-                                              "strong",     "link",        "image"};
+static const markdown_core_node_type node_types[] = {MARKDOWN_CORE_NODE_DOCUMENT,
+                                                     MARKDOWN_CORE_NODE_BLOCK_QUOTE,
+                                                     MARKDOWN_CORE_NODE_LIST,
+                                                     MARKDOWN_CORE_NODE_LIST_ITEM,
+                                                     MARKDOWN_CORE_NODE_CODE_BLOCK,
+                                                     MARKDOWN_CORE_NODE_HTML_BLOCK,
+                                                     MARKDOWN_CORE_NODE_PARAGRAPH,
+                                                     MARKDOWN_CORE_NODE_HEADING,
+                                                     MARKDOWN_CORE_NODE_THEMATIC_BREAK,
+                                                     MARKDOWN_CORE_NODE_TEXT,
+                                                     MARKDOWN_CORE_NODE_SOFT_BREAK,
+                                                     MARKDOWN_CORE_NODE_LINE_BREAK,
+                                                     MARKDOWN_CORE_NODE_CODE,
+                                                     MARKDOWN_CORE_NODE_HTML,
+                                                     MARKDOWN_CORE_NODE_EMPHASIS,
+                                                     MARKDOWN_CORE_NODE_STRONG,
+                                                     MARKDOWN_CORE_NODE_LINK,
+                                                     MARKDOWN_CORE_NODE_IMAGE,
+                                                     MARKDOWN_CORE_NODE_REFERENCE_DEFINITION};
+static const char *const node_type_names[] = {
+    "document", "block_quote",    "list", "list_item",  "code_block",          "html_block", "paragraph",
+    "heading",  "thematic_break", "text", "soft_break", "line_break",          "code",       "html",
+    "emphasis", "strong",         "link", "image",      "reference_definition"};
 static const int num_node_types = sizeof(node_types) / sizeof(*node_types);
 
 static void test_md_paragraph_text(test_batch_runner *runner, const char *markdown, const char *expected_text,
@@ -60,15 +72,22 @@ static void version(test_batch_runner *runner) {
  * `core_extensions_registration` called the `create_*` functions, and nothing
  * in the repository asserted a single one of them. */
 static void node_type_values(test_batch_runner *runner) {
-    static const markdown_core_node_type block_types[] = {
-        MARKDOWN_CORE_NODE_DOCUMENT,       MARKDOWN_CORE_NODE_BLOCK_QUOTE,
-        MARKDOWN_CORE_NODE_LIST,           MARKDOWN_CORE_NODE_LIST_ITEM,
-        MARKDOWN_CORE_NODE_CODE_BLOCK,     MARKDOWN_CORE_NODE_HTML_BLOCK,
-        MARKDOWN_CORE_NODE_PARAGRAPH,      MARKDOWN_CORE_NODE_HEADING,
-        MARKDOWN_CORE_NODE_THEMATIC_BREAK, MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION,
-        MARKDOWN_CORE_NODE_TABLE,          MARKDOWN_CORE_NODE_TABLE_ROW,
-        MARKDOWN_CORE_NODE_TABLE_CELL,     MARKDOWN_CORE_NODE_FORMULA_BLOCK,
-        MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK};
+    static const markdown_core_node_type block_types[] = {MARKDOWN_CORE_NODE_DOCUMENT,
+                                                          MARKDOWN_CORE_NODE_BLOCK_QUOTE,
+                                                          MARKDOWN_CORE_NODE_LIST,
+                                                          MARKDOWN_CORE_NODE_LIST_ITEM,
+                                                          MARKDOWN_CORE_NODE_CODE_BLOCK,
+                                                          MARKDOWN_CORE_NODE_HTML_BLOCK,
+                                                          MARKDOWN_CORE_NODE_PARAGRAPH,
+                                                          MARKDOWN_CORE_NODE_HEADING,
+                                                          MARKDOWN_CORE_NODE_THEMATIC_BREAK,
+                                                          MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION,
+                                                          MARKDOWN_CORE_NODE_TABLE,
+                                                          MARKDOWN_CORE_NODE_TABLE_ROW,
+                                                          MARKDOWN_CORE_NODE_TABLE_CELL,
+                                                          MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+                                                          MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
+                                                          MARKDOWN_CORE_NODE_REFERENCE_DEFINITION};
     static const markdown_core_node_type inline_types[] = {
         MARKDOWN_CORE_NODE_TEXT,          MARKDOWN_CORE_NODE_SOFT_BREAK,
         MARKDOWN_CORE_NODE_LINE_BREAK,    MARKDOWN_CORE_NODE_CODE,
@@ -677,10 +696,15 @@ void hierarchy(test_batch_runner *runner) {
     markdown_core_node_free(bquote1);
 
     unsigned int list_item_flag[] = {MARKDOWN_CORE_NODE_LIST_ITEM, 0};
-    unsigned int top_level_blocks[] = {MARKDOWN_CORE_NODE_BLOCK_QUOTE,    MARKDOWN_CORE_NODE_LIST,
-                                       MARKDOWN_CORE_NODE_CODE_BLOCK,     MARKDOWN_CORE_NODE_HTML_BLOCK,
-                                       MARKDOWN_CORE_NODE_PARAGRAPH,      MARKDOWN_CORE_NODE_HEADING,
-                                       MARKDOWN_CORE_NODE_THEMATIC_BREAK, 0};
+    unsigned int top_level_blocks[] = {MARKDOWN_CORE_NODE_BLOCK_QUOTE,
+                                       MARKDOWN_CORE_NODE_LIST,
+                                       MARKDOWN_CORE_NODE_CODE_BLOCK,
+                                       MARKDOWN_CORE_NODE_HTML_BLOCK,
+                                       MARKDOWN_CORE_NODE_PARAGRAPH,
+                                       MARKDOWN_CORE_NODE_HEADING,
+                                       MARKDOWN_CORE_NODE_THEMATIC_BREAK,
+                                       MARKDOWN_CORE_NODE_REFERENCE_DEFINITION,
+                                       0};
     unsigned int all_inlines[] = {MARKDOWN_CORE_NODE_TEXT,       MARKDOWN_CORE_NODE_SOFT_BREAK,
                                   MARKDOWN_CORE_NODE_LINE_BREAK, MARKDOWN_CORE_NODE_CODE,
                                   MARKDOWN_CORE_NODE_HTML,       MARKDOWN_CORE_NODE_EMPHASIS,
@@ -696,6 +720,8 @@ void hierarchy(test_batch_runner *runner) {
     test_content(runner, MARKDOWN_CORE_NODE_PARAGRAPH, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_HEADING, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_THEMATIC_BREAK, 0);
+    /* A link reference definition's body is a resource, not children. */
+    test_content(runner, MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, 0);
     test_content(runner, MARKDOWN_CORE_NODE_TEXT, 0);
     test_content(runner, MARKDOWN_CORE_NODE_SOFT_BREAK, 0);
     test_content(runner, MARKDOWN_CORE_NODE_LINE_BREAK, 0);
@@ -1491,13 +1517,15 @@ static void ref_source_pos(test_batch_runner *runner) {
                                    "[reference]: https://github.com (GitHub)\n";
 
     test_facade_dump(runner, markdown, 0,
-                     "Document scope=1:1..3:40 children=1\n"
-                     "└── Paragraph scope=1:1..1:28 children=3\n"
-                     "    ├── Text scope=1:1..1:10 literal=\"Let's try \" children=0\n"
-                     "    ├── Link scope=1:11..1:21 destination=\"https://github.com\" "
+                     "Document scope=1:1..3:40 children=2\n"
+                     "├── Paragraph scope=1:1..1:28 children=3\n"
+                     "│   ├── Text scope=1:1..1:10 literal=\"Let's try \" children=0\n"
+                     "│   ├── Link scope=1:11..1:21 destination=\"https://github.com\" "
                      "title=\"GitHub\" children=1\n"
-                     "    │   └── Text scope=1:12..1:20 literal=\"reference\" children=0\n"
-                     "    └── Text scope=1:22..1:28 literal=\" links.\" children=0\n",
+                     "│   │   └── Text scope=1:12..1:20 literal=\"reference\" children=0\n"
+                     "│   └── Text scope=1:22..1:28 literal=\" links.\" children=0\n"
+                     "└── ReferenceDefinition scope=3:1..3:40 label=\"reference\" "
+                     "destination=\"https://github.com\" title=\"GitHub\" children=0\n",
                      "reference link scopes are as expected");
 }
 

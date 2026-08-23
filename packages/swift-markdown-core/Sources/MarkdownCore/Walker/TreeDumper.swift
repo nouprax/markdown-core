@@ -142,6 +142,18 @@ private struct DumpVisitor: MarkupVisitor {
         )
     }
 
+    mutating func visit(_ node: ReferenceDefinition) -> DumpRecord {
+        record(
+            "ReferenceDefinition",
+            node,
+            fields: [
+                "label=\(jsonString(node.label))",
+                "destination=\(jsonString(node.destination))",
+                "title=\(optionalString(node.title))",
+            ]
+        )
+    }
+
     mutating func visit(_ node: Text) -> DumpRecord {
         record("Text", node, fields: ["literal=\(jsonString(node.literal))"])
     }

@@ -103,6 +103,7 @@ public object Walker {
             }
 
             is ThematicBreak,
+            is ReferenceDefinition,
             is CodeBlock,
             is HTMLBlock,
             is FormulaBlock,

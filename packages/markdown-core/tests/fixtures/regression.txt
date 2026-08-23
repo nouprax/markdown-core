@@ -728,7 +728,8 @@ had to be written because no existing one could tell the two rules apart.
 
 [foo]
 .
-Document scope=1:1..4:5 children=2
+Document scope=1:1..4:5 children=3
+├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title=null children=0
 ├── Paragraph scope=2:1..2:10 children=1
 │   └── Text scope=2:1..2:10 literal="\"title\" ok" children=0
 └── Paragraph scope=4:1..4:5 children=1
@@ -773,7 +774,51 @@ endings and leaving the column alone.
 bar
 .
 Document scope=1:1..2:3 children=1
-└── BlockQuote scope=1:1..2:3 children=1
+└── BlockQuote scope=1:1..2:3 children=2
+    ├── ReferenceDefinition scope=1:3..1:9 label="a" destination="/x" title=null children=0
     └── Paragraph scope=2:1..2:3 children=1
         └── Text scope=2:1..2:3 literal="bar" children=0
+````````````````````````````````
+
+Two link reference definitions in one paragraph, the second one indented. The
+indentation ahead of a definition's opening bracket belongs to the block's
+PARENT, which is where the FIRST line's indentation already went, before the
+block existed to claim it. Giving it to either definition puts a region outside
+its owner's scope — before the second one's bracket, after the first one's last
+byte — and `scripts/audit-concrete-records.mjs` says so. NOTHING ELSE DOES:
+with the rule reversed, `correctness` reads 69/69 and every ledger holds,
+because no other fixture has two definitions in one paragraph with the second
+one indented.
+
+```````````````````````````````` example
+  [a]: /1
+  [b]: /2
+.
+Document scope=1:1..2:9 children=2
+├── ReferenceDefinition scope=1:3..1:9 label="a" destination="/1" title=null children=0
+└── ReferenceDefinition scope=2:3..2:9 label="b" destination="/2" title=null children=0
+````````````````````````````````
+
+Three link reference definitions and a paragraph, all in ONE region. Regions
+are laid down left to right and merged when owner, role and cursor line up, so
+consecutive unindented definitions with prose after them are a SINGLE region
+that has to be cut into four. The cut is counted first, the array grown once
+and the surviving rows right-aligned inside the window they will occupy, so the
+forward fill can never overtake its own source; dropping the right-alignment
+SEGFAULTS on this input. No other fixture reaches the arithmetic: every other
+multi-definition case in this repository indents at least one of them, and an
+indent breaks the merge.
+
+```````````````````````````````` example
+[a]: /1
+[b]: /2
+[c]: /3
+x
+.
+Document scope=1:1..4:1 children=4
+├── ReferenceDefinition scope=1:1..1:7 label="a" destination="/1" title=null children=0
+├── ReferenceDefinition scope=2:1..2:7 label="b" destination="/2" title=null children=0
+├── ReferenceDefinition scope=3:1..3:7 label="c" destination="/3" title=null children=0
+└── Paragraph scope=4:1..4:1 children=1
+    └── Text scope=4:1..4:1 literal="x" children=0
 ````````````````````````````````

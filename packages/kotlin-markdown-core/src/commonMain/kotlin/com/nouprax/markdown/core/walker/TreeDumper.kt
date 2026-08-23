@@ -136,6 +136,18 @@ private class DumpVisitor : Visitor<DumpRecord> {
             children = node.content.size,
         )
 
+    override fun visitReferenceDefinition(node: ReferenceDefinition): DumpRecord =
+        record(
+            "ReferenceDefinition",
+            node,
+            fields =
+                listOf(
+                    "label=${jsonString(node.label)}",
+                    "destination=${jsonString(node.destination)}",
+                    "title=${optionalString(node.title)}",
+                ),
+        )
+
     override fun visitText(node: Text): DumpRecord =
         record("Text", node, fields = listOf("literal=${jsonString(node.literal)}"))
 

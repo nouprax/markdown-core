@@ -702,6 +702,19 @@ static int fb_node_payload_equal(markdown_core_node *a, markdown_core_node *b) {
     if (type == MARKDOWN_CORE_NODE_LINK || type == MARKDOWN_CORE_NODE_IMAGE) {
         return fb_chunk_equal(&a->as.link.url, &b->as.link.url) && fb_chunk_equal(&a->as.link.title, &b->as.link.title);
     }
+    /* D30's shape, one node further out: a definition whose destination or
+     * title was lost to a refused allocation is a document that LIES, and the
+     * sweep compares payloads only for the types listed here -- so a kind
+     * added without an arm is compared as `return 1` and the sweep passes on a
+     * wrong tree. */
+    if (type == MARKDOWN_CORE_NODE_REFERENCE_DEFINITION) {
+        if (!a->as.definition || !b->as.definition) {
+            return a->as.definition == b->as.definition;
+        }
+        return fb_chunk_equal(&a->as.definition->label, &b->as.definition->label) &&
+               fb_chunk_equal(&a->as.definition->url, &b->as.definition->url) &&
+               fb_chunk_equal(&a->as.definition->title, &b->as.definition->title);
+    }
     return 1;
 }
 

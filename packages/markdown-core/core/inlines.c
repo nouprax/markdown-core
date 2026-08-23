@@ -1996,7 +1996,7 @@ static void spnl(subject *subj) {
 // Return 0 if no reference found, otherwise position of subject
 // after reference is parsed.
 bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
-                                               markdown_core_map *refmap) {
+                                               markdown_core_map *refmap, markdown_core_reference_parts *parts) {
     subject subj;
 
     markdown_core_chunk lab;
@@ -2061,6 +2061,11 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
         } else {
             return 0;
         }
+    }
+    if (parts) {
+        parts->label = lab;
+        parts->url = url;
+        parts->title = title;
     }
     // insert reference into refmap
     markdown_core_reference_create(refmap, &lab, &url, &title);

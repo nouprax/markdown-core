@@ -22,6 +22,11 @@ echo "correctness-asan  : $(ctest --preset correctness-asan -j 8 2>&1 | grep -oE
 echo "correctness-ubsan : $(ctest --preset correctness-ubsan -j 8 2>&1 | grep -oE '[0-9]+% tests passed out of [0-9]+')"
 echo "conformance       : $(ctest --preset conformance -j 8 2>&1 | grep -oE '[0-9]+% tests passed out of [0-9]+')"
 echo "canonical-ast     : $(node scripts/check-canonical-ast-fixtures.mjs 2>&1 | tail -1)"
+# Both of these are section 4.8 gates and NEITHER was in this script until Step
+# 9b.1, which is how a script that claims to run every gate came to run two
+# fewer than the acceptance checklist names.
+echo "ast-projections   : $(node scripts/audit-ast-projections.mjs 2>&1 | tail -1)"
+echo "source-lists      : $(node scripts/audit-source-lists.mjs 2>&1 | tail -1)"
 echo "public-surface    : $(bash scripts/audit-public-surface.sh 2>&1 | tail -1)"
 echo "special-chars     : $(node scripts/audit-extension-special-chars.mjs 2>&1 | head -1)"
 echo "attach-order      : $(node scripts/audit-extension-attach-order.mjs 2>&1 | tail -1)"

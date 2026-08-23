@@ -8,6 +8,7 @@ import type { Directive } from "./model/directive.js";
 import type { Document } from "./model/document.js";
 import type { Emphasis } from "./model/emphasis.js";
 import type { FootnoteDefinition, FootnoteReference } from "./model/footnote.js";
+import type { ReferenceDefinition } from "./model/reference-definition.js";
 import type { FormulaBlock } from "./model/formula-block.js";
 import type { Formula } from "./model/formula.js";
 import type { Heading } from "./model/heading.js";
@@ -107,6 +108,12 @@ const dumpVisitor: Visitor<DumpRecord> = {
     visitDirectiveLabel: (node: DirectiveLabel) => record("DirectiveLabel", node, [], node.content.length),
     visitFootnoteDefinition: (node: FootnoteDefinition) =>
         record("FootnoteDefinition", node, [`id=${jsonString(node.id)}`], node.content.length),
+    visitReferenceDefinition: (node: ReferenceDefinition) =>
+        record("ReferenceDefinition", node, [
+            `label=${jsonString(node.label)}`,
+            `destination=${jsonString(node.destination)}`,
+            `title=${optionalString(node.title)}`
+        ]),
     visitText: (node: Text) => record("Text", node, [`literal=${jsonString(node.literal)}`]),
     visitSoftBreak: (node: SoftBreak) => record("SoftBreak", node),
     visitLineBreak: (node: LineBreak) => record("LineBreak", node),

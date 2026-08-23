@@ -49,8 +49,8 @@ through `cells` and `content` respectively.
 
 The dump deliberately carries no property or array-index edge labels. Parent
 kind, sibling order, `children`, and behavior-bearing fields such as
-`isHeader` and directive `label` preserve the complete public tree semantics
-without coupling the generic tree formatter to schema-specific edge names.
+`isHeader` preserve the complete public tree semantics without coupling the
+generic tree formatter to schema-specific edge names.
 
 ## Scalar encoding
 
@@ -70,34 +70,44 @@ without coupling the generic tree formatter to schema-specific edge names.
 The dump prints the native C parser's public scope coordinates exactly, without
 normalizing or interpreting particular line/column combinations.
 
-Directive `label` is a scalar presence field in the dump: `label=null` for no
-label, otherwise `label=<count>`, including `label=0` for explicit `[]`.
+A directive's label is a CHILD NODE, not a field: an absent label is a
+directive with no `DirectiveLabel` child, an empty one is a `DirectiveLabel`
+with `children=0`, and a populated one is a `DirectiveLabel` with children. It
+was a scalar presence field until Step 7 made it a node.
 
 ## Field order by record kind
 
 Fields appear after `scope` and before `children` in exactly this order:
 
+This table is CHECKED against `canonical-ast.json` by
+`scripts/audit-ast-projections.mjs`: every kind appears exactly once and its
+fields are the contract's, in the contract's order, minus the fields that are
+the child structure itself. Until Step 9b nothing read it, and it had drifted
+in three ways at once -- a `mode` on four kinds that Q29 deleted at 15A.4, a
+`label` on the two directive kinds that stopped being a scalar when Step 7 made
+it a node, and no row for `DirectiveLabel` at all.
+
 | Kind | Ordered fields between `scope` and `children` |
 | --- | --- |
-| `Document`, `BlockQuote`, `Paragraph`, `ThematicBreak`, `TableCell`, `SoftBreak`, `LineBreak` | none |
+| `Document`, `BlockQuote`, `Paragraph`, `ThematicBreak`, `TableCell`, `DirectiveLabel`, `SoftBreak`, `LineBreak`, `Emphasis`, `Strong`, `Strikethrough` | none |
 | `Heading` | `level` |
 | `List` | `flavor`, `start`, `tight` |
 | `ListItem` | `checked` |
-| `CodeBlock` | `mode`, `info`, `language`, `literal`, `fenced`, `closed` |
+| `CodeBlock` | `info`, `language`, `literal`, `fenced`, `closed` |
 | `HTMLBlock` | `literal` |
-| `FormulaBlock` | `mode`, `literal` |
+| `FormulaBlock` | `literal` |
 | `Table` | `alignments` |
 | `TableRow` | `isHeader` |
-| `DirectiveBlock` | `mode`, `name`, `attributes`, `label` |
+| `DirectiveBlock` | `name`, `attributes` |
 | `FootnoteDefinition` | `id` |
+| `ReferenceDefinition` | `label`, `destination`, `title` |
 | `Text` | `literal` |
-| `Code` | `mode`, `literal` |
+| `Code` | `literal` |
 | `HTML` | `literal` |
 | `Formula` | `mode`, `literal` |
-| `Emphasis`, `Strong`, `Strikethrough` | none |
 | `Link` | `destination`, `title` |
 | `Image` | `source`, `title` |
-| `Directive` | `mode`, `name`, `attributes`, `label` |
+| `Directive` | `name`, `attributes` |
 | `FootnoteReference` | `id` |
 
 Example:
@@ -105,8 +115,9 @@ Example:
 ```text
 Document scope=1:1..1:10 children=1
 └── Paragraph scope=1:1..1:10 children=1
-    └── Directive scope=1:1..1:10 mode=embedded name="badge" attributes=null label=1 children=1
-        └── Text scope=1:8..1:9 literal="ok" children=0
+    └── Directive scope=1:1..1:10 name="badge" attributes=null children=1
+        └── DirectiveLabel scope=1:7..1:10 children=1
+            └── Text scope=1:8..1:9 literal="ok" children=0
 ```
 
 Any public behavior-bearing field added later must be added to this table, the

@@ -28,6 +28,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_link_properties;
     markdown_core_node_image_properties;
     markdown_core_node_footnote_id;
+    markdown_core_node_definition_properties;
     markdown_core_document_dump;
     markdown_core_dump_free;
   local:

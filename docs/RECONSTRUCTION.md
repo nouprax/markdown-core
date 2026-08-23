@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b.1** (§4.14.9b1) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 9b.1** — `ReferenceDefinition` as a node; then 9b.2's `LinkReference`/`ImageReference` and D9. **§4.14.9b0 scopes both before either starts**: a node kind is forty-five files, the upstream gate is already written for the post-9b world, and there is no free core block type value below the extension range. **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d). Remaining: `9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 9b.2** — `LinkReference`/`ImageReference` as nodes, the association (`label` + `identifier`) on all five reference kinds, Q5's footnote `id=` → `label=`, and **D9**: with no destination on a reference the map holds no resource, so the expansion budget has nothing to charge and is deleted. **9b.1 has landed** (§4.14.9b1) — the definition is a node, `specs/concrete/records.json` is 45 rows → 28 with both definition families closed, and the `reference-definition-node` projection is ACTIVE. The mdast backlog is still 5/5 and all five are 9b.2's. **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), Step 9b.1 (§4.14.9b1). Remaining: `9b.2 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -55,7 +55,9 @@ cmake --preset ubsan   && cmake --build --preset ubsan   --parallel
 ctest --preset correctness -j 8            # 69/69
 ctest --preset correctness-asan -j 8       # 60/60 — SEE THE WARNING BELOW
 ctest --preset correctness-ubsan -j 8      # 60/60 — SEE THE WARNING BELOW
-node scripts/check-canonical-ast-fixtures.mjs   # 29 kinds, 48 fields, 6 cases
+node scripts/check-canonical-ast-fixtures.mjs   # 30 kinds, 51 fields, 6 cases
+node scripts/audit-ast-projections.mjs           # 30 kinds over 12 surfaces
+node scripts/audit-source-lists.mjs              # 22 sources, 4 of 5 lists, 1 registered absent
 bash scripts/audit-public-surface.sh
 node scripts/audit-extension-special-chars.mjs   # 6 descriptors read, every byte dispatched
 node scripts/audit-extension-attach-order.mjs    # one attach site, table last (D15, added 0a.11)
@@ -63,10 +65,10 @@ node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/audit-source-lists.mjs              # 22 sources, 4 of 5 lists, 1 registered absent
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
-node scripts/check-upstream-parity.mjs     # 885/885 vs cmark-gfm 0.29.0.gfm.13, 10/10
-                                          # divergences, 3/3 projections acted, 1 pending
-node scripts/check-mdast-parity.mjs        # 110/110, backlog 7/7 still diverging
-node scripts/audit-scope-sanity.mjs        # 4 unresolved rows, 5301 scanned, only-shrink holds
+node scripts/check-upstream-parity.mjs     # 887/887 vs cmark-gfm 0.29.0.gfm.13, 10/10
+                                          # divergences, 4/4 projections acted
+node scripts/check-mdast-parity.mjs        # 110/110, backlog 5/5 still diverging
+node scripts/audit-scope-sanity.mjs        # 1 unresolved row, 5441 scanned, only-shrink holds
 
 # The three position oracles, landed at 0a.1 (§4.2.7). Each fails on a row
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
@@ -74,13 +76,13 @@ node scripts/audit-scope-sanity.mjs        # 4 unresolved rows, 5301 scanned, on
 node scripts/audit-inline-sourcepos.mjs    # 40 rows registered, 68 scanned — and
                                           # for the first time they are rows where THIS
                                           # side is right and upstream is not (§4.14.8a)
-node scripts/audit-scope-containment.mjs   # 9 rows registered, 4217 scanned
-node scripts/audit-position-places.mjs     # 57 rows registered, 4351 scanned
+node scripts/audit-scope-containment.mjs   # 9 rows registered, 4223 scanned
+node scripts/audit-position-places.mjs     # 57 rows registered, 4446 scanned
 
 # Requirement 11a's four laws over the concrete record set, landed at 11a
 # (§4.14.11a). L1 and L3 have no rows and hold by construction; L4 is checked
 # by re-parsing every line-boundary prefix.
-node scripts/audit-concrete-records.mjs   # 45 rows registered, 2746 regions
+node scripts/audit-concrete-records.mjs   # 28 rows registered, 2782 regions
 
 # D9's pin. REGISTERED RED and it fails if a row STOPS reproducing, because
 # deleting the budget clears both rows and costs 204.678x output growth.
@@ -209,7 +211,11 @@ through the binary before trusting a green suite.
    divergence. Zero close in Stage 0a, by design — the backlog measures distance
    to mdast's *model*, while the defects measure wrongness against the engine's
    own intent. **24 at the baseline, 22 after Step 6, 20 after 7.1, 7 after 7.2, 6 after
-   Step 10, 5 after 9a.2** — and the five are all Step 9b's. Step 6's two closed by *leaving the corpus*, not
+   Step 10, 5 after 9a.2** — and the five are all Step 9b's. **9b.1 closes none of
+   them, deliberately**: every one of the five is a `Link`-versus-`LinkReference`
+   disagreement rather than a definition one, and 9b.2 deletes all five. A
+   SUB-step that closes none of its parent step's entries is not a violation;
+   landing 9b with them still listed would be. Step 6's two closed by *leaving the corpus*, not
    by agreeing, so the gate now distinguishes a settled entry from an unreachable
    one and the two are recorded in `retiredBacklog` with the reason (§4.14.6).
    **An entry that stops being exercised is not an entry that closed.**
@@ -351,10 +357,16 @@ it, and the gate requires each to *still* diverge — so a step that lands witho
 deleting its own entries fails as loudly as a new divergence.
 
 ```
-     5  Step 9b  — the reference node model
+     5  Step 9b.2 — the reference node model
     --
      5  remaining
 ```
+
+**9b.1 landed and moved this number not at all**, which is the right answer and
+not a stall: the definition half now agrees with mdast exactly — a `definition`
+node with `label`, `url` and `title`, where it was written — and all five
+entries are the OTHER half, a `Link` carrying a copied destination where remark
+has a `linkReference` carrying a label and a form. 9b.2 closes all five.
 
 **It was 24 at the baseline and the whole of the difference is recorded.** Step
 6 retired two by leaving the corpus, 7.1 closed two, 7.2 closed thirteen, Step
@@ -475,7 +487,7 @@ ones whose witness is stated in this section rather than in the row.
 | D27 | `parser->linebuf.oom` written at six sites and read at none | silent truncation (allocation failure only) | **fixed at 3a.3**, with A1 | §4.13.11, measured: 244 input bytes become 102 with `parser->oom == 0`; re-measured at 3a.3 on a 279-byte document in 32-byte chunks — refusing allocation 6 of 25 leaves 55 of 275 text bytes |
 | D28 | `extensions/formula.c` ignores `markdown_core_chunk_to_cstr`'s failure and keeps a **borrowed** pointer | **use-after-free** | **fixed at 0a.15** | §4.13.11, ASan: `heap-use-after-free`, READ of size 5 in `markdown_core_extensions_get_formula_literal` |
 | D29 | `extensions/table.c:297` does not check `markdown_core_node_new_with_mem`, and `:305` dereferences NULL | **crash** | **fixed at 0a.15** | §4.13.11, SIGSEGV on `lead text⏎x | y` / `--|--` |
-| D30 | `markdown_core_reference_create` commits an entry whose url or title was lost | wrong-document (allocation failure only) | 9a/11c delete it; §4.13.9 pins it | §4.13.11, measured on four refused allocations |
+| D30 | `markdown_core_reference_create` commits an entry whose url or title was lost | wrong-document (allocation failure only) | **HALF CLOSED at 9b.1** — the NODE refuses to commit a lost destination or title and the byte-drop is gone (§4.14.9b1); the MAP entry is 9b.2's, which deletes the resource | §4.13.11, measured on four refused allocations; the node half is mutant M19 |
 | D31 | a raw HTML tag that crosses a line ending ends **one column short of its own literal** | wrong-position | 8 | found at 0a.6 and pinned as a golden row: `a <b`⏎`c> d` gives `HTML scope=1:3..2:1` for a literal whose last byte is at `2:2`, while `a <b c> d` gives `1:3..1:7`, which covers it. cmark-gfm is wrong the same way |
 | D35 | `finalize` ends a block at `parser->line_number - 1`, which assumes a **later** line closed it — false for an HTML block of type 2 to 5, whose terminator can be on its own first line | wrong-position (reversed range) | **fixed at D35, after Step 5** | found by reading `specs/scope-sanity/ledger.json`'s eleven negative rows for an owner: TEN of them were this. `printf 'para\n\n<!-- c -->\n'` gives `HTMLBlock scope=3:1..2:0` for a literal whose last byte is at `3:10`, and `last_line_length` there is the length of the BLANK line before it |
 | D34 | `markdown_core_node_insert_before` / `_insert_after` accept `sibling == node` — `S_can_contain(node->parent, sibling)` starts its ancestor walk at the PARENT and never meets the child, so it answers yes | **unbounded sibling list** | **fixed at 3b** | found at 3b while writing its gate: `insert_before(b, b)` returns 1 and leaves `b->next == b` and `b->prev == b`, with `a->first_child` and `a->last_child` disagreeing; walking `a`'s children never terminates. Reachable with `markdown_core_enable_safety_checks` in EITHER position, so the flag never covered it |
@@ -5764,6 +5776,222 @@ row's `closedBy` says which side is right.
 only for a node that IS one, and no code span sits on one any more.
 
 
+#### 4.14.9b1 Step 9b.1: the definition is a node, and the role its bytes carry is forced by L4
+
+**A link reference definition is a block node at the byte where its `[` was
+written, in the container it was written in, and it owns every byte it read.**
+One new kind, `ReferenceDefinition`, carrying `label`, `destination` and
+`title`. References still resolve to `Link`/`Image` with the destination copied
+in, so nothing else moves — 9b.2 is what makes the reference a node and takes
+D9's budget with it.
+
+```
+before   Document scope=1:1..3:5 children=1
+         └── Paragraph scope=3:1..3:5 …
+after    Document scope=1:1..3:5 children=2
+         ├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title=null children=0
+         └── Paragraph scope=3:1..3:5 …
+```
+
+**Eighty-one golden examples moved and the claim is mechanised.** 78 in
+`spec.txt` (85 new rows), 2 in `regression.txt`, 1 in `extensions.txt`. The
+mechanical statement is that **every one of them differs from its old text by
+added `ReferenceDefinition` rows and by nothing else**: strip the
+`ReferenceDefinition` lines from the new dump, normalise the tree-drawing
+prefixes and the `children=` counts, and the result is byte-identical to the old
+dump for **81 of 81**. One canonical `.ast` row moved with them
+(`specs/canonical-ast/blocks.ast`), which is what `conformance` is for, and its
+`.md` gained the definition **ahead of** the footnote definition so the
+footnote's own scope did not move with it.
+
+##### THE ROLE A DEFINITION'S BYTES CARRY IS FORCED BY L4, and this is the finding
+
+The harvested bytes keep the role they already had — `CONTENT` for the line's
+text, `DISCARDED` for a continuation line's stripped indent. Only the OWNER
+changes. That reads like a stylistic choice and it is not one:
+
+> A prefix of the document that stops before the destination reads `[foo]:` as
+> ordinary paragraph CONTENT. The whole document reads the same bytes as a
+> definition. If becoming a definition changed the role, every such prefix
+> would attribute those bytes differently from the whole — which is exactly
+> what L4 forbids.
+
+Measured. **Mutant M16** makes a definition's own bytes `MARKER`, which is the
+reading §4.14.11a's role vocabulary invites (*"the bytes that made the owner
+what it is"*). `correctness` 69/69, `conformance` 2/2, upstream 887/887 — and
+**six L4 rows appear**, every one of them an input whose first line is not yet a
+definition (`[foo]:` with the destination on the next line, `[Foo bar]:` with an
+angle-bracket URL below, a title that opens on one line and closes on another).
+
+##### `specs/concrete/records.json`: 45 rows to 28, and NOTHING appeared
+
+Both definition families closed, and the second one was 11c's:
+
+| class | law | rows | was owned by |
+|---|---|---|---|
+| `definition-paragraph-destroyed` | L4 | **11 → 0** | 11c |
+| `consumed-definition-line` | L2 | **6 → 0** | 11c |
+
+Seventeen findings cleared over eleven inputs, none appeared. **A definition
+that owns its own bytes is never destroyed**, so nothing hands a paragraph's
+regions to its parent as `DISCARDED` any more, and the paragraph that survives
+a harvest no longer has a region starting twelve bytes before its own scope.
+§4.14.9b0 predicted the L4 half; the L2 half came free with it because both were
+one fact.
+
+**What did NOT close, and it is not this step's.** A paragraph whose first
+SURVIVING line is indented still owns that line's indent, and its scope now
+begins after it — one `region-before-owner` of the pre-existing
+`indent-after-container-closed` family, which is unowned and 8 rows. Before this
+step the same input had FOUR such regions rather than one, so 9b.1 shrinks the
+class without closing it. No corpus input reaches it.
+
+##### The region surgery: one pass, one move, and a segfault a corpus gap hid
+
+A run of unindented definitions is a **single region** — `S_claim_region`
+extends rather than appends when owner, role and cursor line up — so the run has
+to be cut into as many pieces as there are definitions. Cutting once per
+definition would move the tail of the region array once per definition, which is
+quadratic in a paragraph with many definitions and many regions after them, and
+that is off-model (§3). So the pieces are counted, the array is grown once, the
+surviving rows are **right-aligned inside the window they will occupy**, and the
+pieces are written forward over them; the write pointer can never overtake the
+read pointer because every source row produces at least one piece.
+
+`lo` is found by bisection rather than by scanning from row zero, for the same
+reason: a paragraph that opens with a definition would otherwise cost the whole
+document.
+
+**The boundary rule.** A definition takes the bytes from its own opening bracket
+to the end of the last line it read. The indentation between one definition's
+last line ending and the next one's bracket goes to the block's **PARENT** —
+which is where the FIRST line's indentation already went, before the block
+existed to claim it. Giving it to either definition puts a region outside its
+owner's scope.
+
+##### Two corpus gaps, both found by mutant and both closed with a fixture row
+
+| mutant | what it does | before the new rows | after |
+|---|---|---|---|
+| **M17** the indent before a definition goes to that definition | region starts 2 bytes before its owner | **NOTHING** — 69/69, every ledger holds | `audit-concrete-records.mjs` reports one `region-before-owner`; `correctness` still 69/69 |
+| **M18** drop the right-alignment memmove | the forward fill reads rows it has overwritten | **NOTHING** — 69/69, 0 rows appear, and `--concrete` **SEGFAULTS** on an input no fixture had | `audit-concrete-records.mjs` exits 1 |
+
+Both gaps are the same shape: *no fixture had two link reference definitions in
+one paragraph.* Every multi-definition case in this repository indents at least
+one of them, and an indent breaks the merge, so the arithmetic that cuts a
+merged region had no witness at all. Two examples in `regression.txt` close
+them, and both add **zero** ledger rows.
+
+**M18 is killed by `audit-concrete-records.mjs` and by nothing else, for a
+structural reason**: the region set has exactly ONE reader today — the CLI's
+`--concrete`. A corrupted region array is invisible to the facade, to both
+parity oracles and to every golden, because nothing else ever dereferences a
+region's owner. That is requirement 12's job and it is worth writing down now.
+
+##### D30's node half is closed, and the sweep could not see it until it was told
+
+**Q7 and Q26: the destination is REQUIRED.** An allocation that loses the
+destination or the title now fails the parse instead of producing a definition
+that lies about where it points, and the two paths that cannot place a
+definition set the failure bit rather than dropping the node while the reference
+map still resolves the label.
+
+**`fb_node_payload_equal` compares payloads only for the types it lists, and
+returns 1 for everything else.** A new kind added without an arm is therefore
+compared as *equal*, and the allocation-failure sweep — the gate §4.13.9 exists
+for — passes on a wrong tree. Measured, and this is not a hypothetical:
+
+| mutant | result |
+|---|---|
+| **M19** a definition commits a destination or title that was lost | `regression_fallback_oom_sweep` and `..._chunked` RED |
+| **M19 + the comparator arm disabled** | **69/69.** Every suite green on a document with an empty destination and `parser->oom` clear |
+
+The arm is thirteen lines and it is the only thing in the repository that sees
+it.
+
+##### The dump grammar had drifted three ways, and nothing read it
+
+`docs/specs/canonical-ast-dump.md`'s field-order table is a **third copy of the
+contract** — after `canonical-ast.json` and the prose table in
+`canonical-ast.md` — and `audit-ast-projections.mjs` read the other two and not
+this one. Measured against the engine:
+
+- a `mode` on `CodeBlock`, `Code`, `DirectiveBlock` and `Directive`, which
+  **Q29 deleted at 15A.4**;
+- a `label` on the two directive kinds, plus a paragraph calling it *"a scalar
+  presence field"*, which stopped being true when **Step 7** made the label a
+  node — and the doc's own worked example printed `mode=embedded … label=1`,
+  which this engine has not emitted since;
+- **no row for `DirectiveLabel` at all.**
+
+All three fixed, and the table is now checked kind for kind and field for field
+against the contract, in order. Proved by mutant twice: taking `mode` off
+`Formula` and taking `DirectiveLabel` out of the no-fields row each make the
+audit exit 1. This is the same hole 15A.3 closed for the kind surfaces, one
+document further out.
+
+##### Two gates §4.8 names were not in `scripts/dev/gates.sh`
+
+`audit-ast-projections.mjs` and `audit-source-lists.mjs` are both on §4.8's
+checklist and neither was in the script that claims to run every gate. Both
+added; the header still says the binding suites are not there.
+
+##### The numbering gap, and the boxing, both measured
+
+Core block types run to `0x000a` and `table`/`formula`/`directive` occupy
+`0x000b`–`0x000f`, so `MARKDOWN_CORE_NODE_REFERENCE_DEFINITION` is `0x0010`.
+`tests/api/main.c`'s `node_type_values` already asserts that the *n*-th block
+type has value *n*, so the gap is gated by a test that existed before it.
+
+**The payload is boxed, and §5.8's cost argument is now a measurement on this
+tree**: `chunk` 16, `link` 32, `code` 40 — the widest arm `node.as` has — and
+three chunks are 48. Compiled both ways: the node is **168 bytes boxed and 176
+inline**, so storing it inline would cost **8 bytes on every node in the
+document** to carry a payload that appears once per definition.
+
+##### The upstream projection was already written, and activating it is the whole edit
+
+`applyUpstreamReferenceModel` has been in `scripts/lib/upstream-cmark.mjs` since
+Step 0's `scripts/` restore, and 9a.2 moved its delta into `pendingDeltas`
+because it acted on **0 of 885** corpus examples. It now acts on 78 of them, and
+the gate 9a.2 added said so before anything else did:
+
+```
+upstream parity FAILED: PENDING projection `reference-definition-node` has started acting,
+so the step that creates it has landed: Step 9b - one reference model, the node model.
+```
+
+The entry is back in `deltas`, its `landed` note records that only the
+definition half has landed, and the run prints `registered projections: 4/4
+acted`. **No second entry was written**, which is the mistake §4.14.9a2 was
+about.
+
+##### Standing rule 2: the backlog does not move, and that is on purpose
+
+**5/5 still diverging, all five Step 9b's.** Every one of the five is a
+`Link`/`LinkReference` disagreement, not a definition one — verified by reading
+the tree for each: `[ref]: /r "T"` now produces exactly mdast's `definition`
+node, and what remains is `Link destination="/r"` where remark has
+`linkReference label="ref" form="full"`. 9b.2 deletes all five. A sub-step that
+closes none of its parent step's entries is not a violation of the rule; landing
+9b with them still listed would be.
+
+##### Gates
+
+`correctness` 69/69, `correctness-asan` 60/60, `correctness-ubsan` 60/60 (both
+sanitizer trees deleted and reconfigured first), `conformance` 2/2,
+`canonical-ast` **30 kinds, 51 fields, 6 cases**, `ast-projections` 30 kinds over
+12 surfaces, `source-lists` 22 sources, `public-surface`, `special-chars`,
+`attach-order`, `plan-graph` 22/45, fuzz 300/300, upstream **887/887** with
+10/10 divergences and **4/4** projections, mdast 110/110 with a 5/5 backlog,
+scope-sanity 1, inline-sourcepos 40, containment 9, places 57, **concrete
+records 28**, reference-order 2 (still red, still 9b.2's), `test-topology`,
+`format-c`, `format-cmake`, `lint-c`, `pnpm -w run lint`, `leaks --atExit` 0 over
+`regression.txt` + `spec.txt`, and the Swift, Kotlin and ES suites green.
+`scripts/format-swift.sh --check` is **164 findings, unchanged** — the new Swift
+type documents every public declaration it adds.
+
+
 #### 4.14.11a2 Q44 answered: an autocompleted table cell sits where it was completed
 
 **Owner ruling, 2026-08-23, and it supplied the criterion the question was
@@ -6438,7 +6666,7 @@ with the ruling it needed (Q40).
 
 **Thirty-three are closed and three are carried.** D9 (**Step 9b**, two gates
 registered at 0a.8, one known-red; the owner was 9a until 9a.2 measured that
-there is no 9a-shaped fix — §4.14.9a2), D30 (9b/11c delete it; pinned by the
+there is no 9a-shaped fix — §4.14.9a2), D30 (**half closed at 9b.1**, §4.14.9b1; the map entry is 9b.2's; pinned by the
 allocation-failure sweep, which is what caught 9a.2's own new defect) and D31 (Step 8; pinned as a golden row in
 `regression.txt`). **D36** was the fourth for three commits: found at 7c by
 sweeping the grammar against micromark's own source, and **closed at 7e** once

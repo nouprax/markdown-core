@@ -15,6 +15,7 @@ export const kindVisitor = {
     visitDirectiveBlock: (node) => node.kind,
     visitDirectiveLabel: (node) => node.kind,
     visitFootnoteDefinition: (node) => node.kind,
+    visitReferenceDefinition: (node) => node.kind,
     visitText: (node) => node.kind,
     visitSoftBreak: (node) => node.kind,
     visitLineBreak: (node) => node.kind,

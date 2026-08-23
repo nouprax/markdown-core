@@ -41,6 +41,7 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 
 const CONTRACT_PATH = "docs/specs/canonical-ast.json";
 const PROSE_PATH = "docs/specs/canonical-ast.md";
+const DUMP_PATH = "docs/specs/canonical-ast-dump.md";
 
 /** The contract: an ordered kind -> field-name list. */
 function definition() {
@@ -75,6 +76,43 @@ function proseDefinition() {
     }
     if (kinds.size === 0) {
         throw new Error(`${PROSE_PATH}: the kind/fields table read as empty`);
+    }
+    return kinds;
+}
+
+/**
+ * The dump grammar's field-order table: kind -> the fields the dump prints
+ * between `scope` and `children`, in order.
+ *
+ * A THIRD copy of the contract, and until Step 9b nothing read it. It had
+ * drifted three ways at once -- a `mode` on four kinds Q29 deleted at 15A.4, a
+ * `label` on the two directive kinds that stopped being a scalar when Step 7
+ * made it a node, and no row for `DirectiveLabel`. A normative table nobody
+ * reads is prose, and this file already exists to say so.
+ */
+function dumpGrammarDefinition() {
+    const lines = fs.readFileSync(path.join(root, DUMP_PATH), "utf8").split("\n");
+    const header = lines.findIndex((line) => line.startsWith("| Kind | Ordered fields between"));
+    if (header < 0) {
+        throw new Error(`${DUMP_PATH}: the field-order table is gone or renamed`);
+    }
+    const kinds = new Map();
+    for (const line of lines.slice(header + 2)) {
+        if (!line.startsWith("|")) break;
+        const cells = line
+            .trim()
+            .replace(/^\||\|$/g, "")
+            .split("|")
+            .map((cell) => cell.trim());
+        if (cells.length < 2) break;
+        const fields = cells[1] === "none" ? [] : [...cells[1].matchAll(/`([A-Za-z]+)`/g)].map((m) => m[1]);
+        for (const kind of cells[0].matchAll(/`([A-Za-z]+)`/g)) {
+            if (kinds.has(kind[1])) throw new Error(`${DUMP_PATH}: ${kind[1]} is named twice`);
+            kinds.set(kind[1], fields);
+        }
+    }
+    if (kinds.size === 0) {
+        throw new Error(`${DUMP_PATH}: the field-order table read as empty`);
     }
     return kinds;
 }
@@ -356,6 +394,36 @@ for (const { label, expect, actual } of kindSurfaces) {
     }
 }
 
+// The dump grammar's field-order table is the contract's non-structural fields,
+// kind for kind and in order.
+{
+    const grammar = dumpGrammarDefinition();
+    for (const [kind] of kinds) {
+        const expected = contract.kinds
+            .find((entry) => entry.name === kind)
+            .fields.filter((field) => !structural(field))
+            .map((field) => field.name);
+        const declared = grammar.get(kind);
+        if (declared === undefined) {
+            console.error(`${DUMP_PATH}: no field-order row for ${kind}`);
+            failed = true;
+            continue;
+        }
+        if (declared.join(",") !== expected.join(",")) {
+            console.error(
+                `${DUMP_PATH}: ${kind} reads [${declared.join(", ")}] and the contract says [${expected.join(", ")}]`
+            );
+            failed = true;
+        }
+    }
+    for (const kind of grammar.keys()) {
+        if (!kinds.has(kind)) {
+            console.error(`${DUMP_PATH}: names ${kind}, which the contract does not`);
+            failed = true;
+        }
+    }
+}
+
 for (const { label, fieldsOf } of modelProjections) {
     for (const [kind, expected] of kinds) {
         const declared = fieldsOf(kind);
@@ -378,6 +446,6 @@ if (failed) {
 }
 console.log(
     `AST-projection audit passed: ${String(kinds.size)} kinds over ` +
-        `${String(kindSurfaces.length)} surfaces, the C dump's fields, the prose table, and ` +
+        `${String(kindSurfaces.length)} surfaces, the C dump's fields, the prose table, the dump grammar, and ` +
         `${String(modelProjections.length)} models.`
 );

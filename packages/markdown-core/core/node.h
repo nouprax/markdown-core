@@ -44,6 +44,32 @@ typedef struct {
     markdown_core_chunk title;
 } markdown_core_link;
 
+/* A link reference definition is a block node at the byte where its opening
+ * bracket was written, in the container it was written in, and it stays there.
+ * There are two kinds of reference definition and they differ in exactly one
+ * thing: what the definition's body is. A link reference definition's body is a
+ * resource -- a destination and an optional title -- so it is a leaf. A
+ * footnote definition's body is flow content, so it is a container with block
+ * children. Everything else is one rule for both: each carries the label
+ * exactly as the source spells it, delimiters excluded, character escapes and
+ * character references unresolved, whitespace uncollapsed, case unfolded; each
+ * exists whether or not anything refers to it; each keeps the outcome of
+ * matching off the node, in the reference map; and neither is ever moved,
+ * reordered, renumbered, dropped, or given a back-reference by anything that
+ * runs after the parse. This is mdast's model, adopted deliberately in
+ * preference to cmark-gfm's, which erases a link reference definition into a
+ * parser-private map and leaves no node behind.
+ *
+ * BOXED, and the reason is measured rather than stylistic: `markdown_core_link`
+ * is 32 bytes and `markdown_core_code` is 40, which is the widest arm `node.as`
+ * has. Three chunks are 48, so storing this inline would grow EVERY node in the
+ * document by 8 bytes to carry a payload that appears once per definition. */
+typedef struct {
+    markdown_core_chunk label;
+    markdown_core_chunk url;
+    markdown_core_chunk title;
+} markdown_core_definition;
+
 enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__OPEN = (1 << 0),
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
@@ -90,6 +116,7 @@ struct markdown_core_node {
         markdown_core_code code;
         markdown_core_heading heading;
         markdown_core_link link;
+        markdown_core_definition *definition;
         int html_block_type;
         int cell_index; // For keeping track of TABLE_CELL table alignments
         void *opaque;

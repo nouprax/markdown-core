@@ -125,7 +125,11 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE,
     MARKDOWN_CORE_KIND_TABLE_ROW,
     MARKDOWN_CORE_KIND_TABLE_CELL,
-    MARKDOWN_CORE_KIND_DIRECTIVE_LABEL
+    MARKDOWN_CORE_KIND_DIRECTIVE_LABEL,
+    /* Appended, not inserted beside the other block kinds: this enum's ordinal
+     * IS the wire kind every binding decodes, so a kind added in the middle
+     * renumbers every kind after it. */
+    MARKDOWN_CORE_KIND_REFERENCE_DEFINITION
 } markdown_core_node_kind;
 
 typedef enum markdown_core_list_flavor {
@@ -218,6 +222,18 @@ MARKDOWN_CORE_API bool markdown_core_node_image_properties(const markdown_core_n
                                                            markdown_core_string_view *source,
                                                            markdown_core_string_view *title);
 MARKDOWN_CORE_API bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string_view *id);
+/** A link reference definition's association and resource.
+ *
+ * `label` is the bytes between the brackets exactly as the source spells them:
+ * character escapes and character references unresolved, whitespace
+ * uncollapsed, case unfolded. `destination` is REQUIRED and is never absent --
+ * a definition whose destination could not be built is not emitted at all
+ * (Q7, Q26) -- while `title` is absent when the source wrote none, and empty
+ * when the source wrote an empty one. */
+MARKDOWN_CORE_API bool markdown_core_node_definition_properties(const markdown_core_node *node,
+                                                                markdown_core_string_view *label,
+                                                                markdown_core_string_view *destination,
+                                                                markdown_core_string_view *title);
 
 /** Allocates the canonical file-tree dump. Free it with markdown_core_dump_free. */
 MARKDOWN_CORE_API bool markdown_core_document_dump(const markdown_core_document *document, uint8_t **output,

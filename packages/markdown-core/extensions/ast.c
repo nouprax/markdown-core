@@ -231,6 +231,9 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (node->type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION) {
         return MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION;
     }
+    if (node->type == MARKDOWN_CORE_NODE_REFERENCE_DEFINITION) {
+        return MARKDOWN_CORE_KIND_REFERENCE_DEFINITION;
+    }
     if (node->type == MARKDOWN_CORE_NODE_TEXT) {
         return MARKDOWN_CORE_KIND_TEXT;
     }
@@ -321,8 +324,9 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
                                         "FootnoteReference",
                                         "TableRow",
                                         "TableCell",
-                                        "DirectiveLabel"};
-    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_DIRECTIVE_LABEL) {
+                                        "DirectiveLabel",
+                                        "ReferenceDefinition"};
+    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_REFERENCE_DEFINITION) {
         return "None";
     }
     return names[kind];
@@ -570,6 +574,19 @@ bool markdown_core_node_link_properties(const markdown_core_node *node, markdown
 bool markdown_core_node_image_properties(const markdown_core_node *node, markdown_core_string_view *source,
                                          markdown_core_string_view *title) {
     return link_properties(node, MARKDOWN_CORE_NODE_IMAGE, source, title);
+}
+
+bool markdown_core_node_definition_properties(const markdown_core_node *node, markdown_core_string_view *label,
+                                              markdown_core_string_view *destination,
+                                              markdown_core_string_view *title) {
+    if (!node || node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION || !node->as.definition || !label ||
+        !destination || !title) {
+        return false;
+    }
+    view_chunk(label, &node->as.definition->label);
+    view_chunk(destination, &node->as.definition->url);
+    view_chunk(title, &node->as.definition->title);
+    return true;
 }
 
 bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string_view *id) {
@@ -848,6 +865,18 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         markdown_core_node_footnote_id(node, &a);
         buffer_cstr(buffer, " id=");
         buffer_json_string(buffer, a);
+        break;
+    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
+        markdown_core_node_definition_properties(node, &a, &b, &c);
+        buffer_cstr(buffer, " label=");
+        buffer_json_string(buffer, a);
+        /* `destination=` is printed as a string and never as `null`: a
+         * definition that could not build one is not emitted (Q7, Q26), so an
+         * empty destination here means the source wrote `<>` and meant it. */
+        buffer_cstr(buffer, " destination=");
+        buffer_json_string(buffer, b);
+        buffer_cstr(buffer, " title=");
+        buffer_optional_string(buffer, c);
         break;
     case MARKDOWN_CORE_KIND_LINK:
         markdown_core_node_link_properties(node, &a, &b);

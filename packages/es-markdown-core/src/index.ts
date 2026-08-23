@@ -20,6 +20,7 @@ export type { List, ListItem } from "./model/list.js";
 export type { MarkupBase } from "./model/base.js";
 export type { Markup } from "./model/markup.js";
 export type { Paragraph } from "./model/paragraph.js";
+export type { ReferenceDefinition } from "./model/reference-definition.js";
 export type { SoftBreak } from "./model/soft-break.js";
 export type { Strikethrough } from "./model/strikethrough.js";
 export type { Strong } from "./model/strong.js";

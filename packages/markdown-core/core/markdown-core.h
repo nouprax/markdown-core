@@ -39,6 +39,14 @@ typedef enum {
     MARKDOWN_CORE_NODE_HEADING = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0008,
     MARKDOWN_CORE_NODE_THEMATIC_BREAK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0009,
     MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000a,
+    /* 0x000b through 0x000f are taken by the extension block types in
+     * extensions/markdown-core-extensions.h, numbered when 0x000a was the last
+     * core block. A new core block therefore starts at 0x0010 rather than at
+     * the next free value. The internal type value is NOT the wire ordinal --
+     * markdown_core_node_kind numbers the facade's kinds -- so the gap costs
+     * nothing, but the natural assumption is that the next value is free and
+     * it is not. */
+    MARKDOWN_CORE_NODE_REFERENCE_DEFINITION = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0010,
 
     /* Inline */
     MARKDOWN_CORE_NODE_TEXT = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0001,

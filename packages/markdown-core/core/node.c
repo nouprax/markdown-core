@@ -147,6 +147,15 @@ static void free_node_as(markdown_core_node *node) {
         markdown_core_chunk_free(NODE_MEM(node), &node->as.link.url);
         markdown_core_chunk_free(NODE_MEM(node), &node->as.link.title);
         break;
+    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
+        if (node->as.definition) {
+            markdown_core_chunk_free(NODE_MEM(node), &node->as.definition->label);
+            markdown_core_chunk_free(NODE_MEM(node), &node->as.definition->url);
+            markdown_core_chunk_free(NODE_MEM(node), &node->as.definition->title);
+            NODE_MEM(node)->free(node->as.definition);
+            node->as.definition = NULL;
+        }
+        break;
     default:
         break;
     }
@@ -247,6 +256,13 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "heading";
     case MARKDOWN_CORE_NODE_THEMATIC_BREAK:
         return "thematic_break";
+    /* Both definition kinds read `<unknown>` here until Step 9b, which is the
+     * name the concrete record set printed for the owner of every footnote
+     * definition's marker bytes. */
+    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
+        return "footnote_definition";
+    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
+        return "reference_definition";
     case MARKDOWN_CORE_NODE_TEXT:
         return "text";
     case MARKDOWN_CORE_NODE_SOFT_BREAK:
