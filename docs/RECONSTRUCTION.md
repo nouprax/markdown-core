@@ -6135,6 +6135,58 @@ declaration they have (Q41's count shrinks; the check is still red and still
 owned).
 
 
+#### 4.14.9b3 The scoping pass on `end-at-line-ending`, and why it is not a position fix
+
+**Not a step — a measurement, taken before 11b builds on top of it.**
+`specs/positions/places.json` was down to ONE family, 57 rows, and no step owned
+it. It has an owner now: **11c**, and the reason is that the fix is not the
+one-liner it looks like.
+
+**The mechanism, stated exactly.** `finalize`'s third branch ends a block at
+`(line_number - 1, last_line_length)` — the line before the one that closed it.
+Where blank lines are TOLERATED, that line can be blank, and `last_line_length`
+is then 0:
+
+```
+- a          List      scope=1:1..2:0     the list's last byte is at 1:3
+             ListItem  scope=1:1..2:0
+             CodeBlock scope=1:5..2:0     (for `    code` + a blank line)
+```
+
+A block quote closed by the same blank line reports `1:1..1:3` and is right,
+because a blank line CLOSES it — the family is exactly the blocks that survive a
+blank line and are closed one line later.
+
+**The one-line fix works, and it is not enough.** Walking `end_line` back over
+the trailing blank run — bounded by the run and stopped at the block's own first
+line — was built and measured:
+
+| oracle | rows appearing | rows clearing |
+|---|---|---|
+| `audit-position-places.mjs` | **0** | **51 of 57** |
+| `audit-scope-containment.mjs` | 0 | 0 |
+| `audit-scope-sanity.mjs` | 0 | 0 |
+| `audit-concrete-records.mjs` | **37** | 6 |
+
+**The 37 are the finding.** Every one is `region-after-owner`, and they say the
+same thing: the block's SCOPE stopped before the blank line while its REGIONS
+did not. 12 are a `list_item` and 5 a `list` still owning the blank line as
+`DISCARDED`; 12 are an indented `code_block` still owning it as **`CONTENT`** —
+which is a second defect the wrong scope was hiding, because
+`remove_trailing_blank_lines` takes those bytes back OUT of the content buffer
+and the region set was never told.
+
+So the position and the record set are one fact and have to move together: **a
+block ends at the last byte it took, and owns no region after it.** That is a
+region-ownership rule at a block boundary, which is 11c's subject — 11c already
+owns "the block partition is total for real documents" — and it needs the
+end-of-input branch to walk back too, or a prefix ending in the blank run
+attributes those bytes differently from the whole document and L4 fails.
+
+**All 57 rows now carry that owner** instead of `unassigned`. The probe is
+reverted; nothing in this commit changes the engine.
+
+
 #### 4.14.11a2 Q44 answered: an autocompleted table cell sits where it was completed
 
 **Owner ruling, 2026-08-23, and it supplied the criterion the question was
@@ -6187,8 +6239,11 @@ fails `spec_commonmark` and `extensions_gfm`.
 
 **What this leaves.** `specs/positions/places.json` is down to **one** family:
 57 rows of `end-at-line-ending`, of which 57 are a block's end — H14's
-neighbour (§11.4) — and no step owns it. The oracle that began Stage 0a with 131
-rows in six families now has one.
+neighbour (§11.4). The oracle that began Stage 0a with 131 rows in six families
+now has one, and **that one is owned by 11c** as of the scoping pass in
+§4.14.9b3, which measured why it is a region-ownership fix and not a position
+fix: correcting the end alone clears 51 of the 57 and makes **37**
+`region-after-owner` rows appear.
 
 ---
 
