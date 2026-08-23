@@ -1695,8 +1695,15 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             }
 
             S_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
-            *container = add_child(parser, *container, MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION,
-                                   parser->first_nonspace + matched + 1);
+            /* THE ANCHOR RULE (§5.1): a definition is a block node at the byte
+             * where its OPENING BRACKET was written. It used to start at the
+             * byte after `[^label]:`, which is a column that need not exist --
+             * `[^footnote]:` alone on a line is twelve bytes and the definition
+             * began at column 13. Every other block in this engine starts at
+             * its own first byte and the marker is inside it; a footnote
+             * definition was the one that started after its own marker. */
+            *container =
+                add_child(parser, *container, MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION, parser->first_nonspace + 1);
             if (!*container) {
                 markdown_core_chunk_free(parser->mem, &c);
                 return;

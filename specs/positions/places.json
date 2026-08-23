@@ -2,7 +2,7 @@
     "schemaVersion": 1,
     "script": "scripts/audit-position-places.mjs",
     "subject": "Every dumped coordinate over every fixture example: the line must exist in the input and the column must name a byte on it. Byte columns, counted from 1, on lines split the way S_parser_feed splits them.",
-    "purpose": "Seventy-nine rows in five families, and the families are what matter - the number on its own says nothing about which of them a step is allowed to move. It was 131 before 0a.6, 122 before 0a.12, 109 before D35 and 106 before Step 10, which cleared TWENTY-SEVEN in two halves and is the largest single move this ledger has recorded. Count from the data rather than from this paragraph, always: these family counts were already wrong by three once, and re-counting is what found it.\n\n  58  end-at-line-ending              a coordinate names column 0 of a line that exists. There is no column 0; this is how \"ends at the line ending\" gets spelled when the only vocabulary is a coordinate. FIFTY-FIVE are a block's end, H14's neighbour (section 11.4). THE OTHER THREE ARE 0a.6's: un-gating adjust_subj_node_newlines made a code span that opens with a line ending report `1:3..3:0`, whose start is one past the end of a two-byte line and whose end is column zero - and both halves are exactly what cmark-gfm reports, which is why specs/positions/inline-sourcepos.json reads zero over them. Agreeing with an authority that is itself wrong is not a defect this stage introduced; it is the same class, made visible. No step owns it.\n   9  recovered-table-cell            a cell the table extension autocompleted at the end of a short row carries L:0..L:0. It has NO SOURCE BYTES AT ALL, and Step 10 measured both spellings a coordinate pair can give it rather than guessing. The empty range past the row's last byte (`L:len..L:len-1`) is a PURE TRANSFER: nine zero-column rows become nine off-column rows here, containment drops eighteen, and specs/scope-sanity/ledger.json gains nine negative rows, which its only-shrink rule refuses. The row's last byte (`L:len-1..L:len-1`) clears all nine here and nets twelve in containment, but it CLAIMS A BYTE THAT ALREADY BELONGS TO THE CELL BEFORE IT - six new sibling-overlap rows, and requirement 11a's L1 broken before 11a is written. Both trade one wrongness for another, which is the reading D13's Option A and D26 also got, and the cause is the one specs/scope-sanity/ledger.json states: the dump has no spelling for \"no position\" that does not borrow a coordinate. CARRIED as a ruling about vocabulary rather than a repair - Q44, owned by 11a, where a node owning zero regions first becomes a thing that can be said.\n   9  unmatched-code-span-literal     an unmatched backtick run's literal is placed one column right: `hi`lo` gives Text 1:5..1:8 inside a seven-byte paragraph. Section 4.1.3 names it and assigns it to Step 8.\n   2  content-start-past-marker-line  a footnote definition starts at the column after its marker, which does not exist when the marker ends the line: [^footnote]: is twelve bytes and the definition starts at 19:13. NOT NAMED BY ANY DEFECT IN SECTION 2; found by this oracle.\n   1  escaped-byte-content-offset     a text run containing a backslash escape reaches one column too far, because the escape is two source bytes and one content byte while the run's end is measured in content: a line spelling a backslash then a code span, eleven bytes long, gives Text 4:1..4:12. This is the LAST SURVIVOR of what this ledger filed under continuation-line-content-offset, and it was never that class: Step 10 cleared the other twenty-one by making the inline phase read the content-to-source map, and this one did not move, which is how its real cause was identified. Step 8's.\n  --  split-off-table-lead AND continuation-line-content-offset ARE BOTH GONE, both cleared by Step 10, and they had one root: an offset into a block's CONTENT buffer is not a column. split-off-table-lead was six rows - the paragraph a table was split out of, and its inline children, carried positions belonging to neither half. continuation-line-content-offset was twenty-two - a column taken from the content buffer and printed against a source line whose prefix was stripped. The two halves of the fix are the block phase asking requirement 10's map where the header row and the lead were written, and the inline phase asking it where each continuation line begins. Twenty-one of the twenty-two cleared; the twenty-second is the escaped-byte row above and was misfiled. multi-line-span and end-column-never-set went earlier, each cleared by a DIFFERENT defect than the one this ledger named; that is in the git history of this file rather than here, because the list of gone families cannot grow forever.\n\nThirteen of the 79 are inline, out of 2,428 inline nodes; the gate prints that split on every run. It was thirty-seven of 2,275 before Step 10.\n\n`class` is analysis and `closedBy` is measurement. A family whose owner is unassigned is one where the step that moves the rows proves the attribution by moving them, and this gate's CLEARED list is that proof. Step 10 is the newest such proof and it went both ways: it cleared the two families it was expected to, and it did NOT clear one row inside one of them, which is what identified that row as a different defect with a different owner.\n\nA coordinate on line zero is NOT counted here; scripts/audit-scope-sanity.mjs owns the 0:0..0:0 sentinel and the line-zero-with-a-column shape, and there is no line to measure a column against. A zero COLUMN on a real line is measurable and is counted. Where a row is both - Text 1:1..1:0 is a zero column AND a reversed range - the two ratchets interlock rather than overlap: making the end a real column at or after the start clears both, while zeroing the node clears this one and GROWS the sentinel budget, which fails there.\n\nWHAT THIS ORACLE STILL CANNOT SEE, named at 0a.6 so it is not re-derived: a scope that is a place and is still wrong. `a <b`, newline, `c> d` gives HTML scope=1:3..2:1 for a literal whose last byte is at 2:2, so the closing byte belongs to no node - and 2:1 is a perfectly good place. Containment sees a gap, not an overlap, and upstream reports the same numbers. It is pinned as a golden row in regression.txt with prose above it, and it belongs to Step 8. STEP 10 MEASURED HOW LARGE THAT BLIND SPOT IS: of the forty golden rows it moved, this oracle could see twenty-one. Ten of the rest were well-formed columns taken from the wrong line origin - `aaa`, then thirteen spaces and `bbb`, reported the `bbb` at column 1 of a sixteen-byte line - and the statement that catches those is that the source bytes at a Text node's own scope must spell its own literal: 1,037 of 1,134 single-line verbatim literals agreed before, 1,069 after, and not one that agreed stopped agreeing.\nEvery dumped coordinate over every fixture example: the line must exist in the input and the column must name a byte on it. Byte columns, counted from 1, on lines split the way S_parser_feed splits them.\nevery example in packages/markdown-core/tests/fixtures/*.txt",
+    "purpose": "Seventy-nine rows in four families, and the families are what matter - the number on its own says nothing about which of them a step is allowed to move. It was 131 before 0a.6, 122 before 0a.12, 109 before D35 and 106 before Step 10, which cleared TWENTY-SEVEN in two halves and is the largest single move this ledger has recorded. Count from the data rather than from this paragraph, always: these family counts were already wrong by three once, and re-counting is what found it.\n\n  60  end-at-line-ending              a coordinate names column 0 of a line that exists. There is no column 0; this is how \"ends at the line ending\" gets spelled when the only vocabulary is a coordinate. FIFTY-SEVEN are a block's end, H14's neighbour (section 11.4) -- and two of those joined this family at Step 9a.1 rather than being found there: they were `content-start-past-marker-line`, a footnote definition starting at the column AFTER its marker, which does not exist when the marker ends the line (`[^footnote]:` is twelve bytes and the definition began at 19:13). The anchor rule made both starts places and left both ends where they were, so THE TOTAL DID NOT MOVE and the family did. A row is one node, not one fault. THE OTHER THREE ARE 0a.6's: un-gating adjust_subj_node_newlines made a code span that opens with a line ending report `1:3..3:0`, whose start is one past the end of a two-byte line and whose end is column zero - and both halves are exactly what cmark-gfm reports, which is why specs/positions/inline-sourcepos.json reads zero over them. Agreeing with an authority that is itself wrong is not a defect this stage introduced; it is the same class, made visible. No step owns it.\n   9  recovered-table-cell            a cell the table extension autocompleted at the end of a short row carries L:0..L:0. It has NO SOURCE BYTES AT ALL, and Step 10 measured both spellings a coordinate pair can give it rather than guessing. The empty range past the row's last byte (`L:len..L:len-1`) is a PURE TRANSFER: nine zero-column rows become nine off-column rows here, containment drops eighteen, and specs/scope-sanity/ledger.json gains nine negative rows, which its only-shrink rule refuses. The row's last byte (`L:len-1..L:len-1`) clears all nine here and nets twelve in containment, but it CLAIMS A BYTE THAT ALREADY BELONGS TO THE CELL BEFORE IT - six new sibling-overlap rows, and requirement 11a's L1 broken before 11a is written. Both trade one wrongness for another, which is the reading D13's Option A and D26 also got, and the cause is the one specs/scope-sanity/ledger.json states: the dump has no spelling for \"no position\" that does not borrow a coordinate. CARRIED as a ruling about vocabulary rather than a repair - Q44, owned by 11a, where a node owning zero regions first becomes a thing that can be said.\n   9  unmatched-code-span-literal     an unmatched backtick run's literal is placed one column right: `hi`lo` gives Text 1:5..1:8 inside a seven-byte paragraph. Section 4.1.3 names it and assigns it to Step 8.\n   1  escaped-byte-content-offset     a text run containing a backslash escape reaches one column too far, because the escape is two source bytes and one content byte while the run's end is measured in content: a line spelling a backslash then a code span, eleven bytes long, gives Text 4:1..4:12. This is the LAST SURVIVOR of what this ledger filed under continuation-line-content-offset, and it was never that class: Step 10 cleared the other twenty-one by making the inline phase read the content-to-source map, and this one did not move, which is how its real cause was identified. Step 8's.\n  --  split-off-table-lead AND continuation-line-content-offset ARE BOTH GONE, both cleared by Step 10, and they had one root: an offset into a block's CONTENT buffer is not a column. split-off-table-lead was six rows - the paragraph a table was split out of, and its inline children, carried positions belonging to neither half. continuation-line-content-offset was twenty-two - a column taken from the content buffer and printed against a source line whose prefix was stripped. The two halves of the fix are the block phase asking requirement 10's map where the header row and the lead were written, and the inline phase asking it where each continuation line begins. Twenty-one of the twenty-two cleared; the twenty-second is the escaped-byte row above and was misfiled. multi-line-span and end-column-never-set went earlier, each cleared by a DIFFERENT defect than the one this ledger named; that is in the git history of this file rather than here, because the list of gone families cannot grow forever.\n\nThirteen of the 79 are inline, out of 2,428 inline nodes; the gate prints that split on every run. It was thirty-seven of 2,275 before Step 10.\n\n`class` is analysis and `closedBy` is measurement. A family whose owner is unassigned is one where the step that moves the rows proves the attribution by moving them, and this gate's CLEARED list is that proof. Step 10 is the newest such proof and it went both ways: it cleared the two families it was expected to, and it did NOT clear one row inside one of them, which is what identified that row as a different defect with a different owner.\n\nA coordinate on line zero is NOT counted here; scripts/audit-scope-sanity.mjs owns the 0:0..0:0 sentinel and the line-zero-with-a-column shape, and there is no line to measure a column against. A zero COLUMN on a real line is measurable and is counted. Where a row is both - Text 1:1..1:0 is a zero column AND a reversed range - the two ratchets interlock rather than overlap: making the end a real column at or after the start clears both, while zeroing the node clears this one and GROWS the sentinel budget, which fails there.\n\nWHAT THIS ORACLE STILL CANNOT SEE, named at 0a.6 so it is not re-derived: a scope that is a place and is still wrong. `a <b`, newline, `c> d` gives HTML scope=1:3..2:1 for a literal whose last byte is at 2:2, so the closing byte belongs to no node - and 2:1 is a perfectly good place. Containment sees a gap, not an overlap, and upstream reports the same numbers. It is pinned as a golden row in regression.txt with prose above it, and it belongs to Step 8. STEP 10 MEASURED HOW LARGE THAT BLIND SPOT IS: of the forty golden rows it moved, this oracle could see twenty-one. Ten of the rest were well-formed columns taken from the wrong line origin - `aaa`, then thirteen spaces and `bbb`, reported the `bbb` at column 1 of a sixteen-byte line - and the statement that catches those is that the source bytes at a Text node's own scope must spell its own literal: 1,037 of 1,134 single-line verbatim literals agreed before, 1,069 after, and not one that agreed stopped agreeing.\nEvery dumped coordinate over every fixture example: the line must exist in the input and the column must name a byte on it. Byte columns, counted from 1, on lines split the way S_parser_feed splits them.\nevery example in packages/markdown-core/tests/fixtures/*.txt",
     "corpus": "every example in packages/markdown-core/tests/fixtures/*.txt",
     "profile": "gfm-extended",
     "expected": [
@@ -102,21 +102,21 @@
                     "nodePath": "0.5",
                     "kind": "FootnoteDefinition",
                     "phase": "block",
-                    "scope": "15:7..16:0",
+                    "scope": "15:1..16:0",
                     "start": "place",
                     "end": "zero-column",
-                    "class": "end-at-line-ending",
-                    "closedBy": "unassigned"
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
                 },
                 {
                     "nodePath": "0.6",
                     "kind": "FootnoteDefinition",
                     "phase": "block",
-                    "scope": "19:13..25:0",
-                    "start": "off-column",
+                    "scope": "19:1..25:0",
+                    "start": "place",
                     "end": "zero-column",
-                    "class": "content-start-past-marker-line",
-                    "closedBy": "unassigned"
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
                 },
                 {
                     "nodePath": "0.6.1",
@@ -132,21 +132,21 @@
                     "nodePath": "0.7",
                     "kind": "FootnoteDefinition",
                     "phase": "block",
-                    "scope": "10:22..11:0",
+                    "scope": "10:1..11:0",
                     "start": "place",
                     "end": "zero-column",
-                    "class": "end-at-line-ending",
-                    "closedBy": "unassigned"
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
                 },
                 {
                     "nodePath": "0.8",
                     "kind": "FootnoteDefinition",
                     "phase": "block",
-                    "scope": "12:19..14:0",
-                    "start": "off-column",
+                    "scope": "12:1..14:0",
+                    "start": "place",
                     "end": "zero-column",
-                    "class": "content-start-past-marker-line",
-                    "closedBy": "unassigned"
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
                 },
                 {
                     "nodePath": "0.8.0",
@@ -220,11 +220,11 @@
                     "nodePath": "0.2",
                     "kind": "FootnoteDefinition",
                     "phase": "block",
-                    "scope": "3:22..4:0",
+                    "scope": "3:1..4:0",
                     "start": "place",
                     "end": "zero-column",
-                    "class": "end-at-line-ending",
-                    "closedBy": "unassigned"
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
                 }
             ]
         },
@@ -236,11 +236,11 @@
                     "nodePath": "0.1",
                     "kind": "FootnoteDefinition",
                     "phase": "block",
-                    "scope": "3:15..4:0",
+                    "scope": "3:1..4:0",
                     "start": "place",
                     "end": "zero-column",
-                    "class": "end-at-line-ending",
-                    "closedBy": "unassigned"
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
                 }
             ]
         },
@@ -252,11 +252,11 @@
                     "nodePath": "0.3",
                     "kind": "FootnoteDefinition",
                     "phase": "block",
-                    "scope": "5:52..6:0",
+                    "scope": "5:1..6:0",
                     "start": "place",
                     "end": "zero-column",
-                    "class": "end-at-line-ending",
-                    "closedBy": "unassigned"
+                    "closedBy": "unassigned",
+                    "class": "end-at-line-ending"
                 }
             ]
         },

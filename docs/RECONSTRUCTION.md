@@ -27,7 +27,7 @@ only as a record.
 | Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 9a** — the footnote definition stays where it was written, and D9's order-independence oracle stops being red. **Step 10 is done** (§4.14.10): the content-to-source map exists, five consumers read it, and the mdast backlog is down to Step 9b's six. It carries **Q44** — an autocompleted table cell has no source bytes and no coordinate pair can say so — owned by 11a. Remaining: `9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 9a**, continuing — **9a.1 is landed** (§4.14.9a1, the anchor rule); what is left is retention, the post-pass deletion and the call rule. **Step 10 is done** (§4.14.10): the content-to-source map exists, five consumers read it, and the mdast backlog is down to Step 9b's six. It carries **Q44** — an autocompleted table cell has no source bytes and no coordinate pair can say so — owned by 11a. Remaining: `9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -5083,6 +5083,56 @@ and conformance green against a wasm build from the vendored emsdk at
 `.tools/emsdk/4.0.23` -- which is not on `PATH`, and the run fails with
 `spawnSync emcc ENOENT` until `emsdk_env.sh` is sourced; **Kotlin**
 `:jvmTest` green.
+
+
+#### 4.14.9a1 Step 9a.1: the definition anchor rule, and a family that moved rather than shrank
+
+**One line, and the rule it makes true is §5.1's.** A footnote definition used
+to be added at `parser->first_nonspace + matched + 1` — the byte *after*
+`[^label]:` — so it was the one block in this engine that began after its own
+marker rather than at its own first byte. `[^footnote]:` alone on a line is
+twelve bytes and the definition began at column 13, which is not a column.
+
+```
+before   FootnoteDefinition scope=1:13..3:0 id="footnote"
+after    FootnoteDefinition scope=1:1..3:0  id="footnote"
+```
+
+**Sixteen golden rows moved and the claim is mechanised**: for every
+`FootnoteDefinition` in `regression.txt` and `extensions.txt`, the two bytes at
+its reported start must be `[^`. **0 of 16 satisfied that before, 16 of 16
+after.** No other row moved in either file, and `spec.txt` has no footnote
+definition at all. One canonical `.ast` row moved with them
+(`specs/canonical-ast/inlines.ast`), which is what `conformance` is for.
+
+**The children did not move, and that is Step 10 paying for itself.** A
+definition's body is a child paragraph whose inline positions come from the
+content-to-source map, not from the definition's `start_column`, so moving the
+definition's anchor nine columns left changed nothing inside it. Before Step 10
+this same edit would have dragged every inline in every footnote body with it.
+
+**`internal_offset` on a footnote definition is dead and stays.** It is read in
+exactly one place — `markdown_core_parse_inlines`'s block offset — and
+`contains_inlines` is false for a `FOOTNOTE_DEFINITION`, so nothing reads it.
+It is left alone because deleting it is §5.3's list, not this sub-step's.
+
+**A ledger family closed and the total did not move**, which is worth stating
+because the opposite is the natural read. `specs/positions/places.json`'s
+`content-start-past-marker-line` was two rows, and both were exactly this
+defect. Both starts are now places. Both rows are still registered, because
+their *ends* are `zero-column` for an entirely different and unowned reason —
+a block that ends at a line ending. **A row in that ledger is one node, not one
+fault.** The two rows join `end-at-line-ending` (58 → 60) and the family they
+came from is deleted; the total stays 79.
+
+**Mutant.** Restoring `+ matched + 1`: `regression_commonmark` red,
+`extensions_gfm` red, **`conformance` 0/2** (both the facade and the CLI dump
+of `inlines.ast`), and the places oracle reports **14 rows moving** — the seven
+it cleared and the seven it re-registers at the old coordinates.
+
+**Gates.** All of §0 green: correctness 69/69, asan 60/60, ubsan 60/60,
+conformance 2/2, upstream 885/885 with 8/8, mdast 110/110 with a 6/6 backlog,
+scope-sanity 1, containment 31, places 79, inline-sourcepos 0.
 
 ---
 
