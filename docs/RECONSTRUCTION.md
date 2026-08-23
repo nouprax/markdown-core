@@ -24,7 +24,7 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
 | Next action | **Step 9b.1** — `ReferenceDefinition` as a node; then 9b.2's `LinkReference`/`ImageReference` and D9. **§4.14.9b0 scopes both before either starts**: a node kind is forty-five files, the upstream gate is already written for the post-9b world, and there is no free core block type value below the extension range. **Step 8 is done** (§4.14.8a–8b): an inline position is a projection of the byte range it covers, the four counters are gone, and Step 8 owes only **Q45** (does a code span cover its own backticks — built, measured, not taken). Remaining: `9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog | **Step 10 is done** (§4.14.10): the content-to-source map exists, five consumers read it, and the mdast backlog is down to Step 9b's six. It carries **Q44** — an autocompleted table cell has no source bytes and no coordinate pair can say so — owned by 11a. Remaining: `9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
@@ -74,8 +74,8 @@ node scripts/audit-scope-sanity.mjs        # 4 unresolved rows, 5301 scanned, on
 node scripts/audit-inline-sourcepos.mjs    # 40 rows registered, 68 scanned — and
                                           # for the first time they are rows where THIS
                                           # side is right and upstream is not (§4.14.8a)
-node scripts/audit-scope-containment.mjs   # 21 rows registered, 4217 scanned
-node scripts/audit-position-places.mjs     # 66 rows registered, 4351 scanned
+node scripts/audit-scope-containment.mjs   # 9 rows registered, 4217 scanned
+node scripts/audit-position-places.mjs     # 57 rows registered, 4351 scanned
 
 # Requirement 11a's four laws over the concrete record set, landed at 11a
 # (§4.14.11a). L1 and L3 have no rows and hold by construction; L4 is checked
@@ -1222,7 +1222,7 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | **Q42** | When does `prettier --check .` get satisfied, and by reformatting or by scoping? | 15C | **OPEN.** `ci.yml:97` runs it as a required step and it reports **100 files** at Step 6, none of them engine sources — `scripts/*.mjs`, `specs/**/*.json`, docs. Same era skew as `audit:ci`: the config came from `main` with Step 0's `scripts/` restore, the files did not. **Recommend: one deliberate `prettier --write` commit at 15C that touches nothing else**, rather than letting each step carry unrelated churn or leaving a required check red through Stage 0. Scoping prettier away from `specs/` is the alternative and is worse — those are the files a reader diffs most. |
 | **Q43** | Is a directive's label found LEXICALLY, or by the inline delimiter machinery? | 7 | **ANSWERED AT 7e: LEXICALLY**, and at Step 7 rather than Step 8 -- the redesign it looked like turned out to be a deletion. `match_colon_directive` scans the label at the colon and both branches continue, so a label that closes is a label and one that does not is prose; the bytes are consumed there, so no other extension is offered them. Eleven functions, a delimiter rule, a dispatch byte, an extension hook and the whole of 7d went with it: **8 files, +214 / −409.** The two dead-end proposals and the off-by-one in the 32-deep cap are recorded in §4.14.7e. |
 | ~~**Q45**~~ | Does a code span's position cover its own backticks? | 8 | **ANSWERED BY THE OWNER 2026-08-23 — YES**, and taken at 8.4 (§4.14.8d). Every other inline construct covers its own delimiters — emphasis its asterisks, a link its brackets and parens, strikethrough both tilde pairs — and a code span reported the extent of its CONTENT, which is what cmark-gfm reports and is a defect inherited from it. A scope exists so a consumer can map a node back to the source it came from, and the source a code span came from includes the ticks that make it one. **55 golden rows moved and every one is a `Code` node; `places` 69 → 66 and down to two families; `inline-sourcepos` 9 → 40**, every row of it now a place where this side is right and upstream is not. |
-| **Q44** | What does a node with NO SOURCE BYTES report as its position? | 11a | **OPEN, and it is a ruling about vocabulary before it is a repair.** An autocompleted table cell -- the cells GFM completes at the end of a short row -- covers nothing. Step 10 built and measured both spellings a coordinate pair can give it, in the shape §4.2.5 used for D26: the empty range past the row's last byte is a **pure transfer** (nine zero-column rows become nine off-column rows, containment drops eighteen, and `specs/scope-sanity/ledger.json` gains nine negative rows, which its only-shrink rule refuses); the row's last byte clears all nine and nets twelve in containment but **claims a byte that already belongs to the cell before it**, which is 11a's L1 broken before 11a is written. `specs/scope-sanity/ledger.json`'s own `purpose` states the cause: *the dump has no spelling for "no position" that does not borrow a coordinate*. **Recommend: 11a decides it**, because a node owning zero regions is exactly what 11a makes sayable, and it is a dump-grammar change and so a standing-rule-4 commit. The nine rows are registered in `specs/positions/places.json` and eighteen in `specs/positions/containment.json`, both naming 11a rather than `unassigned`. |
+| ~~**Q44**~~ | What does a node with NO SOURCE BYTES report as its position? | 11a | **ANSWERED BY THE OWNER 2026-08-23**, and the answer came with the criterion the question was missing: *a scope is what a consumer follows to map an element back to source*, so a node completion invented points AT the place it was completed — the end of its row. Both spellings 11a had measured were asking which coordinate pair is least wrong about the EXTENT of something with no extent, and that was the wrong question. Taken at §4.14.11a2: `places` 66 → 57 and down to one family, `containment` 21 → 9, and the six sibling-overlap rows it costs are registered with the reasoning that accepts them. |
 | **Q41** | Does the repository keep swift-format's `AllPublicDeclarationsHaveDocumentation`? | 15A / 15C | **OPEN, and it is the owner's.** It is a required CI health check that has been failing: 184 findings at `46e20f2`, 170 after 15A.2, 163 after Step 6, **164** after Step 7.2. Satisfying it means writing a doc comment on every public declaration in the Swift binding, and for a projection layer most of those can only restate the signature — the pass this repository rejected once already. **Recommend: scope the rule to types and functions, or turn it off**, and say so in `.swift-format` rather than leaving a required check red. Whichever way it goes, it is an owner decision and §4.8 needs an answer before Stage 0 closes. |
 | **Q38** | Does the empty `Text` node D13 removes become a registered divergence from cmark-gfm? | 0a.14 | **OPEN.** Upstream emits the node too, so removing it costs one normalizer projection, one `NORMALIZED_DELTAS` name and one `deltas.json` entry. Measured at §4.2.3. Owed by the commit that lands D13. |
 | **Q39** | `[foo]: <>` resolves to `destination=null`, not `destination=""`. Is that right, when the destination WAS written and was empty? | 0a.7 | **TAKEN 2026-08-21, at 0a.7: yes, on consistency grounds, and the limit is stated.** `markdown_core_clean_url` folds a zero-length destination to `CHUNK_EMPTY` before it ever reaches the map — the same fold `clean_title` does — so `<>` is indistinguishable from *no destination* by the time the reference path sees it, and the inline path already answers `[a](<>)` with `destination=null`. Making `chunk_clone` preserve absence made the two paths agree. **This is consistency, not correctness:** a rule that truly separates "written and empty" from "not written" requires the folds to stop, which is Step 14's structural job, and this row is the one input in the corpus that will move again there. It is one row, `spec.txt` example 169. |
@@ -5749,6 +5749,62 @@ row's `closedBy` says which side is right.
 
 **Q45 is answered and closes.** Q40 stands unchanged: a line ending is a place
 only for a node that IS one, and no code span sits on one any more.
+
+
+#### 4.14.11a2 Q44 answered: an autocompleted table cell sits where it was completed
+
+**Owner ruling, 2026-08-23, and it supplied the criterion the question was
+missing:**
+
+> *"The scope is used for consumer that tried to map element from CST/AST back
+> to source. For these auto completed cells, you should just mark it at the
+> place it auto completed."*
+
+**That decides it, and it decides it against both spellings 11a had measured.**
+Both of those asked *which coordinate pair is least wrong about the extent of
+something that has no extent* — and the answer is that a scope is not an extent
+claim, it is **where a consumer should look**. A cell that completion invented
+should point at the place the completion happened: the end of its row.
+
+```
+| a | b | c |
+| --- | --- | ---
+| x
+                                         before           after
+TableRow  3:1..3:3
+  TableCell "x"                          3:2..3:3         3:2..3:3
+  TableCell (completed)                  3:0..3:0         3:3..3:3
+  TableCell (completed)                  3:0..3:0         3:3..3:3
+```
+
+**Nine golden rows moved — two in `spec.txt`, seven in `extensions.txt` — and
+every one is an autocompleted `TableCell`.** Mechanised: **every degenerate
+`TableCell` scope must name a byte on its own line. 2 of 11 before, 11 of 11
+after.** The two that already did are genuinely EMPTY cells the author wrote —
+`| … | |` — which were always placed correctly and did not move; the checker
+cannot tell them apart from the dump, which is why the claim is stated over both.
+
+**Ledgers, and one of them goes up by design.**
+
+| ledger | before | after |
+|---|---|---|
+| `specs/positions/places.json` | 66 | **57, and ONE family left** — `recovered-table-cell` is gone, and it is the only family this ledger has ever closed by a *ruling* rather than a repair |
+| `specs/positions/containment.json` | 21 | **9** — eighteen cleared, **six added** |
+
+**The six are the cost, and they are the reason the question needed an owner.**
+An autocompleted cell now names the row's last byte, and the cell before it ends
+on that byte too, so the two overlap. The alternative is an empty range at
+column `len + 1`, which is off the line, or column 0, which is not a byte at
+all. **Pointing at something beats pointing at nothing**, and the six rows are
+registered in `containment.json` carrying that reasoning rather than hidden.
+
+**Mutant.** Putting the cells back at column 0 moves nine `places` rows and
+fails `spec_commonmark` and `extensions_gfm`.
+
+**What this leaves.** `specs/positions/places.json` is down to **one** family:
+57 rows of `end-at-line-ending`, of which 57 are a block's end — H14's
+neighbour (§11.4) — and no step owns it. The oracle that began Stage 0a with 131
+rows in six families now has one.
 
 ---
 

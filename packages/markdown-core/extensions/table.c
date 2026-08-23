@@ -636,12 +636,30 @@ static markdown_core_node *try_opening_table_row(const markdown_core_syntax_exte
 
         incr_table_row_count(parent_container, i);
 
+        /* AUTOCOMPLETED CELLS SIT WHERE THEY WERE COMPLETED (Q44, answered
+         * 2026-08-23). A row shorter than its header is completed to the
+         * header's width, and the cells that completion invents were never
+         * written -- they have no source bytes at all. They used to carry
+         * `L:0..L:0`, and column 0 is not a byte.
+         *
+         * A scope is what a consumer follows to map a node back to the source,
+         * so the answer is the place the completion happened: the end of the
+         * row. That is the row's last byte, which the previous cell also ends
+         * on -- an empty range there would need column len+1, which is off the
+         * line. The overlap is the honest cost of pointing AT something rather
+         * than at nothing, and it is registered in
+         * specs/positions/containment.json rather than hidden. */
+        bufsize_t completed_at = len;
+        while (completed_at > 0 && (input[completed_at - 1] == '\n' || input[completed_at - 1] == '\r')) {
+            completed_at--;
+        }
         for (; i < table_columns; ++i) {
-            markdown_core_node *node =
-                markdown_core_parser_add_child(parser, table_row_block, MARKDOWN_CORE_NODE_TABLE_CELL, 0);
+            markdown_core_node *node = markdown_core_parser_add_child(parser, table_row_block,
+                                                                      MARKDOWN_CORE_NODE_TABLE_CELL, (int)completed_at);
             if (!node) {
                 break;
             }
+            node->end_column = (int)completed_at;
             markdown_core_node_set_syntax_extension(node, self);
             set_cell_index(node, i);
         }
