@@ -201,6 +201,27 @@ into the record as a missing gate. **Between an edit and a rebuild, `touch` the
 file and `sleep 2`** — and confirm the mutant is live by running its witness
 through the binary before trusting a green suite.
 
+**The binding suites need two things that are not on `PATH`.** `pnpm run
+test:es-node` shells out to `emcc`, which lives at
+`.tools/emsdk/4.0.23/upstream/emscripten` and is not exported by any profile —
+without it the run dies with `spawnSync emcc ENOENT` and looks like a broken
+test rather than a missing toolchain. Gradle goes through `scripts/gradle.sh`
+from the REPOSITORY ROOT; the `pnpm run` scripts are workspace-root scripts too,
+so `pnpm run test:es-node` from inside a package directory reports
+`Missing script`. Both are environment, not failure.
+
+**A gradle test task can be green having run a fraction of the suite.**
+`jvmTest` EXCLUDES `*AstTest*` and `jvmConformanceTest` includes only it, so
+"BUILD SUCCESSFUL" from one of them says nothing about the other. Read
+`build/test-results/*/TEST-*.xml` and count: this branch expects **11** across
+six classes in `jvmTest` and **4** in `jvmConformanceTest`.
+
+**A new binding test whose name does not start with a registered suite prefix
+silently does not run.** `packages/es-markdown-core/scripts/run-tests.mjs`
+filters node's `--test-name-pattern` by a hard-coded suite list; a test named
+`concrete: …` was invisible until `concrete` was added to it, and the run still
+reported every other test passing.
+
 ### The three standing rules
 
 1. **No commit may leave `spec_commonmark` failing.** It is the cheapest oracle
