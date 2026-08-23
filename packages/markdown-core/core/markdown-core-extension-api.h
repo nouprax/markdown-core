@@ -401,6 +401,34 @@ int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser);
  * node (D11) one indirection further out, and AddressSanitizer over
  * `--concrete` is what finds it.
  */
+/** Declare that 'node''s content -- which the caller SET rather than the parser
+ * feeding it -- begins at (line, column) in the source, and runs on from there
+ * without a break. Returns 1, or 0 if it could not be recorded, in which case
+ * the parse is marked lost.
+ *
+ * A block whose content the parser copied in line by line gets this from
+ * `add_line`. A block whose content an extension handed it -- a table cell cut
+ * out of a row, a directive's label -- has none, and every position inside it
+ * then falls back to arithmetic on the block's own start column, which is right
+ * only while the content is one line beginning where the block does. One mark
+ * is the whole answer for content that is one line long, which is what all of
+ * those are.
+ */
+/** Copy the marks covering [from, from + length) of 'owner''s content onto
+ * 'node', rebased so the first covers 'node''s own offset zero. Returns 1, or 0
+ * when there is nothing to copy.
+ *
+ * For content that is a SLICE of another block's content and more than one line
+ * long -- the paragraph a table was split out of -- where one mark would put
+ * every line of it on the first line's row.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, markdown_core_node *owner,
+                                             markdown_core_node *node, bufsize_t from, bufsize_t length);
+
+MARKDOWN_CORE_EXPORT
+int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_core_node *node, int line, int column);
+
 MARKDOWN_CORE_EXPORT
 void markdown_core_parser_transfer_regions(markdown_core_parser *parser, markdown_core_node *from,
                                            markdown_core_node *to);
@@ -634,6 +662,20 @@ int markdown_core_inline_parser_get_line(markdown_core_inline_parser *parser);
 
 MARKDOWN_CORE_EXPORT
 int markdown_core_inline_parser_get_column(markdown_core_inline_parser *parser);
+
+/** Make the Text node a delimiter run stands as: its literal is the bytes
+ * [from, to] of the block's content and its position is a projection of that
+ * range. Returns NULL for a range outside the content.
+ *
+ * ONE constructor, because there were two hand-written copies of it -- one in
+ * `formula`, one in `strikethrough` -- and they disagreed about where the
+ * cursor was when they ran, so each computed the run's columns from a different
+ * end. Passing the range says it once. The cursor is NOT moved: a caller that
+ * has not consumed the run yet still has to.
+ */
+MARKDOWN_CORE_EXPORT
+markdown_core_node *markdown_core_inline_parser_make_delimiter_text(markdown_core_inline_parser *parser, int from,
+                                                                    int to);
 
 /** Convenience function to scan a given delimiter.
  *

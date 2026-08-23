@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a), **8.1** (§4.14.8a) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a), **8.1 – 8.2** (§4.14.8a–8b) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 8.2** — give the synthesized-content blocks marks and delete `block_offset`, `column_offset`, `adjust_subj_node_newlines` and `count_newlines`; convert the four extensions off `get_column` arithmetic. **8.1 is landed** (§4.14.8a). **Step 11a is done** (§4.14.11a): the concrete record set, the normalized source and its line index, and **the fourth law the owner added** — the records are complete for lines 1…N once line N has been fed, checked over 1,200 line-boundary prefixes. L1 and L3 have no rows at all. Remaining: `8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog | **Step 10 is done** (§4.14.10): the content-to-source map exists, five consumers read it, and the mdast backlog is down to Step 9b's six. It carries **Q44** — an autocompleted table cell has no source bytes and no coordinate pair can say so — owned by 11a. Remaining: `9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 9b** — one reference model: `LinkReference`, `ImageReference`, `ReferenceDefinition`, the association, and D9's budget deleted with the destination copy. **Step 8 is done** (§4.14.8a–8b): an inline position is a projection of the byte range it covers, the four counters are gone, and Step 8 owes only **Q45** (does a code span cover its own backticks — built, measured, not taken). Remaining: `9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog | **Step 10 is done** (§4.14.10): the content-to-source map exists, five consumers read it, and the mdast backlog is down to Step 9b's six. It carries **Q44** — an autocompleted table cell has no source bytes and no coordinate pair can say so — owned by 11a. Remaining: `9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -1054,7 +1054,7 @@ Seven defects that this restatement found by measurement are numbered **D18–D2
 | ✅ **10** | For any block node with a content buffer and any byte offset within it, the engine can name the **source line and column** of that byte. Every node synthesized from a content offset carries a position that is a place: the split-off table lead, its inline children, the recovered header row and cells, and any paragraph whose front was consumed (D18). The lead keeps its authored spelling. | ~110 | **Nothing.** Every mechanism exists at the baseline; both consumers run while the marks would be live. |
 | ✅ **9a** | A footnote definition is a block node at the byte where its `[` was written, in the container it was written in, and it **stays there**. No pass runs after the parse that moves, reorders, drops or re-parents any node. Every definition the author wrote is in the tree. The reference map never owns a node. A reference carries **the label the author wrote**; numbering is derived, not stored. A `[…]` is a footnote call only if it opens with a **raw** `^` and the document defines that label; otherwise the brackets take the ordinary unmatched-`[` path and nothing frees children core already built. | **+90 / −290** | 0a.2's D10 fix, so a reference's label is sliced from the parser's own buffer. |
 | ✅ **11a** | A parse produces, beside the tree, a **concrete record set** in which every block-level byte of the normalized source is owned by exactly one node, in exactly one of three roles (`MARKER`, `CONTENT`, `DISCARDED`). Three laws hold over every corpus: **L1** the regions on a line tile it exactly; **L2** every region lies inside its owner's scope and descendants lie inside their ancestor's `CONTENT`; **L3** concatenating the regions in order reproduces the normalized source byte for byte. **L4 — added by the owner before the step was written, and the reason the other three are not enough: the records are complete for lines 1…N once line N has been fed.** The first three constrain the RESULT and not when it is built, so a close-time construction satisfies all of them and recreates §11.5's quadratic cheat one level down. The document **retains** that normalized source and its line index. A region may be *refined* — split, never moved, never deleted — which is how extensions capture without breaking L1. | ~600 + ~350 gate | 0a (an L3 gate written over the unfixed engine would encode D10/D11's loss as expected). 5 (no node without source bytes). 10 (the content-to-source marks 11a retains — **Q22**). |
-| **8** | **The inline position model.** An inline node's position is a *projection* of the byte range it covers, not a counter each handler maintains: one `seek` primitive, one newline index, offsets stored on the node, and one constructor for a delimiter run. `adjust_subj_node_newlines`, `count_newlines`, `subj->column_offset`, `subj->block_offset` and the three hand-written `make_delimiter_text` copies cease to exist. Subsumes D3, D7, D12 and D19/D20/D23 by construction. | **+330 / −245** | 3 (rules exist). 6, 7 (the grammars are settled, so the extensions are rewritten once). 11a (the retained `CONTENT` records are what make the projection exact on continuation lines). |
+| ✅ **8** | **The inline position model.** An inline node's position is a *projection* of the byte range it covers, not a counter each handler maintains: one `seek` primitive, one newline index, offsets stored on the node, and one constructor for a delimiter run. `adjust_subj_node_newlines`, `count_newlines`, `subj->column_offset`, `subj->block_offset` and the three hand-written `make_delimiter_text` copies cease to exist. Subsumes D3, D7, D12 and D19/D20/D23 by construction. | **+330 / −245** | 3 (rules exist). 6, 7 (the grammars are settled, so the extensions are rewritten once). 11a (the retained `CONTENT` records are what make the projection exact on continuation lines). |
 | **9b** | One reference model for both kinds. A link reference definition is a **node** at the byte where its `[` was written. Five kinds carry an **association**: `label` as authored, `identifier` as the match key, neither derivable from the other. A reference holds **no destination** — resolution is the consumer's, and is derivable as "group by identifier, first in document order". The map holds no resource, so D9's expansion budget has nothing to charge and is deleted. The dump and the facade speak one vocabulary (`label=`, not `id=`). | **+450 / −180** C | 9a (the tree is source-ordered and the winner is derivable from it). 10 (a harvested definition needs a source position and the surviving paragraph needs rebasing). 15A. |
 | **11b** | Every byte of every block's `CONTENT` region is owned by exactly one inline node or by the block itself, and inline records are expressed in **source** coordinates, not content coordinates. Delimiter runs, brackets, escapes, entities, destinations, titles and smart-punctuation substitutions are all `MARKER`; the text between is `CONTENT`. | ~500 + ~200 gate | 11a. 8 (a position is a projection of a range, so the lift has one answer, not two). |
 | **11c** | A reference definition and a footnote definition own their source bytes, so the block partition is total for real documents. A definition that lost a duplicate-label contest keeps its bytes. | ~150 | 9b (a node exists to own them). 11a (refinement exists and cannot move a boundary). |
@@ -5493,6 +5493,72 @@ marks and deletes all of it.**
 conformance 2/2, upstream 885/885 with 10/10, mdast 110/110 with a 5/5 backlog,
 fuzz 300/300, scope-sanity 1, containment 31, places 79, concrete records 45,
 **inline-sourcepos 9**, reference-order 2.
+
+
+#### 4.14.8b Step 8.2: the counters cease to exist, and nothing moved
+
+**`subj->block_offset`, `subj->column_offset`, `adjust_subj_node_newlines` and
+`count_newlines` are gone**, along with the line-and-column bookkeeping inside
+`markdown_core_inline_parser_set_offset`. So are the two hand-written
+delimiter-run constructors. **Step 8 in total: +304 / −173 across `core/` and
+`extensions/`**, against the requirement's estimate of +330 / −245.
+
+**NOT ONE GOLDEN ROW MOVED, and not one ledger row moved with them.** places 79,
+containment 31, inline-sourcepos 9, concrete records 45, scope-sanity 1, all
+identical before and after. That is the strongest available evidence that the
+projection reproduces the arithmetic exactly wherever the arithmetic was right —
+8.1 had already moved every row where it was not.
+
+**What made the deletion possible is one line.** The counters survived 8.1
+because a block whose content was **set** rather than fed has no marks to
+project through — a table cell cut out of a row, a directive's label, the
+paragraph a table was split out of. `markdown_core_parse_inlines` now gives any
+such block one mark before parsing it:
+
+```c
+markdown_core_parser_mark_content(parser, parent, parent->start_line,
+                                  parent->start_column + parent->internal_offset);
+```
+
+**That derivation IS the term it replaces.** `block_offset` was
+`start_column - 1 + internal_offset`, applied to every offset in the block;
+saying it once as a mark is what lets the term go. Two blocks needed more than
+the default:
+
+- the **split-off table lead**, whose content is a slice of the paragraph's and
+  can be several lines long, so it ADOPTS the marks for those lines
+  (`markdown_core_parser_adopt_content_marks`) — copied, never shared, because
+  two nodes naming one run is an alias and an alias between two trees is the
+  shape §1 records six times;
+- **table cells**, which take one mark at the place their first content byte was
+  written, read out of the row's own map for a header cell and out of the line
+  in hand for a body cell.
+
+**One residue, and it is pinned by a golden already.** A cell's content is
+`unescape_pipes`'d, so it is one byte shorter per `\|` than the source it came
+from, and one mark cannot say that: after an escaped pipe a cell's inline
+positions are short by the number of dropped backslashes.
+`extensions.txt` pins it — `Text scope=3:3..3:27` for a 27-byte source span —
+and it is a REFINEMENT of one region into several, which is 11b's vocabulary
+rather than this step's.
+
+**One constructor for a delimiter run.** `formula` and `strikethrough` each had
+their own, and they disagreed about where the cursor was when they ran, so each
+computed the run's columns from a different end — `formula` from the run's first
+byte, `strikethrough` from one past its last.
+`markdown_core_inline_parser_make_delimiter_text(parser, from, to)` is told the
+range instead. `strikethrough` also loses a 101-byte stack buffer it was
+filling with `~` characters only to copy them back out as the literal; the
+literal is a slice of the block's own content and needs no copy at all.
+
+**Mutant.** Removing the default mark — a block whose content was SET gets no
+map — fails `extensions_directive` and `extensions_conflicts` and moves a
+containment row.
+
+**Gates.** Every §0 gate green and every ledger unmoved: correctness 69/69,
+asan 60/60, ubsan 60/60, conformance 2/2, upstream 885/885 with 10/10, mdast
+110/110 with a 5/5 backlog, fuzz 300/300, scope-sanity 1, inline-sourcepos 9,
+containment 31, places 79, concrete records 45, reference-order 2.
 
 ---
 

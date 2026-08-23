@@ -301,6 +301,17 @@ static table_row *row_from_string(const markdown_core_syntax_extension *self, ma
     return row;
 }
 
+/* Mark a cell's content with the place its first byte was written, read out of
+ * the row's own map. */
+static void S_mark_cell_content(markdown_core_parser *parser, markdown_core_node *owner, markdown_core_node *cell,
+                                bufsize_t content_offset) {
+    int line, column;
+
+    if (markdown_core_parser_content_place(parser, owner, content_offset, &line, &column)) {
+        markdown_core_parser_mark_content(parser, cell, line, column);
+    }
+}
+
 /* Give `node` the source span of [start_offset, end_offset] in `owner`'s
  * content buffer. Every table position recovered from that buffer goes through
  * here, so there is one place that knows a content offset is not a column. */
@@ -368,6 +379,10 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
         paragraph->end_line = line;
         paragraph->end_column = column;
     }
+    /* The lead's content is a SLICE of the paragraph's, and it can be several
+     * lines long, so it takes the marks for those lines rather than one mark
+     * for the first of them. */
+    markdown_core_parser_adopt_content_marks(parser, parent_container, paragraph, first, last - first);
 
     if (!markdown_core_node_insert_before(parent_container, paragraph)) {
         // markdown_core_node_free, not mem->free: the node owns a content
@@ -538,6 +553,11 @@ static markdown_core_node *try_opening_table_header(const markdown_core_syntax_e
         }
         header_cell->internal_offset = cell->internal_offset;
         S_place_content_span(parser, parent_container, header_cell, cell->start_offset, cell->end_offset);
+        /* The cell's content was SET from `cell->buf`, so it has no marks of
+         * its own and every inline inside it would be placed by arithmetic on
+         * the cell's start column. It begins where its first content byte was
+         * written; one mark says so, because a cell is one line long. */
+        S_mark_cell_content(parser, parent_container, header_cell, cell->start_offset + cell->internal_offset);
         markdown_core_node_set_string_content(header_cell, (char *)cell->buf->ptr);
         markdown_core_node_set_syntax_extension(header_cell, self);
         set_cell_index(header_cell, i);
@@ -604,6 +624,12 @@ static markdown_core_node *try_opening_table_row(const markdown_core_syntax_exte
             node->internal_offset = cell->internal_offset;
             node->end_column = parent_container->start_column + cell->end_offset;
             markdown_core_node_set_string_content(node, (char *)cell->buf->ptr);
+            /* A body row is not fed through `add_line`, so there is no run to
+             * read: the line is the one in hand and the column is where the
+             * cell's content starts on it. */
+            markdown_core_parser_mark_content(parser, node, markdown_core_parser_get_line_number(parser),
+                                              markdown_core_parser_get_first_nonspace(parser) + 1 + cell->start_offset +
+                                                  cell->internal_offset);
             markdown_core_node_set_syntax_extension(node, self);
             set_cell_index(node, i);
         }

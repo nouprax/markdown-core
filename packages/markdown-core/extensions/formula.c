@@ -287,18 +287,17 @@ static int formula_block_matches(const markdown_core_syntax_extension *extension
 
 static markdown_core_node *make_delimiter_text(markdown_core_parser *parser, markdown_core_inline_parser *inline_parser,
                                                bufsize_t len) {
-    markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
     bufsize_t offset = (bufsize_t)markdown_core_inline_parser_get_offset(inline_parser);
-    markdown_core_node *node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
+    markdown_core_node *node;
 
+    (void)parser;
+    /* The cursor is at the run's FIRST byte here, and at its last in
+     * `strikethrough` -- which is why each of them used to compute the columns
+     * from a different end. The shared constructor is told the range. */
+    node = markdown_core_inline_parser_make_delimiter_text(inline_parser, (int)offset, (int)(offset + len - 1));
     if (!node) {
         return NULL;
     }
-
-    node->as.literal = markdown_core_chunk_dup(chunk, offset, len);
-    node->start_line = node->end_line = markdown_core_inline_parser_get_line(inline_parser);
-    node->start_column = markdown_core_inline_parser_get_column(inline_parser);
-    node->end_column = node->start_column + (int)len - 1;
     markdown_core_inline_parser_set_offset(inline_parser, (int)(offset + len));
     return node;
 }

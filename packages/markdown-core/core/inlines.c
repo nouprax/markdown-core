@@ -56,8 +56,6 @@ typedef struct subject {
     unsigned flags;
     int line;
     bufsize_t pos;
-    int block_offset;
-    int column_offset;
     /* The block whose content buffer `input` is, and the parser that holds
      * requirement 10's content-to-source map for it. Both are NULL for a
      * subject built straight out of a chunk -- the reference-definition
@@ -99,8 +97,8 @@ static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *clo
 
 static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_core_node *parent, int options);
 
-static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number, int block_offset,
-                             subject *e, markdown_core_chunk *buffer, markdown_core_map *refmap);
+static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number, subject *e,
+                             markdown_core_chunk *buffer, markdown_core_map *refmap);
 static bufsize_t subject_find_special_char(subject *subj, int options);
 
 /* Give `node` the source extent of the content bytes [from, to].
@@ -120,27 +118,23 @@ static bufsize_t subject_find_special_char(subject *subj, int options);
  * split out of, a reference definition parsed straight out of a chunk. Those
  * have no marks to project through, and Step 8's second half is where they get
  * them. */
-static MARKDOWN_CORE_INLINE bool S_projects(subject *subj) {
-    int line, column;
-    return markdown_core_parser_content_place(subj->owner_parser, subj->owner, 0, &line, &column) != 0;
-}
-
 static MARKDOWN_CORE_INLINE void S_place_inline(subject *subj, markdown_core_node *node, int from, int to) {
     int line, column;
 
+    /* Every content-bearing block has a map by the time its inlines are parsed
+     * -- `markdown_core_parse_inlines` gives one to any block whose content was
+     * SET rather than fed -- so there is no arithmetic left to fall back to.
+     * The subject built straight out of a chunk by
+     * `markdown_core_parse_reference_inline` has no owner and creates no nodes,
+     * which is why the miss below leaves the position at calloc's zero rather
+     * than guessing. */
     if (markdown_core_parser_content_place(subj->owner_parser, subj->owner, from, &line, &column)) {
         node->start_line = line;
         node->start_column = column;
-    } else {
-        node->start_line = subj->line;
-        node->start_column = from + 1 + subj->column_offset + subj->block_offset;
     }
     if (markdown_core_parser_content_place(subj->owner_parser, subj->owner, to, &line, &column)) {
         node->end_line = line;
         node->end_column = column;
-    } else {
-        node->end_line = subj->line;
-        node->end_column = to + 1 + subj->column_offset + subj->block_offset;
     }
 }
 
@@ -294,8 +288,8 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(subject *subj, int
     return link;
 }
 
-static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number, int block_offset,
-                             subject *e, markdown_core_chunk *chunk, markdown_core_map *refmap) {
+static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number, subject *e,
+                             markdown_core_chunk *chunk, markdown_core_map *refmap) {
     int i;
     e->special_chars = parser ? parser->special_chars : BASE_SPECIAL_CHARS;
     e->skip_chars = parser ? parser->skip_chars : BASE_SKIP_CHARS;
@@ -304,8 +298,6 @@ static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *me
     e->flags = 0;
     e->line = line_number;
     e->pos = 0;
-    e->block_offset = block_offset;
-    e->column_offset = 0;
     e->owner_parser = parser;
     e->owner = NULL;
     e->refmap = refmap;
@@ -388,90 +380,6 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk take_while(subject *subj, int (*
     }
 
     return markdown_core_chunk_dup(&subj->input, startpos, len);
-}
-
-// The SOURCE column, counted from 1, at which the content line beginning at
-// `start` was written.
-//
-// The inline phase reports a column as `pos + 1 + column_offset +
-// block_offset`, and that is right only while every line of the block begins
-// at the column the block does. A continuation line does not have to: `"> foo"`
-// followed by `"bar"` strips two bytes from the first line and none from the
-// second, so the second line's content begins at column 1 and the block says 3.
-// `column_offset` is the term that re-seats the origin on each new line, and
-// requirement 10's map is what it is seated on. A subject with no owning block
-// -- the reference-definition parser builds one straight out of a chunk -- has
-// no map, and keeps the assumption it always made.
-static int S_line_start_column(subject *subj, bufsize_t start) {
-    int line, column;
-    if (markdown_core_parser_content_place(subj->owner_parser, subj->owner, start, &line, &column)) {
-        return column;
-    }
-    return subj->block_offset + 1;
-}
-
-// Move the subject's column origin onto the line beginning at content offset
-// `start`, so that `pos + 1 + column_offset + block_offset` names the place
-// the byte at `pos` was written.
-static void S_reseat_column_origin(subject *subj, bufsize_t start) {
-    subj->column_offset = S_line_start_column(subj, start) - (int)start - 1 - subj->block_offset;
-}
-
-// Return the number of newlines in a given span of text in a subject.  If
-// the number is greater than zero, also return the number of characters
-// between the last newline and the end of the span in `since_newline`.
-static int count_newlines(subject *subj, bufsize_t from, bufsize_t len, int *since_newline) {
-    int nls = 0;
-    int since_nl = 0;
-
-    while (len--) {
-        if (subj->input.data[from++] == '\n') {
-            ++nls;
-            since_nl = 0;
-        } else {
-            ++since_nl;
-        }
-    }
-
-    if (!nls) {
-        return 0;
-    }
-
-    *since_newline = since_nl;
-    return nls;
-}
-
-// Adjust `node`'s `end_line`, `end_column`, and `subj`'s `line` and
-// `column_offset` according to the number of newlines in a just-matched span
-// of text in `subj`.
-//
-// This is the only code that walks a consumed span's line endings, and it used
-// to run only when MARKDOWN_CORE_OPT_SOURCEPOS was set -- which nothing in the
-// tree ever set. Inline code and raw HTML that crossed a line ending therefore
-// reported a column on their START line, usually past the end of it, and every
-// node after them in the same paragraph was displaced by the same amount.
-//
-// `block_offset` is on the end column because `since_newline` counts from the
-// start of the line's CONTENT, and inside a block quote or list item the
-// content does not begin at column 1.
-static void adjust_subj_node_newlines(subject *subj, markdown_core_node *node, int matchlen, int extra) {
-    int since_newline;
-    int newlines = count_newlines(subj, subj->pos - matchlen - extra, matchlen, &since_newline);
-    if (newlines) {
-        bufsize_t line_start = subj->pos - since_newline - extra;
-        subj->line += newlines;
-        /* The NODE is only repaired where the projection could not answer.
-         * Where it could, the node already ends where its last byte is and
-         * adding the newlines again would count them twice -- measured, and it
-         * is what a code span spanning two lines reported the moment
-         * `make_literal` started projecting. What is left here is the SUBJECT's
-         * own line and column origin, which only the fallback still reads. */
-        if (!S_projects(subj)) {
-            node->end_line += newlines;
-            node->end_column = S_line_start_column(subj, line_start) + since_newline - 1;
-        }
-        S_reseat_column_origin(subj, line_start);
-    }
 }
 
 // Try to process a backtick code span that began with a
@@ -586,7 +494,6 @@ static markdown_core_node *handle_backticks(subject *subj, int options) {
         if (!node) {
             return NULL;
         }
-        adjust_subj_node_newlines(subj, node, endpos - startpos, openticks.len);
         return node;
     }
 }
@@ -1112,8 +1019,6 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
      * because `skip_line_end` happens not to advance the frame -- an accident,
      * not a contract. `handle_newline` captures its frame first for the same
      * reason, and the two arms must not merely look symmetric. */
-    int escape_line = subj->line;
-    int escape_column_offset = subj->column_offset;
     advance(subj);
     unsigned char nextchar = peek_char(subj);
     if ((parser->backslash_ispunct ? parser->backslash_ispunct : markdown_core_ispunct)(nextchar)) {
@@ -1154,14 +1059,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
              * or CRLF alike. Projected from the two offsets, so the frame
              * captured before the consume is only the fallback's. */
             S_place_inline(subj, hard, start, subj->pos - 1);
-            if (!S_projects(subj)) {
-                hard->start_line = hard->end_line = escape_line;
-                hard->start_column = start + 1 + escape_column_offset + subj->block_offset;
-                hard->end_column = subj->pos + escape_column_offset + subj->block_offset;
-            }
         }
-        ++subj->line;
-        S_reseat_column_origin(subj, subj->pos);
         return hard;
     } else {
         return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("\\"));
@@ -1323,7 +1221,6 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
         contents = markdown_core_chunk_dup(&subj->input, subj->pos - 1, matchlen + 1);
         subj->pos += matchlen;
         markdown_core_node *node = make_raw_html(subj, subj->pos - matchlen - 1, subj->pos - 1, contents);
-        adjust_subj_node_newlines(subj, node, matchlen, 1);
         return node;
     }
 
@@ -1333,7 +1230,6 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
             contents = markdown_core_chunk_dup(&subj->input, subj->pos - 1, matchlen + 1);
             subj->pos += matchlen;
             markdown_core_node *node = make_raw_html(subj, subj->pos - matchlen - 1, subj->pos - 1, contents);
-            adjust_subj_node_newlines(subj, node, matchlen, 1);
             return node;
         }
     }
@@ -1644,7 +1540,6 @@ noMatch:
 
             // the start and end of the footnote ref is the opening and closing brace
             // i.e. the subject's current position, and the opener's start_column
-            int fnref_end_column = subj->pos + subj->column_offset + subj->block_offset;
             int fnref_start_column = opener->inl_text->start_column;
 
             // The label is a slice of the SOURCE, delimited by two buffer offsets
@@ -1671,13 +1566,12 @@ noMatch:
             fnref->as.literal =
                 markdown_core_chunk_dup(&subj->input, opener->position + 1, initial_pos - opener->position - 2);
 
-            // The end is where the ']' is and the start is where the '[' was, so
-            // taking both lines from the closing bracket names a column on a
-            // line that need not contain it.
+            // The call runs from its own '[' to its ']', and the two need not be
+            // on the same line; both ends are projected from the offsets this
+            // function already holds.
+            S_place_inline(subj, fnref, opener->position - 1, initial_pos - 1);
             fnref->start_line = opener->inl_text->start_line;
-            fnref->end_line = subj->line;
             fnref->start_column = fnref_start_column;
-            fnref->end_column = fnref_end_column;
 
             // we then replace the opener with this new fnref node, the net effect
             // being replacing the opening '[' text node with a `^footnote-ref]` node.
@@ -1741,12 +1635,12 @@ match:
     // scan_link_title, which move subj->pos without ever passing through
     // handle_newline -- so a line ending inside `(...)` is invisible to the
     // subject, and every later node in the paragraph inherits the error.
-    // adjust_subj_node_newlines is the repair inline code and raw HTML already
+    // The extent is projected from the two offsets, which is the repair inline
+    // code and raw HTML already
     // use; it walks only [initial_pos, subj->pos), which is what the bracket
     // handler consumed for itself. Counting from the OPENING bracket instead
     // would count the label's own newlines a second time -- measured,
     // `[a\nb](/u) tail` then reports line 3 of a two-line document.
-    adjust_subj_node_newlines(subj, inl, (int)(subj->pos - initial_pos), 0);
     markdown_core_node_insert_before(opener->inl_text, inl);
     // Add link text:
     tmp = opener->inl_text->next;
@@ -1785,8 +1679,6 @@ match:
 // either, and one that carries no line at all.
 static markdown_core_node *handle_newline(subject *subj) {
     bufsize_t nlpos = subj->pos;
-    int break_line = subj->line;
-    int break_column = nlpos + 1 + subj->column_offset + subj->block_offset;
     markdown_core_node *brk;
     // skip over cr, crlf, or lf:
     if (peek_at(subj, subj->pos) == '\r') {
@@ -1795,8 +1687,6 @@ static markdown_core_node *handle_newline(subject *subj) {
     if (peek_at(subj, subj->pos) == '\n') {
         advance(subj);
     }
-    ++subj->line;
-    S_reseat_column_origin(subj, subj->pos);
     // skip spaces at beginning of line
     skip_spaces(subj);
     if (nlpos > 1 && peek_at(subj, nlpos - 1) == ' ' && peek_at(subj, nlpos - 2) == ' ') {
@@ -1808,10 +1698,6 @@ static markdown_core_node *handle_newline(subject *subj) {
         // The two spaces of a hard break stay with the text they follow, as
         // upstream also has them, so both forms own exactly the line ending.
         S_place_inline(subj, brk, nlpos, nlpos);
-        if (!S_projects(subj)) {
-            brk->start_line = brk->end_line = break_line;
-            brk->start_column = brk->end_column = break_column;
-        }
     }
     return brk;
 }
@@ -2059,8 +1945,18 @@ void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_nod
                                  int options) {
     subject subj;
     markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
-    subject_from_buf(parser, parser->mem, parent->start_line, parent->start_column - 1 + parent->internal_offset, &subj,
-                     &content, refmap);
+    /* EVERY content-bearing block has a map by the time its inlines are parsed.
+     * One the parser fed line by line already does; one whose content was SET
+     * -- a table cell, a directive's label -- gets one mark here, derived from
+     * where the block says it starts. That derivation IS the arithmetic this
+     * replaces: `start_column - 1 + internal_offset` was the block offset every
+     * inline position used to be measured from, and stating it once as a mark
+     * is what lets the term itself go. */
+    if (parent->content_mark_count == 0) {
+        markdown_core_parser_mark_content(parser, parent, parent->start_line,
+                                          parent->start_column + parent->internal_offset);
+    }
+    subject_from_buf(parser, parser->mem, parent->start_line, &subj, &content, refmap);
     subj.owner = parent;
     markdown_core_chunk_rtrim(&subj.input);
 
@@ -2105,7 +2001,7 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
     bufsize_t matchlen = 0;
     bufsize_t beforetitle;
 
-    subject_from_buf(NULL, mem, -1, 0, &subj, input, NULL);
+    subject_from_buf(NULL, mem, -1, &subj, input, NULL);
 
     // parse label:
     if (!link_label(&subj, &lab) || lab.len == 0) {
@@ -2280,36 +2176,29 @@ int markdown_core_inline_parser_get_offset(markdown_core_inline_parser *parser) 
 // difference is that an extension names a destination offset where the core
 // names a match length.
 //
-// Only forward moves count newlines. `autolink` rewinds through here, and a
-// rewind is inside the current line by construction — it re-reads bytes the
-// cursor has already passed on this line.
-void markdown_core_inline_parser_set_offset(markdown_core_inline_parser *parser, int offset) {
-    if (offset > parser->pos) {
-        bufsize_t limit = (bufsize_t)offset < parser->input.len ? (bufsize_t)offset : parser->input.len;
-        bufsize_t at;
-        int newlines = 0;
-        int since_newline = 0;
-        for (at = parser->pos; at < limit; at++) {
-            if (parser->input.data[at] == '\n') {
-                newlines++;
-                since_newline = 0;
-            } else {
-                since_newline++;
-            }
-        }
-        if (newlines) {
-            parser->line += newlines;
-            /* The same frame handle_newline and adjust_subj_node_newlines use:
-             * the negated offset of the first byte of the line the cursor now
-             * stands on. */
-            S_reseat_column_origin(parser, (bufsize_t)offset - since_newline);
-        }
+/* `autolink` rewinds through here and every extension advances through it. The
+ * cursor is the only thing that moves: a position is asked of the map when a
+ * node is made, so there is no line or column frame left to keep in step. */
+void markdown_core_inline_parser_set_offset(markdown_core_inline_parser *parser, int offset) { parser->pos = offset; }
+
+markdown_core_node *markdown_core_inline_parser_make_delimiter_text(markdown_core_inline_parser *parser, int from,
+                                                                    int to) {
+    markdown_core_node *node;
+
+    if (from < 0 || to < from || to >= parser->input.len) {
+        return NULL;
     }
-    parser->pos = offset;
+    node = make_literal(parser, MARKDOWN_CORE_NODE_TEXT, from, to,
+                        markdown_core_chunk_dup(&parser->input, from, to - from + 1));
+    return node;
 }
 
 int markdown_core_inline_parser_get_column(markdown_core_inline_parser *parser) {
-    return parser->pos + 1 + parser->column_offset + parser->block_offset;
+    int line, column;
+    if (markdown_core_parser_content_place(parser->owner_parser, parser->owner, parser->pos, &line, &column)) {
+        return column;
+    }
+    return parser->pos + 1;
 }
 
 markdown_core_chunk *markdown_core_inline_parser_get_chunk(markdown_core_inline_parser *parser) {
@@ -2371,7 +2260,13 @@ delimiter *markdown_core_inline_parser_get_last_delimiter(markdown_core_inline_p
     return parser->last_delim;
 }
 
-int markdown_core_inline_parser_get_line(markdown_core_inline_parser *parser) { return parser->line; }
+int markdown_core_inline_parser_get_line(markdown_core_inline_parser *parser) {
+    int line, column;
+    if (markdown_core_parser_content_place(parser->owner_parser, parser->owner, parser->pos, &line, &column)) {
+        return line;
+    }
+    return parser->line;
+}
 
 delimiter *markdown_core_delimiter_previous(const delimiter *delim) { return delim->previous; }
 

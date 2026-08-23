@@ -7,34 +7,32 @@ static markdown_core_node *match(const markdown_core_syntax_extension *self, mar
                                  markdown_core_inline_parser *inline_parser) {
     markdown_core_node *res = NULL;
     int left_flanking, right_flanking, punct_before, punct_after, delims;
-    char buffer[101];
+    /* The longest run this matcher will consider. It used to be `sizeof` a
+     * 101-byte stack buffer the run was then written into, character by
+     * character, only to be copied back out as the node's literal -- the
+     * literal is a slice of the block's own content and needs no copy at all. */
+    enum { MAX_DELIMITERS = 100 };
 
     if (character != '~') {
         return NULL;
     }
 
-    delims = markdown_core_inline_parser_scan_delimiters(inline_parser, sizeof(buffer) - 1, '~', &left_flanking,
+    delims = markdown_core_inline_parser_scan_delimiters(inline_parser, MAX_DELIMITERS, '~', &left_flanking,
                                                          &right_flanking, &punct_before, &punct_after);
 
-    memset(buffer, '~', delims);
-    buffer[delims] = 0;
-
-    res = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
+    // The cursor is one past the run here, so the run is the `delims` bytes
+    // behind it. The shared constructor owns the extent: left to this file it
+    // was an end column computed by addition, and before 0a.12 not computed at
+    // all -- `a~~` gave Text 1:1..1:0, an end before its own start, which
+    // consolidation then carried onto the whole merged run.
+    {
+        int end = markdown_core_inline_parser_get_offset(inline_parser) - 1;
+        res = markdown_core_inline_parser_make_delimiter_text(inline_parser, end - delims + 1, end);
+    }
     if (!res) {
         parser->oom = true;
         return NULL;
     }
-    if (!markdown_core_node_set_literal(res, buffer)) {
-        parser->oom = true;
-    }
-    res->start_line = res->end_line = markdown_core_inline_parser_get_line(inline_parser);
-    res->start_column = markdown_core_inline_parser_get_column(inline_parser) - delims;
-    // The run owns `delims` bytes and must say so. Left unset it stayed 0 from
-    // the calloc, so an UNMATCHED run reported an end before its own start --
-    // `a~~` gave Text 1:1..1:0 -- and consolidation then carried that 0 onto the
-    // whole merged run, because it takes the merged end column from the last
-    // operand.
-    res->end_column = res->start_column + delims - 1;
 
     if ((left_flanking || right_flanking) &&
         (delims == 2 || (!(parser->options & MARKDOWN_CORE_OPT_STRIKETHROUGH_DOUBLE_TILDE) && delims == 1))) {
