@@ -19,6 +19,7 @@ import type { List, ListItem } from "./model/list.js";
 import type { Markup } from "./model/markup.js";
 import type { Paragraph } from "./model/paragraph.js";
 import type { ReferenceDefinition } from "./model/reference-definition.js";
+import type { ImageReference, LinkReference } from "./model/reference.js";
 import type { SoftBreak } from "./model/soft-break.js";
 import type { Strikethrough } from "./model/strikethrough.js";
 import type { Strong } from "./model/strong.js";
@@ -44,6 +45,8 @@ export interface Visitor<Result> {
     visitDirectiveLabel(this: void, node: DirectiveLabel): Result;
     visitFootnoteDefinition(this: void, node: FootnoteDefinition): Result;
     visitReferenceDefinition(this: void, node: ReferenceDefinition): Result;
+    visitLinkReference(this: void, node: LinkReference): Result;
+    visitImageReference(this: void, node: ImageReference): Result;
     visitText(this: void, node: Text): Result;
     visitSoftBreak(this: void, node: SoftBreak): Result;
     visitLineBreak(this: void, node: LineBreak): Result;
@@ -95,6 +98,10 @@ export function visit<Result>(node: Markup, visitor: Visitor<Result>): Result {
             return visitor.visitFootnoteDefinition(node);
         case "referenceDefinition":
             return visitor.visitReferenceDefinition(node);
+        case "linkReference":
+            return visitor.visitLinkReference(node);
+        case "imageReference":
+            return visitor.visitImageReference(node);
         case "text":
             return visitor.visitText(node);
         case "softBreak":

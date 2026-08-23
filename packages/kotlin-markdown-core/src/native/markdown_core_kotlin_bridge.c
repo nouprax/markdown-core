@@ -116,6 +116,7 @@ static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
     markdown_core_string_view first = {0};
     markdown_core_string_view second = {0};
     markdown_core_string_view third = {0};
+    markdown_core_string_view fourth = {0};
 
     put_u8(buffer, (uint8_t)kind);
     put_scope(buffer, markdown_core_node_scope(node));
@@ -243,20 +244,35 @@ static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
         write_children(buffer, node);
         break;
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
-        markdown_core_node_footnote_id(node, &first);
+        markdown_core_node_association(node, &first, &second);
         put_string(buffer, first, true);
+        put_string(buffer, second, true);
         write_children(buffer, node);
         break;
     case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
-        markdown_core_node_footnote_id(node, &first);
-        put_string(buffer, first, true);
-        break;
-    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
-        markdown_core_node_definition_properties(node, &first, &second, &third);
+        markdown_core_node_association(node, &first, &second);
         put_string(buffer, first, true);
         put_string(buffer, second, true);
-        put_string(buffer, third, third.data != NULL);
         break;
+    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
+        markdown_core_node_association(node, &first, &second);
+        markdown_core_node_definition_resource(node, &third, &fourth);
+        put_string(buffer, first, true);
+        put_string(buffer, second, true);
+        put_string(buffer, third, true);
+        put_string(buffer, fourth, fourth.data != NULL);
+        break;
+    case MARKDOWN_CORE_KIND_LINK_REFERENCE:
+    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: {
+        markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
+        markdown_core_node_association(node, &first, &second);
+        markdown_core_node_reference_form(node, &form);
+        put_string(buffer, first, true);
+        put_string(buffer, second, true);
+        put_i32(buffer, (int32_t)form);
+        write_children(buffer, node);
+        break;
+    }
     case MARKDOWN_CORE_KIND_LINK:
         markdown_core_node_link_properties(node, &first, &second);
         put_string(buffer, first, first.data != NULL);

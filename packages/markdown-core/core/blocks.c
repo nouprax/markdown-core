@@ -919,8 +919,7 @@ static markdown_core_node *S_new_reference_definition(markdown_core_parser *pars
     node->end_line = end_line;
     node->end_column = end_column;
 
-    definition->label = markdown_core_chunk_dup(&parts->label, 0, parts->label.len);
-    if (!markdown_core_chunk_to_cstr(parser->mem, &definition->label)) {
+    if (!markdown_core_association_init(parser->mem, &definition->association, &parts->label, 0)) {
         /* The label would keep borrowing the content buffer the harvest drops. */
         parser->oom = true;
         markdown_core_node_free(node);
@@ -1503,16 +1502,6 @@ static markdown_core_node *finalize_document(markdown_core_parser *parser) {
     }
 
     finalize(parser, parser->root);
-
-    // Limit total size of extra content created from reference links to
-    // document size to avoid superlinear growth. Always allow 100KB.
-    if (parser->refmap) {
-        if (parser->total_size > 100000) {
-            parser->refmap->max_ref_size = parser->total_size;
-        } else {
-            parser->refmap->max_ref_size = 100000;
-        }
-    }
 
     process_inlines(parser, parser->refmap, parser->options);
 
@@ -2172,7 +2161,14 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
                 markdown_core_chunk_free(parser->mem, &c);
                 return;
             }
-            (*container)->as.literal = c;
+            /* The identifier KEEPS the caret the label does not carry
+             * (markdown_core_association). */
+            if (!markdown_core_association_init(parser->mem, &(*container)->as.association, &c, '^')) {
+                parser->oom = true;
+                markdown_core_chunk_free(parser->mem, &c);
+                return;
+            }
+            markdown_core_chunk_free(parser->mem, &c);
 
             /* The document defines this label from here on.
              *

@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b.1** (§4.14.9b1) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 9b.2** — `LinkReference`/`ImageReference` as nodes, the association (`label` + `identifier`) on all five reference kinds, Q5's footnote `id=` → `label=`, and **D9**: with no destination on a reference the map holds no resource, so the expansion budget has nothing to charge and is deleted. **9b.1 has landed** (§4.14.9b1) — the definition is a node, `specs/concrete/records.json` is 45 rows → 28 with both definition families closed, and the `reference-definition-node` projection is ACTIVE. The mdast backlog is still 5/5 and all five are 9b.2's. **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), Step 9b.1 (§4.14.9b1). Remaining: `9b.2 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 11b** — every byte of every block's CONTENT region owned by exactly one inline node or by the block itself, in SOURCE coordinates. Then `11c 12 13 14 15C`. **Step 9b is LANDED whole** (§4.14.9b1–9b2): the definition and both references are nodes, five kinds carry an association, **D9 and D30 are closed**, the **mdast backlog is EMPTY**, and `fuzz-parity --oracle mdast` — one of §0's six known-red checks — is green. **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), Step 9b (§4.14.9b1–9b2). Remaining: `11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -55,8 +55,8 @@ cmake --preset ubsan   && cmake --build --preset ubsan   --parallel
 ctest --preset correctness -j 8            # 69/69
 ctest --preset correctness-asan -j 8       # 60/60 — SEE THE WARNING BELOW
 ctest --preset correctness-ubsan -j 8      # 60/60 — SEE THE WARNING BELOW
-node scripts/check-canonical-ast-fixtures.mjs   # 30 kinds, 51 fields, 6 cases
-node scripts/audit-ast-projections.mjs           # 30 kinds over 12 surfaces
+node scripts/check-canonical-ast-fixtures.mjs   # 32 kinds, 62 fields, 6 cases
+node scripts/audit-ast-projections.mjs           # 32 kinds over 12 surfaces
 node scripts/audit-source-lists.mjs              # 22 sources, 4 of 5 lists, 1 registered absent
 bash scripts/audit-public-surface.sh
 node scripts/audit-extension-special-chars.mjs   # 6 descriptors read, every byte dispatched
@@ -64,11 +64,11 @@ node scripts/audit-extension-attach-order.mjs    # one attach site, table last (
 node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/audit-source-lists.mjs              # 22 sources, 4 of 5 lists, 1 registered absent
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
-node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
+node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # 300/300 SINCE 9b.2
 node scripts/check-upstream-parity.mjs     # 887/887 vs cmark-gfm 0.29.0.gfm.13, 10/10
                                           # divergences, 4/4 projections acted
-node scripts/check-mdast-parity.mjs        # 110/110, backlog 5/5 still diverging
-node scripts/audit-scope-sanity.mjs        # 1 unresolved row, 5441 scanned, only-shrink holds
+node scripts/check-mdast-parity.mjs        # 110/110, backlog EMPTY since 9b.2
+node scripts/audit-scope-sanity.mjs        # 1 unresolved row, 5453 scanned, only-shrink holds
 
 # The three position oracles, landed at 0a.1 (§4.2.7). Each fails on a row
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
@@ -84,9 +84,10 @@ node scripts/audit-position-places.mjs     # 57 rows registered, 4446 scanned
 # by re-parsing every line-boundary prefix.
 node scripts/audit-concrete-records.mjs   # 28 rows registered, 2782 regions
 
-# D9's pin. REGISTERED RED and it fails if a row STOPS reproducing, because
-# deleting the budget clears both rows and costs 204.678x output growth.
-node scripts/audit-reference-order-independence.mjs  # 2 rows, must stay red
+# D9's pin. It was REGISTERED RED from 0a.8 to 9b.2 and is now GREEN with an
+# EMPTY ledger -- still fail-closed, so a row appearing fails the run. Deleting
+# the budget alone cost 204.678x output growth; deleting the COPY costs nothing.
+node scripts/audit-reference-order-independence.mjs  # 0 rows, green
 
 # The formatters. `format-c.sh` became load-bearing at Step 2: with
 # `InsertBraces: true` in `.clang-format` it is the only thing that says a
@@ -130,10 +131,10 @@ mdast backlog and D9's oracle use:
 | Check | Why red | Owner |
 |---|---|---|
 | ~~`scripts/audit-ast-projections.mjs`~~ | **GREEN at 15A.2.** It was never era skew — §4.1.2 measured it as one binding a full era behind the other two, and Q30's typed child edges closed all sixteen Swift-only failures. | — |
-| `scripts/format-swift.sh --check` | **NEWLY REGISTERED at 15A.2, and it was in no list.** `swift format lint --strict` exits 1 at `46e20f2` with **184** findings, all `[AllPublicDeclarationsHaveDocumentation]`; the pinned 6.3.0 matches, and `.github/workflows/ci.yml:182` runs it as a required health check. 15A.2 takes it to 170, Step 6's option deletion to **163**, and Step 7.2's two new public types back to **164**. | **Q41** |
+| `scripts/format-swift.sh --check` | **NEWLY REGISTERED at 15A.2, and it was in no list.** `swift format lint --strict` exits 1 at `46e20f2` with **184** findings, all `[AllPublicDeclarationsHaveDocumentation]`; the pinned 6.3.0 matches, and `.github/workflows/ci.yml:182` runs it as a required health check. 15A.2 takes it to 170, Step 6's option deletion to **163**, Step 7.2's two new public types back to **164**, and 9b.2's rewrite of the two footnote types down to **155**. | **Q41** |
 | `scripts/check-generated-scanners.sh` | Added at `8926594`; the baseline build has no re2c invocation or version pin (R9). | R9's experiment, then Step 3 |
 | `node scripts/check-release-version.mjs --skip-swift` | **D17 is fixed and the 3.0.0 bump closed the rest**; what remains is **two** unexpected legacy tags — `codex-doc-pass-backup` and `pre-format-baseline` — which is repo hygiene, not engine state. Every version-drift, release-note and CHANGELOG assertion now passes. | release |
-| `node scripts/fuzz-parity.mjs --oracle mdast` | 0/3 — the mdast oracle is red on every generated input, for the same reason the backlog exists (24 entries at the baseline, 7 after Step 7.2). CI runs both oracles; only the upstream one was listed. | Stage 0 close |
+| ~~`node scripts/fuzz-parity.mjs --oracle mdast`~~ | **GREEN at 9b.2, 300/300.** It was red on every generated input for the same reason the backlog existed, and it turned green in the commit that emptied the backlog — measured on both sides, not assumed (§4.14.9b2). | — |
 | `pnpm audit:ci` | **TRIAGED at Step 6, and it is era skew of the purest kind.** The script was restored from `main`, where every workflow action reference is pinned to a full commit SHA; the workflows are the baseline's, where they are tag refs. It names **`benchmark.yml`, `pr-metrics.yml` and others** — `actions/checkout@v7`, `setup-java@v5`, `setup-emsdk@v16`. No engine state is involved. Pinning them is infrastructure work and the SHAs are a license-adjacent record, so it is not something a step should invent. | release / 15C |
 | `pnpm format:es:check` | **TRIAGED at Step 6: `prettier --check .` reports 100 files**, including `scripts/check-plan-graph.mjs` and `specs/upstream-parity/deltas.json`. Same skew — prettier's config came from `main`, the files did not. It is a required CI step (`ci.yml:97`). Reformatting 100 files in one commit would bury every real diff in Stage 0, and doing it per-step means each step's diff carries unrelated churn. **Q42.** | **Q42** |
 | ~~`pnpm audit:source-lists`~~ | **TRIAGED AND GREEN**, ahead of Step 3a, whose row requires it to RUN. It did not fail, it **threw** — `ENOENT` on `packages/swift-markdown-core/Package.release.swift`, a release manifest that postdates `580d10c` and arrived with Step 0's `scripts/` restore. The absence is now registered in the script with an owner and printed on every run, and the pass line says **`4 of 5 lists in agreement, 1 registered absent`** so it can never read as though all five were compared. | the absence: 15C |
@@ -211,11 +212,11 @@ through the binary before trusting a green suite.
    divergence. Zero close in Stage 0a, by design — the backlog measures distance
    to mdast's *model*, while the defects measure wrongness against the engine's
    own intent. **24 at the baseline, 22 after Step 6, 20 after 7.1, 7 after 7.2, 6 after
-   Step 10, 5 after 9a.2** — and the five are all Step 9b's. **9b.1 closes none of
-   them, deliberately**: every one of the five is a `Link`-versus-`LinkReference`
-   disagreement rather than a definition one, and 9b.2 deletes all five. A
-   SUB-step that closes none of its parent step's entries is not a violation;
-   landing 9b with them still listed would be. Step 6's two closed by *leaving the corpus*, not
+   Step 10, 5 after 9a.2, and ZERO after 9b.2** — 9b.1 closed none of the five
+   deliberately, because every one of them was a `Link`-versus-`LinkReference`
+   disagreement rather than a definition one, and 9b.2 closed all five at once.
+   **An empty backlog means Steps 6, 7, 9 and 10 have landed and NOTHING MORE**;
+   Steps 11 through 15 close no entry here and Stage 0 is accepted by §4.8. Step 6's two closed by *leaving the corpus*, not
    by agreeing, so the gate now distinguishes a settled entry from an unreachable
    one and the two are recorded in `retiredBacklog` with the reason (§4.14.6).
    **An entry that stops being exercised is not an entry that closed.**
@@ -357,16 +358,15 @@ it, and the gate requires each to *still* diverge — so a step that lands witho
 deleting its own entries fails as loudly as a new divergence.
 
 ```
-     5  Step 9b.2 — the reference node model
     --
-     5  remaining
+     0  remaining
 ```
 
-**9b.1 landed and moved this number not at all**, which is the right answer and
-not a stall: the definition half now agrees with mdast exactly — a `definition`
-node with `label`, `url` and `title`, where it was written — and all five
-entries are the OTHER half, a `Link` carrying a copied destination where remark
-has a `linkReference` carrying a label and a form. 9b.2 closes all five.
+**EMPTY as of Step 9b.2.** 9b.1 moved the number not at all, which was the right
+answer and not a stall — the definition half agreed with mdast exactly and all
+five entries were the OTHER half, a `Link` carrying a copied destination where
+remark has a `linkReference` carrying a label and a form. 9b.2 closed all five
+in one commit, and the gate said so before the JSON was touched.
 
 **It was 24 at the baseline and the whole of the difference is recorded.** Step
 6 retired two by leaving the corpus, 7.1 closed two, 7.2 closed thirteen, Step
@@ -466,7 +466,7 @@ ones whose witness is stated in this section rather than in the row.
 | D6 | `make_autolink` writes `title = ""` where nothing was written | wrong-output | **fixed at 0a.7** | built & reverted |
 | D7 | `make_autolink` omits `column_offset + block_offset` | wrong-position | **fixed at 0a.6** | built & reverted |
 | D8 | `try_opening_table_header` returns the parent on ~~eleven~~ **ten** non-opening paths | wrong-output | **fixed at 0a.5**; one of the ten went with the arena at 3a.1 (R14) | built & reverted |
-| D9 | reference resolution is order-dependent | wrong-output | **9b** (~~9a only~~, re-attributed at 9a.2 by measurement — §4.14.9a2) | 200 refs → 99 resolve, 101 do not |
+| D9 | reference resolution is order-dependent | wrong-output | **CLOSED at 9b.2** (§4.14.9b2) — the budget is deleted because a reference copies nothing; `audit-reference-order-independence.mjs` is green and empty and `reference_expansion_bound` measures 0.399x | 200 refs → 99 resolve, 101 do not |
 | D10 | an undefined footnote call **loses source bytes** | data-loss | **fixed at 0a.2** | `x[^a⏎b] tail` → `"x[^] tail"` |
 | D11 | a nested duplicate definition **deletes a paragraph** | data-loss | **fixed at 0a.2** | `"OUTER opens first"` in no node |
 | D12 | `consolidate_text_nodes` drops `end_line` | wrong-position | **fixed at 0a.14** | built & reverted |
@@ -487,7 +487,7 @@ ones whose witness is stated in this section rather than in the row.
 | D27 | `parser->linebuf.oom` written at six sites and read at none | silent truncation (allocation failure only) | **fixed at 3a.3**, with A1 | §4.13.11, measured: 244 input bytes become 102 with `parser->oom == 0`; re-measured at 3a.3 on a 279-byte document in 32-byte chunks — refusing allocation 6 of 25 leaves 55 of 275 text bytes |
 | D28 | `extensions/formula.c` ignores `markdown_core_chunk_to_cstr`'s failure and keeps a **borrowed** pointer | **use-after-free** | **fixed at 0a.15** | §4.13.11, ASan: `heap-use-after-free`, READ of size 5 in `markdown_core_extensions_get_formula_literal` |
 | D29 | `extensions/table.c:297` does not check `markdown_core_node_new_with_mem`, and `:305` dereferences NULL | **crash** | **fixed at 0a.15** | §4.13.11, SIGSEGV on `lead text⏎x | y` / `--|--` |
-| D30 | `markdown_core_reference_create` commits an entry whose url or title was lost | wrong-document (allocation failure only) | **HALF CLOSED at 9b.1** — the NODE refuses to commit a lost destination or title and the byte-drop is gone (§4.14.9b1); the MAP entry is 9b.2's, which deletes the resource | §4.13.11, measured on four refused allocations; the node half is mutant M19 |
+| D30 | `markdown_core_reference_create` commits an entry whose url or title was lost | wrong-document (allocation failure only) | **CLOSED** — the node refuses to commit a lost destination or title at 9b.1 (M19), and 9b.2 deletes the map's url and title outright, so there is no entry left to commit (§4.14.9b1–9b2) | §4.13.11, measured on four refused allocations |
 | D31 | a raw HTML tag that crosses a line ending ends **one column short of its own literal** | wrong-position | 8 | found at 0a.6 and pinned as a golden row: `a <b`⏎`c> d` gives `HTML scope=1:3..2:1` for a literal whose last byte is at `2:2`, while `a <b c> d` gives `1:3..1:7`, which covers it. cmark-gfm is wrong the same way |
 | D35 | `finalize` ends a block at `parser->line_number - 1`, which assumes a **later** line closed it — false for an HTML block of type 2 to 5, whose terminator can be on its own first line | wrong-position (reversed range) | **fixed at D35, after Step 5** | found by reading `specs/scope-sanity/ledger.json`'s eleven negative rows for an owner: TEN of them were this. `printf 'para\n\n<!-- c -->\n'` gives `HTMLBlock scope=3:1..2:0` for a literal whose last byte is at `3:10`, and `last_line_length` there is the length of the BLANK line before it |
 | D34 | `markdown_core_node_insert_before` / `_insert_after` accept `sibling == node` — `S_can_contain(node->parent, sibling)` starts its ancestor walk at the PARENT and never meets the child, so it answers yes | **unbounded sibling list** | **fixed at 3b** | found at 3b while writing its gate: `insert_before(b, b)` returns 1 and leaves `b->next == b` and `b->prev == b`, with `a->first_child` and `a->last_child` disagreeing; walking `a`'s children never terminates. Reachable with `markdown_core_enable_safety_checks` in EITHER position, so the flag never covered it |
@@ -567,7 +567,7 @@ defect commit re-pins the citations that remain.**
 | D6 | autolink writes `title=""` where nothing was written | wrong-output | yes — **−1 line** | 18 + 1 assertion | **no** — all three parity oracles fold `""` to `null` | 0a.7 |
 | D7 | `make_autolink` omits `column_offset + block_offset` | wrong-position | yes — **2 lines** | 0 | **no** — and upstream carries the same bug | 0a.6 |
 | D8 | table's block opener swallows every later extension's | wrong-output | yes — **6 lines** | 0 | **no** — the corpus never co-enables two extensions | 0a.5 |
-| D9 | the reference budget makes resolution order-dependent | wrong-output | **NO — genuinely blocked** | — | **no** | **9b** (~~9a~~, §4.14.9a2); **pinned by two gates in 0a.8** |
+| D9 | the reference budget makes resolution order-dependent | wrong-output | **NO — genuinely blocked** | — | **no** | **CLOSED at 9b.2** (§4.14.9b2); pinned by two gates from 0a.8 until then |
 | D10 | an undefined footnote call loses source bytes | **data-loss + memory-unsafety** | yes — **~10 lines** | 1 + 1 ledger | half, **and the fixture pins the defect** | 0a.2 |
 | D11 | a nested duplicate footnote definition deletes a paragraph | **data-loss** | yes — **~9 lines** | 0 | **no** | 0a.2 |
 | D12 | text consolidation carries `end_column` but not `end_line` | wrong-position | blocked by D13 | unmeasured | no | 5 |
@@ -5992,6 +5992,149 @@ records 28**, reference-order 2 (still red, still 9b.2's), `test-topology`,
 type documents every public declaration it adds.
 
 
+#### 4.14.9b2 Step 9b.2: a reference names its definition, and D9 closes
+
+**The other half of §5.1.** `LinkReference` and `ImageReference` are nodes
+carrying an association and the form they were written in, and **no
+destination**. The destination is stated once, at the definition. Five kinds
+now carry the association — those two, `ReferenceDefinition`,
+`FootnoteDefinition` and `FootnoteReference` — and the dump speaks one
+vocabulary for all five (Q5: `label=`, never `id=`).
+
+```
+before   Link scope=3:5..3:15 destination="/r" title="T"
+after    LinkReference scope=3:5..3:15 label="ref" identifier="ref" form=full
+```
+
+##### D9 IS CLOSED, and both of its gates changed state in the same commit
+
+`markdown_core_map_lookup` carried a running budget — `max(100000, input size)`
+bytes summed over successful lookups — because resolving a reference COPIED the
+definition's destination and title into the node. The budget was the defect: it
+made **whether a reference resolves depend on how many resolved before it**, and
+the contamination crossed labels. Deleting it alone was measured at **204.678x**
+output growth and was never the fix.
+
+A reference that names its definition copies nothing, so there is nothing to
+charge:
+
+| gate | before | after |
+|---|---|---|
+| `audit-reference-order-independence.mjs` | **REGISTERED RED**, 2 rows | **GREEN, 0 rows** — and still fail-closed: M23 puts a budget back and both rows re-appear |
+| `reference_expansion_bound` | 0.999x | **0.399x** |
+
+The bound gate had to be rewritten or it would have passed by measuring nothing:
+it counted `link_properties`/`image_properties` bytes, and after this step a
+reference has none, so it would have reported **0.000x** on a model it no longer
+describes. It now counts the association on every reference kind as well, which
+is what the tree actually stores.
+
+**`markdown_core_reference` is gone.** Both maps are label sets with one free
+function between them; `markdown_core_map_entry` loses `size`, the map loses
+`ref_size` and `max_ref_size`, `chunk_clone` in `core/inlines.c` has no caller
+left, and `core/blocks.c` loses the eight lines that armed the budget.
+**D30 closes with it** — an entry that carries no url and no title cannot commit
+one it lost.
+
+##### The mdast backlog reaches ZERO, and the second fuzz oracle turns green
+
+All five remaining entries were this half, and all five closed here. The gate
+said so itself before the JSON was touched: *"backlog entry now AGREES with
+remark … delete this entry in that same commit."*
+
+**`node scripts/fuzz-parity.mjs --oracle mdast` was one of §0's six known-red
+checks and is now 300/300.** Measured on both sides of this commit rather than
+assumed: stashed to 9b.1 with a clean rebuild it fails; restored it passes. It
+was red for exactly the reason the backlog existed.
+
+**And the mdast oracle now compares more than it did.** `identifier` joins the
+compared fields on all three reference kinds, and §5.6's *"footnote label bytes
+are compared by nobody, on either side"* is answered — `FootnoteDefinition` and
+`FootnoteReference` compare `label`, because mdast's `label` is the authored
+spelling and so is this side's. `identifier` is deliberately NOT compared for
+the footnote kinds: this side keeps the leading `^` and mdast does not (§5.2),
+and a one-byte difference belongs in a register rather than in a gate.
+
+##### The upstream projection groups by `identifier`, and that is stronger
+
+`applyUpstreamReferenceModel` folded the raw label in JavaScript. It cannot:
+**`toLowerCase()` is not a full case fold**, so `[SS]` and `[ẞ]` — which cmark
+matches and this engine matches — would resolve to different definitions in the
+normalizer and report a divergence this engine does not have. It now groups by
+the `identifier` the engine states.
+
+That is not trusting the engine about the thing being checked, and the mutant
+says so: **M22** builds the identifier from the raw label with no fold at all,
+and upstream parity goes **887/887 → 875/887**. A reference that names the wrong
+definition still resolves to the wrong destination here, and a reference that
+names none stays `Text` where upstream has a `Link`.
+
+##### Ninety-four golden examples moved, and the claim is mechanised
+
+78 in `spec.txt`, 12 in `regression.txt`, 4 in `extensions.txt`, plus two
+canonical `.ast` files. Every changed line is one of exactly three rewrites:
+
+1. a `Link`/`Image` becomes a `LinkReference`/`ImageReference` **at the same
+   scope**, with `destination`+`title` replaced by `label`+`identifier`+`form`;
+2. a footnote's `id="X"` becomes `label="X" identifier="^x"`;
+3. a `ReferenceDefinition` gains `identifier=`.
+
+Applied as a canonicalisation and compared: **94 of 94 examples, 0
+unexplained.**
+
+##### The numbering rule, stated because the block half looked like a rule and was not
+
+`MARKDOWN_CORE_NODE_REFERENCE_DEFINITION` is `0x0010` because the extension
+BLOCK types run to `0x000f`. The two inline reference kinds are `0x000f` and
+`0x0010`, because the extension INLINE types stop at `0x000e`. **The two classes
+are numbered independently and the class bits are what separate them** — reading
+9b.1's gap as "core starts at 0x0010" would leave `0x000f` permanently unused
+and break `node_type_values`, which asserts that the *n*-th type in each class
+has value *n*. That test was written before either kind existed and it is what
+makes both statements checkable.
+
+##### `markdown_core_node_association`, and the accessor test that killed nothing first
+
+One function, one switch, all five kinds, and it refuses every other node. §5.2
+requires the dispatch rather than a common-initial-sequence read, and the reason
+is not standards lawyering: a definition's association is **boxed** and the other
+four are inline, so a uniform read would take a POINTER for `chunk.data`.
+
+The new `association_accessor` test walks a corpus and asserts that exactly five
+nodes answer and every other refuses. **Its first version killed nothing**:
+M24 adds `MARKDOWN_CORE_NODE_LINK` to the switch — reading a `markdown_core_link`
+as an association — and the suite stayed 69/69, because the corpus had no inline
+link in it. An inline `Link` and an inline `Image` are now in that corpus
+deliberately; they are the two kinds nearest to answering by accident, because
+their union arm is a pair of chunks too. With them M24 fails three assertions.
+
+##### Mutants
+
+| mutant | what went red |
+|---|---|
+| **M20** a collapsed reference reports `form=full` | `spec_commonmark`, `extensions_gfm`, `conformance` 0/2, mdast **109/110** — and upstream **887/887**, because upstream has no form to compare |
+| **M21** the footnote identifier loses its `^` | `regression_commonmark`, `extensions_gfm`, `conformance` 0/2 |
+| **M22** the identifier is the raw label, unfolded | `spec_commonmark`, `extensions_gfm`, mdast 109/110, upstream **875/887** |
+| **M23** a running budget goes back into `markdown_core_map_lookup` | `audit-reference-order-independence.mjs` reports **both rows appearing**; also `facade_concurrent_stress` and both OOM sweeps, which is the crude mutant's own `static`, not the property |
+| **M24** a sixth kind answers the association accessor | `api_engine`, three assertions — **and nothing at all until the corpus gained an inline link** |
+
+##### Gates
+
+`correctness` 69/69, `correctness-asan` 60/60, `correctness-ubsan` 60/60 (both
+sanitizer trees deleted and reconfigured), `conformance` 2/2, `canonical-ast`
+**32 kinds, 62 fields, 6 cases**, `ast-projections` 32 kinds over 12 surfaces,
+`source-lists` 22 sources, `public-surface`, `special-chars`, `attach-order`,
+`plan-graph` 22/45, **both** fuzz oracles 300/300, upstream **887/887** with
+10/10 divergences and 4/4 projections, mdast 110/110 with **an empty backlog**,
+scope-sanity 1, inline-sourcepos 40, containment 9, places 57, concrete records
+28, **reference-order 0 and green**, `test-topology`, `format-c`,
+`format-cmake`, `lint-c`, `pnpm -w run lint`, `leaks --atExit` 0, and the Swift,
+Kotlin and ES suites green. `scripts/format-swift.sh --check` moves **164 →
+155**: the two footnote types were rewritten and now document every public
+declaration they have (Q41's count shrinks; the check is still red and still
+owned).
+
+
 #### 4.14.11a2 Q44 answered: an autocompleted table cell sits where it was completed
 
 **Owner ruling, 2026-08-23, and it supplied the criterion the question was
@@ -6652,7 +6795,7 @@ following, together:
 - [x] **Directive grammar conformance (Step 7) — deliverable #1. LANDED**, §4.14.7a–e. Nothing carried: **D36** closed at 7e and **Q43** answered with it.
 - [x] **The formula fix (Step 6) — deliverable #2. LANDED, §4.14.6.**
 - [ ] CST concrete records (11a, 11b, 11c) and diagnostics (13) — deliverable #3. **11a is LANDED** (§4.14.11a); 11b, 11c and 13 are not
-- [ ] The reference model (9a, 9b) and the positions that depend on it — **10 is LANDED** (§4.14.10); 9a and 9b are not
+- [x] The reference model (9a, 9b) and the positions that depend on it — **10, 9a and 9b are all LANDED** (§4.14.10, §4.14.9a1–9a2, §4.14.9b1–9b2)
 - [ ] The facade and its single ABI break window (12), the null/empty rule (14)
 - [ ] Bindings, specs and docs regenerated (15)
 
@@ -6664,11 +6807,12 @@ its index table carries thirty-five rows (D1–D25, D27–D36) and **D26 is the
 thirty-third** — measured at 0a.12, refused there, and landed at **0a.12b**
 with the ruling it needed (Q40).
 
-**Thirty-three are closed and three are carried.** D9 (**Step 9b**, two gates
-registered at 0a.8, one known-red; the owner was 9a until 9a.2 measured that
-there is no 9a-shaped fix — §4.14.9a2), D30 (**half closed at 9b.1**, §4.14.9b1; the map entry is 9b.2's; pinned by the
-allocation-failure sweep, which is what caught 9a.2's own new defect) and D31 (Step 8; pinned as a golden row in
-`regression.txt`). **D36** was the fourth for three commits: found at 7c by
+**Thirty-five are closed and one is carried.** D9 and D30 both **CLOSED at 9b**
+(§4.14.9b1–9b2): D9's two gates changed state in one commit — the
+order-independence oracle went from registered-red with two rows to green with
+zero, and `reference_expansion_bound` from 0.999x to 0.399x — and D30 lost its
+mechanism entirely when the map stopped holding a resource. What remains carried
+is **D31** (Step 8; pinned as a golden row in `regression.txt`). **D36** was the fourth for three commits: found at 7c by
 sweeping the grammar against micromark's own source, and **closed at 7e** once
 the owner named the layer -- the defect was in STARTING a directive, not in
 anything downstream. D27 was another and **closed at 3a.3**.
@@ -6677,8 +6821,8 @@ anything downstream. D27 was another and **closed at 3a.3**.
 - [ ] `correctness`, `correctness-asan`, `correctness-ubsan` — each having
       actually run its tests, not merely exited 0 (§0's warning)
 - [ ] `conformance`
-- [ ] upstream parity, and **both** fuzz oracles
-- [ ] mdast parity with an EMPTY backlog — **6 left, all Step 9b's** (§4.14.10)
+- [x] upstream parity, and **both** fuzz oracles — the mdast fuzz oracle turned green at 9b.2 (§4.14.9b2)
+- [x] mdast parity with an EMPTY backlog — **emptied at 9b.2**; ~~6 left, all Step 9b's~~
 - [ ] scope-sanity, having only shrunk
 - [x] `check-canonical-ast-fixtures`, `audit-public-surface`,
       `audit-ast-projections` — all three green; the third since 15A.2

@@ -33,6 +33,8 @@ internal enum class WireKind(
     TABLE_CELL(28),
     DIRECTIVE_LABEL(29),
     REFERENCE_DEFINITION(30),
+    LINK_REFERENCE(31),
+    IMAGE_REFERENCE(32),
     ;
 
     companion object {

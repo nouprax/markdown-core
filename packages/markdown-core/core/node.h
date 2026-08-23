@@ -44,6 +44,42 @@ typedef struct {
     markdown_core_chunk title;
 } markdown_core_link;
 
+/* THE ASSOCIATION every reference and definition carries. TWO values, and
+ * neither derives the other in either direction.
+ *
+ * `label` is the bytes between the delimiters exactly as written: escapes and
+ * character references unresolved, whitespace uncollapsed, case unfolded.
+ * `identifier` is the match key: full Unicode case fold, trim, collapse
+ * internal whitespace -- and for a footnote it KEEPS its leading `^`, so that a
+ * link definition and a footnote definition of the same name cannot collide in
+ * a consumer's single map. That caret is a correction to mdast, which separates
+ * the two namespaces only by node type and so cannot survive being flattened
+ * onto a wire.
+ *
+ * NORMATIVE: `identifier` is compared with memcmp over its bytes. It is never
+ * case mapped, never NFC/NFD normalized, never re-encoded, and never used as a
+ * key in a language map whose `==` has an opinion about Unicode -- Swift's
+ * `String ==` is canonical equivalence, which would collapse the NFC and NFD
+ * spellings of `[cafe\u0301]` that this parser deliberately keeps apart.
+ *
+ * NEITHER derives the other. `raw -> key` needs the case-fold table; `key ->
+ * raw` is impossible, because the fold is many-to-one and `[ss]` and
+ * `[\u00df]` are two labels with one key. The producer computes the key at zero
+ * marginal cost: it already builds one per occurrence for its own map. */
+typedef struct {
+    markdown_core_chunk label;
+    markdown_core_chunk identifier;
+} markdown_core_association;
+
+/* A link or image reference: Association + the form it was written in. IT HOLDS
+ * NO DESTINATION -- the destination is stated once, at the definition, which is
+ * what D9's budget existed to bound and what deleting the copy removes the
+ * reason for. */
+typedef struct {
+    markdown_core_association association;
+    markdown_core_reference_form form;
+} markdown_core_reference_link;
+
 /* A link reference definition is a block node at the byte where its opening
  * bracket was written, in the container it was written in, and it stays there.
  * There are two kinds of reference definition and they differ in exactly one
@@ -60,12 +96,12 @@ typedef struct {
  * preference to cmark-gfm's, which erases a link reference definition into a
  * parser-private map and leaves no node behind.
  *
- * BOXED, and the reason is measured rather than stylistic: `markdown_core_link`
- * is 32 bytes and `markdown_core_code` is 40, which is the widest arm `node.as`
- * has. Three chunks are 48, so storing this inline would grow EVERY node in the
- * document by 8 bytes to carry a payload that appears once per definition. */
+ * BOXED, and the reason is measured rather than stylistic: `markdown_core_code`
+ * is 40 bytes, which is the widest arm `node.as` has, and this is 64. Storing
+ * it inline would grow EVERY node in the document by 24 bytes to carry a
+ * payload that appears once per definition. A reference is 40 and fits. */
 typedef struct {
-    markdown_core_chunk label;
+    markdown_core_association association;
     markdown_core_chunk url;
     markdown_core_chunk title;
 } markdown_core_definition;
@@ -117,6 +153,8 @@ struct markdown_core_node {
         markdown_core_heading heading;
         markdown_core_link link;
         markdown_core_definition *definition;
+        markdown_core_association association;
+        markdown_core_reference_link reference;
         int html_block_type;
         int cell_index; // For keeping track of TABLE_CELL table alignments
         void *opaque;

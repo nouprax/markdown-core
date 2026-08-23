@@ -16,11 +16,11 @@ enum es_string_field {
     ES_STRING_LINK_TITLE,
     ES_STRING_IMAGE_SOURCE,
     ES_STRING_IMAGE_TITLE,
-    ES_STRING_FOOTNOTE_ID,
-    ES_STRING_ERROR_MESSAGE,
-    ES_STRING_DEFINITION_LABEL,
+    ES_STRING_ERROR_MESSAGE = 14,
     ES_STRING_DEFINITION_DESTINATION,
-    ES_STRING_DEFINITION_TITLE
+    ES_STRING_DEFINITION_TITLE,
+    ES_STRING_ASSOCIATION_LABEL,
+    ES_STRING_ASSOCIATION_IDENTIFIER
 };
 
 static void es_write_view(markdown_core_string_view view, uintptr_t *data, size_t *length) {
@@ -122,6 +122,12 @@ int32_t es_node_code_flag(const markdown_core_node *node, int32_t field) {
     return field == 0 ? fenced : closed;
 }
 
+int32_t es_node_reference_form(const markdown_core_node *node) {
+    markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
+    markdown_core_node_reference_form(node, &form);
+    return (int32_t)form;
+}
+
 int32_t es_node_formula_mode(const markdown_core_node *node) {
     markdown_core_placement_mode mode;
     markdown_core_string_view literal;
@@ -206,16 +212,15 @@ void es_string(const void *object, int32_t field, uintptr_t *data, size_t *lengt
         markdown_core_node_image_properties(node, &first, &second);
         first = field == ES_STRING_IMAGE_SOURCE ? first : second;
         break;
-    case ES_STRING_FOOTNOTE_ID:
-        markdown_core_node_footnote_id(node, &first);
-        break;
-    case ES_STRING_DEFINITION_LABEL:
     case ES_STRING_DEFINITION_DESTINATION:
     case ES_STRING_DEFINITION_TITLE:
-        markdown_core_node_definition_properties(node, &first, &second, &third);
-        first = field == ES_STRING_DEFINITION_LABEL         ? first
-                : field == ES_STRING_DEFINITION_DESTINATION ? second
-                                                            : third;
+        markdown_core_node_definition_resource(node, &first, &second);
+        first = field == ES_STRING_DEFINITION_DESTINATION ? first : second;
+        break;
+    case ES_STRING_ASSOCIATION_LABEL:
+    case ES_STRING_ASSOCIATION_IDENTIFIER:
+        markdown_core_node_association(node, &first, &second);
+        first = field == ES_STRING_ASSOCIATION_LABEL ? first : second;
         break;
     case ES_STRING_ERROR_MESSAGE:
         first = markdown_core_error_get_message((const markdown_core_error *)object);

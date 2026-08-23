@@ -28,7 +28,9 @@ export type NativeKind =
     | "tableRow"
     | "tableCell"
     | "directiveLabel"
-    | "referenceDefinition";
+    | "referenceDefinition"
+    | "linkReference"
+    | "imageReference";
 
 export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "none",
@@ -61,5 +63,7 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "tableRow",
     "tableCell",
     "directiveLabel",
-    "referenceDefinition"
+    "referenceDefinition",
+    "linkReference",
+    "imageReference"
 ]);

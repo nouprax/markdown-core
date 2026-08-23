@@ -137,7 +137,7 @@ private struct DumpVisitor: MarkupVisitor {
         record(
             "FootnoteDefinition",
             node,
-            fields: ["id=\(jsonString(node.id))"],
+            fields: association(node.label, node.identifier),
             children: node.content.count
         )
     }
@@ -146,12 +146,42 @@ private struct DumpVisitor: MarkupVisitor {
         record(
             "ReferenceDefinition",
             node,
-            fields: [
-                "label=\(jsonString(node.label))",
+            fields: association(node.label, node.identifier) + [
                 "destination=\(jsonString(node.destination))",
                 "title=\(optionalString(node.title))",
             ]
         )
+    }
+
+    mutating func visit(_ node: LinkReference) -> DumpRecord {
+        record(
+            "LinkReference",
+            node,
+            fields: association(node.label, node.identifier) + ["form=\(formName(node.form))"],
+            children: node.content.count
+        )
+    }
+
+    mutating func visit(_ node: ImageReference) -> DumpRecord {
+        record(
+            "ImageReference",
+            node,
+            fields: association(node.label, node.identifier) + ["form=\(formName(node.form))"],
+            children: node.content.count
+        )
+    }
+
+    /// The two fields five kinds carry identically, in contract order.
+    private func association(_ label: String, _ identifier: String) -> [String] {
+        ["label=\(jsonString(label))", "identifier=\(jsonString(identifier))"]
+    }
+
+    private func formName(_ form: ReferenceForm) -> String {
+        switch form {
+        case .full: "full"
+        case .collapsed: "collapsed"
+        case .shortcut: "shortcut"
+        }
     }
 
     mutating func visit(_ node: Text) -> DumpRecord {
@@ -221,7 +251,7 @@ private struct DumpVisitor: MarkupVisitor {
     }
 
     mutating func visit(_ node: FootnoteReference) -> DumpRecord {
-        record("FootnoteReference", node, fields: ["id=\(jsonString(node.id))"])
+        record("FootnoteReference", node, fields: association(node.label, node.identifier))
     }
 
     mutating func visit(_ node: TableRow) -> DumpRecord {

@@ -3,6 +3,7 @@
 
 #include "config.h"
 #include "node.h"
+#include "references.h"
 #include "syntax_extension.h"
 
 static void S_node_unlink(markdown_core_node *node);
@@ -34,6 +35,8 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     case MARKDOWN_CORE_NODE_STRONG:
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_IMAGE:
+    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
+    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
         return MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
 
     default:
@@ -138,9 +141,15 @@ static void free_node_as(markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_CODE:
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
+        markdown_core_chunk_free(NODE_MEM(node), &node->as.literal);
+        break;
     case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
     case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
-        markdown_core_chunk_free(NODE_MEM(node), &node->as.literal);
+        markdown_core_association_free(NODE_MEM(node), &node->as.association);
+        break;
+    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
+    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
+        markdown_core_association_free(NODE_MEM(node), &node->as.reference.association);
         break;
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_IMAGE:
@@ -149,7 +158,7 @@ static void free_node_as(markdown_core_node *node) {
         break;
     case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
         if (node->as.definition) {
-            markdown_core_chunk_free(NODE_MEM(node), &node->as.definition->label);
+            markdown_core_association_free(NODE_MEM(node), &node->as.definition->association);
             markdown_core_chunk_free(NODE_MEM(node), &node->as.definition->url);
             markdown_core_chunk_free(NODE_MEM(node), &node->as.definition->title);
             NODE_MEM(node)->free(node->as.definition);
@@ -263,6 +272,10 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "footnote_definition";
     case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
         return "reference_definition";
+    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
+        return "link_reference";
+    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
+        return "image_reference";
     case MARKDOWN_CORE_NODE_TEXT:
         return "text";
     case MARKDOWN_CORE_NODE_SOFT_BREAK:
@@ -360,8 +373,6 @@ const char *markdown_core_node_get_literal(markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_TEXT:
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_CODE:
-    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
-    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
         return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.literal);
 
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
@@ -384,7 +395,6 @@ int markdown_core_node_set_literal(markdown_core_node *node, const char *content
     case MARKDOWN_CORE_NODE_TEXT:
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_CODE:
-    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
         return markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.literal, content);
 
     case MARKDOWN_CORE_NODE_CODE_BLOCK:

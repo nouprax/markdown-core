@@ -18,6 +18,7 @@ export interface NativeExports extends WebAssembly.Exports {
     es_node_checked(node: number): number;
     es_node_code_flag(node: number, field: number): number;
     es_node_formula_mode(node: number): number;
+    es_node_reference_form(node: number): number;
     es_node_table_column_count(node: number): number;
     es_node_table_alignment(node: number, index: number): number;
     es_node_table_row_header(node: number): number;

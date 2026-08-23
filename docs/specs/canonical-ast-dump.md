@@ -99,16 +99,17 @@ it a node, and no row for `DirectiveLabel` at all.
 | `Table` | `alignments` |
 | `TableRow` | `isHeader` |
 | `DirectiveBlock` | `name`, `attributes` |
-| `FootnoteDefinition` | `id` |
-| `ReferenceDefinition` | `label`, `destination`, `title` |
+| `FootnoteDefinition` | `label`, `identifier` |
+| `ReferenceDefinition` | `label`, `identifier`, `destination`, `title` |
 | `Text` | `literal` |
 | `Code` | `literal` |
 | `HTML` | `literal` |
 | `Formula` | `mode`, `literal` |
 | `Link` | `destination`, `title` |
 | `Image` | `source`, `title` |
+| `LinkReference`, `ImageReference` | `label`, `identifier`, `form` |
 | `Directive` | `name`, `attributes` |
-| `FootnoteReference` | `id` |
+| `FootnoteReference` | `label`, `identifier` |
 
 Example:
 

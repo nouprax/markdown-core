@@ -59,7 +59,28 @@ typedef enum {
     MARKDOWN_CORE_NODE_LINK = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0008,
     MARKDOWN_CORE_NODE_IMAGE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0009,
     MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000a,
+    /* 0x000b through 0x000e are the extension INLINE types; 0x000f is the next
+     * free value in that class and these two take it. The block class had no
+     * such value -- its extensions run to 0x000f -- which is why
+     * MARKDOWN_CORE_NODE_REFERENCE_DEFINITION starts at 0x0010 and these do
+     * not. The two classes are numbered independently; the class bits are what
+     * separate them. */
+    MARKDOWN_CORE_NODE_LINK_REFERENCE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000f,
+    MARKDOWN_CORE_NODE_IMAGE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0010,
 } markdown_core_node_type;
+
+/* The form a reference was WRITTEN in, which is not derivable from anything
+ * else on the node: `[t][l]`, `[l][]` and `[l]` all resolve the same way and
+ * are three different spellings. A footnote reference deliberately has no form
+ * -- there is one footnote call syntax, so a field would have one value (Q3). */
+#ifndef MARKDOWN_CORE_REFERENCE_FORM_TYPEDEF
+#define MARKDOWN_CORE_REFERENCE_FORM_TYPEDEF
+typedef enum markdown_core_reference_form {
+    MARKDOWN_CORE_REFERENCE_FULL = 1,
+    MARKDOWN_CORE_REFERENCE_COLLAPSED = 2,
+    MARKDOWN_CORE_REFERENCE_SHORTCUT = 3
+} markdown_core_reference_form;
+#endif
 
 typedef enum { MARKDOWN_CORE_NO_LIST, MARKDOWN_CORE_BULLET_LIST, MARKDOWN_CORE_ORDERED_LIST } markdown_core_list_type;
 

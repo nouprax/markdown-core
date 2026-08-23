@@ -17,3 +17,5 @@ let x = 1
 [note]: /destination "The title"
 
 [^note]: Footnote
+
+[a][note] [note][] [note] ![alt][note]

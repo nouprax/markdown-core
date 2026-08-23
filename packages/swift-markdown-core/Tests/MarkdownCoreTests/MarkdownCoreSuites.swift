@@ -83,6 +83,10 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: FootnoteDefinition) -> String { kindName(node) }
 
     mutating func visit(_ node: ReferenceDefinition) -> String { kindName(node) }
+
+    mutating func visit(_ node: LinkReference) -> String { kindName(node) }
+
+    mutating func visit(_ node: ImageReference) -> String { kindName(node) }
     mutating func visit(_ node: Text) -> String { kindName(node) }
     mutating func visit(_ node: SoftBreak) -> String { kindName(node) }
     mutating func visit(_ node: LineBreak) -> String { kindName(node) }

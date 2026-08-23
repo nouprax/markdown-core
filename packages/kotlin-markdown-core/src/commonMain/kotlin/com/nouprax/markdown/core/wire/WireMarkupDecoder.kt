@@ -72,11 +72,19 @@ internal fun WireReader.markup(): Markup {
         }
 
         WireKind.FOOTNOTE_DEFINITION -> {
-            FootnoteDefinition(requiredString(), markupList(), nodeScope)
+            FootnoteDefinition(requiredString(), requiredString(), markupList(), nodeScope)
         }
 
         WireKind.REFERENCE_DEFINITION -> {
-            ReferenceDefinition(requiredString(), requiredString(), string(), nodeScope)
+            ReferenceDefinition(requiredString(), requiredString(), requiredString(), string(), nodeScope)
+        }
+
+        WireKind.LINK_REFERENCE -> {
+            LinkReference(requiredString(), requiredString(), referenceForm(), markupList(), nodeScope)
+        }
+
+        WireKind.IMAGE_REFERENCE -> {
+            ImageReference(requiredString(), requiredString(), referenceForm(), markupList(), nodeScope)
         }
 
         WireKind.TEXT -> {
@@ -128,7 +136,7 @@ internal fun WireReader.markup(): Markup {
         }
 
         WireKind.FOOTNOTE_REFERENCE -> {
-            FootnoteReference(requiredString(), nodeScope)
+            FootnoteReference(requiredString(), requiredString(), nodeScope)
         }
 
         WireKind.TABLE_ROW -> {
@@ -150,6 +158,14 @@ private fun WireReader.placement(): PlacementMode =
         1 -> PlacementMode.EMBEDDED
         2 -> PlacementMode.STANDALONE
         else -> error("invalid native placement mode $rawValue")
+    }
+
+private fun WireReader.referenceForm(): ReferenceForm =
+    when (val rawValue = int()) {
+        1 -> ReferenceForm.FULL
+        2 -> ReferenceForm.COLLAPSED
+        3 -> ReferenceForm.SHORTCUT
+        else -> error("unsupported native reference form $rawValue")
     }
 
 private fun WireReader.markupList(): kotlin.collections.List<Markup> {

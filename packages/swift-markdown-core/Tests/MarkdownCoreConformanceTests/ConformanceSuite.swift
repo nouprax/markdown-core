@@ -7,7 +7,8 @@ import Testing
     func schemaReachability() throws {
         let sources = [
             "# Heading\n\n> Quote\n\n---\n\n3. ordered\n\n- [x] task\n\n"
-                + "``` swift\ncode\n```\n\n<section>raw</section>\n\n[^n]: note\n\n[ref]: /r \"t\"\n",
+                + "``` swift\ncode\n```\n\n<section>raw</section>\n\n[^n]: note\n\n[ref]: /r \"t\"\n"
+                + "\n[a][ref] ![b][ref]\n",
             "Text *em* **strong** ~~strike~~ `code` [link](/go \"title\") ![alt](/image.png) "
                 + ":badge[label]{kind=demo} $x$ [^n]  \nnext <i>raw</i>\nsoft\n\n[^n]: definition\n",
             "| left | center |\n| :--- | :----: |\n| a | b |\n\n::leaf[Label]{id=value}\n\n"
@@ -24,7 +25,7 @@ import Testing
             "LineBreak",
             "Code", "HTML", "Formula", "Emphasis", "Strong",
             "Strikethrough", "Link", "Image", "Directive", "FootnoteReference",
-            "TableRow", "TableCell", "ReferenceDefinition",
+            "TableRow", "TableCell", "ReferenceDefinition", "LinkReference", "ImageReference",
         ]
         #expect(kinds == expected)
         #expect(documents.allSatisfy { $0.scope.start == Position(line: 1, column: 1) })

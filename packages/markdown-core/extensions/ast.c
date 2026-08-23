@@ -234,6 +234,12 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (node->type == MARKDOWN_CORE_NODE_REFERENCE_DEFINITION) {
         return MARKDOWN_CORE_KIND_REFERENCE_DEFINITION;
     }
+    if (node->type == MARKDOWN_CORE_NODE_LINK_REFERENCE) {
+        return MARKDOWN_CORE_KIND_LINK_REFERENCE;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_IMAGE_REFERENCE) {
+        return MARKDOWN_CORE_KIND_IMAGE_REFERENCE;
+    }
     if (node->type == MARKDOWN_CORE_NODE_TEXT) {
         return MARKDOWN_CORE_KIND_TEXT;
     }
@@ -325,8 +331,10 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
                                         "TableRow",
                                         "TableCell",
                                         "DirectiveLabel",
-                                        "ReferenceDefinition"};
-    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_REFERENCE_DEFINITION) {
+                                        "ReferenceDefinition",
+                                        "LinkReference",
+                                        "ImageReference"};
+    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_IMAGE_REFERENCE) {
         return "None";
     }
     return names[kind];
@@ -576,30 +584,60 @@ bool markdown_core_node_image_properties(const markdown_core_node *node, markdow
     return link_properties(node, MARKDOWN_CORE_NODE_IMAGE, source, title);
 }
 
-bool markdown_core_node_definition_properties(const markdown_core_node *node, markdown_core_string_view *label,
-                                              markdown_core_string_view *destination,
-                                              markdown_core_string_view *title) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION || !node->as.definition || !label ||
-        !destination || !title) {
+/* ONE accessor for all five reference kinds, dispatched on the type and
+ * relying on no layout at all.
+ *
+ * The union arms genuinely differ -- a definition is BOXED and the other four
+ * are inline -- so the common-initial-sequence read that would have made this
+ * a single load is not merely unlicensed, it is impossible: `as.association`
+ * on a definition node would read a POINTER as `chunk.data`. It costs a branch
+ * and buys a guarantee the union trick never had. */
+bool markdown_core_node_association(const markdown_core_node *node, markdown_core_string_view *label,
+                                    markdown_core_string_view *identifier) {
+    const markdown_core_association *association;
+    if (!node || !label || !identifier) {
         return false;
     }
-    view_chunk(label, &node->as.definition->label);
+    switch (node->type) {
+    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
+        if (!node->as.definition) {
+            return false;
+        }
+        association = &node->as.definition->association;
+        break;
+    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
+    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
+        association = &node->as.association;
+        break;
+    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
+    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
+        association = &node->as.reference.association;
+        break;
+    default:
+        return false;
+    }
+    view_chunk(label, &association->label);
+    view_chunk(identifier, &association->identifier);
+    return true;
+}
+
+bool markdown_core_node_definition_resource(const markdown_core_node *node, markdown_core_string_view *destination,
+                                            markdown_core_string_view *title) {
+    if (!node || node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION || !node->as.definition || !destination ||
+        !title) {
+        return false;
+    }
     view_chunk(destination, &node->as.definition->url);
     view_chunk(title, &node->as.definition->title);
     return true;
 }
 
-bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string_view *id) {
-    if (!node || !id ||
-        (node->type != MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION && node->type != MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE)) {
+bool markdown_core_node_reference_form(const markdown_core_node *node, markdown_core_reference_form *form) {
+    if (!node || !form ||
+        (node->type != MARKDOWN_CORE_NODE_LINK_REFERENCE && node->type != MARKDOWN_CORE_NODE_IMAGE_REFERENCE)) {
         return false;
     }
-    /* Both kinds carry the label the author wrote, so both answer from
-     * themselves. A reference used to answer through a back-pointer to its
-     * definition, because a post-pass had overwritten the reference's own
-     * label with a decimal index -- so the one field the author wrote was
-     * recoverable only through a pointer the same pass installed. */
-    view_chunk(id, &node->as.literal);
+    *form = node->as.reference.form;
     return true;
 }
 
@@ -736,16 +774,29 @@ static const char *alignment_name(markdown_core_table_alignment alignment) {
     }
 }
 
+static const char *form_name(markdown_core_reference_form form) {
+    switch (form) {
+    case MARKDOWN_CORE_REFERENCE_FULL:
+        return "full";
+    case MARKDOWN_CORE_REFERENCE_COLLAPSED:
+        return "collapsed";
+    case MARKDOWN_CORE_REFERENCE_SHORTCUT:
+        break;
+    }
+    return "shortcut";
+}
+
 static const char *mode_name(markdown_core_placement_mode mode) {
     return mode == MARKDOWN_CORE_PLACEMENT_EMBEDDED ? "embedded" : "standalone";
 }
 
 static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, markdown_core_node_kind kind) {
-    markdown_core_string_view a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0};
+    markdown_core_string_view a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0}, d = {NULL, 0};
     markdown_core_optional_i64 start;
     markdown_core_optional_bool checked;
     markdown_core_list_flavor flavor;
     markdown_core_placement_mode mode;
+    markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
     bool x, y, has_attributes;
     size_t count, i;
     int32_t level;
@@ -860,23 +911,41 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         }
         buffer_cstr(buffer, "]");
         break;
+    /* `label=`, not `id=` (Q5). Two names for one field after unifying the
+     * field is the failure mode that produced three accessors. */
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
     case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
-        markdown_core_node_footnote_id(node, &a);
-        buffer_cstr(buffer, " id=");
-        buffer_json_string(buffer, a);
-        break;
-    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
-        markdown_core_node_definition_properties(node, &a, &b, &c);
+        markdown_core_node_association(node, &a, &b);
         buffer_cstr(buffer, " label=");
         buffer_json_string(buffer, a);
+        buffer_cstr(buffer, " identifier=");
+        buffer_json_string(buffer, b);
+        break;
+    case MARKDOWN_CORE_KIND_LINK_REFERENCE:
+    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE:
+        markdown_core_node_association(node, &a, &b);
+        markdown_core_node_reference_form(node, &form);
+        buffer_cstr(buffer, " label=");
+        buffer_json_string(buffer, a);
+        buffer_cstr(buffer, " identifier=");
+        buffer_json_string(buffer, b);
+        buffer_cstr(buffer, " form=");
+        buffer_cstr(buffer, form_name(form));
+        break;
+    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
+        markdown_core_node_association(node, &a, &b);
+        markdown_core_node_definition_resource(node, &c, &d);
+        buffer_cstr(buffer, " label=");
+        buffer_json_string(buffer, a);
+        buffer_cstr(buffer, " identifier=");
+        buffer_json_string(buffer, b);
         /* `destination=` is printed as a string and never as `null`: a
          * definition that could not build one is not emitted (Q7, Q26), so an
          * empty destination here means the source wrote `<>` and meant it. */
         buffer_cstr(buffer, " destination=");
-        buffer_json_string(buffer, b);
+        buffer_json_string(buffer, c);
         buffer_cstr(buffer, " title=");
-        buffer_optional_string(buffer, c);
+        buffer_optional_string(buffer, d);
         break;
     case MARKDOWN_CORE_KIND_LINK:
         markdown_core_node_link_properties(node, &a, &b);

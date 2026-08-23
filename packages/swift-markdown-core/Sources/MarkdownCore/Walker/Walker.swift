@@ -58,6 +58,10 @@ private struct ChildrenVisitor: MarkupVisitor {
 
     mutating func visit(_ node: ReferenceDefinition) -> [any Markup] { [] }
 
+    mutating func visit(_ node: LinkReference) -> [any Markup] { node.content }
+
+    mutating func visit(_ node: ImageReference) -> [any Markup] { node.content }
+
     mutating func visit(_: Text) -> [any Markup] { [] }
 
     mutating func visit(_: SoftBreak) -> [any Markup] { [] }

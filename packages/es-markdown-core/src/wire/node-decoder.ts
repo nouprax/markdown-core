@@ -5,7 +5,7 @@ import type { Document } from "../model/document.js";
 import type { Markup } from "../model/markup.js";
 import type { TableCell, TableRow } from "../model/table.js";
 import { ParseError, type ParseErrorCode } from "../parse-error.js";
-import type { ListFlavor, PlacementMode, Scope, TableAlignment } from "../values.js";
+import type { ListFlavor, PlacementMode, ReferenceForm, Scope, TableAlignment } from "../values.js";
 import type { NativeExports } from "../runtime/native.js";
 import { TreeDumper } from "../tree-dumper.js";
 import { kinds, type NativeKind } from "./kinds.js";
@@ -33,11 +33,11 @@ const stringField = {
     linkTitle: 10,
     imageSource: 11,
     imageTitle: 12,
-    footnoteID: 13,
     errorMessage: 14,
-    definitionLabel: 15,
-    definitionDestination: 16,
-    definitionTitle: 17
+    definitionDestination: 15,
+    definitionTitle: 16,
+    associationLabel: 17,
+    associationIdentifier: 18
 } as const;
 
 export class NodeDecoder {
@@ -132,13 +132,13 @@ export class NodeDecoder {
             case "footnoteDefinition":
                 return {
                     ...this.base(node, kind),
-                    id: this.requiredString(node, stringField.footnoteID),
+                    ...this.association(node),
                     content: this.content(node)
                 };
             case "referenceDefinition":
                 return {
                     ...this.base(node, kind),
-                    label: this.requiredString(node, stringField.definitionLabel),
+                    ...this.association(node),
                     destination: this.requiredString(node, stringField.definitionDestination),
                     title: this.readString(node, stringField.definitionTitle)
                 };
@@ -192,7 +192,15 @@ export class NodeDecoder {
                 };
             }
             case "footnoteReference":
-                return { ...this.base(node, kind), id: this.requiredString(node, stringField.footnoteID) };
+                return { ...this.base(node, kind), ...this.association(node) };
+            case "linkReference":
+            case "imageReference":
+                return {
+                    ...this.base(node, kind),
+                    ...this.association(node),
+                    form: this.referenceForm(this.native.es_node_reference_form(node)),
+                    content: this.content(node)
+                };
             case "tableRow":
                 return this.copyTableRow(node);
             case "tableCell":
@@ -363,6 +371,21 @@ export class NodeDecoder {
         const value = Number(this.dataView().getBigInt64(this.scratch, true));
         if (!Number.isSafeInteger(value)) throw new Error("native list start exceeds JavaScript integer precision");
         return value;
+    }
+
+    /** The two halves of an association, which five kinds carry identically. */
+    private association(node: number): { readonly label: string; readonly identifier: string } {
+        return {
+            label: this.requiredString(node, stringField.associationLabel),
+            identifier: this.requiredString(node, stringField.associationIdentifier)
+        };
+    }
+
+    private referenceForm(rawValue: number): ReferenceForm {
+        if (rawValue === 1) return "full";
+        if (rawValue === 2) return "collapsed";
+        if (rawValue === 3) return "shortcut";
+        throw new Error(`native parser returned invalid reference form ${rawValue}`);
     }
 
     private placement(rawValue: number): PlacementMode {

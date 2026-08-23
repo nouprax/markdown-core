@@ -12,6 +12,11 @@
             "bullet",
             "ordered"
         ],
+        "ReferenceForm": [
+            "full",
+            "collapsed",
+            "shortcut"
+        ],
         "TableAlignment": [
             "none",
             "left",
@@ -264,7 +269,12 @@
             "name": "FootnoteDefinition",
             "fields": [
                 {
-                    "name": "id",
+                    "name": "label",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "identifier",
                     "type": "String",
                     "optional": false
                 },
@@ -274,13 +284,18 @@
                     "optional": false
                 }
             ],
-            "invariants": "id is non-empty; block content"
+            "invariants": "label is non-empty and as written; identifier KEEPS the leading `^`, so a footnote and a link definition of one name cannot collide; block content"
         },
         {
             "name": "ReferenceDefinition",
             "fields": [
                 {
                     "name": "label",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "identifier",
                     "type": "String",
                     "optional": false
                 },
@@ -295,7 +310,7 @@
                     "optional": true
                 }
             ],
-            "invariants": "label is the bytes between the brackets as written, delimiters excluded, escapes and character references unresolved, whitespace uncollapsed, case unfolded; destination is never absent, because a definition that could not build one is not produced at all; absent and empty title remain distinct; leaf"
+            "invariants": "label is the bytes between the brackets as written, delimiters excluded, escapes and character references unresolved, whitespace uncollapsed, case unfolded; identifier is the match key -- full Unicode case fold, trimmed, internal whitespace collapsed -- and is compared with memcmp over its bytes; neither derives the other; destination is never absent, because a definition that could not build one is not produced at all; absent and empty title remain distinct; leaf"
         },
         {
             "name": "Text",
@@ -432,6 +447,58 @@
             "invariants": "content is parsed alt-text inline content"
         },
         {
+            "name": "LinkReference",
+            "fields": [
+                {
+                    "name": "label",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "identifier",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "form",
+                    "type": "ReferenceForm",
+                    "optional": false
+                },
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "label is as written and identifier is the match key, exactly as on ReferenceDefinition; the node carries NO destination -- the destination is stated once, at the definition; form records which of the three spellings the source used, and all three resolve identically; inline content"
+        },
+        {
+            "name": "ImageReference",
+            "fields": [
+                {
+                    "name": "label",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "identifier",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "form",
+                    "type": "ReferenceForm",
+                    "optional": false
+                },
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "label is as written and identifier is the match key, exactly as on ReferenceDefinition; the node carries NO destination -- the destination is stated once, at the definition; form records which of the three spellings the source used, and all three resolve identically; content is parsed alt-text inline content"
+        },
+        {
             "name": "Directive",
             "fields": [
                 {
@@ -456,12 +523,17 @@
             "name": "FootnoteReference",
             "fields": [
                 {
-                    "name": "id",
+                    "name": "label",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "identifier",
                     "type": "String",
                     "optional": false
                 }
             ],
-            "invariants": "id is non-empty; leaf"
+            "invariants": "label is non-empty and as written; identifier KEEPS the leading `^`; no form -- there is one footnote call syntax; leaf"
         }
     ]
 }

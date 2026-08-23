@@ -10,7 +10,7 @@ class AstTest {
     fun publicSchemaIsReachableThroughKotlinValues() {
         val sources =
             listOf(
-                "# Heading\n\n> Quote\n\n---\n\n3. ordered\n\n- [x] task\n\n``` swift\ncode\n```\n\n<section>raw</section>\n\n[^n]: note\n\n[ref]: /r \"t\"\n",
+                "# Heading\n\n> Quote\n\n---\n\n3. ordered\n\n- [x] task\n\n``` swift\ncode\n```\n\n<section>raw</section>\n\n[^n]: note\n\n[ref]: /r \"t\"\n\n[a][ref] ![b][ref]\n",
                 "Text *em* **strong** ~~strike~~ `code` [link](/go \"title\") ![alt](/image.png) :badge[label]{kind=demo} \$x\$ [^n]  \nnext <i>raw</i>\nsoft\n\n[^n]: definition\n",
                 "| left | center |\n| :--- | :----: |\n| a | b |\n\n::leaf[Label]{id=value}\n\n:::container[Title]{kind=demo}\nBody\n:::\n",
                 "\$\$\ny\n\$\$\n",
@@ -49,6 +49,8 @@ class AstTest {
                 "TableRow",
                 "TableCell",
                 "ReferenceDefinition",
+                "LinkReference",
+                "ImageReference",
             ),
             values.mapNotNullTo(mutableSetOf()) { it::class.simpleName },
         )
@@ -119,6 +121,8 @@ private fun flatten(root: Any): kotlin.collections.List<Any> =
             is TableCell -> root.content.flatMap(::flatten)
             is DirectiveBlock -> (listOfNotNull(root.label) + root.content).flatMap(::flatten)
             is FootnoteDefinition -> root.content.flatMap(::flatten)
+            is LinkReference -> root.content.flatMap(::flatten)
+            is ImageReference -> root.content.flatMap(::flatten)
             is Emphasis -> root.content.flatMap(::flatten)
             is Strong -> root.content.flatMap(::flatten)
             is Strikethrough -> root.content.flatMap(::flatten)

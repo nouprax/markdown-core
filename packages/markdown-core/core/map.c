@@ -331,47 +331,8 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
     }
     map->mem->free(norm);
 
-    if (r != NULL || ref != NULL) {
-        if (!r) {
-            r = ref[0];
-        }
-        /* D9. THIS IS A KNOWN DEFECT, PINNED RATHER THAN FIXED, AND IT MUST NOT
-         * BE FIXED HERE.
-         *
-         * Resolving a reference COPIES the definition's destination and title
-         * into the node, so one definition with a long destination, referenced
-         * many times, turns a small document into a large tree. The running
-         * budget below — max(100000, input size) bytes summed over successful
-         * lookups, set in core/blocks.c — bounds that by refusing to resolve
-         * once it is spent.
-         *
-         * The cost is that WHETHER A REFERENCE RESOLVES DEPENDS ON HOW MANY
-         * RESOLVED BEFORE IT, and the contamination crosses labels: `[b]:
-         * /short` then `[b]` resolves on its own, and does not if an unrelated
-         * `[a]` with a long destination spent the budget first. 200 identical
-         * references to one label split 100 resolved, 100 degraded to text.
-         *
-         * Deleting these three lines is measured, and it is not the fix: the
-         * output bound goes from 0.999x to 204.678x — 656 KB of input producing
-         * 134 MB of copied destinations. The budget buys the bound by breaking
-         * resolution.
-         *
-         * Both halves are gated. scripts/audit-reference-order-independence.mjs
-         * is REGISTERED RED and fails if either row stops reproducing;
-         * `reference_expansion_bound` in the complexity runner is green and
-         * must stay green. Step 9b satisfies both at once by letting a
-         * reference NAME its definition instead of copying it, which removes
-         * the reason for a budget rather than the budget.
-         *
-         * This said Step 9a until 9a.2 measured it. There is no 9a-shaped fix:
-         * the refmap is freed with the parser and the document holds only the
-         * root, so a Link that borrows a map entry's destination dangles, and
-         * giving the map an owner that outlives the document is work 9b then
-         * deletes. Deleting the copy IS the node model. */
-        if (r->size > map->max_ref_size - map->ref_size) {
-            return NULL;
-        }
-        map->ref_size += r->size;
+    if (r == NULL && ref != NULL) {
+        r = ref[0];
     }
 
     return r;
@@ -403,6 +364,5 @@ markdown_core_map *markdown_core_map_new(markdown_core_mem *mem, markdown_core_m
     }
     map->mem = mem;
     map->free = free;
-    map->max_ref_size = UINT_MAX;
     return map;
 }

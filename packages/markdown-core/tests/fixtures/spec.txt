@@ -2979,9 +2979,9 @@ them.
 [foo]
 .
 Document scope=1:1..3:5 children=2
-├── ReferenceDefinition scope=1:1..1:19 label="foo" destination="/url" title="title" children=0
+├── ReferenceDefinition scope=1:1..1:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 └── Paragraph scope=3:1..3:5 children=1
-    └── Link scope=3:1..3:5 destination="/url" title="title" children=1
+    └── LinkReference scope=3:1..3:5 label="foo" identifier="foo" form=shortcut children=1
         └── Text scope=3:2..3:4 literal="foo" children=0
 ````````````````````````````````
 
@@ -2994,9 +2994,9 @@ Document scope=1:1..3:5 children=2
 [foo]
 .
 Document scope=1:1..5:5 children=2
-├── ReferenceDefinition scope=1:4..3:24 label="foo" destination="/url" title="the title" children=0
+├── ReferenceDefinition scope=1:4..3:24 label="foo" identifier="foo" destination="/url" title="the title" children=0
 └── Paragraph scope=5:1..5:5 children=1
-    └── Link scope=5:1..5:5 destination="/url" title="the title" children=1
+    └── LinkReference scope=5:1..5:5 label="foo" identifier="foo" form=shortcut children=1
         └── Text scope=5:2..5:4 literal="foo" children=0
 ````````````````````````````````
 
@@ -3007,9 +3007,9 @@ Document scope=1:1..5:5 children=2
 [Foo*bar\]]
 .
 Document scope=1:1..3:11 children=2
-├── ReferenceDefinition scope=1:1..1:42 label="Foo*bar\\]" destination="my_(url)" title="title (with parens)" children=0
+├── ReferenceDefinition scope=1:1..1:42 label="Foo*bar\\]" identifier="foo*bar\\]" destination="my_(url)" title="title (with parens)" children=0
 └── Paragraph scope=3:1..3:11 children=1
-    └── Link scope=3:1..3:11 destination="my_(url)" title="title (with parens)" children=1
+    └── LinkReference scope=3:1..3:11 label="Foo*bar\\]" identifier="foo*bar\\]" form=shortcut children=1
         └── Text scope=3:2..3:10 literal="Foo*bar]" children=0
 ````````````````````````````````
 
@@ -3022,9 +3022,9 @@ Document scope=1:1..3:11 children=2
 [Foo bar]
 .
 Document scope=1:1..5:9 children=2
-├── ReferenceDefinition scope=1:1..3:7 label="Foo bar" destination="my url" title="title" children=0
+├── ReferenceDefinition scope=1:1..3:7 label="Foo bar" identifier="foo bar" destination="my url" title="title" children=0
 └── Paragraph scope=5:1..5:9 children=1
-    └── Link scope=5:1..5:9 destination="my url" title="title" children=1
+    └── LinkReference scope=5:1..5:9 label="Foo bar" identifier="foo bar" form=shortcut children=1
         └── Text scope=5:2..5:8 literal="Foo bar" children=0
 ````````````````````````````````
 
@@ -3041,9 +3041,9 @@ line2
 [foo]
 .
 Document scope=1:1..7:5 children=2
-├── ReferenceDefinition scope=1:1..5:1 label="foo" destination="/url" title="\ntitle\nline1\nline2\n" children=0
+├── ReferenceDefinition scope=1:1..5:1 label="foo" identifier="foo" destination="/url" title="\ntitle\nline1\nline2\n" children=0
 └── Paragraph scope=7:1..7:5 children=1
-    └── Link scope=7:1..7:5 destination="/url" title="\ntitle\nline1\nline2\n" children=1
+    └── LinkReference scope=7:1..7:5 label="foo" identifier="foo" form=shortcut children=1
         └── Text scope=7:2..7:4 literal="foo" children=0
 ````````````````````````````````
 
@@ -3076,9 +3076,9 @@ The title may be omitted:
 [foo]
 .
 Document scope=1:1..4:5 children=2
-├── ReferenceDefinition scope=1:1..2:4 label="foo" destination="/url" title=null children=0
+├── ReferenceDefinition scope=1:1..2:4 label="foo" identifier="foo" destination="/url" title=null children=0
 └── Paragraph scope=4:1..4:5 children=1
-    └── Link scope=4:1..4:5 destination="/url" title=null children=1
+    └── LinkReference scope=4:1..4:5 label="foo" identifier="foo" form=shortcut children=1
         └── Text scope=4:2..4:4 literal="foo" children=0
 ````````````````````````````````
 
@@ -3106,9 +3106,9 @@ Document scope=1:1..3:5 children=2
 [foo]
 .
 Document scope=1:1..3:5 children=2
-├── ReferenceDefinition scope=1:1..1:9 label="foo" destination="" title=null children=0
+├── ReferenceDefinition scope=1:1..1:9 label="foo" identifier="foo" destination="" title=null children=0
 └── Paragraph scope=3:1..3:5 children=1
-    └── Link scope=3:1..3:5 destination=null title=null children=1
+    └── LinkReference scope=3:1..3:5 label="foo" identifier="foo" form=shortcut children=1
         └── Text scope=3:2..3:4 literal="foo" children=0
 ````````````````````````````````
 
@@ -3139,9 +3139,9 @@ and literal backslashes:
 [foo]
 .
 Document scope=1:1..3:5 children=2
-├── ReferenceDefinition scope=1:1..1:35 label="foo" destination="/url\\bar*baz" title="foo\"bar\\baz" children=0
+├── ReferenceDefinition scope=1:1..1:35 label="foo" identifier="foo" destination="/url\\bar*baz" title="foo\"bar\\baz" children=0
 └── Paragraph scope=3:1..3:5 children=1
-    └── Link scope=3:1..3:5 destination="/url\\bar*baz" title="foo\"bar\\baz" children=1
+    └── LinkReference scope=3:1..3:5 label="foo" identifier="foo" form=shortcut children=1
         └── Text scope=3:2..3:4 literal="foo" children=0
 ````````````````````````````````
 
@@ -3155,9 +3155,9 @@ A link can come before its corresponding definition:
 .
 Document scope=1:1..3:10 children=2
 ├── Paragraph scope=1:1..1:5 children=1
-│   └── Link scope=1:1..1:5 destination="url" title=null children=1
+│   └── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:10 label="foo" destination="url" title=null children=0
+└── ReferenceDefinition scope=3:1..3:10 label="foo" identifier="foo" destination="url" title=null children=0
 ````````````````````````````````
 
 
@@ -3172,10 +3172,10 @@ precedence:
 .
 Document scope=1:1..4:13 children=3
 ├── Paragraph scope=1:1..1:5 children=1
-│   └── Link scope=1:1..1:5 destination="first" title=null children=1
+│   └── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-├── ReferenceDefinition scope=3:1..3:12 label="foo" destination="first" title=null children=0
-└── ReferenceDefinition scope=4:1..4:13 label="foo" destination="second" title=null children=0
+├── ReferenceDefinition scope=3:1..3:12 label="foo" identifier="foo" destination="first" title=null children=0
+└── ReferenceDefinition scope=4:1..4:13 label="foo" identifier="foo" destination="second" title=null children=0
 ````````````````````````````````
 
 
@@ -3188,9 +3188,9 @@ case-insensitive (see [matches]).
 [Foo]
 .
 Document scope=1:1..3:5 children=2
-├── ReferenceDefinition scope=1:1..1:11 label="FOO" destination="/url" title=null children=0
+├── ReferenceDefinition scope=1:1..1:11 label="FOO" identifier="foo" destination="/url" title=null children=0
 └── Paragraph scope=3:1..3:5 children=1
-    └── Link scope=3:1..3:5 destination="/url" title=null children=1
+    └── LinkReference scope=3:1..3:5 label="Foo" identifier="foo" form=shortcut children=1
         └── Text scope=3:2..3:4 literal="Foo" children=0
 ````````````````````````````````
 
@@ -3201,9 +3201,9 @@ Document scope=1:1..3:5 children=2
 [αγω]
 .
 Document scope=1:1..3:8 children=2
-├── ReferenceDefinition scope=1:1..1:17 label="ΑΓΩ" destination="/φου" title=null children=0
+├── ReferenceDefinition scope=1:1..1:17 label="ΑΓΩ" identifier="αγω" destination="/φου" title=null children=0
 └── Paragraph scope=3:1..3:8 children=1
-    └── Link scope=3:1..3:8 destination="/φου" title=null children=1
+    └── LinkReference scope=3:1..3:8 label="αγω" identifier="αγω" form=shortcut children=1
         └── Text scope=3:2..3:7 literal="αγω" children=0
 ````````````````````````````````
 
@@ -3215,7 +3215,7 @@ It contributes nothing to the document.
 [foo]: /url
 .
 Document scope=1:1..1:11 children=1
-└── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title=null children=0
+└── ReferenceDefinition scope=1:1..1:11 label="foo" identifier="foo" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -3228,7 +3228,7 @@ foo
 bar
 .
 Document scope=1:1..4:3 children=2
-├── ReferenceDefinition scope=1:1..3:7 label="foo" destination="/url" title=null children=0
+├── ReferenceDefinition scope=1:1..3:7 label="foo" identifier="foo" destination="/url" title=null children=0
 └── Paragraph scope=4:1..4:3 children=1
     └── Text scope=4:1..4:3 literal="bar" children=0
 ````````````````````````````````
@@ -3253,7 +3253,7 @@ This is a link reference definition, but it has no title:
 "title" ok
 .
 Document scope=1:1..2:10 children=2
-├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title=null children=0
+├── ReferenceDefinition scope=1:1..1:11 label="foo" identifier="foo" destination="/url" title=null children=0
 └── Paragraph scope=2:1..2:10 children=1
     └── Text scope=2:1..2:10 literal="\"title\" ok" children=0
 ````````````````````````````````
@@ -3319,9 +3319,9 @@ and thematic breaks, and it need not be followed by a blank line.
 .
 Document scope=1:1..3:5 children=3
 ├── Heading scope=1:1..1:7 level=1 children=1
-│   └── Link scope=1:3..1:7 destination="/url" title=null children=1
+│   └── LinkReference scope=1:3..1:7 label="Foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:4..1:6 literal="Foo" children=0
-├── ReferenceDefinition scope=2:1..2:11 label="foo" destination="/url" title=null children=0
+├── ReferenceDefinition scope=2:1..2:11 label="foo" identifier="foo" destination="/url" title=null children=0
 └── BlockQuote scope=3:1..3:5 children=1
     └── Paragraph scope=3:3..3:5 children=1
         └── Text scope=3:3..3:5 literal="bar" children=0
@@ -3334,11 +3334,11 @@ bar
 [foo]
 .
 Document scope=1:1..4:5 children=3
-├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title=null children=0
+├── ReferenceDefinition scope=1:1..1:11 label="foo" identifier="foo" destination="/url" title=null children=0
 ├── Heading scope=2:1..4:5 level=1 children=1
 │   └── Text scope=2:1..2:3 literal="bar" children=0
 └── Paragraph scope=4:1..4:5 children=1
-    └── Link scope=4:1..4:5 destination="/url" title=null children=1
+    └── LinkReference scope=4:1..4:5 label="foo" identifier="foo" form=shortcut children=1
         └── Text scope=4:2..4:4 literal="foo" children=0
 ````````````````````````````````
 
@@ -3348,11 +3348,11 @@ Document scope=1:1..4:5 children=3
 [foo]
 .
 Document scope=1:1..3:5 children=2
-├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title=null children=0
+├── ReferenceDefinition scope=1:1..1:11 label="foo" identifier="foo" destination="/url" title=null children=0
 └── Paragraph scope=2:1..3:5 children=3
     ├── Text scope=2:1..2:3 literal="===" children=0
     ├── SoftBreak scope=2:4..2:4 children=0
-    └── Link scope=3:1..3:5 destination="/url" title=null children=1
+    └── LinkReference scope=3:1..3:5 label="foo" identifier="foo" form=shortcut children=1
         └── Text scope=3:2..3:4 literal="foo" children=0
 ````````````````````````````````
 
@@ -3371,19 +3371,19 @@ can occur one after another, without intervening blank lines.
 [baz]
 .
 Document scope=1:1..8:5 children=4
-├── ReferenceDefinition scope=1:1..1:21 label="foo" destination="/foo-url" title="foo" children=0
-├── ReferenceDefinition scope=2:1..3:7 label="bar" destination="/bar-url" title="bar" children=0
-├── ReferenceDefinition scope=4:1..4:15 label="baz" destination="/baz-url" title=null children=0
+├── ReferenceDefinition scope=1:1..1:21 label="foo" identifier="foo" destination="/foo-url" title="foo" children=0
+├── ReferenceDefinition scope=2:1..3:7 label="bar" identifier="bar" destination="/bar-url" title="bar" children=0
+├── ReferenceDefinition scope=4:1..4:15 label="baz" identifier="baz" destination="/baz-url" title=null children=0
 └── Paragraph scope=6:1..8:5 children=7
-    ├── Link scope=6:1..6:5 destination="/foo-url" title="foo" children=1
+    ├── LinkReference scope=6:1..6:5 label="foo" identifier="foo" form=shortcut children=1
     │   └── Text scope=6:2..6:4 literal="foo" children=0
     ├── Text scope=6:6..6:6 literal="," children=0
     ├── SoftBreak scope=6:7..6:7 children=0
-    ├── Link scope=7:1..7:5 destination="/bar-url" title="bar" children=1
+    ├── LinkReference scope=7:1..7:5 label="bar" identifier="bar" form=shortcut children=1
     │   └── Text scope=7:2..7:4 literal="bar" children=0
     ├── Text scope=7:6..7:6 literal="," children=0
     ├── SoftBreak scope=7:7..7:7 children=0
-    └── Link scope=8:1..8:5 destination="/baz-url" title=null children=1
+    └── LinkReference scope=8:1..8:5 label="baz" identifier="baz" form=shortcut children=1
         └── Text scope=8:2..8:4 literal="baz" children=0
 ````````````````````````````````
 
@@ -3400,10 +3400,10 @@ are defined:
 .
 Document scope=1:1..3:13 children=2
 ├── Paragraph scope=1:1..1:5 children=1
-│   └── Link scope=1:1..1:5 destination="/url" title=null children=1
+│   └── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
 └── BlockQuote scope=3:1..3:13 children=1
-    └── ReferenceDefinition scope=3:3..3:13 label="foo" destination="/url" title=null children=0
+    └── ReferenceDefinition scope=3:3..3:13 label="foo" identifier="foo" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -3417,7 +3417,7 @@ no visible content:
 [foo]: /url
 .
 Document scope=1:1..1:11 children=1
-└── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title=null children=0
+└── ReferenceDefinition scope=1:1..1:11 label="foo" identifier="foo" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -5982,7 +5982,7 @@ Document scope=1:1..5:3 children=1
     ├── ListItem scope=2:1..4:13 checked=null children=2
     │   ├── Paragraph scope=2:3..2:3 children=1
     │   │   └── Text scope=2:3..2:3 literal="b" children=0
-    │   └── ReferenceDefinition scope=4:3..4:13 label="ref" destination="/url" title=null children=0
+    │   └── ReferenceDefinition scope=4:3..4:13 label="ref" identifier="ref" destination="/url" title=null children=0
     └── ListItem scope=5:1..5:3 checked=null children=1
         └── Paragraph scope=5:3..5:3 children=1
             └── Text scope=5:3..5:3 literal="d" children=0
@@ -6369,9 +6369,9 @@ Document scope=1:1..1:23 children=1
 .
 Document scope=1:1..3:23 children=2
 ├── Paragraph scope=1:1..1:5 children=1
-│   └── Link scope=1:1..1:5 destination="/bar*" title="ti*tle" children=1
+│   └── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:23 label="foo" destination="/bar*" title="ti*tle" children=0
+└── ReferenceDefinition scope=3:1..3:23 label="foo" identifier="foo" destination="/bar*" title="ti*tle" children=0
 ````````````````````````````````
 
 
@@ -6533,9 +6533,9 @@ Document scope=1:1..1:37 children=1
 .
 Document scope=1:1..3:37 children=2
 ├── Paragraph scope=1:1..1:5 children=1
-│   └── Link scope=1:1..1:5 destination="/föö" title="föö" children=1
+│   └── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:37 label="foo" destination="/föö" title="föö" children=0
+└── ReferenceDefinition scope=3:1..3:37 label="foo" identifier="foo" destination="/föö" title="föö" children=0
 ````````````````````````````````
 
 
@@ -9462,9 +9462,9 @@ Here is a simple example:
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:10 children=1
-│   └── Link scope=1:1..1:10 destination="/url" title="title" children=1
+│   └── LinkReference scope=1:1..1:10 label="bar" identifier="bar" form=full children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="bar" identifier="bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9481,9 +9481,9 @@ unless they are escaped:
 .
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:23 children=1
-│   └── Link scope=1:1..1:23 destination="/uri" title=null children=1
+│   └── LinkReference scope=1:1..1:23 label="ref" identifier="ref" form=full children=1
 │       └── Text scope=1:2..1:17 literal="link [foo [bar]]" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9494,9 +9494,9 @@ Document scope=1:1..3:11 children=2
 .
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:17 children=1
-│   └── Link scope=1:1..1:17 destination="/uri" title=null children=1
+│   └── LinkReference scope=1:1..1:17 label="ref" identifier="ref" form=full children=1
 │       └── Text scope=1:2..1:11 literal="link [bar" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9509,7 +9509,7 @@ The link text may contain inline content:
 .
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:29 children=1
-│   └── Link scope=1:1..1:29 destination="/uri" title=null children=2
+│   └── LinkReference scope=1:1..1:29 label="ref" identifier="ref" form=full children=2
 │       ├── Text scope=1:2..1:6 literal="link " children=0
 │       └── Emphasis scope=1:7..1:23 children=4
 │           ├── Text scope=1:8..1:11 literal="foo " children=0
@@ -9517,7 +9517,7 @@ Document scope=1:1..3:11 children=2
 │           │   └── Text scope=1:14..1:16 literal="bar" children=0
 │           ├── Text scope=1:19..1:19 literal=" " children=0
 │           └── Code scope=1:20..1:22 literal="#" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9528,10 +9528,10 @@ Document scope=1:1..3:11 children=2
 .
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:24 children=1
-│   └── Link scope=1:1..1:24 destination="/uri" title=null children=1
+│   └── LinkReference scope=1:1..1:24 label="ref" identifier="ref" form=full children=1
 │       └── Image scope=1:2..1:18 source="moon.jpg" title=null children=1
 │           └── Text scope=1:4..1:7 literal="moon" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9548,9 +9548,9 @@ Document scope=1:1..3:11 children=2
 │   ├── Link scope=1:6..1:16 destination="/uri" title=null children=1
 │   │   └── Text scope=1:7..1:9 literal="bar" children=0
 │   ├── Text scope=1:17..1:17 literal="]" children=0
-│   └── Link scope=1:18..1:22 destination="/uri" title=null children=1
+│   └── LinkReference scope=1:18..1:22 label="ref" identifier="ref" form=shortcut children=1
 │       └── Text scope=1:19..1:21 literal="ref" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9564,12 +9564,12 @@ Document scope=1:1..3:11 children=2
 │   ├── Text scope=1:1..1:5 literal="[foo " children=0
 │   ├── Emphasis scope=1:6..1:21 children=2
 │   │   ├── Text scope=1:7..1:10 literal="bar " children=0
-│   │   └── Link scope=1:11..1:20 destination="/uri" title=null children=1
+│   │   └── LinkReference scope=1:11..1:20 label="ref" identifier="ref" form=full children=1
 │   │       └── Text scope=1:12..1:14 literal="baz" children=0
 │   ├── Text scope=1:22..1:22 literal="]" children=0
-│   └── Link scope=1:23..1:27 destination="/uri" title=null children=1
+│   └── LinkReference scope=1:23..1:27 label="ref" identifier="ref" form=shortcut children=1
 │       └── Text scope=1:24..1:26 literal="ref" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9587,9 +9587,9 @@ emphasis grouping:
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:12 children=2
 │   ├── Text scope=1:1..1:1 literal="*" children=0
-│   └── Link scope=1:2..1:12 destination="/uri" title=null children=1
+│   └── LinkReference scope=1:2..1:12 label="ref" identifier="ref" form=full children=1
 │       └── Text scope=1:3..1:6 literal="foo*" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9600,9 +9600,9 @@ Document scope=1:1..3:11 children=2
 .
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:15 children=1
-│   └── Link scope=1:1..1:15 destination="/uri" title=null children=1
+│   └── LinkReference scope=1:1..1:15 label="ref" identifier="ref" form=full children=1
 │       └── Text scope=1:2..1:9 literal="foo *bar" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9618,7 +9618,7 @@ Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:24 children=2
 │   ├── Text scope=1:1..1:5 literal="[foo " children=0
 │   └── HTML scope=1:6..1:24 literal="<bar attr=\"][ref]\">" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9631,7 +9631,7 @@ Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:12 children=2
 │   ├── Text scope=1:1..1:4 literal="[foo" children=0
 │   └── Code scope=1:5..1:12 literal="][ref]" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9645,7 +9645,7 @@ Document scope=1:1..3:11 children=2
 │   ├── Text scope=1:1..1:4 literal="[foo" children=0
 │   └── Link scope=1:5..1:39 destination="http://example.com/?search=][ref]" title=null children=1
 │       └── Text scope=1:6..1:38 literal="http://example.com/?search=][ref]" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9658,9 +9658,9 @@ Matching is case-insensitive:
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:10 children=1
-│   └── Link scope=1:1..1:10 destination="/url" title="title" children=1
+│   └── LinkReference scope=1:1..1:10 label="BaR" identifier="bar" form=full children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="bar" identifier="bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9673,10 +9673,10 @@ Unicode case fold is used:
 .
 Document scope=1:1..3:20 children=2
 ├── Paragraph scope=1:1..1:47 children=2
-│   ├── Link scope=1:1..1:28 destination="/url" title=null children=1
+│   ├── LinkReference scope=1:1..1:28 label="Толпой" identifier="толпой" form=full children=1
 │   │   └── Text scope=1:2..1:13 literal="Толпой" children=0
 │   └── Text scope=1:29..1:47 literal=" is a Russian word." children=0
-└── ReferenceDefinition scope=3:1..3:20 label="ТОЛПОЙ" destination="/url" title=null children=0
+└── ReferenceDefinition scope=3:1..3:20 label="ТОЛПОЙ" identifier="толпой" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -9690,9 +9690,9 @@ purposes of determining matching:
 [Baz][Foo bar]
 .
 Document scope=1:1..4:14 children=2
-├── ReferenceDefinition scope=1:1..2:12 label="Foo\nbar" destination="/url" title=null children=0
+├── ReferenceDefinition scope=1:1..2:12 label="Foo\nbar" identifier="foo bar" destination="/url" title=null children=0
 └── Paragraph scope=4:1..4:14 children=1
-    └── Link scope=4:1..4:14 destination="/url" title=null children=1
+    └── LinkReference scope=4:1..4:14 label="Foo bar" identifier="foo bar" form=full children=1
         └── Text scope=4:2..4:4 literal="Baz" children=0
 ````````````````````````````````
 
@@ -9708,9 +9708,9 @@ No [whitespace] is allowed between the [link text] and the
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:11 children=2
 │   ├── Text scope=1:1..1:6 literal="[foo] " children=0
-│   └── Link scope=1:7..1:11 destination="/url" title="title" children=1
+│   └── LinkReference scope=1:7..1:11 label="bar" identifier="bar" form=shortcut children=1
 │       └── Text scope=1:8..1:10 literal="bar" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="bar" identifier="bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9724,9 +9724,9 @@ Document scope=1:1..4:19 children=2
 ├── Paragraph scope=1:1..2:5 children=3
 │   ├── Text scope=1:1..1:5 literal="[foo]" children=0
 │   ├── SoftBreak scope=1:6..1:6 children=0
-│   └── Link scope=2:1..2:5 destination="/url" title="title" children=1
+│   └── LinkReference scope=2:1..2:5 label="bar" identifier="bar" form=shortcut children=1
 │       └── Text scope=2:2..2:4 literal="bar" children=0
-└── ReferenceDefinition scope=4:1..4:19 label="bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=4:1..4:19 label="bar" identifier="bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9768,10 +9768,10 @@ the first is used:
 [bar][foo]
 .
 Document scope=1:1..5:10 children=3
-├── ReferenceDefinition scope=1:1..1:12 label="foo" destination="/url1" title=null children=0
-├── ReferenceDefinition scope=3:1..3:12 label="foo" destination="/url2" title=null children=0
+├── ReferenceDefinition scope=1:1..1:12 label="foo" identifier="foo" destination="/url1" title=null children=0
+├── ReferenceDefinition scope=3:1..3:12 label="foo" identifier="foo" destination="/url2" title=null children=0
 └── Paragraph scope=5:1..5:10 children=1
-    └── Link scope=5:1..5:10 destination="/url1" title=null children=1
+    └── LinkReference scope=5:1..5:10 label="foo" identifier="foo" form=full children=1
         └── Text scope=5:2..5:4 literal="bar" children=0
 ````````````````````````````````
 
@@ -9788,7 +9788,7 @@ labels define equivalent inline content:
 Document scope=1:1..3:12 children=2
 ├── Paragraph scope=1:1..1:12 children=1
 │   └── Text scope=1:1..1:12 literal="[bar][foo!]" children=0
-└── ReferenceDefinition scope=3:1..3:12 label="foo!" destination="/url" title=null children=0
+└── ReferenceDefinition scope=3:1..3:12 label="foo!" identifier="foo!" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -9841,9 +9841,9 @@ Document scope=1:1..3:15 children=2
 .
 Document scope=1:1..3:13 children=2
 ├── Paragraph scope=1:1..1:12 children=1
-│   └── Link scope=1:1..1:12 destination="/uri" title=null children=1
+│   └── LinkReference scope=1:1..1:12 label="ref\\[" identifier="ref\\[" form=full children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:13 label="ref\\[" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:13 label="ref\\[" identifier="ref\\[" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9855,9 +9855,9 @@ Note that in this example `]` is not backslash-escaped:
 [bar\\]
 .
 Document scope=1:1..3:7 children=2
-├── ReferenceDefinition scope=1:1..1:13 label="bar\\\\" destination="/uri" title=null children=0
+├── ReferenceDefinition scope=1:1..1:13 label="bar\\\\" identifier="bar\\\\" destination="/uri" title=null children=0
 └── Paragraph scope=3:1..3:7 children=1
-    └── Link scope=3:1..3:7 destination="/uri" title=null children=1
+    └── LinkReference scope=3:1..3:7 label="bar\\\\" identifier="bar\\\\" form=shortcut children=1
         └── Text scope=3:2..3:6 literal="bar\\" children=0
 ````````````````````````````````
 
@@ -9912,9 +9912,9 @@ provided by the matching reference link definition.  Thus,
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:7 children=1
-│   └── Link scope=1:1..1:7 destination="/url" title="title" children=1
+│   └── LinkReference scope=1:1..1:7 label="foo" identifier="foo" form=collapsed children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9925,11 +9925,11 @@ Document scope=1:1..3:19 children=2
 .
 Document scope=1:1..3:25 children=2
 ├── Paragraph scope=1:1..1:13 children=1
-│   └── Link scope=1:1..1:13 destination="/url" title="title" children=2
+│   └── LinkReference scope=1:1..1:13 label="*foo* bar" identifier="*foo* bar" form=collapsed children=2
 │       ├── Emphasis scope=1:2..1:6 children=1
 │       │   └── Text scope=1:3..1:5 literal="foo" children=0
 │       └── Text scope=1:7..1:10 literal=" bar" children=0
-└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" identifier="*foo* bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9942,9 +9942,9 @@ The link labels are case-insensitive:
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:7 children=1
-│   └── Link scope=1:1..1:7 destination="/url" title="title" children=1
+│   └── LinkReference scope=1:1..1:7 label="Foo" identifier="foo" form=collapsed children=1
 │       └── Text scope=1:2..1:4 literal="Foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9960,11 +9960,11 @@ allowed between the two sets of brackets:
 .
 Document scope=1:1..4:19 children=2
 ├── Paragraph scope=1:1..2:2 children=3
-│   ├── Link scope=1:1..1:5 destination="/url" title="title" children=1
+│   ├── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │   │   └── Text scope=1:2..1:4 literal="foo" children=0
 │   ├── SoftBreak scope=1:7..1:7 children=0
 │   └── Text scope=2:1..2:2 literal="[]" children=0
-└── ReferenceDefinition scope=4:1..4:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=4:1..4:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9984,9 +9984,9 @@ Thus, `[foo]` is equivalent to `[foo][]`.
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:5 children=1
-│   └── Link scope=1:1..1:5 destination="/url" title="title" children=1
+│   └── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9997,11 +9997,11 @@ Document scope=1:1..3:19 children=2
 .
 Document scope=1:1..3:25 children=2
 ├── Paragraph scope=1:1..1:11 children=1
-│   └── Link scope=1:1..1:11 destination="/url" title="title" children=2
+│   └── LinkReference scope=1:1..1:11 label="*foo* bar" identifier="*foo* bar" form=shortcut children=2
 │       ├── Emphasis scope=1:2..1:6 children=1
 │       │   └── Text scope=1:3..1:5 literal="foo" children=0
 │       └── Text scope=1:7..1:10 literal=" bar" children=0
-└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" identifier="*foo* bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10013,12 +10013,12 @@ Document scope=1:1..3:25 children=2
 Document scope=1:1..3:25 children=2
 ├── Paragraph scope=1:1..1:13 children=3
 │   ├── Text scope=1:1..1:1 literal="[" children=0
-│   ├── Link scope=1:2..1:12 destination="/url" title="title" children=2
+│   ├── LinkReference scope=1:2..1:12 label="*foo* bar" identifier="*foo* bar" form=shortcut children=2
 │   │   ├── Emphasis scope=1:3..1:7 children=1
 │   │   │   └── Text scope=1:4..1:6 literal="foo" children=0
 │   │   └── Text scope=1:8..1:11 literal=" bar" children=0
 │   └── Text scope=1:13..1:13 literal="]" children=0
-└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" identifier="*foo* bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10030,9 +10030,9 @@ Document scope=1:1..3:25 children=2
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:11 children=2
 │   ├── Text scope=1:1..1:6 literal="[[bar " children=0
-│   └── Link scope=1:7..1:11 destination="/url" title=null children=1
+│   └── LinkReference scope=1:7..1:11 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:8..1:10 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="foo" destination="/url" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="foo" identifier="foo" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -10045,9 +10045,9 @@ The link labels are case-insensitive:
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:5 children=1
-│   └── Link scope=1:1..1:5 destination="/url" title="title" children=1
+│   └── LinkReference scope=1:1..1:5 label="Foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:2..1:4 literal="Foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10060,10 +10060,10 @@ A space after the link text should be preserved:
 .
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:9 children=2
-│   ├── Link scope=1:1..1:5 destination="/url" title=null children=1
+│   ├── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │   │   └── Text scope=1:2..1:4 literal="foo" children=0
 │   └── Text scope=1:6..1:9 literal=" bar" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="foo" destination="/url" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="foo" identifier="foo" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -10078,7 +10078,7 @@ opening bracket to avoid links:
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:6 children=1
 │   └── Text scope=1:1..1:6 literal="[foo]" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10091,10 +10091,10 @@ following closing bracket:
 *[foo*]
 .
 Document scope=1:1..3:7 children=2
-├── ReferenceDefinition scope=1:1..1:12 label="foo*" destination="/url" title=null children=0
+├── ReferenceDefinition scope=1:1..1:12 label="foo*" identifier="foo*" destination="/url" title=null children=0
 └── Paragraph scope=3:1..3:7 children=2
     ├── Text scope=3:1..3:1 literal="*" children=0
-    └── Link scope=3:2..3:7 destination="/url" title=null children=1
+    └── LinkReference scope=3:2..3:7 label="foo*" identifier="foo*" form=shortcut children=1
         └── Text scope=3:3..3:6 literal="foo*" children=0
 ````````````````````````````````
 
@@ -10110,10 +10110,10 @@ references:
 .
 Document scope=1:1..4:12 children=3
 ├── Paragraph scope=1:1..1:10 children=1
-│   └── Link scope=1:1..1:10 destination="/url2" title=null children=1
+│   └── LinkReference scope=1:1..1:10 label="bar" identifier="bar" form=full children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-├── ReferenceDefinition scope=3:1..3:12 label="foo" destination="/url1" title=null children=0
-└── ReferenceDefinition scope=4:1..4:12 label="bar" destination="/url2" title=null children=0
+├── ReferenceDefinition scope=3:1..3:12 label="foo" identifier="foo" destination="/url1" title=null children=0
+└── ReferenceDefinition scope=4:1..4:12 label="bar" identifier="bar" destination="/url2" title=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -10123,9 +10123,9 @@ Document scope=1:1..4:12 children=3
 .
 Document scope=1:1..3:12 children=2
 ├── Paragraph scope=1:1..1:7 children=1
-│   └── Link scope=1:1..1:7 destination="/url1" title=null children=1
+│   └── LinkReference scope=1:1..1:7 label="foo" identifier="foo" form=collapsed children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:12 label="foo" destination="/url1" title=null children=0
+└── ReferenceDefinition scope=3:1..3:12 label="foo" identifier="foo" destination="/url1" title=null children=0
 ````````````````````````````````
 
 Inline links also take precedence:
@@ -10139,7 +10139,7 @@ Document scope=1:1..3:12 children=2
 ├── Paragraph scope=1:1..1:7 children=1
 │   └── Link scope=1:1..1:7 destination=null title=null children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:12 label="foo" destination="/url1" title=null children=0
+└── ReferenceDefinition scope=3:1..3:12 label="foo" identifier="foo" destination="/url1" title=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -10149,10 +10149,10 @@ Document scope=1:1..3:12 children=2
 .
 Document scope=1:1..3:12 children=2
 ├── Paragraph scope=1:1..1:17 children=2
-│   ├── Link scope=1:1..1:5 destination="/url1" title=null children=1
+│   ├── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │   │   └── Text scope=1:2..1:4 literal="foo" children=0
 │   └── Text scope=1:6..1:17 literal="(not a link)" children=0
-└── ReferenceDefinition scope=3:1..3:12 label="foo" destination="/url1" title=null children=0
+└── ReferenceDefinition scope=3:1..3:12 label="foo" identifier="foo" destination="/url1" title=null children=0
 ````````````````````````````````
 
 In the following case `[bar][baz]` is parsed as a reference,
@@ -10166,9 +10166,9 @@ In the following case `[bar][baz]` is parsed as a reference,
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:15 children=2
 │   ├── Text scope=1:1..1:5 literal="[foo]" children=0
-│   └── Link scope=1:6..1:15 destination="/url" title=null children=1
+│   └── LinkReference scope=1:6..1:15 label="baz" identifier="baz" form=full children=1
 │       └── Text scope=1:7..1:9 literal="bar" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="baz" destination="/url" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="baz" identifier="baz" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -10183,12 +10183,12 @@ Here, though, `[foo][bar]` is parsed as a reference, since
 .
 Document scope=1:1..4:12 children=3
 ├── Paragraph scope=1:1..1:15 children=2
-│   ├── Link scope=1:1..1:10 destination="/url2" title=null children=1
+│   ├── LinkReference scope=1:1..1:10 label="bar" identifier="bar" form=full children=1
 │   │   └── Text scope=1:2..1:4 literal="foo" children=0
-│   └── Link scope=1:11..1:15 destination="/url1" title=null children=1
+│   └── LinkReference scope=1:11..1:15 label="baz" identifier="baz" form=shortcut children=1
 │       └── Text scope=1:12..1:14 literal="baz" children=0
-├── ReferenceDefinition scope=3:1..3:12 label="baz" destination="/url1" title=null children=0
-└── ReferenceDefinition scope=4:1..4:12 label="bar" destination="/url2" title=null children=0
+├── ReferenceDefinition scope=3:1..3:12 label="baz" identifier="baz" destination="/url1" title=null children=0
+└── ReferenceDefinition scope=4:1..4:12 label="bar" identifier="bar" destination="/url2" title=null children=0
 ````````````````````````````````
 
 
@@ -10204,10 +10204,10 @@ is followed by a link label (even though `[bar]` is not defined):
 Document scope=1:1..4:12 children=3
 ├── Paragraph scope=1:1..1:15 children=2
 │   ├── Text scope=1:1..1:5 literal="[foo]" children=0
-│   └── Link scope=1:6..1:15 destination="/url1" title=null children=1
+│   └── LinkReference scope=1:6..1:15 label="baz" identifier="baz" form=full children=1
 │       └── Text scope=1:7..1:9 literal="bar" children=0
-├── ReferenceDefinition scope=3:1..3:12 label="baz" destination="/url1" title=null children=0
-└── ReferenceDefinition scope=4:1..4:12 label="foo" destination="/url2" title=null children=0
+├── ReferenceDefinition scope=3:1..3:12 label="baz" identifier="baz" destination="/url1" title=null children=0
+└── ReferenceDefinition scope=4:1..4:12 label="foo" identifier="foo" destination="/url2" title=null children=0
 ````````````````````````````````
 
 
@@ -10241,11 +10241,11 @@ Document scope=1:1..1:20 children=1
 .
 Document scope=1:1..3:39 children=2
 ├── Paragraph scope=1:1..1:12 children=1
-│   └── Image scope=1:1..1:12 source="train.jpg" title="train & tracks" children=2
+│   └── ImageReference scope=1:1..1:12 label="foo *bar*" identifier="foo *bar*" form=shortcut children=2
 │       ├── Text scope=1:3..1:6 literal="foo " children=0
 │       └── Emphasis scope=1:7..1:11 children=1
 │           └── Text scope=1:8..1:10 literal="bar" children=0
-└── ReferenceDefinition scope=3:1..3:39 label="foo *bar*" destination="train.jpg" title="train & tracks" children=0
+└── ReferenceDefinition scope=3:1..3:39 label="foo *bar*" identifier="foo *bar*" destination="train.jpg" title="train & tracks" children=0
 ````````````````````````````````
 
 
@@ -10287,11 +10287,11 @@ content is rendered, without formatting.
 .
 Document scope=1:1..3:39 children=2
 ├── Paragraph scope=1:1..1:14 children=1
-│   └── Image scope=1:1..1:14 source="train.jpg" title="train & tracks" children=2
+│   └── ImageReference scope=1:1..1:14 label="foo *bar*" identifier="foo *bar*" form=collapsed children=2
 │       ├── Text scope=1:3..1:6 literal="foo " children=0
 │       └── Emphasis scope=1:7..1:11 children=1
 │           └── Text scope=1:8..1:10 literal="bar" children=0
-└── ReferenceDefinition scope=3:1..3:39 label="foo *bar*" destination="train.jpg" title="train & tracks" children=0
+└── ReferenceDefinition scope=3:1..3:39 label="foo *bar*" identifier="foo *bar*" destination="train.jpg" title="train & tracks" children=0
 ````````````````````````````````
 
 
@@ -10302,11 +10302,11 @@ Document scope=1:1..3:39 children=2
 .
 Document scope=1:1..3:36 children=2
 ├── Paragraph scope=1:1..1:20 children=1
-│   └── Image scope=1:1..1:20 source="train.jpg" title="train & tracks" children=2
+│   └── ImageReference scope=1:1..1:20 label="foobar" identifier="foobar" form=full children=2
 │       ├── Text scope=1:3..1:6 literal="foo " children=0
 │       └── Emphasis scope=1:7..1:11 children=1
 │           └── Text scope=1:8..1:10 literal="bar" children=0
-└── ReferenceDefinition scope=3:1..3:36 label="FOOBAR" destination="train.jpg" title="train & tracks" children=0
+└── ReferenceDefinition scope=3:1..3:36 label="FOOBAR" identifier="foobar" destination="train.jpg" title="train & tracks" children=0
 ````````````````````````````````
 
 
@@ -10359,9 +10359,9 @@ Reference-style:
 .
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:11 children=1
-│   └── Image scope=1:1..1:11 source="/url" title=null children=1
+│   └── ImageReference scope=1:1..1:11 label="bar" identifier="bar" form=full children=1
 │       └── Text scope=1:3..1:5 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="bar" destination="/url" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="bar" identifier="bar" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -10372,9 +10372,9 @@ Document scope=1:1..3:11 children=2
 .
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:11 children=1
-│   └── Image scope=1:1..1:11 source="/url" title=null children=1
+│   └── ImageReference scope=1:1..1:11 label="bar" identifier="bar" form=full children=1
 │       └── Text scope=1:3..1:5 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="BAR" destination="/url" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="BAR" identifier="bar" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -10387,9 +10387,9 @@ Collapsed:
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:8 children=1
-│   └── Image scope=1:1..1:8 source="/url" title="title" children=1
+│   └── ImageReference scope=1:1..1:8 label="foo" identifier="foo" form=collapsed children=1
 │       └── Text scope=1:3..1:5 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10400,11 +10400,11 @@ Document scope=1:1..3:19 children=2
 .
 Document scope=1:1..3:25 children=2
 ├── Paragraph scope=1:1..1:14 children=1
-│   └── Image scope=1:1..1:14 source="/url" title="title" children=2
+│   └── ImageReference scope=1:1..1:14 label="*foo* bar" identifier="*foo* bar" form=collapsed children=2
 │       ├── Emphasis scope=1:3..1:7 children=1
 │       │   └── Text scope=1:4..1:6 literal="foo" children=0
 │       └── Text scope=1:8..1:11 literal=" bar" children=0
-└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" identifier="*foo* bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10417,9 +10417,9 @@ The labels are case-insensitive:
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:8 children=1
-│   └── Image scope=1:1..1:8 source="/url" title="title" children=1
+│   └── ImageReference scope=1:1..1:8 label="Foo" identifier="foo" form=collapsed children=1
 │       └── Text scope=1:3..1:5 literal="Foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10434,11 +10434,11 @@ between the two sets of brackets:
 .
 Document scope=1:1..4:19 children=2
 ├── Paragraph scope=1:1..2:2 children=3
-│   ├── Image scope=1:1..1:6 source="/url" title="title" children=1
+│   ├── ImageReference scope=1:1..1:6 label="foo" identifier="foo" form=shortcut children=1
 │   │   └── Text scope=1:3..1:5 literal="foo" children=0
 │   ├── SoftBreak scope=1:8..1:8 children=0
 │   └── Text scope=2:1..2:2 literal="[]" children=0
-└── ReferenceDefinition scope=4:1..4:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=4:1..4:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10451,9 +10451,9 @@ Shortcut:
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:6 children=1
-│   └── Image scope=1:1..1:6 source="/url" title="title" children=1
+│   └── ImageReference scope=1:1..1:6 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:3..1:5 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10464,11 +10464,11 @@ Document scope=1:1..3:19 children=2
 .
 Document scope=1:1..3:25 children=2
 ├── Paragraph scope=1:1..1:12 children=1
-│   └── Image scope=1:1..1:12 source="/url" title="title" children=2
+│   └── ImageReference scope=1:1..1:12 label="*foo* bar" identifier="*foo* bar" form=shortcut children=2
 │       ├── Emphasis scope=1:3..1:7 children=1
 │       │   └── Text scope=1:4..1:6 literal="foo" children=0
 │       └── Text scope=1:8..1:11 literal=" bar" children=0
-└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" identifier="*foo* bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10496,9 +10496,9 @@ The link labels are case-insensitive:
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:6 children=1
-│   └── Image scope=1:1..1:6 source="/url" title="title" children=1
+│   └── ImageReference scope=1:1..1:6 label="Foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:3..1:5 literal="Foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10513,7 +10513,7 @@ backslash-escape the opening `[`:
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:7 children=1
 │   └── Text scope=1:1..1:7 literal="![foo]" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10528,9 +10528,9 @@ If you want a link after a literal `!`, backslash-escape the
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:7 children=2
 │   ├── Text scope=1:1..1:2 literal="!" children=0
-│   └── Link scope=1:3..1:7 destination="/url" title="title" children=1
+│   └── LinkReference scope=1:3..1:7 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:4..1:6 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 

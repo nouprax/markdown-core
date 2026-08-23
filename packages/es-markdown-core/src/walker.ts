@@ -42,6 +42,8 @@ function children(node: Markup): readonly Markup[] {
         case "strikethrough":
         case "link":
         case "image":
+        case "linkReference":
+        case "imageReference":
             return node.content;
         case "list":
             return node.items;

@@ -16,6 +16,8 @@ public protocol MarkupVisitor {
     mutating func visit(_ node: DirectiveLabel) -> Result
     mutating func visit(_ node: FootnoteDefinition) -> Result
     mutating func visit(_ node: ReferenceDefinition) -> Result
+    mutating func visit(_ node: LinkReference) -> Result
+    mutating func visit(_ node: ImageReference) -> Result
     mutating func visit(_ node: Text) -> Result
     mutating func visit(_ node: SoftBreak) -> Result
     mutating func visit(_ node: LineBreak) -> Result

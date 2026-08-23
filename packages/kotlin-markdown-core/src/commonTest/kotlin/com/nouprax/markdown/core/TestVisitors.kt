@@ -35,6 +35,10 @@ internal class KindVisitor : Visitor<String> {
 
     override fun visitReferenceDefinition(node: ReferenceDefinition): String = name(node)
 
+    override fun visitLinkReference(node: LinkReference): String = name(node)
+
+    override fun visitImageReference(node: ImageReference): String = name(node)
+
     override fun visitText(node: Text): String = name(node)
 
     override fun visitSoftBreak(node: SoftBreak): String = name(node)
@@ -98,6 +102,10 @@ internal class RecordingVisitor : Visitor<Unit> {
     override fun visitFootnoteDefinition(node: FootnoteDefinition): Unit = record(node)
 
     override fun visitReferenceDefinition(node: ReferenceDefinition): Unit = record(node)
+
+    override fun visitLinkReference(node: LinkReference): Unit = record(node)
+
+    override fun visitImageReference(node: ImageReference): Unit = record(node)
 
     override fun visitText(node: Text): Unit = record(node)
 

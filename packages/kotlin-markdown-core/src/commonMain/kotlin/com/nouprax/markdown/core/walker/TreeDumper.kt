@@ -132,7 +132,7 @@ private class DumpVisitor : Visitor<DumpRecord> {
         record(
             "FootnoteDefinition",
             node,
-            fields = listOf("id=${jsonString(node.id)}"),
+            fields = association(node.label, node.identifier),
             children = node.content.size,
         )
 
@@ -141,12 +141,41 @@ private class DumpVisitor : Visitor<DumpRecord> {
             "ReferenceDefinition",
             node,
             fields =
-                listOf(
-                    "label=${jsonString(node.label)}",
-                    "destination=${jsonString(node.destination)}",
-                    "title=${optionalString(node.title)}",
-                ),
+                association(node.label, node.identifier) +
+                    listOf(
+                        "destination=${jsonString(node.destination)}",
+                        "title=${optionalString(node.title)}",
+                    ),
         )
+
+    override fun visitLinkReference(node: LinkReference): DumpRecord =
+        record(
+            "LinkReference",
+            node,
+            fields = association(node.label, node.identifier) + listOf("form=${formName(node.form)}"),
+            children = node.content.size,
+        )
+
+    override fun visitImageReference(node: ImageReference): DumpRecord =
+        record(
+            "ImageReference",
+            node,
+            fields = association(node.label, node.identifier) + listOf("form=${formName(node.form)}"),
+            children = node.content.size,
+        )
+
+    /** The two fields five kinds carry identically, in contract order. */
+    private fun association(
+        label: String,
+        identifier: String,
+    ): kotlin.collections.List<String> = listOf("label=${jsonString(label)}", "identifier=${jsonString(identifier)}")
+
+    private fun formName(form: ReferenceForm): String =
+        when (form) {
+            ReferenceForm.FULL -> "full"
+            ReferenceForm.COLLAPSED -> "collapsed"
+            ReferenceForm.SHORTCUT -> "shortcut"
+        }
 
     override fun visitText(node: Text): DumpRecord =
         record("Text", node, fields = listOf("literal=${jsonString(node.literal)}"))
@@ -212,7 +241,7 @@ private class DumpVisitor : Visitor<DumpRecord> {
         )
 
     override fun visitFootnoteReference(node: FootnoteReference): DumpRecord =
-        record("FootnoteReference", node, fields = listOf("id=${jsonString(node.id)}"))
+        record("FootnoteReference", node, fields = association(node.label, node.identifier))
 }
 
 private fun record(

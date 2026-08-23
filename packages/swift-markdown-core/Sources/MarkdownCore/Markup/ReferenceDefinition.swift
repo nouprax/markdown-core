@@ -2,16 +2,18 @@ import MarkdownCoreC
 
 /// A link reference definition, at the byte where its opening bracket was written.
 ///
-/// `label` is the bytes between the brackets exactly as the source spells them:
-/// character escapes and character references unresolved, whitespace uncollapsed,
-/// case unfolded. `destination` is never absent, because a definition that could
-/// not build one is not produced at all. `title` is `nil` when the source wrote
-/// none and empty when it wrote an empty one.
+/// `label` is the bytes between the brackets exactly as the source spells them.
+/// `identifier` is the match key — full Unicode case fold, trimmed, internal
+/// whitespace collapsed — and neither derives the other. `destination` is never
+/// absent, because a definition that could not build one is not produced at all.
+/// `title` is `nil` when the source wrote none and empty when it wrote an empty one.
 public struct ReferenceDefinition: Markup {
     /// The source range the definition covers, from its opening bracket.
     public let scope: Scope
     /// The label as written, delimiters excluded.
     public let label: String
+    /// The match key. Compare it by bytes, never by `String ==`.
+    public let identifier: String
     /// The destination the label resolves to.
     public let destination: String
     /// The title, or `nil` when the source wrote none.
@@ -24,12 +26,15 @@ public struct ReferenceDefinition: Markup {
 extension ReferenceDefinition {
     init(from node: OpaquePointer) {
         var label = markdown_core_string_view()
+        var identifier = markdown_core_string_view()
         var destination = markdown_core_string_view()
         var title = markdown_core_string_view()
-        markdown_core_node_definition_properties(node, &label, &destination, &title)
+        markdown_core_node_association(node, &label, &identifier)
+        markdown_core_node_definition_resource(node, &destination, &title)
         self.init(
             scope: Self.scope(from: node),
             label: label.requiredString,
+            identifier: identifier.requiredString,
             destination: destination.requiredString,
             title: title.optionalString
         )

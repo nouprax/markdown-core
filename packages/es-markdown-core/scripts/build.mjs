@@ -55,6 +55,7 @@ const exported = [
     "es_node_checked",
     "es_node_code_flag",
     "es_node_formula_mode",
+    "es_node_reference_form",
     "es_node_table_column_count",
     "es_node_table_alignment",
     "es_node_table_row_header",

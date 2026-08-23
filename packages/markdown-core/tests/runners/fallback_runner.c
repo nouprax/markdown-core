@@ -97,66 +97,67 @@ static char *fb_strdup(const char *text) {
     return copy;
 }
 
-static int fb_expect_url(markdown_core_map *map, const char *label, const char *url, const char *context) {
+/* WHICH ENTRY a label resolves to, by the entry's `age` -- its position in
+ * document order. The map used to hold a destination and this asserted the
+ * bytes it resolved to; Step 9b.2 took the destination off the entry, and the
+ * property being checked was never about the destination anyway. `age` states
+ * first-definition-wins directly: the duplicate label must answer with the
+ * FIRST of the three, not merely with one whose url happens to match.
+ * `expected < 0` means the label must not resolve at all. */
+static int fb_expect_entry(markdown_core_map *map, const char *label, long expected, const char *context) {
     markdown_core_chunk chunk = fb_chunk(label);
-    markdown_core_reference *ref = (markdown_core_reference *)markdown_core_map_lookup(map, &chunk);
-    if (!url) {
-        if (ref) {
+    markdown_core_map_entry *entry = markdown_core_map_lookup(map, &chunk);
+    if (expected < 0) {
+        if (entry) {
             fprintf(stderr, "%s: label '%s' unexpectedly resolved\n", context, label);
             return -1;
         }
         return 0;
     }
-    if (!ref) {
+    if (!entry) {
         fprintf(stderr, "%s: label '%s' did not resolve\n", context, label);
         return -1;
     }
-    if (ref->url.len != (bufsize_t)strlen(url) || memcmp(ref->url.data, url, ref->url.len) != 0) {
-        fprintf(stderr, "%s: label '%s' resolved to '%.*s', expected '%s'\n", context, label, (int)ref->url.len,
-                ref->url.data, url);
+    if ((long)entry->age != expected) {
+        fprintf(stderr, "%s: label '%s' resolved to entry %ld, expected %ld\n", context, label, (long)entry->age,
+                expected);
         return -1;
     }
     return 0;
 }
 
-static void fb_create_reference(markdown_core_map *map, const char *label, const char *url) {
+static void fb_create_reference(markdown_core_map *map, const char *label) {
     markdown_core_chunk label_chunk = fb_chunk(label);
-    markdown_core_chunk url_chunk = fb_chunk(url);
-    markdown_core_chunk title_chunk = fb_chunk("");
-    markdown_core_reference_create(map, &label_chunk, &url_chunk, &title_chunk);
+    markdown_core_reference_create(map, &label_chunk);
 }
 
 enum { FB_UNIQUE_REFERENCES = 40 };
 
 static void fb_populate_reference_map(markdown_core_map *map) {
     char label[32];
-    char url[32];
     int i;
     for (i = 0; i < FB_UNIQUE_REFERENCES; i++) {
         snprintf(label, sizeof(label), "ref%d", i);
-        snprintf(url, sizeof(url), "/u%d", i);
-        fb_create_reference(map, label, url);
+        fb_create_reference(map, label);
     }
-    fb_create_reference(map, "dup", "/first");
-    fb_create_reference(map, "dup", "/second");
-    fb_create_reference(map, "dup", "/third");
+    fb_create_reference(map, "dup");
+    fb_create_reference(map, "dup");
+    fb_create_reference(map, "dup");
 }
 
 static int fb_check_reference_map(markdown_core_map *map, const char *context) {
     char label[32];
-    char url[32];
     int i;
     for (i = 0; i < FB_UNIQUE_REFERENCES; i++) {
         snprintf(label, sizeof(label), "ref%d", i);
-        snprintf(url, sizeof(url), "/u%d", i);
-        if (fb_expect_url(map, label, url, context) != 0) {
+        if (fb_expect_entry(map, label, i, context) != 0) {
             return -1;
         }
     }
-    if (fb_expect_url(map, "dup", "/first", context) != 0) {
+    if (fb_expect_entry(map, "dup", FB_UNIQUE_REFERENCES, context) != 0) {
         return -1;
     }
-    return fb_expect_url(map, "missing", NULL, context);
+    return fb_expect_entry(map, "missing", -1, context);
 }
 
 /* Identical definitions resolve identically through the hash index and
@@ -210,7 +211,7 @@ static int case_map_prepare_oom(void) {
 
     fb_block_slot_tables = 1;
     fb_block_pointer_arrays = 1;
-    if (fb_expect_url(map, "ref1", NULL, "prepare under OOM") != 0) {
+    if (fb_expect_entry(map, "ref1", -1, "prepare under OOM") != 0) {
         goto done;
     }
     if (map->prepared) {
@@ -219,7 +220,7 @@ static int case_map_prepare_oom(void) {
     }
     fb_block_slot_tables = 0;
     fb_block_pointer_arrays = 0;
-    if (fb_expect_url(map, "ref1", "/u1", "recovery after OOM") != 0) {
+    if (fb_expect_entry(map, "ref1", 1, "recovery after OOM") != 0) {
         goto done;
     }
     if (!map->indexed) {
@@ -259,7 +260,7 @@ static int case_constructor_oom(void) {
         return -1;
     }
 
-    fb_create_reference(NULL, "ref", "/u");
+    fb_create_reference(NULL, "ref");
     if (markdown_core_map_lookup(NULL, &label) != NULL) {
         fputs("NULL map lookup unexpectedly resolved\n", stderr);
         return -1;
@@ -693,6 +694,10 @@ static int fb_chunk_equal(const markdown_core_chunk *a, const markdown_core_chun
     return memcmp(a->data, b->data, (size_t)a->len) == 0;
 }
 
+static int fb_association_equal(const markdown_core_association *a, const markdown_core_association *b) {
+    return fb_chunk_equal(&a->label, &b->label) && fb_chunk_equal(&a->identifier, &b->identifier);
+}
+
 static int fb_node_payload_equal(markdown_core_node *a, markdown_core_node *b) {
     markdown_core_node_type type = markdown_core_node_get_type(a);
     if (type == MARKDOWN_CORE_NODE_TEXT || type == MARKDOWN_CORE_NODE_CODE || type == MARKDOWN_CORE_NODE_HTML ||
@@ -711,9 +716,16 @@ static int fb_node_payload_equal(markdown_core_node *a, markdown_core_node *b) {
         if (!a->as.definition || !b->as.definition) {
             return a->as.definition == b->as.definition;
         }
-        return fb_chunk_equal(&a->as.definition->label, &b->as.definition->label) &&
+        return fb_association_equal(&a->as.definition->association, &b->as.definition->association) &&
                fb_chunk_equal(&a->as.definition->url, &b->as.definition->url) &&
                fb_chunk_equal(&a->as.definition->title, &b->as.definition->title);
+    }
+    if (type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION || type == MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE) {
+        return fb_association_equal(&a->as.association, &b->as.association);
+    }
+    if (type == MARKDOWN_CORE_NODE_LINK_REFERENCE || type == MARKDOWN_CORE_NODE_IMAGE_REFERENCE) {
+        return a->as.reference.form == b->as.reference.form &&
+               fb_association_equal(&a->as.reference.association, &b->as.reference.association);
     }
     return 1;
 }

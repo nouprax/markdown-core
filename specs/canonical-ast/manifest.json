@@ -38,6 +38,8 @@
             "Strikethrough",
             "Link",
             "Image",
+            "LinkReference",
+            "ImageReference",
             "Directive",
             "FootnoteReference"
         ],
@@ -73,6 +75,9 @@
             "directive.label.null",
             "directive.label.empty",
             "directive.label.populated",
+            "reference.form.full",
+            "reference.form.collapsed",
+            "reference.form.shortcut",
             "link.title.null",
             "link.title.empty",
             "link.title.value",
@@ -121,7 +126,9 @@
                     "CodeBlock",
                     "HTMLBlock",
                     "FootnoteDefinition",
-                    "ReferenceDefinition"
+                    "ReferenceDefinition",
+                    "LinkReference",
+                    "ImageReference"
                 ],
                 "states": [
                     "list.flavor.bullet",
@@ -138,7 +145,10 @@
                     "scope.positive",
                     "children.empty",
                     "children.populated",
-                    "escaping.newline"
+                    "escaping.newline",
+                    "reference.form.full",
+                    "reference.form.collapsed",
+                    "reference.form.shortcut"
                 ],
                 "orders": [
                     "document.source-order"

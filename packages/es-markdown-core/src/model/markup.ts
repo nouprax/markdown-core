@@ -18,6 +18,7 @@ import type { Link } from "./link.js";
 import type { List, ListItem } from "./list.js";
 import type { Paragraph } from "./paragraph.js";
 import type { ReferenceDefinition } from "./reference-definition.js";
+import type { ImageReference, LinkReference } from "./reference.js";
 import type { SoftBreak } from "./soft-break.js";
 import type { Strikethrough } from "./strikethrough.js";
 import type { Strong } from "./strong.js";
@@ -54,5 +55,7 @@ export type Markup =
     | Strikethrough
     | Link
     | Image
+    | LinkReference
+    | ImageReference
     | Directive
     | FootnoteReference;

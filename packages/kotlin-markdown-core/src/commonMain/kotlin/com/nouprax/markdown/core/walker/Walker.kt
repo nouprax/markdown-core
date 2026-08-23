@@ -98,6 +98,14 @@ public object Walker {
                 content.walk(visit)
             }
 
+            is LinkReference -> {
+                content.walk(visit)
+            }
+
+            is ImageReference -> {
+                content.walk(visit)
+            }
+
             is Directive -> {
                 label?.let { walk(it, visit) }
             }

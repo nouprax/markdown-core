@@ -7,11 +7,14 @@
 extern "C" {
 #endif
 
+/* An entry is a normalized LABEL and nothing else. It used to carry a `size`,
+ * which was the number of bytes resolving against it copied into a node -- the
+ * quantity D9's expansion budget charged. A reference that names its definition
+ * copies nothing, so there is nothing to charge and no field to carry it. */
 struct markdown_core_map_entry {
     struct markdown_core_map_entry *next;
     unsigned char *label;
     size_t age;
-    size_t size;
 };
 
 typedef struct markdown_core_map_entry markdown_core_map_entry;
@@ -40,8 +43,6 @@ struct markdown_core_map {
     markdown_core_map_entry **sorted;
     markdown_core_key_index index;
     size_t size;
-    size_t ref_size;
-    size_t max_ref_size;
     int prepared;
     int indexed;
     /* Sticky flag: a definition or lookup structure was lost to allocation

@@ -9,6 +9,7 @@ import type { Document } from "./model/document.js";
 import type { Emphasis } from "./model/emphasis.js";
 import type { FootnoteDefinition, FootnoteReference } from "./model/footnote.js";
 import type { ReferenceDefinition } from "./model/reference-definition.js";
+import type { ImageReference, LinkReference } from "./model/reference.js";
 import type { FormulaBlock } from "./model/formula-block.js";
 import type { Formula } from "./model/formula.js";
 import type { Heading } from "./model/heading.js";
@@ -107,13 +108,17 @@ const dumpVisitor: Visitor<DumpRecord> = {
         ),
     visitDirectiveLabel: (node: DirectiveLabel) => record("DirectiveLabel", node, [], node.content.length),
     visitFootnoteDefinition: (node: FootnoteDefinition) =>
-        record("FootnoteDefinition", node, [`id=${jsonString(node.id)}`], node.content.length),
+        record("FootnoteDefinition", node, association(node), node.content.length),
     visitReferenceDefinition: (node: ReferenceDefinition) =>
         record("ReferenceDefinition", node, [
-            `label=${jsonString(node.label)}`,
+            ...association(node),
             `destination=${jsonString(node.destination)}`,
             `title=${optionalString(node.title)}`
         ]),
+    visitLinkReference: (node: LinkReference) =>
+        record("LinkReference", node, [...association(node), `form=${node.form}`], node.content.length),
+    visitImageReference: (node: ImageReference) =>
+        record("ImageReference", node, [...association(node), `form=${node.form}`], node.content.length),
     visitText: (node: Text) => record("Text", node, [`literal=${jsonString(node.literal)}`]),
     visitSoftBreak: (node: SoftBreak) => record("SoftBreak", node),
     visitLineBreak: (node: LineBreak) => record("LineBreak", node),
@@ -140,9 +145,13 @@ const dumpVisitor: Visitor<DumpRecord> = {
         ),
     visitDirective: (node: Directive) =>
         record("Directive", node, directiveFields(node.name, node.attributes), node.label === null ? 0 : 1),
-    visitFootnoteReference: (node: FootnoteReference) =>
-        record("FootnoteReference", node, [`id=${jsonString(node.id)}`])
+    visitFootnoteReference: (node: FootnoteReference) => record("FootnoteReference", node, association(node))
 };
+
+/** The two fields five kinds carry identically, in contract order. */
+function association(node: { readonly label: string; readonly identifier: string }): readonly string[] {
+    return [`label=${jsonString(node.label)}`, `identifier=${jsonString(node.identifier)}`];
+}
 
 function record(kind: string, node: Markup, fields: readonly string[] = [], children = 0): DumpRecord {
     const fieldText = fields.length === 0 ? "" : ` ${fields.join(" ")}`;

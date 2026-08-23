@@ -129,8 +129,23 @@ typedef enum markdown_core_node_kind {
     /* Appended, not inserted beside the other block kinds: this enum's ordinal
      * IS the wire kind every binding decodes, so a kind added in the middle
      * renumbers every kind after it. */
-    MARKDOWN_CORE_KIND_REFERENCE_DEFINITION
+    MARKDOWN_CORE_KIND_REFERENCE_DEFINITION,
+    MARKDOWN_CORE_KIND_LINK_REFERENCE,
+    MARKDOWN_CORE_KIND_IMAGE_REFERENCE
 } markdown_core_node_kind;
+
+/** The form a reference was written in: `[t][l]`, `[l][]` and `[l]` all
+ * resolve the same way and are three different spellings, so nothing else on
+ * the node records which one the author wrote. A footnote reference has no
+ * form: there is one footnote call syntax (Q3). */
+#ifndef MARKDOWN_CORE_REFERENCE_FORM_TYPEDEF
+#define MARKDOWN_CORE_REFERENCE_FORM_TYPEDEF
+typedef enum markdown_core_reference_form {
+    MARKDOWN_CORE_REFERENCE_FULL = 1,
+    MARKDOWN_CORE_REFERENCE_COLLAPSED = 2,
+    MARKDOWN_CORE_REFERENCE_SHORTCUT = 3
+} markdown_core_reference_form;
+#endif
 
 typedef enum markdown_core_list_flavor {
     MARKDOWN_CORE_LIST_FLAVOR_BULLET = 1,
@@ -221,19 +236,40 @@ MARKDOWN_CORE_API bool markdown_core_node_link_properties(const markdown_core_no
 MARKDOWN_CORE_API bool markdown_core_node_image_properties(const markdown_core_node *node,
                                                            markdown_core_string_view *source,
                                                            markdown_core_string_view *title);
-MARKDOWN_CORE_API bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string_view *id);
-/** A link reference definition's association and resource.
+/** The association a reference or a definition carries. Answers for
+ * `ReferenceDefinition`, `LinkReference`, `ImageReference`,
+ * `FootnoteDefinition` and `FootnoteReference`, and refuses every other kind.
  *
- * `label` is the bytes between the brackets exactly as the source spells them:
- * character escapes and character references unresolved, whitespace
- * uncollapsed, case unfolded. `destination` is REQUIRED and is never absent --
- * a definition whose destination could not be built is not emitted at all
- * (Q7, Q26) -- while `title` is absent when the source wrote none, and empty
- * when the source wrote an empty one. */
-MARKDOWN_CORE_API bool markdown_core_node_definition_properties(const markdown_core_node *node,
-                                                                markdown_core_string_view *label,
-                                                                markdown_core_string_view *destination,
-                                                                markdown_core_string_view *title);
+ * `label` is the bytes between the delimiters exactly as the source spells
+ * them: character escapes and character references unresolved, whitespace
+ * uncollapsed, case unfolded. `identifier` is the match key -- full Unicode
+ * case fold, trimmed, internal whitespace collapsed -- and for the two
+ * footnote kinds it KEEPS a leading `^`, so a footnote and a link definition
+ * of one name cannot collide in a consumer's single map.
+ *
+ * NEITHER DERIVES THE OTHER. `label` to `identifier` needs the case-fold
+ * table; `identifier` to `label` is impossible, because the fold is
+ * many-to-one.
+ *
+ * NORMATIVE: `identifier` is compared with memcmp over its bytes. It is never
+ * case mapped, never NFC/NFD normalized, never re-encoded, and never used as a
+ * key in a language map whose equality has an opinion about Unicode -- Swift's
+ * `String ==` is canonical equivalence, which would collapse two spellings
+ * this parser deliberately keeps apart. */
+MARKDOWN_CORE_API bool markdown_core_node_association(const markdown_core_node *node, markdown_core_string_view *label,
+                                                      markdown_core_string_view *identifier);
+/** A link reference definition's resource.
+ *
+ * `destination` is REQUIRED and is never absent -- a definition whose
+ * destination could not be built is not emitted at all (Q7, Q26) -- while
+ * `title` is absent when the source wrote none, and empty when the source
+ * wrote an empty one. */
+MARKDOWN_CORE_API bool markdown_core_node_definition_resource(const markdown_core_node *node,
+                                                              markdown_core_string_view *destination,
+                                                              markdown_core_string_view *title);
+/** The form a `LinkReference` or `ImageReference` was written in. */
+MARKDOWN_CORE_API bool markdown_core_node_reference_form(const markdown_core_node *node,
+                                                         markdown_core_reference_form *form);
 
 /** Allocates the canonical file-tree dump. Free it with markdown_core_dump_free. */
 MARKDOWN_CORE_API bool markdown_core_document_dump(const markdown_core_document *document, uint8_t **output,

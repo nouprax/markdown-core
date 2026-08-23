@@ -209,38 +209,6 @@ static void append_child(markdown_core_node *node, markdown_core_node *child) {
     }
 }
 
-// Duplicate a chunk by creating a copy of the buffer not by reusing the
-// buffer like markdown_core_chunk_dup does.
-static markdown_core_chunk chunk_clone(subject *subj, markdown_core_chunk *src) {
-    markdown_core_chunk c;
-    bufsize_t len = src->len;
-
-    // NULL data means the field was never written, and a copy of "never
-    // written" is "never written". This used to allocate a one-byte buffer for
-    // it, so a reference resolved through a definition with no title handed the
-    // Link an empty title -- while the same document's inline link, which never
-    // goes through here, reported absence. One construct, two answers.
-    if (!src->data) {
-        markdown_core_chunk absent = MARKDOWN_CORE_CHUNK_EMPTY;
-        return absent;
-    }
-
-    c.len = len;
-    c.data = (unsigned char *)subj->mem->calloc((size_t)len + 1, 1);
-    if (!c.data) {
-        markdown_core_chunk empty = MARKDOWN_CORE_CHUNK_EMPTY;
-        subj->oom = 1;
-        return empty;
-    }
-    c.alloc = 1;
-    if (len) {
-        memcpy(c.data, src->data, len);
-    }
-    c.data[len] = '\0';
-
-    return c;
-}
-
 static markdown_core_chunk markdown_core_clean_autolink(subject *subj, markdown_core_chunk *url, int is_email) {
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(subj->mem);
 
@@ -1388,7 +1356,8 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     bufsize_t initial_pos, after_link_text_pos;
     bufsize_t endurl, starttitle, endtitle, endall;
     bufsize_t sps, n;
-    markdown_core_reference *ref = NULL;
+    int matched_reference = 0;
+    markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
     markdown_core_chunk url_chunk, title_chunk;
     markdown_core_chunk url, title;
     bracket *opener;
@@ -1465,24 +1434,27 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
         subj->pos = initial_pos;
     }
 
+    /* THE FORM, decided here because this is the only place that still knows
+     * it. `[t][l]` is FULL, `[l][]` is COLLAPSED and `[l]` is SHORTCUT; all
+     * three resolve identically, so nothing downstream can recover which one
+     * the author wrote (Q3 keeps a footnote call out of this: there is one
+     * footnote syntax, so a form field would have one value). */
+    form = !found_label         ? MARKDOWN_CORE_REFERENCE_SHORTCUT
+           : raw_label.len == 0 ? MARKDOWN_CORE_REFERENCE_COLLAPSED
+                                : MARKDOWN_CORE_REFERENCE_FULL;
+
     if ((!found_label || raw_label.len == 0) && !opener->bracket_after) {
         markdown_core_chunk_free(subj->mem, &raw_label);
         raw_label = markdown_core_chunk_dup(&subj->input, opener->position, initial_pos - opener->position - 1);
         found_label = true;
     }
 
-    if (found_label) {
-        ref = (markdown_core_reference *)markdown_core_map_lookup(subj->refmap, &raw_label);
-        markdown_core_chunk_free(subj->mem, &raw_label);
-    }
-
-    if (ref != NULL) { // found
-        url = chunk_clone(subj, &ref->url);
-        title = chunk_clone(subj, &ref->title);
+    if (found_label && markdown_core_map_lookup(subj->refmap, &raw_label) != NULL) {
+        matched_reference = 1;
         goto match;
-    } else {
-        goto noMatch;
     }
+    markdown_core_chunk_free(subj->mem, &raw_label);
+    goto noMatch;
 
 noMatch:
     // If we fall through to here, it means we didn't match a link.
@@ -1569,8 +1541,20 @@ noMatch:
             // and either a second decoded byte or a further node, and decoding
             // never lengthens a span, so the span is at least two bytes wide.
             assert(initial_pos - opener->position >= 2);
-            fnref->as.literal =
-                markdown_core_chunk_dup(&subj->input, opener->position + 1, initial_pos - opener->position - 2);
+            {
+                markdown_core_chunk label =
+                    markdown_core_chunk_dup(&subj->input, opener->position + 1, initial_pos - opener->position - 2);
+                /* The identifier KEEPS the caret the label does not carry, so a
+                 * footnote and a link definition of one name cannot collide in
+                 * a consumer's single map (markdown_core_association). */
+                if (!markdown_core_association_init(subj->mem, &fnref->as.association, &label, '^')) {
+                    subj->oom = 1;
+                    markdown_core_node_free(fnref);
+                    pop_bracket(subj);
+                    subj->pos = initial_pos;
+                    return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
+                }
+            }
 
             // The call runs from its own '[' to its ']', and the two need not be
             // on the same line; both ends are projected from the offsets this
@@ -1617,6 +1601,34 @@ noMatch:
     return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
 
 match:
+    if (matched_reference) {
+        /* A REFERENCE NAMES ITS DEFINITION AND CARRIES NO DESTINATION (§5.1).
+         * The destination is stated once, at the definition; copying it here is
+         * what made a small document with one long destination into a large
+         * tree, and the running budget that bounded that made whether a
+         * reference resolves depend on how many resolved before it (D9). With
+         * nothing copied there is nothing to bound. */
+        markdown_core_association association;
+        if (!markdown_core_association_init(subj->mem, &association, &raw_label, 0)) {
+            subj->oom = 1;
+            markdown_core_chunk_free(subj->mem, &raw_label);
+            pop_bracket(subj);
+            subj->pos = initial_pos;
+            return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
+        }
+        markdown_core_chunk_free(subj->mem, &raw_label);
+        inl = make_simple(subj->mem, is_image ? MARKDOWN_CORE_NODE_IMAGE_REFERENCE : MARKDOWN_CORE_NODE_LINK_REFERENCE);
+        if (!inl) {
+            subj->oom = 1;
+            markdown_core_association_free(subj->mem, &association);
+            pop_bracket(subj);
+            subj->pos = initial_pos;
+            return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
+        }
+        inl->as.reference.association = association;
+        inl->as.reference.form = form;
+        goto placed;
+    }
     inl = make_simple(subj->mem, is_image ? MARKDOWN_CORE_NODE_IMAGE : MARKDOWN_CORE_NODE_LINK);
     if (!inl) {
         subj->oom = 1;
@@ -1628,6 +1640,7 @@ match:
     }
     inl->as.link.url = url;
     inl->as.link.title = title;
+placed:;
     // A link starts at its own '[' and ends at its closing ')' or ']', and the
     // two need not be on the same line. Taking BOTH from subj->line made a link
     // start where it ENDED: `[a\nb](/u)` reported Link 2:1..2:6 around a child
@@ -2067,8 +2080,9 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
         parts->url = url;
         parts->title = title;
     }
-    // insert reference into refmap
-    markdown_core_reference_create(refmap, &lab, &url, &title);
+    // The map holds LABELS ONLY: what a reference needs from it is whether the
+    // label is defined, and the destination is stated once, at the definition.
+    markdown_core_reference_create(refmap, &lab);
     if (subj.oom && refmap) {
         refmap->oom = 1;
     }

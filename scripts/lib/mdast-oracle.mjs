@@ -84,6 +84,7 @@ function convert(node, definitions) {
                 kind: "ReferenceDefinition",
                 fields: {
                     label: node.label ?? node.identifier ?? "",
+                    identifier: node.identifier ?? "",
                     destination: node.url ?? "",
                     title: node.title ?? ""
                 },
@@ -101,7 +102,11 @@ function convert(node, definitions) {
         return [
             {
                 kind: node.type === "linkReference" ? "LinkReference" : "ImageReference",
-                fields: { label: node.label ?? "", form: node.referenceType ?? "shortcut" },
+                fields: {
+                    label: node.label ?? "",
+                    identifier: node.identifier ?? "",
+                    form: node.referenceType ?? "shortcut"
+                },
                 children: (node.children ?? []).flatMap((child) => convert(child, definitions))
             }
         ];
@@ -131,6 +136,11 @@ function convert(node, definitions) {
     if (node.type === "link" || node.type === "image") {
         fields.destination = node.url ?? "";
         fields.title = node.title ?? "null";
+    }
+    // §5.6: a footnote's label bytes were compared by nobody, on either side.
+    // mdast's `label` is the authored spelling and so is this side's.
+    if (node.type === "footnoteReference" || node.type === "footnoteDefinition") {
+        fields.label = node.label ?? node.identifier ?? "";
     }
     if (node.type === "tableRow") fields.isHeader = "false";
     if (node.type === "inlineMath" || node.type === "math") fields.literal = node.value ?? "";
@@ -228,9 +238,17 @@ export const MDAST_COMPARED = {
     Link: ["destination", "title"],
     Image: ["destination", "title"],
     TableRow: ["isHeader"],
-    ReferenceDefinition: ["label", "destination", "title"],
-    LinkReference: ["label", "form"],
-    ImageReference: ["label", "form"],
+    ReferenceDefinition: ["label", "identifier", "destination", "title"],
+    LinkReference: ["label", "identifier", "form"],
+    ImageReference: ["label", "identifier", "form"],
+    // §5.6: footnote label bytes used to be compared by NOBODY, on either
+    // side. mdast's `label` is the authored spelling and so is this side's, so
+    // there is something to compare as of Step 9b.2. `identifier` is NOT
+    // compared for these two: this side keeps the leading `^` deliberately and
+    // mdast does not (§5.2), which is a difference of one byte that would have
+    // to be registered rather than checked.
+    FootnoteDefinition: ["label"],
+    FootnoteReference: ["label"],
     Directive: ["name", "attributes"],
     DirectiveBlock: ["name", "attributes"],
     Formula: ["literal"],

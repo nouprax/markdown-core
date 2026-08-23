@@ -36,11 +36,13 @@ static const markdown_core_node_type node_types[] = {MARKDOWN_CORE_NODE_DOCUMENT
                                                      MARKDOWN_CORE_NODE_STRONG,
                                                      MARKDOWN_CORE_NODE_LINK,
                                                      MARKDOWN_CORE_NODE_IMAGE,
-                                                     MARKDOWN_CORE_NODE_REFERENCE_DEFINITION};
+                                                     MARKDOWN_CORE_NODE_REFERENCE_DEFINITION,
+                                                     MARKDOWN_CORE_NODE_LINK_REFERENCE,
+                                                     MARKDOWN_CORE_NODE_IMAGE_REFERENCE};
 static const char *const node_type_names[] = {
-    "document", "block_quote",    "list", "list_item",  "code_block",          "html_block", "paragraph",
-    "heading",  "thematic_break", "text", "soft_break", "line_break",          "code",       "html",
-    "emphasis", "strong",         "link", "image",      "reference_definition"};
+    "document", "block_quote",    "list", "list_item",  "code_block",           "html_block",     "paragraph",
+    "heading",  "thematic_break", "text", "soft_break", "line_break",           "code",           "html",
+    "emphasis", "strong",         "link", "image",      "reference_definition", "link_reference", "image_reference"};
 static const int num_node_types = sizeof(node_types) / sizeof(*node_types);
 
 static void test_md_paragraph_text(test_batch_runner *runner, const char *markdown, const char *expected_text,
@@ -89,13 +91,14 @@ static void node_type_values(test_batch_runner *runner) {
                                                           MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
                                                           MARKDOWN_CORE_NODE_REFERENCE_DEFINITION};
     static const markdown_core_node_type inline_types[] = {
-        MARKDOWN_CORE_NODE_TEXT,          MARKDOWN_CORE_NODE_SOFT_BREAK,
-        MARKDOWN_CORE_NODE_LINE_BREAK,    MARKDOWN_CORE_NODE_CODE,
-        MARKDOWN_CORE_NODE_HTML,          MARKDOWN_CORE_NODE_EMPHASIS,
-        MARKDOWN_CORE_NODE_STRONG,        MARKDOWN_CORE_NODE_LINK,
-        MARKDOWN_CORE_NODE_IMAGE,         MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE,
-        MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_FORMULA,
-        MARKDOWN_CORE_NODE_DIRECTIVE,     MARKDOWN_CORE_NODE_DIRECTIVE_LABEL};
+        MARKDOWN_CORE_NODE_TEXT,           MARKDOWN_CORE_NODE_SOFT_BREAK,
+        MARKDOWN_CORE_NODE_LINE_BREAK,     MARKDOWN_CORE_NODE_CODE,
+        MARKDOWN_CORE_NODE_HTML,           MARKDOWN_CORE_NODE_EMPHASIS,
+        MARKDOWN_CORE_NODE_STRONG,         MARKDOWN_CORE_NODE_LINK,
+        MARKDOWN_CORE_NODE_IMAGE,          MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE,
+        MARKDOWN_CORE_NODE_STRIKETHROUGH,  MARKDOWN_CORE_NODE_FORMULA,
+        MARKDOWN_CORE_NODE_DIRECTIVE,      MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
+        MARKDOWN_CORE_NODE_LINK_REFERENCE, MARKDOWN_CORE_NODE_IMAGE_REFERENCE};
 
     for (size_t i = 0; i < sizeof(block_types) / sizeof(*block_types); ++i) {
         INT_EQ(runner, block_types[i] & MARKDOWN_CORE_NODE_TYPE_MASK, MARKDOWN_CORE_NODE_TYPE_BLOCK,
@@ -705,11 +708,18 @@ void hierarchy(test_batch_runner *runner) {
                                        MARKDOWN_CORE_NODE_THEMATIC_BREAK,
                                        MARKDOWN_CORE_NODE_REFERENCE_DEFINITION,
                                        0};
-    unsigned int all_inlines[] = {MARKDOWN_CORE_NODE_TEXT,       MARKDOWN_CORE_NODE_SOFT_BREAK,
-                                  MARKDOWN_CORE_NODE_LINE_BREAK, MARKDOWN_CORE_NODE_CODE,
-                                  MARKDOWN_CORE_NODE_HTML,       MARKDOWN_CORE_NODE_EMPHASIS,
-                                  MARKDOWN_CORE_NODE_STRONG,     MARKDOWN_CORE_NODE_LINK,
-                                  MARKDOWN_CORE_NODE_IMAGE,      0};
+    unsigned int all_inlines[] = {MARKDOWN_CORE_NODE_TEXT,
+                                  MARKDOWN_CORE_NODE_SOFT_BREAK,
+                                  MARKDOWN_CORE_NODE_LINE_BREAK,
+                                  MARKDOWN_CORE_NODE_CODE,
+                                  MARKDOWN_CORE_NODE_HTML,
+                                  MARKDOWN_CORE_NODE_EMPHASIS,
+                                  MARKDOWN_CORE_NODE_STRONG,
+                                  MARKDOWN_CORE_NODE_LINK,
+                                  MARKDOWN_CORE_NODE_IMAGE,
+                                  MARKDOWN_CORE_NODE_LINK_REFERENCE,
+                                  MARKDOWN_CORE_NODE_IMAGE_REFERENCE,
+                                  0};
 
     test_content(runner, MARKDOWN_CORE_NODE_DOCUMENT, top_level_blocks);
     test_content(runner, MARKDOWN_CORE_NODE_BLOCK_QUOTE, top_level_blocks);
@@ -731,6 +741,8 @@ void hierarchy(test_batch_runner *runner) {
     test_content(runner, MARKDOWN_CORE_NODE_STRONG, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_LINK, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_IMAGE, all_inlines);
+    test_content(runner, MARKDOWN_CORE_NODE_LINK_REFERENCE, all_inlines);
+    test_content(runner, MARKDOWN_CORE_NODE_IMAGE_REFERENCE, all_inlines);
 }
 
 static void test_content(test_batch_runner *runner, markdown_core_node_type type, unsigned int *allowed_content) {
@@ -1511,6 +1523,90 @@ static void source_pos_inlines(test_batch_runner *runner) {
                      "multiline emphasis scopes are as expected");
 }
 
+/* §5.6's G7: ONE accessor answers for all five reference kinds and refuses
+ * every other node.
+ *
+ * The five differ in where the association lives -- a definition's is boxed
+ * behind a pointer, a footnote's is inline in the union, a link reference's is
+ * inside a wider struct -- which is exactly why this is a switch on the type
+ * and not a common-initial-sequence read. A sixth kind that answered here
+ * would be reading some other union arm as two chunks. */
+static void association_accessor(test_batch_runner *runner) {
+    /* An inline Link and an inline Image are in the corpus DELIBERATELY: they
+     * are the two kinds nearest to answering by accident, because their union
+     * arm is a pair of chunks too. Without them a sixth arm added to the
+     * switch kills nothing -- measured. */
+    static const char markdown[] = "[a][ref] ![b][ref] [^n] [c](/inline) ![d](/i.png)\n"
+                                   "\n"
+                                   "[ref]: /r\n"
+                                   "\n"
+                                   "[^n]: note\n";
+    markdown_core_parse_options options;
+    markdown_core_document *document;
+    const markdown_core_node *root;
+    const markdown_core_node *node;
+    markdown_core_string_view label = {NULL, 0};
+    markdown_core_string_view identifier = {NULL, 0};
+    int answered = 0;
+    int refused = 0;
+    size_t seen = 0;
+    /* Five kinds answer. Everything else -- including the Paragraph, the Text
+     * children and the Document -- refuses. */
+    const markdown_core_node_kind carriers[] = {
+        MARKDOWN_CORE_KIND_REFERENCE_DEFINITION, MARKDOWN_CORE_KIND_LINK_REFERENCE, MARKDOWN_CORE_KIND_IMAGE_REFERENCE,
+        MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION, MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE};
+    unsigned int found = 0;
+
+    memset(&options, 0, sizeof(options));
+    options.footnotes = true;
+    document = markdown_core_document_parse((const uint8_t *)markdown, strlen(markdown), &options, NULL);
+    if (!document) {
+        OK(runner, 0, "association corpus parses");
+        return;
+    }
+    root = markdown_core_document_root(document);
+
+    {
+        /* An explicit stack, because the walk must reach every node and the
+         * facade's traversal is the only one the accessor is public through. */
+        const markdown_core_node *stack[64];
+        size_t depth = 0;
+        stack[depth++] = root;
+        while (depth > 0) {
+            const markdown_core_node *current = stack[--depth];
+            markdown_core_node_kind kind = markdown_core_node_get_kind(current);
+            size_t index;
+            int carries = 0;
+            seen++;
+            for (index = 0; index < sizeof(carriers) / sizeof(carriers[0]); index++) {
+                if (kind == carriers[index]) {
+                    carries = 1;
+                    found |= 1u << index;
+                }
+            }
+            if (markdown_core_node_association(current, &label, &identifier)) {
+                answered++;
+                INT_EQ(runner, carries, 1, "kind %d answers the association accessor", (int)kind);
+                OK(runner, label.data != NULL && identifier.data != NULL && identifier.length > 0,
+                   "kind %d carries both halves", (int)kind);
+            } else {
+                refused++;
+                INT_EQ(runner, carries, 0, "kind %d refuses the association accessor", (int)kind);
+            }
+            for (node = markdown_core_node_get_first_child(current); node;
+                 node = markdown_core_node_get_next_sibling(node)) {
+                if (depth < sizeof(stack) / sizeof(stack[0])) {
+                    stack[depth++] = node;
+                }
+            }
+        }
+    }
+    INT_EQ(runner, (int)found, 31, "all five reference kinds appear in the corpus");
+    INT_EQ(runner, answered, 5, "exactly five nodes answer");
+    OK(runner, refused > 0 && seen == (size_t)(answered + refused), "every other node refuses");
+    markdown_core_document_free(document);
+}
+
 static void ref_source_pos(test_batch_runner *runner) {
     static const char markdown[] = "Let's try [reference] links.\n"
                                    "\n"
@@ -1520,11 +1616,11 @@ static void ref_source_pos(test_batch_runner *runner) {
                      "Document scope=1:1..3:40 children=2\n"
                      "├── Paragraph scope=1:1..1:28 children=3\n"
                      "│   ├── Text scope=1:1..1:10 literal=\"Let's try \" children=0\n"
-                     "│   ├── Link scope=1:11..1:21 destination=\"https://github.com\" "
-                     "title=\"GitHub\" children=1\n"
+                     "│   ├── LinkReference scope=1:11..1:21 label=\"reference\" "
+                     "identifier=\"reference\" form=shortcut children=1\n"
                      "│   │   └── Text scope=1:12..1:20 literal=\"reference\" children=0\n"
                      "│   └── Text scope=1:22..1:28 literal=\" links.\" children=0\n"
-                     "└── ReferenceDefinition scope=3:1..3:40 label=\"reference\" "
+                     "└── ReferenceDefinition scope=3:1..3:40 label=\"reference\" identifier=\"reference\" "
                      "destination=\"https://github.com\" title=\"GitHub\" children=0\n",
                      "reference link scopes are as expected");
 }
@@ -1599,6 +1695,7 @@ int main(void) {
     source_pos(runner);
     source_pos_inlines(runner);
     ref_source_pos(runner);
+    association_accessor(runner);
     autolink_source_pos(runner);
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);

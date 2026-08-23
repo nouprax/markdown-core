@@ -9,5 +9,7 @@ export interface Scope {
 }
 
 export type ListFlavor = "bullet" | "ordered";
+/** Which of the three reference spellings the source wrote. */
+export type ReferenceForm = "full" | "collapsed" | "shortcut";
 export type PlacementMode = "embedded" | "standalone";
 export type TableAlignment = "none" | "left" | "center" | "right";

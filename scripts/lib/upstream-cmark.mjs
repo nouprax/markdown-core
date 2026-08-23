@@ -241,7 +241,7 @@ export function applyUpstreamFootnoteModel(root, fired) {
     const fold = (label) => label.trim().replace(/\s+/g, " ").toLowerCase();
     const referenced = new Set();
     const survey = (node) => {
-        if (node.kind === "FootnoteReference") referenced.add(fold(node.fields.id ?? ""));
+        if (node.kind === "FootnoteReference") referenced.add(fold(node.fields.label ?? ""));
         for (const child of node.children) survey(child);
     };
     survey(root);
@@ -249,7 +249,7 @@ export function applyUpstreamFootnoteModel(root, fired) {
     const rewrite = (node) => {
         const before = node.children.length;
         node.children = node.children.filter(
-            (child) => !(child.kind === "FootnoteDefinition" && !referenced.has(fold(child.fields.id ?? "")))
+            (child) => !(child.kind === "FootnoteDefinition" && !referenced.has(fold(child.fields.label ?? "")))
         );
         if (node.children.length !== before) fired?.add("footnote-resolution-model");
         for (const child of node.children) rewrite(child);
@@ -271,12 +271,20 @@ export function applyUpstreamFootnoteModel(root, fired) {
  * destination, or to none, still shows up as a difference.
  */
 export function applyUpstreamReferenceModel(root, fired) {
-    const fold = (label) => label.trim().replace(/\s+/g, " ").toLowerCase();
     const definitions = new Map();
     const survey = (node) => {
         if (node.kind === "ReferenceDefinition") {
             fired?.add("reference-definition-node");
-            const key = fold(node.fields.label ?? "");
+            // GROUPED BY `identifier`, WHICH THE ENGINE STATES. Folding the raw
+            // label here instead would need the full Unicode case fold: `[SS]`
+            // defines the label `[\u1e9e]` refers to, and JavaScript has no
+            // full case fold — `toLowerCase()` maps \u1e9e to \u00df, not to
+            // `ss`, so the projection would resolve to the wrong definition on
+            // an input cmark gets right. The check is not weakened by trusting
+            // the key: a reference that resolved to the WRONG definition names
+            // that one here, and its destination is still compared; one that
+            // resolved to none stays `Text` where upstream has a `Link`.
+            const key = node.fields.identifier ?? "";
             // The earliest definition of a label wins, in both models.
             if (!definitions.has(key)) definitions.set(key, node.fields);
         }
@@ -290,7 +298,7 @@ export function applyUpstreamReferenceModel(root, fired) {
             .map((child) => {
                 if (child.kind === "LinkReference" || child.kind === "ImageReference") {
                     fired?.add("reference-definition-node");
-                    const found = definitions.get(fold(child.fields.label ?? ""));
+                    const found = definitions.get(child.fields.identifier ?? "");
                     rewrite(child);
                     return {
                         kind: child.kind === "LinkReference" ? "Link" : "Image",

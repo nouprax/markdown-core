@@ -35,6 +35,10 @@ public interface Visitor<Result> {
 
     public fun visitReferenceDefinition(node: ReferenceDefinition): Result
 
+    public fun visitLinkReference(node: LinkReference): Result
+
+    public fun visitImageReference(node: ImageReference): Result
+
     public fun visitText(node: Text): Result
 
     public fun visitSoftBreak(node: SoftBreak): Result
