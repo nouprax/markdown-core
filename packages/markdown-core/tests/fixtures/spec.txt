@@ -1845,7 +1845,7 @@ foo
 .
 Document scope=1:1..3:2 children=1
 └── Paragraph scope=1:1..3:2 children=1
-    └── Code scope=1:3..2:4 literal="foo" children=0
+    └── Code scope=1:1..3:2 literal="foo" children=0
 ````````````````````````````````
 
 The closing code fence must use the same character as the opening
@@ -2052,7 +2052,7 @@ aaa
 .
 Document scope=1:1..2:3 children=1
 └── Paragraph scope=1:1..2:3 children=3
-    ├── Code scope=1:4..1:4 literal=" " children=0
+    ├── Code scope=1:1..1:7 literal=" " children=0
     ├── SoftBreak scope=1:8..1:8 children=0
     └── Text scope=2:1..2:3 literal="aaa" children=0
 ````````````````````````````````
@@ -2155,7 +2155,7 @@ foo
 .
 Document scope=1:1..2:3 children=1
 └── Paragraph scope=1:1..2:3 children=3
-    ├── Code scope=1:4..1:7 literal="aa" children=0
+    ├── Code scope=1:1..1:10 literal="aa" children=0
     ├── SoftBreak scope=1:11..1:11 children=0
     └── Text scope=2:1..2:3 literal="foo" children=0
 ````````````````````````````````
@@ -3636,7 +3636,7 @@ Document scope=1:1..4:15 children=1
     ├── TableRow scope=3:1..3:13 isHeader=false children=1
     │   └── TableCell scope=3:2..3:12 children=3
     │       ├── Text scope=3:3..3:4 literal="b " children=0
-    │       ├── Code scope=3:6..3:6 literal="|" children=0
+    │       ├── Code scope=3:5..3:7 literal="|" children=0
     │       └── Text scope=3:8..3:10 literal=" az" children=0
     └── TableRow scope=4:1..4:15 isHeader=false children=1
         └── TableCell scope=4:2..4:14 children=3
@@ -6180,7 +6180,7 @@ Thus, for example, in
 .
 Document scope=1:1..1:7 children=1
 └── Paragraph scope=1:1..1:7 children=2
-    ├── Code scope=1:2..1:3 literal="hi" children=0
+    ├── Code scope=1:1..1:4 literal="hi" children=0
     └── Text scope=1:5..1:7 literal="lo`" children=0
 ````````````````````````````````
 
@@ -6284,7 +6284,7 @@ raw HTML:
 .
 Document scope=1:1..1:10 children=1
 └── Paragraph scope=1:1..1:10 children=1
-    └── Code scope=1:3..1:8 literal="\\[\\`" children=0
+    └── Code scope=1:1..1:10 literal="\\[\\`" children=0
 ````````````````````````````````
 
 
@@ -6530,7 +6530,7 @@ text in code spans and code blocks:
 .
 Document scope=1:1..1:15 children=1
 └── Paragraph scope=1:1..1:15 children=1
-    └── Code scope=1:2..1:14 literal="f&ouml;&ouml;" children=0
+    └── Code scope=1:1..1:15 literal="f&ouml;&ouml;" children=0
 ````````````````````````````````
 
 
@@ -6624,7 +6624,7 @@ This is a simple code span:
 .
 Document scope=1:1..1:5 children=1
 └── Paragraph scope=1:1..1:5 children=1
-    └── Code scope=1:2..1:4 literal="foo" children=0
+    └── Code scope=1:1..1:5 literal="foo" children=0
 ````````````````````````````````
 
 
@@ -6637,7 +6637,7 @@ trailing space:
 .
 Document scope=1:1..1:15 children=1
 └── Paragraph scope=1:1..1:15 children=1
-    └── Code scope=1:3..1:13 literal="foo ` bar" children=0
+    └── Code scope=1:1..1:15 literal="foo ` bar" children=0
 ````````````````````````````````
 
 
@@ -6649,7 +6649,7 @@ spaces:
 .
 Document scope=1:1..1:6 children=1
 └── Paragraph scope=1:1..1:6 children=1
-    └── Code scope=1:2..1:5 literal="``" children=0
+    └── Code scope=1:1..1:6 literal="``" children=0
 ````````````````````````````````
 
 Note that only *one* space is stripped:
@@ -6659,7 +6659,7 @@ Note that only *one* space is stripped:
 .
 Document scope=1:1..1:8 children=1
 └── Paragraph scope=1:1..1:8 children=1
-    └── Code scope=1:2..1:7 literal=" `` " children=0
+    └── Code scope=1:1..1:8 literal=" `` " children=0
 ````````````````````````````````
 
 The stripping only happens if the space is on both
@@ -6670,7 +6670,7 @@ sides of the string:
 .
 Document scope=1:1..1:4 children=1
 └── Paragraph scope=1:1..1:4 children=1
-    └── Code scope=1:2..1:3 literal=" a" children=0
+    └── Code scope=1:1..1:4 literal=" a" children=0
 ````````````````````````````````
 
 Only [spaces], and not [unicode whitespace] in general, are
@@ -6681,7 +6681,7 @@ stripped in this way:
 .
 Document scope=1:1..1:7 children=1
 └── Paragraph scope=1:1..1:7 children=1
-    └── Code scope=1:2..1:6 literal=" b " children=0
+    └── Code scope=1:1..1:7 literal=" b " children=0
 ````````````````````````````````
 
 No stripping occurs if the code span contains only spaces:
@@ -6692,9 +6692,9 @@ No stripping occurs if the code span contains only spaces:
 .
 Document scope=1:1..2:4 children=1
 └── Paragraph scope=1:1..2:4 children=3
-    ├── Code scope=1:2..1:3 literal=" " children=0
+    ├── Code scope=1:1..1:4 literal=" " children=0
     ├── SoftBreak scope=1:5..1:5 children=0
-    └── Code scope=2:2..2:3 literal="  " children=0
+    └── Code scope=2:1..2:4 literal="  " children=0
 ````````````````````````````````
 
 
@@ -6709,7 +6709,7 @@ baz
 .
 Document scope=1:1..5:2 children=1
 └── Paragraph scope=1:1..5:2 children=1
-    └── Code scope=1:3..4:4 literal="foo bar   baz" children=0
+    └── Code scope=1:1..5:2 literal="foo bar   baz" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -6719,7 +6719,7 @@ foo
 .
 Document scope=1:1..3:2 children=1
 └── Paragraph scope=1:1..3:2 children=1
-    └── Code scope=1:3..2:5 literal="foo " children=0
+    └── Code scope=1:1..3:2 literal="foo " children=0
 ````````````````````````````````
 
 
@@ -6731,7 +6731,7 @@ baz`
 .
 Document scope=1:1..2:4 children=1
 └── Paragraph scope=1:1..2:4 children=1
-    └── Code scope=1:2..2:3 literal="foo   bar  baz" children=0
+    └── Code scope=1:1..2:4 literal="foo   bar  baz" children=0
 ````````````````````````````````
 
 Note that browsers will typically collapse consecutive spaces
@@ -6749,7 +6749,7 @@ are treated literally:
 .
 Document scope=1:1..1:10 children=1
 └── Paragraph scope=1:1..1:10 children=2
-    ├── Code scope=1:2..1:5 literal="foo\\" children=0
+    ├── Code scope=1:1..1:6 literal="foo\\" children=0
     └── Text scope=1:7..1:10 literal="bar`" children=0
 ````````````````````````````````
 
@@ -6763,7 +6763,7 @@ not contain any strings of exactly *n* backtick characters.
 .
 Document scope=1:1..1:11 children=1
 └── Paragraph scope=1:1..1:11 children=1
-    └── Code scope=1:3..1:9 literal="foo`bar" children=0
+    └── Code scope=1:1..1:11 literal="foo`bar" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -6771,7 +6771,7 @@ Document scope=1:1..1:11 children=1
 .
 Document scope=1:1..1:14 children=1
 └── Paragraph scope=1:1..1:14 children=1
-    └── Code scope=1:2..1:13 literal="foo `` bar" children=0
+    └── Code scope=1:1..1:14 literal="foo `` bar" children=0
 ````````````````````````````````
 
 
@@ -6786,7 +6786,7 @@ span:
 Document scope=1:1..1:7 children=1
 └── Paragraph scope=1:1..1:7 children=2
     ├── Text scope=1:1..1:4 literal="*foo" children=0
-    └── Code scope=1:6..1:6 literal="*" children=0
+    └── Code scope=1:5..1:7 literal="*" children=0
 ````````````````````````````````
 
 
@@ -6798,7 +6798,7 @@ And this is not parsed as a link:
 Document scope=1:1..1:20 children=1
 └── Paragraph scope=1:1..1:20 children=3
     ├── Text scope=1:1..1:7 literal="[not a " children=0
-    ├── Code scope=1:9..1:18 literal="link](/foo" children=0
+    ├── Code scope=1:8..1:19 literal="link](/foo" children=0
     └── Text scope=1:20..1:20 literal=")" children=0
 ````````````````````````````````
 
@@ -6811,7 +6811,7 @@ Thus, this is code:
 .
 Document scope=1:1..1:14 children=1
 └── Paragraph scope=1:1..1:14 children=2
-    ├── Code scope=1:2..1:10 literal="<a href=\"" children=0
+    ├── Code scope=1:1..1:11 literal="<a href=\"" children=0
     └── Text scope=1:12..1:14 literal="\">`" children=0
 ````````````````````````````````
 
@@ -6835,7 +6835,7 @@ And this is code:
 .
 Document scope=1:1..1:23 children=1
 └── Paragraph scope=1:1..1:23 children=2
-    ├── Code scope=1:2..1:17 literal="<http://foo.bar." children=0
+    ├── Code scope=1:1..1:18 literal="<http://foo.bar." children=0
     └── Text scope=1:19..1:23 literal="baz>`" children=0
 ````````````````````````````````
 
@@ -6882,7 +6882,7 @@ closing backtick strings to be equal in length:
 Document scope=1:1..1:11 children=1
 └── Paragraph scope=1:1..1:11 children=2
     ├── Text scope=1:1..1:4 literal="`foo" children=0
-    └── Code scope=1:7..1:9 literal="bar" children=0
+    └── Code scope=1:5..1:11 literal="bar" children=0
 ````````````````````````````````
 
 
@@ -8698,7 +8698,7 @@ Document scope=1:1..1:7 children=1
 └── Paragraph scope=1:1..1:7 children=1
     └── Emphasis scope=1:1..1:7 children=2
         ├── Text scope=1:2..1:3 literal="a " children=0
-        └── Code scope=1:5..1:5 literal="*" children=0
+        └── Code scope=1:4..1:6 literal="*" children=0
 ````````````````````````````````
 
 
@@ -8709,7 +8709,7 @@ Document scope=1:1..1:7 children=1
 └── Paragraph scope=1:1..1:7 children=1
     └── Emphasis scope=1:1..1:7 children=2
         ├── Text scope=1:2..1:3 literal="a " children=0
-        └── Code scope=1:5..1:5 literal="_" children=0
+        └── Code scope=1:4..1:6 literal="_" children=0
 ````````````````````````````````
 
 
@@ -9268,7 +9268,7 @@ Document scope=1:1..1:30 children=1
             ├── Strong scope=1:12..1:18 children=1
             │   └── Text scope=1:14..1:16 literal="bar" children=0
             ├── Text scope=1:19..1:19 literal=" " children=0
-            └── Code scope=1:21..1:21 literal="#" children=0
+            └── Code scope=1:20..1:22 literal="#" children=0
 ````````````````````````````````
 
 
@@ -9382,7 +9382,7 @@ Document scope=1:1..1:24 children=1
 Document scope=1:1..1:13 children=1
 └── Paragraph scope=1:1..1:13 children=2
     ├── Text scope=1:1..1:4 literal="[foo" children=0
-    └── Code scope=1:6..1:12 literal="](/uri)" children=0
+    └── Code scope=1:5..1:13 literal="](/uri)" children=0
 ````````````````````````````````
 
 
@@ -9486,7 +9486,7 @@ Document scope=1:1..3:11 children=1
             ├── Strong scope=1:12..1:18 children=1
             │   └── Text scope=1:14..1:16 literal="bar" children=0
             ├── Text scope=1:19..1:19 literal=" " children=0
-            └── Code scope=1:21..1:21 literal="#" children=0
+            └── Code scope=1:20..1:22 literal="#" children=0
 ````````````````````````````````
 
 
@@ -9593,7 +9593,7 @@ Document scope=1:1..3:11 children=1
 Document scope=1:1..3:11 children=1
 └── Paragraph scope=1:1..1:12 children=2
     ├── Text scope=1:1..1:4 literal="[foo" children=0
-    └── Code scope=1:6..1:11 literal="][ref]" children=0
+    └── Code scope=1:5..1:12 literal="][ref]" children=0
 ````````````````````````````````
 
 
@@ -11381,7 +11381,7 @@ span`
 .
 Document scope=1:1..2:5 children=1
 └── Paragraph scope=1:1..2:5 children=1
-    └── Code scope=1:2..2:4 literal="code   span" children=0
+    └── Code scope=1:1..2:5 literal="code   span" children=0
 ````````````````````````````````
 
 
@@ -11391,7 +11391,7 @@ span`
 .
 Document scope=1:1..2:5 children=1
 └── Paragraph scope=1:1..2:5 children=1
-    └── Code scope=1:2..2:4 literal="code\\ span" children=0
+    └── Code scope=1:1..2:5 literal="code\\ span" children=0
 ````````````````````````````````
 
 

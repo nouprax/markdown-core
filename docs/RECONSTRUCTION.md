@@ -24,7 +24,7 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a), **8.1 – 8.2 – 8.3** (§4.14.8a–8c) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
 | Next action | **Step 9b.1** — `ReferenceDefinition` as a node; then 9b.2's `LinkReference`/`ImageReference` and D9. **§4.14.9b0 scopes both before either starts**: a node kind is forty-five files, the upstream gate is already written for the post-9b world, and there is no free core block type value below the extension range. **Step 8 is done** (§4.14.8a–8b): an inline position is a projection of the byte range it covers, the four counters are gone, and Step 8 owes only **Q45** (does a code span cover its own backticks — built, measured, not taken). Remaining: `9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog | **Step 10 is done** (§4.14.10): the content-to-source map exists, five consumers read it, and the mdast backlog is down to Step 9b's six. It carries **Q44** — an autocompleted table cell has no source bytes and no coordinate pair can say so — owned by 11a. Remaining: `9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
@@ -71,11 +71,11 @@ node scripts/audit-scope-sanity.mjs        # 4 unresolved rows, 5301 scanned, on
 # The three position oracles, landed at 0a.1 (§4.2.7). Each fails on a row
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
 # fails here rather than in review.
-node scripts/audit-inline-sourcepos.mjs    # 9 rows registered, 68 scanned — and
+node scripts/audit-inline-sourcepos.mjs    # 40 rows registered, 68 scanned — and
                                           # for the first time they are rows where THIS
                                           # side is right and upstream is not (§4.14.8a)
 node scripts/audit-scope-containment.mjs   # 21 rows registered, 4217 scanned
-node scripts/audit-position-places.mjs     # 69 rows registered, 4351 scanned
+node scripts/audit-position-places.mjs     # 66 rows registered, 4351 scanned
 
 # Requirement 11a's four laws over the concrete record set, landed at 11a
 # (§4.14.11a). L1 and L3 have no rows and hold by construction; L4 is checked
@@ -1221,7 +1221,7 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | **Q30** | Do the bindings spell child edges typed (`content`, `items`, `label`, `header`, `rows`, `cells`) or flat (`children`)? | 15A | **TAKEN at 15A.2: typed.** The Swift dump is byte-identical afterwards and `audit-ast-projections.mjs` is green. ~~**Typed.** Kotlin and ES already do; Swift's flat `children` is what forces `labelCount: Int?`, forces `Table.init` to filter rows by `isHeader` and `preconditionFailure` if the count is not one, and forces `children: [any Markup] = []` onto eleven leaf kinds. Two of three bindings and the contract already assume it.~~ **Every one of those was measured true at 15A.2 and every one of them is gone.** |
 | **Q42** | When does `prettier --check .` get satisfied, and by reformatting or by scoping? | 15C | **OPEN.** `ci.yml:97` runs it as a required step and it reports **100 files** at Step 6, none of them engine sources — `scripts/*.mjs`, `specs/**/*.json`, docs. Same era skew as `audit:ci`: the config came from `main` with Step 0's `scripts/` restore, the files did not. **Recommend: one deliberate `prettier --write` commit at 15C that touches nothing else**, rather than letting each step carry unrelated churn or leaving a required check red through Stage 0. Scoping prettier away from `specs/` is the alternative and is worse — those are the files a reader diffs most. |
 | **Q43** | Is a directive's label found LEXICALLY, or by the inline delimiter machinery? | 7 | **ANSWERED AT 7e: LEXICALLY**, and at Step 7 rather than Step 8 -- the redesign it looked like turned out to be a deletion. `match_colon_directive` scans the label at the colon and both branches continue, so a label that closes is a label and one that does not is prose; the bytes are consumed there, so no other extension is offered them. Eleven functions, a delimiter rule, a dispatch byte, an extension hook and the whole of 7d went with it: **8 files, +214 / −409.** The two dead-end proposals and the off-by-one in the 32-deep cap are recorded in §4.14.7e. |
-| **Q45** | Does a code span's position cover its own backticks? | 8 | **OPEN, and it is the same shape as Q40.** `scope=` is what the question is about — the node's source extent, not its literal. Emphasis covers its asterisks (`*bar*` → `1:1..1:5`), a link covers its brackets and parens (`[a](/u)` → `1:11..1:17`), strikethrough covers both tilde pairs — and a code span is the one construct in this engine whose extent is its CONTENT: `` `foo` `` → `1:24..1:26`, with the backticks at 23 and 27 belonging to no node at all. On a line where the opening run IS the line, that start stops being a place: `` `` `` alone on line 1 puts the code span at column 3 of a two-byte line. **BUILT AND MEASURED at 8.1, and the first reading of the measurement was wrong and is corrected here**: covering the ticks clears **three** `places` rows — the multi-line code spans — and **none** of the nine `unmatched-code-span-literal` rows, which are `Text` nodes and were a different defect, closed at 8.3 by one line. It moves **thirty-seven** rows in `specs/positions/inline-sourcepos.json`, because upstream reports the content extent for every code span and not only the ones that cross a line ending. **Recommend: cover them** — a position is a projection of the byte range the node covers, and the range a code span covers is the construct, which is also what 11b needs if every byte is to have an owner — but it is a deliberate divergence from cmark-gfm on a construct nothing else in the corpus disagrees about, so it is the owner's. |
+| ~~**Q45**~~ | Does a code span's position cover its own backticks? | 8 | **ANSWERED BY THE OWNER 2026-08-23 — YES**, and taken at 8.4 (§4.14.8d). Every other inline construct covers its own delimiters — emphasis its asterisks, a link its brackets and parens, strikethrough both tilde pairs — and a code span reported the extent of its CONTENT, which is what cmark-gfm reports and is a defect inherited from it. A scope exists so a consumer can map a node back to the source it came from, and the source a code span came from includes the ticks that make it one. **55 golden rows moved and every one is a `Code` node; `places` 69 → 66 and down to two families; `inline-sourcepos` 9 → 40**, every row of it now a place where this side is right and upstream is not. |
 | **Q44** | What does a node with NO SOURCE BYTES report as its position? | 11a | **OPEN, and it is a ruling about vocabulary before it is a repair.** An autocompleted table cell -- the cells GFM completes at the end of a short row -- covers nothing. Step 10 built and measured both spellings a coordinate pair can give it, in the shape §4.2.5 used for D26: the empty range past the row's last byte is a **pure transfer** (nine zero-column rows become nine off-column rows, containment drops eighteen, and `specs/scope-sanity/ledger.json` gains nine negative rows, which its only-shrink rule refuses); the row's last byte clears all nine and nets twelve in containment but **claims a byte that already belongs to the cell before it**, which is 11a's L1 broken before 11a is written. `specs/scope-sanity/ledger.json`'s own `purpose` states the cause: *the dump has no spelling for "no position" that does not borrow a coordinate*. **Recommend: 11a decides it**, because a node owning zero regions is exactly what 11a makes sayable, and it is a dump-grammar change and so a standing-rule-4 commit. The nine rows are registered in `specs/positions/places.json` and eighteen in `specs/positions/containment.json`, both naming 11a rather than `unassigned`. |
 | **Q41** | Does the repository keep swift-format's `AllPublicDeclarationsHaveDocumentation`? | 15A / 15C | **OPEN, and it is the owner's.** It is a required CI health check that has been failing: 184 findings at `46e20f2`, 170 after 15A.2, 163 after Step 6, **164** after Step 7.2. Satisfying it means writing a doc comment on every public declaration in the Swift binding, and for a projection layer most of those can only restate the signature — the pass this repository rejected once already. **Recommend: scope the rule to types and functions, or turn it off**, and say so in `.swift-format` rather than leaving a required check red. Whichever way it goes, it is an owner decision and §4.8 needs an answer before Stage 0 closes. |
 | **Q38** | Does the empty `Text` node D13 removes become a registered divergence from cmark-gfm? | 0a.14 | **OPEN.** Upstream emits the node too, so removing it costs one normalizer projection, one `NORMALIZED_DELTAS` name and one `deltas.json` entry. Measured at §4.2.3. Owed by the commit that lands D13. |
@@ -5695,6 +5695,60 @@ analysis, and the analysis was wrong twice here — once about which step owned
 the nine (right: Step 8) and once about what caused them (wrong: not the
 delimiters, the placement). Both were caught by the same thing: a step landing
 and the rows NOT moving.
+
+
+#### 4.14.8d Step 8.4: Q45 answered — a code span covers its backticks
+
+**Owner ruling, 2026-08-23:**
+
+> *"For Q45, it's definitely a defect or bug inherited from cmark. It should
+> cover backtick according to all the other inline element rules, right?"*
+
+**Yes, and the rule the ruling appeals to is visible on one line:**
+
+```
+*bar* and [a](/u) and `foo` and ~~s~~
+├── Emphasis      1:1..1:5     covers *bar*     — asterisks included
+├── Link          1:11..1:17   covers [a](/u)   — brackets and parens included
+├── Code          1:24..1:26   covers foo       — backticks at 23 and 27 owned by NOBODY
+└── Strikethrough 1:33..1:37   covers ~~s~~     — both tilde pairs included
+```
+
+`make_code` is now given the construct's range instead of its content's. The
+same line now reads `Code scope=1:23..1:27`.
+
+**Fifty-five golden rows moved and EVERY ONE OF THEM IS A `Code` NODE** — 34 in
+`spec.txt`, 12 in `extensions.txt`, 9 in `regression.txt`, plus one each in
+`smart_punct.txt`, `extensions-formula-conflicts.txt` and
+`specs/canonical-ast/inlines.ast`, and one assertion in `api_engine`. Zero rows
+of any other kind moved, which is the cleanest statement available that the
+change touches exactly the construct it names.
+
+**Mechanised: the source bytes at a `Code` node's own scope must start and end
+with a backtick. 0 of 55 before, 51 of 55 after.** The four that remain are all
+code spans inside a table cell with an escaped pipe — the residue §4.14.8b
+already names and pins, where the cell's content is `unescape_pipes`'d and so is
+one byte shorter per `\|` than the source it was cut from. **The checker had to
+index the source in BYTES to say this**: a no-break space is one character and
+two columns, and a character-indexed first draft reported two false failures on
+`` `\u00a0` ``.
+
+**Ledgers.**
+
+| ledger | before | after |
+|---|---|---|
+| `specs/positions/places.json` | 69 | **66**, and it is down to TWO families — `multi-line-span-ends-at-a-line-ending` is gone, because a code span that crossed a line ending used to end AT the line ending (its content's last byte was the newline) and now ends at its closing tick, which is a place |
+| `specs/positions/inline-sourcepos.json` | 9 | **40** — 34 `Code` rows added, 3 cleared |
+
+**The inline-sourcepos ledger going up is the ruling, not a regression.** It
+compares this engine's inline positions against cmark-gfm's, it read zero for
+the whole of Stage 0a — *including on the rows that were wrong* — and every one
+of its forty rows is now a row where this side is right and upstream is not.
+Thirty-four are this ruling; six are Step 8.1's raw-HTML closing byte. Each
+row's `closedBy` says which side is right.
+
+**Q45 is answered and closes.** Q40 stands unchanged: a line ending is a place
+only for a node that IS one, and no code span sits on one any more.
 
 ---
 

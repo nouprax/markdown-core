@@ -2,7 +2,7 @@
     "schemaVersion": 1,
     "script": "scripts/audit-inline-sourcepos.mjs",
     "subject": "Every inline Code and HTML node's position, compared with cmark-gfm's own --sourcepos over the CommonMark spec fixture.",
-    "purpose": "Nine rows, and for the first time in this ledger's life they are rows where THIS SIDE IS RIGHT. It read zero for the whole of Stage 0a: every inline position agreed with cmark-gfm's, including the ones that were wrong, which is exactly what specs/positions/places.json's closing note says this oracle cannot see.\n\n   6  raw-html-loses-its-closing-byte   `a <b` / `c> d` gives a raw-HTML node whose literal ends at 2:2 and whose scope ended at 2:1, so its closing `>` belonged to no node at all. places.json names this input, pins it as a golden row in regression.txt, and assigns it to Step 8. Step 8's projection closes it: an inline node's extent is a projection of the byte range it covers, and asking the content-to-source map where the last byte is answers 2:2. Upstream still reports 2:1 on all six.\n   3  multi-line-span-ends-at-a-line-ending   A code span crossing a line ending now ends at the end of the line its last byte is on -- `1:3..2:4` -- where upstream says column 0 of the line after -- `1:3..3:0`. Both are line-ending spellings; this one names the right line. See places.json's family of the same name and Q45.\n\nAGREEING WITH AN AUTHORITY THAT IS ITSELF WRONG IS NOT AGREEMENT. This ledger's value was always that it would go non-zero the moment this engine's inline positions stopped being cmark-gfm's; what it did not say until now is that the first such moment would be an improvement. A row here is a disagreement, not a defect, and each one's closedBy says which.",
+    "purpose": "Forty rows, and every one of them is a row where THIS SIDE IS RIGHT. It read zero for the whole of Stage 0a: every inline position agreed with cmark-gfm's, including the ones that were wrong, which is exactly what specs/positions/places.json's closing note says this oracle cannot see.\n\n  34  code-span-covers-its-backticks   A code span's scope covers its own delimiters, as emphasis covers its asterisks, a link its brackets and parens, and strikethrough both tilde pairs. Upstream reports the extent of the CONTENT instead, which is a defect this repository inherited from it: `` `foo` `` on a line of its own put the span at columns 2..4 of a five-byte line, and `` `` `` alone on a line put it at column 3 of a two-byte line, which is not a place at all. A scope exists so a consumer can map a node back to the source it came from, and the source a code span came from includes the ticks that make it one. ANSWERED BY THE OWNER at 8.4 (Q45), after the alternative had been built and measured twice.\n   6  raw-html-loses-its-closing-byte   `a <b` / `c> d` gives a raw-HTML node whose literal ends at 2:2 and whose scope ended at 2:1, so its closing `>` belonged to no node at all. places.json names this input, pins it as a golden row in regression.txt, and assigns it to Step 8. Step 8.1's projection closed it. Upstream still reports 2:1 on all six.\n\nAGREEING WITH AN AUTHORITY THAT IS ITSELF WRONG IS NOT AGREEMENT. This ledger's value was always that it would go non-zero the moment this engine's inline positions stopped being cmark-gfm's; what it did not say until Step 8 is that every such moment so far would be an improvement. A row here is a DISAGREEMENT, not a defect, and each one's closedBy says which side is right.",
     "corpus": "packages/markdown-core/tests/fixtures/spec.txt",
     "profile": "gfm",
     "expected": [
@@ -13,10 +13,200 @@
                 {
                     "nodePath": "0.0.0",
                     "kind": "Code",
-                    "ours": "1:3..2:4",
+                    "ours": "1:1..3:2",
                     "upstream": "1:3..3:0",
-                    "closedBy": "closed at Step 8 -- both spellings are line endings and this one names the right line",
-                    "class": "multi-line-span-ends-at-a-line-ending"
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:2049",
+            "input": "``` ```\naaa\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:7",
+                    "upstream": "1:4..1:4",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:2152",
+            "input": "``` aa ```\nfoo\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:10",
+                    "upstream": "1:4..1:7",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3625",
+            "input": "| f\\|oo  |\n| ------ |\n| b `\\|` az |\n| b **\\|** im |\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.1",
+                    "kind": "Code",
+                    "ours": "3:5..3:7",
+                    "upstream": "3:6..3:6",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6178",
+            "input": "`hi`lo`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:4",
+                    "upstream": "1:2..1:3",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6282",
+            "input": "`` \\[\\` ``\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:10",
+                    "upstream": "1:3..1:8",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6528",
+            "input": "`f&ouml;&ouml;`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:15",
+                    "upstream": "1:2..1:14",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6622",
+            "input": "`foo`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:5",
+                    "upstream": "1:2..1:4",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6635",
+            "input": "`` foo ` bar ``\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:15",
+                    "upstream": "1:3..1:13",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6647",
+            "input": "` `` `\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:6",
+                    "upstream": "1:2..1:5",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6657",
+            "input": "`  ``  `\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:8",
+                    "upstream": "1:2..1:7",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6668",
+            "input": "` a`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:4",
+                    "upstream": "1:2..1:3",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6679",
+            "input": "`\u00a0b\u00a0`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:7",
+                    "upstream": "1:2..1:6",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6689",
+            "input": "`\u00a0`\n`  `\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:4",
+                    "upstream": "1:2..1:3",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                },
+                {
+                    "nodePath": "0.0.2",
+                    "kind": "Code",
+                    "ours": "2:1..2:4",
+                    "upstream": "2:2..2:3",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
                 }
             ]
         },
@@ -27,10 +217,10 @@
                 {
                     "nodePath": "0.0.0",
                     "kind": "Code",
-                    "ours": "1:3..4:4",
+                    "ours": "1:1..5:2",
                     "upstream": "1:3..5:0",
-                    "closedBy": "closed at Step 8 -- both spellings are line endings and this one names the right line",
-                    "class": "multi-line-span-ends-at-a-line-ending"
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
                 }
             ]
         },
@@ -41,10 +231,164 @@
                 {
                     "nodePath": "0.0.0",
                     "kind": "Code",
-                    "ours": "1:3..2:5",
+                    "ours": "1:1..3:2",
                     "upstream": "1:3..3:0",
-                    "closedBy": "closed at Step 8 -- both spellings are line endings and this one names the right line",
-                    "class": "multi-line-span-ends-at-a-line-ending"
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6728",
+            "input": "`foo   bar \nbaz`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..2:4",
+                    "upstream": "1:2..2:3",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6747",
+            "input": "`foo\\`bar`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:6",
+                    "upstream": "1:2..1:5",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6761",
+            "input": "``foo`bar``\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:11",
+                    "upstream": "1:3..1:9",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6769",
+            "input": "` foo `` bar `\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:14",
+                    "upstream": "1:2..1:13",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6783",
+            "input": "*foo`*`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "Code",
+                    "ours": "1:5..1:7",
+                    "upstream": "1:6..1:6",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6795",
+            "input": "[not a `link](/foo`)\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "Code",
+                    "ours": "1:8..1:19",
+                    "upstream": "1:9..1:18",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6809",
+            "input": "`<a href=\"`\">`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:11",
+                    "upstream": "1:2..1:10",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6833",
+            "input": "`<http://foo.bar.`baz>`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..1:18",
+                    "upstream": "1:2..1:17",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:6879",
+            "input": "`foo``bar``\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "Code",
+                    "ours": "1:5..1:11",
+                    "upstream": "1:7..1:9",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:8694",
+            "input": "*a `*`*\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.1",
+                    "kind": "Code",
+                    "ours": "1:4..1:6",
+                    "upstream": "1:5..1:5",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:8705",
+            "input": "_a `_`_\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.1",
+                    "kind": "Code",
+                    "ours": "1:4..1:6",
+                    "upstream": "1:5..1:5",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
                 }
             ]
         },
@@ -57,8 +401,64 @@
                     "kind": "HTML",
                     "ours": "1:8..2:4",
                     "upstream": "1:8..2:3",
-                    "closedBy": "closed at Step 8 -- this side is right and upstream is not; the row records the disagreement",
-                    "class": "raw-html-loses-its-closing-byte"
+                    "class": "raw-html-loses-its-closing-byte",
+                    "closedBy": "closed at Step 8.1 -- this side is right and upstream is not; the row records the disagreement"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:9259",
+            "input": "[link *foo **bar** `#`*](/uri)\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.1.3",
+                    "kind": "Code",
+                    "ours": "1:20..1:22",
+                    "upstream": "1:21..1:21",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:9379",
+            "input": "[foo`](/uri)`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "Code",
+                    "ours": "1:5..1:13",
+                    "upstream": "1:6..1:12",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:9475",
+            "input": "[link *foo **bar** `#`*][ref]\n\n[ref]: /uri\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.1.3",
+                    "kind": "Code",
+                    "ours": "1:20..1:22",
+                    "upstream": "1:21..1:21",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:9588",
+            "input": "[foo`][ref]`\n\n[ref]: /uri\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1",
+                    "kind": "Code",
+                    "ours": "1:5..1:12",
+                    "upstream": "1:6..1:11",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
                 }
             ]
         },
@@ -71,8 +471,8 @@
                     "kind": "HTML",
                     "ours": "1:7..2:12",
                     "upstream": "1:7..2:11",
-                    "closedBy": "closed at Step 8 -- this side is right and upstream is not; the row records the disagreement",
-                    "class": "raw-html-loses-its-closing-byte"
+                    "class": "raw-html-loses-its-closing-byte",
+                    "closedBy": "closed at Step 8.1 -- this side is right and upstream is not; the row records the disagreement"
                 }
             ]
         },
@@ -85,8 +485,8 @@
                     "kind": "HTML",
                     "ours": "1:1..2:27",
                     "upstream": "1:1..2:26",
-                    "closedBy": "closed at Step 8 -- this side is right and upstream is not; the row records the disagreement",
-                    "class": "raw-html-loses-its-closing-byte"
+                    "class": "raw-html-loses-its-closing-byte",
+                    "closedBy": "closed at Step 8.1 -- this side is right and upstream is not; the row records the disagreement"
                 }
             ]
         },
@@ -99,8 +499,36 @@
                     "kind": "HTML",
                     "ours": "1:5..2:26",
                     "upstream": "1:5..2:25",
-                    "closedBy": "closed at Step 8 -- this side is right and upstream is not; the row records the disagreement",
-                    "class": "raw-html-loses-its-closing-byte"
+                    "class": "raw-html-loses-its-closing-byte",
+                    "closedBy": "closed at Step 8.1 -- this side is right and upstream is not; the row records the disagreement"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:11378",
+            "input": "`code  \nspan`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..2:5",
+                    "upstream": "1:2..2:4",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:11388",
+            "input": "`code\\\nspan`\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "kind": "Code",
+                    "ours": "1:1..2:5",
+                    "upstream": "1:2..2:4",
+                    "closedBy": "closed at 8.4 by owner ruling (Q45) -- this side is right and upstream is not",
+                    "class": "code-span-covers-its-backticks"
                 }
             ]
         },
@@ -113,8 +541,8 @@
                     "kind": "HTML",
                     "ours": "1:1..2:5",
                     "upstream": "1:1..2:4",
-                    "closedBy": "closed at Step 8 -- this side is right and upstream is not; the row records the disagreement",
-                    "class": "raw-html-loses-its-closing-byte"
+                    "class": "raw-html-loses-its-closing-byte",
+                    "closedBy": "closed at Step 8.1 -- this side is right and upstream is not; the row records the disagreement"
                 }
             ]
         },
@@ -127,8 +555,8 @@
                     "kind": "HTML",
                     "ours": "1:1..2:5",
                     "upstream": "1:1..2:4",
-                    "closedBy": "closed at Step 8 -- this side is right and upstream is not; the row records the disagreement",
-                    "class": "raw-html-loses-its-closing-byte"
+                    "class": "raw-html-loses-its-closing-byte",
+                    "closedBy": "closed at Step 8.1 -- this side is right and upstream is not; the row records the disagreement"
                 }
             ]
         }
