@@ -27,7 +27,7 @@ only as a record.
 | Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 9b.1** — `ReferenceDefinition` as a node; then 9b.2's `LinkReference`/`ImageReference` and D9. **§4.14.9b0 scopes both before either starts**: a node kind is forty-five files, the upstream gate is already written for the post-9b world, and there is no free core block type value below the extension range. **Step 8 is done** (§4.14.8a–8b): an inline position is a projection of the byte range it covers, the four counters are gone, and Step 8 owes only **Q45** (does a code span cover its own backticks — built, measured, not taken). Remaining: `9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog | **Step 10 is done** (§4.14.10): the content-to-source map exists, five consumers read it, and the mdast backlog is down to Step 9b's six. It carries **Q44** — an autocompleted table cell has no source bytes and no coordinate pair can say so — owned by 11a. Remaining: `9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 9b.1** — `ReferenceDefinition` as a node; then 9b.2's `LinkReference`/`ImageReference` and D9. **§4.14.9b0 scopes both before either starts**: a node kind is forty-five files, the upstream gate is already written for the post-9b world, and there is no free core block type value below the extension range. **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d). Remaining: `9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -149,6 +149,19 @@ red, ask which ERA it belongs to before assuming the engine is at fault.**
 
 `timeout` is not on the macOS PATH; guard long runs with a background job and a
 `kill`.
+
+**A MUTANT HARNESS THAT RESTORES FROM A SNAPSHOT SILENTLY REVERTS EVERYTHING
+YOU WROTE AFTER TAKING IT.** The loop used through Steps 10, 9a, 11a and 8 kept
+a copy of each source it might mutate and copied them all back afterwards. The
+snapshot for `core/inlines.c` was taken at 8.3's mutant; Q45 then edited the
+same file; Q44's mutant ran, restored the whole snapshot set, and **took Q45 out
+of the working tree.** Every suite was green when the commit was made and the
+tree it committed was inconsistent — the goldens said a code span covers its
+backticks and the engine said it does not — because the check ran against a
+binary that still had the change. The repair is `1b21a02`. **Re-take the
+snapshot immediately before each mutant, restore only the file the mutant
+touched, and re-run the mechanised claim of the step you are standing on — not
+just the suite — after a restore.**
 
 **`rm -rf build/<preset>` before any measurement that spans a `git stash`.**
 Two stash cycles at 7d left objects newer than the restored sources, so a build

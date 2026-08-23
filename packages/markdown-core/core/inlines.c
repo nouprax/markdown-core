@@ -484,25 +484,19 @@ static markdown_core_node *handle_backticks(subject *subj, int options) {
             subj->oom = 1;
         }
 
-        /* The extent is the code span's CONTENT and not the construct, which
-         * is what upstream reports and is why `` ``foo`` `` starts at the byte
-         * after its opening ticks -- a column that does not exist on a
-         * two-byte line. Emphasis covers its asterisks, a link covers its
-         * brackets, and this is the one construct that does not cover its own
-         * delimiters.
+        /* A CODE SPAN COVERS ITS BACKTICKS (Q45, answered 2026-08-23). Every
+         * other inline construct covers its own delimiters -- emphasis its
+         * asterisks, a link its brackets and parens, strikethrough both tilde
+         * pairs -- and this one reported the extent of its CONTENT instead,
+         * which is what upstream reports and is a defect inherited from it.
          *
-         * Covering them was BUILT AND MEASURED, twice, and the second reading
-         * corrected the first: it clears THREE rows in
-         * specs/positions/places.json -- the multi-line code spans, and none of
-         * the nine `unmatched-code-span-literal` rows, which are Text nodes and
-         * were a different defect, closed at 8.3 -- and it moves THIRTY-SEVEN
-         * rows in specs/positions/inline-sourcepos.json, because upstream
-         * reports the content extent for every code span and not only the ones
-         * that cross a line ending. That is a ruling about what a node covers,
-         * in the shape Q40 took, and it is Q45's -- not a side effect of the
-         * projection. */
+         * A scope exists so a consumer can map a node back to the source it
+         * came from, and the source a code span came from includes the ticks
+         * that make it one. Reporting the content alone also produced a start
+         * that is not a place: `` `` `` alone on a line put the span at column
+         * 3 of a two-byte line. */
         markdown_core_node *node =
-            make_code(subj, startpos, endpos - openticks.len - 1, markdown_core_chunk_buf_detach(&buf));
+            make_code(subj, startpos - openticks.len, endpos - 1, markdown_core_chunk_buf_detach(&buf));
         if (!node) {
             return NULL;
         }
