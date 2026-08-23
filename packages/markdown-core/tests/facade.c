@@ -258,6 +258,42 @@ static void check_two_views(void) {
         markdown_core_region region;
         check(!markdown_core_document_region_at(document, count, &region), "a region past the end is not a region");
     }
+    /* THE LOCATOR THAT SURVIVES THE COPY. Every binding copies the tree into
+     * value types and frees the handle, so a region's owner has to be nameable
+     * by something that is not a pointer -- and the path has to lead back to
+     * the same node. Checked by walking it. */
+    {
+        int32_t path[32];
+        size_t depth = 0;
+        int resolves = 1;
+        for (index = 0; index < count; index++) {
+            markdown_core_region region;
+            const markdown_core_node *walk;
+            size_t step;
+            if (!markdown_core_document_region_at(document, index, &region) ||
+                !markdown_core_document_region_owner_path(document, index, path, 32, &depth)) {
+                resolves = 0;
+                break;
+            }
+            walk = root;
+            for (step = 0; step < depth && walk; step++) {
+                int32_t position = path[step];
+                walk = markdown_core_node_get_first_child(walk);
+                while (walk && position-- > 0) {
+                    walk = markdown_core_node_get_next_sibling(walk);
+                }
+            }
+            if (walk != region.owner) {
+                resolves = 0;
+                break;
+            }
+        }
+        check(resolves, "every region's owner path leads back to its owner");
+        check(!markdown_core_document_region_owner_path(document, count, path, 32, &depth),
+              "a region past the end has no owner path");
+        check(!markdown_core_document_region_owner_path(document, count - 1, path, 0, &depth),
+              "a path that does not fit is refused rather than truncated");
+    }
     markdown_core_document_free(document);
 
     check(markdown_core_document_source(NULL).data == NULL, "a null document has no source");

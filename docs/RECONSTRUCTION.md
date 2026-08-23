@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), **11b** (§4.14.11b), **11c** (§4.14.11c), **12.1** (§4.14.12a) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), **11b** (§4.14.11b), **11c** (§4.14.11c), **12.1** (§4.14.12a), **12.2's locator** (§4.14.12b) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 12.2** — the bindings: `document.concrete` copied into value types, with a region naming its owner by a node PATH rather than a pointer. **12.1 is LANDED** (§4.14.12a): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 reads 69/69 there and fails `conformance`. Then `13 14 15C`. **Step 9b is LANDED whole** (§4.14.9b1–9b2): the definition and both references are nodes, five kinds carry an association, **D9 and D30 are closed**, the **mdast backlog is EMPTY**, and `fuzz-parity --oracle mdast` — one of §0's six known-red checks — is green. **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), Step 9b (§4.14.9b1–9b2), **Step 11b** (§4.14.11b) — which added TWO laws, L5 and L6, because L1–L4 are all true of the day before it — and **Step 11c** (§4.14.11c), whose engine change is NOTHING because 9b.1 had already made its requirement true; what it adds is the gate that would notice if it stopped. **11c also inherits four families** and they are named in its record. Remaining: `12.2 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 12.2's bindings**, and the API question §4.14.12b puts to the owner first: whether `Document.parse` returns `{semantic, concrete}` (literal, breaks every consumer in three languages) or the document value stays the semantic view and gains `.concrete` (nothing existing moves; the recommendation). **12.1 is LANDED** (§4.14.12a) and so is the LOCATOR (§4.14.12b): the C facade has both views, the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 reads 69/69 there and fails `conformance` — and a region names its owner by a path that survives being copied. Then `13 14 15C`. **Step 9b is LANDED whole** (§4.14.9b1–9b2): the definition and both references are nodes, five kinds carry an association, **D9 and D30 are closed**, the **mdast backlog is EMPTY**, and `fuzz-parity --oracle mdast` — one of §0's six known-red checks — is green. **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), Step 9b (§4.14.9b1–9b2), **Step 11b** (§4.14.11b) — which added TWO laws, L5 and L6, because L1–L4 are all true of the day before it — and **Step 11c** (§4.14.11c), whose engine change is NOTHING because 9b.1 had already made its requirement true; what it adds is the gate that would notice if it stopped. **11c also inherits four families** and they are named in its record. Remaining: `12.2 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -6506,6 +6506,57 @@ one), both fuzz oracles 300/300, upstream 888/888, mdast 110/110 with an empty
 backlog, every position ledger holding, `lint-c` — which caught the missing
 initializer in `core/main.c` that no preset did — `pnpm -w run lint`, `leaks
 --atExit` 0, and the Swift, Kotlin and ES suites green through the rename.
+
+
+#### 4.14.12b Step 12.2 part one: the locator a value type can keep, and the API question it exposes
+
+**`markdown_core_document_region_owner_path`.** A region's owner is a
+`const markdown_core_node *`, and every binding copies the tree into value types
+and frees the handle — so a pointer is exactly the locator that does not survive
+the copy. The path of child indices from the semantic root is the one that does:
+`{}` is the root, `{0, 2}` the third child of the first.
+
+It is an ORDINAL, which §5.8 rejected for the reference model, and the
+difference is worth stating because the two look alike: §5.8's ordinal had to
+survive `filter`, `slice` and `merge` on a tree a consumer edits, and this one
+names a node inside ONE immutable snapshot. Nothing filters a parsed document.
+
+`facade_test` walks every path back down and requires it to arrive at the owner
+it came from; a path that does not fit the caller's buffer is refused rather
+than truncated, and a region past the end has no path.
+
+##### THE API QUESTION 12.2 EXPOSES, and it is the owner's
+
+The requirement says the surface presents *"`document.semantic` … and
+`document.concrete`"*. In C that is now literally true. **In the bindings it is
+not, and cannot be without a break the requirement does not obviously
+authorise**: `Document.parse(source)` returns the markup `Document` VALUE, and
+consumers write `document.content`. There are two readings:
+
+1. **the parse result gains both** — `Document.parse` returns
+   `{ semantic, concrete }`. Literal, and it breaks every consumer, every
+   binding test and every conformance suite in three languages.
+2. **the document value IS the semantic view and gains `.concrete`** — nothing
+   existing moves, `document.concrete.regions` is reachable, and
+   `audit-ast-projections.mjs` permits it, because the model check is
+   one-directional by design: *"the models may carry members the contract does
+   not name"*.
+
+**Reading 2 is what the bindings should take**, and it is recorded here rather
+than taken silently, because it is a public-surface decision and §4.11's
+precedent is that those are the owner's. The cost of reading 1 is measurable and
+is the reason: three model declarations, three decoders, three dumpers, three
+conformance suites and every consumer example.
+
+##### What 12 still owes, precisely
+
+The three bindings, each: a `Concrete` value type (`source`, `lines`,
+`regions`), a `Region` value type (`start`, `length`, `role`, `owner` as the
+path), the copy at parse time, and a test that reads a region AFTER the native
+handle is freed — which is the requirement's own sentence and the only part of
+it a C test cannot make. ES reads the wasm accessors directly, Kotlin needs the
+view on its wire, Swift calls the C functions; the three mechanisms differ and
+the value types do not.
 
 
 #### 4.14.11a2 Q44 answered: an autocompleted table cell sits where it was completed

@@ -254,6 +254,23 @@ MARKDOWN_CORE_API size_t markdown_core_document_region_count(const markdown_core
 /** The region at `index`, counting from 0. */
 MARKDOWN_CORE_API bool markdown_core_document_region_at(const markdown_core_document *document, size_t index,
                                                         markdown_core_region *region);
+/** The owner of region `index`, as the PATH of child indices from the semantic
+ * root: `{}` is the root, `{0, 2}` is the third child of the first.
+ *
+ * A pointer names a node only while the handle is alive, and every binding
+ * copies the tree into value types and frees the handle -- so a pointer is
+ * exactly the locator that does not survive the copy, and this is the one that
+ * does. It is an ordinal, which §5.8 rejected for the reference model, and the
+ * difference is that this one names a node inside ONE immutable snapshot rather
+ * than across edits: nothing filters or slices a parsed document.
+ *
+ * `capacity` is how many `int32_t` `path` can hold. `*length` receives the
+ * depth, and the call fails without writing if the path is deeper than that --
+ * ask again with more room. Traversal here is the RAW tree's, the same one the
+ * regions were recorded against, not the canonical traversal
+ * `markdown_core_node_get_first_child` performs. */
+MARKDOWN_CORE_API bool markdown_core_document_region_owner_path(const markdown_core_document *document, size_t index,
+                                                                int32_t *path, size_t capacity, size_t *length);
 
 MARKDOWN_CORE_API markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error);
 MARKDOWN_CORE_API markdown_core_string_view markdown_core_error_get_message(const markdown_core_error *error);

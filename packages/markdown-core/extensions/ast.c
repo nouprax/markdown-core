@@ -212,6 +212,44 @@ bool markdown_core_document_region_at(const markdown_core_document *document, si
     return true;
 }
 
+bool markdown_core_document_region_owner_path(const markdown_core_document *document, size_t index, int32_t *path,
+                                              size_t capacity, size_t *length) {
+    const markdown_core_node *node;
+    const markdown_core_node *root;
+    size_t depth = 0;
+    size_t at;
+
+    if (!document || !length || index >= (size_t)document->concrete.regions_size) {
+        return false;
+    }
+    root = document->root;
+    node = document->concrete.regions[index].owner;
+    /* Counted UPWARD and then reversed: a node knows its parent and its
+     * previous sibling, and neither knows its own index. */
+    for (; node && node != root; node = markdown_core_node_parent((markdown_core_node *)node)) {
+        depth++;
+    }
+    *length = depth;
+    if (node != root) {
+        return false;
+    }
+    if (depth > capacity || (depth > 0 && !path)) {
+        return false;
+    }
+    node = document->concrete.regions[index].owner;
+    for (at = depth; at > 0; at--) {
+        const markdown_core_node *sibling;
+        int32_t position = 0;
+        for (sibling = markdown_core_node_previous((markdown_core_node *)node); sibling;
+             sibling = markdown_core_node_previous((markdown_core_node *)sibling)) {
+            position++;
+        }
+        path[at - 1] = position;
+        node = markdown_core_node_parent((markdown_core_node *)node);
+    }
+    return true;
+}
+
 markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error) {
     return error ? error->code : MARKDOWN_CORE_ERROR_NONE;
 }

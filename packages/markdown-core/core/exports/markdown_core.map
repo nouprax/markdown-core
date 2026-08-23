@@ -9,6 +9,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_document_line_start;
     markdown_core_document_region_count;
     markdown_core_document_region_at;
+    markdown_core_document_region_owner_path;
     markdown_core_error_get_code;
     markdown_core_error_get_message;
     markdown_core_error_get_scope;
