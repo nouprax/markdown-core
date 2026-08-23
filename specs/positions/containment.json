@@ -2,7 +2,7 @@
     "schemaVersion": 1,
     "script": "scripts/audit-scope-containment.mjs",
     "subject": "Two geometric invariants over every fixture example: a child's extent lies inside its parent's, and no two siblings claim the same byte.",
-    "purpose": "Forty-five rows, four causes, and the sibling half is what earns this oracle. WAS FIFTY-EIGHT: 0a.13 cleared the fourteen that were the emphasis defect, which is the cause the sibling half was written for. It was fifty-nine for one commit -- 0a.12b gave break nodes a position and one of them landed on top of a Text that already over-reaches, which is a second symptom of a defect this ledger already carries rather than a new one. Containment alone cannot see the emphasis defect: ***a** gives a Text spanning columns 1..3 and a Strong starting at column 1, and both sit inside their paragraph, so the only statement that catches it is that two nodes claim one byte. That is exactly what it caught, and what 0a.13 then cleared: reverting the emphasis fix makes fourteen rows reappear here, and reverting only the ONE-LINE form of it that the plan originally named leaves SEVEN of the fourteen standing -- the leftover Text still spans the whole run. Measured both ways. This cannot be an upstream comparison either - cmark-gfm re-parents emphasis the same way and takes a link's start from the closing bracket the same way, so it would return agreement on exactly the rows that are wrong. Nodes with no position are skipped, not judged; the 0:0..0:0 sentinel and line zero are scripts/audit-scope-sanity.mjs's subject, and two ratchets that claim the same row can each be satisfied by it moving to the other. Every row's closedBy names the step that is expected to clear it; the three H14 rows name no step because none exists yet, and that is the honest state rather than a guess.",
+    "purpose": "Thirty-one rows, three causes, and the sibling half is what earns this oracle. WAS FORTY-FIVE, and 58 before 0a.13: Step 10 cleared FOURTEEN by making the inline phase read requirement 10's content-to-source map, so a continuation line's inline children stop being measured from the block's first-line column and stop reaching outside their own parent. 0a.13 cleared the fourteen that were the emphasis defect, which is the cause the sibling half was written for. Containment alone cannot see the emphasis defect: ***a** gives a Text spanning columns 1..3 and a Strong starting at column 1, and both sit inside their paragraph, so the only statement that catches it is that two nodes claim one byte. That is exactly what it caught, and what 0a.13 then cleared: reverting the emphasis fix makes fourteen rows reappear here, and reverting only the ONE-LINE form of it that the plan originally named leaves SEVEN of the fourteen standing. Measured both ways. This cannot be an upstream comparison either - cmark-gfm re-parents emphasis the same way and takes a link's start from the closing bracket the same way, so it would return agreement on exactly the rows that are wrong. Nodes with no position are skipped, not judged; the 0:0..0:0 sentinel and line zero are scripts/audit-scope-sanity.mjs's subject, and two ratchets that claim the same row can each be satisfied by it moving to the other - which is why the run now reports ZERO skipped child relations where it used to skip the split-off table lead's. Every row's closedBy names the step that is expected to clear it; the three H14 rows name no step because none exists yet, and that is the honest state rather than a guess. EIGHTEEN of the thirty-one are one thing - an autocompleted table cell, which has no source bytes at all - and Step 10 measured both coordinate spellings for it before carrying it rather than taking one: see the recovered-table-cell family in specs/positions/places.json, and Q44.",
     "corpus": "every example in packages/markdown-core/tests/fixtures/*.txt",
     "profile": "gfm-extended",
     "expected": [
@@ -17,7 +17,7 @@
                     "scope": "3:0..3:0",
                     "parentKind": "TableRow",
                     "parentScope": "3:1..3:3",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 },
                 {
                     "nodePath": "0.0.1.2",
@@ -26,7 +26,7 @@
                     "scope": "3:0..3:0",
                     "parentKind": "TableRow",
                     "parentScope": "3:1..3:3",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 },
                 {
                     "nodePath": "0.0.1.1",
@@ -35,7 +35,7 @@
                     "scope": "3:0..3:0",
                     "previousKind": "TableCell",
                     "previousScope": "3:2..3:3",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 },
                 {
                     "nodePath": "0.0.1.2",
@@ -44,7 +44,7 @@
                     "scope": "3:0..3:0",
                     "previousKind": "TableCell",
                     "previousScope": "3:0..3:0",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 },
                 {
                     "nodePath": "0.0.2.2",
@@ -53,7 +53,7 @@
                     "scope": "4:0..4:0",
                     "parentKind": "TableRow",
                     "parentScope": "4:1..4:7",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 },
                 {
                     "nodePath": "0.0.2.2",
@@ -62,7 +62,7 @@
                     "scope": "4:0..4:0",
                     "previousKind": "TableCell",
                     "previousScope": "4:6..4:7",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 }
             ]
         },
@@ -77,7 +77,7 @@
                     "scope": "4:0..4:0",
                     "parentKind": "TableRow",
                     "parentScope": "4:1..4:34",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 },
                 {
                     "nodePath": "0.0.2.1",
@@ -86,7 +86,7 @@
                     "scope": "4:0..4:0",
                     "previousKind": "TableCell",
                     "previousScope": "4:2..4:33",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 },
                 {
                     "nodePath": "0.0.3.1",
@@ -95,7 +95,7 @@
                     "scope": "5:0..5:0",
                     "parentKind": "TableRow",
                     "parentScope": "5:1..5:24",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 },
                 {
                     "nodePath": "0.0.3.1",
@@ -104,7 +104,7 @@
                     "scope": "5:0..5:0",
                     "previousKind": "TableCell",
                     "previousScope": "5:2..5:24",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 },
                 {
                     "nodePath": "0.0.4.1",
@@ -113,7 +113,7 @@
                     "scope": "6:0..6:0",
                     "parentKind": "TableRow",
                     "parentScope": "6:1..6:23",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 },
                 {
                     "nodePath": "0.0.4.1",
@@ -122,7 +122,7 @@
                     "scope": "6:0..6:0",
                     "previousKind": "TableCell",
                     "previousScope": "6:2..6:23",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 }
             ]
         },
@@ -137,7 +137,7 @@
                     "scope": "3:0..3:0",
                     "parentKind": "TableRow",
                     "parentScope": "3:1..3:11",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 },
                 {
                     "nodePath": "0.0.1.1",
@@ -146,7 +146,7 @@
                     "scope": "3:0..3:0",
                     "previousKind": "TableCell",
                     "previousScope": "3:2..3:10",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 }
             ]
         },
@@ -181,21 +181,6 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:1332",
-            "input": "> foo\nbar\n===\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.4",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "3:3..3:5",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:3..3:3",
-                    "closedBy": "Step 10 \u2014 the content-offset-as-column class on a continuation line (Q22)"
-                }
-            ]
-        },
-        {
             "source": "packages/markdown-core/tests/fixtures/spec.txt:1922",
             "input": "> ```\n> aaa\n\nbbb\n",
             "findings": [
@@ -211,36 +196,6 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:3463",
-            "input": "  aaa\n bbb\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.2",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "2:3..2:5",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:3..2:4",
-                    "closedBy": "Step 10 \u2014 the content-offset-as-column class on a continuation line (Q22)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:3496",
-            "input": "   aaa\nbbb\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.2",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "2:4..2:6",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:4..2:3",
-                    "closedBy": "Step 10 \u2014 the content-offset-as-column class on a continuation line (Q22)"
-                }
-            ]
-        },
-        {
             "source": "packages/markdown-core/tests/fixtures/spec.txt:3675",
             "input": "| abc | def |\n| --- | --- |\n| bar | baz |\nbar\n\nbar\n",
             "findings": [
@@ -251,7 +206,7 @@
                     "scope": "4:0..4:0",
                     "parentKind": "TableRow",
                     "parentScope": "4:1..4:3",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 },
                 {
                     "nodePath": "0.0.2.1",
@@ -260,7 +215,7 @@
                     "scope": "4:0..4:0",
                     "previousKind": "TableCell",
                     "previousScope": "4:1..4:3",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 }
             ]
         },
@@ -275,7 +230,7 @@
                     "scope": "3:0..3:0",
                     "parentKind": "TableRow",
                     "parentScope": "3:1..3:7",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 },
                 {
                     "nodePath": "0.0.1.1",
@@ -284,37 +239,7 @@
                     "scope": "3:0..3:0",
                     "previousKind": "TableCell",
                     "previousScope": "3:2..3:6",
-                    "closedBy": "Step 10 \u2014 the recovered header row and cells carry no source (requirement 10)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:3851",
-            "input": "   > # Foo\n   > bar\n > baz\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.2",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "3:6..3:8",
-                    "parentKind": "Paragraph",
-                    "parentScope": "2:6..3:6",
-                    "closedBy": "Step 10 \u2014 the content-offset-as-column class on a continuation line (Q22)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:3882",
-            "input": "> # Foo\n> bar\nbaz\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.2",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "3:3..3:5",
-                    "parentKind": "Paragraph",
-                    "parentScope": "2:3..3:3",
-                    "closedBy": "Step 10 \u2014 the content-offset-as-column class on a continuation line (Q22)"
+                    "closedBy": "11a, under Q44 - an autocompleted table cell has no source bytes and no coordinate pair can say so"
                 }
             ]
         },
@@ -334,126 +259,6 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:3997",
-            "input": "> foo\n    - bar\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.2",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "2:7..2:11",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:3..2:9",
-                    "closedBy": "Step 10 \u2014 the content-offset-as-column class on a continuation line (Q22)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:4146",
-            "input": "> bar\nbaz\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.2",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "2:3..2:5",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:3..2:3",
-                    "closedBy": "Step 10 \u2014 the content-offset-as-column class on a continuation line (Q22)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:4191",
-            "input": "> > > foo\nbar\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.0.0.2",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "2:7..2:9",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:7..2:3",
-                    "closedBy": "Step 10 \u2014 the content-offset-as-column class on a continuation line (Q22)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:4206",
-            "input": ">>> foo\n> bar\n>>baz\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.0.0.4",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "3:5..3:7",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:5..3:5",
-                    "closedBy": "Step 10 \u2014 the content-offset-as-column class on a continuation line (Q22)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:5005",
-            "input": "  1.  A paragraph\nwith two lines.\n\n          indented code\n\n      > A block quote.\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.0.2",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "2:7..2:21",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:7..2:15",
-                    "closedBy": "Step 10 \u2014 the content-offset-as-column class on a continuation line (Q22)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:5029",
-            "input": "  1.  A paragraph\n    with two lines.\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.0.2",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "2:11..2:25",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:7..2:19",
-                    "closedBy": "Step 10 \u2014 the content-offset-as-column class on a continuation line (Q22)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:5045",
-            "input": "> 1. > Blockquote\ncontinued here.\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.0.0.0.2",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "2:8..2:22",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:8..2:15",
-                    "closedBy": "Step 10 \u2014 the content-offset-as-column class on a continuation line (Q22)"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:5061",
-            "input": "> 1. > Blockquote\n> continued here.\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.0.0.0.2",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "2:8..2:22",
-                    "parentKind": "Paragraph",
-                    "parentScope": "1:8..2:17",
-                    "closedBy": "Step 10 \u2014 the content-offset-as-column class on a continuation line (Q22)"
-                }
-            ]
-        },
-        {
             "source": "packages/markdown-core/tests/fixtures/spec.txt:5207",
             "input": "- # Foo\n- Bar\n  ---\n  baz\n",
             "findings": [
@@ -465,21 +270,6 @@
                     "previousKind": "Heading",
                     "previousScope": "2:3..4:5",
                     "closedBy": "H14 (\u00a711.4) \u2014 finalize reads an empty curline as end-of-input; unowned by any step"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:5828",
-            "input": "- a\n - b\n  - c\n   - d\n    - e\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.3.0.2",
-                    "violation": "containment",
-                    "kind": "Text",
-                    "scope": "5:10..5:12",
-                    "parentKind": "Paragraph",
-                    "parentScope": "4:6..5:7",
-                    "closedBy": "Step 10 \u2014 the content-offset-as-column class on a continuation line (Q22)"
                 }
             ]
         },
@@ -509,7 +299,7 @@
                     "scope": "4:12..4:12",
                     "previousKind": "Text",
                     "previousScope": "4:1..4:12",
-                    "closedBy": "Q22 / Step 10 \u2014 the break is at its line's true ending; the Text it overlaps reaches one column too far because an escape is two source bytes and one content byte, and that Text is already registered in specs/positions/places.json under continuation-line-content-offset. Registered at 0a.12b, when D26 gave breaks a position and made a second symptom of one defect visible."
+                    "closedBy": "Step 8 - the break is at its line's true ending; the Text it overlaps reaches one column too far because an escape is two source bytes and one content byte. Registered at 0a.12b when D26 gave breaks a position; re-attributed at Step 10, which cleared every other row that carried the Q22 label and left this one standing, which is what named its real cause."
                 }
             ]
         },

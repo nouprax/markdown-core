@@ -301,10 +301,29 @@ static table_row *row_from_string(const markdown_core_syntax_extension *self, ma
     return row;
 }
 
+/* Give `node` the source span of [start_offset, end_offset] in `owner`'s
+ * content buffer. Every table position recovered from that buffer goes through
+ * here, so there is one place that knows a content offset is not a column. */
+static void S_place_content_span(markdown_core_parser *parser, markdown_core_node *owner, markdown_core_node *node,
+                                 bufsize_t start_offset, bufsize_t end_offset) {
+    int line, column;
+
+    if (markdown_core_parser_content_place(parser, owner, start_offset, &line, &column)) {
+        node->start_line = line;
+        node->start_column = column;
+    }
+    if (markdown_core_parser_content_place(parser, owner, end_offset, &line, &column)) {
+        node->end_line = line;
+        node->end_column = column;
+    }
+}
+
 static void try_inserting_table_header_paragraph(markdown_core_parser *parser, markdown_core_node *parent_container,
                                                  unsigned char *parent_string, int paragraph_offset) {
     markdown_core_node *paragraph;
-    markdown_core_strbuf *paragraph_content;
+    bufsize_t first = 0;
+    bufsize_t last = paragraph_offset;
+    int line, column;
 
     // Four allocations, and every one of them used to be trusted. The first was
     // a crash: an unchecked node reached markdown_core_node_set_string_content,
@@ -318,29 +337,37 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
         return;
     }
 
-    paragraph_content = unescape_pipes(parser->mem, parent_string, paragraph_offset);
-    /* `unescape_pipes` hands back a POISONED buffer rather than NULL when a put
-     * fails, and its content is then whatever fitted -- the sweep caught the
-     * lead paragraph coming back with no text at all while the parse reported
-     * success. A poisoned buffer is a loss, not a value. */
-    if (!paragraph_content || paragraph_content->oom) {
+    /* THE LEAD KEEPS ITS AUTHORED SPELLING. This used to run the lead through
+     * `unescape_pipes`, which is a CELL transformation: a pipe a cell escaped
+     * is not a pipe the cell contains. The lead is not a cell -- it is the
+     * paragraph the table was split out of -- so `pre \\| lead` above a table
+     * lost one of its two backslashes here and the inline phase then read the
+     * survivor as the escape, giving `pre | lead` where the author wrote an
+     * escaped backslash followed by a pipe. */
+    while (first < last && markdown_core_isspace(parent_string[first])) {
+        first++;
+    }
+    while (last > first && markdown_core_isspace(parent_string[last - 1])) {
+        last--;
+    }
+    markdown_core_strbuf_put(&paragraph->content, parent_string + first, last - first);
+    if (paragraph->content.oom) {
         parser->oom = true;
-        if (paragraph_content) {
-            markdown_core_strbuf_free(paragraph_content);
-            parser->mem->free(paragraph_content);
-        }
         markdown_core_node_free(paragraph);
         return;
     }
-    markdown_core_strbuf_trim(paragraph_content);
-    /* markdown_core_node_set_string_content returns true unconditionally, so
-     * the only way to see a failed copy is the buffer's own flag. */
-    markdown_core_node_set_string_content(paragraph, (char *)paragraph_content->ptr);
-    if (paragraph->content.oom) {
-        parser->oom = true;
+
+    /* The lead is synthesized from a content offset and so has no position of
+     * its own; before requirement 10 it kept the 0:0..0:0 sentinel, and every
+     * inline in it inherited line zero. The map answers both ends. */
+    if (markdown_core_parser_content_place(parser, parent_container, first, &line, &column)) {
+        paragraph->start_line = line;
+        paragraph->start_column = column;
     }
-    markdown_core_strbuf_free(paragraph_content);
-    parser->mem->free(paragraph_content);
+    if (last > first && markdown_core_parser_content_place(parser, parent_container, last - 1, &line, &column)) {
+        paragraph->end_line = line;
+        paragraph->end_column = column;
+    }
 
     if (!markdown_core_node_insert_before(parent_container, paragraph)) {
         // markdown_core_node_free, not mem->free: the node owns a content
@@ -385,6 +412,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_syntax_e
     node_table_row *ntr;
     const char *parent_string;
     uint16_t i;
+    int header_line, header_column;
 
     if (parent_container->flags & MARKDOWN_CORE_NODE__TABLE_VISITED) {
         return NULL;
@@ -425,6 +453,14 @@ static markdown_core_node *try_opening_table_header(const markdown_core_syntax_e
     if (header_row->paragraph_offset) {
         try_inserting_table_header_paragraph(parser, parent_container, (unsigned char *)parent_string,
                                              header_row->paragraph_offset);
+        /* The table starts where its HEADER ROW was written, not where the
+         * paragraph it was split out of did. Taken before the row and cells
+         * below read start_column, because they are placed against it. */
+        if (markdown_core_parser_content_place(parser, parent_container, header_row->paragraph_offset, &header_line,
+                                               &header_column)) {
+            parent_container->start_line = header_line;
+            parent_container->start_column = header_column;
+        }
     }
 
     /* The paragraph is already rewritten into a table node here.  On
@@ -475,8 +511,14 @@ static markdown_core_node *try_opening_table_header(const markdown_core_syntax_e
         return parent_container;
     }
     markdown_core_node_set_syntax_extension(table_header, self);
-    table_header->end_column = parent_container->start_column + (int)strlen(parent_string) - 2;
-    table_header->start_line = table_header->end_line = parent_container->start_line;
+    /* The header row and its cells are RECOVERED from the paragraph's content
+     * buffer, and every offset below is an offset into that buffer. Adding one
+     * to a column is only right while the buffer holds a single line starting
+     * where the block does; with a lead split off, `| a | b |` on line three
+     * was reported at 1:10, a column that is not on line one. The map turns
+     * each offset back into the place it was written. */
+    S_place_content_span(parser, parent_container, table_header, header_row->paragraph_offset,
+                         (bufsize_t)strlen(parent_string) - 2);
 
     table_header->as.opaque = ntr = (node_table_row *)parser->mem->calloc(1, sizeof(node_table_row));
     if (!ntr) {
@@ -494,9 +536,8 @@ static markdown_core_node *try_opening_table_header(const markdown_core_syntax_e
         if (!header_cell) {
             break;
         }
-        header_cell->start_line = header_cell->end_line = parent_container->start_line;
         header_cell->internal_offset = cell->internal_offset;
-        header_cell->end_column = parent_container->start_column + cell->end_offset;
+        S_place_content_span(parser, parent_container, header_cell, cell->start_offset, cell->end_offset);
         markdown_core_node_set_string_content(header_cell, (char *)cell->buf->ptr);
         markdown_core_node_set_syntax_extension(header_cell, self);
         set_cell_index(header_cell, i);

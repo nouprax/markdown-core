@@ -391,6 +391,24 @@ int markdown_core_parser_get_column(markdown_core_parser *parser);
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser);
 
+/** Name the source line and BYTE column, both counted from 1, of the byte at
+ * 'content_offset' in 'node''s content buffer, and return 1. Returns 0,
+ * leaving both outputs untouched, for a node that never took a line.
+ *
+ * A block's content is the concatenation of the line slices the parser copied
+ * into it with the container prefix stripped, so an offset in it is NOT a
+ * column: `"> foo\nbar"` strips two bytes from the first line and none from
+ * the second, and the two lines of one paragraph's content then start at
+ * different source columns. This is the only thing that knows which.
+ *
+ * The map is live for as long as the parse is: an extension may ask while the
+ * block is open, and the inline phase may ask after every block has closed.
+ * markdown_core_parser_finish releases it with the rest of the parse state.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_parser_content_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t content_offset,
+                                       int *line, int *column);
+
 /** Return the absolute index of the first nonspace column coming after 'offset'
  * in the line currently being processed, counting tabs as multiple
  * columns as appropriate.

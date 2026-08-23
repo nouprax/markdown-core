@@ -197,6 +197,13 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     if (parser->refmap) {
         markdown_core_map_free(parser->refmap);
     }
+
+    /* The content-to-source map outlives every block that indexes it and
+     * nothing else does, so it is released here rather than with the node. */
+    parser->mem->free(parser->line_marks);
+    parser->line_marks = NULL;
+    parser->line_marks_size = 0;
+    parser->line_marks_alloc = 0;
 }
 
 static void markdown_core_parser_reset(markdown_core_parser *parser) {
@@ -322,11 +329,59 @@ static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
     return (node->type == MARKDOWN_CORE_NODE_PARAGRAPH || node->type == MARKDOWN_CORE_NODE_HEADING);
 }
 
+/* Record where the bytes about to be appended to `node`'s content came from.
+ *
+ * `column` is a BYTE column counted from 1, which is what every position in
+ * the tree is counted in; `parser->column` is not one, because it counts a tab
+ * as the several columns it expands to. */
+static void S_record_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t column) {
+    markdown_core_line_mark *mark;
+
+    if (parser->line_marks_size == parser->line_marks_alloc) {
+        /* One mark per line, so the doubling never has a realistic ceiling to
+         * reach; the guard is here because it is cheaper than reasoning about
+         * whether it can. */
+        bufsize_t alloc = parser->line_marks_alloc ? parser->line_marks_alloc * 2 : 64;
+        markdown_core_line_mark *grown;
+        if (parser->line_marks_alloc > (bufsize_t)(INT32_MAX / 2)) {
+            parser->oom = true;
+            return;
+        }
+        grown = (markdown_core_line_mark *)parser->mem->realloc(parser->line_marks,
+                                                                (size_t)alloc * sizeof(markdown_core_line_mark));
+        if (!grown) {
+            parser->oom = true;
+            return;
+        }
+        parser->line_marks = grown;
+        parser->line_marks_alloc = alloc;
+    }
+
+    if (node->content_mark_count == 0) {
+        node->content_mark = (int)parser->line_marks_size;
+    } else {
+        /* A block's marks are contiguous because only the deepest open block
+         * takes lines and opening another one closes it. If that ever stops
+         * being true the run below stops describing this block, silently. */
+        assert(node->content_mark + node->content_mark_count == (int)parser->line_marks_size);
+    }
+
+    mark = &parser->line_marks[parser->line_marks_size++];
+    mark->content_offset = node->content.size;
+    mark->line = parser->line_number;
+    mark->column = (int)column;
+    node->content_mark_count++;
+}
+
 static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown_core_parser *parser) {
     int chars_to_tab;
     int i;
     assert(node->flags & MARKDOWN_CORE_NODE__OPEN);
     if (parser->partially_consumed_tab) {
+        /* The spaces below stand for the tail of the tab at parser->offset and
+         * have no source bytes of their own, so they are marked against the
+         * tab itself and the copied bytes get a mark of their own. */
+        S_record_content_mark(parser, node, parser->offset + 1);
         parser->offset += 1; // skip over tab
         // add space characters:
         chars_to_tab = TAB_STOP - (parser->column % TAB_STOP);
@@ -334,10 +389,75 @@ static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown
             markdown_core_strbuf_putc(&node->content, ' ');
         }
     }
+    S_record_content_mark(parser, node, parser->offset + 1);
     markdown_core_strbuf_put(&node->content, ch->data + parser->offset, ch->len - parser->offset);
     if (node->content.oom) {
         parser->oom = true;
     }
+}
+
+/* Requirement 10: for any block with a content buffer and any byte offset
+ * within it, name the source line and column of that byte.
+ *
+ * The answer is a projection of the block's mark run, not a counter anyone
+ * maintains: find the slice the offset falls in and add the distance from its
+ * start. Binary search, so a caller that asks once per inline node pays
+ * log(lines in the block) rather than re-walking it. */
+int markdown_core_parser_content_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t content_offset,
+                                       int *line, int *column) {
+    const markdown_core_line_mark *mark;
+    int lo, hi;
+
+    if (!parser || !node || node->content_mark_count <= 0 || content_offset < 0) {
+        return 0;
+    }
+
+    lo = node->content_mark;
+    hi = lo + node->content_mark_count - 1;
+    while (lo < hi) {
+        int mid = lo + (hi - lo + 1) / 2;
+        if (parser->line_marks[mid].content_offset <= content_offset) {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+
+    mark = &parser->line_marks[lo];
+    *line = mark->line;
+    *column = mark->column + (int)(content_offset - mark->content_offset);
+    return 1;
+}
+
+/* Drop `dropped` bytes off the FRONT of `node`'s content and keep the map
+ * describing what is left. The marks stay where they are in the vector: the
+ * run's head moves past the slices that went away, and the slice the cut
+ * landed inside keeps its line with its column advanced to the cut. */
+static void S_rebase_content_marks(markdown_core_parser *parser, markdown_core_node *node, bufsize_t dropped) {
+    int i;
+    int first = node->content_mark;
+    int last = node->content_mark + node->content_mark_count - 1;
+
+    if (node->content_mark_count <= 0 || dropped <= 0) {
+        return;
+    }
+
+    while (first < last && parser->line_marks[first + 1].content_offset <= dropped) {
+        first++;
+    }
+    if (parser->line_marks[first].content_offset > dropped) {
+        /* Nothing survives ahead of the cut; the run is empty rather than wrong. */
+        node->content_mark_count = 0;
+        return;
+    }
+
+    parser->line_marks[first].column += (int)(dropped - parser->line_marks[first].content_offset);
+    parser->line_marks[first].content_offset = 0;
+    for (i = first + 1; i <= last; i++) {
+        parser->line_marks[i].content_offset -= dropped;
+    }
+    node->content_mark = first;
+    node->content_mark_count = last - first + 1;
 }
 
 static void remove_trailing_blank_lines(markdown_core_strbuf *ln) {
@@ -397,28 +517,34 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
     }
     // The definitions are dropped off the FRONT of the block's content, so what
     // is left starts further down the source than the block was told it did.
-    // Advance the start line by the line endings in the prefix that goes away:
-    // without this a paragraph whose leading definitions were consumed keeps the
-    // DEFINITION's line, and so does every inline in it, because
-    // markdown_core_parse_inlines seeds the subject's line from b->start_line.
+    // Without this a paragraph whose leading definitions were consumed keeps the
+    // DEFINITION's position, and so does every inline in it, because
+    // markdown_core_parse_inlines seeds the subject from b->start_line and
+    // b->start_column.
     //
-    // Counting is sound because markdown_core_parse_reference_inline only
-    // returns after skip_line_end succeeds, so the dropped prefix always ends on
-    // a line boundary.
-    //
-    // start_column is deliberately NOT adjusted. It is right wherever the
-    // remaining first line has the same stripped prefix as the definition's line,
-    // which is every corpus case plus block quotes and list items; where the
-    // prefixes differ the residue is the content-to-source column class that
-    // exists with no reference definition in sight (`a\n  *b* tail` reports
-    // Emphasis 2:1..2:3 where the truth is 2:3..2:5). That is Q22's.
+    // D18 corrected the LINE here by counting the line endings in the prefix
+    // that goes away, and left the column alone with the note that it was
+    // right wherever the remaining first line has the same stripped prefix as
+    // the definition's line. Requirement 10 removes both the count and the
+    // caveat: the map says where the surviving first byte was written, so the
+    // column is answered rather than assumed, and the marks are rebased so the
+    // inline phase reads the same map against the shortened buffer.
     bufsize_t dropped = node_content->size - chunk.len;
-    for (bufsize_t i = 0; i < dropped; i++) {
-        if (node_content->ptr[i] == '\n') {
-            b->start_line++;
-        }
-    }
+    int line, column;
+    S_rebase_content_marks(parser, b, dropped);
     markdown_core_strbuf_drop(node_content, dropped);
+    /* The block now begins where its FIRST SURVIVING line was written, and
+     * that is asked of the map rather than derived: this function can be
+     * reached twice on one paragraph -- once at the setext-underline check and
+     * again at finalize -- and the first call can consume everything recorded
+     * so far, leaving the line that carries what is left still unread. Taking
+     * the answer from the surviving run rather than from the size of the cut
+     * is what makes both arrivals give the same result. On a block with no
+     * definitions in front of it this is what the block already said. */
+    if (markdown_core_parser_content_place(parser, b, 0, &line, &column)) {
+        b->start_line = line;
+        b->start_column = column;
+    }
     return !is_blank(&b->content, 0);
 }
 

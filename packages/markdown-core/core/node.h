@@ -74,6 +74,11 @@ struct markdown_core_node {
     int end_line;
     int end_column;
     int internal_offset;
+    /* This block's run in parser->line_marks -- the content-to-source map.
+     * `content_mark_count == 0` means the block took no lines, which is the
+     * state of every node that is not a block that accumulates content. */
+    int content_mark;
+    int content_mark_count;
     uint16_t type;
     markdown_core_node_internal_flags flags;
 

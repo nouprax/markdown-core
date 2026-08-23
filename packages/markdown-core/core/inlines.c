@@ -58,6 +58,12 @@ typedef struct subject {
     bufsize_t pos;
     int block_offset;
     int column_offset;
+    /* The block whose content buffer `input` is, and the parser that holds
+     * requirement 10's content-to-source map for it. Both are NULL for a
+     * subject built straight out of a chunk -- the reference-definition
+     * parser -- and the map is then simply not consulted. */
+    markdown_core_parser *owner_parser;
+    markdown_core_node *owner;
     markdown_core_map *refmap;
     delimiter *last_delim;
     bracket *last_bracket;
@@ -263,6 +269,8 @@ static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *me
     e->pos = 0;
     e->block_offset = block_offset;
     e->column_offset = 0;
+    e->owner_parser = parser;
+    e->owner = NULL;
     e->refmap = refmap;
     e->last_delim = NULL;
     e->last_bracket = NULL;
@@ -345,6 +353,33 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk take_while(subject *subj, int (*
     return markdown_core_chunk_dup(&subj->input, startpos, len);
 }
 
+// The SOURCE column, counted from 1, at which the content line beginning at
+// `start` was written.
+//
+// The inline phase reports a column as `pos + 1 + column_offset +
+// block_offset`, and that is right only while every line of the block begins
+// at the column the block does. A continuation line does not have to: `"> foo"`
+// followed by `"bar"` strips two bytes from the first line and none from the
+// second, so the second line's content begins at column 1 and the block says 3.
+// `column_offset` is the term that re-seats the origin on each new line, and
+// requirement 10's map is what it is seated on. A subject with no owning block
+// -- the reference-definition parser builds one straight out of a chunk -- has
+// no map, and keeps the assumption it always made.
+static int S_line_start_column(subject *subj, bufsize_t start) {
+    int line, column;
+    if (markdown_core_parser_content_place(subj->owner_parser, subj->owner, start, &line, &column)) {
+        return column;
+    }
+    return subj->block_offset + 1;
+}
+
+// Move the subject's column origin onto the line beginning at content offset
+// `start`, so that `pos + 1 + column_offset + block_offset` names the place
+// the byte at `pos` was written.
+static void S_reseat_column_origin(subject *subj, bufsize_t start) {
+    subj->column_offset = S_line_start_column(subj, start) - (int)start - 1 - subj->block_offset;
+}
+
 // Return the number of newlines in a given span of text in a subject.  If
 // the number is greater than zero, also return the number of characters
 // between the last newline and the end of the span in `since_newline`.
@@ -386,10 +421,11 @@ static void adjust_subj_node_newlines(subject *subj, markdown_core_node *node, i
     int since_newline;
     int newlines = count_newlines(subj, subj->pos - matchlen - extra, matchlen, &since_newline);
     if (newlines) {
+        bufsize_t line_start = subj->pos - since_newline - extra;
         subj->line += newlines;
         node->end_line += newlines;
-        node->end_column = since_newline + subj->block_offset;
-        subj->column_offset = -subj->pos + since_newline + extra;
+        node->end_column = S_line_start_column(subj, line_start) + since_newline - 1;
+        S_reseat_column_origin(subj, line_start);
     }
 }
 
@@ -1064,7 +1100,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
             hard->end_column = subj->pos + escape_column_offset + subj->block_offset;
         }
         ++subj->line;
-        subj->column_offset = -subj->pos;
+        S_reseat_column_origin(subj, subj->pos);
         return hard;
     } else {
         return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("\\"));
@@ -1662,7 +1698,7 @@ static markdown_core_node *handle_newline(subject *subj) {
         advance(subj);
     }
     ++subj->line;
-    subj->column_offset = -subj->pos;
+    S_reseat_column_origin(subj, subj->pos);
     // skip spaces at beginning of line
     skip_spaces(subj);
     if (nlpos > 1 && peek_at(subj, nlpos - 1) == ' ' && peek_at(subj, nlpos - 2) == ' ') {
@@ -1924,6 +1960,7 @@ void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_nod
     markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
     subject_from_buf(parser, parser->mem, parent->start_line, parent->start_column - 1 + parent->internal_offset, &subj,
                      &content, refmap);
+    subj.owner = parent;
     markdown_core_chunk_rtrim(&subj.input);
 
     while (!is_eof(&subj) && parse_inline(parser, &subj, parent, options))
@@ -2164,7 +2201,7 @@ void markdown_core_inline_parser_set_offset(markdown_core_inline_parser *parser,
             /* The same frame handle_newline and adjust_subj_node_newlines use:
              * the negated offset of the first byte of the line the cursor now
              * stands on. */
-            parser->column_offset = -offset + since_newline;
+            S_reseat_column_origin(parser, (bufsize_t)offset - since_newline);
         }
     }
     parser->pos = offset;

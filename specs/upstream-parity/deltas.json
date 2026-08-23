@@ -93,6 +93,18 @@
             "handling": "PROJECTED, not keyed to inputs: it appears wherever the construct does, so a list of inputs would go stale the moment the corpus grew. `normalize` in scripts/lib/upstream-cmark.mjs drops an empty-literal `Text` from BOTH sides, after the adjacent-run join, so a merged run that came out empty goes with it.",
             "evidence": "packages/markdown-core/core/iterator.c, markdown_core_consolidate_text_nodes; packages/markdown-core/extensions/autolink.c, postprocess_text. Without the projection the gate reads 806/817 with eleven inputs diverging -- eight autolink, three hard-break and shortcut-reference.",
             "landed": "0a.14, and this entry IS Q38. The question was owed by that sub-step and the answer is the projection rather than eleven `expectedDivergences` rows. specs/mdast-parity/deltas.json carries the same id and its note is amended in the same commit, because the sentence that classified this as a shape delta rather than a defect became history here."
+        },
+        {
+            "id": "table-lead-authored-spelling",
+            "kind": "deliberate-difference",
+            "summary": "When a table is split out of a paragraph, upstream runs the LEAD it leaves behind through the same pipe-unescaping it applies to a cell, so `\\\\|` in the lead loses one of its two backslashes before the inline phase ever sees it. The lead is not a cell, and Markdown Core hands it the bytes the author wrote.",
+            "example": "pre \\\\| lead",
+            "upstream": "Text literal=\"pre | lead\"",
+            "ours": "Text literal=\"pre \\\\| lead\"",
+            "rationale": "Unescaping a pipe is what makes a CELL's text mean what the author meant, because a pipe is the cell delimiter. Nothing delimits the lead, so the same rewrite there is a rewrite of source the author wrote: `pre \\\\| lead` reaches the inline phase as `pre \\| lead`, whose backslash then escapes the pipe, and the paragraph comes out one character short of what was written.",
+            "handling": "Keyed to one input rather than projected: the rewrite is one call in upstream's table opener applied to a node that is not a cell, not a model this side could apply to a tree, and erasing backslashes in the normalizer would blind the gate to every real escape difference. REGISTERED at Step 10, which is where the fix landed. remark agrees with this side, and the same input is the mdast backlog's last entry that was not Step 9b's (specs/mdast-parity/corpus.md:207).",
+            "evidence": "packages/markdown-core/extensions/table.c, try_inserting_table_header_paragraph. Still present in upstream 0.29.0.gfm.13.",
+            "landed": "Step 10, with requirement 10's content-to-source map. Activating it needed a CORPUS ADDITION and not a JSON edit: check-upstream-parity.mjs keys expectedDivergences by input and fails any entry the corpus never reaches, and no fixture had an escaped pipe in a split-off lead."
         }
     ],
     "expectedDivergences": [
@@ -130,6 +142,11 @@
             "id": "tasklist-checked-marker",
             "input": "- [ ] call me [x] later\n",
             "note": "Keyed to an input rather than projected: upstream's substring search is a bug in one function, not a model this side could apply to a tree. Erasing `checked` in the normalizer would blind the gate to every real checked-state difference. ACTIVE as of 0a.11."
+        },
+        {
+            "id": "table-lead-authored-spelling",
+            "input": "pre \\\\| lead\n| a | b |\n| - | - |\n",
+            "note": "Keyed to an input rather than projected: upstream's unescape of the lead is one call in its table opener, not a model. Erasing escapes in the normalizer would blind the gate to every real escape difference. ACTIVE as of Step 10."
         }
     ],
     "notDeltas": [],

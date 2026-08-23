@@ -2,7 +2,7 @@
     "schemaVersion": 1,
     "script": "scripts/audit-position-places.mjs",
     "subject": "Every dumped coordinate over every fixture example: the line must exist in the input and the column must name a byte on it. Byte columns, counted from 1, on lines split the way S_parser_feed splits them.",
-    "purpose": "One hundred and six rows in six families, and the families are what matter — the number on its own says nothing about which of them a step is allowed to move. It was 131 before 0a.6, which cleared thirteen and added three, 122 before 0a.12, which cleared twelve and added none, and 109 before D35, which cleared three. AND THE FAMILY COUNTS BELOW WERE ALREADY WRONG BY THREE before D35 touched them: they read 61 + 19 + 9 + 9 + 6 + 2 = 106 while the ledger held 109, so continuation-line-content-offset had been undercounted since whenever it grew. Counted from the data rather than from this paragraph, and the two now agree.\n\n  58  end-at-line-ending              a coordinate names column 0 of a line that exists. There is no column 0; this is how \"ends at the line ending\" gets spelled when the only vocabulary is a coordinate. FIFTY-FIVE are a block's end, H14's neighbour (§11.4). THE OTHER THREE ARE NEW AND ARE 0a.6's: un-gating adjust_subj_node_newlines made a code span that opens with a line ending report `1:3..3:0`, whose start is one past the end of a two-byte line and whose end is column zero — and both halves are exactly what cmark-gfm reports, which is why specs/positions/inline-sourcepos.json reads zero over them. Agreeing with an authority that is itself wrong is not a defect this stage introduced; it is the same class, made visible. No step owns it.\n  22  continuation-line-content-offset  a column taken from the paragraph's CONTENT buffer and printed against a source line whose prefix was stripped. Two spaces, aaa, newline, one space, bbb gives Text 2:3..2:5 on a four-byte line. §4.2's 0a.12 calls this out as the residue it does NOT fix: Q22/Step 10.\n   9  recovered-table-cell            a cell the table extension synthesized carries L:0..L:0. Requirement 10.\n   9  unmatched-code-span-literal     an unmatched backtick run's literal is placed one column right: `hi`lo` gives Text 1:5..1:8 inside a seven-byte paragraph. §4.1.3 names it and assigns it to Step 8.\n  --  multi-line-span AND end-column-never-set ARE BOTH GONE, and they are recorded here rather than deleted because each was cleared by a DIFFERENT defect than the one the ledger named. multi-line-span was nineteen, then seven, then one, then none: 0a.6 cleared the twelve that were inline Code and HTML; 0a.12 cleared the six that survived, and the attribution those six carried was WRONG -- they said `0a.6 - D3, un-gating adjust_subj_node_newlines`, which could never have reached them, because neither `handle_close_bracket` nor `handle_backslash` calls that helper (one was D19's link, five were D32's backslash hard break); 0a.14 cleared the last, which was D12's, by taking a merged run's end LINE and column together. end-column-never-set was six: exactly three were the strikethrough delimiter run, cleared by 0a.12's one line -- against this file's own claim that \"the corpus carries the autolink spelling of it and not yet the strikethrough one\", which was wrong in both halves -- and the other three were autolink's zero-length split fragments, cleared at 0a.14 by not creating them.\n   6  split-off-table-lead            the paragraph a table was split out of, and its inline children, keep positions belonging to neither half. Requirement 10.\n\n   2  content-start-past-marker-line  a footnote definition starts at the column after its marker, which does not exist when the marker ends the line: [^footnote]: is twelve bytes and the definition starts at 19:13. NOT NAMED BY ANY DEFECT IN §2; found by this oracle.\n\nThirty-seven of the 106 are inline, out of 2,275 inline nodes; the gate prints that split on every run.\n\n`class` is analysis and `closedBy` is measurement. Two families carry a measured owner: the three end-at-line-ending rows 0a.6 created, and the one multi-line-span row 0a.14 owns. The consumed-definition-line family is GONE — 0a.12 cleared all three, which is the attribution proved by moving them. Every other family's owner is deliberately unassigned — the step that moves the rows proves the attribution by moving them, and this gate's CLEARED list is that proof. D35 is the newest such proof: three end-at-line-ending rows were an HTML block whose terminator sits on its own opening line, which `finalize` ended at `line_number - 1`.\n\nA coordinate on line zero is NOT counted here; scripts/audit-scope-sanity.mjs owns the 0:0..0:0 sentinel and the line-zero-with-a-column shape, and there is no line to measure a column against. A zero COLUMN on a real line is measurable and is counted. Where a row is both — Text 1:1..1:0 is a zero column AND a reversed range — the two ratchets interlock rather than overlap: making the end a real column at or after the start clears both, while zeroing the node clears this one and GROWS the sentinel budget, which fails there.\n\nWHAT THIS ORACLE STILL CANNOT SEE, named at 0a.6 so it is not re-derived: a scope that is a place and is still wrong. `a <b`, newline, `c> d` gives HTML scope=1:3..2:1 for a literal whose last byte is at 2:2, so the closing byte belongs to no node — and 2:1 is a perfectly good place. Containment sees a gap, not an overlap, and upstream reports the same numbers. It is pinned as a golden row in regression.txt with prose above it, and it belongs to Step 8.",
+    "purpose": "Seventy-nine rows in five families, and the families are what matter - the number on its own says nothing about which of them a step is allowed to move. It was 131 before 0a.6, 122 before 0a.12, 109 before D35 and 106 before Step 10, which cleared TWENTY-SEVEN in two halves and is the largest single move this ledger has recorded. Count from the data rather than from this paragraph, always: these family counts were already wrong by three once, and re-counting is what found it.\n\n  58  end-at-line-ending              a coordinate names column 0 of a line that exists. There is no column 0; this is how \"ends at the line ending\" gets spelled when the only vocabulary is a coordinate. FIFTY-FIVE are a block's end, H14's neighbour (section 11.4). THE OTHER THREE ARE 0a.6's: un-gating adjust_subj_node_newlines made a code span that opens with a line ending report `1:3..3:0`, whose start is one past the end of a two-byte line and whose end is column zero - and both halves are exactly what cmark-gfm reports, which is why specs/positions/inline-sourcepos.json reads zero over them. Agreeing with an authority that is itself wrong is not a defect this stage introduced; it is the same class, made visible. No step owns it.\n   9  recovered-table-cell            a cell the table extension autocompleted at the end of a short row carries L:0..L:0. It has NO SOURCE BYTES AT ALL, and Step 10 measured both spellings a coordinate pair can give it rather than guessing. The empty range past the row's last byte (`L:len..L:len-1`) is a PURE TRANSFER: nine zero-column rows become nine off-column rows here, containment drops eighteen, and specs/scope-sanity/ledger.json gains nine negative rows, which its only-shrink rule refuses. The row's last byte (`L:len-1..L:len-1`) clears all nine here and nets twelve in containment, but it CLAIMS A BYTE THAT ALREADY BELONGS TO THE CELL BEFORE IT - six new sibling-overlap rows, and requirement 11a's L1 broken before 11a is written. Both trade one wrongness for another, which is the reading D13's Option A and D26 also got, and the cause is the one specs/scope-sanity/ledger.json states: the dump has no spelling for \"no position\" that does not borrow a coordinate. CARRIED as a ruling about vocabulary rather than a repair - Q44, owned by 11a, where a node owning zero regions first becomes a thing that can be said.\n   9  unmatched-code-span-literal     an unmatched backtick run's literal is placed one column right: `hi`lo` gives Text 1:5..1:8 inside a seven-byte paragraph. Section 4.1.3 names it and assigns it to Step 8.\n   2  content-start-past-marker-line  a footnote definition starts at the column after its marker, which does not exist when the marker ends the line: [^footnote]: is twelve bytes and the definition starts at 19:13. NOT NAMED BY ANY DEFECT IN SECTION 2; found by this oracle.\n   1  escaped-byte-content-offset     a text run containing a backslash escape reaches one column too far, because the escape is two source bytes and one content byte while the run's end is measured in content: a line spelling a backslash then a code span, eleven bytes long, gives Text 4:1..4:12. This is the LAST SURVIVOR of what this ledger filed under continuation-line-content-offset, and it was never that class: Step 10 cleared the other twenty-one by making the inline phase read the content-to-source map, and this one did not move, which is how its real cause was identified. Step 8's.\n  --  split-off-table-lead AND continuation-line-content-offset ARE BOTH GONE, both cleared by Step 10, and they had one root: an offset into a block's CONTENT buffer is not a column. split-off-table-lead was six rows - the paragraph a table was split out of, and its inline children, carried positions belonging to neither half. continuation-line-content-offset was twenty-two - a column taken from the content buffer and printed against a source line whose prefix was stripped. The two halves of the fix are the block phase asking requirement 10's map where the header row and the lead were written, and the inline phase asking it where each continuation line begins. Twenty-one of the twenty-two cleared; the twenty-second is the escaped-byte row above and was misfiled. multi-line-span and end-column-never-set went earlier, each cleared by a DIFFERENT defect than the one this ledger named; that is in the git history of this file rather than here, because the list of gone families cannot grow forever.\n\nThirteen of the 79 are inline, out of 2,428 inline nodes; the gate prints that split on every run. It was thirty-seven of 2,275 before Step 10.\n\n`class` is analysis and `closedBy` is measurement. A family whose owner is unassigned is one where the step that moves the rows proves the attribution by moving them, and this gate's CLEARED list is that proof. Step 10 is the newest such proof and it went both ways: it cleared the two families it was expected to, and it did NOT clear one row inside one of them, which is what identified that row as a different defect with a different owner.\n\nA coordinate on line zero is NOT counted here; scripts/audit-scope-sanity.mjs owns the 0:0..0:0 sentinel and the line-zero-with-a-column shape, and there is no line to measure a column against. A zero COLUMN on a real line is measurable and is counted. Where a row is both - Text 1:1..1:0 is a zero column AND a reversed range - the two ratchets interlock rather than overlap: making the end a real column at or after the start clears both, while zeroing the node clears this one and GROWS the sentinel budget, which fails there.\n\nWHAT THIS ORACLE STILL CANNOT SEE, named at 0a.6 so it is not re-derived: a scope that is a place and is still wrong. `a <b`, newline, `c> d` gives HTML scope=1:3..2:1 for a literal whose last byte is at 2:2, so the closing byte belongs to no node - and 2:1 is a perfectly good place. Containment sees a gap, not an overlap, and upstream reports the same numbers. It is pinned as a golden row in regression.txt with prose above it, and it belongs to Step 8. STEP 10 MEASURED HOW LARGE THAT BLIND SPOT IS: of the forty golden rows it moved, this oracle could see twenty-one. Ten of the rest were well-formed columns taken from the wrong line origin - `aaa`, then thirteen spaces and `bbb`, reported the `bbb` at column 1 of a sixteen-byte line - and the statement that catches those is that the source bytes at a Text node's own scope must spell its own literal: 1,037 of 1,134 single-line verbatim literals agreed before, 1,069 after, and not one that agreed stopped agreeing.\nEvery dumped coordinate over every fixture example: the line must exist in the input and the column must name a byte on it. Byte columns, counted from 1, on lines split the way S_parser_feed splits them.\nevery example in packages/markdown-core/tests/fixtures/*.txt",
     "corpus": "every example in packages/markdown-core/tests/fixtures/*.txt",
     "profile": "gfm-extended",
     "expected": [
@@ -18,7 +18,7 @@
                     "start": "zero-column",
                     "end": "zero-column",
                     "class": "recovered-table-cell",
-                    "closedBy": "unassigned"
+                    "closedBy": "11a, under Q44 \u2014 a node with no source bytes has no spelling a coordinate pair can give it"
                 },
                 {
                     "nodePath": "0.0.1.2",
@@ -28,7 +28,7 @@
                     "start": "zero-column",
                     "end": "zero-column",
                     "class": "recovered-table-cell",
-                    "closedBy": "unassigned"
+                    "closedBy": "11a, under Q44 \u2014 a node with no source bytes has no spelling a coordinate pair can give it"
                 },
                 {
                     "nodePath": "0.0.2.2",
@@ -38,7 +38,7 @@
                     "start": "zero-column",
                     "end": "zero-column",
                     "class": "recovered-table-cell",
-                    "closedBy": "unassigned"
+                    "closedBy": "11a, under Q44 \u2014 a node with no source bytes has no spelling a coordinate pair can give it"
                 }
             ]
         },
@@ -54,7 +54,7 @@
                     "start": "zero-column",
                     "end": "zero-column",
                     "class": "recovered-table-cell",
-                    "closedBy": "unassigned"
+                    "closedBy": "11a, under Q44 \u2014 a node with no source bytes has no spelling a coordinate pair can give it"
                 },
                 {
                     "nodePath": "0.0.3.1",
@@ -64,7 +64,7 @@
                     "start": "zero-column",
                     "end": "zero-column",
                     "class": "recovered-table-cell",
-                    "closedBy": "unassigned"
+                    "closedBy": "11a, under Q44 \u2014 a node with no source bytes has no spelling a coordinate pair can give it"
                 },
                 {
                     "nodePath": "0.0.4.1",
@@ -74,7 +74,7 @@
                     "start": "zero-column",
                     "end": "zero-column",
                     "class": "recovered-table-cell",
-                    "closedBy": "unassigned"
+                    "closedBy": "11a, under Q44 \u2014 a node with no source bytes has no spelling a coordinate pair can give it"
                 }
             ]
         },
@@ -90,78 +90,12 @@
                     "start": "zero-column",
                     "end": "zero-column",
                     "class": "recovered-table-cell",
-                    "closedBy": "unassigned"
+                    "closedBy": "11a, under Q44 \u2014 a node with no source bytes has no spelling a coordinate pair can give it"
                 }
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/extensions.txt:509",
-            "input": "123\n456\n| a | b |\n| ---| --- |\nd | e\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "1:0..1:2",
-                    "start": "zero-column",
-                    "end": "place",
-                    "class": "split-off-table-lead",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.1.0",
-                    "kind": "TableRow",
-                    "phase": "block",
-                    "scope": "1:1..1:17",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "split-off-table-lead",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.1.0.0",
-                    "kind": "TableCell",
-                    "phase": "block",
-                    "scope": "1:10..1:12",
-                    "start": "off-column",
-                    "end": "off-column",
-                    "class": "split-off-table-lead",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.1.0.0.0",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "1:11..1:11",
-                    "start": "off-column",
-                    "end": "off-column",
-                    "class": "split-off-table-lead",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.1.0.1",
-                    "kind": "TableCell",
-                    "phase": "block",
-                    "scope": "1:14..1:16",
-                    "start": "off-column",
-                    "end": "off-column",
-                    "class": "split-off-table-lead",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.1.0.1.0",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "1:15..1:15",
-                    "start": "off-column",
-                    "end": "off-column",
-                    "class": "split-off-table-lead",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/extensions.txt:888",
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:931",
             "input": "This is some text![^1]. Other text.[^footnote].\n\nHere's a thing[^other-note].\n\nAnd another thing[^codeblock-note].\n\nThis doesn't have a referent[^nope].\n\n\n[^other-note]:       no code block here (spaces are stripped away)\n\n[^codeblock-note]:\n        this is now a code block (8 spaces indentation)\n\n[^1]: Some *bolded* footnote definition.\n\nHi!\n\n[^footnote]:\n    > Blockquotes can be in a footnote.\n\n        as well as code blocks\n\n    or, naturally, simple paragraphs.\n\n[^unused]: This is unused.\n",
             "findings": [
                 {
@@ -227,7 +161,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/extensions.txt:1064",
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:1107",
             "input": "- [x] foo\n  - [ ] bar\n  - [x] baz\n- [ ] bim\n\nShow a regular (non task) list to show that it has the same structure\n- [@] foo\n  - [@] bar\n  - [@] baz\n- [@] bim\n",
             "findings": [
                 {
@@ -253,7 +187,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/extensions.txt:1111",
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:1154",
             "input": "- [x] foo\n    - [ ] bar\n    - [x] baz\n- [ ] bim\n\nShow a regular (non task) list to show that it has the same structure\n- [@] foo\n    - [@] bar\n    - [@] baz\n- [@] bim\n",
             "findings": [
                 {
@@ -359,22 +293,6 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:1152",
-            "input": "  Foo *bar\nbaz*\t\n====\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1",
-                    "kind": "Emphasis",
-                    "phase": "inline",
-                    "scope": "1:7..2:6",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
             "source": "packages/markdown-core/tests/fixtures/spec.txt:1169",
             "input": "Foo\n-------------------------\n\nFoo\n=\n",
             "findings": [
@@ -433,42 +351,6 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:1332",
-            "input": "> foo\nbar\n===\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "2:3..2:5",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.0.0.3",
-                    "kind": "SoftBreak",
-                    "phase": "inline",
-                    "scope": "2:6..2:6",
-                    "start": "off-column",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "Q22 / Step 10 — the content-to-source column map. The break is at its line's true ending; the SIBLING it follows is the one that is wrong, and that sibling is already registered in this ledger under continuation-line-content-offset. Registered at 0a.12b, when D26 gave breaks a position and made a second symptom of one defect visible."
-                },
-                {
-                    "nodePath": "0.0.0.4",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "3:3..3:5",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
             "source": "packages/markdown-core/tests/fixtures/spec.txt:1517",
             "input": "Foo\nbar\n\n---\n\nbaz\n",
             "findings": [
@@ -512,7 +394,7 @@
                     "start": "off-column",
                     "end": "zero-column",
                     "class": "end-at-line-ending",
-                    "closedBy": "unowned — the end-column-zero class. 0a.6 created these three by un-gating adjust_subj_node_newlines; agreeing with upstream here means adopting upstream's own column zero. See this ledger's purpose."
+                    "closedBy": "unowned \u2014 the end-column-zero class. 0a.6 created these three by un-gating adjust_subj_node_newlines; agreeing with upstream here means adopting upstream's own column zero. See this ledger's purpose."
                 }
             ]
         },
@@ -581,38 +463,6 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:3463",
-            "input": "  aaa\n bbb\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "2:3..2:5",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:3496",
-            "input": "   aaa\nbbb\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "2:4..2:6",
-                    "start": "off-column",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
             "source": "packages/markdown-core/tests/fixtures/spec.txt:3675",
             "input": "| abc | def |\n| --- | --- |\n| bar | baz |\nbar\n\nbar\n",
             "findings": [
@@ -624,7 +474,7 @@
                     "start": "zero-column",
                     "end": "zero-column",
                     "class": "recovered-table-cell",
-                    "closedBy": "unassigned"
+                    "closedBy": "11a, under Q44 \u2014 a node with no source bytes has no spelling a coordinate pair can give it"
                 }
             ]
         },
@@ -640,149 +490,7 @@
                     "start": "zero-column",
                     "end": "zero-column",
                     "class": "recovered-table-cell",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:3851",
-            "input": "   > # Foo\n   > bar\n > baz\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "3:6..3:8",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:3882",
-            "input": "> # Foo\n> bar\nbaz\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "3:3..3:5",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:3901",
-            "input": "> bar\nbaz\n> foo\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "2:3..2:5",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.0.0.3",
-                    "kind": "SoftBreak",
-                    "phase": "inline",
-                    "scope": "2:6..2:6",
-                    "start": "off-column",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "Q22 / Step 10 — the content-to-source column map. The break is at its line's true ending; the SIBLING it follows is the one that is wrong, and that sibling is already registered in this ledger under continuation-line-content-offset. Registered at 0a.12b, when D26 gave breaks a position and made a second symptom of one defect visible."
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:3997",
-            "input": "> foo\n    - bar\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "2:7..2:11",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:4146",
-            "input": "> bar\nbaz\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "2:3..2:5",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:4191",
-            "input": "> > > foo\nbar\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.0.0.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "2:7..2:9",
-                    "start": "off-column",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:4206",
-            "input": ">>> foo\n> bar\n>>baz\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.0.0.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "2:5..2:7",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.0.0.0.0.3",
-                    "kind": "SoftBreak",
-                    "phase": "inline",
-                    "scope": "2:8..2:8",
-                    "start": "off-column",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "Q22 / Step 10 — the content-to-source column map. The break is at its line's true ending; the SIBLING it follows is the one that is wrong, and that sibling is already registered in this ledger under continuation-line-content-offset. Registered at 0a.12b, when D26 gave breaks a position and made a second symptom of one defect visible."
-                },
-                {
-                    "nodePath": "0.0.0.0.0.4",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "3:5..3:7",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
+                    "closedBy": "11a, under Q44 \u2014 a node with no source bytes has no spelling a coordinate pair can give it"
                 }
             ]
         },
@@ -1013,16 +721,6 @@
             "input": "  1.  A paragraph\nwith two lines.\n\n          indented code\n\n      > A block quote.\n",
             "findings": [
                 {
-                    "nodePath": "0.0.0.0.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "2:7..2:21",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
-                },
-                {
                     "nodePath": "0.0.0.1",
                     "kind": "CodeBlock",
                     "phase": "block",
@@ -1030,54 +728,6 @@
                     "start": "place",
                     "end": "zero-column",
                     "class": "end-at-line-ending",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:5029",
-            "input": "  1.  A paragraph\n    with two lines.\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.0.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "2:11..2:25",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:5045",
-            "input": "> 1. > Blockquote\ncontinued here.\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.0.0.0.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "2:8..2:22",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:5061",
-            "input": "> 1. > Blockquote\n> continued here.\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.0.0.0.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "2:8..2:22",
-                    "start": "place",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
                     "closedBy": "unassigned"
                 }
             ]
@@ -1192,22 +842,6 @@
                     "start": "place",
                     "end": "zero-column",
                     "class": "end-at-line-ending",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:5828",
-            "input": "- a\n - b\n  - c\n   - d\n    - e\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.3.0.2",
-                    "kind": "Text",
-                    "phase": "inline",
-                    "scope": "5:10..5:12",
-                    "start": "off-column",
-                    "end": "off-column",
-                    "class": "continuation-line-content-offset",
                     "closedBy": "unassigned"
                 }
             ]
@@ -1353,8 +987,8 @@
                     "scope": "4:1..4:12",
                     "start": "place",
                     "end": "off-column",
-                    "class": "continuation-line-content-offset",
-                    "closedBy": "unassigned"
+                    "class": "escaped-byte-content-offset",
+                    "closedBy": "Step 8 \u2014 the inline position model"
                 }
             ]
         },
@@ -1370,7 +1004,7 @@
                     "start": "off-column",
                     "end": "zero-column",
                     "class": "end-at-line-ending",
-                    "closedBy": "unowned — the end-column-zero class. 0a.6 created these three by un-gating adjust_subj_node_newlines; agreeing with upstream here means adopting upstream's own column zero. See this ledger's purpose."
+                    "closedBy": "unowned \u2014 the end-column-zero class. 0a.6 created these three by un-gating adjust_subj_node_newlines; agreeing with upstream here means adopting upstream's own column zero. See this ledger's purpose."
                 }
             ]
         },
@@ -1386,7 +1020,7 @@
                     "start": "off-column",
                     "end": "zero-column",
                     "class": "end-at-line-ending",
-                    "closedBy": "unowned — the end-column-zero class. 0a.6 created these three by un-gating adjust_subj_node_newlines; agreeing with upstream here means adopting upstream's own column zero. See this ledger's purpose."
+                    "closedBy": "unowned \u2014 the end-column-zero class. 0a.6 created these three by un-gating adjust_subj_node_newlines; agreeing with upstream here means adopting upstream's own column zero. See this ledger's purpose."
                 }
             ]
         },

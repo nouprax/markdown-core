@@ -13,6 +13,28 @@ extern "C" {
 
 #define MAX_LINK_LABEL_LENGTH 1000
 
+/* Where one source line's bytes landed in a block's content buffer.
+ *
+ * A block's content is the concatenation of the line slices `add_line` copies
+ * into it, and the source column a slice starts at is NOT derivable from the
+ * block's own `start_column`: the container prefix stripped from a
+ * continuation line need not match the one stripped from the first, so
+ * `"> foo\nbar"` strips two bytes then none. One mark per `add_line` call
+ * records where the slice came from, and `markdown_core_parser_content_place`
+ * reads them back.
+ *
+ * Marks are appended in parse order and only the deepest open block takes
+ * lines, so one block's marks are the contiguous run
+ * [node->content_mark, node->content_mark + node->content_mark_count). */
+typedef struct {
+    /* Offset in the owning block's content where this slice begins. */
+    bufsize_t content_offset;
+    /* The source line the slice was copied from, counted from 1. */
+    int line;
+    /* The BYTE column on that line the slice begins at, counted from 1. */
+    int column;
+} markdown_core_line_mark;
+
 struct markdown_core_parser {
     struct markdown_core_mem *mem;
     /* A hashtable of urls in the current document for cross-references */
@@ -64,6 +86,14 @@ struct markdown_core_parser {
      * observe each other's characters. */
     int8_t special_chars[256];
     int8_t skip_chars[256];
+    /* The content-to-source map (see markdown_core_line_mark): one run per
+     * block that took lines, appended in parse order. It is read while the
+     * parse is still running -- the block phase reads it as blocks close and
+     * the inline phase reads it before markdown_core_parser_finish resets --
+     * and it is released with the rest of the per-parse state. */
+    markdown_core_line_mark *line_marks;
+    bufsize_t line_marks_size;
+    bufsize_t line_marks_alloc;
 };
 
 #ifdef __cplusplus
