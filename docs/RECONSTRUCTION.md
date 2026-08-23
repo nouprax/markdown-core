@@ -158,7 +158,7 @@ same file; Q44's mutant ran, restored the whole snapshot set, and **took Q45 out
 of the working tree.** Every suite was green when the commit was made and the
 tree it committed was inconsistent — the goldens said a code span covers its
 backticks and the engine said it does not — because the check ran against a
-binary that still had the change. The repair is `1b21a02`. **Re-take the
+binary that still had the change. The repair is `9af96ce`. **Re-take the
 snapshot immediately before each mutant, restore only the file the mutant
 touched, and re-run the mechanised claim of the step you are standing on — not
 just the suite — after a restore.**
