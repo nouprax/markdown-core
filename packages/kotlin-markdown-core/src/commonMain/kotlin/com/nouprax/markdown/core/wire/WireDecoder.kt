@@ -1,7 +1,8 @@
 package com.nouprax.markdown.core
 
 internal object WireDecoder {
-    private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x32)
+    /** `MKC3`: the payload gained the concrete view at Step 12.2. */
+    private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x33)
 
     fun decodeDocument(bytes: ByteArray): Document {
         val reader = WireReader(bytes)
@@ -17,10 +18,37 @@ internal object WireDecoder {
             else -> error("unsupported native bridge status")
         }
         val root = reader.markup()
-        require(reader.finished && root is Document) { "native bridge returned an invalid document tree" }
-        return root
+        require(root is DocumentRoot) { "native bridge returned an invalid document tree" }
+        val concrete = reader.concrete()
+        require(reader.finished) { "native bridge returned a truncated payload" }
+        return Document(root, concrete)
     }
 }
+
+/**
+ * The concrete view, as [write_concrete] lays it out: the source length and its
+ * bytes, the line count and one offset per line, the region count and
+ * (start, length, role) per region, then `count + 1` path offsets and the flat
+ * path elements they cut.
+ */
+private fun WireReader.concrete(): Concrete {
+    val source = bytes(int())
+    val lineStarts = IntArray(count()) { int() }
+    val regionCount = count()
+    val starts = IntArray(regionCount)
+    val lengths = IntArray(regionCount)
+    val roles = ByteArray(regionCount)
+    repeat(regionCount) { index ->
+        starts[index] = int()
+        lengths[index] = int()
+        roles[index] = byte()
+    }
+    val ownerOffsets = IntArray(regionCount + 1) { int() }
+    val ownerPaths = IntArray(ownerOffsets[regionCount]) { int() }
+    return Concrete(source, lineStarts, starts, lengths, roles, ownerPaths, ownerOffsets)
+}
+
+private fun WireReader.count(): Int = int().also { require(it >= 0) { "invalid native count" } }
 
 private fun WireReader.error(): ParseException {
     val code =
@@ -69,6 +97,12 @@ internal class WireReader(
     }
 
     fun requiredString(): String = requireNotNull(string()) { "missing native field" }
+
+    fun bytes(size: Int): ByteArray {
+        require(size >= 0 && size <= bytes.size - offset) { "invalid native byte run" }
+        val end = offset + size
+        return bytes.copyOfRange(offset, end).also { offset = end }
+    }
 
     fun scope(): Scope = Scope(Position(int(), int()), Position(int(), int()))
 

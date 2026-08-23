@@ -50,6 +50,50 @@ const markdown_core_node *es_document_root(const markdown_core_document *documen
     return markdown_core_document_semantic(document);
 }
 
+void es_document_source(const markdown_core_document *document, uintptr_t *data, size_t *length) {
+    es_write_view(markdown_core_document_source(document), data, length);
+}
+
+size_t es_document_line_count(const markdown_core_document *document) {
+    return markdown_core_document_line_count(document);
+}
+
+/* Written whole rather than one call per line: the binding copies the entire
+ * index anyway, and a call per line is 8410 crossings on a 674 KB document. */
+void es_document_line_starts(const markdown_core_document *document, uint32_t *out) {
+    size_t count = markdown_core_document_line_count(document);
+    size_t line;
+    for (line = 1; line <= count; line++) {
+        size_t offset = 0;
+        markdown_core_document_line_start(document, line, &offset);
+        out[line - 1] = (uint32_t)offset;
+    }
+}
+
+size_t es_document_region_count(const markdown_core_document *document) {
+    return markdown_core_document_region_count(document);
+}
+
+/* start, length and role for every region, in source order: three uint32 each. */
+void es_document_regions(const markdown_core_document *document, uint32_t *out) {
+    size_t count = markdown_core_document_region_count(document);
+    size_t index;
+    for (index = 0; index < count; index++) {
+        markdown_core_region region;
+        if (!markdown_core_document_region_at(document, index, &region)) {
+            return;
+        }
+        out[index * 3] = (uint32_t)region.start;
+        out[index * 3 + 1] = (uint32_t)region.length;
+        out[index * 3 + 2] = (uint32_t)region.role;
+    }
+}
+
+int32_t es_document_owner_paths(const markdown_core_document *document, int32_t *paths, size_t paths_capacity,
+                                uint32_t *offsets, size_t offsets_capacity) {
+    return markdown_core_document_region_owner_paths(document, paths, paths_capacity, offsets, offsets_capacity);
+}
+
 int32_t es_error_code(const markdown_core_error *error) { return (int32_t)markdown_core_error_get_code(error); }
 
 void es_error_free(markdown_core_error *error) { markdown_core_error_free(error); }

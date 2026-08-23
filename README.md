@@ -18,10 +18,22 @@ divergence history, and license relationship.
 ## Usage
 
 All platform APIs have one synchronous parse entry point: `Document.parse` in
-Swift, Kotlin, and ECMAScript, and `markdown_core_document_parse` in C. Parsing
-produces a complete AST. The Swift, Kotlin, and ECMAScript bindings copy that
-AST into platform values and retain no native parser handle after the parse
-returns; the C API exposes an owned document with borrowed node views.
+Swift, Kotlin, and ECMAScript, and `markdown_core_document_parse` in C.
+
+A parse produces **two total views of one document**. `semantic` is the AST with
+policy applied and may omit bytes: a fence, a bullet and a reference
+definition's punctuation are in no literal anywhere. `concrete` omits nothing —
+the normalized source, its line index, and every byte of it in exactly one
+region with exactly one owner in the semantic tree. The pair is complete, so
+nothing the parser read is reachable through neither.
+
+A `Document` is that pair, matching C, where `markdown_core_document` has always
+been the parse result; the markup root it exposes as `semantic` is a
+`DocumentRoot`. The Swift, Kotlin, and ECMAScript bindings copy both views into
+platform values and retain no native parser handle after the parse returns —
+which is why a region names its owner by the PATH of child indices from the
+semantic root rather than by a pointer. The C API exposes an owned document with
+borrowed node views.
 
 The default parse options enable smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas (including
@@ -42,11 +54,12 @@ The root Swift package supports iOS 18 and macOS 15 or later and exports the
 ```swift
 import MarkdownCore
 
-let document = try Document.parse(
+let parsed = try Document.parse(
     "# Hello",
     options: ParseOptions(directives: false)
 )
-print(document.dump())
+print(parsed.semantic.dump())
+print(parsed.concrete.regionCount)
 ```
 
 The Swift AST is an immutable, `Sendable` value tree. The module also provides
@@ -67,14 +80,15 @@ kotlin {
 ```
 
 ```kotlin
-import com.nouprax.markdown.core.Document
 import com.nouprax.markdown.core.ParseOptions
+import com.nouprax.markdown.core.Document
 
-val document = Document.parse(
+val parsed = Document.parse(
     "# Hello",
     ParseOptions(directives = false),
 )
-println(document.dump())
+println(parsed.semantic.dump())
+println(parsed.concrete.regionCount)
 ```
 
 The published targets are Android (API 21 or later), JVM 17, macOS arm64, and
@@ -94,11 +108,12 @@ pnpm add @nouprax/es-markdown-core
 ```js
 import { Document, TreeDumper, Walker } from "@nouprax/es-markdown-core";
 
-const document = Document.parse("# Hello", { directives: false });
-new Walker().walk(document, (event, node) => {
+const parsed = Document.parse("# Hello", { directives: false });
+new Walker().walk(parsed.semantic, (event, node) => {
   console.log(event, node.kind, node.scope);
 });
-console.log(TreeDumper.dump(document));
+console.log(TreeDumper.dump(parsed.semantic));
+console.log(parsed.concrete.regionCount);
 ```
 
 The package supports Node.js 20 or later and browser environments that can load

@@ -27,7 +27,7 @@ only as a record.
 | Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), **11b** (§4.14.11b), **11c** (§4.14.11c), **12.1** (§4.14.12a), **12.2's locator** (§4.14.12b), **`end-at-line-ending` CLOSED** (§4.14.11c2) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 12.2's bindings**, and the API question §4.14.12b puts to the owner first: whether `Document.parse` returns `{semantic, concrete}` (literal, breaks every consumer in three languages) or the document value stays the semantic view and gains `.concrete` (nothing existing moves; the recommendation). **12.1 is LANDED** (§4.14.12a) and so is the LOCATOR (§4.14.12b): the C facade has both views, the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 reads 69/69 there and fails `conformance` — and a region names its owner by a path that survives being copied. Then `13 14 15C`. **Step 9b is LANDED whole** (§4.14.9b1–9b2): the definition and both references are nodes, five kinds carry an association, **D9 and D30 are closed**, the **mdast backlog is EMPTY**, and `fuzz-parity --oracle mdast` — one of §0's six known-red checks — is green. **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), Step 9b (§4.14.9b1–9b2), **Step 11b** (§4.14.11b) — which added TWO laws, L5 and L6, because L1–L4 are all true of the day before it — and **Step 11c** (§4.14.11c), whose engine change is NOTHING because 9b.1 had already made its requirement true; what it adds is the gate that would notice if it stopped. **11c also inherits four families** and they are named in its record. Remaining: `12.2 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 13**, then `14 15C`. **STEP 12 IS LANDED WHOLE** (§4.14.12a–12c): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 and M33 both read 69/69 there and fail `conformance` — a region names its owner by a path that survives being copied, `markdown_core_document_region_owner_paths` answers for every region in **1.13 ms against the 96.8 ms the singular call costs in a loop**, and all three bindings return `Document` = `{semantic, concrete}` copied into value types. **The owner ruled twice here**: reading 1 over my recommendation (§4.14.12b), and then that the PAIR takes the name `Document` while the markup root becomes `DocumentRoot` — which is what C has always done. **`specs/positions/places.json` IS EMPTY** (§4.14.11c2). **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), **Step 9b** whole (§4.14.9b1–9b2) — the definition and both references are nodes, **D9 and D30 closed**, the **mdast backlog EMPTY** — **Step 11b** (§4.14.11b), which added L5 and L6 because L1–L4 are all true of the day before it, and **Step 11c** (§4.14.11c). Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -6510,6 +6510,131 @@ initializer in `core/main.c` that no preset did — `pnpm -w run lint`, `leaks
 --atExit` 0, and the Swift, Kotlin and ES suites green through the rename.
 
 
+#### 4.14.12c Step 12.2: the bindings, and the name `Document` goes where C always had it
+
+**Requirement 12 is complete.** All three bindings return two total views, both
+copied into value types, and each has a test that reads a region after the
+native handle is freed — the requirement's own sentence and the one part of it
+a C test cannot make.
+
+##### THE OWNER'S SECOND RULING: the pair is `Document`
+
+§4.14.12b's ruling settled reading 1 and left one name to pick. My answer was
+`ParsedDocument`, on the ground that the markup root's model type must be
+spelled `Document` because `audit-ast-projections.mjs` requires each model to
+declare a type named for every contract kind. **The owner took the third option
+instead: the PAIR is `Document` and the ROOT is renamed.**
+
+It is the better answer and C is the argument. `markdown_core_document` has
+always been the parse result; `markdown_core_document_semantic` returns a
+`markdown_core_node` whose KIND is `DOCUMENT`. The bindings had given the root
+the name C gives the pair, and 12.2 is where that shows.
+
+| | before | after |
+|---|---|---|
+| the parse result | *(no value existed)* | **`Document`** — `semantic`, `concrete`, `parse`, `ownerOf` |
+| the markup root | `Document` | **`DocumentRoot`** |
+
+**Everything else keeps saying `Document`,** and that is deliberate: the kind
+name, this repository's contract table, the dump string in every golden,
+`MARKDOWN_CORE_KIND_DOCUMENT`, `WireKind.DOCUMENT`, `"document"` in the ES wire,
+and every `visitDocument`. **One spelling moved, in one place**, so the
+projections audit carries ONE named mapping rather than a pattern:
+
+```js
+const MODEL_NAME = new Map([["Document", "DocumentRoot"]]);
+```
+
+Not a rule. A list of one, which a second entry would have to be added to
+deliberately. Three model projections and the two Swift surfaces that key on the
+parameter type read through it; the Kotlin and ES dumpers key on
+`visitDocument(` and did not move.
+
+##### THE C FUNCTION 12.2 NEEDED, and the measurement that asked for it
+
+`markdown_core_document_region_owner_path` answers for ONE region, and a binding
+copies every one. **Looping it costs 96.8 ms against a 30.8 ms parse** on this
+document's own source — 52853 regions — because a node knows its parent and not
+its own index among its siblings, so every call counts previous siblings from
+scratch. That is §3's rule broken by a query.
+
+**The thread-safety contract decided the shape.** `markdown_core.h` promises
+that *"concurrent read-only access … to the same document from multiple threads
+is safe"*, and `facade_concurrent_stress` gates it — so a lazy cache on the
+document was out, and precomputing at finalize costs every consumer who never
+asks. What is left is a call that does the whole pass at once and keeps its
+memo on the STACK:
+
+```c
+markdown_core_document_region_owner_paths(document, paths, paths_capacity,
+                                          offsets, offsets_capacity)
+```
+
+Regions come in source order, so a pass in that order can start where the last
+one stopped: a 64-bucket direct-mapped memo of (parent, child, index), scanning
+FORWARD from what it remembers. **119232 of 125655 path elements are memo hits,
+and the whole forward scan is 21128 steps.** Both calls of the two-call
+protocol — size, then fill — measure **1.13 ms**, against 96.8. The offsets are
+written even when the paths are refused, so the caller learns the total from the
+call that refused.
+
+##### The three mechanisms differ and the values do not
+
+| | how it crosses | what it costs |
+|---|---|---|
+| Swift | calls the C functions directly | `[UInt8]`, five `[Int32]` |
+| Kotlin | one wire payload, magic `MKC2` → **`MKC3`** | the concrete view appended after the tree |
+| ES | six new `es_*` accessors, each read in ONE crossing | `Uint8Array` + typed arrays |
+
+**The regions are COLUMNAR and a `Region` is built when it is asked for.**
+Measured density on real prose is **one region per 17 bytes** — `README.md`
+484/8633, `canonical-ast.md` 840/13294, this document 40252/673903 — so an
+object per region costs several times the source it describes, and the parallel
+arrays cost about 25 bytes each. The C surface chose index addressing first
+(`region_count` / `region_at`), and the bindings mirror it.
+
+**`source` is BYTES** in all three, because region offsets index the normalized
+source and handing back a `String` invites indexing it — §0's trap that reports
+false failures on `\u00a0`.
+
+##### `ownerOf`, and the descent that is not `content[i]`
+
+A path of child indices is not a locator unless something resolves it, and the
+value trees split some C child runs into named fields — a table's `header` and
+`rows`, a directive's `label` and `content`. So each binding grew ONE shared
+`children()` in the order the C tree holds them, **which the walker now walks
+with too**, so the two cannot disagree, and `Document.ownerOf` descends with it.
+
+##### Mutants
+
+| mutant | what saw it |
+|---|---|
+| **M33** the memo returns its remembered index without advancing it | `conformance` fails on **"the one-pass paths are the same paths"** — and `correctness` reads **69/69**, because `facade_test` is not in that preset (§4.14.12a) |
+| **M34** Kotlin: a table's rows before its header | `ConcreteTest` — `Position(line=5, column=3)` expected, `line=7` got: the header cell's `a` resolved to the body row |
+| **M35** ES: the concrete view borrows WASM memory instead of copying it | the ES `concrete` suite, on re-reading after 300 further parses |
+| **M36** Swift: the same reversal | the Swift `concrete` suite, same witness |
+| **M37** ES: the same reversal | the ES `concrete` suite, same witness |
+
+**AND ONE MUTANT THAT KILLS NOTHING, which is worth more than the five.** The
+memo's backward-scan fallback — the arm that runs when the forward scan does not
+find the child — is **unreachable today**. Deleting the check that guards it
+leaves bulk and singular in agreement on **67797 regions across four
+documents**. The 6423 misses measured earlier are all bucket COLLISIONS, which
+take the backward path anyway. The arm stays, because it is what makes the memo
+correct rather than lucky if region order ever stops implying owner order; it is
+recorded here as dead so that nobody reads its survival as coverage.
+
+##### Gates
+
+`correctness` 69/69, asan 60/60, ubsan 60/60, `conformance` 2/2, canonical-ast
+32 kinds / 62 fields, projections 32 over 12 surfaces, public surface, both fuzz
+oracles 300/300, upstream 888/888 with 10/10, mdast 110/110, scope-sanity 1,
+inline-sourcepos 40, containment 8, places 0, concrete records 277,
+reference-order 0, `lint-c`, `pnpm -w run lint`, `leaks --atExit` 0 on
+`facade_test`, and the binding suites: **ES 11 + 9**, **Swift 6 + 1 + 3**,
+**Kotlin 11 + 4**.
+
+
 #### 4.14.12b Step 12.2 part one: the locator a value type can keep, and the API question it exposes
 
 **`markdown_core_document_region_owner_path`.** A region's owner is a
@@ -6582,9 +6707,9 @@ Reading 1 needs no allowance.
 by taste.** `audit-ast-projections.mjs` requires each of the three models to
 declare a type named for every contract kind, and `Document` is a contract kind
 whose name is also the dump string in every golden. So the PARSE RESULT is the
-thing that needs a name, and it is **`ParsedDocument`**, with `parse` on it:
-`Document` becomes an ordinary kind carrying no parser, which is what every
-other kind already is.
+thing that needs a name. **SUPERSEDED by §4.14.12c**: the owner's answer is
+that the PAIR takes `Document` and the root becomes `DocumentRoot`, which is
+what C has always done.
 
 **`.concrete` is INDEX-ADDRESSED, not an array of objects, and the C surface
 chose that first.** `markdown_core_document_region_count` / `_region_at` /
@@ -6604,12 +6729,11 @@ that reports false failures on `\u00a0`. `Concrete.source` is `Uint8Array`,
 
 ##### What 12 still owes, precisely
 
-The three bindings, each: `ParsedDocument` (`semantic`, `concrete`) carrying
-`parse`, a `Concrete` value type (`source` as bytes, `lineCount`/`lineStart`,
-`regionCount`/`region(index)`), a `Region` value type (`start`, `length`,
-`role`, `owner` as the path), the copy at parse time, and a test that reads a
-region AFTER the native handle is freed — which is the requirement's own
-sentence and the only part of it a C test cannot make. ES reads the wasm
+**Paid in §4.14.12c.** The three bindings, each: `Document` (`semantic`,
+`concrete`) carrying `parse`, a `Concrete` value type (`source` as bytes,
+`lineCount`/`lineStart`, `regionCount`/`region(index)`), a `Region` value type
+(`start`, `length`, `role`, `owner` as the path), the copy at parse time, and a
+test that reads a region AFTER the native handle is freed. ES reads the wasm
 accessors directly, Kotlin needs the view on its wire, Swift calls the C
 functions; the three mechanisms differ and the value types do not.
 
@@ -7380,7 +7504,7 @@ following, together:
 - [x] **The formula fix (Step 6) — deliverable #2. LANDED, §4.14.6.**
 - [ ] CST concrete records (11a, 11b, 11c) and diagnostics (13) — deliverable #3. **11a, 11b and 11c are LANDED** (§4.14.11a, §4.14.11b, §4.14.11c); 13 is not
 - [x] The reference model (9a, 9b) and the positions that depend on it — **10, 9a and 9b are all LANDED** (§4.14.10, §4.14.9a1–9a2, §4.14.9b1–9b2)
-- [ ] The facade and its single ABI break window (12), the null/empty rule (14)
+- [ ] The facade (12), the null/empty rule (14) — **12 is LANDED WHOLE** (§4.14.12a–12c): two total views in C and in all three bindings, and §4.10's ruling that the break window is not a constraint is what let 12.2 take the literal reading; 14 is not
 - [ ] Bindings, specs and docs regenerated (15)
 
 **Defects** — **all thirty-six of §2** closed, or explicitly carried with a

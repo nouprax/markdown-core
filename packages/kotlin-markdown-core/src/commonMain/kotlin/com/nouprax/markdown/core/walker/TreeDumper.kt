@@ -42,7 +42,7 @@ private data class DumpRecord(
 )
 
 private class DumpVisitor : Visitor<DumpRecord> {
-    override fun visitDocument(node: Document): DumpRecord = record("Document", node, children = node.content.size)
+    override fun visitDocument(node: DocumentRoot): DumpRecord = record("Document", node, children = node.content.size)
 
     override fun visitBlockQuote(node: BlockQuote): DumpRecord =
         record("BlockQuote", node, children = node.content.size)

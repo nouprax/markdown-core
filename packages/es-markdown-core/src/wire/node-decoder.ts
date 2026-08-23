@@ -1,7 +1,7 @@
 import type { MarkupBase } from "../model/base.js";
 import type { DirectiveAttribute } from "../model/directive-attribute.js";
 import type { DirectiveLabel } from "../model/directive-label.js";
-import type { Document } from "../model/document.js";
+import type { DocumentRoot } from "../model/document-root.js";
 import type { Markup } from "../model/markup.js";
 import type { TableCell, TableRow } from "../model/table.js";
 import { ParseError, type ParseErrorCode } from "../parse-error.js";
@@ -55,7 +55,7 @@ export class NodeDecoder {
         this.scratch = 0;
     }
 
-    decodeDocument(node: number): Document {
+    decodeDocument(node: number): DocumentRoot {
         const document = this.copyMarkup(node);
         if (document.kind !== "document") {
             throw new ParseError("internal", "parser returned an invalid document tree");

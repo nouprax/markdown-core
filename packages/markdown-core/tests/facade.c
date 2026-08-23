@@ -294,6 +294,51 @@ static void check_two_views(void) {
         check(!markdown_core_document_region_owner_path(document, count - 1, path, 0, &depth),
               "a path that does not fit is refused rather than truncated");
     }
+    /* THE SAME ANSWER IN ONE PASS. A binding copies every region, and counting
+     * previous siblings from scratch for each one is quadratic; the bulk call
+     * remembers where the last one stopped, so it has to be checked against the
+     * one that does not. */
+    {
+        uint32_t *offsets = (uint32_t *)malloc((count + 1) * sizeof(uint32_t));
+        int32_t *paths;
+        size_t total;
+        int agrees = 1;
+        check(offsets != NULL, "the offset buffer allocates");
+        if (!offsets) {
+            markdown_core_document_free(document);
+            return;
+        }
+        check(!markdown_core_document_region_owner_paths(document, NULL, 0, offsets, count + 1),
+              "sizing refuses to write paths it has no room for");
+        total = offsets[count];
+        check(total > 0 && offsets[0] == 0, "the sizing pass fills the offsets it refused on");
+        check(!markdown_core_document_region_owner_paths(document, NULL, 0, offsets, count),
+              "an offset buffer one short is refused");
+        paths = (int32_t *)malloc(total * sizeof(int32_t));
+        check(paths != NULL, "the path buffer allocates");
+        if (!paths) {
+            free(offsets);
+            markdown_core_document_free(document);
+            return;
+        }
+        check(!markdown_core_document_region_owner_paths(document, paths, total - 1, offsets, count + 1),
+              "a path buffer one short is refused rather than truncated");
+        check(markdown_core_document_region_owner_paths(document, paths, total, offsets, count + 1),
+              "every owner path fits in one pass");
+        for (index = 0; index < count; index++) {
+            int32_t one[32];
+            size_t depth = 0;
+            if (!markdown_core_document_region_owner_path(document, index, one, 32, &depth) ||
+                depth != offsets[index + 1] - offsets[index] ||
+                memcmp(one, paths + offsets[index], depth * sizeof(int32_t)) != 0) {
+                agrees = 0;
+                break;
+            }
+        }
+        check(agrees, "the one-pass paths are the same paths");
+        free(paths);
+        free(offsets);
+    }
     markdown_core_document_free(document);
 
     check(markdown_core_document_source(NULL).data == NULL, "a null document has no source");

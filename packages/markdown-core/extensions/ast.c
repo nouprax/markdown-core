@@ -250,6 +250,101 @@ bool markdown_core_document_region_owner_path(const markdown_core_document *docu
     return true;
 }
 
+/* One remembered (parent, child, index) per bucket, so a pass in source order
+ * can start where the last one stopped instead of counting from scratch. */
+typedef struct {
+    const markdown_core_node *parent;
+    const markdown_core_node *child;
+    int32_t index;
+} owner_memo;
+
+#define OWNER_MEMO_BUCKETS 64u
+
+static int32_t S_sibling_index(owner_memo *memo, const markdown_core_node *parent, const markdown_core_node *child) {
+    owner_memo *entry = &memo[((uintptr_t)parent >> 4) % OWNER_MEMO_BUCKETS];
+    const markdown_core_node *at;
+    int32_t index = 0;
+    if (entry->parent == parent) {
+        int32_t steps = 0;
+        for (at = entry->child; at && at != child; at = markdown_core_node_next((markdown_core_node *)at)) {
+            steps++;
+        }
+        /* Only forward: a region whose owner sits BEFORE the last one -- which
+         * the containment ledger says happens -- falls through to the count. */
+        if (at == child) {
+            entry->child = child;
+            entry->index += steps;
+            return entry->index;
+        }
+    }
+    for (at = markdown_core_node_previous((markdown_core_node *)child); at;
+         at = markdown_core_node_previous((markdown_core_node *)at)) {
+        index++;
+    }
+    entry->parent = parent;
+    entry->child = child;
+    entry->index = index;
+    return index;
+}
+
+/* How deep `owner` sits below `root`, or -1 if it is not below it at all. */
+static int32_t S_owner_depth(const markdown_core_node *owner, const markdown_core_node *root) {
+    const markdown_core_node *node;
+    int32_t depth = 0;
+    for (node = owner; node && node != root; node = markdown_core_node_parent((markdown_core_node *)node)) {
+        depth++;
+    }
+    return node == root ? depth : -1;
+}
+
+bool markdown_core_document_region_owner_paths(const markdown_core_document *document, int32_t *paths,
+                                               size_t paths_capacity, uint32_t *offsets, size_t offsets_capacity) {
+    owner_memo memo[OWNER_MEMO_BUCKETS];
+    const markdown_core_node *root;
+    size_t count;
+    size_t index;
+    size_t at = 0;
+
+    if (!document || !offsets) {
+        return false;
+    }
+    count = (size_t)document->concrete.regions_size;
+    if (offsets_capacity < count + 1) {
+        return false;
+    }
+    root = document->root;
+    memset(memo, 0, sizeof(memo));
+
+    /* The offsets are written whether or not the paths fit, so the caller
+     * learns the total it needs from the same call that refused. */
+    offsets[0] = 0;
+    for (index = 0; index < count; index++) {
+        int32_t depth = S_owner_depth(document->concrete.regions[index].owner, root);
+        if (depth < 0) {
+            return false;
+        }
+        at += (size_t)depth;
+        if (at > UINT32_MAX) {
+            return false;
+        }
+        offsets[index + 1] = (uint32_t)at;
+    }
+    if (at > paths_capacity || (at > 0 && !paths)) {
+        return false;
+    }
+
+    for (index = 0; index < count; index++) {
+        const markdown_core_node *node = document->concrete.regions[index].owner;
+        size_t depth = offsets[index + 1] - offsets[index];
+        for (; depth > 0; depth--) {
+            const markdown_core_node *parent = markdown_core_node_parent((markdown_core_node *)node);
+            paths[offsets[index] + depth - 1] = S_sibling_index(memo, parent, node);
+            node = parent;
+        }
+    }
+    return true;
+}
+
 markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error) {
     return error ? error->code : MARKDOWN_CORE_ERROR_NONE;
 }

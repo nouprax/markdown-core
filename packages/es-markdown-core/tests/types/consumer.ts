@@ -1,26 +1,43 @@
 import {
+    Concrete,
     Document,
+    RegionRole,
     TreeDumper,
     visit,
     Walker,
+    type DocumentRoot,
     type Heading,
     type Markup,
+    type Region,
     type Table,
     type TableCell,
     type TableRow,
     type Visitor
 } from "@nouprax/es-markdown-core";
-import type { Document as ParsedDocument } from "@nouprax/es-markdown-core";
 
-const document = Document.parse("# typed", { tables: true });
-const parsedDocument: ParsedDocument = document;
+const parsed = Document.parse("# typed", { tables: true });
+const document: DocumentRoot = parsed.semantic;
+const concrete: Concrete = parsed.concrete;
 const diagnostic: string = document.dump();
 const explicitDiagnostic: string = TreeDumper.dump(document);
 void diagnostic;
 void explicitDiagnostic;
-void parsedDocument;
-// @ts-expect-error Document values are created only by Document.parse
-new Document();
+// The concrete view is bytes, a line index and regions, and its owners are
+// paths that outlive the WASM handle.
+const source: Uint8Array = concrete.source;
+const region: Region = concrete.region(0);
+const owner: Markup | undefined = parsed.ownerOf(region);
+const role: RegionRole = region.role;
+const ownerPath: readonly number[] = region.owner;
+void source;
+void owner;
+void role;
+void ownerPath;
+void concrete.lineStart(1);
+// @ts-expect-error a region's fields are readonly
+region.start = 1;
+// @ts-expect-error the two views are readonly
+parsed.semantic = document;
 const visitor: Visitor<string> = {
     visitDocument: (node) => node.kind,
     visitBlockQuote: (node) => node.kind,

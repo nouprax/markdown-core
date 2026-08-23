@@ -62,10 +62,13 @@ try {
                 "--eval",
                 [
                     "import * as api from '@nouprax/es-markdown-core';",
-                    "const d = api.Document.parse('# npm consumer');",
+                    "const p = api.Document.parse('# npm consumer');",
+                    "const d = p.semantic;",
                     "if (d.content[0].kind !== 'heading') process.exit(2);",
                     "if ('memory' in api || 'initialize' in api) process.exit(3);",
-                    "if (d.dump() !== api.TreeDumper.dump(d)) process.exit(4);"
+                    "if (d.dump() !== api.TreeDumper.dump(d)) process.exit(4);",
+                    "if (p.concrete.region(0).start !== 0 || p.concrete.source.length !== 15) process.exit(5);",
+                    "if (p.ownerOf(p.concrete.region(0)) === undefined) process.exit(6);"
                 ].join("\n")
             ],
             { cwd: temporary, encoding: "utf8" }

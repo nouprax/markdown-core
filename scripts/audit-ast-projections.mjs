@@ -169,6 +169,18 @@ function namedKinds(relative, pattern, transform = (m) => m[1]) {
     return [...text.matchAll(pattern)].map(transform);
 }
 
+/* THE ONE KIND WHOSE BINDING TYPE IS NOT ITS CONTRACT NAME.
+ *
+ * Step 12.2 gave `Document` to the PARSE RESULT -- the pair of views, which is
+ * what `markdown_core_document` has always been in C -- so the markup root the
+ * contract calls `Document` is declared as `DocumentRoot` in the three value
+ * models. The kind name, the dump string, the wire enums and every
+ * `visitDocument` are unchanged: only the TYPE spelling moved, it moved in one
+ * place, and it is named here rather than pattern-matched so that a second one
+ * cannot appear by accident. */
+const MODEL_NAME = new Map([["Document", "DocumentRoot"]]);
+const modelName = (kind) => MODEL_NAME.get(kind) ?? kind;
+
 const modelProjections = [
     projection({
         label: "Swift model",
@@ -176,7 +188,7 @@ const modelProjections = [
         // Document is a final class — it owns the native parse, which a value
         // type cannot release — while every other kind is a struct. Both are
         // declarations; only the keyword differs.
-        declaration: (kind) => new RegExp(`public (?:final class|struct) ${kind}\\b[^\\n]*\\{`),
+        declaration: (kind) => new RegExp(`public (?:final class|struct) ${modelName(kind)}\\b[^\\n]*\\{`),
         field: /public (?:let|var) ([A-Za-z]+)\s*:/g
     }),
     projection({
@@ -185,7 +197,7 @@ const modelProjections = [
         // Both spellings: most kinds take an `internal constructor`, the two
         // extension kinds take a plain one. A reader that knew only the first
         // reported them as missing.
-        declaration: (kind) => new RegExp(`public class ${kind}\\b[^\\n]*\\(`),
+        declaration: (kind) => new RegExp(`public class ${modelName(kind)}\\b[^\\n]*\\(`),
         field: /(?:public |override )?val ([A-Za-z]+)\s*:/g
     }),
     projection({
@@ -194,7 +206,8 @@ const modelProjections = [
         // A kind with no fields is a type alias, not an interface — which is
         // the correct TypeScript for it, and reads as "declared with zero
         // fields", not as "missing".
-        declaration: (kind) => new RegExp(`export (?:interface ${kind}\\b[^\\n]*\\{|type ${kind}\\s*=)`),
+        declaration: (kind) =>
+            new RegExp(`export (?:interface ${modelName(kind)}\\b[^\\n]*\\{|type ${modelName(kind)}\\s*=)`),
         field: /readonly ([A-Za-z]+)\s*[?]?\s*:/g
     })
 ];
@@ -242,6 +255,8 @@ let failed = false;
  * read three of those -- the three MODELS -- so a decoder that forgot a kind, a
  * dumper that could not name one, or a wire enum that was one short was
  * invisible here and visible only if some test happened to parse that kind. */
+const modelKinds = new Set([...kinds.keys()].map(modelName));
+
 const kindSurfaces = [
     {
         label: "C header kind enum",
@@ -283,10 +298,10 @@ const kindSurfaces = [
     },
     {
         label: "ES export list",
-        expect: [...kinds.keys()],
+        expect: [...kinds.keys()].map(modelName),
         actual: namedKinds("packages/es-markdown-core/src/index.ts", /export (?:type )?\{([^}]*)\}/g, (m) => m[1])
             .flatMap((names) => names.split(",").map((n) => n.trim()))
-            .filter((name) => kinds.has(name))
+            .filter((name) => modelKinds.has(name))
     },
     {
         label: "ES wire kinds",
@@ -307,7 +322,7 @@ const kindSurfaces = [
     },
     {
         label: "Swift dumper",
-        expect: [...kinds.keys()],
+        expect: [...kinds.keys()].map(modelName),
         actual: namedKinds(
             "packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift",
             /mutating func visit\(_:? ?n?o?d?e?:? (?:MarkdownCore\.)?([A-Za-z]+)\)/g
@@ -315,7 +330,7 @@ const kindSurfaces = [
     },
     {
         label: "Swift walker",
-        expect: [...kinds.keys()],
+        expect: [...kinds.keys()].map(modelName),
         actual: namedKinds(
             "packages/swift-markdown-core/Sources/MarkdownCore/Walker/Walker.swift",
             /mutating func visit\(_:? ?n?o?d?e?:? (?:MarkdownCore\.)?([A-Za-z]+)\)/g

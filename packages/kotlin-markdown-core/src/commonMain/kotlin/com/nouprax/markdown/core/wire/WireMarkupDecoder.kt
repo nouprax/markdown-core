@@ -5,7 +5,7 @@ internal fun WireReader.markup(): Markup {
     val nodeScope = scope()
     return when (kind) {
         WireKind.DOCUMENT -> {
-            Document(markupList(), nodeScope)
+            DocumentRoot(markupList(), nodeScope)
         }
 
         WireKind.BLOCK_QUOTE -> {

@@ -4,7 +4,7 @@ import type { Code } from "./code.js";
 import type { DirectiveBlock } from "./directive-block.js";
 import type { DirectiveLabel } from "./directive-label.js";
 import type { Directive } from "./directive.js";
-import type { Document } from "./document.js";
+import type { DocumentRoot } from "./document-root.js";
 import type { Emphasis } from "./emphasis.js";
 import type { FootnoteDefinition, FootnoteReference } from "./footnote.js";
 import type { FormulaBlock } from "./formula-block.js";
@@ -27,7 +27,7 @@ import type { Text } from "./text.js";
 import type { ThematicBreak } from "./thematic-break.js";
 
 export type Markup =
-    | Document
+    | DocumentRoot
     | BlockQuote
     | Paragraph
     | Heading

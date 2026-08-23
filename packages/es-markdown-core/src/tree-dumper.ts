@@ -5,7 +5,7 @@ import type { DirectiveAttribute } from "./model/directive-attribute.js";
 import type { DirectiveBlock } from "./model/directive-block.js";
 import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
-import type { Document } from "./model/document.js";
+import type { DocumentRoot } from "./model/document-root.js";
 import type { Emphasis } from "./model/emphasis.js";
 import type { FootnoteDefinition, FootnoteReference } from "./model/footnote.js";
 import type { ReferenceDefinition } from "./model/reference-definition.js";
@@ -70,7 +70,7 @@ export class TreeDumper {
 }
 
 const dumpVisitor: Visitor<DumpRecord> = {
-    visitDocument: (node: Document) => record("Document", node, [], node.content.length),
+    visitDocument: (node: DocumentRoot) => record("Document", node, [], node.content.length),
     visitBlockQuote: (node: BlockQuote) => record("BlockQuote", node, [], node.content.length),
     visitParagraph: (node: Paragraph) => record("Paragraph", node, [], node.content.length),
     visitHeading: (node: Heading) => record("Heading", node, [`level=${node.level}`], node.content.length),

@@ -15,11 +15,11 @@ class AstTest {
                 "| left | center |\n| :--- | :----: |\n| a | b |\n\n::leaf[Label]{id=value}\n\n:::container[Title]{kind=demo}\nBody\n:::\n",
                 "\$\$\ny\n\$\$\n",
             )
-        val documents = sources.map { Document.parse(it) }
+        val documents = sources.map { Document.parse(it).semantic }
         val values = documents.flatMap(::flatten)
         assertEquals(
             setOf(
-                "Document",
+                "DocumentRoot",
                 "BlockQuote",
                 "Paragraph",
                 "Heading",
@@ -60,9 +60,10 @@ class AstTest {
     @Test
     fun fieldsNullabilityAndTypedTableNodesAreMapped() {
         val document =
-            Document.parse(
-                "3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image \"title\")\n",
-            )
+            Document
+                .parse(
+                    "3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image \"title\")\n",
+                ).semantic
         val ordered = document.content[0] as List
         assertEquals(ListFlavor.ORDERED, ordered.flavor)
         assertEquals(3, ordered.start)
@@ -87,11 +88,11 @@ class AstTest {
 
     @Test
     fun walkerDispatchesTableRowsAndCellsAsMarkup() {
-        val document = Document.parse("| a |\n| --- |\n| b |\n")
+        val document = Document.parse("| a |\n| --- |\n| b |\n").semantic
         val visitor = RecordingVisitor()
         Walker.walk(document, visitor)
         assertEquals(
-            listOf("Document", "Table", "TableRow", "TableCell", "Text", "TableRow", "TableCell", "Text"),
+            listOf("DocumentRoot", "Table", "TableRow", "TableCell", "Text", "TableRow", "TableCell", "Text"),
             visitor.visited,
         )
     }
@@ -100,7 +101,7 @@ class AstTest {
     fun allManifestCasesMatchTheSharedCanonicalAstSpec() {
         assertTrue(canonicalAstCases.isNotEmpty())
         for (testCase in canonicalAstCases) {
-            val document = Document.parse(testCase.source, testCase.options)
+            val document = Document.parse(testCase.source, testCase.options).semantic
             assertEquals(testCase.expected, TreeDumper.dump(document), testCase.name)
             assertEquals(testCase.expected, document.dump(), testCase.name)
         }
@@ -110,7 +111,7 @@ class AstTest {
 private fun flatten(root: Any): kotlin.collections.List<Any> =
     listOf(root) +
         when (root) {
-            is Document -> root.content.flatMap(::flatten)
+            is DocumentRoot -> root.content.flatMap(::flatten)
             is BlockQuote -> root.content.flatMap(::flatten)
             is Paragraph -> root.content.flatMap(::flatten)
             is Heading -> root.content.flatMap(::flatten)

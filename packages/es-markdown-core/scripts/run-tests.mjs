@@ -7,6 +7,7 @@ const packageDirectory = path.resolve(fileURLToPath(new URL("..", import.meta.ur
 const correctnessSuites = [
     "api",
     "ast",
+    "concrete",
     "consumer",
     "errors",
     "ownership",
@@ -40,7 +41,7 @@ if (target === "browser") {
     process.exit(0);
 }
 const selectedNodeSuites = selected.filter((suite) =>
-    ["api", "ast", "errors", "ownership", "robustness", "unicode"].includes(suite)
+    ["api", "ast", "concrete", "errors", "ownership", "robustness", "unicode"].includes(suite)
 );
 if (selectedNodeSuites.length) {
     run("node", ["--test", `--test-name-pattern=^(${selectedNodeSuites.join("|")}):`, "tests/node.test.mjs"]);

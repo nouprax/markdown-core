@@ -142,7 +142,10 @@ const runtimeExports = [
         match[1].split(",").map((name) => name.trim())
     )
 ].sort();
-const expectedRuntime = ["Document", "ParseError", "TreeDumper", "WalkEvent", "Walker", "visit"].sort();
+// `Document` is the PARSE RESULT as of Step 12.2 -- the pair of views -- and
+// the markup root it exposes as `semantic` is the type `DocumentRoot`, which
+// is a type and not a runtime value.
+const expectedRuntime = ["Concrete", "Document", "ParseError", "RegionRole", "TreeDumper", "WalkEvent", "Walker", "visit"].sort();
 if (runtimeExports.join("\n") !== expectedRuntime.join("\n")) {
     throw new Error(`Unexpected ES runtime exports: ${runtimeExports.join(", ")}`);
 }
