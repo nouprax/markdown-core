@@ -1,7 +1,7 @@
 package com.nouprax.markdown.core
 
 internal class KindVisitor : Visitor<String> {
-    override fun visitDocument(node: DocumentRoot): String = name(node)
+    override fun visitDocument(node: Document): String = name(node)
 
     override fun visitBlockQuote(node: BlockQuote): String = name(node)
 
@@ -69,7 +69,7 @@ internal class KindVisitor : Visitor<String> {
 internal class RecordingVisitor : Visitor<Unit> {
     val visited: MutableList<String> = mutableListOf()
 
-    override fun visitDocument(node: DocumentRoot): Unit = record(node)
+    override fun visitDocument(node: Document): Unit = record(node)
 
     override fun visitBlockQuote(node: BlockQuote): Unit = record(node)
 

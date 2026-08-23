@@ -174,16 +174,10 @@ validates the owning edge: the value in `Table.header` is true and values in
 ## ParseOptions
 
 `Document.parse(source, options = ParseOptions.default)` is the only parsing
-entry point, and it returns TWO TOTAL VIEWS: `semantic`, the root this table
-calls `Document`, and `concrete`, the normalized source with every byte of it in
-exactly one region. This table is the semantic view's contract; the concrete
-view has no kinds and no fields of its own.
-
-**One kind is spelled differently in the bindings.** `Document` here is the
-markup ROOT, and the three value models declare it as `DocumentRoot`, because
-the name `Document` belongs to the parse result — the pair — the way
-`markdown_core_document` always has in C. The kind name, this table, the dump
-string, the wire enums and every `visitDocument` are unchanged. `ParseOptions` is immutable and contains exactly these booleans:
+entry point. A parse is TWO TOTAL VIEWS: the `Document` this table describes,
+and `Document.concrete` — the normalized source with every byte of it in exactly
+one region. This table is the semantic view's contract; the concrete view has no
+kinds and no fields of its own, and `concrete` is not a dumped field. `ParseOptions` is immutable and contains exactly these booleans:
 
 | Field | Default |
 | --- | --- |

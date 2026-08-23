@@ -4,7 +4,7 @@ import type { Code } from "./model/code.js";
 import type { DirectiveBlock } from "./model/directive-block.js";
 import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
-import type { DocumentRoot } from "./model/document-root.js";
+import type { Document } from "./model/document.js";
 import type { Emphasis } from "./model/emphasis.js";
 import type { FootnoteDefinition, FootnoteReference } from "./model/footnote.js";
 import type { FormulaBlock } from "./model/formula-block.js";
@@ -28,7 +28,7 @@ import type { Text } from "./model/text.js";
 import type { ThematicBreak } from "./model/thematic-break.js";
 
 export interface Visitor<Result> {
-    visitDocument(this: void, node: DocumentRoot): Result;
+    visitDocument(this: void, node: Document): Result;
     visitBlockQuote(this: void, node: BlockQuote): Result;
     visitParagraph(this: void, node: Paragraph): Result;
     visitHeading(this: void, node: Heading): Result;

@@ -5,7 +5,6 @@ import {
     TreeDumper,
     visit,
     Walker,
-    type DocumentRoot,
     type Heading,
     type Markup,
     type Region,
@@ -15,9 +14,8 @@ import {
     type Visitor
 } from "@nouprax/es-markdown-core";
 
-const parsed = Document.parse("# typed", { tables: true });
-const document: DocumentRoot = parsed.semantic;
-const concrete: Concrete = parsed.concrete;
+const document: Document = Document.parse("# typed", { tables: true });
+const concrete: Concrete = document.concrete;
 const diagnostic: string = document.dump();
 const explicitDiagnostic: string = TreeDumper.dump(document);
 void diagnostic;
@@ -26,7 +24,7 @@ void explicitDiagnostic;
 // paths that outlive the WASM handle.
 const source: Uint8Array = concrete.source;
 const region: Region = concrete.region(0);
-const owner: Markup | undefined = parsed.ownerOf(region);
+const owner: Markup | undefined = document.ownerOf(region);
 const role: RegionRole = region.role;
 const ownerPath: readonly number[] = region.owner;
 void source;
@@ -36,8 +34,8 @@ void ownerPath;
 void concrete.lineStart(1);
 // @ts-expect-error a region's fields are readonly
 region.start = 1;
-// @ts-expect-error the two views are readonly
-parsed.semantic = document;
+// @ts-expect-error the concrete view is readonly
+document.concrete = concrete;
 const visitor: Visitor<string> = {
     visitDocument: (node) => node.kind,
     visitBlockQuote: (node) => node.kind,

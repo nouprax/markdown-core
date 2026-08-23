@@ -15,11 +15,11 @@ import Testing
                 + ":::container[Title]{kind=demo}\nBody\n:::\n",
             "$$\ny\n$$\n",
         ]
-        let documents = try sources.map { try Document.parse($0).semantic }
+        let documents = try sources.map { try Document.parse($0) }
         let nodes = documents.flatMap(flatten)
         let kinds = Set(nodes.map(kindName))
         let expected: Set<String> = [
-            "DocumentRoot", "BlockQuote", "Paragraph", "Heading", "ThematicBreak", "List",
+            "Document", "BlockQuote", "Paragraph", "Heading", "ThematicBreak", "List",
             "ListItem", "CodeBlock", "HTMLBlock", "FormulaBlock", "Table",
             "DirectiveBlock", "DirectiveLabel", "FootnoteDefinition", "Text", "SoftBreak",
             "LineBreak",
@@ -35,7 +35,7 @@ import Testing
     func fieldsAndNullability() throws {
         let document = try Document.parse(
             "3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image \"title\")\n"
-        ).semantic
+        )
         let ordered = try #require(document.content[0] as? MarkdownCore.List)
         #expect(ordered.flavor == .ordered)
         #expect(ordered.start == 3)
@@ -64,7 +64,7 @@ import Testing
         #expect(!manifest.cases.isEmpty)
 
         for testCase in manifest.cases {
-            let document = try Document.parse(testCase.source, options: testCase.parseOptions.value).semantic
+            let document = try Document.parse(testCase.source, options: testCase.parseOptions.value)
             #expect(TreeDumper.dump(document) == testCase.expected, Comment(rawValue: testCase.name))
             #expect(document.dump() == testCase.expected, Comment(rawValue: testCase.name))
         }

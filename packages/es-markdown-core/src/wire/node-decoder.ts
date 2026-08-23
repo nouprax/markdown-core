@@ -1,7 +1,7 @@
 import type { MarkupBase } from "../model/base.js";
 import type { DirectiveAttribute } from "../model/directive-attribute.js";
 import type { DirectiveLabel } from "../model/directive-label.js";
-import type { DocumentRoot } from "../model/document-root.js";
+import type { Document } from "../model/document.js";
 import type { Markup } from "../model/markup.js";
 import type { TableCell, TableRow } from "../model/table.js";
 import { ParseError, type ParseErrorCode } from "../parse-error.js";
@@ -10,7 +10,15 @@ import type { NativeExports } from "../runtime/native.js";
 import { TreeDumper } from "../tree-dumper.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
-type MarkupValue = Markup extends infer Node ? (Node extends Markup ? Omit<Node, "dump"> : never) : never;
+/* THE THREE MEMBERS A DECODED VALUE DOES NOT CARRY. `dump` is defined on every
+ * node after the copy, and `concrete` and `ownerOf` on the ROOT once the
+ * concrete view has been read -- which is after the tree, and out of the
+ * decoder's reach. */
+type MarkupValue = Markup extends infer Node
+    ? Node extends Markup
+        ? Omit<Node, "dump" | "concrete" | "ownerOf">
+        : never
+    : never;
 type MarkupValueOf<Kind extends Markup["kind"]> = Extract<MarkupValue, { readonly kind: Kind }>;
 
 interface DirectiveFields {
@@ -55,7 +63,8 @@ export class NodeDecoder {
         this.scratch = 0;
     }
 
-    decodeDocument(node: number): DocumentRoot {
+    /** The root, without its concrete view: `parseDocument` attaches that. */
+    decodeDocument(node: number): Omit<Document, "concrete" | "ownerOf"> {
         const document = this.copyMarkup(node);
         if (document.kind !== "document") {
             throw new ParseError("internal", "parser returned an invalid document tree");

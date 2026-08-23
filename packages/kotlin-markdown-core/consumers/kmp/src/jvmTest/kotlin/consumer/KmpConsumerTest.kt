@@ -8,10 +8,9 @@ import kotlin.test.assertEquals
 class KmpConsumerTest {
     @Test
     fun rootMetadataSelectsTheJvmVariant() {
-        val parsed = Document.parse("# KMP consumer\n")
-        val document = parsed.semantic
+        val document = Document.parse("# KMP consumer\n")
         assertEquals(1, document.content.size)
         assertEquals(document.dump(), TreeDumper.dump(document))
-        assertEquals(0, parsed.concrete.region(0).start)
+        assertEquals(0, document.concrete.region(0).start)
     }
 }

@@ -27,7 +27,7 @@ public struct Walker: Sendable {
 /// what a region's owner path counts. `Walker` walks with it and
 /// `Document.owner(of:)` descends with it.
 struct ChildrenVisitor: MarkupVisitor {
-    mutating func visit(_ node: DocumentRoot) -> [any Markup] { node.content }
+    mutating func visit(_ node: Document) -> [any Markup] { node.content }
 
     mutating func visit(_ node: BlockQuote) -> [any Markup] { node.content }
 

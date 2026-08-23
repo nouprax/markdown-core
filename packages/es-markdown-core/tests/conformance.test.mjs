@@ -17,7 +17,7 @@ test("conformance: public node schema is reachable", () => {
         "| left | center |\n| :--- | :----: |\n| a | b |\n\n::leaf[Label]{id=value}\n\n:::container[Title]{kind=demo}\nBody\n:::\n",
         "$$\ny\n$$\n"
     ];
-    const documents = sources.map((source) => Document.parse(source).semantic);
+    const documents = sources.map((source) => Document.parse(source));
     const nodes = documents.flatMap(flatten);
     assert.deepEqual(
         new Set(nodes.map((node) => node.kind)),
@@ -62,7 +62,7 @@ test("conformance: public node schema is reachable", () => {
 test("conformance: fields, nullability, and typed table nodes map to JavaScript", () => {
     const document = Document.parse(
         '3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image "title")\n'
-    ).semantic;
+    );
     assert.equal(document.content[0].flavor, "ordered");
     assert.equal(document.content[0].start, 3);
     assert.equal(document.content[0].tight, true);
@@ -96,7 +96,7 @@ test("conformance: fields, nullability, and typed table nodes map to JavaScript"
 });
 
 test("conformance: directive labels preserve missing, empty, and populated states", () => {
-    const document = Document.parse(":missing{id=1}\n\n:empty[]\n\n:label[text]\n\n::block[title]\n").semantic;
+    const document = Document.parse(":missing{id=1}\n\n:empty[]\n\n:label[text]\n\n::block[title]\n");
     const missing = document.content[0].content[0];
     const empty = document.content[1].content[0];
     const label = document.content[2].content[0];
@@ -115,7 +115,7 @@ test("conformance: directive labels preserve missing, empty, and populated state
 
 for (const testCase of canonicalManifest.cases) {
     test(`conformance: shared canonical AST case ${testCase.name}`, async () => {
-        const document = Document.parse(testCase.source, testCase.parseOptions).semantic;
+        const document = Document.parse(testCase.source, testCase.parseOptions);
         assert.equal(TreeDumper.dump(document), testCase.expected, testCase.name);
         assert.equal(document.dump(), testCase.expected, testCase.name);
     });

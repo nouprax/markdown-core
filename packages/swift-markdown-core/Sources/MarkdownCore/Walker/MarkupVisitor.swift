@@ -1,6 +1,6 @@
 public protocol MarkupVisitor {
     associatedtype Result
-    mutating func visit(_ node: DocumentRoot) -> Result
+    mutating func visit(_ node: Document) -> Result
     mutating func visit(_ node: BlockQuote) -> Result
     mutating func visit(_ node: Paragraph) -> Result
     mutating func visit(_ node: Heading) -> Result
@@ -12,7 +12,6 @@ public protocol MarkupVisitor {
     mutating func visit(_ node: FormulaBlock) -> Result
     mutating func visit(_ node: Table) -> Result
     mutating func visit(_ node: DirectiveBlock) -> Result
-
     mutating func visit(_ node: DirectiveLabel) -> Result
     mutating func visit(_ node: FootnoteDefinition) -> Result
     mutating func visit(_ node: ReferenceDefinition) -> Result

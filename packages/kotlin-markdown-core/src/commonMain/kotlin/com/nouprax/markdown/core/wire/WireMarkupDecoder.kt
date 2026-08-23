@@ -5,7 +5,9 @@ internal fun WireReader.markup(): Markup {
     val nodeScope = scope()
     return when (kind) {
         WireKind.DOCUMENT -> {
-            DocumentRoot(markupList(), nodeScope)
+            // Only ever the ROOT, and the root is read by `document()`, which is
+            // the only place the concrete view exists to build it with.
+            error("a document node cannot be a child")
         }
 
         WireKind.BLOCK_QUOTE -> {
@@ -168,7 +170,7 @@ private fun WireReader.referenceForm(): ReferenceForm =
         else -> error("unsupported native reference form $rawValue")
     }
 
-private fun WireReader.markupList(): kotlin.collections.List<Markup> {
+internal fun WireReader.markupList(): kotlin.collections.List<Markup> {
     val count = int()
     require(count >= 0) { "invalid native child count" }
     return immutableList(count) { markup() }

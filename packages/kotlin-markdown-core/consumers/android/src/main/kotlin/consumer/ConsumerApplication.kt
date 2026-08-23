@@ -6,6 +6,6 @@ import com.nouprax.markdown.core.Document
 class ConsumerApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        check(Document.parse("Android consumer\n").semantic.content.size == 1)
+        check(Document.parse("Android consumer\n").content.size == 1)
     }
 }

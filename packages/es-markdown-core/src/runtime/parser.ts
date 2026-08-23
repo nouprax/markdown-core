@@ -1,5 +1,8 @@
 import { Concrete } from "../concrete.js";
-import type { DocumentRoot } from "../model/document-root.js";
+import type { Region } from "../concrete.js";
+import type { Markup } from "../model/markup.js";
+import { children } from "../walker.js";
+import type { Document } from "../model/document.js";
 import { ParseError } from "../parse-error.js";
 import type { ParseOptions } from "../parse-options.js";
 import { NodeDecoder } from "../wire/node-decoder.js";
@@ -25,14 +28,7 @@ const options = [
 
 const utf8Encoder = new TextEncoder();
 
-/** The two views, before `Document` wraps them: the class lives one
- * module up so that the parser does not import what imports it. */
-export interface ParsedViews {
-    readonly semantic: DocumentRoot;
-    readonly concrete: Concrete;
-}
-
-export function parseDocument(source: string, parseOptions: ParseOptions = {}): ParsedViews {
+export function parseDocument(source: string, parseOptions: ParseOptions = {}): Document {
     validateInput(source, parseOptions);
     const bytes = utf8Encoder.encode(source);
     let sourcePointer = 0;
@@ -50,10 +46,10 @@ export function parseDocument(source: string, parseOptions: ParseOptions = {}): 
         const decoder = new NodeDecoder(native);
         try {
             if (!documentPointer) throw decoder.parseError(errorPointer);
-            return {
-                semantic: decoder.decodeDocument(native.es_document_root(documentPointer)),
-                concrete: readConcrete(documentPointer)
-            };
+            return withConcrete(
+                decoder.decodeDocument(native.es_document_root(documentPointer)),
+                readConcrete(documentPointer)
+            );
         } finally {
             decoder.dispose();
         }
@@ -73,6 +69,36 @@ export function parseDocument(source: string, parseOptions: ParseOptions = {}): 
  * and a call per line or per region is tens of thousands of them on a document
  * of any size.
  */
+/**
+ * The root, given its concrete view and the descent that reads it.
+ *
+ * `concrete` is data and enumerates; `ownerOf` is behaviour and does not, the
+ * same way `dump` does not -- a consumer that spreads a document gets its
+ * fields and not its methods.
+ */
+function withConcrete(root: Omit<Document, "concrete" | "ownerOf">, concrete: Concrete): Document {
+    // Defined ON the decoded root rather than spread into a new object: `dump`
+    // is not enumerable, and a spread would leave it behind.
+    const document = root as Document;
+    Object.defineProperty(document, "concrete", { enumerable: true, value: concrete });
+    Object.defineProperty(document, "ownerOf", {
+        enumerable: false,
+        value: (region: Region): Markup | undefined => ownerOf(document, region)
+    });
+    return document;
+}
+
+/** The descent a region's owner path names, from the root it was taken in. */
+function ownerOf(document: Document, region: Region): Markup | undefined {
+    let node: Markup = document;
+    for (const step of region.owner) {
+        const descendants = children(node);
+        if (step < 0 || step >= descendants.length) return undefined;
+        node = descendants[step]!;
+    }
+    return node;
+}
+
 function readConcrete(documentPointer: number): Concrete {
     const viewOutput = allocate(Uint32Array.BYTES_PER_ELEMENT * 2);
     let lineOutput = 0;

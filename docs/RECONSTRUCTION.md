@@ -27,7 +27,7 @@ only as a record.
 | Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), **11b** (§4.14.11b), **11c** (§4.14.11c), **12.1** (§4.14.12a), **12.2's locator** (§4.14.12b), **`end-at-line-ending` CLOSED** (§4.14.11c2) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 13**, then `14 15C`. **STEP 12 IS LANDED WHOLE** (§4.14.12a–12c): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 and M33 both read 69/69 there and fail `conformance` — a region names its owner by a path that survives being copied, `markdown_core_document_region_owner_paths` answers for every region in **1.13 ms against the 96.8 ms the singular call costs in a loop**, and all three bindings return `Document` = `{semantic, concrete}` copied into value types. **The owner ruled twice here**: reading 1 over my recommendation (§4.14.12b), and then that the PAIR takes the name `Document` while the markup root becomes `DocumentRoot` — which is what C has always done. **`specs/positions/places.json` IS EMPTY** (§4.14.11c2). **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), **Step 9b** whole (§4.14.9b1–9b2) — the definition and both references are nodes, **D9 and D30 closed**, the **mdast backlog EMPTY** — **Step 11b** (§4.14.11b), which added L5 and L6 because L1–L4 are all true of the day before it, and **Step 11c** (§4.14.11c). Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 13**, then `14 15C`. **STEP 12 IS LANDED WHOLE** (§4.14.12a–12c): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 and M33 both read 69/69 there and fail `conformance` — a region names its owner by a path that survives being copied, `markdown_core_document_region_owner_paths` answers for every region in **1.13 ms against the 96.8 ms the singular call costs in a loop**, and all three bindings carry `concrete` and `parse` on `Document` itself. **The owner ruled the surface and I read it wrong twice**: the semver question killed my *reason*, not reading 2, and §4.14.12c records both misreadings. **`specs/positions/places.json` IS EMPTY** (§4.14.11c2). **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), **Step 9b** whole (§4.14.9b1–9b2) — the definition and both references are nodes, **D9 and D30 closed**, the **mdast backlog EMPTY** — **Step 11b** (§4.14.11b), which added L5 and L6 because L1–L4 are all true of the day before it, and **Step 11c** (§4.14.11c). Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -6510,45 +6510,44 @@ initializer in `core/main.c` that no preset did — `pnpm -w run lint`, `leaks
 --atExit` 0, and the Swift, Kotlin and ES suites green through the rename.
 
 
-#### 4.14.12c Step 12.2: the bindings, and the name `Document` goes where C always had it
+#### 4.14.12c Step 12.2: the bindings, and `Document` keeps its name because it keeps its meaning
 
-**Requirement 12 is complete.** All three bindings return two total views, both
-copied into value types, and each has a test that reads a region after the
-native handle is freed — the requirement's own sentence and the one part of it
-a C test cannot make.
+**Requirement 12 is complete.** All three bindings copy both views into value
+types, and each has a test that reads a region after the native handle is
+freed — the requirement's own sentence and the one part of it a C test cannot
+make.
 
-##### THE OWNER'S SECOND RULING: the pair is `Document`
+##### THE OWNER'S RULING, and what my two records got wrong about it
 
-§4.14.12b's ruling settled reading 1 and left one name to pick. My answer was
-`ParsedDocument`, on the ground that the markup root's model type must be
-spelled `Document` because `audit-ast-projections.mjs` requires each model to
-declare a type named for every contract kind. **The owner took the third option
-instead: the PAIR is `Document` and the ROOT is renamed.**
+§4.14.12b put two readings to the owner. §4.14.12c's first draft read the
+semver answer as *"take reading 1"*, coined `ParsedDocument`, and then — when
+that was questioned — offered three options **all of which were inside reading
+1**. The owner's answer was none of them:
 
-It is the better answer and C is the argument. `markdown_core_document` has
-always been the parse result; `markdown_core_document_semantic` returns a
-`markdown_core_node` whose KIND is `DOCUMENT`. The bindings had given the root
-the name C gives the pair, and 12.2 is where that shows.
-
-| | before | after |
-|---|---|---|
-| the parse result | *(no value existed)* | **`Document`** — `semantic`, `concrete`, `parse`, `ownerOf` |
-| the markup root | `Document` | **`DocumentRoot`** |
-
-**Everything else keeps saying `Document`,** and that is deliberate: the kind
-name, this repository's contract table, the dump string in every golden,
-`MARKDOWN_CORE_KIND_DOCUMENT`, `WireKind.DOCUMENT`, `"document"` in the ES wire,
-and every `visitDocument`. **One spelling moved, in one place**, so the
-projections audit carries ONE named mapping rather than a pattern:
-
-```js
-const MODEL_NAME = new Map([["Document", "DocumentRoot"]]);
+```swift
+public struct Document: Markup {
+    public let concrete: Concrete
+    public static func parse(...) throws -> Document
 ```
 
-Not a rule. A list of one, which a second entry would have to be added to
-deliberately. Three model projections and the two Swift surfaces that key on the
-parameter type read through it; the Kotlin and ES dumpers key on
-`visitDocument(` and did not move.
+**That is reading 2**, which §4.14.12b recommended and then abandoned. What the
+semver question actually killed was my REASON — *"it breaks every consumer"* is
+not an argument under a major version — and I read it as killing the reading.
+A cost argument being invalid does not decide a design; it only stops standing
+in for one.
+
+**The design argument, which neither record made, is that the document IS the
+semantic view.** There is one `Document`: the markup root, with `content` and
+`scope`, carrying `concrete` beside them and `parse` on it. No pair type, no
+`.semantic`, no second name, and **no consumer line that used to work stops
+working** — `Document.parse(src).content` is what it was in 1.0.
+
+**`document.semantic` from §4.1's row 12 does not exist, deliberately.** In C
+the two views are siblings because `markdown_core_document` is a HANDLE and the
+root is a node it lends out. In a binding the handle is gone by the time `parse`
+returns, the tree is a value, and there is nothing left for a sibling to hang
+off — so the view hangs off the root it names into. `markdown_core_document_semantic`
+stays as it is; the asymmetry is between a handle and a value, and it is real.
 
 ##### THE C FUNCTION 12.2 NEEDED, and the measurement that asked for it
 
@@ -6561,9 +6560,9 @@ scratch. That is §3's rule broken by a query.
 **The thread-safety contract decided the shape.** `markdown_core.h` promises
 that *"concurrent read-only access … to the same document from multiple threads
 is safe"*, and `facade_concurrent_stress` gates it — so a lazy cache on the
-document was out, and precomputing at finalize costs every consumer who never
-asks. What is left is a call that does the whole pass at once and keeps its
-memo on the STACK:
+document was out, and precomputing at finalize charges every consumer who never
+asks. What is left is a call that does the whole pass at once and keeps its memo
+on the STACK:
 
 ```c
 markdown_core_document_region_owner_paths(document, paths, paths_capacity,
@@ -6580,18 +6579,26 @@ call that refused.
 
 ##### The three mechanisms differ and the values do not
 
-| | how it crosses | what it costs |
+| | how it crosses | what the root costs |
 |---|---|---|
 | Swift | calls the C functions directly | `[UInt8]`, five `[Int32]` |
-| Kotlin | one wire payload, magic `MKC2` → **`MKC3`** | the concrete view appended after the tree |
+| Kotlin | one wire payload, magic `MKC2` → **`MKC3`** | the view appended after the tree |
 | ES | six new `es_*` accessors, each read in ONE crossing | `Uint8Array` + typed arrays |
+
+**A document node cannot be a child, and all three decoders now say so.** The
+root carries the concrete view, the view is read after the tree, and a node is
+built as it is read — so the root is built by `parse` (Swift, ES) or read by
+hand (Kotlin's `document()`), and the generic decoder's document arm is a
+`preconditionFailure` / `error` / `throw`. The arm stays because the projections
+audit requires every decoder surface to NAME every kind; what it names is now
+the impossibility.
 
 **The regions are COLUMNAR and a `Region` is built when it is asked for.**
 Measured density on real prose is **one region per 17 bytes** — `README.md`
 484/8633, `canonical-ast.md` 840/13294, this document 40252/673903 — so an
 object per region costs several times the source it describes, and the parallel
 arrays cost about 25 bytes each. The C surface chose index addressing first
-(`region_count` / `region_at`), and the bindings mirror it.
+(`region_count` / `region_at`) and the bindings mirror it.
 
 **`source` is BYTES** in all three, because region offsets index the normalized
 source and handing back a `String` invites indexing it — §0's trap that reports
@@ -6612,10 +6619,16 @@ with too**, so the two cannot disagree, and `Document.ownerOf` descends with it.
 | **M33** the memo returns its remembered index without advancing it | `conformance` fails on **"the one-pass paths are the same paths"** — and `correctness` reads **69/69**, because `facade_test` is not in that preset (§4.14.12a) |
 | **M34** Kotlin: a table's rows before its header | `ConcreteTest` — `Position(line=5, column=3)` expected, `line=7` got: the header cell's `a` resolved to the body row |
 | **M35** ES: the concrete view borrows WASM memory instead of copying it | the ES `concrete` suite, on re-reading after 300 further parses |
-| **M36** Swift: the same reversal | the Swift `concrete` suite, same witness |
-| **M37** ES: the same reversal | the ES `concrete` suite, same witness |
+| **M36** Swift, **M37** ES: the same reversal as M34 | each binding's `concrete` suite, same witness |
+| **M38** ES: the root is SPREAD into a new object before the view is attached | `document.dump is not a function` — a spread copies enumerable properties and `dump` is not one |
 
-**AND ONE MUTANT THAT KILLS NOTHING, which is worth more than the five.** The
+**M38 is a defect this step made and the tests caught**, not a hypothetical: the
+first cut of `withConcrete` did spread, and the ES suite failed on `dump` before
+the concrete assertions were ever reached. The fix is to define `concrete` and
+`ownerOf` ON the decoded root — `concrete` enumerable because it is data,
+`ownerOf` not, the way `dump` already is.
+
+**AND ONE MUTANT THAT KILLS NOTHING, which is worth more than the six.** The
 memo's backward-scan fallback — the arm that runs when the forward scan does not
 find the child — is **unreachable today**. Deleting the check that guards it
 leaves bulk and singular in agreement on **67797 regions across four
@@ -6627,12 +6640,13 @@ recorded here as dead so that nobody reads its survival as coverage.
 ##### Gates
 
 `correctness` 69/69, asan 60/60, ubsan 60/60, `conformance` 2/2, canonical-ast
-32 kinds / 62 fields, projections 32 over 12 surfaces, public surface, both fuzz
-oracles 300/300, upstream 888/888 with 10/10, mdast 110/110, scope-sanity 1,
-inline-sourcepos 40, containment 8, places 0, concrete records 277,
-reference-order 0, `lint-c`, `pnpm -w run lint`, `leaks --atExit` 0 on
-`facade_test`, and the binding suites: **ES 11 + 9**, **Swift 6 + 1 + 3**,
-**Kotlin 11 + 4**.
+32 kinds / 62 fields, projections 32 over 12 surfaces **with no exception added
+to it**, public surface, both fuzz oracles 300/300, upstream 888/888 with 10/10,
+mdast 110/110, scope-sanity 1, inline-sourcepos 40, containment 8, places 0,
+concrete records 277, reference-order 0, `lint-c`, `pnpm -w run lint`,
+`leaks --atExit` 0 on `facade_test`, and the binding suites: **ES 11 + 9**,
+**Swift 6 + 1 + 3**, **Kotlin 11 + 4**. No golden moved and no kind name
+changed.
 
 
 #### 4.14.12b Step 12.2 part one: the locator a value type can keep, and the API question it exposes
@@ -6729,8 +6743,8 @@ that reports false failures on `\u00a0`. `Concrete.source` is `Uint8Array`,
 
 ##### What 12 still owes, precisely
 
-**Paid in §4.14.12c.** The three bindings, each: `Document` (`semantic`,
-`concrete`) carrying `parse`, a `Concrete` value type (`source` as bytes,
+**Paid in §4.14.12c.** The three bindings, each: `concrete` and `parse` on
+`Document` itself, a `Concrete` value type (`source` as bytes,
 `lineCount`/`lineStart`, `regionCount`/`region(index)`), a `Region` value type
 (`start`, `length`, `role`, `owner` as the path), the copy at parse time, and a
 test that reads a region AFTER the native handle is freed. ES reads the wasm

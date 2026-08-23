@@ -8,15 +8,15 @@ import Testing
         #expect(options.tables && options.directives && options.formulas)
         let document = try Document.parse("# Heading\n")
         var visitor = KindVisitor()
-        #expect(document.semantic.content[0].accept(&visitor) == "heading:1")
+        #expect(document.content[0].accept(&visitor) == "heading:1")
         let table = try #require(
-            Document.parse("| a |\n| --- |\n| b |\n").semantic.content.first as? Table
+            Document.parse("| a |\n| --- |\n| b |\n").content.first as? Table
         )
         #expect(table.header.accept(&visitor) == "header")
         #expect(table.header.cells[0].accept(&visitor) == "cell")
         #expect(
             try Document.parse("| a |\n| --- |\n| b |\n", options: ParseOptions(tables: false))
-                .semantic.content.first is Paragraph
+                .content.first is Paragraph
         )
     }
 }
@@ -24,7 +24,7 @@ import Testing
 @Suite("unicode") struct UnicodeSuite {
     @Test("UTF-8 survives the C-to-Swift boundary")
     func unicode() throws {
-        let paragraph = try #require(Document.parse("héllo 🚀 中文\n").semantic.content.first as? Paragraph)
+        let paragraph = try #require(Document.parse("héllo 🚀 中文\n").content.first as? Paragraph)
         #expect((paragraph.content.first as? Text)?.literal == "héllo 🚀 中文")
     }
 }
@@ -32,19 +32,19 @@ import Testing
 @Suite("errors") struct ErrorsSuite {
     @Test("empty input maps to an empty document")
     func empty() throws {
-        #expect(try Document.parse("").semantic.content.isEmpty)
+        #expect(try Document.parse("").content.isEmpty)
     }
 }
 
 @Suite("ownership") struct OwnershipSuite {
     @Test("values remain usable and Sendable after native release")
     func copiedAndSendable() async throws {
-        requireSendable(DocumentRoot.self)
         requireSendable(Document.self)
+        requireSendable(Concrete.self)
         requireSendable(ParseOptions.self)
         let document = try Document.parse("parallel 🚀\n")
         let counts = await withTaskGroup(of: Int.self, returning: [Int].self) { group in
-            for _ in 0..<20 { group.addTask { document.semantic.content.count } }
+            for _ in 0..<20 { group.addTask { document.content.count } }
             return await group.reduce(into: []) { $0.append($1) }
         }
         #expect(counts == Array(repeating: 1, count: 20))
@@ -134,18 +134,18 @@ import Testing
     @Test("large and deeply nested inputs preserve complete value trees")
     func workloads() throws {
         let unit = "## Section\n\nParagraph with **strong**, [link](/), and 🚀.\n\n"
-        #expect(try Document.parse(String(repeating: unit, count: 5_000)).semantic.content.count == 10_000)
+        #expect(try Document.parse(String(repeating: unit, count: 5_000)).content.count == 10_000)
         var node = try #require(
-            Document.parse(String(repeating: "> ", count: 128) + "leaf\n").semantic.content.first
+            Document.parse(String(repeating: "> ", count: 128) + "leaf\n").content.first
         )
         for _ in 0..<128 { node = try #require((node as? BlockQuote)?.content.first) }
         #expect(node is Paragraph)
-        for _ in 0..<2_000 { #expect(try Document.parse("# Copy\n\n- [x] item\n").semantic.content.count == 2) }
+        for _ in 0..<2_000 { #expect(try Document.parse("# Copy\n\n- [x] item\n").content.count == 2) }
     }
 }
 
 private struct KindVisitor: MarkupVisitor {
-    mutating func visit(_ node: DocumentRoot) -> String { kindName(node) }
+    mutating func visit(_ node: Document) -> String { kindName(node) }
     mutating func visit(_ node: BlockQuote) -> String { kindName(node) }
     mutating func visit(_ node: Paragraph) -> String { kindName(node) }
     mutating func visit(_ node: Heading) -> String { "heading:\(node.level)" }

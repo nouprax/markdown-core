@@ -46,7 +46,7 @@ private struct DumpRecord {
 }
 
 private struct DumpVisitor: MarkupVisitor {
-    mutating func visit(_ node: DocumentRoot) -> DumpRecord {
+    mutating func visit(_ node: Document) -> DumpRecord {
         record("Document", node, children: node.content.count)
     }
 

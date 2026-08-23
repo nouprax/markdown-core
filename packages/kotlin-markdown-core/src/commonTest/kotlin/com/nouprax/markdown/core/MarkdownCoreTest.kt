@@ -19,25 +19,25 @@ class ApiTest {
         assertIs<Table>(
             Document
                 .parse(markdown)
-                .semantic.content
+                .content
                 .first(),
         )
         assertIs<Paragraph>(
             Document
                 .parse(markdown, ParseOptions(tables = false))
-                .semantic.content
+                .content
                 .first(),
         )
     }
 
     @Test
     fun visitorAndWalkerAreTypedAndDepthFirst() {
-        val document = Document.parse("# Heading\n\nBody\n").semantic
+        val document = Document.parse("# Heading\n\nBody\n")
         val visitor = KindVisitor()
         assertEquals("heading:1", document.content.first().accept(visitor))
         val recordingVisitor = RecordingVisitor()
         Walker.walk(document, recordingVisitor)
-        assertEquals("DocumentRoot", recordingVisitor.visited.first())
+        assertEquals("Document", recordingVisitor.visited.first())
         assertTrue("Heading" in recordingVisitor.visited && "Text" in recordingVisitor.visited)
     }
 }
@@ -45,7 +45,7 @@ class ApiTest {
 class UnicodeTest {
     @Test
     fun standardUtf8SurvivesTheNativeBoundary() {
-        val document = Document.parse("héllo 🚀 中文\n").semantic
+        val document = Document.parse("héllo 🚀 中文\n")
         val paragraph = assertIs<Paragraph>(document.content.first())
         assertEquals("héllo 🚀 中文", assertIs<Text>(paragraph.content.first()).literal)
     }
@@ -57,7 +57,7 @@ class ErrorsTest {
         assertTrue(
             Document
                 .parse("")
-                .semantic.content
+                .content
                 .isEmpty(),
         )
     }
@@ -73,14 +73,14 @@ class ErrorsTest {
 class OwnershipTest {
     @Test
     fun returnedTreesOutliveEveryNativeDocument() {
-        val documents = kotlin.collections.List(300) { Document.parse("# Copy\n\n- [x] item\n").semantic }
+        val documents = kotlin.collections.List(300) { Document.parse("# Copy\n\n- [x] item\n") }
         assertTrue(documents.all { it.content.size == 2 })
         assertEquals(1, assertIs<Heading>(documents.last().content.first()).level)
     }
 
     @Test
     fun readOnlyCollectionsDoNotLeakMutableImplementations() {
-        val content = Document.parse("one *two* three\n").semantic.content
+        val content = Document.parse("one *two* three\n").content
         assertFailsWith<ClassCastException> {
             @Suppress("UNCHECKED_CAST")
             (content as MutableList<Markup>).clear()
@@ -92,7 +92,7 @@ class RobustnessTest {
     @Test
     fun largeDocumentsCopyCompletelyBeforeNativeRelease() {
         val unit = "## Section\n\nParagraph with **strong**, [link](https://example.com), and 🚀.\n\n"
-        val document = Document.parse(unit.repeat(5_000)).semantic
+        val document = Document.parse(unit.repeat(5_000))
         assertEquals(10_000, document.content.size)
     }
 
@@ -102,7 +102,7 @@ class RobustnessTest {
         var node: Markup =
             Document
                 .parse("> ".repeat(depth) + "leaf\n")
-                .semantic.content
+                .content
                 .single()
         repeat(depth) {
             val quote = assertIs<BlockQuote>(node)
@@ -118,7 +118,7 @@ class RobustnessTest {
                 2,
                 Document
                     .parse("# Copy\n\n- [x] item 🚀\n")
-                    .semantic.content.size,
+                    .content.size,
             )
         }
     }
@@ -151,8 +151,8 @@ class ConcreteTest {
                 "see [a].",
                 "",
             ).joinToString("\n")
-        val parsed = Document.parse(source)
-        val concrete = parsed.concrete
+        val document = Document.parse(source)
+        val concrete = document.concrete
         assertContentEquals(source.encodeToByteArray(), concrete.source)
         assertEquals(15, concrete.lineCount)
         assertEquals(0, concrete.lineStart(1))
@@ -168,7 +168,7 @@ class ConcreteTest {
             assertEquals(covered, region.start)
             assertTrue(region.length > 0)
             covered += region.length
-            assertTrue(parsed.ownerOf(region) != null)
+            assertTrue(document.ownerOf(region) != null)
             if (region.role == RegionRole.MARKER) markers += 1
         }
         // The heading's closing `##`, the table's pipes and the definition's
@@ -176,15 +176,15 @@ class ConcreteTest {
         // line above says every byte of them is in a region here.
         assertEquals(concrete.source.size, covered)
         assertTrue(markers > 0)
-        assertEquals(null, parsed.ownerOf(Region(0, 1, RegionRole.CONTENT, listOf(99))))
+        assertEquals(null, document.ownerOf(Region(0, 1, RegionRole.CONTENT, listOf(99))))
 
         // THE DESCENT IS THE C CHILD ORDER, not the value tree's named fields.
         // A table holds its header BEFORE its rows, so byte 42 -- the `a` of
         // the header row -- has to land on line 5 and not on line 7; a
         // directive holds its LABEL before its content, so byte 106 -- the `B`
         // of `Body` -- has to land on line 10 and not inside the label on 9.
-        assertEquals(Position(5, 3), parsed.ownerAt(42).scope.start)
-        assertEquals(Position(10, 1), parsed.ownerAt(106).scope.start)
+        assertEquals(Position(5, 3), document.ownerAt(42).scope.start)
+        assertEquals(Position(10, 1), document.ownerAt(106).scope.start)
 
         // Nothing native is left: 300 more parses cannot move what was copied.
         repeat(300) { Document.parse("# copy\n") }

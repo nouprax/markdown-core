@@ -17,12 +17,24 @@ internal object WireDecoder {
             1 -> throw reader.error()
             else -> error("unsupported native bridge status")
         }
-        val root = reader.markup()
-        require(root is DocumentRoot) { "native bridge returned an invalid document tree" }
-        val concrete = reader.concrete()
-        require(reader.finished) { "native bridge returned a truncated payload" }
-        return Document(root, concrete)
+        return reader.document()
     }
+}
+
+/**
+ * THE ROOT IS READ BY HAND, and it is the only node that is.
+ *
+ * A document carries the concrete view, the wire writes that view AFTER the
+ * tree, and a node is built as it is read -- so the root's own fields are read
+ * here, the view after them, and the document constructed from both.
+ */
+private fun WireReader.document(): Document {
+    require(kind() == WireKind.DOCUMENT) { "native bridge returned an invalid document tree" }
+    val rootScope = scope()
+    val content = markupList()
+    val concrete = concrete()
+    require(finished) { "native bridge returned a truncated payload" }
+    return Document(content, rootScope, concrete)
 }
 
 /**
