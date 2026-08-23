@@ -822,3 +822,26 @@ Document scope=1:1..4:1 children=4
 └── Paragraph scope=4:1..4:1 children=1
     └── Text scope=4:1..4:1 literal="x" children=0
 ````````````````````````````````
+
+A LABEL DEFINED TWICE. The first definition wins the label and the second one
+resolves nothing — and both are nodes that own their own bytes, which is
+requirement 11c's second sentence. Upstream keeps neither: it consumes both
+into a map and frees the paragraph they were written in.
+`audit-concrete-records.mjs`'s L5 is what says they own them, and it covers
+`ReferenceDefinition` and `FootnoteDefinition` for exactly this reason — no
+other block kind is checked there, because a container block's bytes are its
+children's by construction.
+
+```````````````````````````````` example
+[a]: /1
+[a]: /2
+
+[a]
+.
+Document scope=1:1..4:3 children=3
+├── ReferenceDefinition scope=1:1..1:7 label="a" identifier="a" destination="/1" title=null children=0
+├── ReferenceDefinition scope=2:1..2:7 label="a" identifier="a" destination="/2" title=null children=0
+└── Paragraph scope=4:1..4:3 children=1
+    └── LinkReference scope=4:1..4:3 label="a" identifier="a" form=shortcut children=1
+        └── Text scope=4:2..4:2 literal="a" children=0
+````````````````````````````````

@@ -291,7 +291,15 @@ function checkInlineCoverage({ source, lineStarts, regions, nodes }) {
         owned.set(region.path, run);
     }
     for (const node of nodes) {
-        if (BLOCK_KINDS.has(node.kind)) continue;
+        // The two DEFINITION kinds are checked here too, and that is
+        // requirement 11c's claim: a reference definition and a footnote
+        // definition OWN THEIR SOURCE BYTES, so the partition is total for a
+        // definition-bearing document and a definition that lost a
+        // duplicate-label contest keeps its bytes like any other. No other
+        // block kind is: L5 is about what a node's own bytes are, and a
+        // container block's bytes are its children's by construction.
+        if (BLOCK_KINDS.has(node.kind) && node.kind !== "reference_definition" && node.kind !== "footnote_definition")
+            continue;
         const start = offsetOf(lineStarts, node.scope[0], source);
         const end = offsetOf(lineStarts, node.scope[1], source);
         if (start === null || end === null || end < start) {
@@ -315,6 +323,7 @@ function checkInlineCoverage({ source, lineStarts, regions, nodes }) {
             if (to > at) at = to;
         }
         coveredNodes += 1;
+        if (node.kind === "reference_definition" || node.kind === "footnote_definition") coveredDefinitions += 1;
         // The scope's end names the LAST BYTE, and a node whose last byte is a
         // line ending owns one more than `end - start + 1`.
         if (gap || at < end + 1) {
@@ -347,6 +356,7 @@ function checkInlineCoverage({ source, lineStarts, regions, nodes }) {
 let compared = 0;
 let offered = 0;
 let coveredNodes = 0;
+let coveredDefinitions = 0;
 let skippedNodes = 0;
 
 /* The two halves of L4 are checked over different byte sets, so the check needs
@@ -500,8 +510,9 @@ if (verbose)
 
 process.stdout.write(
     `  ${String(regionCount)} regions over ${String(scanned)} examples; L4 checked over ${String(prefixes)} ` +
-        `line-boundary prefixes; L5 over ${String(coveredNodes)} inline nodes (${String(skippedNodes)} skipped: ` +
-        `their scope is not a place). BLOCK attribution over all ${String(offered)} bytes, the INLINE refinement over ` +
+        `line-boundary prefixes; L5 over ${String(coveredNodes)} nodes, ${String(coveredDefinitions)} of them a ` +
+        `definition that must own its own bytes (${String(skippedNodes)} skipped: their scope is not a place). ` +
+        `BLOCK attribution over all ${String(offered)} bytes, the INLINE refinement over ` +
         `${String(compared)} of them ` +
         `(${String(Math.round((100 * compared) / Math.max(1, offered)))}%; the rest are in the block the prefix left open).\n`
 );

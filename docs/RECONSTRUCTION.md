@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), **11b** (§4.14.11b) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), **11b** (§4.14.11b), **11c** (§4.14.11c) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 11c** — a reference definition and a footnote definition own their source bytes so the block partition is total, plus the three causes §4.14.11b hands it and the `end-at-line-ending` family §4.14.9b3 hands it. Then `12 13 14 15C`. **Step 9b is LANDED whole** (§4.14.9b1–9b2): the definition and both references are nodes, five kinds carry an association, **D9 and D30 are closed**, the **mdast backlog is EMPTY**, and `fuzz-parity --oracle mdast` — one of §0's six known-red checks — is green. **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), Step 9b (§4.14.9b1–9b2), **Step 11b** (§4.14.11b) — which added TWO laws, L5 and L6, because L1–L4 are all true of the day before it. Remaining: `11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 12** — one parse under two total views, `document.semantic` and `document.concrete`, and the law that binds them. Then `13 14 15C`. **Step 9b is LANDED whole** (§4.14.9b1–9b2): the definition and both references are nodes, five kinds carry an association, **D9 and D30 are closed**, the **mdast backlog is EMPTY**, and `fuzz-parity --oracle mdast` — one of §0's six known-red checks — is green. **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), Step 9b (§4.14.9b1–9b2), **Step 11b** (§4.14.11b) — which added TWO laws, L5 and L6, because L1–L4 are all true of the day before it — and **Step 11c** (§4.14.11c), whose engine change is NOTHING because 9b.1 had already made its requirement true; what it adds is the gate that would notice if it stopped. **11c also inherits four families** and they are named in its record. Remaining: `12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -65,7 +65,7 @@ node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/audit-source-lists.mjs              # 22 sources, 4 of 5 lists, 1 registered absent
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # 300/300 SINCE 9b.2
-node scripts/check-upstream-parity.mjs     # 887/887 vs cmark-gfm 0.29.0.gfm.13, 10/10
+node scripts/check-upstream-parity.mjs     # 888/888 vs cmark-gfm 0.29.0.gfm.13, 10/10
                                           # divergences, 4/4 projections acted
 node scripts/check-mdast-parity.mjs        # 110/110, backlog EMPTY since 9b.2
 node scripts/audit-scope-sanity.mjs        # 1 unresolved row, 5453 scanned, only-shrink holds
@@ -82,7 +82,7 @@ node scripts/audit-position-places.mjs     # 57 rows registered, 4446 scanned
 # Requirement 11a's four laws over the concrete record set, landed at 11a
 # (§4.14.11a). L1 and L3 have no rows and hold by construction; L4 is checked
 # by re-parsing every line-boundary prefix.
-node scripts/audit-concrete-records.mjs   # 267 rows registered, 5845 regions
+node scripts/audit-concrete-records.mjs   # 267 rows registered, 5852 regions
 
 # D9's pin. It was REGISTERED RED from 0a.8 to 9b.2 and is now GREEN with an
 # EMPTY ledger -- still fail-closed, so a row appearing fails the run. Deleting
@@ -6386,6 +6386,55 @@ reference-order 0, `pnpm -w run lint`, `leaks --atExit` 0, and the Swift, Kotlin
 and ES suites green.
 
 
+#### 4.14.11c Step 11c: the requirement was already true, and now something says so
+
+**A step whose engine change is nothing, and that is the finding.** 11c's row
+reads: *"A reference definition and a footnote definition own their source
+bytes, so the block partition is total for real documents. A definition that
+lost a duplicate-label contest keeps its bytes."* **Step 9b.1 made all of it
+true** — the definition became a node at the byte where its `[` was written,
+owning every byte it read, and a definition that loses a label is a node like
+any other because nothing picks a winner at parse time (§4.14.9a2). What was
+missing was not the behaviour. It was anything that would notice if it stopped.
+
+**So 11c is the gate, and it is L5 with two block kinds added.** L5 says an
+inline node's scope is exactly the bytes it and its descendants own; applied to
+`ReferenceDefinition` and `FootnoteDefinition` it says exactly 11c's sentence.
+**115 definition nodes across the corpus, 0 rows.** No other block kind is
+checked there, and the reason is stated in the code: a container block's bytes
+are its children's by construction, and the wide form of that clause reported 78
+`table_row` rows at 11a saying nothing.
+
+**One fixture, for the second sentence.** `[a]: /1⏎[a]: /2⏎⏎[a]` — the first
+definition wins the label, the second resolves nothing, and both are nodes that
+own their own bytes. Upstream keeps neither.
+
+**Mutant M29**: only the first definition of a run becomes a node.
+`spec_commonmark` and `regression_commonmark` red, and **19 concrete rows
+appear**.
+
+##### What 11c carries forward, and it is not this requirement
+
+Four families are now owned by 11c and none of them is the sentence above. They
+are recorded where they were measured rather than restated here:
+
+| family | rows | measured in |
+|---|---|---|
+| `end-at-line-ending` — a block ends at the last byte it took and owns no region after it | 57 (`places`) | §4.14.9b3, twice, with the numbers of four attempts |
+| `inline-scope-not-covered` and `inline-role-repaired-to-content` — the table row's MARKER line, the autolinker's postprocess, a text run's rtrimmed tail | 287 + 45 | §4.14.11b |
+| `split-off-table-lead-content` | 3 | 11a |
+| `html-block-end-before-its-content`, `indent-after-container-closed`, `thematic-break-line-ending`, `atx-closing-sequence` | 26 | 11a, unassigned until now |
+
+##### Gates
+
+`correctness` 69/69 (the new fixture takes `regression.txt` to its own count),
+asan 60/60, ubsan 60/60, `conformance` 2/2, canonical-ast 32 kinds / 62 fields,
+projections 32 over 12 surfaces, both fuzz oracles 300/300, upstream **888/888**
+with 10/10 and 4/4, mdast 110/110 with an empty backlog, scope-sanity 1,
+inline-sourcepos 40, containment 9, places 57, concrete records 267,
+reference-order 0, formatters and linters clean.
+
+
 #### 4.14.11a2 Q44 answered: an autocompleted table cell sits where it was completed
 
 **Owner ruling, 2026-08-23, and it supplied the criterion the question was
@@ -7048,7 +7097,7 @@ following, together:
 **Deliverables**
 - [x] **Directive grammar conformance (Step 7) — deliverable #1. LANDED**, §4.14.7a–e. Nothing carried: **D36** closed at 7e and **Q43** answered with it.
 - [x] **The formula fix (Step 6) — deliverable #2. LANDED, §4.14.6.**
-- [ ] CST concrete records (11a, 11b, 11c) and diagnostics (13) — deliverable #3. **11a and 11b are LANDED** (§4.14.11a, §4.14.11b); 11c and 13 are not
+- [ ] CST concrete records (11a, 11b, 11c) and diagnostics (13) — deliverable #3. **11a, 11b and 11c are LANDED** (§4.14.11a, §4.14.11b, §4.14.11c); 13 is not
 - [x] The reference model (9a, 9b) and the positions that depend on it — **10, 9a and 9b are all LANDED** (§4.14.10, §4.14.9a1–9a2, §4.14.9b1–9b2)
 - [ ] The facade and its single ABI break window (12), the null/empty rule (14)
 - [ ] Bindings, specs and docs regenerated (15)
