@@ -27,7 +27,7 @@ only as a record.
 | Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a), **8.1 – 8.2** (§4.14.8a–8b) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 9b** — one reference model: `LinkReference`, `ImageReference`, `ReferenceDefinition`, the association, and D9's budget deleted with the destination copy. **Step 8 is done** (§4.14.8a–8b): an inline position is a projection of the byte range it covers, the four counters are gone, and Step 8 owes only **Q45** (does a code span cover its own backticks — built, measured, not taken). Remaining: `9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog | **Step 10 is done** (§4.14.10): the content-to-source map exists, five consumers read it, and the mdast backlog is down to Step 9b's six. It carries **Q44** — an autocompleted table cell has no source bytes and no coordinate pair can say so — owned by 11a. Remaining: `9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 9b.1** — `ReferenceDefinition` as a node; then 9b.2's `LinkReference`/`ImageReference` and D9. **§4.14.9b0 scopes both before either starts**: a node kind is forty-five files, the upstream gate is already written for the post-9b world, and there is no free core block type value below the extension range. **Step 8 is done** (§4.14.8a–8b): an inline position is a projection of the byte range it covers, the four counters are gone, and Step 8 owes only **Q45** (does a code span cover its own backticks — built, measured, not taken). Remaining: `9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog | **Step 10 is done** (§4.14.10): the content-to-source map exists, five consumers read it, and the mdast backlog is down to Step 9b's six. It carries **Q44** — an autocompleted table cell has no source bytes and no coordinate pair can say so — owned by 11a. Remaining: `9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -5559,6 +5559,60 @@ containment row.
 asan 60/60, ubsan 60/60, conformance 2/2, upstream 885/885 with 10/10, mdast
 110/110 with a 5/5 backlog, fuzz 300/300, scope-sanity 1, inline-sourcepos 9,
 containment 31, places 79, concrete records 45, reference-order 2.
+
+
+#### 4.14.9b0 What Step 9b actually costs, measured before it was started
+
+**Scoped, not landed.** This is here because §0 says everything needed to pick
+the work up cold lives in this file, and because the shape of 9b is not what
+its requirement row implies.
+
+**Three node kinds, and a node kind is forty-five files.** Counted by naming
+one that already exists: `FootnoteDefinition` appears in **45 files** across C,
+Kotlin, ES and Swift — the type enum, the facade kind enum, the C dump, the
+wire kind enum and decoder in two languages, four dumpers, four visitors, four
+models, the TypeScript `dist/*.d.ts` that ship beside the sources, the canonical
+manifest, the contract JSON, the contract prose and the dump grammar. Standing
+rule 4 requires all of them in ONE commit with the regenerated `.ast` goldens.
+`scripts/audit-ast-projections.mjs` checks **twelve** of those surfaces by name,
+which is what makes the count trustworthy rather than a guess.
+
+**So 9b splits in two, and each half is a standing-rule-4 commit on its own:**
+
+- **9b.1 — the definition is a node.** One new kind, `ReferenceDefinition`,
+  carrying `label`, `destination` and `title`. References still resolve to
+  `Link`/`Image` with the destination copied in, so nothing else moves. This is
+  also what closes **11c's** half and **the whole of L4's exception in
+  `specs/concrete/records.json`** — the eleven rows there are one fact, that a
+  paragraph holding only definitions is destroyed, and a definition that owns
+  its own bytes is never destroyed.
+- **9b.2 — the reference is a node.** `LinkReference` and `ImageReference`
+  carrying the association and the form, no destination; the map loses its
+  resources; **D9's budget has nothing left to charge and is deleted**, which is
+  the whole of D9's fix and the reason §4.14.9a2 re-attributed it here.
+
+**Three things are already in the tree and were not obvious.**
+
+1. `scripts/lib/upstream-cmark.mjs` already carries
+   `applyUpstreamReferenceModel`, which collects `ReferenceDefinition` nodes,
+   drops them, and resolves `LinkReference`/`ImageReference` against them before
+   comparing. **The upstream gate is already written for the post-9b world** —
+   era skew from Step 0's `scripts/` restore, in this repository's favour for
+   once. The delta `reference-definition-node` is registered and describes the
+   target state in the present tense.
+2. It also fixes the **vocabulary**: `ReferenceDefinition` has `label`,
+   `destination` and `title`; a reference has `label`. Q5's rename of the
+   footnote `id=` to `label=` belongs with it.
+3. **There is no free core BLOCK type value below the extension range.** Core
+   runs to `0x000a` and `table`/`formula`/`directive` occupy `0x000b`–`0x000f`,
+   so a new core block kind takes `0x0010`. The internal type value is NOT the
+   wire ordinal — `WireKind` numbers the FACADE's kinds — so the gap costs
+   nothing but must be written down, because the natural assumption is that the
+   next value is free.
+
+**What 9b does NOT need.** No concrete record work: every byte it stores is
+available at parse time, which is §4.1.4's struck `9b → 11a` arrow, and it still
+holds. Its dependencies — 9a and 10 — are landed.
 
 ---
 
