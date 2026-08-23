@@ -63,7 +63,8 @@ node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/audit-source-lists.mjs              # 22 sources, 4 of 5 lists, 1 registered absent
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
 node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # KNOWN-RED, see below
-node scripts/check-upstream-parity.mjs     # 882/882 vs cmark-gfm 0.29.0.gfm.13, 7/7 divergences
+node scripts/check-upstream-parity.mjs     # 885/885 vs cmark-gfm 0.29.0.gfm.13, 10/10
+                                          # divergences, 3/3 projections acted, 1 pending
 node scripts/check-mdast-parity.mjs        # 110/110, backlog 7/7 still diverging
 node scripts/audit-scope-sanity.mjs        # 4 unresolved rows, 5301 scanned, only-shrink holds
 
@@ -5223,6 +5224,30 @@ that owes the activation. Verified by putting the entry back into
 `PENDING divergence ... has started reproducing, so the step that creates it has
 landed: Step 10`. The duplicate is deleted, the original entry is activated
 under its own id, and its `landed` note records what happened.
+
+**THE CLEAN-UP, and what it found on the other side of the registry.** Merging
+the duplicate back was the small half. The registry's PROJECTED entries were
+held to no rule at all — an input-keyed divergence has to still reproduce, but a
+projection could describe a difference this engine does not have and nothing
+would notice. **`reference-definition-node` was doing exactly that**: registered
+in `deltas`, implemented by `applyUpstreamReferenceModel`, and acting on **0 of
+885 corpus examples**, because this engine produces no `ReferenceDefinition`,
+`LinkReference` or `ImageReference` yet. It was describing **Step 9b's model as
+though it had landed.** It is in `pendingDeltas` now, marked `projected` and
+naming Step 9b, and the gate holds both halves to the same rule:
+
+- an ACTIVE projection that acts on no corpus input fails — *a projection that
+  never acts describes a difference this engine does not have*;
+- a PENDING projection that starts acting fails, naming the step that owes the
+  activation, exactly as a pending input does.
+
+`own-extensions` is the one exemption and it is stated in the code: it is not a
+tree rewrite but the **corpus profile** — the extension fixtures run under
+`--profile gfm` so the comparison is of one language — so there is nothing for a
+normalizer to report. The gate prints `registered projections: 3/3 acted, 1
+pending` on every run, so a projection going quiet is visible rather than
+assumed. Both checks were proved by mutant: putting the inert entry back into
+`deltas` fails, and stopping a live projection from reporting fails.
 
 **`scripts/fuzz-parity.mjs` needed a fragment exclusion, and its comment was
 already carrying two defects.** The upstream oracle's `excludeFragments` gains

@@ -104,15 +104,29 @@ function corpus() {
     });
 }
 
+/* Which projections actually acted, accumulated over the whole corpus. A
+ * projected delta that never acts asserts nothing, which is the same hole the
+ * input-keyed half closed years ago by requiring every registered input to
+ * still reproduce. */
+const fired = new Set();
+
 function compare(input, profile = "gfm", flags = []) {
-    const upstreamTree = liftFootnoteDefinitions(normalize(parseUpstreamXml(runUpstream(input, flags)), "upstream"));
+    const upstreamTree = liftFootnoteDefinitions(
+        normalize(parseUpstreamXml(runUpstream(input, flags)), "upstream", fired),
+        fired
+    );
     // `footnote-resolution-model` is applied before `normalize`, which keeps
     // only the compared fields and so drops the labels the model reads.
     const ourTree = liftFootnoteDefinitions(
         normalize(
-            applyUpstreamReferenceModel(applyUpstreamFootnoteModel(parseCanonicalDump(runOurs(input, profile)))),
-            "ours"
-        )
+            applyUpstreamReferenceModel(
+                applyUpstreamFootnoteModel(parseCanonicalDump(runOurs(input, profile)), fired),
+                fired
+            ),
+            "ours",
+            fired
+        ),
+        fired
     );
     const unmapped = new Set([...unknownKinds(upstreamTree), ...unknownKinds(ourTree)]);
     return { upstream: render(upstreamTree), ours: render(ourTree), unmapped };
@@ -139,6 +153,12 @@ const NORMALIZED_DELTAS = new Set([
     "reference-definition-node",
     "empty-text-node"
 ]);
+/* `own-extensions` is the one projection that is not a tree rewrite: it is the
+ * CORPUS PROFILE. The extension fixtures run under `--profile gfm`, which
+ * detaches this repository's own two extensions so the comparison is of one
+ * language, and there is nothing for a normalizer to report. Every other
+ * projection acts on a tree and says so. */
+const UNTRACKED_PROJECTIONS = new Set(["own-extensions"]);
 for (const delta of policy.deltas) {
     if (!NORMALIZED_DELTAS.has(delta.id) && !(policy.expectedDivergences ?? []).some((e) => e.id === delta.id)) {
         process.stderr.write(
@@ -208,6 +228,43 @@ process.stdout.write(`  registered deltas: ${policy.deltas.map((d) => d.id).join
 process.stdout.write(
     `  registered divergences: ${String(reproduced.size)}/${String(expected.size)} inputs reproduced\n`
 );
+
+/* The projected half of the registry, held to the same rule as the keyed half.
+ * A projection that never acts over the whole corpus is describing a difference
+ * this engine does not have -- which is what `reference-definition-node` was
+ * doing: registered as though Step 9b had landed, acting on nothing, and
+ * excusing a comparison nobody was making. It is in `pendingDeltas` now, and a
+ * pending projection that STARTS acting fails below for the same reason a
+ * pending input that starts diverging does. */
+if (corpusOverride < 0 && limit === Infinity) {
+    const pendingIds = new Set((policy.pendingDeltas ?? []).map((delta) => delta.id));
+    const tracked = [...NORMALIZED_DELTAS].filter((id) => !UNTRACKED_PROJECTIONS.has(id) && !pendingIds.has(id));
+    const silent = tracked.filter((id) => !fired.has(id));
+    const pendingProjections = (policy.pendingDeltas ?? []).filter((delta) => delta.projected);
+    const acting = pendingProjections.filter((delta) => fired.has(delta.id));
+    process.stdout.write(
+        `  registered projections: ${String(tracked.length - silent.length)}/${String(tracked.length)} acted` +
+            `${pendingProjections.length ? `, ${String(pendingProjections.length)} pending` : ""}\n`
+    );
+    if (silent.length > 0) {
+        process.stderr.write(
+            `\nupstream parity FAILED: projected delta(s) ${silent.join(", ")} acted on no corpus input.\n` +
+                "A projection that never acts describes a difference this engine does not have.\n" +
+                "Move it to `pendingDeltas` with a `pendingStep`, or retire it.\n"
+        );
+        process.exit(1);
+    }
+    if (acting.length > 0) {
+        for (const delta of acting) {
+            process.stderr.write(
+                `\nupstream parity FAILED: PENDING projection \`${delta.id}\` has started acting, so the step\n` +
+                    `that creates it has landed: ${delta.pendingStep ?? "step unnamed"}.\n` +
+                    "Move it from `pendingDeltas` into `deltas` in that step's commit.\n"
+            );
+        }
+        process.exit(1);
+    }
+}
 
 if (unmappedKinds.size) {
     // Two unmapped kinds render alike and would compare equal, so this reads as

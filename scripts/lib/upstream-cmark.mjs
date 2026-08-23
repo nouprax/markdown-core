@@ -145,10 +145,10 @@ export function parseCanonicalDump(dump) {
     return root;
 }
 
-export function normalize(node, side) {
+export function normalize(node, side, fired) {
     const children = [];
     for (const child of node.children) {
-        const normalized = normalize(child, side);
+        const normalized = normalize(child, side, fired);
         const previous = children[children.length - 1];
         // The two parsers split runs of text at different points around
         // entities, escapes, and extension boundaries. The character content
@@ -170,6 +170,7 @@ export function normalize(node, side) {
     // corpus grew. Dropped after the run-joining above, so a merged run that
     // came out empty goes too.
     const kept = children.filter((child) => !(child.kind === "Text" && child.fields.literal === ""));
+    if (kept.length !== children.length) fired?.add("empty-text-node");
     children.length = 0;
     children.push(...kept);
     const fields = {};
@@ -200,7 +201,7 @@ export function normalize(node, side) {
  * lifted out and re-attached in one deterministic order, which compares their
  * *content* while deliberately not comparing their position.
  */
-export function liftFootnoteDefinitions(root) {
+export function liftFootnoteDefinitions(root, fired) {
     const definitions = [];
     const strip = (node) => {
         node.children = node.children.filter((child) => {
@@ -217,6 +218,7 @@ export function liftFootnoteDefinitions(root) {
     for (const definition of definitions) strip(definition);
     definitions.sort((left, right) => (render(left) < render(right) ? -1 : 1));
     root.children.push(...definitions);
+    if (definitions.length > 0) fired?.add("footnote-definition-placement");
     return root;
 }
 
@@ -233,7 +235,7 @@ export function liftFootnoteDefinitions(root) {
  * side so the gate compares the resolved language rather than two
  * representations of retention.
  */
-export function applyUpstreamFootnoteModel(root) {
+export function applyUpstreamFootnoteModel(root, fired) {
     // cmark matches footnote labels through the reference map's normalization:
     // case-folded with whitespace runs collapsed.
     const fold = (label) => label.trim().replace(/\s+/g, " ").toLowerCase();
@@ -245,9 +247,11 @@ export function applyUpstreamFootnoteModel(root) {
     survey(root);
 
     const rewrite = (node) => {
+        const before = node.children.length;
         node.children = node.children.filter(
             (child) => !(child.kind === "FootnoteDefinition" && !referenced.has(fold(child.fields.id ?? "")))
         );
+        if (node.children.length !== before) fired?.add("footnote-resolution-model");
         for (const child of node.children) rewrite(child);
         return node;
     };
@@ -266,11 +270,12 @@ export function applyUpstreamFootnoteModel(root) {
  * document's own definitions, so a reference that resolved to the wrong
  * destination, or to none, still shows up as a difference.
  */
-export function applyUpstreamReferenceModel(root) {
+export function applyUpstreamReferenceModel(root, fired) {
     const fold = (label) => label.trim().replace(/\s+/g, " ").toLowerCase();
     const definitions = new Map();
     const survey = (node) => {
         if (node.kind === "ReferenceDefinition") {
+            fired?.add("reference-definition-node");
             const key = fold(node.fields.label ?? "");
             // The earliest definition of a label wins, in both models.
             if (!definitions.has(key)) definitions.set(key, node.fields);
@@ -284,6 +289,7 @@ export function applyUpstreamReferenceModel(root) {
             .filter((child) => child.kind !== "ReferenceDefinition")
             .map((child) => {
                 if (child.kind === "LinkReference" || child.kind === "ImageReference") {
+                    fired?.add("reference-definition-node");
                     const found = definitions.get(fold(child.fields.label ?? ""));
                     rewrite(child);
                     return {
