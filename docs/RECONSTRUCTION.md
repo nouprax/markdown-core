@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 11a** — the concrete record set, and the fourth law §11.5/11.7 owes it. **Step 9a is done** (§4.14.9a1–9a2): the anchor rule, definition retention, the post-pass deleted, the call rule gated on definedness, and the mdast backlog down to Step 9b's five. It carries **D9 re-attributed to 9b** with the reasoning measured, and **D30** unchanged. Remaining: `11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog | **Step 10 is done** (§4.14.10): the content-to-source map exists, five consumers read it, and the mdast backlog is down to Step 9b's six. It carries **Q44** — an autocompleted table cell has no source bytes and no coordinate pair can say so — owned by 11a. Remaining: `9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 8** — the inline position model. **Step 11a is done** (§4.14.11a): the concrete record set, the normalized source and its line index, and **the fourth law the owner added** — the records are complete for lines 1…N once line N has been fed, checked over 1,200 line-boundary prefixes. L1 and L3 have no rows at all. Remaining: `8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog | **Step 10 is done** (§4.14.10): the content-to-source map exists, five consumers read it, and the mdast backlog is down to Step 9b's six. It carries **Q44** — an autocompleted table cell has no source bytes and no coordinate pair can say so — owned by 11a. Remaining: `9a 11a 8 9b 11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -73,6 +73,11 @@ node scripts/audit-scope-sanity.mjs        # 4 unresolved rows, 5301 scanned, on
 node scripts/audit-inline-sourcepos.mjs    # 0 rows registered, 68 scanned
 node scripts/audit-scope-containment.mjs   # 45 rows registered, 4174 scanned
 node scripts/audit-position-places.mjs     # 106 rows registered, 4312 scanned
+
+# Requirement 11a's four laws over the concrete record set, landed at 11a
+# (§4.14.11a). L1 and L3 have no rows and hold by construction; L4 is checked
+# by re-parsing every line-boundary prefix.
+node scripts/audit-concrete-records.mjs   # 45 rows registered, 2746 regions
 
 # D9's pin. REGISTERED RED and it fails if a row STOPS reproducing, because
 # deleting the budget clears both rows and costs 204.678x output growth.
@@ -1046,7 +1051,7 @@ Seven defects that this restatement found by measurement are numbered **D18–D2
 | **7** | **Deliverable #1.** The directive grammar of micromark-extension-directive 4.0.0 and mdast-util-directive 3.1.0, applied to **code points**: name rules, one/two/three-colon forms, `#`/`.` shorthand, `class` accumulation, last-value-wins elsewhere, and **degradation** — a malformed label or attribute block leaves the directive standing and the punctuation as prose. `DirectiveLabel` is a visible node whose scope spans its brackets. A container's closing fence **closes it and every block open inside it** (D21). A directive that consumes a span containing a line ending leaves the subject's position honest (D22). Attributes are an ordered key/value sequence; the JSON round-trip is deleted. | ~530 written · **+150 net** | 3. 15A (this is the first step that changes the node inventory). 0a.6's newline-adjust mechanism is live, or Step 7 lands it (D22). |
 | ✅ **10** | For any block node with a content buffer and any byte offset within it, the engine can name the **source line and column** of that byte. Every node synthesized from a content offset carries a position that is a place: the split-off table lead, its inline children, the recovered header row and cells, and any paragraph whose front was consumed (D18). The lead keeps its authored spelling. | ~110 | **Nothing.** Every mechanism exists at the baseline; both consumers run while the marks would be live. |
 | ✅ **9a** | A footnote definition is a block node at the byte where its `[` was written, in the container it was written in, and it **stays there**. No pass runs after the parse that moves, reorders, drops or re-parents any node. Every definition the author wrote is in the tree. The reference map never owns a node. A reference carries **the label the author wrote**; numbering is derived, not stored. A `[…]` is a footnote call only if it opens with a **raw** `^` and the document defines that label; otherwise the brackets take the ordinary unmatched-`[` path and nothing frees children core already built. | **+90 / −290** | 0a.2's D10 fix, so a reference's label is sliced from the parser's own buffer. |
-| **11a** | A parse produces, beside the tree, a **concrete record set** in which every block-level byte of the normalized source is owned by exactly one node, in exactly one of three roles (`MARKER`, `CONTENT`, `DISCARDED`). Three laws hold over every corpus: **L1** the regions on a line tile it exactly; **L2** every region lies inside its owner's scope and descendants lie inside their ancestor's `CONTENT`; **L3** concatenating the regions in order reproduces the normalized source byte for byte. The document **retains** that normalized source and its line index. A region may be *refined* — split, never moved, never deleted — which is how extensions capture without breaking L1. | ~600 + ~350 gate | 0a (an L3 gate written over the unfixed engine would encode D10/D11's loss as expected). 5 (no node without source bytes). 10 (the content-to-source marks 11a retains — **Q22**). |
+| ✅ **11a** | A parse produces, beside the tree, a **concrete record set** in which every block-level byte of the normalized source is owned by exactly one node, in exactly one of three roles (`MARKER`, `CONTENT`, `DISCARDED`). Three laws hold over every corpus: **L1** the regions on a line tile it exactly; **L2** every region lies inside its owner's scope and descendants lie inside their ancestor's `CONTENT`; **L3** concatenating the regions in order reproduces the normalized source byte for byte. **L4 — added by the owner before the step was written, and the reason the other three are not enough: the records are complete for lines 1…N once line N has been fed.** The first three constrain the RESULT and not when it is built, so a close-time construction satisfies all of them and recreates §11.5's quadratic cheat one level down. The document **retains** that normalized source and its line index. A region may be *refined* — split, never moved, never deleted — which is how extensions capture without breaking L1. | ~600 + ~350 gate | 0a (an L3 gate written over the unfixed engine would encode D10/D11's loss as expected). 5 (no node without source bytes). 10 (the content-to-source marks 11a retains — **Q22**). |
 | **8** | **The inline position model.** An inline node's position is a *projection* of the byte range it covers, not a counter each handler maintains: one `seek` primitive, one newline index, offsets stored on the node, and one constructor for a delimiter run. `adjust_subj_node_newlines`, `count_newlines`, `subj->column_offset`, `subj->block_offset` and the three hand-written `make_delimiter_text` copies cease to exist. Subsumes D3, D7, D12 and D19/D20/D23 by construction. | **+330 / −245** | 3 (rules exist). 6, 7 (the grammars are settled, so the extensions are rewritten once). 11a (the retained `CONTENT` records are what make the projection exact on continuation lines). |
 | **9b** | One reference model for both kinds. A link reference definition is a **node** at the byte where its `[` was written. Five kinds carry an **association**: `label` as authored, `identifier` as the match key, neither derivable from the other. A reference holds **no destination** — resolution is the consumer's, and is derivable as "group by identifier, first in document order". The map holds no resource, so D9's expansion budget has nothing to charge and is deleted. The dump and the facade speak one vocabulary (`label=`, not `id=`). | **+450 / −180** C | 9a (the tree is source-ordered and the winner is derivable from it). 10 (a harvested definition needs a source position and the surviving paragraph needs rebasing). 15A. |
 | **11b** | Every byte of every block's `CONTENT` region is owned by exactly one inline node or by the block itself, and inline records are expressed in **source** coordinates, not content coordinates. Delimiter runs, brackets, escapes, entities, destinations, titles and smart-punctuation substitutions are all `MARKER`; the text between is `CONTENT`. | ~500 + ~200 gate | 11a. 8 (a position is a projection of a range, so the lift has one answer, not two). |
@@ -5275,6 +5280,136 @@ still 9b's now), plan graph 22/45, source lists **22 sources** (was 23;
 `footnotes.c` is gone from all four live lists), `leaks --atExit` 0, `pnpm -w
 run lint` clean, and the Swift, Kotlin and ES binding suites green.
 
+
+#### 4.14.11a Step 11a: the concrete record set, and the law the owner added
+
+**The deliverable.** A parse now produces, beside the tree, a record set in
+which **every byte of the normalized source is in exactly one region**, each
+region with exactly one owner and one of three roles — `MARKER` for the bytes
+that made the owner what it is, `CONTENT` for the bytes that went into its
+content buffer, `DISCARDED` for the bytes it read and kept nowhere. The parser
+retains the normalized source and its line index, because a region is a byte
+range in **that** and not in whatever buffer the caller fed.
+
+```
+$ printf '> foo\n> bar\n\n# head #\n' | markdown-core --concrete
+concrete source=22 lines=4 regions=8
+region  0 2 MARKER    0.0   block_quote   "> "
+region  2 4 CONTENT   0.0.0 paragraph     "foo\n"
+region  6 2 MARKER    0.0   block_quote   "> "
+region  8 4 CONTENT   0.0.0 paragraph     "bar\n"
+region 12 1 DISCARDED 0     document      "\n"
+region 13 2 MARKER    0.1   heading       "# "
+region 15 4 CONTENT   0.1   heading       "head"
+region 19 3 DISCARDED 0.1   heading       " #\n"
+```
+
+**THE FOURTH LAW, and it is the owner's.** §11.5/11.7 narrow Stage 1 to *"make
+the tree readable at a line boundary, without ending the parse and without
+paying the document"*, and 11a's three published laws constrain the record
+set's **result**, not when it is built — so a close-time construction would
+satisfy all three and recreate the quadratic cheat one level down. The fourth
+law says it cannot:
+
+> **L4. The concrete records are complete for lines 1…N once line N has been
+> fed.**
+
+**One mechanism satisfies all four, and two of them by construction.**
+`S_claim_region` attributes the line in hand up to a byte offset and moves a
+cursor there. The cursor only moves forward, every claim starts where the last
+one ended, and the end of `S_process_line` sweeps whatever is left. So **L1**
+(the regions tile the line) is the statement that nobody bypassed the cursor;
+**L3** (concatenation reproduces the source) follows, because every region is a
+range *of* the source; and **L4** holds because there is nowhere else to claim
+from. The gate checks all four anyway — *by construction* is a property of
+today's code, and the gate is what makes it a property of tomorrow's.
+
+**Measured: L1 and L3 have no rows at all.** 2,746 regions over 885 examples,
+zero gaps, zero overlaps, zero shortfalls. **L4 has eleven**, over 1,200
+line-boundary prefixes, and all eleven are one fact (below).
+
+##### Three attribution rules, each of them measured before it was written
+
+The first reading of the gate was **139 rows**. Three rules took it to 45, and
+each one is a claim about who a byte belongs to rather than a fix to a symptom:
+
+| rule | what it replaced | rows |
+|---|---|---|
+| indentation ahead of an opener belongs to the **container**, not to the block being opened | an indented code block's four spaces were its own `MARKER` and began four bytes before its own scope | **−52**, plus 28 list items and more |
+| indentation stripped ahead of a line's content belongs to the container that stripped it | it was the block being written into, and on that block's first line it preceded the block's start | **−11** |
+| L2's second clause — *descendants lie inside their ancestor's `CONTENT`* — is **11b's** | applied to BLOCKS it reported 78 rows, every one a `table_row`, because a block child of a block is not inside its parent's content in any sense a block partition can express: a block quote has no content buffer, and a table's content regions are the paragraph's from before it was retyped | **−78** |
+
+The wide form of the third was measured before it was narrowed, which is the
+rule §0 asks for. The clause is about **inline** regions inside the block whose
+content they were cut from, and there are none until 11b.
+
+##### Two defects found by building it
+
+- **A region naming a freed node**, which is a map owning a node (D11) one
+  indirection further out. The formula extension replaces a fenced code block
+  whose info line says `formula` with a formula block and frees the old node;
+  every region naming it dangled, and `--concrete` under ASan reported the
+  use-after-free on `$$x+y$$`. `markdown_core_parser_transfer_regions` is how a
+  replacement says the bytes moved with the construct, and the same mechanism
+  hands a destroyed paragraph's bytes to its parent.
+- **A latent defect in Step 10's own rebase.** `S_rebase_content_marks` chose
+  the last mark at or before the cut, which is right unless the cut takes
+  *everything* — and then it kept that mark and advanced its column past the
+  end of its own line. A paragraph of nothing but reference definitions
+  therefore reported a `start_line` on the last line it consumed, and through
+  that, the disown scan started below the regions it was meant to find and left
+  them naming a freed node. It takes a `remaining` argument now. **Nothing
+  observed it before**: the node is freed on that path, so the wrong start_line
+  reached no golden.
+
+##### What it costs, measured rather than estimated
+
+| | before | after |
+|---|---|---|
+| peak RSS, 2.3 MB input | 91,799,552 B | **100,335,616 B, +9.3%** |
+| `bench large_document@128 / @256 / @512` | 19.989 / 40.240 / 80.192 ms | 22.001 / 43.579 / 86.314 ms, **+10.1% / +8.3% / +7.6%** |
+| `bench deep_nesting@32768` | 1.900 ms | 2.025 ms, +6.6% |
+| `bench extensions@400` | 8.681 ms | 8.997 ms, +3.6% |
+
+**This is the only step so far whose cost is above the machine's own noise, and
+it is the deliverable rather than an accident**: the memory is the normalized
+source the requirement says the document retains, plus one 24-byte region per
+claim and four bytes per line. Per line the work is one buffer append and a
+constant number of claims — nothing re-walks anything (§3).
+
+##### The forty-five rows, and the eleven
+
+`specs/concrete/records.json` carries them in six families with the ledger's
+usual rule: `class` is analysis, `closedBy` is measurement, and a family whose
+owner is unassigned is one where the step that moves the rows proves the
+attribution by moving them. Three families name **11c** — a paragraph destroyed
+for holding only definitions, the lines a harvest consumed, and the table lead's
+content — and all three are the same underlying fact: **a definition does not
+yet own its bytes.** That is precisely 11c's requirement, and it is the whole of
+L4's exception: whether `[foo]: /url` is a destroyed paragraph or a surviving
+one depends on whether a later line follows it, so those bytes' ROLE changes
+after their line was fed. Not a record created late, moved, or deleted — and
+11c deletes the case.
+
+##### Gate and mutants
+
+`scripts/audit-concrete-records.mjs`, in §0's list and in `scripts/dev/gates.sh`.
+
+| mutant | what went red |
+|---|---|
+| M14 the line's remainder is never swept | concrete records: **117 `L1 gap` rows and 18 `L3 does-not-reproduce-source`** |
+| M15 indentation ahead of an opener is the new block's | **96 `L2 region-before-owner` rows** |
+| M16 a replaced block does not hand over its records | 3 `L2 owner-scope-is-not-a-place` rows, **and AddressSanitizer reports a heap-use-after-free** |
+
+**None of the three moves a single golden row**, which is the point: the record
+set is beside the tree, and no oracle that reads the tree can see it.
+
+**Gates.** correctness 69/69, asan 60/60, ubsan 60/60, conformance 2/2, upstream
+885/885 with 10/10, mdast 110/110 with a 5/5 backlog, fuzz 300/300,
+scope-sanity 1, inline-sourcepos 0, containment 31, places 79, **concrete
+records 45**, reference-order 2, plan graph 22/45, source lists 22, formatters
+and linters clean, and an ASan sweep of `--concrete` over every corpus example.
+
 ---
 
 ### 4.3 The ordering argument
@@ -5879,7 +6014,7 @@ following, together:
 **Deliverables**
 - [x] **Directive grammar conformance (Step 7) — deliverable #1. LANDED**, §4.14.7a–e. Nothing carried: **D36** closed at 7e and **Q43** answered with it.
 - [x] **The formula fix (Step 6) — deliverable #2. LANDED, §4.14.6.**
-- [ ] CST concrete records (11a, 11b, 11c) and diagnostics (13) — deliverable #3
+- [ ] CST concrete records (11a, 11b, 11c) and diagnostics (13) — deliverable #3. **11a is LANDED** (§4.14.11a); 11b, 11c and 13 are not
 - [ ] The reference model (9a, 9b) and the positions that depend on it — **10 is LANDED** (§4.14.10); 9a and 9b are not
 - [ ] The facade and its single ABI break window (12), the null/empty rule (14)
 - [ ] Bindings, specs and docs regenerated (15)

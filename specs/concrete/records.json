@@ -1,0 +1,630 @@
+{
+    "schemaVersion": 1,
+    "script": "scripts/audit-concrete-records.mjs",
+    "subject": "Requirement 11a's four laws over the concrete record set.",
+    "purpose": "Forty-five rows in six families, over 2,746 regions and 885 examples, and TWO OF THE FOUR LAWS HAVE NO ROWS AT ALL.\n\nL1 (the regions on a line tile it exactly) and L3 (concatenating them reproduces the normalized source byte for byte) hold ABSOLUTELY, everywhere, and they hold by construction: S_claim_region lays regions down left to right from a cursor that only moves forward, and every region is a range of the source, so a tiling of [0, size) IS the source. They are still checked here, because \"by construction\" is a property of today's code and this file is what makes it a property of tomorrow's.\n\nL4 (the records are complete for lines 1..N once line N has been fed) is the law the owner asked for, and it is what stops the record set being built at close: it is checked by re-parsing every LINE-BOUNDARY PREFIX and requiring the prefix's per-byte roles to match the whole document's over the bytes they share. 1,200 prefixes, ELEVEN rows, and every one of the eleven is the same fact -- see the family below.\n\n  11  definition-paragraph-destroyed   L4. A paragraph that holds nothing but reference definitions is FREED, and its bytes are handed to its parent as DISCARDED rather than left naming a node that no longer exists. Whether that happens depends on how much of the document has been fed: `[foo]: /url` alone is a destroyed paragraph, and the same line followed by `bar` is a paragraph that survives. So the ROLE of those bytes changes at a line that arrives later, which is the one qualification L4 carries. It is not a record being created late, moved or deleted -- 11c deletes the case outright by giving a definition its own node to own its bytes.\n   8  atx-closing-sequence             L2. An ATX heading's scope stops at its content, so the closing `#`s and the spaces before them -- which the heading itself read and discarded -- lie after their owner's scope. `#                  foo                     ` overruns by 21 bytes. Whether a heading's scope covers its own closing sequence is a model question and no step owns it yet.\n   8  html-block-end-before-its-content L2. An HTML block's scope ends before the last bytes of its own content. Neighbouring D35, which fixed an HTML block that ended one line before it STARTED; this is the other end and it is not the same defect.\n   6  indent-after-container-closed    L2. Indentation stripped at the top of a line is claimed for the container that was open when the line began, and that container can turn out to have closed on the line before -- `- one`, blank, ` two` gives the list a byte on line 3. The alternative is to claim it after the openers have run, which means claiming it for a block chosen by bytes that come after it.\n   5  consumed-definition-line         L2. The reference-definition harvest moves a paragraph's start forward to its first surviving line, and the CONTENT regions for the lines it consumed still name that paragraph -- so they now start before their own owner. 11c's, and the same fact as the L4 family from the other side.\n   3  split-off-table-lead-content     L2. When a table is split out of a paragraph the table keeps the paragraph's earlier CONTENT regions, and the table starts at its header row. The lead paragraph Step 10 creates should own the lines it was split out of; that is a partial transfer, which is a refinement, which is 11b/11c's.\n   2  thematic-break-line-ending       L2. A thematic break's scope stops at its last `*`, and the line ending it consumed is after it.\n\n`class` is analysis and `closedBy` is measurement: a family whose owner is unassigned is one where the step that moves the rows proves the attribution by moving them.\n\nWHAT THIS LEDGER MEASURED AND FIXED RATHER THAN REGISTERED, recorded because the counts are the argument for the three attribution rules the record set now follows. The first reading was 139 rows. Indentation ahead of a block opener was claimed for the block being OPENED, so an indented code block's four spaces started four bytes before its own scope: 52 rows, plus 28 list items and more. Indentation stripped ahead of a line's content was claimed for the block being written INTO rather than the container that stripped it: 11 more. And the wide form of L2's second clause -- \"descendants lie inside their ancestor's CONTENT\" -- reported 78 rows, every one a table_row, because a block child of a block is not inside its parent's content in any sense a BLOCK partition can express; that clause is about inline regions inside the block whose content they were cut from, and it lands at 11b with something to say. 139 -> 45.",
+    "profile": "gfm-extended",
+    "corpus": "every example in packages/markdown-core/tests/fixtures/*.txt",
+    "expected": [
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:509",
+            "input": "123\n456\n| a | b |\n| ---| --- |\nd | e\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-before-owner",
+                    "kind": "table",
+                    "role": "CONTENT",
+                    "short": 8,
+                    "closedBy": "11c - the lead owns the lines it was split out of, and the table the header row",
+                    "class": "split-off-table-lead-content"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:539",
+            "input": "pre \\\\| lead\n| a | b |\n| - | - |\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-before-owner",
+                    "kind": "table",
+                    "role": "CONTENT",
+                    "short": 13,
+                    "closedBy": "11c - the lead owns the lines it was split out of, and the table the header row",
+                    "class": "split-off-table-lead-content"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:560",
+            "input": "> 123\n> | a | b |\n> | --- | --- |\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-before-owner",
+                    "kind": "table",
+                    "role": "CONTENT",
+                    "short": 6,
+                    "closedBy": "11c - the lead owns the lines it was split out of, and the table the header row",
+                    "class": "split-off-table-lead-content"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:870",
+            "input": "This is <xmp> not okay, but **this** <strong>is</strong>.\n\n<p>This is <xmp> not okay, but **this** <strong>is</strong>.</p>\n\nNope, I won't have <textarea>.\n\n<p>No <textarea> here either.</p>\n\n<p>This <random /> <thing> is okay</thing> though.</p>\n\nYep, <totally>okay</totally>.\n\n<!-- HTML comments are okay, though. -->\n<!- But we're strict. ->\n<! No nonsense. >\n<!-- Leave multiline comments the heck alone, though, okay?\nEven with {\"x\":\"y\"} or 1 > 2 or whatever. Even **markdown**.\n-->\n<!--- Support everything CommonMark's parser does. -->\n<!---->\n<!--thistoo-->\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "html_block",
+                    "role": "CONTENT",
+                    "over": 4,
+                    "closedBy": "unassigned",
+                    "class": "html-block-end-before-its-content"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:1157",
+            "input": "- [x] foo\n    - [ ] bar\n    - [x] baz\n- [ ] bim\n\nShow a regular (non task) list to show that it has the same structure\n- [@] foo\n    - [@] bar\n    - [@] baz\n- [@] bim\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "paragraph",
+                    "role": "DISCARDED",
+                    "over": 4,
+                    "closedBy": "unassigned",
+                    "class": "indent-after-container-closed"
+                },
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "paragraph",
+                    "role": "DISCARDED",
+                    "over": 4,
+                    "closedBy": "unassigned",
+                    "class": "indent-after-container-closed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/regression.txt:725",
+            "input": "[foo]: /url\n\"title\" ok\n\n[foo]\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-before-owner",
+                    "kind": "paragraph",
+                    "role": "CONTENT",
+                    "short": 12,
+                    "closedBy": "11c - the definition owns the line its bytes were harvested from",
+                    "class": "consumed-definition-line"
+                },
+                {
+                    "law": "L4",
+                    "fault": "prefix-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "11c - a reference definition owns its source bytes, so no paragraph is destroyed for having held only definitions",
+                    "class": "definition-paragraph-destroyed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/regression.txt:771",
+            "input": "> [a]: /x\nbar\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-before-owner",
+                    "kind": "paragraph",
+                    "role": "CONTENT",
+                    "short": 8,
+                    "closedBy": "11c - the definition owns the line its bytes were harvested from",
+                    "class": "consumed-definition-line"
+                },
+                {
+                    "law": "L4",
+                    "fault": "prefix-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "11c - a reference definition owns its source bytes, so no paragraph is destroyed for having held only definitions",
+                    "class": "definition-paragraph-destroyed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:606",
+            "input": " ***\n  ***\n   ***\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "thematic_break",
+                    "role": "DISCARDED",
+                    "over": 2,
+                    "closedBy": "unassigned",
+                    "class": "thematic-break-line-ending"
+                },
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "thematic_break",
+                    "role": "DISCARDED",
+                    "over": 3,
+                    "closedBy": "unassigned",
+                    "class": "thematic-break-line-ending"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:909",
+            "input": "#                  foo                     \n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "heading",
+                    "role": "DISCARDED",
+                    "over": 21,
+                    "closedBy": "unassigned",
+                    "class": "atx-closing-sequence"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:959",
+            "input": "## foo ##\n  ###   bar    ###\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "heading",
+                    "role": "DISCARDED",
+                    "over": 3,
+                    "closedBy": "unassigned",
+                    "class": "atx-closing-sequence"
+                },
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "heading",
+                    "role": "DISCARDED",
+                    "over": 7,
+                    "closedBy": "unassigned",
+                    "class": "atx-closing-sequence"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:973",
+            "input": "# foo ##################################\n##### foo ##\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "heading",
+                    "role": "DISCARDED",
+                    "over": 35,
+                    "closedBy": "unassigned",
+                    "class": "atx-closing-sequence"
+                },
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "heading",
+                    "role": "DISCARDED",
+                    "over": 3,
+                    "closedBy": "unassigned",
+                    "class": "atx-closing-sequence"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:987",
+            "input": "### foo ###     \n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "heading",
+                    "role": "DISCARDED",
+                    "over": 9,
+                    "closedBy": "unassigned",
+                    "class": "atx-closing-sequence"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1071",
+            "input": "## \n#\n### ###\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "heading",
+                    "role": "DISCARDED",
+                    "over": 4,
+                    "closedBy": "unassigned",
+                    "class": "atx-closing-sequence"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:2563",
+            "input": "<pre language=\"haskell\"><code>\nimport Text.HTML.TagSoup\n\nmain :: IO ()\nmain = print $ parseTags tags\n</code></pre>\nokay\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "html_block",
+                    "role": "CONTENT",
+                    "over": 14,
+                    "closedBy": "unassigned",
+                    "class": "html-block-end-before-its-content"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:2581",
+            "input": "<script type=\"text/javascript\">\n// JavaScript example\n\ndocument.getElementById(\"demo\").innerHTML = \"Hello JavaScript!\";\n</script>\nokay\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "html_block",
+                    "role": "CONTENT",
+                    "over": 10,
+                    "closedBy": "unassigned",
+                    "class": "html-block-end-before-its-content"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:2598",
+            "input": "<style\n  type=\"text/css\">\nh1 {color:red;}\n\np {color:blue;}\n</style>\nokay\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "html_block",
+                    "role": "CONTENT",
+                    "over": 9,
+                    "closedBy": "unassigned",
+                    "class": "html-block-end-before-its-content"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:2686",
+            "input": "<script>\nfoo\n</script>1. *bar*\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "html_block",
+                    "role": "CONTENT",
+                    "over": 18,
+                    "closedBy": "unassigned",
+                    "class": "html-block-end-before-its-content"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:2698",
+            "input": "<!-- Foo\n\nbar\n   baz -->\nokay\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "html_block",
+                    "role": "CONTENT",
+                    "over": 11,
+                    "closedBy": "unassigned",
+                    "class": "html-block-end-before-its-content"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:2715",
+            "input": "<?php\n\n  echo '>';\n\n?>\nokay\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "html_block",
+                    "role": "CONTENT",
+                    "over": 3,
+                    "closedBy": "unassigned",
+                    "class": "html-block-end-before-its-content"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:2742",
+            "input": "<![CDATA[\nfunction matchwo(a,b)\n{\n  if (a < b && a < 0) then {\n    return 1;\n\n  } else {\n\n    return 0;\n  }\n}\n]]>\nokay\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "html_block",
+                    "role": "CONTENT",
+                    "over": 4,
+                    "closedBy": "unassigned",
+                    "class": "html-block-end-before-its-content"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:2988",
+            "input": "   [foo]: \n      /url  \n           'the title'  \n\n[foo]\n",
+            "findings": [
+                {
+                    "law": "L4",
+                    "fault": "prefix-role-differs",
+                    "whole": "DISCARDED",
+                    "alone": "CONTENT",
+                    "closedBy": "11c - a reference definition owns its source bytes, so no paragraph is destroyed for having held only definitions",
+                    "class": "definition-paragraph-destroyed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3014",
+            "input": "[Foo bar]:\n<my url>\n'title'\n\n[Foo bar]\n",
+            "findings": [
+                {
+                    "law": "L4",
+                    "fault": "prefix-role-differs",
+                    "whole": "DISCARDED",
+                    "alone": "CONTENT",
+                    "closedBy": "11c - a reference definition owns its source bytes, so no paragraph is destroyed for having held only definitions",
+                    "class": "definition-paragraph-destroyed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3030",
+            "input": "[foo]: /url '\ntitle\nline1\nline2\n'\n\n[foo]\n",
+            "findings": [
+                {
+                    "law": "L4",
+                    "fault": "prefix-role-differs",
+                    "whole": "DISCARDED",
+                    "alone": "CONTENT",
+                    "closedBy": "11c - a reference definition owns its source bytes, so no paragraph is destroyed for having held only definitions",
+                    "class": "definition-paragraph-destroyed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3067",
+            "input": "[foo]:\n/url\n\n[foo]\n",
+            "findings": [
+                {
+                    "law": "L4",
+                    "fault": "prefix-role-differs",
+                    "whole": "DISCARDED",
+                    "alone": "CONTENT",
+                    "closedBy": "11c - a reference definition owns its source bytes, so no paragraph is destroyed for having held only definitions",
+                    "class": "definition-paragraph-destroyed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3210",
+            "input": "[\nfoo\n]: /url\nbar\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-before-owner",
+                    "kind": "paragraph",
+                    "role": "CONTENT",
+                    "short": 14,
+                    "closedBy": "11c - the definition owns the line its bytes were harvested from",
+                    "class": "consumed-definition-line"
+                },
+                {
+                    "law": "L4",
+                    "fault": "prefix-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "11c - a reference definition owns its source bytes, so no paragraph is destroyed for having held only definitions",
+                    "class": "definition-paragraph-destroyed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3236",
+            "input": "[foo]: /url\n\"title\" ok\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-before-owner",
+                    "kind": "paragraph",
+                    "role": "CONTENT",
+                    "short": 12,
+                    "closedBy": "11c - the definition owns the line its bytes were harvested from",
+                    "class": "consumed-definition-line"
+                },
+                {
+                    "law": "L4",
+                    "fault": "prefix-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "11c - a reference definition owns its source bytes, so no paragraph is destroyed for having held only definitions",
+                    "class": "definition-paragraph-destroyed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3313",
+            "input": "[foo]: /url\nbar\n===\n[foo]\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-before-owner",
+                    "kind": "heading",
+                    "role": "CONTENT",
+                    "short": 12,
+                    "closedBy": "11c - the definition owns the line its bytes were harvested from",
+                    "class": "consumed-definition-line"
+                },
+                {
+                    "law": "L4",
+                    "fault": "prefix-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "11c - a reference definition owns its source bytes, so no paragraph is destroyed for having held only definitions",
+                    "class": "definition-paragraph-destroyed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3327",
+            "input": "[foo]: /url\n===\n[foo]\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-before-owner",
+                    "kind": "paragraph",
+                    "role": "CONTENT",
+                    "short": 12,
+                    "closedBy": "11c - the definition owns the line its bytes were harvested from",
+                    "class": "consumed-definition-line"
+                },
+                {
+                    "law": "L4",
+                    "fault": "prefix-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "11c - a reference definition owns its source bytes, so no paragraph is destroyed for having held only definitions",
+                    "class": "definition-paragraph-destroyed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4339",
+            "input": "- one\n\n two\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "list",
+                    "role": "DISCARDED",
+                    "over": 1,
+                    "closedBy": "unassigned",
+                    "class": "indent-after-container-closed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4369",
+            "input": " -    one\n\n     two\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "list",
+                    "role": "DISCARDED",
+                    "over": 5,
+                    "closedBy": "unassigned",
+                    "class": "indent-after-container-closed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4710",
+            "input": "-    foo\n\n  bar\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "list",
+                    "role": "DISCARDED",
+                    "over": 2,
+                    "closedBy": "unassigned",
+                    "class": "indent-after-container-closed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4799",
+            "input": "-\n\n  foo\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "list",
+                    "role": "DISCARDED",
+                    "over": 2,
+                    "closedBy": "unassigned",
+                    "class": "indent-after-container-closed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:5159",
+            "input": "10) foo\n   - bar\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "list",
+                    "role": "DISCARDED",
+                    "over": 3,
+                    "closedBy": "unassigned",
+                    "class": "indent-after-container-closed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:5857",
+            "input": "1. a\n\n  2. b\n\n    3. c\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "list",
+                    "role": "DISCARDED",
+                    "over": 4,
+                    "closedBy": "unassigned",
+                    "class": "indent-after-container-closed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:9645",
+            "input": "[Foo\n  bar]: /url\n\n[Baz][Foo bar]\n",
+            "findings": [
+                {
+                    "law": "L4",
+                    "fault": "prefix-role-differs",
+                    "whole": "DISCARDED",
+                    "alone": "CONTENT",
+                    "closedBy": "11c - a reference definition owns its source bytes, so no paragraph is destroyed for having held only definitions",
+                    "class": "definition-paragraph-destroyed"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:11451",
+            "input": "### foo  \n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "heading",
+                    "role": "DISCARDED",
+                    "over": 2,
+                    "closedBy": "unassigned",
+                    "class": "atx-closing-sequence"
+                }
+            ]
+        }
+    ],
+    "completenessMaxLines": 12
+}

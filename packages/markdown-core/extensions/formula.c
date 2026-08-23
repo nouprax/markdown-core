@@ -634,15 +634,18 @@ static markdown_core_node *new_formula_block_from_literal(const markdown_core_sy
     return formula;
 }
 
-static int replace_with_formula_block(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,
+static int replace_with_formula_block(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
                                       markdown_core_node *oldnode, const unsigned char *literal,
                                       bufsize_t literal_len) {
-    markdown_core_node *formula = new_formula_block_from_literal(extension, mem, oldnode, literal, literal_len);
+    markdown_core_node *formula = new_formula_block_from_literal(extension, parser->mem, oldnode, literal, literal_len);
     if (!formula) {
         return 0;
     }
 
     if (markdown_core_node_replace(oldnode, formula)) {
+        /* The bytes did not change hands, the node did. Said before the free,
+         * because after it there is nothing left to name. */
+        markdown_core_parser_transfer_regions(parser, oldnode, formula);
         markdown_core_node_free(oldnode);
         return 1;
     }
@@ -670,7 +673,7 @@ static void postprocess_node(const markdown_core_syntax_extension *extension, ma
     }
 
     if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code.info)) {
-        if (!replace_with_formula_block(extension, parser->mem, node, node->as.code.literal.data,
+        if (!replace_with_formula_block(extension, parser, node, node->as.code.literal.data,
                                         node->as.code.literal.len)) {
             parser->oom = true;
         }
@@ -681,8 +684,7 @@ static void postprocess_node(const markdown_core_syntax_extension *extension, ma
         node->first_child->type == MARKDOWN_CORE_NODE_FORMULA && is_standalone_formula_node(node->first_child)) {
         node_formula *formula = get_formula(node->first_child);
         if (formula) {
-            if (!replace_with_formula_block(extension, parser->mem, node, formula->literal.data,
-                                            formula->literal.len)) {
+            if (!replace_with_formula_block(extension, parser, node, formula->literal.data, formula->literal.len)) {
                 parser->oom = true;
             }
             return;

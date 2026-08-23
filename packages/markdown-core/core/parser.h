@@ -13,6 +13,42 @@ extern "C" {
 
 #define MAX_LINK_LABEL_LENGTH 1000
 
+/* THE CONCRETE RECORD SET (requirement 11a).
+ *
+ * A region is a byte range of the normalized source with exactly one owner and
+ * exactly one role. Every block-level byte is in exactly one region, so the
+ * regions on a line tile it and the regions in order reproduce the source.
+ *
+ * The three roles are what the byte DID, not what it looks like:
+ *
+ *   MARKER     the bytes that made the owner the kind of thing it is, and are
+ *              not its content: `> `, `- `, `#`s, a fence, `[^label]:`.
+ *   CONTENT    the bytes that went into the owner's content buffer, and so are
+ *              the bytes its children are cut from.
+ *   DISCARDED  the bytes the parse read and kept nowhere -- indentation
+ *              stripped from a continuation line, the trailing hashes of a
+ *              closed ATX heading, a line ending nothing owns. They still have
+ *              an owner: the block they were read inside.
+ *
+ * A region may be REFINED -- split into adjacent regions covering the same
+ * bytes -- which is how an extension takes credit for part of a span without
+ * breaking the tiling. It may never be moved and never be deleted. */
+typedef enum {
+    MARKDOWN_CORE_REGION_MARKER = 0,
+    MARKDOWN_CORE_REGION_CONTENT = 1,
+    MARKDOWN_CORE_REGION_DISCARDED = 2
+} markdown_core_region_role;
+
+typedef struct {
+    /* Offset in the parser's normalized source, and the length in bytes. */
+    bufsize_t start;
+    bufsize_t length;
+    /* The node these bytes belong to. Never NULL: bytes that belong to no
+     * block belong to the document. */
+    struct markdown_core_node *owner;
+    uint8_t role;
+} markdown_core_region;
+
 /* Where one source line's bytes landed in a block's content buffer.
  *
  * A block's content is the concatenation of the line slices `add_line` copies
@@ -68,6 +104,39 @@ struct markdown_core_parser {
     bool partially_consumed_tab;
     /* Contains the currently processed line */
     markdown_core_strbuf curline;
+    /* THE NORMALIZED SOURCE: every line exactly as S_process_line normalized
+     * it -- UTF-8 validated if the option is on, NUL replaced, the line ending
+     * a single '\n' whether the author wrote one, wrote CRLF, or wrote nothing
+     * at all -- concatenated in order. The document retains it because the
+     * concrete record set indexes it: a region is a byte range in HERE, not in
+     * whatever buffer the caller fed, and requirement 11a's L3 says the regions
+     * in order reproduce it byte for byte.
+     *
+     * It is NOT the caller's bytes. `markdown_core_parser_feed` may be called
+     * with any split, the caller's buffer may be freed the moment feed returns,
+     * and two different inputs normalize to the same source -- which is the
+     * point: what the tree describes is this. */
+    markdown_core_strbuf source;
+    /* Where each line begins in `source`: line N starts at line_starts[N - 1].
+     * The line index the same requirement names, and the only thing that can
+     * turn a source offset back into a (line, column) after the parse. */
+    bufsize_t *line_starts;
+    bufsize_t line_starts_size;
+    bufsize_t line_starts_alloc;
+    /* The concrete record set (see markdown_core_region), in source order, and
+     * how far the line in hand has been attributed. Regions are emitted while
+     * the line that contains them is being processed and never afterwards,
+     * which is L4: the record set is complete for lines 1..N once line N has
+     * been fed. */
+    markdown_core_region *regions;
+    bufsize_t regions_size;
+    bufsize_t regions_alloc;
+    bufsize_t region_cursor;
+    /* When set, markdown_core_parser_finish writes the record set here before
+     * releasing it. There is no public reader: requirement 12 is where a
+     * document keeps the concrete view, and until then the CLI's `--concrete`
+     * and the gate that drives it are the only consumers. */
+    FILE *concrete_out;
     /* See the documentation for markdown_core_parser_get_last_line_length() in markdown_core.h */
     bufsize_t last_line_length;
     /* Accumulates partial feed chunks until a complete line is available;
