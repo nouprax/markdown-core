@@ -6186,6 +6186,33 @@ attributes those bytes differently from the whole document and L4 fails.
 **All 57 rows now carry that owner** instead of `unassigned`. The probe is
 reverted; nothing in this commit changes the engine.
 
+##### SECOND ATTEMPT, after 11b, and it is recorded so the third does not start over
+
+The full shape was then built — the walk-back in BOTH end branches, the trailing
+run handed to the block's PARENT as `DISCARDED`, and the row the cut lands
+inside SPLIT, because a run of blank lines inside an indented code block is one
+`CONTENT` row with everything before it. Measured at each turn:
+
+| version | places CLEARED | concrete rows APPEARING |
+|---|---|---|
+| walk-back only | 51 | 37 `region-after-owner` |
+| + hand the tail back | 52 | 54 (29 L4 block-role, 12 `code_block` CONTENT) |
+| + split the straddling row | 52 | 271 — because the handback then fired for EVERY block and took its own line ending |
+| + fire only where the end MOVED | **52** | **32** (26 L4 block-role, 6 L2) |
+
+**The last one is the closest and it still fails, and the reason is decisive:**
+26 of the 32 are `prefix-block-role-differs`, and **11b's L4 block half is at
+zero**. That half is 11a's law unweakened, and the whole point of splitting L4
+in two (§4.14.11b) was that the BLOCK attribution keeps it. Trading a family of
+57 position rows for 26 rows of the one law that has none is not a step
+forward, so the attempt is reverted again rather than landed at 32.
+
+What the third attempt needs is the piece none of these had: **why the walk
+fires in a PREFIX where it does not fire in the whole document.** The witness is
+`    Foo⏎    ---⏎⏎    Foo⏎---⏎` at byte 15 — the `\n` ending line 2 — which the
+prefix of lines 1–2 calls `DISCARDED` and the whole document calls `CONTENT`.
+Start there.
+
 
 #### 4.14.11b Step 11b: the inline phase owns its bytes, and two laws that say so
 
