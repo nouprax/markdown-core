@@ -50,7 +50,11 @@ void print_usage(void) {
 }
 
 static bool print_document(markdown_core_node *document) {
-    markdown_core_document facade_document = {document};
+    /* The CLI dumps the SEMANTIC view only; its concrete view is printed
+     * straight from the parser by `--concrete`, so the field is zeroed here
+     * rather than filled and `markdown_core_document_free` is never called on
+     * this stack value. */
+    markdown_core_document facade_document = {document, {0}};
     markdown_core_error *error = NULL;
     uint8_t *dump = NULL;
     size_t length = 0;

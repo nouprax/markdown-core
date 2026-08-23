@@ -574,10 +574,10 @@ static delimiter *insert_formula(const markdown_core_syntax_extension *extension
          * frees EVERY node the span was built from, so without these claims the
          * whole construct would fall back to the block. */
         markdown_core_parser_claim_inline(parser, formula, body_start - markdown_core_delimiter_length(opener),
-                                          body_start, MARKDOWN_CORE_REGION_MARKER);
-        markdown_core_parser_claim_inline(parser, formula, body_start, body_end, MARKDOWN_CORE_REGION_CONTENT);
+                                          body_start, MARKDOWN_CORE_REGION_ROLE_MARKER);
+        markdown_core_parser_claim_inline(parser, formula, body_start, body_end, MARKDOWN_CORE_REGION_ROLE_CONTENT);
         markdown_core_parser_claim_inline(parser, formula, body_end, markdown_core_delimiter_position(closer),
-                                          MARKDOWN_CORE_REGION_MARKER);
+                                          MARKDOWN_CORE_REGION_ROLE_MARKER);
         free_nodes_through(opener_node, closer_node);
     } else {
         markdown_core_node_free(formula);

@@ -68,7 +68,7 @@ static int pc_parse(pc_context *context, const char *const *option_names) {
     if (!context->document) {
         return -1;
     }
-    return ts_ast_count_kinds(markdown_core_document_root(context->document), context->counts);
+    return ts_ast_count_kinds(markdown_core_document_semantic(context->document), context->counts);
 }
 
 static int pc_expect_count(const pc_context *context, markdown_core_node_kind kind, size_t expected, const char *what) {
@@ -83,7 +83,7 @@ static int pc_expect_count(const pc_context *context, markdown_core_node_kind ki
  * raw input, the AST equivalent of "everything stayed literal text"). */
 static int pc_expect_text(const pc_context *context, const char *expected, size_t expected_length) {
     size_t actual_length = 0;
-    char *actual = ts_ast_concat_text(markdown_core_document_root(context->document), &actual_length);
+    char *actual = ts_ast_concat_text(markdown_core_document_semantic(context->document), &actual_length);
     int result = 0;
     if (!actual) {
         return -1;
@@ -244,7 +244,7 @@ static int case_hard_link_emph(pc_context *context) {
         return -1;
     }
 
-    root = markdown_core_document_root(context->document);
+    root = markdown_core_document_semantic(context->document);
     paragraph = markdown_core_node_get_first_child(root);
     text = markdown_core_node_get_first_child(paragraph);
     if (!markdown_core_node_literal(text, &view) || view.length != 4 || memcmp(view.data, "**x ", 4) != 0) {
@@ -424,7 +424,7 @@ static int case_tables(pc_context *context) {
         pc_expect_count(context, MARKDOWN_CORE_KIND_TABLE_ROW, 89998, "TableRow") != 0) {
         return -1;
     }
-    root = markdown_core_document_root(context->document);
+    root = markdown_core_document_semantic(context->document);
     paragraph = markdown_core_node_get_first_child(root);
     if (markdown_core_node_get_kind(paragraph) != MARKDOWN_CORE_KIND_PARAGRAPH ||
         !markdown_core_node_literal(markdown_core_node_get_first_child(paragraph), &view) || view.length != 3 ||
@@ -527,7 +527,7 @@ static int case_reference_collisions(pc_context *context) {
     check.expected_length = strlen(expected_text);
     check.seen = 0;
     check.mismatch = 0;
-    if (ts_ast_walk(markdown_core_document_root(context->document), pc_uniform_text_visit, &check) < 0 ||
+    if (ts_ast_walk(markdown_core_document_semantic(context->document), pc_uniform_text_visit, &check) < 0 ||
         check.mismatch || check.seen != COLLISIONS - 1) {
         fprintf(stderr, "unresolved references are not uniform literal text\n");
         return -1;
@@ -612,7 +612,7 @@ static int case_directive_unclosed_attributes(pc_context *context) {
 static int case_directive_colon_pairs(pc_context *context) { return pc_directive_literal_case(context, "::", 40000); }
 
 static const markdown_core_node *pc_first_directive(const pc_context *context) {
-    const markdown_core_node *root = markdown_core_document_root(context->document);
+    const markdown_core_node *root = markdown_core_document_semantic(context->document);
     const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
     return markdown_core_node_get_first_child(paragraph);
 }
@@ -723,7 +723,7 @@ static int pc_formula_case(pc_context *context, const char *prefix, const char *
         return -1;
     }
     if (expected_literal) {
-        const markdown_core_node *root = markdown_core_document_root(context->document);
+        const markdown_core_node *root = markdown_core_document_semantic(context->document);
         const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
         const markdown_core_node *formula = markdown_core_node_get_first_child(paragraph);
         markdown_core_placement_mode mode;

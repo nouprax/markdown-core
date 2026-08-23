@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), **11b** (§4.14.11b), **11c** (§4.14.11c) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), **11b** (§4.14.11b), **11c** (§4.14.11c), **12.1** (§4.14.12a) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 12** — one parse under two total views, `document.semantic` and `document.concrete`, and the law that binds them. Then `13 14 15C`. **Step 9b is LANDED whole** (§4.14.9b1–9b2): the definition and both references are nodes, five kinds carry an association, **D9 and D30 are closed**, the **mdast backlog is EMPTY**, and `fuzz-parity --oracle mdast` — one of §0's six known-red checks — is green. **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), Step 9b (§4.14.9b1–9b2), **Step 11b** (§4.14.11b) — which added TWO laws, L5 and L6, because L1–L4 are all true of the day before it — and **Step 11c** (§4.14.11c), whose engine change is NOTHING because 9b.1 had already made its requirement true; what it adds is the gate that would notice if it stopped. **11c also inherits four families** and they are named in its record. Remaining: `12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 12.2** — the bindings: `document.concrete` copied into value types, with a region naming its owner by a node PATH rather than a pointer. **12.1 is LANDED** (§4.14.12a): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 reads 69/69 there and fails `conformance`. Then `13 14 15C`. **Step 9b is LANDED whole** (§4.14.9b1–9b2): the definition and both references are nodes, five kinds carry an association, **D9 and D30 are closed**, the **mdast backlog is EMPTY**, and `fuzz-parity --oracle mdast` — one of §0's six known-red checks — is green. **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), Step 9b (§4.14.9b1–9b2), **Step 11b** (§4.14.11b) — which added TWO laws, L5 and L6, because L1–L4 are all true of the day before it — and **Step 11c** (§4.14.11c), whose engine change is NOTHING because 9b.1 had already made its requirement true; what it adds is the gate that would notice if it stopped. **11c also inherits four families** and they are named in its record. Remaining: `12.2 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -6433,6 +6433,79 @@ projections 32 over 12 surfaces, both fuzz oracles 300/300, upstream **888/888**
 with 10/10 and 4/4, mdast 110/110 with an empty backlog, scope-sanity 1,
 inline-sourcepos 40, containment 9, places 57, concrete records 267,
 reference-order 0, formatters and linters clean.
+
+
+#### 4.14.12a Step 12.1: one parse under two views, in C
+
+**The C half of requirement 12.** `markdown_core_document_root` is now
+`markdown_core_document_semantic`, and beside it the document keeps the other
+view: `_source`, `_line_count`, `_line_start`, `_region_count`, `_region_at`.
+The rename is deliberate and is the whole of the ABI break §4.1's row 12
+budgets — one name per thing, and `root` was a name for the semantic view that
+did not say it was one.
+
+**The law is in the header, and it is checkable rather than aspirational:**
+
+> Every byte of `markdown_core_document_source` lies in exactly one region, and
+> every region has exactly one owner in the semantic tree.
+
+So the pair is complete: the tree MAY omit bytes — a fence's backticks are in no
+literal, an ATX heading's closing hashes are in nothing at all — and the concrete
+view may not.
+
+##### The view moves; it is not copied
+
+The parser's `source`, `line_starts` and `regions` were released at `finish`,
+which is what 11a's own comment said requirement 12 would change. They are now
+**moved** into the document, at the one moment they are both complete and still
+owned: after every rewrite, before the reset. The regions name NODES, so the
+document owns both and frees them together, regions first.
+
+`markdown_core_parser_retain_concrete` is how a caller asks; the CLI does not,
+which is why its `--concrete` still prints straight from the parser and its
+stack-allocated facade document zeroes the field.
+
+##### One name collision, and it is worth writing down
+
+The internal region type and the public one are different shapes — `bufsize_t`
+against `size_t`, an owner that is mutable against one that is not — so the
+internal struct is `markdown_core_region_record` now and the public one takes
+the plain name. The ROLE enum is shared and is guarded the way
+`markdown_core_reference_form` is: one definition, two headers that both admit
+it.
+
+##### The gate, and where it does NOT run
+
+`facade_test` gains `check_two_views`, which asserts the law through the public
+surface and nothing else — the regions tile the source with no gap, no overlap
+and nothing past the end; every owner is reachable from the semantic root; every
+line but the first begins after a line ending; and line zero, a line past the
+end and a region past the end are all refused. The corpus is deliberately one of
+everything the tree omits.
+
+**Mutant M30** drops the last region on the way out of the parser.
+`correctness` reads **69/69** — and `conformance` fails with *"every byte of the
+source is in exactly one region"*. `facade_native` is labelled `conformance`,
+not `correctness`, so the preset most work is done under cannot see this law at
+all. `scripts/dev/gates.sh` runs both, which is why it is gated; anyone running
+only `ctest --preset correctness` is not testing requirement 12.
+
+##### What 12 still owes
+
+The bindings. *"The concrete view survives being copied into value types and the
+handle being freed"* is 12.2's sentence, and it needs a region to name its owner
+by something that survives the copy — a node PATH, which is what `--concrete`
+already prints and what a pointer cannot be.
+
+##### Gates
+
+`correctness` 69/69, asan 60/60, ubsan 60/60, `conformance` 2/2, canonical-ast
+32 kinds / 62 fields, projections 32 over 12 surfaces, `public-surface` (which
+compares the header against both export lists and so catches a symbol added to
+one), both fuzz oracles 300/300, upstream 888/888, mdast 110/110 with an empty
+backlog, every position ledger holding, `lint-c` — which caught the missing
+initializer in `core/main.c` that no preset did — `pnpm -w run lint`, `leaks
+--atExit` 0, and the Swift, Kotlin and ES suites green through the rename.
 
 
 #### 4.14.11a2 Q44 answered: an autocompleted table cell sits where it was completed

@@ -385,7 +385,7 @@ static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
  * parser looked. */
 static void S_claim_region(markdown_core_parser *parser, markdown_core_node *owner, bufsize_t upto,
                            markdown_core_region_role role) {
-    markdown_core_region *region;
+    markdown_core_region_record *region;
     bufsize_t base;
 
     if (!owner || parser->line_starts_size == 0 || upto <= parser->region_cursor) {
@@ -405,12 +405,12 @@ static void S_claim_region(markdown_core_parser *parser, markdown_core_node *own
 
     if (parser->regions_size == parser->regions_alloc) {
         bufsize_t alloc = parser->regions_alloc ? parser->regions_alloc * 2 : 256;
-        markdown_core_region *grown;
+        markdown_core_region_record *grown;
         if (parser->regions_alloc > (bufsize_t)(INT32_MAX / 2)) {
             parser->oom = true;
             return;
         }
-        grown = (markdown_core_region *)parser->mem->realloc(parser->regions, (size_t)alloc * sizeof(*grown));
+        grown = (markdown_core_region_record *)parser->mem->realloc(parser->regions, (size_t)alloc * sizeof(*grown));
         if (!grown) {
             parser->oom = true;
             return;
@@ -483,7 +483,7 @@ static void S_reown_regions(markdown_core_parser *parser, markdown_core_node *fr
         if (parser->regions[i].owner == from_node) {
             parser->regions[i].owner = to_node;
             if (discard) {
-                parser->regions[i].role = (uint8_t)MARKDOWN_CORE_REGION_DISCARDED;
+                parser->regions[i].role = (uint8_t)MARKDOWN_CORE_REGION_ROLE_DISCARDED;
             }
         }
     }
@@ -586,7 +586,7 @@ static void S_write_concrete(markdown_core_parser *parser, FILE *out) {
         fprintf(out, "line %ld %ld\n", (long)i + 1, (long)parser->line_starts[i]);
     }
     for (i = 0; i < parser->regions_size; i++) {
-        const markdown_core_region *region = &parser->regions[i];
+        const markdown_core_region_record *region = &parser->regions[i];
         fprintf(out, "region %ld %ld %s ", (long)region->start, (long)region->length, ROLE[region->role]);
         S_write_node_path(out, region->owner, parser->root);
         fprintf(out, " %s %d:%d..%d:%d\n", markdown_core_node_get_type_string(region->owner), region->owner->start_line,
@@ -634,9 +634,9 @@ static void S_write_concrete(markdown_core_parser *parser, FILE *out) {
  * cell's own inline nodes is a refinement -- the same bytes, a descendant
  * owner -- and refusing it leaves every node inside a table or a label owning
  * nothing at all, which is what L5 says out loud. */
-static int S_region_is_refinable(const markdown_core_region *region, markdown_core_node *b) {
+static int S_region_is_refinable(const markdown_core_region_record *region, markdown_core_node *b) {
     markdown_core_node *node;
-    if (region->role != (uint8_t)MARKDOWN_CORE_REGION_CONTENT) {
+    if (region->role != (uint8_t)MARKDOWN_CORE_REGION_ROLE_CONTENT) {
         return 0;
     }
     /* The owner must be the block itself or an ANCESTOR of it. Anything else
@@ -737,7 +737,7 @@ static void S_reseat_inline_regions(markdown_core_parser *parser) {
             /* Gone. Its bytes are the document's, in the role a byte nothing
              * claims always has. */
             parser->regions[i].owner = parser->root;
-            parser->regions[i].role = (uint8_t)MARKDOWN_CORE_REGION_DISCARDED;
+            parser->regions[i].role = (uint8_t)MARKDOWN_CORE_REGION_ROLE_DISCARDED;
             continue;
         }
         /* UP THE ANCESTOR CHAIN, not one step. A pointer freed by a
@@ -776,7 +776,7 @@ static void S_reseat_inline_regions(markdown_core_parser *parser) {
              * INLINE node taking them keeps the role they had: the bytes are
              * still whatever they were, one owner further out. */
             if (!MARKDOWN_CORE_NODE_INLINE_P(owner)) {
-                parser->regions[i].role = (uint8_t)MARKDOWN_CORE_REGION_CONTENT;
+                parser->regions[i].role = (uint8_t)MARKDOWN_CORE_REGION_ROLE_CONTENT;
             }
         }
     }
@@ -840,14 +840,14 @@ void markdown_core_parser_claim_inline(markdown_core_parser *parser, markdown_co
      * the BLOCK-level attribution depend on the inline phase. That breaks L4's
      * first half: the same bytes read as CONTENT in a prefix whose block had
      * not yet grown the construct. Measured, eleven rows. */
-    claim->role = MARKDOWN_CORE_NODE_INLINE_P(owner) ? (uint8_t)role : (uint8_t)MARKDOWN_CORE_REGION_CONTENT;
+    claim->role = MARKDOWN_CORE_NODE_INLINE_P(owner) ? (uint8_t)role : (uint8_t)MARKDOWN_CORE_REGION_ROLE_CONTENT;
 }
 
 /* Resolve the claims made while `b`'s inlines were parsed, and REFINE `b`'s
  * CONTENT regions into them.
  *
  * A region may be refined -- split into adjacent regions covering the same
- * bytes -- and may never be moved or deleted (see markdown_core_region). This
+ * bytes -- and may never be moved or deleted (see markdown_core_region_record). This
  * is the only refiner in the engine, and everything it produces covers exactly
  * the bytes `b` already owned in role CONTENT.
  *
@@ -867,7 +867,7 @@ void markdown_core_parser_refine_inline_regions(markdown_core_parser *parser, ma
     bufsize_t content_length = b->content.size;
     bufsize_t i, at, produced = 0, delta, read, write;
     bufsize_t pieces_size = 0;
-    markdown_core_region *pieces = NULL;
+    markdown_core_region_record *pieces = NULL;
     bufsize_t lo, hi;
 
     if (parser->inline_claims_size <= base || content_length <= 0 || b->content_mark_count <= 0) {
@@ -937,9 +937,9 @@ void markdown_core_parser_refine_inline_regions(markdown_core_parser *parser, ma
             }
             source_start = parser->line_starts[line - 1] + column - 1;
             if (pieces_size == capacity) {
-                markdown_core_region *grown;
+                markdown_core_region_record *grown;
                 capacity = capacity ? capacity * 2 : 64;
-                grown = (markdown_core_region *)parser->mem->realloc(pieces, (size_t)capacity * sizeof(*grown));
+                grown = (markdown_core_region_record *)parser->mem->realloc(pieces, (size_t)capacity * sizeof(*grown));
                 if (!grown) {
                     parser->mem->free(pieces);
                     parser->oom = true;
@@ -952,7 +952,7 @@ void markdown_core_parser_refine_inline_regions(markdown_core_parser *parser, ma
             pieces[pieces_size].length = run - at;
             pieces[pieces_size].owner = which < 0 ? b : parser->inline_claims[which].owner;
             pieces[pieces_size].role =
-                which < 0 ? (uint8_t)MARKDOWN_CORE_REGION_CONTENT : parser->inline_claims[which].role;
+                which < 0 ? (uint8_t)MARKDOWN_CORE_REGION_ROLE_CONTENT : parser->inline_claims[which].role;
             pieces_size++;
             at = run;
         }
@@ -1026,7 +1026,7 @@ void markdown_core_parser_refine_inline_regions(markdown_core_parser *parser, ma
             }
             if (!found) {
                 pieces[i].owner = b;
-                pieces[i].role = (uint8_t)MARKDOWN_CORE_REGION_CONTENT;
+                pieces[i].role = (uint8_t)MARKDOWN_CORE_REGION_ROLE_CONTENT;
                 continue;
             }
             if (owner == b || owner->start_line < 1 || owner->start_line > parser->line_starts_size ||
@@ -1037,7 +1037,7 @@ void markdown_core_parser_refine_inline_regions(markdown_core_parser *parser, ma
             if (pieces[i].start < parser->line_starts[owner->start_line - 1] + owner->start_column - 1 ||
                 pieces[i].start + pieces[i].length > stop_at + 1) {
                 pieces[i].owner = b;
-                pieces[i].role = (uint8_t)MARKDOWN_CORE_REGION_CONTENT;
+                pieces[i].role = (uint8_t)MARKDOWN_CORE_REGION_ROLE_CONTENT;
             }
         }
         parser->mem->free(live);
@@ -1118,8 +1118,8 @@ void markdown_core_parser_refine_inline_regions(markdown_core_parser *parser, ma
             alloc *= 2;
         }
         if (alloc != parser->regions_alloc) {
-            markdown_core_region *grown =
-                (markdown_core_region *)parser->mem->realloc(parser->regions, (size_t)alloc * sizeof(*grown));
+            markdown_core_region_record *grown =
+                (markdown_core_region_record *)parser->mem->realloc(parser->regions, (size_t)alloc * sizeof(*grown));
             if (!grown) {
                 parser->mem->free(pieces);
                 parser->oom = true;
@@ -1138,7 +1138,7 @@ void markdown_core_parser_refine_inline_regions(markdown_core_parser *parser, ma
     {
         bufsize_t piece = 0;
         for (i = 0; i < hi - lo; i++) {
-            markdown_core_region source = parser->regions[read++];
+            markdown_core_region_record source = parser->regions[read++];
             bufsize_t at = source.start;
             bufsize_t end = at + source.length;
             /* A region a NESTED refine already wrote -- a directive's label is
@@ -1270,7 +1270,7 @@ static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown
      * start before its own scope. The bytes that ARE copied are its content,
      * and the tab below is one of them, because its expansion is what lands in
      * the buffer. */
-    S_claim_region(parser, node->parent ? node->parent : node, parser->offset, MARKDOWN_CORE_REGION_DISCARDED);
+    S_claim_region(parser, node->parent ? node->parent : node, parser->offset, MARKDOWN_CORE_REGION_ROLE_DISCARDED);
     if (parser->partially_consumed_tab) {
         /* The spaces below stand for the tail of the tab at parser->offset and
          * have no source bytes of their own, so they are marked against the
@@ -1285,7 +1285,7 @@ static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown
     }
     S_record_content_mark(parser, node, parser->offset + 1);
     markdown_core_strbuf_put(&node->content, ch->data + parser->offset, ch->len - parser->offset);
-    S_claim_region(parser, node, ch->len, MARKDOWN_CORE_REGION_CONTENT);
+    S_claim_region(parser, node, ch->len, MARKDOWN_CORE_REGION_ROLE_CONTENT);
     if (node->content.oom) {
         parser->oom = true;
     }
@@ -1730,8 +1730,8 @@ static void S_partition_definition_regions(markdown_core_parser *parser, markdow
             alloc *= 2;
         }
         if (alloc != parser->regions_alloc) {
-            markdown_core_region *grown =
-                (markdown_core_region *)parser->mem->realloc(parser->regions, (size_t)alloc * sizeof(*grown));
+            markdown_core_region_record *grown =
+                (markdown_core_region_record *)parser->mem->realloc(parser->regions, (size_t)alloc * sizeof(*grown));
             if (!grown) {
                 parser->oom = true;
                 return;
@@ -1750,7 +1750,7 @@ static void S_partition_definition_regions(markdown_core_parser *parser, markdow
     read = lo + delta;
     write = lo;
     for (i = 0; i < hi - lo; i++) {
-        markdown_core_region source = parser->regions[read++];
+        markdown_core_region_record source = parser->regions[read++];
         bufsize_t at = source.start;
         bufsize_t end = at + source.length;
         if (source.owner != b) {
@@ -2637,7 +2637,7 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
             if (!parse_extension_block(parser, container, input, &should_continue)) {
                 goto done;
             }
-            S_claim_region(parser, container, parser->offset, MARKDOWN_CORE_REGION_MARKER);
+            S_claim_region(parser, container, parser->offset, MARKDOWN_CORE_REGION_ROLE_MARKER);
             continue;
         }
 
@@ -2682,7 +2682,7 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
         /* Whatever this container's prefix consumed is that container's
          * MARKER: `> ` belongs to the block quote, the item's indent to the
          * list item. One claim per container, walking down the spine. */
-        S_claim_region(parser, container, parser->offset, MARKDOWN_CORE_REGION_MARKER);
+        S_claim_region(parser, container, parser->offset, MARKDOWN_CORE_REGION_ROLE_MARKER);
     }
 
     *all_matched = true;
@@ -2690,7 +2690,7 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
 done:
     /* A container whose prefix consumed bytes and then declined still read
      * them; they are its marker up to the point it gave up. */
-    S_claim_region(parser, container, parser->offset, MARKDOWN_CORE_REGION_MARKER);
+    S_claim_region(parser, container, parser->offset, MARKDOWN_CORE_REGION_ROLE_MARKER);
     if (!*all_matched) {
         container = container->parent; // back up to last matching node
     }
@@ -2725,7 +2725,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
          * giving the spaces to the block being opened would make its first
          * region start before its own scope. Measured before it was fixed --
          * 52 rows of an indented code block's four spaces alone. */
-        S_claim_region(parser, *container, parser->first_nonspace, MARKDOWN_CORE_REGION_DISCARDED);
+        S_claim_region(parser, *container, parser->first_nonspace, MARKDOWN_CORE_REGION_ROLE_DISCARDED);
         indented = parser->indent >= CODE_INDENT;
 
         if (!indented && peek_at(input, parser->first_nonspace) == '>') {
@@ -2958,7 +2958,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
          * block owns it: `> `, `- `, the `#`s of a heading, the opening fence,
          * `[^label]:`. Claimed once per turn of the loop -- once per block
          * opened -- and before `accepts_lines` breaks out. */
-        S_claim_region(parser, *container, parser->offset, MARKDOWN_CORE_REGION_MARKER);
+        S_claim_region(parser, *container, parser->offset, MARKDOWN_CORE_REGION_ROLE_MARKER);
 
         if (accepts_lines(*container)) {
             // if it's a line container, it can't contain other containers
@@ -2968,7 +2968,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
         cont_type = S_type(*container);
         maybe_lazy = false;
     }
-    S_claim_region(parser, *container, parser->offset, MARKDOWN_CORE_REGION_MARKER);
+    S_claim_region(parser, *container, parser->offset, MARKDOWN_CORE_REGION_ROLE_MARKER);
 }
 
 static void add_text_to_container(markdown_core_parser *parser, markdown_core_node *container,
@@ -3177,7 +3177,7 @@ finished:
      * After this the line tiles, which is L1, and no later phase adds to it,
      * which is L4. */
     S_claim_region(parser, parser->current ? parser->current : parser->root, parser->curline.size,
-                   MARKDOWN_CORE_REGION_DISCARDED);
+                   MARKDOWN_CORE_REGION_ROLE_DISCARDED);
     parser->region_cursor = 0;
 
     parser->last_line_length = input.len;
@@ -3280,6 +3280,27 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
         S_write_concrete(parser, parser->concrete_out);
     }
 
+    /* REQUIREMENT 12: the document keeps the concrete view. Moved rather than
+     * copied -- the parser is about to reset and would free all three -- and
+     * moved HERE, after every rewrite and before the reset, which is the only
+     * moment at which the view is both complete and still owned. */
+    if (parser->concrete_retain) {
+        markdown_core_concrete *out = parser->concrete_retain;
+        out->mem = parser->mem;
+        out->source = parser->source;
+        out->line_starts = parser->line_starts;
+        out->line_starts_size = parser->line_starts_size;
+        out->regions = parser->regions;
+        out->regions_size = parser->regions_size;
+        markdown_core_strbuf_init(parser->mem, &parser->source, 0);
+        parser->line_starts = NULL;
+        parser->line_starts_size = 0;
+        parser->line_starts_alloc = 0;
+        parser->regions = NULL;
+        parser->regions_size = 0;
+        parser->regions_alloc = 0;
+    }
+
     res = parser->root;
     parser->root = NULL;
 
@@ -3309,6 +3330,24 @@ int markdown_core_parser_has_partially_consumed_tab(markdown_core_parser *parser
 }
 
 int markdown_core_parser_get_last_line_length(markdown_core_parser *parser) { return parser->last_line_length; }
+
+void markdown_core_parser_retain_concrete(markdown_core_parser *parser, markdown_core_concrete *out) {
+    if (!parser || !out) {
+        return;
+    }
+    memset(out, 0, sizeof(*out));
+    parser->concrete_retain = out;
+}
+
+void markdown_core_concrete_dispose(markdown_core_concrete *concrete) {
+    if (!concrete || !concrete->mem) {
+        return;
+    }
+    markdown_core_strbuf_free(&concrete->source);
+    concrete->mem->free(concrete->line_starts);
+    concrete->mem->free(concrete->regions);
+    memset(concrete, 0, sizeof(*concrete));
+}
 
 markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser, markdown_core_node *parent,
                                                    markdown_core_node_type block_type, int start_column) {

@@ -264,9 +264,9 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(subject *subj, int
         append_child(link, text);
     }
     /* The pointy braces are the syntax; what they enclose is the text. */
-    S_claim(subj, link, start_column, start_column + 1, MARKDOWN_CORE_REGION_MARKER);
-    S_claim(subj, text ? text : link, start_column + 1, end_column, MARKDOWN_CORE_REGION_CONTENT);
-    S_claim(subj, link, end_column, end_column + 1, MARKDOWN_CORE_REGION_MARKER);
+    S_claim(subj, link, start_column, start_column + 1, MARKDOWN_CORE_REGION_ROLE_MARKER);
+    S_claim(subj, text ? text : link, start_column + 1, end_column, MARKDOWN_CORE_REGION_ROLE_CONTENT);
+    S_claim(subj, link, end_column, end_column + 1, MARKDOWN_CORE_REGION_ROLE_MARKER);
     return link;
 }
 
@@ -483,9 +483,9 @@ static markdown_core_node *handle_backticks(subject *subj, int options) {
             return NULL;
         }
         /* The ticks reach no literal and the bytes between them do. */
-        S_claim(subj, node, startpos - openticks.len, startpos, MARKDOWN_CORE_REGION_MARKER);
-        S_claim(subj, node, startpos, endpos - openticks.len, MARKDOWN_CORE_REGION_CONTENT);
-        S_claim(subj, node, endpos - openticks.len, endpos, MARKDOWN_CORE_REGION_MARKER);
+        S_claim(subj, node, startpos - openticks.len, startpos, MARKDOWN_CORE_REGION_ROLE_MARKER);
+        S_claim(subj, node, startpos, endpos - openticks.len, MARKDOWN_CORE_REGION_ROLE_CONTENT);
+        S_claim(subj, node, endpos - openticks.len, endpos, MARKDOWN_CORE_REGION_ROLE_MARKER);
         return node;
     }
 }
@@ -878,9 +878,9 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
                      * claims them for its own node -- a later claim, which
                      * wins. */
                     S_claim(subj, subj->owner, opener->position - opener->length, opener->position,
-                            MARKDOWN_CORE_REGION_MARKER);
+                            MARKDOWN_CORE_REGION_ROLE_MARKER);
                     S_claim(subj, subj->owner, closer->position - closer->length, closer->position,
-                            MARKDOWN_CORE_REGION_MARKER);
+                            MARKDOWN_CORE_REGION_ROLE_MARKER);
                 }
                 closer = opener_found ? extension->insert_inline_from_delim(extension, parser, subj, opener, closer)
                                       : closer->next;
@@ -983,9 +983,9 @@ static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *clo
      * nothing is its own literal; this claim is later and wins. `position` is
      * the content offset one past the run, which is why the opener's used bytes
      * are counted back from it and the closer's forward from its own start. */
-    S_claim(subj, emph, opener->position - use_delims, opener->position, MARKDOWN_CORE_REGION_MARKER);
+    S_claim(subj, emph, opener->position - use_delims, opener->position, MARKDOWN_CORE_REGION_ROLE_MARKER);
     S_claim(subj, emph, closer->position - closer_num_chars - use_delims, closer->position - closer_num_chars,
-            MARKDOWN_CORE_REGION_MARKER);
+            MARKDOWN_CORE_REGION_ROLE_MARKER);
 
     // The emphasis takes the delimiters ADJACENT TO ITS CONTENT -- the opener's
     // trailing `use_delims` and the closer's leading ones -- so what is left over
@@ -1055,8 +1055,8 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
                      * escape and reaches no literal, the second is the byte the
                      * literal is made of. */
                     for (bufsize_t at = start; run && at + 1 < end; at += 2) {
-                        S_claim(subj, run, at, at + 1, MARKDOWN_CORE_REGION_MARKER);
-                        S_claim(subj, run, at + 1, at + 2, MARKDOWN_CORE_REGION_CONTENT);
+                        S_claim(subj, run, at, at + 1, MARKDOWN_CORE_REGION_ROLE_MARKER);
+                        S_claim(subj, run, at + 1, at + 2, MARKDOWN_CORE_REGION_ROLE_CONTENT);
                     }
                     return run;
                 }
@@ -1067,8 +1067,8 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
         {
             markdown_core_node *escaped =
                 make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_dup(&subj->input, subj->pos - 1, 1));
-            S_claim(subj, escaped, subj->pos - 2, subj->pos - 1, MARKDOWN_CORE_REGION_MARKER);
-            S_claim(subj, escaped, subj->pos - 1, subj->pos, MARKDOWN_CORE_REGION_CONTENT);
+            S_claim(subj, escaped, subj->pos - 2, subj->pos - 1, MARKDOWN_CORE_REGION_ROLE_MARKER);
+            S_claim(subj, escaped, subj->pos - 1, subj->pos, MARKDOWN_CORE_REGION_ROLE_CONTENT);
             return escaped;
         }
     } else if (!is_eof(subj) && skip_line_end(subj)) {
@@ -1109,7 +1109,7 @@ static markdown_core_node *handle_entity(subject *subj) {
     if (len == 0) {
         markdown_core_node *literal = make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("&"));
         /* Not an entity: the `&` IS the literal, so it is content. */
-        S_claim(subj, literal, subj->pos - 1, subj->pos, MARKDOWN_CORE_REGION_CONTENT);
+        S_claim(subj, literal, subj->pos - 1, subj->pos, MARKDOWN_CORE_REGION_ROLE_CONTENT);
         return literal;
     }
 
@@ -1624,7 +1624,7 @@ noMatch:
 
             // we then replace the opener with this new fnref node, the net effect
             // being replacing the opening '[' text node with a `^footnote-ref]` node.
-            S_claim(subj, fnref, opener->position - 1, initial_pos, MARKDOWN_CORE_REGION_MARKER);
+            S_claim(subj, fnref, opener->position - 1, initial_pos, MARKDOWN_CORE_REGION_ROLE_MARKER);
             markdown_core_node_insert_before(opener->inl_text, fnref);
 
             process_emphasis(parser, subj, opener->position);
@@ -1706,8 +1706,8 @@ placed:;
      * markers. They were claimed CONTENT as they were read, because an
      * unmatched `[` is its own literal; these claims are later and win. The
      * children keep the claims they made for themselves. */
-    S_claim(subj, inl, opener->position - (is_image ? 2 : 1), opener->position, MARKDOWN_CORE_REGION_MARKER);
-    S_claim(subj, inl, initial_pos - 1, subj->pos, MARKDOWN_CORE_REGION_MARKER);
+    S_claim(subj, inl, opener->position - (is_image ? 2 : 1), opener->position, MARKDOWN_CORE_REGION_ROLE_MARKER);
+    S_claim(subj, inl, initial_pos - 1, subj->pos, MARKDOWN_CORE_REGION_ROLE_MARKER);
     // A link starts at its own '[' and ends at its closing ')' or ']', and the
     // two need not be on the same line. Taking BOTH from subj->line made a link
     // start where it ENDED: `[a\nb](/u)` reported Link 2:1..2:6 around a child
@@ -1790,8 +1790,8 @@ static markdown_core_node *handle_newline(subject *subj) {
          * next line's leading whitespace: the parse read them and kept them
          * nowhere, which is what DISCARDED is for, and they belong to the
          * block they were read inside rather than to the break. */
-        S_claim(subj, brk, nlpos, end_of_break, MARKDOWN_CORE_REGION_MARKER);
-        S_claim(subj, subj->owner, end_of_break, subj->pos, MARKDOWN_CORE_REGION_DISCARDED);
+        S_claim(subj, brk, nlpos, end_of_break, MARKDOWN_CORE_REGION_ROLE_MARKER);
+        S_claim(subj, subj->owner, end_of_break, subj->pos, MARKDOWN_CORE_REGION_ROLE_DISCARDED);
     }
     return brk;
 }
@@ -1951,7 +1951,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
      * what lets the gap fill below be a merge rather than a search. */
     bufsize_t before = subj->pos;
     bufsize_t claimed = subj->owner_parser ? subj->owner_parser->inline_claims_size : 0;
-    markdown_core_region_role fallback = MARKDOWN_CORE_REGION_CONTENT;
+    markdown_core_region_role fallback = MARKDOWN_CORE_REGION_ROLE_CONTENT;
     c = peek_char(subj);
     if (c == 0) {
         return 0;
@@ -1962,7 +1962,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         /* A break's bytes reach no literal: a `SoftBreak` and a `LineBreak`
          * both have none, and a hard break's two trailing spaces or backslash
          * are exactly the syntax that made it one. */
-        fallback = MARKDOWN_CORE_REGION_MARKER;
+        fallback = MARKDOWN_CORE_REGION_ROLE_MARKER;
         new_inl = handle_newline(subj);
         break;
     case '`':
@@ -1979,7 +1979,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
          * source wrote -- no byte of the entity survives as itself. An `&`
          * that is NOT an entity is returned by the same handler as its own
          * literal, and claims itself CONTENT. */
-        fallback = MARKDOWN_CORE_REGION_MARKER;
+        fallback = MARKDOWN_CORE_REGION_ROLE_MARKER;
         new_inl = handle_entity(subj);
         break;
     case '<':
@@ -1994,19 +1994,19 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
          * A smart quote is a SUBSTITUTION: the literal is a curly quote, which
          * is not the byte the source wrote. */
         if ((c == '\'' || c == '"') && (options & MARKDOWN_CORE_OPT_SMART) != 0) {
-            fallback = MARKDOWN_CORE_REGION_MARKER;
+            fallback = MARKDOWN_CORE_REGION_ROLE_MARKER;
         }
         new_inl = handle_delim(subj, c, (options & MARKDOWN_CORE_OPT_SMART) != 0);
         break;
     case '-':
         if ((options & MARKDOWN_CORE_OPT_SMART) != 0) {
-            fallback = MARKDOWN_CORE_REGION_MARKER;
+            fallback = MARKDOWN_CORE_REGION_ROLE_MARKER;
         }
         new_inl = handle_hyphen(subj, (options & MARKDOWN_CORE_OPT_SMART) != 0);
         break;
     case '.':
         if ((options & MARKDOWN_CORE_OPT_SMART) != 0) {
-            fallback = MARKDOWN_CORE_REGION_MARKER;
+            fallback = MARKDOWN_CORE_REGION_ROLE_MARKER;
         }
         new_inl = handle_period(subj, (options & MARKDOWN_CORE_OPT_SMART) != 0);
         break;
@@ -2068,8 +2068,8 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
          * run's, in the role a byte kept nowhere has. Giving them to the block
          * instead left the node covering eight columns and owning three, which
          * is what L5 measures. */
-        S_claim(subj, new_inl, startpos, startpos + contents.len, MARKDOWN_CORE_REGION_CONTENT);
-        S_claim(subj, subj->owner, startpos + contents.len, endpos, MARKDOWN_CORE_REGION_DISCARDED);
+        S_claim(subj, new_inl, startpos, startpos + contents.len, MARKDOWN_CORE_REGION_ROLE_CONTENT);
+        S_claim(subj, subj->owner, startpos + contents.len, endpos, MARKDOWN_CORE_REGION_ROLE_DISCARDED);
     }
     if (new_inl != NULL) {
         append_child(parent, new_inl);

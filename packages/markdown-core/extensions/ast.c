@@ -146,9 +146,11 @@ markdown_core_document *markdown_core_document_parse(const uint8_t *source, size
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
         return NULL;
     }
+    markdown_core_parser_retain_concrete(parser, &document->concrete);
     document->root = markdown_core_parser_finish(parser);
     markdown_core_parser_free(parser);
     if (!document->root) {
+        markdown_core_concrete_dispose(&document->concrete);
         free(document);
         set_error(error, MARKDOWN_CORE_ERROR_INTERNAL, "parser did not produce a document");
         return NULL;
@@ -160,12 +162,54 @@ void markdown_core_document_free(markdown_core_document *document) {
     if (!document) {
         return;
     }
+    /* The regions name nodes of this tree, so the two are freed together and
+     * in this order: nothing may read a region after its owner is gone. */
+    markdown_core_concrete_dispose(&document->concrete);
     markdown_core_node_free(document->root);
     free(document);
 }
 
-const markdown_core_node *markdown_core_document_root(const markdown_core_document *document) {
+const markdown_core_node *markdown_core_document_semantic(const markdown_core_document *document) {
     return document ? document->root : NULL;
+}
+
+markdown_core_string_view markdown_core_document_source(const markdown_core_document *document) {
+    markdown_core_string_view view = {NULL, 0};
+    if (document && document->concrete.source.ptr) {
+        view.data = document->concrete.source.ptr;
+        view.length = (size_t)document->concrete.source.size;
+    }
+    return view;
+}
+
+size_t markdown_core_document_line_count(const markdown_core_document *document) {
+    return document ? (size_t)document->concrete.line_starts_size : 0;
+}
+
+bool markdown_core_document_line_start(const markdown_core_document *document, size_t line, size_t *offset) {
+    if (!document || !offset || line < 1 || line > (size_t)document->concrete.line_starts_size) {
+        return false;
+    }
+    *offset = (size_t)document->concrete.line_starts[line - 1];
+    return true;
+}
+
+size_t markdown_core_document_region_count(const markdown_core_document *document) {
+    return document ? (size_t)document->concrete.regions_size : 0;
+}
+
+bool markdown_core_document_region_at(const markdown_core_document *document, size_t index,
+                                      markdown_core_region *region) {
+    const markdown_core_region_record *source;
+    if (!document || !region || index >= (size_t)document->concrete.regions_size) {
+        return false;
+    }
+    source = &document->concrete.regions[index];
+    region->start = (size_t)source->start;
+    region->length = (size_t)source->length;
+    region->role = (markdown_core_region_role)source->role;
+    region->owner = source->owner;
+    return true;
 }
 
 markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error) {

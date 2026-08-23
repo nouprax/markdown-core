@@ -159,6 +159,112 @@ done:
     markdown_core_error_free(error);
 }
 
+/* Is `node` in `root`'s tree? A region's owner must be, or the two views are
+ * not one parse. */
+static int reachable(const markdown_core_node *root, const markdown_core_node *node) {
+    const markdown_core_node *child;
+    if (root == node) {
+        return 1;
+    }
+    for (child = markdown_core_node_get_first_child(root); child; child = markdown_core_node_get_next_sibling(child)) {
+        if (reachable(child, node)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* REQUIREMENT 12'S LAW, through the public surface and nothing else.
+ *
+ * The tree may omit bytes; the concrete view may not. Stated as three checks
+ * that a consumer could make for itself:
+ *
+ *   the regions TILE the source -- no gap, no overlap, nothing past the end;
+ *   every region's OWNER is a node of this document's semantic view;
+ *   the line index agrees with the source, line for line.
+ *
+ * The corpus is deliberately one of everything the tree DOES omit: a fence's
+ * backticks, an ATX heading's closing hashes, a link's brackets and
+ * destination, an emphasis delimiter, a definition, an entity. If the pair were
+ * incomplete this is where it would show.
+ */
+static void check_two_views(void) {
+    static const uint8_t source[] = "# Heading ##\n"
+                                    "\n"
+                                    "> quoted *em* and `code`\n"
+                                    "\n"
+                                    "```c\n"
+                                    "x\n"
+                                    "```\n"
+                                    "\n"
+                                    "[a]: /u \"t\"\n"
+                                    "\n"
+                                    "see [a] and &amp; and [b](/v).\n";
+    markdown_core_document *document = markdown_core_document_parse(source, sizeof(source) - 1, NULL, NULL);
+    markdown_core_string_view text;
+    const markdown_core_node *root;
+    size_t count;
+    size_t at = 0;
+    size_t index;
+    size_t line;
+    int tiled = 1;
+    int owned = 1;
+    int lines_agree = 1;
+
+    check(document != NULL, "two-views corpus parses");
+    if (!document) {
+        return;
+    }
+    root = markdown_core_document_semantic(document);
+    text = markdown_core_document_source(document);
+    count = markdown_core_document_region_count(document);
+    check(text.length > 0 && count > 0, "the concrete view is populated");
+
+    for (index = 0; index < count; index++) {
+        markdown_core_region region;
+        if (!markdown_core_document_region_at(document, index, &region)) {
+            tiled = 0;
+            break;
+        }
+        if (region.start != at || region.length == 0) {
+            tiled = 0;
+        }
+        at = region.start + region.length;
+        if (!region.owner || !reachable(root, region.owner)) {
+            owned = 0;
+        }
+    }
+    check(tiled && at == text.length, "every byte of the source is in exactly one region");
+    check(owned, "every region has exactly one owner in the semantic view");
+
+    /* The tree omits bytes and the pair does not: the closing `##`, the fence
+     * and the definition's punctuation are in no literal anywhere, and every
+     * one of them is in a region above. */
+    check(markdown_core_document_line_count(document) == 11, "the line index counts the source's lines");
+    for (line = 1; line <= markdown_core_document_line_count(document); line++) {
+        size_t offset = 0;
+        if (!markdown_core_document_line_start(document, line, &offset) || offset > text.length) {
+            lines_agree = 0;
+            break;
+        }
+        if (line > 1 && text.data[offset - 1] != '\n') {
+            lines_agree = 0;
+        }
+    }
+    check(lines_agree, "every line but the first begins after a line ending");
+    check(!markdown_core_document_line_start(document, 0, &at), "line zero is not a line");
+    check(!markdown_core_document_line_start(document, 12, &at), "a line past the end is not a line");
+    {
+        markdown_core_region region;
+        check(!markdown_core_document_region_at(document, count, &region), "a region past the end is not a region");
+    }
+    markdown_core_document_free(document);
+
+    check(markdown_core_document_source(NULL).data == NULL, "a null document has no source");
+    check(markdown_core_document_region_count(NULL) == 0, "a null document has no regions");
+    check(markdown_core_document_line_count(NULL) == 0, "a null document has no lines");
+}
+
 static void check_api(void) {
     static const uint8_t source[] = "# Heading\n\n- [ ] task\n";
     markdown_core_parse_options options;
@@ -179,7 +285,7 @@ static void check_api(void) {
     document = markdown_core_document_parse(source, sizeof(source) - 1, &options, &error);
     check(document != NULL && error == NULL, "typed-options parse succeeds");
     if (document) {
-        root = markdown_core_document_root(document);
+        root = markdown_core_document_semantic(document);
         heading = markdown_core_node_get_first_child(root);
         check(markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT, "document root kind is typed");
         check(markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING,
@@ -219,6 +325,7 @@ int main(int argc, char **argv) {
     }
     fixture_dir = argv[2];
     check_api();
+    check_two_views();
     for (i = 3; i < argc; i += 2) {
         check_fixture(fixture_dir, argv[i], argv[i + 1]);
     }

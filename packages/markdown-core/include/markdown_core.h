@@ -164,6 +164,36 @@ typedef enum markdown_core_table_alignment {
     MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT = 3
 } markdown_core_table_alignment;
 
+/** THE ROLE A REGION'S BYTES PLAYED. Not what they look like -- what they DID.
+ *
+ * MARKER     the bytes that made the owner the kind of thing it is and are not
+ *            its content: `> `, `- `, a fence, `[^label]:`, a link's brackets,
+ *            an emphasis delimiter, an entity, a backslash escape.
+ * CONTENT    the bytes that went into the owner's content, and so are the bytes
+ *            its children are cut from.
+ * DISCARDED  the bytes the parse read and kept nowhere -- indentation stripped
+ *            from a continuation line, the trailing hashes of a closed ATX
+ *            heading, a line ending nothing owns. They still have an owner.
+ */
+#ifndef MARKDOWN_CORE_REGION_ROLE_TYPEDEF
+#define MARKDOWN_CORE_REGION_ROLE_TYPEDEF
+typedef enum markdown_core_region_role {
+    MARKDOWN_CORE_REGION_ROLE_MARKER = 0,
+    MARKDOWN_CORE_REGION_ROLE_CONTENT = 1,
+    MARKDOWN_CORE_REGION_ROLE_DISCARDED = 2
+} markdown_core_region_role;
+#endif
+
+/** One region of the concrete view: a byte range of the normalized source with
+ * exactly one owner and exactly one role. `start` and `length` index
+ * `markdown_core_document_source`, never the caller's own buffer. */
+typedef struct markdown_core_region {
+    size_t start;
+    size_t length;
+    markdown_core_region_role role;
+    const markdown_core_node *owner;
+} markdown_core_region;
+
 typedef struct markdown_core_optional_i64 {
     bool has_value;
     int64_t value;
@@ -186,7 +216,44 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_document_parse(const uin
                                                                        const markdown_core_parse_options *options,
                                                                        markdown_core_error **error);
 MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *document);
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_root(const markdown_core_document *document);
+
+/**
+ * ONE PARSE UNDER TWO TOTAL VIEWS, and the law that binds them.
+ *
+ * `markdown_core_document_semantic` is the tree: policy applied, and it MAY
+ * omit bytes -- a fence's backticks are in no node's literal, and the closing
+ * hashes of an ATX heading are in nothing at all.
+ *
+ * The concrete view -- `_source`, `_line_count`, `_line_start`, `_region_count`
+ * and `_region_at` -- OMITS NOTHING, and that is not a promise about intent but
+ * a checkable law:
+ *
+ *   EVERY BYTE of `markdown_core_document_source` lies in exactly one region,
+ *   and every region has exactly one owner in the semantic tree.
+ *
+ * So the pair is complete: a consumer that wants meaning reads the tree, one
+ * that wants provenance reads the regions, and no byte of the input is
+ * reachable through neither. The source is the NORMALIZED source -- UTF-8
+ * validated, NUL replaced, every line ending a single `\n` -- and not the bytes
+ * the caller passed, because that is what the tree's positions and the regions
+ * both index.
+ *
+ * Both views end with the document. A region's `owner` is a node of the same
+ * document and is valid for exactly as long as it is.
+ */
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_semantic(const markdown_core_document *document);
+/** The normalized source. Empty, never null, for a document that parsed no bytes. */
+MARKDOWN_CORE_API markdown_core_string_view markdown_core_document_source(const markdown_core_document *document);
+/** How many lines the normalized source has. */
+MARKDOWN_CORE_API size_t markdown_core_document_line_count(const markdown_core_document *document);
+/** Where line `line` begins in the source, counting lines from 1. */
+MARKDOWN_CORE_API bool markdown_core_document_line_start(const markdown_core_document *document, size_t line,
+                                                         size_t *offset);
+/** How many regions the concrete view has. They are in source order. */
+MARKDOWN_CORE_API size_t markdown_core_document_region_count(const markdown_core_document *document);
+/** The region at `index`, counting from 0. */
+MARKDOWN_CORE_API bool markdown_core_document_region_at(const markdown_core_document *document, size_t index,
+                                                        markdown_core_region *region);
 
 MARKDOWN_CORE_API markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error);
 MARKDOWN_CORE_API markdown_core_string_view markdown_core_error_get_message(const markdown_core_error *error);

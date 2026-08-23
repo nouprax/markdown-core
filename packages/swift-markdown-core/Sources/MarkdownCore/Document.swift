@@ -82,7 +82,7 @@ public struct Document: Markup {
         }
         defer { markdown_core_document_free(nativeDocument) }
 
-        guard let root = markdown_core_document_root(nativeDocument),
+        guard let root = markdown_core_document_semantic(nativeDocument),
             let document = markup(from: root) as? Document
         else {
             throw ParseError(

@@ -33,11 +33,14 @@ extern "C" {
  * A region may be REFINED -- split into adjacent regions covering the same
  * bytes -- which is how an extension takes credit for part of a span without
  * breaking the tiling. It may never be moved and never be deleted. */
-typedef enum {
-    MARKDOWN_CORE_REGION_MARKER = 0,
-    MARKDOWN_CORE_REGION_CONTENT = 1,
-    MARKDOWN_CORE_REGION_DISCARDED = 2
+#ifndef MARKDOWN_CORE_REGION_ROLE_TYPEDEF
+#define MARKDOWN_CORE_REGION_ROLE_TYPEDEF
+typedef enum markdown_core_region_role {
+    MARKDOWN_CORE_REGION_ROLE_MARKER = 0,
+    MARKDOWN_CORE_REGION_ROLE_CONTENT = 1,
+    MARKDOWN_CORE_REGION_ROLE_DISCARDED = 2
 } markdown_core_region_role;
+#endif
 
 typedef struct {
     /* Offset in the parser's normalized source, and the length in bytes. */
@@ -47,7 +50,7 @@ typedef struct {
      * block belong to the document. */
     struct markdown_core_node *owner;
     uint8_t role;
-} markdown_core_region;
+} markdown_core_region_record;
 
 /* ONE INLINE CLAIM: the bytes [`from`, `to`) of the block's CONTENT buffer are
  * `owner`'s, in role `role`.
@@ -73,6 +76,26 @@ typedef struct {
     struct markdown_core_node *owner;
     uint8_t role;
 } markdown_core_inline_claim;
+
+/* THE CONCRETE VIEW, moved out of the parser and into the document.
+ *
+ * Requirement 12: one parse under two TOTAL views. The semantic one is the
+ * tree; this is the other -- the normalized source, its line index, and every
+ * region -- and the law that binds them is that every byte of the source is in
+ * exactly one region and every region has exactly one owner, so the pair omits
+ * nothing. It lived and died with the parser until Step 12, which is why 11a's
+ * comment says "requirement 12 is where a document keeps this view".
+ *
+ * The regions name NODES, so whoever holds this must hold the tree: the
+ * document owns both, and freeing it frees both. */
+typedef struct {
+    markdown_core_mem *mem;
+    markdown_core_strbuf source;
+    bufsize_t *line_starts;
+    bufsize_t line_starts_size;
+    markdown_core_region_record *regions;
+    bufsize_t regions_size;
+} markdown_core_concrete;
 
 /* Where one source line's bytes landed in a block's content buffer.
  *
@@ -148,15 +171,19 @@ struct markdown_core_parser {
     bufsize_t *line_starts;
     bufsize_t line_starts_size;
     bufsize_t line_starts_alloc;
-    /* The concrete record set (see markdown_core_region), in source order, and
+    /* The concrete record set (see markdown_core_region_record), in source order, and
      * how far the line in hand has been attributed. Regions are emitted while
      * the line that contains them is being processed and never afterwards,
      * which is L4: the record set is complete for lines 1..N once line N has
      * been fed. */
-    markdown_core_region *regions;
+    markdown_core_region_record *regions;
     bufsize_t regions_size;
     bufsize_t regions_alloc;
     bufsize_t region_cursor;
+    /* When set, markdown_core_parser_finish MOVES the normalized source, the
+     * line index and the region set here instead of releasing them, and the
+     * caller becomes their owner (requirement 12). */
+    markdown_core_concrete *concrete_retain;
     /* When set, markdown_core_parser_finish writes the record set here before
      * releasing it. There is no public reader: requirement 12 is where a
      * document keeps the concrete view, and until then the CLI's `--concrete`
@@ -214,6 +241,11 @@ struct markdown_core_parser {
  * -- or discard -- the outer one's claims. */
 void markdown_core_parser_refine_inline_regions(markdown_core_parser *parser, markdown_core_node *block,
                                                 bufsize_t base);
+
+/* Ask `finish` to hand the concrete view over rather than release it. `out` is
+ * zeroed here and filled at finish; a parse that fails leaves it empty. */
+void markdown_core_parser_retain_concrete(markdown_core_parser *parser, markdown_core_concrete *out);
+void markdown_core_concrete_dispose(markdown_core_concrete *concrete);
 
 /* `to` takes `from`'s regions, with a forward-only cursor shared across a run
  * of merges. Pass -1 to have it initialised from `from`'s own start. */

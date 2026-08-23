@@ -13,7 +13,7 @@ int main() {
     if (!document || error) {
         return 1;
     }
-    const auto *root = markdown_core_document_root(document);
+    const auto *root = markdown_core_document_semantic(document);
     const bool valid = markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT;
     markdown_core_document_free(const_cast<markdown_core_document *>(document));
     return valid ? 0 : 1;

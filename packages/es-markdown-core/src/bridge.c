@@ -47,7 +47,7 @@ markdown_core_document *es_document_parse(const uint8_t *source, size_t length, 
 void es_document_free(markdown_core_document *document) { markdown_core_document_free(document); }
 
 const markdown_core_node *es_document_root(const markdown_core_document *document) {
-    return markdown_core_document_root(document);
+    return markdown_core_document_semantic(document);
 }
 
 int32_t es_error_code(const markdown_core_error *error) { return (int32_t)markdown_core_error_get_code(error); }

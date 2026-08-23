@@ -347,7 +347,7 @@ bool markdown_core_kotlin_parse(const uint8_t *source, size_t length, uint32_t o
         markdown_core_error_free(error);
     } else {
         put_u8(&buffer, 0);
-        root = markdown_core_document_root(document);
+        root = markdown_core_document_semantic(document);
         if (root == NULL) {
             buffer.failed = true;
         } else {

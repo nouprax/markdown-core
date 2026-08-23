@@ -3,7 +3,12 @@ MARKDOWN_CORE_1.0 {
     markdown_core_parse_options_init;
     markdown_core_document_parse;
     markdown_core_document_free;
-    markdown_core_document_root;
+    markdown_core_document_semantic;
+    markdown_core_document_source;
+    markdown_core_document_line_count;
+    markdown_core_document_line_start;
+    markdown_core_document_region_count;
+    markdown_core_document_region_at;
     markdown_core_error_get_code;
     markdown_core_error_get_message;
     markdown_core_error_get_scope;

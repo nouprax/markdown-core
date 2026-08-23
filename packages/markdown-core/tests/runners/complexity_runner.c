@@ -220,7 +220,7 @@ static int cc_run_expansion(const char *name) {
         free(input);
         return -1;
     }
-    if (ts_ast_walk(markdown_core_document_root(document), cc_expansion_visit, &total) != 0) {
+    if (ts_ast_walk(markdown_core_document_semantic(document), cc_expansion_visit, &total) != 0) {
         markdown_core_document_free(document);
         free(input);
         return -1;

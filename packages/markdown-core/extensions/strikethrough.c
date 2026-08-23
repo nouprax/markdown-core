@@ -81,10 +81,10 @@ static delimiter *insert(const markdown_core_syntax_extension *self, markdown_co
      * the next line, so its claim would name nothing. */
     markdown_core_parser_claim_inline(parser, strikethrough,
                                       markdown_core_delimiter_position(opener) - markdown_core_delimiter_length(opener),
-                                      markdown_core_delimiter_position(opener), MARKDOWN_CORE_REGION_MARKER);
+                                      markdown_core_delimiter_position(opener), MARKDOWN_CORE_REGION_ROLE_MARKER);
     markdown_core_parser_claim_inline(parser, strikethrough,
                                       markdown_core_delimiter_position(closer) - markdown_core_delimiter_length(closer),
-                                      markdown_core_delimiter_position(closer), MARKDOWN_CORE_REGION_MARKER);
+                                      markdown_core_delimiter_position(closer), MARKDOWN_CORE_REGION_ROLE_MARKER);
     markdown_core_node_free(markdown_core_delimiter_node(closer));
 
 done:
