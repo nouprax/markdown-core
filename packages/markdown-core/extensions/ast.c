@@ -16,9 +16,27 @@
 #include <node.h>
 #include <parser.h>
 
+/* A parse failure, and NOTHING ELSE. It carries no scope -- requirement 13's
+ * converse -- and the two fields that used to offer one were never written by
+ * any path in the library, so `markdown_core_error_get_scope` returned false
+ * for every error it could ever be handed.
+ *
+ * `message` is a STRING LITERAL and is not copied. Every one of the eight
+ * failures this file can report names a constant, and the copy was the second
+ * allocation in a function whose whole job is to report that an allocation
+ * failed: on a `malloc` that returned NULL it freed the error and returned,
+ * leaving the caller with no document AND no error. One allocation, one
+ * failure mode. */
 struct markdown_core_error {
     markdown_core_error_code code;
-    char *message;
+    const char *message;
+    /* DEAD, and requirement 13's converse says so: a parse failure carries no
+     * scope, because an input the parser could not turn into a document has no
+     * extent to point at. No path in the library has ever written these, so
+     * `markdown_core_error_get_scope` returns false for every error it can be
+     * handed. They go with the binding that mirrors them (13.2), because
+     * deleting the accessor here alone would leave the Swift and Kotlin
+     * bridges calling a symbol that is not there. */
     bool has_scope;
     markdown_core_scope scope;
 };
@@ -40,7 +58,6 @@ static void clear_error(markdown_core_error **error) {
 
 static void set_error(markdown_core_error **error, markdown_core_error_code code, const char *message) {
     markdown_core_error *value;
-    size_t length;
     if (!error) {
         return;
     }
@@ -48,13 +65,7 @@ static void set_error(markdown_core_error **error, markdown_core_error_code code
     if (!value) {
         return;
     }
-    length = strlen(message);
-    value->message = (char *)malloc(length + 1);
-    if (!value->message) {
-        free(value);
-        return;
-    }
-    memcpy(value->message, message, length + 1);
+    value->message = message;
     value->code = code;
     *error = value;
 }
@@ -81,6 +92,7 @@ markdown_core_document *markdown_core_document_parse(const uint8_t *source, size
     const markdown_core_parse_options *options = requested_options;
     markdown_core_document *document;
     markdown_core_parser *parser;
+    markdown_core_diagnostics pending_diagnostics;
     unsigned extensions = 0;
     int native_options = MARKDOWN_CORE_OPT_VALIDATE_UTF8;
 
@@ -137,6 +149,14 @@ markdown_core_document *markdown_core_document_parse(const uint8_t *source, size
         return NULL;
     }
 
+    /* REQUIREMENT 13, and it is asked for BEFORE the first byte is fed because
+     * recording happens as the lines are read. Diagnostics are not optional
+     * here for the same reason the concrete view is not (Q24): they are part of
+     * the model, and the switch exists so the LAW can be checked -- the tree
+     * and the records must be byte-identical either way -- not so that a
+     * consumer can choose a different engine. */
+    markdown_core_parser_retain_diagnostics(parser, &pending_diagnostics);
+
     if (length) {
         markdown_core_parser_feed(parser, (const char *)source, length);
     }
@@ -151,10 +171,19 @@ markdown_core_document *markdown_core_document_parse(const uint8_t *source, size
     markdown_core_parser_free(parser);
     if (!document->root) {
         markdown_core_concrete_dispose(&document->concrete);
+        markdown_core_diagnostics_dispose(&pending_diagnostics);
         free(document);
-        set_error(error, MARKDOWN_CORE_ERROR_INTERNAL, "parser did not produce a document");
+        /* A3, carried here from 3a: A FAILURE IS A RETURNED STATUS, and this is
+         * the vocabulary the surface has for it. `finish` returns NULL for
+         * exactly one reason on a parser that has just been fed -- every one of
+         * the sticky flag's write sites is an allocation or a size cap -- so
+         * reporting INTERNAL was reporting the commonest cause as the one code
+         * that means "no cause is known", and ALLOCATION_FAILED was unreachable
+         * from this path. */
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
         return NULL;
     }
+    document->diagnostics = pending_diagnostics;
     return document;
 }
 
@@ -165,6 +194,7 @@ void markdown_core_document_free(markdown_core_document *document) {
     /* The regions name nodes of this tree, so the two are freed together and
      * in this order: nothing may read a region after its owner is gone. */
     markdown_core_concrete_dispose(&document->concrete);
+    markdown_core_diagnostics_dispose(&document->diagnostics);
     markdown_core_node_free(document->root);
     free(document);
 }
@@ -345,6 +375,32 @@ bool markdown_core_document_region_owner_paths(const markdown_core_document *doc
     return true;
 }
 
+size_t markdown_core_document_diagnostic_count(const markdown_core_document *document) {
+    return document ? (size_t)document->diagnostics.entries_size : 0;
+}
+
+bool markdown_core_document_diagnostic_at(const markdown_core_document *document, size_t index,
+                                          markdown_core_diagnostic *diagnostic) {
+    const markdown_core_diagnostic_record *entry;
+    if (!document || !diagnostic || index >= (size_t)document->diagnostics.entries_size) {
+        return false;
+    }
+    entry = &document->diagnostics.entries[index];
+    diagnostic->severity = (markdown_core_diagnostic_severity)entry->severity;
+    diagnostic->code = (markdown_core_diagnostic_code)entry->code;
+    diagnostic->scope.start.line = entry->start_line;
+    diagnostic->scope.start.column = entry->start_column;
+    diagnostic->scope.end.line = entry->end_line;
+    diagnostic->scope.end.column = entry->end_column;
+    diagnostic->message.data = document->diagnostics.messages.ptr + entry->message_start;
+    diagnostic->message.length = (size_t)entry->message_length;
+    return true;
+}
+
+const char *markdown_core_diagnostic_code_name(markdown_core_diagnostic_code code) {
+    return markdown_core_diagnostic_code_string(code);
+}
+
 markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error) {
     return error ? error->code : MARKDOWN_CORE_ERROR_NONE;
 }
@@ -366,13 +422,7 @@ bool markdown_core_error_get_scope(const markdown_core_error *error, markdown_co
     return true;
 }
 
-void markdown_core_error_free(markdown_core_error *error) {
-    if (!error) {
-        return;
-    }
-    free(error->message);
-    free(error);
-}
+void markdown_core_error_free(markdown_core_error *error) { free(error); }
 
 markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *node) {
     if (!node) {

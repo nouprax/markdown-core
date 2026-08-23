@@ -919,3 +919,39 @@ Document scope=1:1..4:7 children=1
     └── Paragraph scope=4:3..4:7 children=1
         └── Text scope=4:3..4:7 literal="after" children=0
 ````````````````````````````````
+
+THE BLOCK FORM OF A DIRECTIVE HAS NO PARTIAL FALLBACK. The inline form keeps
+the directive and gives up only the label or the attribute list; here one bad
+attribute, or one byte of content after a good one, costs the whole line, and
+what is left is a paragraph indistinguishable from prose. Requirement 13's
+`directive-rejected` is the only thing that says so, and these two examples
+are what exercise it — `scripts/audit-diagnostics.mjs` pins both.
+
+```````````````````````````````` example
+::note{=value}
+
+::note{a=b} trailing
+.
+Document scope=1:1..3:20 children=2
+├── Paragraph scope=1:1..1:14 children=1
+│   └── Text scope=1:1..1:14 literal="::note{=value}" children=0
+└── Paragraph scope=3:1..3:20 children=1
+    └── Text scope=3:1..3:20 literal="::note{a=b} trailing" children=0
+````````````````````````````````
+
+A DIAGNOSTIC'S EXCERPT IS CUT AT A CODE-POINT BOUNDARY. A message quotes at
+most 40 bytes of the source, and `message` is published as a UTF-8 string
+view -- so a cut through a continuation byte would hand a consumer a sequence
+this engine would have replaced had it arrived in the input. Here the fortieth
+byte is the second of an `é`, so the excerpt stops at thirty-nine. It is a
+fixture rather than a unit test because the property is about BYTES and every
+binding republishes the same view.
+
+```````````````````````````````` example
+:nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnéz[unclosed
+.
+Document scope=1:1..1:52 children=1
+└── Paragraph scope=1:1..1:52 children=2
+    ├── Directive scope=1:1..1:43 name="nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnéz" attributes=null children=0
+    └── Text scope=1:44..1:52 literal="[unclosed" children=0
+````````````````````````````````

@@ -300,6 +300,19 @@ typedef int (*markdown_core_accepts_lines_func)(const markdown_core_syntax_exten
 typedef markdown_core_node *(*markdown_core_postprocess_func)(const markdown_core_syntax_extension *extension,
                                                               markdown_core_parser *parser, markdown_core_node *root);
 
+/** Called once, from `finalize`, on a block of this extension's own type, after
+ * its scope is settled and before anything reads its content.
+ *
+ * It exists because a container that the END OF THE INPUT closed and one a
+ * fence closed are the same node: unlike a fenced code block, whose `closed`
+ * is a field every projection carries, an extension block's close state lives
+ * in its opaque payload and reaches no view. This is the only moment at which
+ * the extension can still say so, and saying so is a diagnostic, not a rewrite
+ * -- a close hook that changed the tree would be a second `postprocess` with a
+ * worse name. */
+typedef void (*markdown_core_close_block_func)(const markdown_core_syntax_extension *extension,
+                                               markdown_core_parser *parser, markdown_core_node *node);
+
 typedef int (*markdown_core_ispunct_func)(char c);
 
 typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,

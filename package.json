@@ -8,7 +8,10 @@
         "pnpm": "11.7.0"
     },
     "scripts": {
+        "audit:ast-projections": "node scripts/audit-ast-projections.mjs",
         "audit:ci": "scripts/audit-ci-policy.sh",
+        "audit:concrete-records": "node scripts/audit-concrete-records.mjs",
+        "audit:diagnostics": "node scripts/audit-diagnostics.mjs",
         "audit:extension-attach-order": "node scripts/audit-extension-attach-order.mjs",
         "audit:extension-special-chars": "node scripts/audit-extension-special-chars.mjs",
         "audit:inline-sourcepos": "node scripts/audit-inline-sourcepos.mjs",
@@ -19,6 +22,7 @@
         "audit:repository:clean": "scripts/audit-repository.sh --clean",
         "audit:scope-containment": "node scripts/audit-scope-containment.mjs",
         "audit:scope-sanity": "node scripts/audit-scope-sanity.mjs",
+        "audit:source-lists": "node scripts/audit-source-lists.mjs",
         "audit:surface": "scripts/audit-public-surface.sh",
         "audit:tests": "scripts/audit-test-topology.sh",
         "benchmark:c-host": "cmake --preset default && cmake --build --preset default --parallel && ctest --preset benchmark",
@@ -42,6 +46,9 @@
         "conformance:kotlin-macos-arm64": "scripts/gradle.sh :packages:kotlin-markdown-core:macosArm64ConformanceTest",
         "conformance:swift-ios-simulator": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache xcodebuild test -scheme swift-markdown-core-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' -derivedDataPath build/xcode-tests -only-testing:MarkdownCoreConformanceTests",
         "conformance:swift-macos": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --filter '^MarkdownCoreConformanceTests\\.'",
+        "coverage:es-node": "scripts/coverage-es-node.sh",
+        "coverage:kotlin-jvm": "scripts/coverage-kotlin-jvm.sh",
+        "coverage:swift-macos": "scripts/coverage-swift-macos.sh",
         "format": "pnpm run format:c && pnpm run format:cmake && pnpm run format:swift && pnpm run format:kotlin && pnpm run format:es",
         "format:c": "scripts/format-c.sh",
         "format:c:check": "scripts/format-c.sh --check",

@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), **11b** (§4.14.11b), **11c** (§4.14.11c), **12.1** (§4.14.12a), **12.2's locator** (§4.14.12b), **`end-at-line-ending` CLOSED** (§4.14.11c2) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), **11b** (§4.14.11b), **11c** (§4.14.11c), **12.1** (§4.14.12a), **12.2's locator** (§4.14.12b), **`end-at-line-ending` CLOSED** (§4.14.11c2), **13.1** (§4.14.13a) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 13**, then `14 15C`. **STEP 12 IS LANDED WHOLE** (§4.14.12a–12c): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 and M33 both read 69/69 there and fail `conformance` — a region names its owner by a path that survives being copied, `markdown_core_document_region_owner_paths` answers for every region in **1.13 ms against the 96.8 ms the singular call costs in a loop**, and all three bindings carry `concrete` and `parse` on `Document` itself. **The owner ruled the surface and I read it wrong twice**: the semver question killed my *reason*, not reading 2, and §4.14.12c records both misreadings. **`specs/positions/places.json` IS EMPTY** (§4.14.11c2). **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), **Step 9b** whole (§4.14.9b1–9b2) — the definition and both references are nodes, **D9 and D30 closed**, the **mdast backlog EMPTY** — **Step 11b** (§4.14.11b), which added L5 and L6 because L1–L4 are all true of the day before it, and **Step 11c** (§4.14.11c). Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 13.2** (the three bindings), then `14 15C`. **13.1 IS LANDED** (§4.14.13a): eight diagnostic codes, the rule that decided them (*a diagnostic exists exactly where the two total views cannot say what happened*), and **the owner's 2026-08-24 ruling that there is NO FALLBACK ON OOM**, which struck row 13's truncation-marker clause and deleted the sweep that had been built for it. **What the ruling opens is measured and named** in §4.14.13a: 10 of 501 injected failures still succeed losslessly, and the step that makes them terminal owns the gate that replaces `fallback_runner`. **STEP 12 IS LANDED WHOLE** (§4.14.12a–12c): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 and M33 both read 69/69 there and fail `conformance` — a region names its owner by a path that survives being copied, `markdown_core_document_region_owner_paths` answers for every region in **1.13 ms against the 96.8 ms the singular call costs in a loop**, and all three bindings carry `concrete` and `parse` on `Document` itself. **The owner ruled the surface and I read it wrong twice**: the semver question killed my *reason*, not reading 2, and §4.14.12c records both misreadings. **`specs/positions/places.json` IS EMPTY** (§4.14.11c2). **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), **Step 9b** whole (§4.14.9b1–9b2) — the definition and both references are nodes, **D9 and D30 closed**, the **mdast backlog EMPTY** — **Step 11b** (§4.14.11b), which added L5 and L6 because L1–L4 are all true of the day before it, and **Step 11c** (§4.14.11c). Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -64,7 +64,10 @@ node scripts/audit-extension-attach-order.mjs    # one attach site, table last (
 node scripts/check-plan-graph.mjs                # 22 steps, 45 edges, acyclic
 node scripts/audit-source-lists.mjs              # 22 sources, 4 of 5 lists, 1 registered absent
 node scripts/fuzz-parity.mjs --iterations 300                   # upstream, 300/300
-node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # 300/300 SINCE 9b.2
+node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # 300/300 SINCE 9b.2   -- and it was NOT in
+                                          # `gates.sh` until 13.1, which is the
+                                          # third time that script has run fewer
+                                          # gates than this list names
 node scripts/check-upstream-parity.mjs     # 888/888 vs cmark-gfm 0.29.0.gfm.13, 10/10
                                           # divergences, 4/4 projections acted
 node scripts/check-mdast-parity.mjs        # 110/110, backlog EMPTY since 9b.2
@@ -82,7 +85,14 @@ node scripts/audit-position-places.mjs     # 0 rows registered, 4451 scanned -- 
 # Requirement 11a's four laws over the concrete record set, landed at 11a
 # (§4.14.11a). L1 and L3 have no rows and hold by construction; L4 is checked
 # by re-parsing every line-boundary prefix.
-node scripts/audit-concrete-records.mjs   # 277 rows registered, 5860 regions
+node scripts/audit-concrete-records.mjs   # 277 rows registered, 5874 regions
+
+# Requirement 13's three laws over the diagnostic list, landed at 13.1
+# (§4.14.13a). D1 -- the semantic tree AND the concrete records are
+# byte-identical with recording on and off -- is the only one a corpus can see,
+# and the census beside it is fail-closed both ways: a code that stops firing
+# fails as loudly as one that starts.
+node scripts/audit-diagnostics.mjs        # 38 diagnostics, 891 examples, 7 of 8 codes
 
 # D9's pin. It was REGISTERED RED from 0a.8 to 9b.2 and is now GREEN with an
 # EMPTY ledger -- still fail-closed, so a row appearing fails the run. Deleting
@@ -1106,7 +1116,7 @@ Seven defects that this restatement found by measurement are numbered **D18–D2
 | **11b** | Every byte of every block's `CONTENT` region is owned by exactly one inline node or by the block itself, and inline records are expressed in **source** coordinates, not content coordinates. Delimiter runs, brackets, escapes, entities, destinations, titles and smart-punctuation substitutions are all `MARKER`; the text between is `CONTENT`. | ~500 + ~200 gate | 11a. 8 (a position is a projection of a range, so the lift has one answer, not two). |
 | **11c** | A reference definition and a footnote definition own their source bytes, so the block partition is total for real documents. A definition that lost a duplicate-label contest keeps its bytes. | ~150 | 9b (a node exists to own them). 11a (refinement exists and cannot move a boundary). |
 | **12** | The public surface presents **one parse under two total views** — `document.semantic` (policy applied, may omit bytes) and `document.concrete` (the normalized source, its line index, and every node's regions; omits nothing) — and states the law that binds them: every byte is in exactly one region and every region has exactly one owner, so the pair is complete. The concrete view survives being copied into value types and the handle being freed. | ~400 | 6, 7 (the surface is not renamed twice). 11b, and 11c for definition-bearing documents. 15A. |
-| **13** | **Deliverable #3.** A parse produces an ordered list of diagnostics — `(severity, code, scope, message)` — and one law governs them: **a lost diagnostic is not a lost parse.** For every input and option set the semantic tree and the concrete records are byte-identical with diagnostics on and off; if the buffer cannot be allocated the parse still returns a complete document with a truncation marker. Its converse is equally normative: **a parse failure is not a diagnostic** — `markdown_core_error` means there is no document, and it carries no scope. | ~430 + ~150 gate | 7 (its 51 oracle examples are the enumeration of degradation cases). 12 (a scope is resolvable without a node handle). |
+| **13** | **Deliverable #3.** A parse produces an ordered list of diagnostics — `(severity, code, scope, message)` — and one law governs them: ~~a lost diagnostic is not a lost parse~~ **RECORDING THEM CHANGES NOTHING THE PARSE BUILDS.** For every input and option set the semantic tree and the concrete records are byte-identical with diagnostics on and off; ~~if the buffer cannot be allocated the parse still returns a complete document with a truncation marker~~ — **OWNER RULING, 2026-08-24: NO FALLBACK ON OOM.** *"We do not want fallback when OOM happens. The parser should return an error rather than return a fallback."* An allocation the diagnostic list cannot make abandons the parse, exactly as one the region set cannot make does; there is no truncation marker and no partial list, and what survives of the law is that **recording changes nothing the parse builds**. Its converse is equally normative: **a parse failure is not a diagnostic** — `markdown_core_error` means there is no document, and it carries no scope. | ~430 + ~150 gate | 7 (its 51 oracle examples are the enumeration of degradation cases). 12 (a scope is resolvable without a node handle). |
 | **14** | `null` means "the source did not write this"; `""` means "the source wrote it and it was empty". The distinction is **structural**: an optional field cannot be assigned a value that does not state whether it is present, so a write site that does not say so **does not compile**. No transformation and **no read** collapses it. The facade folds nothing. | ~150 C + bindings | 9b (the optional field set is complete). 12 (the accessors are the target accessors). 15A. |
 | **15C** | The 3.0 release obligations: one contract, all seventeen defects closed or carried with a registered gate, both deliverables measured against the 96 whitelisted examples with every staleness recorded, every §4.8 gate green and non-vacuous, release plumbing pointing at live paths, and `check-release-version.mjs` passing with no `--skip-*`. | ~150 + notes | 12, 13, 14. |
 
@@ -6933,6 +6943,309 @@ neighbour (§11.4). §4.14.9b3 scoped it and measured four attempts that all
 stalled; **§4.14.11c2 CLOSED it and the ledger is now EMPTY.** The oracle that
 began Stage 0a with 131 rows in six families has none.
 
+
+#### 4.14.13a Step 13.1: a diagnostic is what the two total views cannot say
+
+**Requirement 13's C half.** A parse produces an ordered list of
+`(severity, code, scope, message)`, the facade publishes it beside the two
+views, and one law governs it: **a lost diagnostic is not a lost parse.**
+
+**ZERO GOLDEN ROWS MOVED.** 13.1 adds a list; it does not change the tree.
+Every `.ast`, `spec.txt`, both parity oracles and all five position ledgers are
+byte-identical across this commit except for the three fixtures it adds, which
+are new inputs rather than moved rows.
+
+##### The rule that decided every site, and it is one sentence
+
+> **A diagnostic exists exactly where the two total views cannot say what
+> happened.**
+
+Both views omit nothing, so what is missing is never a BYTE — it is *why a byte
+that looks like a construct is not one*. `:a[b` and `:a` followed by the prose
+`[b` are byte-identical trees with byte-identical records; nothing but a
+diagnostic can tell them apart. The rule is 11b's role rule one level out, and
+like it, it *derives* the list instead of enumerating it.
+
+**It decides the exclusions as firmly as the inclusions**, which is the test of
+a rule rather than a preference. An unclosed fenced code block is **not**
+diagnosed: `CodeBlock.closed` is a field every projection already carries, so
+the views do say it. A duplicate reference definition is **not**: both are nodes
+that own their bytes (11c) and *"group by identifier, first in document order"*
+is 9b's own model of resolution, so the views say it too — and that exclusion
+also dodged a real obstacle, because `definition_create` asserts
+`!map->prepared` (`core/references.c`) and asking *"is this label already
+defined"* at definition time would force the map's index early and make
+registration order matter again, which is precisely what D11's fix removed.
+An unreferenced footnote definition is **not**: the definition and every
+reference are in the tree. A table row's excess cells are **not**: the dropped
+bytes are `DISCARDED` regions, and a `DISCARDED` region IS the views saying
+"read and kept nowhere". A duplicate directive attribute is **not**:
+last-value-wins is the grammar (Q19), not a failure.
+
+**And one corollary, which is what keeps the list from being noise: a
+diagnostic needs EVIDENCE the author meant the construct, and the evidence is
+the construct's own unambiguous opener.** A `:` in prose is not evidence;
+`:name` is. A `[` is not; `[^` and `][` are. So the inline directive reports
+nothing when the NAME fails to scan — a colon in prose is prose — and a
+reference is reported only in the FULL and COLLAPSED forms, because `[a]` is
+also how anyone writes a citation marker or a checklist.
+
+**The wide rule was measured before it was rejected**, as §0's method requires.
+Mutant **M41** drops the shortcut exclusion: the census moves **88 rows** over
+891 examples, an eightfold increase in a corpus whose degradations are
+deliberate. That is the noise the corollary avoids, and it is a number rather
+than an intuition.
+
+##### Eight codes, seven exercised by the corpus and the eighth by construction
+
+| code | severity | witness |
+|---|---|---|
+| `directive-label-rejected` | W | `:note[unclosed` — the directive stands, `[…` is prose |
+| `directive-attributes-rejected` | W | `:invalid{=value}` and `:open{title="value}` — `attributes=null`, which is also what `:invalid` alone reports |
+| `directive-rejected` | W | `::note{=value}` — the BLOCK form has no partial fallback and the whole line is a paragraph |
+| `directive-unclosed` | W | `:::note` with no closing fence |
+| `table-rejected` | W | a delimiter row whose column count differs from the header's |
+| `reference-undefined` | E | `[text][nope]`, `[nope][]` |
+| `footnote-undefined` | E | `[^nope]` |
+| `label-too-long` | E | an 1100-byte label — **the one live "data loss with no diagnostic" §11.4 names, and it is now named** |
+
+**§11.4's note is half stale and the measurement says which half.** It records
+that a 1200-character footnote label *"silently fails to resolve and the
+definition is then dropped from the tree as unreferenced"*. Measured at HEAD:
+at 900 characters the call resolves; at 1200 the **definition survives** — 9a
+made it a node that stays where it was written — and it is the **CALL** that
+silently becomes prose. The loss is real and it moved one node outwards.
+
+**TWO SEVERITIES, and the rule is one sentence: ERROR when the author NAMED
+something that does not exist, WARNING when the author WROTE something the
+engine did not read the way they meant.** Those are the two things a consumer
+does differently — a documentation build fails on a broken cross-reference and
+reports a malformed attribute block. There is no fatal level, because a parse
+failure is not a diagnostic. `label-too-long` is an ERROR and not a WARNING
+because the call names something unreachable; that it is the engine's cap and
+not the author's mistake is what makes it a separate CODE.
+
+##### Recording is a RETAIN CALL, not an option, and that is what reconciles three settled rulings
+
+Row 13's law quantifies over *"diagnostics on and off"*; **Q14** deletes the
+whole option surface; **Q24** rules the concrete view *"not optional; it is part
+of the model"*. The document never reconciles the three. This does, and the
+mechanism was already in the tree:
+`markdown_core_parser_retain_diagnostics(parser, out)` mirrors
+`markdown_core_parser_retain_concrete` exactly — the parser records only when
+asked, `finish` MOVES the list into the caller at the same moment and on the
+same terms, and **the facade always asks**. No `MARKDOWN_CORE_OPT_*` bit, no
+`markdown_core_parse_options` field, and the switch exists so the LAW can be
+checked rather than so a consumer can choose a different engine. **Q46** is
+proposed for it.
+
+##### The one place this list is deliberately unlike every other in the engine
+
+**It is not.** The first cut of this step made it so — a growth the list could
+not afford marked itself `truncated` and the parse carried on, which is what
+row 13 asked for in writing — and the owner overruled it mid-step:
+
+> **Owner ruling, 2026-08-24:** *"We do not want fallback when OOM happens. The
+> parser should return an error rather than return a fallback."*
+
+So `markdown_core_parser_diagnose` sets `parser->oom` at both of its growth
+sites, exactly as `S_claim_region` does, and there is no truncation marker on
+any surface. **Q49 is answered by the owner and not proposed**: the question
+*"what shape is the marker"* had no answer because there is no marker. Row 13's
+clause is struck in §4.1 with the ruling quoted beside it.
+
+**The engine agrees with the ruling everywhere else already**, which is why it
+is a deletion rather than a redesign: D27, D30 and both halves of A1 are each a
+site that produced a lossy result with the failure bit clear, and each was fixed
+by making the failure terminal. A diagnostics list that stopped short would have
+been the fifth, and the only one designed in on purpose.
+
+##### What the ruling cost, measured — and the gate it took with it
+
+**The version that was built and deleted is worth recording, because it is what
+the ruling is a ruling about.** `regression_fallback_diagnostics_oom_sweep`
+injected a failure at every allocation over a corpus of degradations and made
+an exact, index-free claim: recording adds `total_on − total_off` allocations
+and changes nothing else, so the parse must survive exactly that many more
+injected failures than it does with recording off —
+
+> `survivals_on − survivals_off == total_on − total_off`
+
+Measured: **recording adds 6 of 190 allocations and the parse survived every
+one**. It killed two mutants that a weaker form did not: poisoning `parser->oom`
+from the entry array read *11 of 190 against 6 of 184*, and from the message
+pool *7 of 190*. The weaker form — *"at least one injected failure produced a
+complete document with a truncated list"* — printed **6 of 190** and stayed
+GREEN under the first of those, at **5 of 190**: a count that merely moves is
+not an oracle, and that is worth keeping even though the case it proved is gone.
+
+**Under the ruling both of those mutants are the correct code**, so the case was
+deleted. `correctness` is back to **69/69**.
+
+**What the ruling costs, measured on the untouched engine**: over the main
+sweep corpus, **10 of 501** injected allocation failures produce a successful
+parse today — the lossless-fallback surface the ruling removes is ten sites'
+worth of behaviour, not a rewrite. (§4.14.3a's `oom_sweep` numbers, **429** and
+**433**, are stale: the corpus and the engine have both grown and the run costs
+**501** and **505**.)
+
+**AND IT LEAVES A GAP THIS STEP DOES NOT CLOSE.** Nothing now gates *"a
+diagnostics allocation failure abandons the parse"*. The natural home is a
+sweep, and `fallback_runner` is the file the ruling calls meaningless — so the
+gate is owed by whatever step executes the ruling engine-wide, and it is named
+here rather than left to be rediscovered. See **"What the ruling opens"** below.
+
+##### `audit-diagnostics.mjs`: three laws over 891 examples
+
+**D1 — NEUTRALITY, and it is the whole of the law a corpus can see.** For every
+input the semantic tree AND the concrete records are byte-identical with
+recording on and off, checked by running `--concrete` both ways and requiring
+the two outputs to differ by exactly the diagnostic rows. **Mutant M43** makes
+a diagnostic site consume the byte it reports on, but only when recording:
+**2 violations**, and nothing else in the repository moves.
+
+**D2 — EVERY SCOPE IS A PLACE** in the normalized source: both ends name a real
+byte of a real line, neither is a line ending, and the end does not precede the
+start. §4.5's *"a well-formed but wrong position sails through the ratchet"* is
+why this is a law and not a review item.
+
+**D3 — EVERY MESSAGE IS ONE NON-EMPTY UTF-8 LINE**, and this one was written
+because the gate found the defect. A message quotes up to 40 bytes of the
+source; the first cut copied those bytes verbatim, and **`spec.txt` failed D1**
+with one extra output line — a directive label that spanned a line ending had
+put a `\n` inside a message and turned one diagnostic row into two. The fix is
+a control byte becoming a space. The other half of the cut is the code-point
+boundary: **mutant M45** removes the back-off and D3 reports *"the message was
+cut inside a UTF-8 sequence"* on the fixture written for it.
+
+**And a CENSUS**, fail-closed in both directions: **38 diagnostics over 891
+examples, 7 of 8 codes exercised.** A code that stops firing fails as loudly as
+one that starts, because the failure mode of a diagnostic is silence and a count
+cannot tell six of one from three of two. **Mutant M42**, reporting a container
+that closed as unclosed, moves **11 rows**.
+
+**`label-too-long` is the eighth and it is tested in C rather than in a
+fixture**, deliberately: the cap is 1000 bytes, so a golden that showed it would
+carry an eleven-hundred-character line no reviewer can read and every position
+oracle would then measure. Built in `facade.c` it is three lines.
+
+##### Diagnostics are in RECORDING order, and recording order is not source order
+
+A block-level diagnostic is recorded on the line it is about; an inline one when
+its BLOCK closes, which can be many lines later. The witness is a fixture:
+
+```
+see [x][nope] here
+| a | b |
+| --- |
+```
+
+The table attempt on line 3 is reported while the paragraph that began on line 1
+is still open, so the reference on line 1 is reported second. **1 inversion over
+38 diagnostics**, and the number is printed on every run. The engine does not
+sort: a sort here is an allocation, and an allocation that fails would hand back
+an order the caller cannot predict — which is the one thing a "lost diagnostic
+is not a lost parse" list may not do. The header says the order is the order
+they were recorded rather than promising one the engine cannot always give.
+
+##### A3, carried here from 3a, and the count in §4.13.7 is wrong
+
+*"A failure is a returned status"*, and this is the vocabulary the surface has
+for it: `markdown_core_document_parse` now reports
+`MARKDOWN_CORE_ERROR_ALLOCATION_FAILED` where it reported
+`MARKDOWN_CORE_ERROR_INTERNAL`. `finish` returns NULL for exactly one reason on
+a parser that has just been fed, so INTERNAL — the code that means *no cause is
+known* — was being used for the commonest cause, and ALLOCATION_FAILED was
+**unreachable from that path**.
+
+**Re-measured, because §0 says to re-measure any number the document states.**
+§4.13.7 and §4.14.3a record *"70 write sites, three reads"* at
+`core/blocks.c:1762`, `:1818`, `:1894`. Today: `parser->oom = true` appears at
+**94** sites — `core/blocks.c` 49, `extensions/autolink.c` 14, `table.c` 11,
+`directive.c` 10, `formula.c` 8, `core/inlines.c` 1, `strikethrough.c` 1 — and
+the three reads are at **`:3181`, `:3250`, `:3363`**. The characterisation is
+right and every number in it is stale.
+
+**`set_error` also stopped being able to fail silently.** Every one of the
+eight failures the facade reports names a string LITERAL, so the message is no
+longer copied: the copy was a second allocation inside the function whose whole
+job is to report that an allocation failed, and on a NULL `malloc` it freed the
+error and returned, leaving the caller with no document AND no error.
+
+##### A12 is satisfied by construction and stated rather than built
+
+§4.13.3: *"a line that is rolled back rolls back its diagnostics and its
+concrete records … it must be stated for both now."* The list is append-only and
+its entire rollback state is one length, which is the mechanism §4.13.3 assigns
+it. Nothing in Stage 0 rolls back a line, so no rollback machinery is built
+here; §4.13.9's digest already names *"diagnostics length"* as a monotone
+counter, and the list exposes exactly that.
+
+##### `markdown_core_error_get_scope` is NOT deleted here, and that is deliberate
+
+§4.1.5 assigns the deletion to Step 12 and Step 12 did not take it. It is
+requirement 13's converse in mechanical form — the field is dead, `has_scope` is
+never written by any path — but the Swift binding and the Kotlin bridge both
+CALL it, and the Kotlin one puts a `has_scope` byte on the wire. Deleting it
+here would leave two bindings referring to a symbol that is not there. **12.1
+was green because it only ADDED**, and 13.1 keeps that discipline: the deletion
+lands with 13.2, which bumps the wire format anyway.
+
+##### Three gate holes found on the way, all of them in gates rather than in the engine
+
+1. **`audit-public-surface.sh` never read `markdown_core.exports`.** It compared
+   the header with the ELF version script alone, and the Mach-O list — the one
+   that governs the macOS link — was compared against nothing. A symbol added to
+   two of the three left the audit GREEN and the macOS shared library short one
+   symbol, surfacing only as a link error in a binding build. It now reads all
+   three; removing one name from the Mach-O list fails it, measured.
+2. **`package.json` was missing five scripts `ci.yml` invokes by name** —
+   `audit:source-lists`, `audit:ast-projections` and all three `coverage:*`.
+   Step 0's wholesale `scripts/` restore rewrote `package.json` without them, so
+   CI's health-check job would have failed on a missing script. Restored, plus
+   `audit:concrete-records` and `audit:diagnostics`.
+3. **`scripts/dev/gates.sh` did not run the mdast fuzz oracle**, which §0's own
+   list names. The same hole its own comment records for two other gates at
+   9b.1; it has been unrun by that loop since it turned green at 9b.2.
+
+##### Gates after
+
+`correctness` **69/69**, `correctness-asan` **60/60**,
+`correctness-ubsan` **60/60**, `conformance` 2/2,
+canonical-ast 32 kinds / 62 fields / 6 cases, projections 32 over 12 surfaces
+**with no exception added**, public surface (now three lists), special chars,
+attach order, plan graph 22/45, source lists 22 / 4 of 5, **both** fuzz oracles
+300/300, upstream **891/891** with 10/10, mdast **112/112** with an empty
+backlog, scope-sanity 1, inline-sourcepos 40, containment 8, places 0, concrete
+records 277, **diagnostics 38 over 891**, reference-order 0, test topology,
+`format-c`, `format-cmake`, `lint-c` — which caught the missing field
+initializer in `core/main.c` that no preset did, for the second step running —
+`pnpm -w run lint`, `leaks --atExit` **0 leaks** on `facade_test`, and the
+binding suites unchanged: **ES 11 + 9**, **Swift 6 + 1 + 3**, **Kotlin 11 + 4**.
+
+##### What 13 still owes
+
+13.2: the three bindings, and with them the deletion of
+`markdown_core_error_get_scope` and of `ParseError.scope` in all three — one
+wire-format bump (`MKC3` → `MKC4`) carrying both.
+
+##### What the ruling opens, and it is not Step 13's
+
+*"We do not want fallback when OOM happens"* is a statement about the ENGINE,
+not about diagnostics, and Step 13 has applied it only to the list it added.
+The rest is measured and named here so it is scheduled rather than rediscovered:
+**10 of 501** injected failures still produce a successful parse, through the
+lossless routes `fallback_runner`'s other eight cases exist to test — the
+attribute sort's no-index path (`extensions/directive.c`), the reference
+harvest's (`core/blocks.c`), the shared key index's probe-growth path
+(`core/map.c`), and `map_prepare_oom`. Making each of those terminal is what
+would make the runner vacuous and therefore deletable, and it touches Step 3's
+extension code and Step 3a's allocator model rather than requirement 13.
+**Whichever step takes it also owes the sweep that replaces the runner**: the
+contract *"no injected failure produces a successful parse"* is not vacuous, it
+is the ruling itself, and something has to say it.
+
+
 ---
 
 ### 4.3 The ordering argument
@@ -7537,7 +7850,7 @@ following, together:
 **Deliverables**
 - [x] **Directive grammar conformance (Step 7) — deliverable #1. LANDED**, §4.14.7a–e. Nothing carried: **D36** closed at 7e and **Q43** answered with it.
 - [x] **The formula fix (Step 6) — deliverable #2. LANDED, §4.14.6.**
-- [ ] CST concrete records (11a, 11b, 11c) and diagnostics (13) — deliverable #3. **11a, 11b and 11c are LANDED** (§4.14.11a, §4.14.11b, §4.14.11c); 13 is not
+- [ ] CST concrete records (11a, 11b, 11c) and diagnostics (13) — deliverable #3. **11a, 11b and 11c are LANDED** (§4.14.11a, §4.14.11b, §4.14.11c); **13.1 is LANDED** (§4.14.13a) and 13.2, the bindings, is not
 - [x] The reference model (9a, 9b) and the positions that depend on it — **10, 9a and 9b are all LANDED** (§4.14.10, §4.14.9a1–9a2, §4.14.9b1–9b2)
 - [ ] The facade (12), the null/empty rule (14) — **12 is LANDED WHOLE** (§4.14.12a–12c): two total views in C and in all three bindings, and §4.10's ruling that the break window is not a constraint is what let 12.2 take the literal reading; 14 is not
 - [ ] Bindings, specs and docs regenerated (15)
@@ -7572,6 +7885,8 @@ anything downstream. D27 was another and **closed at 3a.3**.
 - [ ] `check-generated-scanners` — known-red, owned by R9 then Step 3, and must
       be green or re-owned by close
 - [ ] `pnpm check:contracts`, formatters, linters, repository audits
+- [x] `audit-diagnostics` — requirement 13's three laws and its census, green
+      at 13.1 and registered in `gates.sh`, `package.json` and `ci.yml`
 - [ ] `check-release-version` — including the legacy-tag condition
 
 **Decisions** — Q8, Q9 and Q10 settled and recorded in §9.
@@ -8236,6 +8551,10 @@ which is why they kept getting re-argued:
 | **Q24** | Is the concrete view opt-in? | **SETTLED 2026-08-20 — NO. It is not optional; it is part of the model.** Diagnostics on directive attributes have nowhere to point without it. | owner | 12, 13 |
 | **Q25** | When are defects fixed? | **SETTLED 2026-08-20 — ALL of them, before any other task.** Not just D16's two sites: every defect that *can* be fixed at the baseline moves into Stage 0a. See §4.12. | owner | Stage 0a |
 | **Q26** | Do `Link.destination`, `Image.source`, `ReferenceDefinition.destination` stay optional? | **SETTLED 2026-08-20 — NO, all three are required.** Q7's argument generalises: a value reachable only through allocation loss is not optionality, it is a node that lies. | owner | 9b, 14 |
+| **Q46** | Are diagnostics switchable, and how? | **TAKEN at 13.1 — a RETAIN CALL, not an option.** `markdown_core_parser_retain_diagnostics` mirrors `markdown_core_parser_retain_concrete` exactly: the parser records only when asked, `finish` moves the list at the same moment and on the same terms, and the FACADE always asks. It is the only shape that satisfies three settled rulings at once — Q14 deletes the option surface, Q24 makes the second view part of the model rather than a choice, and row 13's law quantifies over *"diagnostics on and off"* and so needs an axis to quantify over. The switch exists so the LAW can be checked, not so a consumer can choose a different engine. | 13.1 | 13 |
+| **Q47** | What decides whether a site gets a diagnostic? | **TAKEN at 13.1 — a diagnostic exists exactly where the TWO TOTAL VIEWS CANNOT SAY WHAT HAPPENED**, with the corollary that it needs EVIDENCE the author meant the construct and the evidence is the construct's own unambiguous opener. It derives the eight codes and, more usefully, the exclusions: an unclosed fence is not diagnosed because `closed` is on the node, a duplicate definition is not because both are nodes and 9b's model derives the winner, a shortcut reference is not because `[a]` is also prose. The wide rule was measured before it was rejected: including the shortcut form moves **88 census rows** over 891 examples (§4.14.13a). | 13.1 | 13 |
+| **Q48** | How many severities, and what decides one? | **TAKEN at 13.1 — two.** ERROR when the author NAMED something that does not exist; WARNING when the author WROTE something the engine did not read the way they meant. Those are the two things a consumer does differently. There is no fatal level, because a parse failure is not a diagnostic. | 13.1 | 13 |
+| ~~**Q49**~~ | What shape is the truncation marker? | **ANSWERED BY THE OWNER 2026-08-24, and the question dissolved: there is no marker.** *"We do not want fallback when OOM happens. The parser should return an error rather than return a fallback."* An allocation the diagnostic list cannot make abandons the parse. Row 13's clause is struck; §4.14.13a records the sweep that was built for it, the two mutants it killed, and the **10 of 501** lossless successes the ruling leaves for whichever step executes it engine-wide. | owner | 13 |
 | **Q10** | Does 1.0.4 ship? | **SETTLED 2026-08-20 — NO.** The release from this base is **3.0**. 1.0.4 is an internal alignment marker only, carrying no release obligation. | owner | see §4.10 |
 
 | ID | Question | Recommendation |

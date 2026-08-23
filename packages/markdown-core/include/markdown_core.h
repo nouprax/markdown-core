@@ -194,6 +194,78 @@ typedef struct markdown_core_region {
     const markdown_core_node *owner;
 } markdown_core_region;
 
+/** A PARSE PRODUCES AN ORDERED LIST OF DIAGNOSTICS, and one law governs it:
+ *
+ *   RECORDING THE LIST CHANGES NOTHING THE PARSE BUILDS.
+ *
+ * For every input the semantic tree and the concrete records are byte-identical
+ * whether or not diagnostics were recorded. THERE IS NO PARTIAL LIST: an
+ * allocation the list cannot make abandons the parse, so either a document
+ * carries every diagnostic its input earned or there is no document. The
+ * converse is equally normative: A PARSE FAILURE IS NOT A DIAGNOSTIC --
+ * `markdown_core_error` means there is no document at all, and it carries no
+ * scope.
+ *
+ * WHAT EARNS A DIAGNOSTIC is a fact about the two views rather than a list of
+ * syntax rules: A DIAGNOSTIC EXISTS EXACTLY WHERE THE TWO TOTAL VIEWS CANNOT
+ * SAY WHAT HAPPENED. Neither view omits a byte, so what is missing is never a
+ * byte -- it is why a byte that looks like a construct is not one. So an
+ * unclosed fence is NOT diagnosed (`closed` on the node already says it) and a
+ * duplicate definition is not (both are nodes, and first-in-document-order is
+ * derivable), while a directive whose attribute list was rejected is: that
+ * directive and one written with no braces at all are the same tree.
+ */
+#ifndef MARKDOWN_CORE_DIAGNOSTIC_TYPEDEFS
+#define MARKDOWN_CORE_DIAGNOSTIC_TYPEDEFS
+typedef enum markdown_core_diagnostic_severity {
+    /** The author wrote something the engine did not read the way they meant,
+     * and the bytes stand as prose. */
+    MARKDOWN_CORE_DIAGNOSTIC_WARNING = 1,
+    /** The author NAMED something that does not exist. */
+    MARKDOWN_CORE_DIAGNOSTIC_ERROR = 2
+} markdown_core_diagnostic_severity;
+
+/** Why a diagnostic was recorded. The ordinal is the wire value every binding
+ * decodes, so a code is appended and never inserted. */
+typedef enum markdown_core_diagnostic_code {
+    /** A directive stands and the `[` after its name did not become a label. */
+    MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_LABEL_REJECTED = 1,
+    /** A directive stands and the `{` after it did not become an attribute
+     * list, so `attributes` is null -- which is also what a directive with no
+     * braces at all reports. */
+    MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES_REJECTED = 2,
+    /** A `::name`/`:::name` line did not open a directive block at all: the
+     * block form has no partial fallback, so the whole line is a paragraph. */
+    MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_REJECTED = 3,
+    /** A container directive was closed by the end of the input rather than by
+     * a fence. */
+    MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_UNCLOSED = 4,
+    /** A delimiter row was found and the header row above it has a different
+     * number of columns, so the paragraph is not a table. */
+    MARKDOWN_CORE_DIAGNOSTIC_TABLE_REJECTED = 5,
+    /** `[text][label]` or `[label][]` naming a label the document does not
+     * define. The shortcut form `[label]` is deliberately never reported: it is
+     * indistinguishable from ordinary bracketed prose. */
+    MARKDOWN_CORE_DIAGNOSTIC_REFERENCE_UNDEFINED = 6,
+    /** `[^label]` naming a footnote the document does not define. */
+    MARKDOWN_CORE_DIAGNOSTIC_FOOTNOTE_UNDEFINED = 7,
+    /** A label the ENGINE refused as too long. The author's label is well
+     * formed, which is why this is not "no such definition". */
+    MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG = 8
+} markdown_core_diagnostic_code;
+#endif
+
+/** One diagnostic. `scope` is a place in `markdown_core_document_source` and is
+ * resolvable without a node handle, which is what the concrete view is for.
+ * `message` borrows from the document and ends with it; it is UTF-8, one line,
+ * and never empty. */
+typedef struct markdown_core_diagnostic {
+    markdown_core_diagnostic_severity severity;
+    markdown_core_diagnostic_code code;
+    markdown_core_scope scope;
+    markdown_core_string_view message;
+} markdown_core_diagnostic;
+
 typedef struct markdown_core_optional_i64 {
     bool has_value;
     int64_t value;
@@ -290,8 +362,24 @@ MARKDOWN_CORE_API bool markdown_core_document_region_owner_paths(const markdown_
                                                                  size_t paths_capacity, uint32_t *offsets,
                                                                  size_t offsets_capacity);
 
+/** How many diagnostics the parse recorded. They are in the order they were
+ * recorded, which is source order for everything the block phase reports and
+ * block-then-inline order otherwise. */
+MARKDOWN_CORE_API size_t markdown_core_document_diagnostic_count(const markdown_core_document *document);
+/** The diagnostic at `index`, counting from 0. */
+MARKDOWN_CORE_API bool markdown_core_document_diagnostic_at(const markdown_core_document *document, size_t index,
+                                                            markdown_core_diagnostic *diagnostic);
+/** The stable spelling of a code, for a consumer that would otherwise keep its
+ * own table. NULL for a value no version of this library defines. */
+MARKDOWN_CORE_API const char *markdown_core_diagnostic_code_name(markdown_core_diagnostic_code code);
+
+/** A parse failure. There is NO document, and there is no scope: an input the
+ * parser could not turn into a document has no extent to point at, and a
+ * failure the author could act on would have been a diagnostic instead. */
 MARKDOWN_CORE_API markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error);
 MARKDOWN_CORE_API markdown_core_string_view markdown_core_error_get_message(const markdown_core_error *error);
+/** Always false. Kept only until the bindings that mirror it are rewritten
+ * (13.2); requirement 13's converse is that a parse failure carries no scope. */
 MARKDOWN_CORE_API bool markdown_core_error_get_scope(const markdown_core_error *error, markdown_core_scope *scope);
 MARKDOWN_CORE_API void markdown_core_error_free(markdown_core_error *error);
 

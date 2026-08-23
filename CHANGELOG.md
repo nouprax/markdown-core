@@ -21,6 +21,18 @@ longer exists.
   emphasis means when they are attached.
 - Test the flanking scan's bound before reading it, and stop the directive
   extension registering a byte its inline matcher cannot consume.
+- Report an ordered list of diagnostics beside the parsed document —
+  `(severity, code, scope, message)` — covering the eight places where a
+  construct the author wrote did not become one and neither the tree nor the
+  concrete records can say so: a directive's rejected label or attribute list, a
+  directive block that did not open or never closed, a table whose delimiter row
+  does not match its header, a full or collapsed reference and a footnote call
+  naming nothing the document defines, and a label the parser refused as too
+  long. Recording them changes nothing the parse builds, and an allocation the
+  list cannot make abandons the parse rather than reporting a short one.
+- Report an allocation loss as `MARKDOWN_CORE_ERROR_ALLOCATION_FAILED` rather
+  than as `MARKDOWN_CORE_ERROR_INTERNAL`, and stop the failure reporter needing
+  an allocation of its own to say so.
 
 ## 1.0.3 - 2026-07-15
 

@@ -148,6 +148,30 @@ static MARKDOWN_CORE_INLINE void S_claim(subject *subj, markdown_core_node *node
     }
 }
 
+/* REQUIREMENT 13: say what the tree cannot, about the content bytes
+ * [`from`, `to`].
+ *
+ * The place is the same projection `S_place_inline` gives a node, for the same
+ * reason: a bracket span may cross a line ending, and a column derived by
+ * addition then names a place in the wrong line's frame. A span the map cannot
+ * place is not reported -- an invented position is worse than a missing
+ * diagnostic. */
+static void S_diagnose_span(markdown_core_parser *parser, subject *subj, markdown_core_diagnostic_severity severity,
+                            markdown_core_diagnostic_code code, bufsize_t from, bufsize_t to, const char *message,
+                            const unsigned char *label, bufsize_t label_length) {
+    int start_line;
+    int start_column;
+    int end_line;
+    int end_column;
+
+    if (!markdown_core_parser_content_place(subj->owner_parser, subj->owner, from, &start_line, &start_column) ||
+        !markdown_core_parser_content_place(subj->owner_parser, subj->owner, to, &end_line, &end_column)) {
+        return;
+    }
+    markdown_core_parser_diagnose(parser, severity, code, start_line, start_column, end_line, end_column, message,
+                                  label, label_length);
+}
+
 // Create an inline with a literal string value.
 static MARKDOWN_CORE_INLINE markdown_core_node *make_literal(subject *subj, markdown_core_node_type t, int start_column,
                                                              int end_column, markdown_core_chunk s) {
@@ -1512,6 +1536,29 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
         matched_reference = 1;
         goto match;
     }
+    /* THE AUTHOR NAMED SOMETHING THAT DOES NOT EXIST, which is what separates
+     * this from every other diagnostic in the engine and is why it is an ERROR.
+     * The bytes fall through to the unmatched-`[` path and become prose, so the
+     * tree is byte-identical to one whose author wrote those brackets meaning
+     * nothing.
+     *
+     * ONLY THE FULL AND COLLAPSED FORMS. `[a]` is a shortcut reference and is
+     * also how anyone writes a bracketed aside, a citation marker or a
+     * checklist; reporting on it would report on prose. The second bracket
+     * pair exists only to name a definition, and that is the evidence.
+     *
+     * The over-long case is a DIFFERENT fact and gets its own code: the label
+     * is well formed and the engine's own cap refused to look it up, so the
+     * repair is not "define it". */
+    if (found_label && form != MARKDOWN_CORE_REFERENCE_SHORTCUT && raw_label.len >= 1) {
+        int too_long = raw_label.len > MAX_LINK_LABEL_LENGTH;
+        S_diagnose_span(
+            parser, subj, MARKDOWN_CORE_DIAGNOSTIC_ERROR,
+            too_long ? MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG : MARKDOWN_CORE_DIAGNOSTIC_REFERENCE_UNDEFINED,
+            opener->position - 1, subj->pos - 1,
+            too_long ? "reference label too long to resolve" : "reference to a label the document does not define",
+            raw_label.data, raw_label.len);
+    }
     markdown_core_chunk_free(subj->mem, &raw_label);
     goto noMatch;
 
@@ -1558,9 +1605,13 @@ noMatch:
         // The definition set is filled by the block phase, which has finished
         // by the time any inline is parsed, so "defines" is answered over the
         // WHOLE document here and not over a prefix of it.
-        if (opener->position < subj->input.len && subj->input.data[opener->position] == '^' &&
-            (literal->len > 1 || opener->inl_text->next->next) &&
-            S_footnote_label_is_defined(parser, subj, opener->position, initial_pos)) {
+        /* THE CARET IS THE EVIDENCE, and it is separated from the definedness
+         * test so that the case where the first holds and the second does not
+         * can be reported. `[^x]` is footnote syntax and nothing else; a reader
+         * who writes it and gets prose has no other way to find out. */
+        bool caret_written = opener->position < subj->input.len && subj->input.data[opener->position] == '^' &&
+                             (literal->len > 1 || opener->inl_text->next->next);
+        if (caret_written && S_footnote_label_is_defined(parser, subj, opener->position, initial_pos)) {
 
             // Before we got this far, the `handle_close_bracket` function may have
             // advanced the current state beyond our footnote's actual closing
@@ -1653,6 +1704,16 @@ noMatch:
 
             pop_bracket(subj);
             return NULL;
+        }
+        if (caret_written) {
+            bufsize_t label_length = initial_pos - opener->position - 2;
+            int too_long = label_length > MAX_LINK_LABEL_LENGTH;
+            S_diagnose_span(parser, subj, MARKDOWN_CORE_DIAGNOSTIC_ERROR,
+                            too_long ? MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG
+                                     : MARKDOWN_CORE_DIAGNOSTIC_FOOTNOTE_UNDEFINED,
+                            opener->position - 1, initial_pos - 1,
+                            too_long ? "footnote label too long to resolve" : "footnote call with no definition",
+                            subj->input.data + opener->position + 1, label_length > 0 ? label_length : 0);
         }
     }
 
