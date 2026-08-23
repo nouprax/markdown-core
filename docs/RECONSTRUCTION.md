@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), **11b** (§4.14.11b) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 11b** — every byte of every block's CONTENT region owned by exactly one inline node or by the block itself, in SOURCE coordinates. Then `11c 12 13 14 15C`. **Step 9b is LANDED whole** (§4.14.9b1–9b2): the definition and both references are nodes, five kinds carry an association, **D9 and D30 are closed**, the **mdast backlog is EMPTY**, and `fuzz-parity --oracle mdast` — one of §0's six known-red checks — is green. **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), Step 9b (§4.14.9b1–9b2). Remaining: `11b 11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 11c** — a reference definition and a footnote definition own their source bytes so the block partition is total, plus the three causes §4.14.11b hands it and the `end-at-line-ending` family §4.14.9b3 hands it. Then `12 13 14 15C`. **Step 9b is LANDED whole** (§4.14.9b1–9b2): the definition and both references are nodes, five kinds carry an association, **D9 and D30 are closed**, the **mdast backlog is EMPTY**, and `fuzz-parity --oracle mdast` — one of §0's six known-red checks — is green. **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), Step 9b (§4.14.9b1–9b2), **Step 11b** (§4.14.11b) — which added TWO laws, L5 and L6, because L1–L4 are all true of the day before it. Remaining: `11c 12 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -82,7 +82,7 @@ node scripts/audit-position-places.mjs     # 57 rows registered, 4446 scanned
 # Requirement 11a's four laws over the concrete record set, landed at 11a
 # (§4.14.11a). L1 and L3 have no rows and hold by construction; L4 is checked
 # by re-parsing every line-boundary prefix.
-node scripts/audit-concrete-records.mjs   # 28 rows registered, 2782 regions
+node scripts/audit-concrete-records.mjs   # 267 rows registered, 5845 regions
 
 # D9's pin. It was REGISTERED RED from 0a.8 to 9b.2 and is now GREEN with an
 # EMPTY ledger -- still fail-closed, so a row appearing fails the run. Deleting
@@ -6187,6 +6187,178 @@ attributes those bytes differently from the whole document and L4 fails.
 reverted; nothing in this commit changes the engine.
 
 
+#### 4.14.11b Step 11b: the inline phase owns its bytes, and two laws that say so
+
+**The deliverable.** Every byte of every block's CONTENT region is owned by
+exactly one INLINE node or by the block itself, in source coordinates. A
+paragraph's record set is no longer one row:
+
+```
+a *em* `c` b
+region 0 2 CONTENT  text        1:1..1:2
+region 2 1 MARKER   emphasis    1:3..1:6
+region 3 2 CONTENT  text        1:4..1:5
+region 5 1 MARKER   emphasis    1:3..1:6
+region 6 1 CONTENT  text        1:7..1:7
+region 7 1 MARKER   code        1:8..1:10
+region 8 1 CONTENT  code        1:8..1:10
+region 9 1 MARKER   code        1:8..1:10
+region 10 2 CONTENT text        1:11..1:12
+region 12 1 CONTENT paragraph   1:1..1:12
+```
+
+**NOT ONE GOLDEN ROW MOVED.** 11b adds records; it does not change the tree.
+`spec.txt`, `regression.txt`, `extensions.txt`, every `.ast`, both parity
+oracles and all three position ledgers are byte-identical across this commit.
+
+##### The role rule is one sentence, and it decides every case the requirement lists
+
+> A byte is **CONTENT** when it survives into the owner's literal **as itself**,
+> and **MARKER** when it does not.
+
+That is not a restatement of the requirement's list — it *derives* it. A
+matched delimiter run, a matched bracket, a backslash, an entity, a
+destination, a title and a smart-punctuation substitution all fail the test; an
+UNMATCHED `*` passes it, because the node's literal is that byte. It is also
+11a's own rule for blocks, applied one level in.
+
+##### The mechanism: claims, painted, then one refinement
+
+The inline phase CLAIMS ranges of the block's content as it reads them, and the
+claims are resolved when the block's inlines are done — because emphasis and
+brackets are settled at the END of the block, and a `*` that turns out to open
+an emphasis was a `Text` node when it was read. **LATER CLAIMS WIN**, which is
+exactly that: `S_insert_emph` re-claims the delimiter bytes for the node it just
+made, and so does `handle_close_bracket` for a link's brackets.
+
+Resolution is three passes and one move, all bounded by the block: paint one
+claim index per content byte, group the paint into runs and cut them at the
+block's own line marks — a content range that crosses a line ending is TWO
+source ranges, because the next line's stripped indent lies between them — then
+rewrite the block's CONTENT rows, counting first, growing once and
+right-aligning the survivors, which is the shape §4.14.9b1 already used and for
+the same reason.
+
+**A claim for the BLOCK ITSELF is forced to `CONTENT`**, whatever the caller
+asked for. 11b REFINES a block's content into inline owners; it does not
+re-label it. Calling a byte the inline phase read and kept nowhere `DISCARDED`
+makes the BLOCK-level attribution depend on the inline phase, and that breaks
+L4 — measured, eleven rows, all of them a prefix whose block had not yet grown
+the construct.
+
+##### THE CLAIM LIST IS A STACK, and the reason is one call
+
+`markdown_core_parse_inlines` is REENTRANT: `extensions/directive.c` parses a
+label's inlines from inside the paragraph's own inline pass, because
+`process_inlines`' walk cannot reach a node created during that pass. A single
+flush would have resolved the outer block's half-made claims. Each call records
+the claim count it entered with and resolves only its own.
+
+The same call needed one more line: the label's inline parse walks the block's
+ANCESTORS to find the region its content was cut from, and the directive that
+will hold the label is still a return value at that point — so `node->parent`
+is set there rather than left to `append_child` a moment later. Without it every
+node inside a label owned nothing.
+
+##### Three soundness filters, and each one is a fact about the engine
+
+| filter | what it answers |
+|---|---|
+| the LIVE SET, over the whole tree, after the last rewrite | a claim's owner may have been FREED — an extension that matches a delimiter pair builds its own node and frees the text nodes the run was; consolidation frees every text node but the first; the autolinker splits a text node in its POSTPROCESS, at `finish`. A region naming a freed node is read by `S_write_concrete`, so it is a use-after-free and not a wrong label |
+| the SCOPE walk, up the ancestor chain | a pointer freed by a postprocess can be REUSED by a node the same postprocess allocates, so membership proves the owner is *a* node and not that it is *the* node. One step up is not enough: measured, three rows a thousand bytes past their owner |
+| CLIPPING a piece to the region it falls in | a claim can span a refinable region and one a nested refine already wrote; taking it whole overlaps, which L1 says out loud |
+
+**Consolidation had to become parser-aware, and then cursored.** It frees every
+text node but the first of each run, and those nodes own regions. Transferring
+them one at a time scans the region array from the node's own line — which
+narrows nothing when 300,000 `<!--` are 600,000 text nodes on ONE line.
+Measured as a **TIMEOUT** in `pathological_unclosed_comment`. A forward-only
+cursor shared across the run makes the whole run cost the run.
+
+##### Two new laws, and one of them is the only thing that can see 11b at all
+
+**L5 — an inline node's scope is exactly the bytes it and its descendants own.**
+L1 through L4 are all satisfied by a record set that names no inline node:
+*"every byte of a block's CONTENT is owned by an inline node OR BY THE BLOCK"*
+is true of the day before this step, and so is the tiling, and so is the
+completeness. **Mutant M26 deletes the entire refinement**: `correctness` 69/69,
+`conformance` 2/2, upstream 887/887, mdast 110/110, every position ledger
+holding — and `audit-concrete-records.mjs` reports **324 rows appearing**.
+Nothing else in the repository moves.
+
+L5 needs the tree, which the record rows cannot give it, so `--concrete` now
+prints a `node` row per node in preorder — the RAW tree's, the same traversal
+`S_write_node_path` walks, not the facade's, which hides the directive label.
+
+**L6 — an inline node's OWN regions carry the role its kind admits.** A `Text`
+owns no marker unless it is an entity, an escape or a smart substitution, so its
+vocabulary is open and the law says nothing about that kind; every other kind is
+exact. **Mutant M27** reports an emphasis's opening delimiter as CONTENT:
+`correctness` 69/69 and **154 L6 rows appear**. Without L6 the role assignment
+had no oracle at all.
+
+##### L4 had to be told the truth about inline records, in two halves
+
+An inline record is made when its BLOCK closes, so the block a prefix leaves
+open cannot have the same ones — `$$` on its own line is a paragraph and
+`$$⏎x⏎$$` is a formula, and the same bytes are CONTENT in the first reading and
+MARKER in the second. No ordering of the parse avoids that: the construct is not
+there yet.
+
+So L4 is now checked in two halves, and the split keeps 11a's law intact:
+
+- the **BLOCK attribution** over **every byte** — an inline region only ever
+  refines a byte the block already called CONTENT, so the coarse role is
+  recoverable and the original law is unweakened. **0 rows.**
+- the **INLINE refinement** over the bytes in a block the prefix had already
+  closed — **5,246 of 27,734 (19%)**, and the run prints both numbers, because a
+  bound that quietly swallowed the document would read as agreement.
+
+**Eight rows survive even that**, and they are not a defect: whether `[a]` is a
+reference or prose depends on a definition that may appear on the LAST line, so
+no prefix can attribute those bytes the way the whole document does. Registered
+as `reference-recognition-is-document-scoped`, so a row appearing anywhere else
+still fails.
+
+##### What is registered, and the three causes
+
+`audit-concrete-records.mjs` goes 36 → **267 rows**, and the growth is the two
+new laws finding what the block model leaves behind. **2,255 of 2,462 inline
+nodes (91.6%) are exactly covered**; 207 are not, and 24 carry a repaired role.
+Three named causes, all of them block-level facts 11b refines on top of, all
+owned by **11c**:
+
+1. the **table** extension gives a row line the role MARKER, so a cell has no
+   refinable CONTENT region and nothing inside it owns anything — the same shape
+   as `split-off-table-lead-content`, which 11c already owns;
+2. the **autolink** extension rewrites the tree in its postprocess, AFTER the
+   block whose regions it invalidates has been refined, so its pieces are
+   reseated up to the block;
+3. a text run **rtrims** its trailing spaces out of its literal while its SCOPE
+   still covers them, so the run owns fewer bytes than it claims to — giving
+   them to the run instead costs two L4 block rows and needs the scope decided
+   first.
+
+##### What the extensions do claim
+
+`strikethrough` claims both tilde runs for the node it retypes in place;
+`formula` claims its two delimiter runs and the body between them, because
+`free_nodes_through` frees every node the span was built from; `directive`
+claims its label's brackets, which are the label's scope and not its content.
+The floor under all of them is a re-claim to the BLOCK before any extension
+delimiter handler runs, so a handler that claims nothing still cannot dangle.
+
+##### Gates
+
+`correctness` 69/69, asan 60/60, ubsan 60/60 (both trees deleted and
+reconfigured), `conformance` 2/2, canonical-ast 32 kinds / 62 fields,
+projections 32 over 12 surfaces, both fuzz oracles 300/300, upstream 887/887
+with 10/10 and 4/4, mdast 110/110 with an empty backlog, scope-sanity 1,
+inline-sourcepos 40, containment 9, places 57, **concrete records 267**,
+reference-order 0, `pnpm -w run lint`, `leaks --atExit` 0, and the Swift, Kotlin
+and ES suites green.
+
+
 #### 4.14.11a2 Q44 answered: an autocompleted table cell sits where it was completed
 
 **Owner ruling, 2026-08-23, and it supplied the criterion the question was
@@ -6849,7 +7021,7 @@ following, together:
 **Deliverables**
 - [x] **Directive grammar conformance (Step 7) — deliverable #1. LANDED**, §4.14.7a–e. Nothing carried: **D36** closed at 7e and **Q43** answered with it.
 - [x] **The formula fix (Step 6) — deliverable #2. LANDED, §4.14.6.**
-- [ ] CST concrete records (11a, 11b, 11c) and diagnostics (13) — deliverable #3. **11a is LANDED** (§4.14.11a); 11b, 11c and 13 are not
+- [ ] CST concrete records (11a, 11b, 11c) and diagnostics (13) — deliverable #3. **11a and 11b are LANDED** (§4.14.11a, §4.14.11b); 11c and 13 are not
 - [x] The reference model (9a, 9b) and the positions that depend on it — **10, 9a and 9b are all LANDED** (§4.14.10, §4.14.9a1–9a2, §4.14.9b1–9b2)
 - [ ] The facade and its single ABI break window (12), the null/empty rule (14)
 - [ ] Bindings, specs and docs regenerated (15)

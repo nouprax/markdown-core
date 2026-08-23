@@ -1036,7 +1036,7 @@ static markdown_core_node *make_directive_node(const markdown_core_syntax_extens
  * Scanning it here also means the bytes are CONSUMED here, so no other
  * extension is ever offered them. There is nothing left to protect. */
 static markdown_core_node *match_colon_directive(const markdown_core_syntax_extension *extension,
-                                                 markdown_core_parser *parser,
+                                                 markdown_core_parser *parser, markdown_core_node *parent,
                                                  markdown_core_inline_parser *inline_parser, markdown_core_chunk *chunk,
                                                  bufsize_t offset) {
     bufsize_t name_start;
@@ -1148,7 +1148,23 @@ static markdown_core_node *match_colon_directive(const markdown_core_syntax_exte
      * always had. `process_inlines`' walk cannot reach a node created during a
      * paragraph's own inline pass, so the parse is driven from here. */
     if (label_node) {
+        /* The parent link is set HERE and not left to `parse_inline`'s
+         * `append_child`, because requirement 11b's refinement walks a block's
+         * ancestors to find the region its content was cut from -- and without
+         * this the label's chain stops at a directive that is still a return
+         * value, so every node inside a label would own no region at all. The
+         * link is the one `append_child` writes a moment later. */
+        node->parent = parent;
         markdown_core_parse_inlines(parser, label_node, parser->refmap, parser->options);
+        /* The label's scope spans its brackets, so the brackets are the
+         * label's markers (requirement 11b). They are claimed from HERE, in
+         * the enclosing paragraph's claim run, because they are not part of
+         * the label's own content buffer -- the label was made from what is
+         * between them. */
+        markdown_core_parser_claim_inline(parser, label_node, label_start - 1, label_start,
+                                          MARKDOWN_CORE_REGION_MARKER);
+        markdown_core_parser_claim_inline(parser, label_node, label_start + label_len, label_start + label_len + 1,
+                                          MARKDOWN_CORE_REGION_MARKER);
     }
     return node;
 }
@@ -1164,7 +1180,7 @@ static markdown_core_node *match(const markdown_core_syntax_extension *extension
     bufsize_t offset = (bufsize_t)markdown_core_inline_parser_get_offset(inline_parser);
 
     if (character == ':') {
-        return match_colon_directive(extension, parser, inline_parser, chunk, offset);
+        return match_colon_directive(extension, parser, parent, inline_parser, chunk, offset);
     }
 
     return NULL;

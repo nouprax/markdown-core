@@ -49,6 +49,31 @@ typedef struct {
     uint8_t role;
 } markdown_core_region;
 
+/* ONE INLINE CLAIM: the bytes [`from`, `to`) of the block's CONTENT buffer are
+ * `owner`'s, in role `role`.
+ *
+ * Requirement 11b's law is that every byte of every block's CONTENT region is
+ * owned by exactly one INLINE node or by the block itself, and the inline phase
+ * is the only thing that knows which. Claims are made as the bytes are read,
+ * accumulated for the block being parsed, and applied once when its inlines are
+ * done -- because emphasis and brackets are resolved at the END of the block,
+ * and a `*` that turns out to open an emphasis was a `Text` node when it was
+ * read. LATER CLAIMS WIN, which is exactly that: `S_insert_emph` re-claims the
+ * delimiter bytes for the node it just made.
+ *
+ * THE ROLE IS DERIVABLE AND IS STATED ONCE: a byte is CONTENT when it survives
+ * into a node's literal AS ITSELF, and MARKER when it does not. That decides
+ * every case the requirement enumerates without a second list -- a matched
+ * delimiter run, a matched bracket, a backslash, an entity, a destination, a
+ * title and a smart-punctuation substitution all fail it; an UNMATCHED `*`
+ * passes it, because the node's literal is that byte. */
+typedef struct {
+    bufsize_t from;
+    bufsize_t to;
+    struct markdown_core_node *owner;
+    uint8_t role;
+} markdown_core_inline_claim;
+
 /* Where one source line's bytes landed in a block's content buffer.
  *
  * A block's content is the concatenation of the line slices `add_line` copies
@@ -167,7 +192,33 @@ struct markdown_core_parser {
     markdown_core_line_mark *line_marks;
     bufsize_t line_marks_size;
     bufsize_t line_marks_alloc;
+    /* Requirement 11b's inline claims for the block being parsed, and the
+     * scratch that resolves them. Both are reused block to block and grow to
+     * the largest block seen; neither survives the parse. `paint` is one
+     * claim index per CONTENT byte, which is what makes "later claims win" a
+     * single pass rather than an interval structure. */
+    markdown_core_inline_claim *inline_claims;
+    bufsize_t inline_claims_size;
+    bufsize_t inline_claims_alloc;
+    int32_t *inline_paint;
+    bufsize_t inline_paint_alloc;
 };
+
+/* Requirement 11b: resolve the inline claims made while `block`'s inlines were
+ * parsed and refine its CONTENT regions into them. Implemented beside the rest
+ * of the region set in core/blocks.c and called once per block by
+ * markdown_core_parse_inlines. */
+/* `base` is the claim count at the start of this block's inline parse: the
+ * claim list is a STACK, because a directive's label is inline-parsed from
+ * inside its own paragraph's inline parse and the inner call must not resolve
+ * -- or discard -- the outer one's claims. */
+void markdown_core_parser_refine_inline_regions(markdown_core_parser *parser, markdown_core_node *block,
+                                                bufsize_t base);
+
+/* `to` takes `from`'s regions, with a forward-only cursor shared across a run
+ * of merges. Pass -1 to have it initialised from `from`'s own start. */
+void markdown_core_parser_absorb_regions(markdown_core_parser *parser, markdown_core_node *from, markdown_core_node *to,
+                                         bufsize_t *cursor);
 
 #ifdef __cplusplus
 }

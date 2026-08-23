@@ -294,6 +294,8 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "link";
     case MARKDOWN_CORE_NODE_IMAGE:
         return "image";
+    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
+        return "footnote_reference";
     }
 
     return "<unknown>";

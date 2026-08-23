@@ -4,6 +4,7 @@
 #include "config.h"
 #include "node.h"
 #include "markdown-core.h"
+#include "parser.h"
 #include "iterator.h"
 
 markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
@@ -79,6 +80,15 @@ markdown_core_event_type markdown_core_iter_get_event_type(markdown_core_iter *i
 markdown_core_node *markdown_core_iter_get_root(markdown_core_iter *iter) { return iter->root; }
 
 int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
+    return markdown_core_consolidate_text_nodes_with_parser(NULL, root);
+}
+
+/* Consolidation frees every text node but the first of each run, and since
+ * requirement 11b those nodes OWN REGIONS. `parser` is how the survivor takes
+ * them: one node replacing another, roles kept, bounded by the freed node's own
+ * lines. NULL is the public entry point's answer -- a caller outside a parse
+ * has no region set to keep. */
+int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parser, markdown_core_node *root) {
     if (root == NULL) {
         return 1;
     }
@@ -86,6 +96,7 @@ int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(root->content.mem);
     markdown_core_event_type ev_type;
     markdown_core_node *cur, *tmp, *next;
+    bufsize_t region_cursor = -1;
     int ok = 1;
 
     if (!iter) {
@@ -105,6 +116,7 @@ int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
         if (cur->next && cur->next->type == MARKDOWN_CORE_NODE_TEXT) {
             markdown_core_strbuf_clear(&buf);
             markdown_core_strbuf_put(&buf, cur->as.literal.data, cur->as.literal.len);
+            region_cursor = -1;
             tmp = cur->next;
             while (tmp && tmp->type == MARKDOWN_CORE_NODE_TEXT) {
                 /* Bring `tmp` to its own EXIT before freeing it: two events
@@ -125,6 +137,9 @@ int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
                     cur->end_column = tmp->end_column;
                 }
                 next = tmp->next;
+                if (parser) {
+                    markdown_core_parser_absorb_regions(parser, tmp, cur, &region_cursor);
+                }
                 markdown_core_node_free(tmp);
                 tmp = next;
             }

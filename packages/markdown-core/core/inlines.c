@@ -138,6 +138,16 @@ static MARKDOWN_CORE_INLINE void S_place_inline(subject *subj, markdown_core_nod
     }
 }
 
+/* REQUIREMENT 11b: the bytes [`from`, `to`) of the block being parsed are
+ * `node`'s, in `role`. A no-op for the ownerless subject
+ * `markdown_core_parse_reference_inline` builds, which creates no nodes. */
+static MARKDOWN_CORE_INLINE void S_claim(subject *subj, markdown_core_node *node, bufsize_t from, bufsize_t to,
+                                         markdown_core_region_role role) {
+    if (subj->owner_parser && subj->owner && node) {
+        markdown_core_parser_claim_inline(subj->owner_parser, node, from, to, (int)role);
+    }
+}
+
 // Create an inline with a literal string value.
 static MARKDOWN_CORE_INLINE markdown_core_node *make_literal(subject *subj, markdown_core_node_type t, int start_column,
                                                              int end_column, markdown_core_chunk s) {
@@ -253,6 +263,10 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(subject *subj, int
     if (text) {
         append_child(link, text);
     }
+    /* The pointy braces are the syntax; what they enclose is the text. */
+    S_claim(subj, link, start_column, start_column + 1, MARKDOWN_CORE_REGION_MARKER);
+    S_claim(subj, text ? text : link, start_column + 1, end_column, MARKDOWN_CORE_REGION_CONTENT);
+    S_claim(subj, link, end_column, end_column + 1, MARKDOWN_CORE_REGION_MARKER);
     return link;
 }
 
@@ -468,6 +482,10 @@ static markdown_core_node *handle_backticks(subject *subj, int options) {
         if (!node) {
             return NULL;
         }
+        /* The ticks reach no literal and the bytes between them do. */
+        S_claim(subj, node, startpos - openticks.len, startpos, MARKDOWN_CORE_REGION_MARKER);
+        S_claim(subj, node, startpos, endpos - openticks.len, MARKDOWN_CORE_REGION_CONTENT);
+        S_claim(subj, node, endpos - openticks.len, endpos, MARKDOWN_CORE_REGION_MARKER);
         return node;
     }
 }
@@ -850,6 +868,20 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
             old_closer = closer;
 
             if (extension != NULL) {
+                if (opener_found) {
+                    /* An extension that matches a delimiter pair BUILDS ITS OWN
+                     * NODE and frees the two `Text` nodes the runs were, so the
+                     * claims those made would name freed memory. Re-claiming
+                     * the runs for the BLOCK first is the floor: the bytes are
+                     * syntax either way, the owner is a node that cannot go
+                     * away, and an extension that wants the finer attribution
+                     * claims them for its own node -- a later claim, which
+                     * wins. */
+                    S_claim(subj, subj->owner, opener->position - opener->length, opener->position,
+                            MARKDOWN_CORE_REGION_MARKER);
+                    S_claim(subj, subj->owner, closer->position - closer->length, closer->position,
+                            MARKDOWN_CORE_REGION_MARKER);
+                }
                 closer = opener_found ? extension->insert_inline_from_delim(extension, parser, subj, opener, closer)
                                       : closer->next;
             } else if (closer->rule == MARKDOWN_CORE_DELIM_RULE_EMPHASIS ||
@@ -946,6 +978,15 @@ static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *clo
     }
     markdown_core_node_insert_after(opener_inl, emph);
 
+    /* REQUIREMENT 11b: the delimiters the emphasis USED are now its markers.
+     * They were claimed CONTENT when they were read, because a `*` that matches
+     * nothing is its own literal; this claim is later and wins. `position` is
+     * the content offset one past the run, which is why the opener's used bytes
+     * are counted back from it and the closer's forward from its own start. */
+    S_claim(subj, emph, opener->position - use_delims, opener->position, MARKDOWN_CORE_REGION_MARKER);
+    S_claim(subj, emph, closer->position - closer_num_chars - use_delims, closer->position - closer_num_chars,
+            MARKDOWN_CORE_REGION_MARKER);
+
     // The emphasis takes the delimiters ADJACENT TO ITS CONTENT -- the opener's
     // trailing `use_delims` and the closer's leading ones -- so what is left over
     // is the opener's LEADING bytes and the closer's TRAILING ones. Taking the
@@ -1006,15 +1047,30 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
                 unsigned char *output = (unsigned char *)subj->mem->calloc((size_t)output_len + 1, 1);
                 if (output) {
                     markdown_core_chunk contents = {output, output_len, 1};
+                    markdown_core_node *run;
                     memset(output, '\\', (size_t)output_len);
                     subj->pos = end;
-                    return make_str(subj, start, end - 1, contents);
+                    run = make_str(subj, start, end - 1, contents);
+                    /* One escape per PAIR: the first backslash of each is the
+                     * escape and reaches no literal, the second is the byte the
+                     * literal is made of. */
+                    for (bufsize_t at = start; run && at + 1 < end; at += 2) {
+                        S_claim(subj, run, at, at + 1, MARKDOWN_CORE_REGION_MARKER);
+                        S_claim(subj, run, at + 1, at + 2, MARKDOWN_CORE_REGION_CONTENT);
+                    }
+                    return run;
                 }
             }
         }
         // only ascii symbols and newline can be escaped
         advance(subj);
-        return make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_dup(&subj->input, subj->pos - 1, 1));
+        {
+            markdown_core_node *escaped =
+                make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_dup(&subj->input, subj->pos - 1, 1));
+            S_claim(subj, escaped, subj->pos - 2, subj->pos - 1, MARKDOWN_CORE_REGION_MARKER);
+            S_claim(subj, escaped, subj->pos - 1, subj->pos, MARKDOWN_CORE_REGION_CONTENT);
+            return escaped;
+        }
     } else if (!is_eof(subj) && skip_line_end(subj)) {
         // A backslash hard break CONSUMES a line ending, so the subject has to
         // be told, exactly as handle_newline tells it. It was not, so every node
@@ -1051,7 +1107,10 @@ static markdown_core_node *handle_entity(subject *subj) {
     len = houdini_unescape_ent(&ent, subj->input.data + subj->pos, subj->input.len - subj->pos);
 
     if (len == 0) {
-        return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("&"));
+        markdown_core_node *literal = make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("&"));
+        /* Not an entity: the `&` IS the literal, so it is content. */
+        S_claim(subj, literal, subj->pos - 1, subj->pos, MARKDOWN_CORE_REGION_CONTENT);
+        return literal;
     }
 
     subj->pos += len;
@@ -1565,6 +1624,7 @@ noMatch:
 
             // we then replace the opener with this new fnref node, the net effect
             // being replacing the opening '[' text node with a `^footnote-ref]` node.
+            S_claim(subj, fnref, opener->position - 1, initial_pos, MARKDOWN_CORE_REGION_MARKER);
             markdown_core_node_insert_before(opener->inl_text, fnref);
 
             process_emphasis(parser, subj, opener->position);
@@ -1641,6 +1701,13 @@ match:
     inl->as.link.url = url;
     inl->as.link.title = title;
 placed:;
+    /* REQUIREMENT 11b: the brackets, and whatever follows the closing one --
+     * `(...)` with the destination and title, or `[label]` -- are the link's
+     * markers. They were claimed CONTENT as they were read, because an
+     * unmatched `[` is its own literal; these claims are later and win. The
+     * children keep the claims they made for themselves. */
+    S_claim(subj, inl, opener->position - (is_image ? 2 : 1), opener->position, MARKDOWN_CORE_REGION_MARKER);
+    S_claim(subj, inl, initial_pos - 1, subj->pos, MARKDOWN_CORE_REGION_MARKER);
     // A link starts at its own '[' and ends at its closing ')' or ']', and the
     // two need not be on the same line. Taking BOTH from subj->line made a link
     // start where it ENDED: `[a\nb](/u)` reported Link 2:1..2:6 around a child
@@ -1698,6 +1765,7 @@ placed:;
 // either, and one that carries no line at all.
 static markdown_core_node *handle_newline(subject *subj) {
     bufsize_t nlpos = subj->pos;
+    bufsize_t end_of_break;
     markdown_core_node *brk;
     // skip over cr, crlf, or lf:
     if (peek_at(subj, subj->pos) == '\r') {
@@ -1706,6 +1774,7 @@ static markdown_core_node *handle_newline(subject *subj) {
     if (peek_at(subj, subj->pos) == '\n') {
         advance(subj);
     }
+    end_of_break = subj->pos;
     // skip spaces at beginning of line
     skip_spaces(subj);
     if (nlpos > 1 && peek_at(subj, nlpos - 1) == ' ' && peek_at(subj, nlpos - 2) == ' ') {
@@ -1717,6 +1786,12 @@ static markdown_core_node *handle_newline(subject *subj) {
         // The two spaces of a hard break stay with the text they follow, as
         // upstream also has them, so both forms own exactly the line ending.
         S_place_inline(subj, brk, nlpos, nlpos);
+        /* The break is the line ending. The spaces skipped after it are the
+         * next line's leading whitespace: the parse read them and kept them
+         * nowhere, which is what DISCARDED is for, and they belong to the
+         * block they were read inside rather than to the break. */
+        S_claim(subj, brk, nlpos, end_of_break, MARKDOWN_CORE_REGION_MARKER);
+        S_claim(subj, subj->owner, end_of_break, subj->pos, MARKDOWN_CORE_REGION_DISCARDED);
     }
     return brk;
 }
@@ -1864,6 +1939,19 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
     markdown_core_chunk contents;
     unsigned char c;
     bufsize_t startpos, endpos;
+    /* REQUIREMENT 11b. Every branch below consumes a known span of the block's
+     * content and produces at most one node, so the DISPATCH can claim what
+     * the handler did not: `before` is where the span starts, `claimed` is how
+     * many claims existed before the handler ran, and anything the handler
+     * left unclaimed inside its own span is the node's in `fallback`.
+     *
+     * A handler makes its own finer claims only where the span is NOT one
+     * role -- a code span's backticks against its content, a backslash against
+     * the byte it escapes -- and it makes them in increasing order, which is
+     * what lets the gap fill below be a merge rather than a search. */
+    bufsize_t before = subj->pos;
+    bufsize_t claimed = subj->owner_parser ? subj->owner_parser->inline_claims_size : 0;
+    markdown_core_region_role fallback = MARKDOWN_CORE_REGION_CONTENT;
     c = peek_char(subj);
     if (c == 0) {
         return 0;
@@ -1871,6 +1959,10 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
     switch (c) {
     case '\r':
     case '\n':
+        /* A break's bytes reach no literal: a `SoftBreak` and a `LineBreak`
+         * both have none, and a hard break's two trailing spaces or backslash
+         * are exactly the syntax that made it one. */
+        fallback = MARKDOWN_CORE_REGION_MARKER;
         new_inl = handle_newline(subj);
         break;
     case '`':
@@ -1883,6 +1975,11 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         }
         break;
     case '&':
+        /* `&amp;` reaches the literal as `&`, and that `&` is not the `&` the
+         * source wrote -- no byte of the entity survives as itself. An `&`
+         * that is NOT an entity is returned by the same handler as its own
+         * literal, and claims itself CONTENT. */
+        fallback = MARKDOWN_CORE_REGION_MARKER;
         new_inl = handle_entity(subj);
         break;
     case '<':
@@ -1892,16 +1989,31 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
     case '_':
     case '\'':
     case '"':
+        /* A `*` or `_` run is CONTENT until it matches -- an unmatched one IS
+         * its own literal -- and `S_insert_emph` re-claims the bytes it uses.
+         * A smart quote is a SUBSTITUTION: the literal is a curly quote, which
+         * is not the byte the source wrote. */
+        if ((c == '\'' || c == '"') && (options & MARKDOWN_CORE_OPT_SMART) != 0) {
+            fallback = MARKDOWN_CORE_REGION_MARKER;
+        }
         new_inl = handle_delim(subj, c, (options & MARKDOWN_CORE_OPT_SMART) != 0);
         break;
     case '-':
+        if ((options & MARKDOWN_CORE_OPT_SMART) != 0) {
+            fallback = MARKDOWN_CORE_REGION_MARKER;
+        }
         new_inl = handle_hyphen(subj, (options & MARKDOWN_CORE_OPT_SMART) != 0);
         break;
     case '.':
+        if ((options & MARKDOWN_CORE_OPT_SMART) != 0) {
+            fallback = MARKDOWN_CORE_REGION_MARKER;
+        }
         new_inl = handle_period(subj, (options & MARKDOWN_CORE_OPT_SMART) != 0);
         break;
     case '[':
         advance(subj);
+        /* CONTENT until it matches: an unmatched `[` IS its own literal, and
+         * `handle_close_bracket` re-claims it MARKER for the link it opens. */
         new_inl = make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("["));
         if (new_inl) {
             push_bracket(subj, false, new_inl);
@@ -1951,9 +2063,35 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         }
 
         new_inl = make_str(subj, startpos, endpos - 1, contents);
+        /* `rtrim` above takes the trailing spaces before a line ending OUT of
+         * the literal, and the run's SCOPE still covers them -- so they are the
+         * run's, in the role a byte kept nowhere has. Giving them to the block
+         * instead left the node covering eight columns and owning three, which
+         * is what L5 measures. */
+        S_claim(subj, new_inl, startpos, startpos + contents.len, MARKDOWN_CORE_REGION_CONTENT);
+        S_claim(subj, subj->owner, startpos + contents.len, endpos, MARKDOWN_CORE_REGION_DISCARDED);
     }
     if (new_inl != NULL) {
         append_child(parent, new_inl);
+    }
+    /* Fill what the handler left. Its own claims are in increasing order, so
+     * one walk closes every gap between them and the two ends of the span. */
+    if (new_inl != NULL && subj->owner_parser && subj->owner && subj->pos > before) {
+        markdown_core_parser *owner = subj->owner_parser;
+        bufsize_t at = before;
+        bufsize_t i;
+        for (i = claimed; i < owner->inline_claims_size; i++) {
+            bufsize_t start = owner->inline_claims[i].from;
+            if (start > at) {
+                S_claim(subj, new_inl, at, start, fallback);
+            }
+            if (owner->inline_claims[i].to > at) {
+                at = owner->inline_claims[i].to;
+            }
+        }
+        if (at < subj->pos) {
+            S_claim(subj, new_inl, at, subj->pos, fallback);
+        }
     }
 
     return 1;
@@ -1963,6 +2101,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
 void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap,
                                  int options) {
     subject subj;
+    bufsize_t claim_base = parser->inline_claims_size;
     markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
     /* EVERY content-bearing block has a map by the time its inlines are parsed.
      * One the parser fed line by line already does; one whose content was SET
@@ -1994,6 +2133,13 @@ void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_nod
     if (subj.oom) {
         parser->oom = true;
     }
+
+    /* REQUIREMENT 11b: every byte of this block's CONTENT is now owned by
+     * exactly one inline node or by the block itself. Resolved HERE and not at
+     * the end of the parse, because emphasis and brackets are settled at the
+     * end of the BLOCK and a claim made before that is superseded by one made
+     * after it. */
+    markdown_core_parser_refine_inline_regions(parser, parent, claim_base);
 }
 
 // Parse zero or more space characters, including at most one newline.
