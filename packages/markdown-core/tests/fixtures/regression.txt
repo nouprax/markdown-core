@@ -385,7 +385,7 @@ Document scope=1:1..5:96 children=3
 ├── Paragraph scope=1:1..1:48 children=2
 │   ├── Text scope=1:1..1:37 literal="This is some text. It has a citation." children=0
 │   └── FootnoteReference scope=1:38..1:48 label="citation" identifier="^citation" children=0
-├── FootnoteDefinition scope=3:1..4:0 label="another-citation" identifier="^another-citation" children=1
+├── FootnoteDefinition scope=3:1..3:40 label="another-citation" identifier="^another-citation" children=1
 │   └── Paragraph scope=3:22..3:40 children=1
 │       └── Text scope=3:22..3:40 literal="My second citation." children=0
 └── FootnoteDefinition scope=5:1..5:96 label="citation" identifier="^citation" children=1
@@ -409,7 +409,7 @@ Document scope=1:1..5:22 children=3
 │   ├── FootnoteReference scope=1:85..1:96 label="footnote1" identifier="^footnote1" children=0
 │   ├── FootnoteReference scope=1:97..1:108 label="footnote2" identifier="^footnote2" children=0
 │   └── Text scope=1:109..1:150 literal=" which are definitely not link references." children=0
-├── FootnoteDefinition scope=3:1..4:0 label="footnote1" identifier="^footnote1" children=1
+├── FootnoteDefinition scope=3:1..3:20 label="footnote1" identifier="^footnote1" children=1
 │   └── Paragraph scope=3:15..3:20 children=1
 │       └── Text scope=3:15..3:20 literal="Hello." children=0
 └── FootnoteDefinition scope=5:1..5:22 label="footnote2" identifier="^footnote2" children=1
@@ -439,7 +439,7 @@ Document scope=1:1..7:39 children=4
 │   ├── Code scope=3:102..3:104 literal="_" children=0
 │   ├── Text scope=3:105..3:106 literal=")." children=0
 │   └── FootnoteReference scope=3:107..3:155 label="sphinx-of-black-quartz_judge-my-vow-0123456789" identifier="^sphinx-of-black-quartz_judge-my-vow-0123456789" children=0
-├── FootnoteDefinition scope=5:1..6:0 label="sphinx-of-black-quartz_judge-my-vow-0123456789" identifier="^sphinx-of-black-quartz_judge-my-vow-0123456789" children=1
+├── FootnoteDefinition scope=5:1..5:64 label="sphinx-of-black-quartz_judge-my-vow-0123456789" identifier="^sphinx-of-black-quartz_judge-my-vow-0123456789" children=1
 │   └── Paragraph scope=5:52..5:64 children=1
 │       └── Text scope=5:52..5:64 literal="so does this." children=0
 └── FootnoteDefinition scope=7:1..7:39 label="widely-cited" identifier="^widely-cited" children=1

@@ -1117,7 +1117,7 @@ Foo *bar*
 ---------
 .
 Document scope=1:1..5:9 children=2
-├── Heading scope=1:1..3:0 level=1 children=2
+├── Heading scope=1:1..2:9 level=1 children=2
 │   ├── Text scope=1:1..1:4 literal="Foo " children=0
 │   └── Emphasis scope=1:5..1:9 children=1
 │       └── Text scope=1:6..1:8 literal="bar" children=0
@@ -1174,7 +1174,7 @@ Foo
 =
 .
 Document scope=1:1..5:1 children=2
-├── Heading scope=1:1..3:0 level=2 children=1
+├── Heading scope=1:1..2:25 level=2 children=1
 │   └── Text scope=1:1..1:3 literal="Foo" children=0
 └── Heading scope=4:1..5:1 level=1 children=1
     └── Text scope=4:1..4:3 literal="Foo" children=0
@@ -1195,9 +1195,9 @@ not line up with the underlining:
   ===
 .
 Document scope=1:1..8:5 children=3
-├── Heading scope=1:4..3:0 level=2 children=1
+├── Heading scope=1:4..2:3 level=2 children=1
 │   └── Text scope=1:4..1:6 literal="Foo" children=0
-├── Heading scope=4:3..6:0 level=2 children=1
+├── Heading scope=4:3..5:5 level=2 children=1
 │   └── Text scope=4:3..4:5 literal="Foo" children=0
 └── Heading scope=7:3..8:5 level=1 children=1
     └── Text scope=7:3..7:5 literal="Foo" children=0
@@ -1527,7 +1527,7 @@ Document scope=1:1..6:3 children=3
 │   ├── Text scope=1:1..1:3 literal="Foo" children=0
 │   ├── SoftBreak scope=1:4..1:4 children=0
 │   └── Text scope=2:1..2:3 literal="bar" children=0
-├── ThematicBreak scope=4:1..5:0 children=0
+├── ThematicBreak scope=4:1..4:3 children=0
 └── Paragraph scope=6:1..6:3 children=1
     └── Text scope=6:1..6:3 literal="baz" children=0
 ````````````````````````````````
@@ -1685,7 +1685,7 @@ Foo
     bar
 
 .
-Document scope=1:1..3:0 children=1
+Document scope=1:1..2:7 children=1
 └── Paragraph scope=1:1..2:7 children=3
     ├── Text scope=1:1..1:3 literal="Foo" children=0
     ├── SoftBreak scope=1:4..1:4 children=0
@@ -1751,8 +1751,8 @@ are not included in it:
     
 
 .
-Document scope=1:1..5:0 children=1
-└── CodeBlock scope=3:5..5:0 info=null language=null literal="foo\n" fenced=false closed=true children=0
+Document scope=1:1..4:4 children=1
+└── CodeBlock scope=3:5..4:4 info=null language=null literal="foo\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -1927,7 +1927,7 @@ bbb
 .
 Document scope=1:1..4:3 children=2
 ├── BlockQuote scope=1:1..2:5 children=1
-│   └── CodeBlock scope=1:3..3:0 info=null language=null literal="aaa\n" fenced=true closed=false children=0
+│   └── CodeBlock scope=1:3..2:5 info=null language=null literal="aaa\n" fenced=true closed=false children=0
 └── Paragraph scope=4:1..4:3 children=1
     └── Text scope=4:1..4:3 literal="bbb" children=0
 ````````````````````````````````
@@ -2721,7 +2721,7 @@ A processing instruction (type 3):
 okay
 .
 Document scope=1:1..6:4 children=2
-├── HTMLBlock scope=1:1..4:0 literal="<?php\n\n  echo '>';\n\n?>\n" children=0
+├── HTMLBlock scope=1:1..3:11 literal="<?php\n\n  echo '>';\n\n?>\n" children=0
 └── Paragraph scope=6:1..6:4 children=1
     └── Text scope=6:1..6:4 literal="okay" children=0
 ````````````````````````````````
@@ -2943,7 +2943,7 @@ an indented code block:
 Document scope=1:1..11:8 children=5
 ├── HTMLBlock scope=1:1..1:7 literal="<table>\n" children=0
 ├── HTMLBlock scope=3:3..3:6 literal="  <tr>\n" children=0
-├── CodeBlock scope=5:5..8:0 info=null language=null literal="<td>\n  Hi\n</td>\n" fenced=false closed=true children=0
+├── CodeBlock scope=5:5..7:9 info=null language=null literal="<td>\n  Hi\n</td>\n" fenced=false closed=true children=0
 ├── HTMLBlock scope=9:3..9:7 literal="  </tr>\n" children=0
 └── HTMLBlock scope=11:1..11:8 literal="</table>\n" children=0
 ````````````````````````````````
@@ -3268,7 +3268,7 @@ four spaces:
 [foo]
 .
 Document scope=1:1..3:5 children=2
-├── CodeBlock scope=1:5..2:0 info=null language=null literal="[foo]: /url \"title\"\n" fenced=false closed=true children=0
+├── CodeBlock scope=1:5..1:23 info=null language=null literal="[foo]: /url \"title\"\n" fenced=false closed=true children=0
 └── Paragraph scope=3:1..3:5 children=1
     └── Text scope=3:1..3:5 literal="[foo]" children=0
 ````````````````````````````````
@@ -4316,7 +4316,7 @@ Document scope=1:1..6:16 children=3
 │   ├── Text scope=1:1..1:11 literal="A paragraph" children=0
 │   ├── SoftBreak scope=1:12..1:12 children=0
 │   └── Text scope=2:1..2:15 literal="with two lines." children=0
-├── CodeBlock scope=4:5..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
+├── CodeBlock scope=4:5..4:17 info=null language=null literal="indented code\n" fenced=false closed=true children=0
 └── BlockQuote scope=6:1..6:16 children=1
     └── Paragraph scope=6:3..6:16 children=1
         └── Text scope=6:3..6:16 literal="A block quote." children=0
@@ -4342,7 +4342,7 @@ Document scope=1:1..6:20 children=1
         │   ├── Text scope=1:5..1:15 literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:16..1:16 children=0
         │   └── Text scope=2:5..2:19 literal="with two lines." children=0
-        ├── CodeBlock scope=4:9..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
+        ├── CodeBlock scope=4:9..4:21 info=null language=null literal="indented code\n" fenced=false closed=true children=0
         └── BlockQuote scope=6:5..6:20 children=1
             └── Paragraph scope=6:7..6:20 children=1
                 └── Text scope=6:7..6:20 literal="A block quote." children=0
@@ -4366,8 +4366,8 @@ put under the list item:
  two
 .
 Document scope=1:1..3:4 children=2
-├── List scope=1:1..2:0 flavor=bullet start=null tight=true children=1
-│   └── ListItem scope=1:1..2:0 checked=null children=1
+├── List scope=1:1..1:5 flavor=bullet start=null tight=true children=1
+│   └── ListItem scope=1:1..1:5 checked=null children=1
 │       └── Paragraph scope=1:3..1:5 children=1
 │           └── Text scope=1:3..1:5 literal="one" children=0
 └── Paragraph scope=3:2..3:4 children=1
@@ -4396,8 +4396,8 @@ Document scope=1:1..3:5 children=1
      two
 .
 Document scope=1:1..3:8 children=2
-├── List scope=1:2..2:0 flavor=bullet start=null tight=true children=1
-│   └── ListItem scope=1:2..2:0 checked=null children=1
+├── List scope=1:2..1:9 flavor=bullet start=null tight=true children=1
+│   └── ListItem scope=1:2..1:9 checked=null children=1
 │       └── Paragraph scope=1:7..1:9 children=1
 │           └── Text scope=1:7..1:9 literal="one" children=0
 └── CodeBlock scope=3:5..3:8 info=null language=null literal=" two\n" fenced=false closed=true children=0
@@ -4666,7 +4666,7 @@ paragraph
     more code
 .
 Document scope=1:1..5:13 children=3
-├── CodeBlock scope=1:5..2:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
+├── CodeBlock scope=1:5..1:17 info=null language=null literal="indented code\n" fenced=false closed=true children=0
 ├── Paragraph scope=3:1..3:9 children=1
 │   └── Text scope=3:1..3:9 literal="paragraph" children=0
 └── CodeBlock scope=5:5..5:13 info=null language=null literal="more code\n" fenced=false closed=true children=0
@@ -4683,7 +4683,7 @@ Document scope=1:1..5:13 children=3
 Document scope=1:1..5:16 children=1
 └── List scope=1:1..5:16 flavor=ordered start=1 tight=false children=1
     └── ListItem scope=1:1..5:16 checked=null children=3
-        ├── CodeBlock scope=1:8..2:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
+        ├── CodeBlock scope=1:8..1:20 info=null language=null literal="indented code\n" fenced=false closed=true children=0
         ├── Paragraph scope=3:4..3:12 children=1
         │   └── Text scope=3:4..3:12 literal="paragraph" children=0
         └── CodeBlock scope=5:8..5:16 info=null language=null literal="more code\n" fenced=false closed=true children=0
@@ -4703,7 +4703,7 @@ inside the code block:
 Document scope=1:1..5:16 children=1
 └── List scope=1:1..5:16 flavor=ordered start=1 tight=false children=1
     └── ListItem scope=1:1..5:16 checked=null children=3
-        ├── CodeBlock scope=1:8..2:0 info=null language=null literal=" indented code\n" fenced=false closed=true children=0
+        ├── CodeBlock scope=1:8..1:21 info=null language=null literal=" indented code\n" fenced=false closed=true children=0
         ├── Paragraph scope=3:4..3:12 children=1
         │   └── Text scope=3:4..3:12 literal="paragraph" children=0
         └── CodeBlock scope=5:8..5:16 info=null language=null literal="more code\n" fenced=false closed=true children=0
@@ -4737,8 +4737,8 @@ Document scope=1:1..3:3 children=2
   bar
 .
 Document scope=1:1..3:5 children=2
-├── List scope=1:1..2:0 flavor=bullet start=null tight=true children=1
-│   └── ListItem scope=1:1..2:0 checked=null children=1
+├── List scope=1:1..1:8 flavor=bullet start=null tight=true children=1
+│   └── ListItem scope=1:1..1:8 checked=null children=1
 │       └── Paragraph scope=1:6..1:8 children=1
 │           └── Text scope=1:6..1:8 literal="foo" children=0
 └── Paragraph scope=3:3..3:5 children=1
@@ -4826,7 +4826,7 @@ item:
   foo
 .
 Document scope=1:1..3:5 children=2
-├── List scope=1:1..2:0 flavor=bullet start=null tight=true children=1
+├── List scope=1:1..1:1 flavor=bullet start=null tight=true children=1
 │   └── ListItem scope=1:1..1:1 checked=null children=0
 └── Paragraph scope=3:3..3:5 children=1
     └── Text scope=3:3..3:5 literal="foo" children=0
@@ -4944,7 +4944,7 @@ Document scope=1:1..6:21 children=1
         │   ├── Text scope=1:6..1:16 literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:17..1:17 children=0
         │   └── Text scope=2:6..2:20 literal="with two lines." children=0
-        ├── CodeBlock scope=4:10..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
+        ├── CodeBlock scope=4:10..4:22 info=null language=null literal="indented code\n" fenced=false closed=true children=0
         └── BlockQuote scope=6:6..6:21 children=1
             └── Paragraph scope=6:8..6:21 children=1
                 └── Text scope=6:8..6:21 literal="A block quote." children=0
@@ -4968,7 +4968,7 @@ Document scope=1:1..6:22 children=1
         │   ├── Text scope=1:7..1:17 literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:18..1:18 children=0
         │   └── Text scope=2:7..2:21 literal="with two lines." children=0
-        ├── CodeBlock scope=4:11..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
+        ├── CodeBlock scope=4:11..4:23 info=null language=null literal="indented code\n" fenced=false closed=true children=0
         └── BlockQuote scope=6:7..6:22 children=1
             └── Paragraph scope=6:9..6:22 children=1
                 └── Text scope=6:9..6:22 literal="A block quote." children=0
@@ -4992,7 +4992,7 @@ Document scope=1:1..6:23 children=1
         │   ├── Text scope=1:8..1:18 literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:19..1:19 children=0
         │   └── Text scope=2:8..2:22 literal="with two lines." children=0
-        ├── CodeBlock scope=4:12..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
+        ├── CodeBlock scope=4:12..4:24 info=null language=null literal="indented code\n" fenced=false closed=true children=0
         └── BlockQuote scope=6:8..6:23 children=1
             └── Paragraph scope=6:10..6:23 children=1
                 └── Text scope=6:10..6:23 literal="A block quote." children=0
@@ -5041,7 +5041,7 @@ Document scope=1:1..6:22 children=1
         │   ├── Text scope=1:7..1:17 literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:18..1:18 children=0
         │   └── Text scope=2:1..2:15 literal="with two lines." children=0
-        ├── CodeBlock scope=4:11..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
+        ├── CodeBlock scope=4:11..4:23 info=null language=null literal="indented code\n" fenced=false closed=true children=0
         └── BlockQuote scope=6:7..6:22 children=1
             └── Paragraph scope=6:9..6:22 children=1
                 └── Text scope=6:9..6:22 literal="A block quote." children=0
@@ -5689,10 +5689,10 @@ There can be any number of blank lines between items:
 .
 Document scope=1:1..6:5 children=1
 └── List scope=1:1..6:5 flavor=bullet start=null tight=false children=3
-    ├── ListItem scope=1:1..2:0 checked=null children=1
+    ├── ListItem scope=1:1..1:5 checked=null children=1
     │   └── Paragraph scope=1:3..1:5 children=1
     │       └── Text scope=1:3..1:5 literal="foo" children=0
-    ├── ListItem scope=3:1..5:0 checked=null children=1
+    ├── ListItem scope=3:1..3:5 checked=null children=1
     │   └── Paragraph scope=3:3..3:5 children=1
     │       └── Text scope=3:3..3:5 literal="bar" children=0
     └── ListItem scope=6:1..6:5 checked=null children=1
@@ -5741,11 +5741,11 @@ comment:
 - bim
 .
 Document scope=1:1..7:5 children=3
-├── List scope=1:1..3:0 flavor=bullet start=null tight=true children=2
+├── List scope=1:1..2:5 flavor=bullet start=null tight=true children=2
 │   ├── ListItem scope=1:1..1:5 checked=null children=1
 │   │   └── Paragraph scope=1:3..1:5 children=1
 │   │       └── Text scope=1:3..1:5 literal="foo" children=0
-│   └── ListItem scope=2:1..3:0 checked=null children=1
+│   └── ListItem scope=2:1..2:5 checked=null children=1
 │       └── Paragraph scope=2:3..2:5 children=1
 │           └── Text scope=2:3..2:5 literal="bar" children=0
 ├── HTMLBlock scope=4:1..4:8 literal="<!-- -->\n" children=0
@@ -5771,13 +5771,13 @@ Document scope=1:1..7:5 children=3
     code
 .
 Document scope=1:1..9:8 children=3
-├── List scope=1:1..6:0 flavor=bullet start=null tight=false children=2
-│   ├── ListItem scope=1:1..4:0 checked=null children=2
+├── List scope=1:1..5:7 flavor=bullet start=null tight=false children=2
+│   ├── ListItem scope=1:1..3:11 checked=null children=2
 │   │   ├── Paragraph scope=1:5..1:7 children=1
 │   │   │   └── Text scope=1:5..1:7 literal="foo" children=0
 │   │   └── Paragraph scope=3:5..3:11 children=1
 │   │       └── Text scope=3:5..3:11 literal="notcode" children=0
-│   └── ListItem scope=5:1..6:0 checked=null children=1
+│   └── ListItem scope=5:1..5:7 checked=null children=1
 │       └── Paragraph scope=5:5..5:7 children=1
 │           └── Text scope=5:5..5:7 literal="foo" children=0
 ├── HTMLBlock scope=7:1..7:8 literal="<!-- -->\n" children=0
@@ -5834,10 +5834,10 @@ Document scope=1:1..7:3 children=1
 .
 Document scope=1:1..5:7 children=1
 └── List scope=1:1..5:7 flavor=ordered start=1 tight=false children=3
-    ├── ListItem scope=1:1..2:0 checked=null children=1
+    ├── ListItem scope=1:1..1:4 checked=null children=1
     │   └── Paragraph scope=1:4..1:4 children=1
     │       └── Text scope=1:4..1:4 literal="a" children=0
-    ├── ListItem scope=3:3..4:0 checked=null children=1
+    ├── ListItem scope=3:3..3:6 checked=null children=1
     │   └── Paragraph scope=3:6..3:6 children=1
     │       └── Text scope=3:6..3:6 literal="b" children=0
     └── ListItem scope=5:4..5:7 checked=null children=1
@@ -5886,11 +5886,11 @@ blank line.
     3. c
 .
 Document scope=1:1..5:8 children=2
-├── List scope=1:1..4:0 flavor=ordered start=1 tight=false children=2
-│   ├── ListItem scope=1:1..2:0 checked=null children=1
+├── List scope=1:1..3:6 flavor=ordered start=1 tight=false children=2
+│   ├── ListItem scope=1:1..1:4 checked=null children=1
 │   │   └── Paragraph scope=1:4..1:4 children=1
 │   │       └── Text scope=1:4..1:4 literal="a" children=0
-│   └── ListItem scope=3:3..4:0 checked=null children=1
+│   └── ListItem scope=3:3..3:6 checked=null children=1
 │       └── Paragraph scope=3:6..3:6 children=1
 │           └── Text scope=3:6..3:6 literal="b" children=0
 └── CodeBlock scope=5:5..5:8 info=null language=null literal="3. c\n" fenced=false closed=true children=0
@@ -5911,7 +5911,7 @@ Document scope=1:1..4:3 children=1
     ├── ListItem scope=1:1..1:3 checked=null children=1
     │   └── Paragraph scope=1:3..1:3 children=1
     │       └── Text scope=1:3..1:3 literal="a" children=0
-    ├── ListItem scope=2:1..3:0 checked=null children=1
+    ├── ListItem scope=2:1..2:3 checked=null children=1
     │   └── Paragraph scope=2:3..2:3 children=1
     │       └── Text scope=2:3..2:3 literal="b" children=0
     └── ListItem scope=4:1..4:3 checked=null children=1
@@ -6151,8 +6151,8 @@ Document scope=1:1..4:5 children=1
     └── ListItem scope=1:1..4:5 checked=null children=3
         ├── Paragraph scope=1:3..1:5 children=1
         │   └── Text scope=1:3..1:5 literal="foo" children=0
-        ├── List scope=2:3..3:0 flavor=bullet start=null tight=true children=1
-        │   └── ListItem scope=2:3..3:0 checked=null children=1
+        ├── List scope=2:3..2:7 flavor=bullet start=null tight=true children=1
+        │   └── ListItem scope=2:3..2:7 checked=null children=1
         │       └── Paragraph scope=2:5..2:7 children=1
         │           └── Text scope=2:5..2:7 literal="bar" children=0
         └── Paragraph scope=4:3..4:5 children=1
@@ -6171,14 +6171,14 @@ Document scope=1:1..4:5 children=1
 .
 Document scope=1:1..7:5 children=1
 └── List scope=1:1..7:5 flavor=bullet start=null tight=false children=2
-    ├── ListItem scope=1:1..4:0 checked=null children=2
+    ├── ListItem scope=1:1..3:5 checked=null children=2
     │   ├── Paragraph scope=1:3..1:3 children=1
     │   │   └── Text scope=1:3..1:3 literal="a" children=0
-    │   └── List scope=2:3..4:0 flavor=bullet start=null tight=true children=2
+    │   └── List scope=2:3..3:5 flavor=bullet start=null tight=true children=2
     │       ├── ListItem scope=2:3..2:5 checked=null children=1
     │       │   └── Paragraph scope=2:5..2:5 children=1
     │       │       └── Text scope=2:5..2:5 literal="b" children=0
-    │       └── ListItem scope=3:3..4:0 checked=null children=1
+    │       └── ListItem scope=3:3..3:5 checked=null children=1
     │           └── Paragraph scope=3:5..3:5 children=1
     │               └── Text scope=3:5..3:5 literal="c" children=0
     └── ListItem scope=5:1..7:5 checked=null children=2

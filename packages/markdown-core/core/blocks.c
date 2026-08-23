@@ -1844,6 +1844,94 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
     return !is_blank(&b->content, 0);
 }
 
+static bufsize_t S_source_line_length(markdown_core_parser *parser, int line) {
+    bufsize_t start, stop;
+    if (line < 1 || line > parser->line_starts_size) {
+        return 0;
+    }
+    start = parser->line_starts[line - 1];
+    stop = line < parser->line_starts_size ? parser->line_starts[line] : parser->source.size;
+    while (stop > start && S_is_line_end_char((char)parser->source.ptr[stop - 1])) {
+        stop -= 1;
+    }
+    return stop - start;
+}
+
+static void S_end_at_last_byte_taken(markdown_core_parser *parser, markdown_core_node *b) {
+    markdown_core_node *parent = b->parent ? b->parent : parser->root;
+    bufsize_t stop;
+    bufsize_t lo, hi;
+    int walked = 0;
+
+    while (b->end_column == 0 && b->end_line > b->start_line) {
+        b->end_line -= 1;
+        b->end_column = (int)S_source_line_length(parser, b->end_line);
+        walked = 1;
+    }
+    if (!walked || b->end_line < 1 || b->end_line > parser->line_starts_size || b == parent) {
+        return;
+    }
+    /* THE WHOLE LINE, not up to the last byte: every block in this engine owns
+     * the line ending of its own last line -- `hello` is one paragraph owning
+     * six bytes -- and what this block does NOT own is the blank lines after
+     * it. Cutting at the last byte instead takes its own line ending away, and
+     * only from blocks whose end walked back, which is arbitrary and is what
+     * made the same byte CONTENT in one reading and DISCARDED in the other. */
+    stop = b->end_line < parser->line_starts_size ? parser->line_starts[b->end_line] : parser->source.size;
+    /* THE NEAREST ANCESTOR THAT ACTUALLY COVERS THEM, not simply the parent.
+     * A block can be finalized while a descendant of it is still open -- a list
+     * closes when a code block opens beside it, and its item closes after --
+     * so handing the item's trailing blank line to the list would put it past
+     * an end the list has already settled. An ancestor still OPEN is fine: its
+     * own handback runs later and moves the bytes on if it has to. */
+    while (parent->parent && !(parent->flags & MARKDOWN_CORE_NODE__OPEN)) {
+        bufsize_t reach = parent->end_line >= 1 && parent->end_line <= parser->line_starts_size
+                              ? (parent->end_line < parser->line_starts_size ? parser->line_starts[parent->end_line]
+                                                                             : parser->source.size)
+                              : 0;
+        if (reach > stop) {
+            break;
+        }
+        parent = parent->parent;
+    }
+    lo = 0;
+    hi = parser->regions_size;
+    while (lo < hi) {
+        bufsize_t mid = lo + (hi - lo) / 2;
+        if (parser->regions[mid].start + parser->regions[mid].length <= stop) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    if (lo < parser->regions_size && parser->regions[lo].owner == b && parser->regions[lo].start < stop) {
+        if (parser->regions_size == parser->regions_alloc) {
+            bufsize_t alloc = parser->regions_alloc ? parser->regions_alloc * 2 : 256;
+            markdown_core_region_record *grown =
+                (markdown_core_region_record *)parser->mem->realloc(parser->regions, (size_t)alloc * sizeof(*grown));
+            if (!grown) {
+                parser->oom = true;
+                return;
+            }
+            parser->regions = grown;
+            parser->regions_alloc = alloc;
+        }
+        memmove(&parser->regions[lo + 1], &parser->regions[lo],
+                (size_t)(parser->regions_size - lo) * sizeof(*parser->regions));
+        parser->regions_size++;
+        parser->regions[lo].length = stop - parser->regions[lo].start;
+        parser->regions[lo + 1].start = stop;
+        parser->regions[lo + 1].length -= parser->regions[lo].length;
+        lo++;
+    }
+    for (; lo < parser->regions_size; lo++) {
+        if (parser->regions[lo].owner == b) {
+            parser->regions[lo].owner = parent;
+            parser->regions[lo].role = (uint8_t)MARKDOWN_CORE_REGION_ROLE_DISCARDED;
+        }
+    }
+}
+
 static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_node *b) {
     bufsize_t pos;
     markdown_core_node *item;
@@ -1859,6 +1947,7 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
         // end of input - line number has not been incremented
         b->end_line = parser->line_number;
         b->end_column = parser->last_line_length;
+        S_end_at_last_byte_taken(parser, b);
     } else if (S_type(b) == MARKDOWN_CORE_NODE_DOCUMENT ||
                (S_type(b) == MARKDOWN_CORE_NODE_CODE_BLOCK && b->as.code.fenced) ||
                (S_type(b) == MARKDOWN_CORE_NODE_HEADING && b->as.heading.setext) ||
@@ -1874,9 +1963,11 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
                 * `specs/scope-sanity/ledger.json` were this. */
                parser->line_number == b->start_line) {
         S_set_end_to_current_line(parser, b);
+        S_end_at_last_byte_taken(parser, b);
     } else {
         b->end_line = parser->line_number - 1;
         b->end_column = parser->last_line_length;
+        S_end_at_last_byte_taken(parser, b);
     }
 
     markdown_core_strbuf *node_content = &b->content;

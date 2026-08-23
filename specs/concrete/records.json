@@ -47,8 +47,8 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -85,16 +85,16 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "directive_label",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -115,8 +115,8 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -153,8 +153,8 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -199,8 +199,8 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -237,8 +237,8 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -1508,112 +1508,112 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -1687,16 +1687,16 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -2186,6 +2186,106 @@
             ]
         },
         {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1209",
+            "input": "    Foo\n    ---\n\n    Foo\n---\n",
+            "findings": [
+                {
+                    "law": "L4",
+                    "fault": "prefix-block-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "NEVER, and it is not a defect. A blank line inside an indented code block, a fenced block, an HTML block or a loose list item is that block's CONTENT; the same blank line at the END of the block is trailing, and `remove_trailing_blank_lines` takes it back out. Which one it is depends on the line AFTER it, so a prefix that ends on the blank cannot attribute it the way the whole document does. Same shape as reference-recognition-is-document-scoped. Registered so a row appearing anywhere ELSE fails.",
+                    "class": "blank-line-is-interior-or-trailing-only-at-close"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1640",
+            "input": "    <a/>\n    *hi*\n\n    - one\n",
+            "findings": [
+                {
+                    "law": "L4",
+                    "fault": "prefix-block-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "NEVER, and it is not a defect. A blank line inside an indented code block, a fenced block, an HTML block or a loose list item is that block's CONTENT; the same blank line at the END of the block is trailing, and `remove_trailing_blank_lines` takes it back out. Which one it is depends on the line AFTER it, so a prefix that ends on the blank cannot attribute it the way the whole document does. Same shape as reference-recognition-is-document-scoped. Registered so a row appearing anywhere ELSE fails.",
+                    "class": "blank-line-is-interior-or-trailing-only-at-close"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1653",
+            "input": "    chunk1\n\n    chunk2\n  \n \n \n    chunk3\n",
+            "findings": [
+                {
+                    "law": "L4",
+                    "fault": "prefix-block-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "NEVER, and it is not a defect. A blank line inside an indented code block, a fenced block, an HTML block or a loose list item is that block's CONTENT; the same blank line at the END of the block is trailing, and `remove_trailing_blank_lines` takes it back out. Which one it is depends on the line AFTER it, so a prefix that ends on the blank cannot attribute it the way the whole document does. Same shape as reference-recognition-is-document-scoped. Registered so a row appearing anywhere ELSE fails.",
+                    "class": "blank-line-is-interior-or-trailing-only-at-close"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1683",
+            "input": "Foo\n    bar\n\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "document",
+                    "role": "DISCARDED",
+                    "over": 1,
+                    "closedBy": "unassigned - the DOCUMENT's own end, not this family. A block that gives its trailing blank run up hands it to the document, and the document's end is the last line it had CONTENT on, so it does not reach the byte it now owns. Before the handback the block kept the byte and its own end was column 0, which made the containment check pass by accident.",
+                    "class": "document-does-not-reach-its-trailing-blank-line"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1747",
+            "input": "\n    \n    foo\n    \n\n",
+            "findings": [
+                {
+                    "law": "L2",
+                    "fault": "region-after-owner",
+                    "kind": "document",
+                    "role": "DISCARDED",
+                    "over": 1,
+                    "closedBy": "unassigned - the DOCUMENT's own end, not this family. A block that gives its trailing blank run up hands it to the document, and the document's end is the last line it had CONTENT on, so it does not reach the byte it now owns. Before the handback the block kept the byte and its own end was column 0, which made the containment check pass by accident.",
+                    "class": "document-does-not-reach-its-trailing-blank-line"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1911",
+            "input": "`````\n\n```\naaa\n",
+            "findings": [
+                {
+                    "law": "L4",
+                    "fault": "prefix-block-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "NEVER, and it is not a defect. A blank line inside an indented code block, a fenced block, an HTML block or a loose list item is that block's CONTENT; the same blank line at the END of the block is trailing, and `remove_trailing_blank_lines` takes it back out. Which one it is depends on the line AFTER it, so a prefix that ends on the blank cannot attribute it the way the whole document does. Same shape as reference-recognition-is-document-scoped. Registered so a row appearing anywhere ELSE fails.",
+                    "class": "blank-line-is-interior-or-trailing-only-at-close"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1938",
+            "input": "```\n\n  \n```\n",
+            "findings": [
+                {
+                    "law": "L4",
+                    "fault": "prefix-block-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "NEVER, and it is not a defect. A blank line inside an indented code block, a fenced block, an HTML block or a loose list item is that block's CONTENT; the same blank line at the END of the block is trailing, and `remove_trailing_blank_lines` takes it back out. Which one it is depends on the line AFTER it, so a prefix that ends on the blank cannot attribute it the way the whole document does. Same shape as reference-recognition-is-document-scoped. Registered so a row appearing anywhere ELSE fails.",
+                    "class": "blank-line-is-interior-or-trailing-only-at-close"
+                }
+            ]
+        },
+        {
             "source": "packages/markdown-core/tests/fixtures/spec.txt:2563",
             "input": "<pre language=\"haskell\"><code>\nimport Text.HTML.TagSoup\n\nmain :: IO ()\nmain = print $ parseTags tags\n</code></pre>\nokay\n",
             "findings": [
@@ -2197,6 +2297,14 @@
                     "over": 14,
                     "class": "html-block-end-before-its-content",
                     "closedBy": "unassigned"
+                },
+                {
+                    "law": "L4",
+                    "fault": "prefix-block-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "NEVER, and it is not a defect. A blank line inside an indented code block, a fenced block, an HTML block or a loose list item is that block's CONTENT; the same blank line at the END of the block is trailing, and `remove_trailing_blank_lines` takes it back out. Which one it is depends on the line AFTER it, so a prefix that ends on the blank cannot attribute it the way the whole document does. Same shape as reference-recognition-is-document-scoped. Registered so a row appearing anywhere ELSE fails.",
+                    "class": "blank-line-is-interior-or-trailing-only-at-close"
                 }
             ]
         },
@@ -2212,6 +2320,14 @@
                     "over": 10,
                     "class": "html-block-end-before-its-content",
                     "closedBy": "unassigned"
+                },
+                {
+                    "law": "L4",
+                    "fault": "prefix-block-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "NEVER, and it is not a defect. A blank line inside an indented code block, a fenced block, an HTML block or a loose list item is that block's CONTENT; the same blank line at the END of the block is trailing, and `remove_trailing_blank_lines` takes it back out. Which one it is depends on the line AFTER it, so a prefix that ends on the blank cannot attribute it the way the whole document does. Same shape as reference-recognition-is-document-scoped. Registered so a row appearing anywhere ELSE fails.",
+                    "class": "blank-line-is-interior-or-trailing-only-at-close"
                 }
             ]
         },
@@ -2227,6 +2343,28 @@
                     "over": 9,
                     "class": "html-block-end-before-its-content",
                     "closedBy": "unassigned"
+                },
+                {
+                    "law": "L4",
+                    "fault": "prefix-block-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "NEVER, and it is not a defect. A blank line inside an indented code block, a fenced block, an HTML block or a loose list item is that block's CONTENT; the same blank line at the END of the block is trailing, and `remove_trailing_blank_lines` takes it back out. Which one it is depends on the line AFTER it, so a prefix that ends on the blank cannot attribute it the way the whole document does. Same shape as reference-recognition-is-document-scoped. Registered so a row appearing anywhere ELSE fails.",
+                    "class": "blank-line-is-interior-or-trailing-only-at-close"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:2618",
+            "input": "<style\n  type=\"text/css\">\n\nfoo\n",
+            "findings": [
+                {
+                    "law": "L4",
+                    "fault": "prefix-block-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "NEVER, and it is not a defect. A blank line inside an indented code block, a fenced block, an HTML block or a loose list item is that block's CONTENT; the same blank line at the END of the block is trailing, and `remove_trailing_blank_lines` takes it back out. Which one it is depends on the line AFTER it, so a prefix that ends on the blank cannot attribute it the way the whole document does. Same shape as reference-recognition-is-document-scoped. Registered so a row appearing anywhere ELSE fails.",
+                    "class": "blank-line-is-interior-or-trailing-only-at-close"
                 }
             ]
         },
@@ -2257,6 +2395,14 @@
                     "over": 11,
                     "class": "html-block-end-before-its-content",
                     "closedBy": "unassigned"
+                },
+                {
+                    "law": "L4",
+                    "fault": "prefix-block-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "NEVER, and it is not a defect. A blank line inside an indented code block, a fenced block, an HTML block or a loose list item is that block's CONTENT; the same blank line at the END of the block is trailing, and `remove_trailing_blank_lines` takes it back out. Which one it is depends on the line AFTER it, so a prefix that ends on the blank cannot attribute it the way the whole document does. Same shape as reference-recognition-is-document-scoped. Registered so a row appearing anywhere ELSE fails.",
+                    "class": "blank-line-is-interior-or-trailing-only-at-close"
                 }
             ]
         },
@@ -2265,13 +2411,12 @@
             "input": "<?php\n\n  echo '>';\n\n?>\nokay\n",
             "findings": [
                 {
-                    "law": "L2",
-                    "fault": "region-after-owner",
-                    "kind": "html_block",
-                    "role": "CONTENT",
-                    "over": 3,
-                    "class": "html-block-end-before-its-content",
-                    "closedBy": "unassigned"
+                    "law": "L4",
+                    "fault": "prefix-block-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "NEVER, and it is not a defect. A blank line inside an indented code block, a fenced block, an HTML block or a loose list item is that block's CONTENT; the same blank line at the END of the block is trailing, and `remove_trailing_blank_lines` takes it back out. Which one it is depends on the line AFTER it, so a prefix that ends on the blank cannot attribute it the way the whole document does. Same shape as reference-recognition-is-document-scoped. Registered so a row appearing anywhere ELSE fails.",
+                    "class": "blank-line-is-interior-or-trailing-only-at-close"
                 }
             ]
         },
@@ -2493,62 +2638,30 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:4363",
-            "input": "- one\n\n two\n",
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4538",
+            "input": "- Foo\n\n      bar\n\n\n      baz\n",
             "findings": [
                 {
-                    "law": "L2",
-                    "fault": "region-after-owner",
-                    "kind": "list",
-                    "role": "DISCARDED",
-                    "over": 1,
-                    "class": "indent-after-container-closed",
-                    "closedBy": "unassigned"
+                    "law": "L4",
+                    "fault": "prefix-block-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "NEVER, and it is not a defect. A blank line inside an indented code block, a fenced block, an HTML block or a loose list item is that block's CONTENT; the same blank line at the END of the block is trailing, and `remove_trailing_blank_lines` takes it back out. Which one it is depends on the line AFTER it, so a prefix that ends on the blank cannot attribute it the way the whole document does. Same shape as reference-recognition-is-document-scoped. Registered so a row appearing anywhere ELSE fails.",
+                    "class": "blank-line-is-interior-or-trailing-only-at-close"
                 }
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:4393",
-            "input": " -    one\n\n     two\n",
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:5004",
+            "input": "    1.  A paragraph\n        with two lines.\n\n            indented code\n\n        > A block quote.\n",
             "findings": [
                 {
-                    "law": "L2",
-                    "fault": "region-after-owner",
-                    "kind": "list",
-                    "role": "DISCARDED",
-                    "over": 5,
-                    "class": "indent-after-container-closed",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:4734",
-            "input": "-    foo\n\n  bar\n",
-            "findings": [
-                {
-                    "law": "L2",
-                    "fault": "region-after-owner",
-                    "kind": "list",
-                    "role": "DISCARDED",
-                    "over": 2,
-                    "class": "indent-after-container-closed",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:4823",
-            "input": "-\n\n  foo\n",
-            "findings": [
-                {
-                    "law": "L2",
-                    "fault": "region-after-owner",
-                    "kind": "list",
-                    "role": "DISCARDED",
-                    "over": 2,
-                    "class": "indent-after-container-closed",
-                    "closedBy": "unassigned"
+                    "law": "L4",
+                    "fault": "prefix-block-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "NEVER, and it is not a defect. A blank line inside an indented code block, a fenced block, an HTML block or a loose list item is that block's CONTENT; the same blank line at the END of the block is trailing, and `remove_trailing_blank_lines` takes it back out. Which one it is depends on the line AFTER it, so a prefix that ends on the blank cannot attribute it the way the whole document does. Same shape as reference-recognition-is-document-scoped. Registered so a row appearing anywhere ELSE fails.",
+                    "class": "blank-line-is-interior-or-trailing-only-at-close"
                 }
             ]
         },
@@ -2568,17 +2681,16 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:5881",
-            "input": "1. a\n\n  2. b\n\n    3. c\n",
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:5994",
+            "input": "- a\n- ```\n  b\n\n\n  ```\n- c\n",
             "findings": [
                 {
-                    "law": "L2",
-                    "fault": "region-after-owner",
-                    "kind": "list",
-                    "role": "DISCARDED",
-                    "over": 4,
-                    "class": "indent-after-container-closed",
-                    "closedBy": "unassigned"
+                    "law": "L4",
+                    "fault": "prefix-block-role-differs",
+                    "whole": "CONTENT",
+                    "alone": "DISCARDED",
+                    "closedBy": "NEVER, and it is not a defect. A blank line inside an indented code block, a fenced block, an HTML block or a loose list item is that block's CONTENT; the same blank line at the END of the block is trailing, and `remove_trailing_blank_lines` takes it back out. Which one it is depends on the line AFTER it, so a prefix that ends on the blank cannot attribute it the way the whole document does. Same shape as reference-recognition-is-document-scoped. Registered so a row appearing anywhere ELSE fails.",
+                    "class": "blank-line-is-interior-or-trailing-only-at-close"
                 }
             ]
         },
@@ -2591,8 +2703,8 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "line_break",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -2929,8 +3041,8 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -2997,8 +3109,8 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -3027,8 +3139,8 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -3071,8 +3183,8 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -3093,8 +3205,8 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -3123,16 +3235,16 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -3177,32 +3289,32 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -3223,8 +3335,8 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -3253,16 +3365,16 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -3283,8 +3395,8 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -3361,24 +3473,24 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 },
                 {
                     "law": "L6",
                     "fault": "inline-role-not-allowed",
                     "kind": "link",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -3511,8 +3623,8 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "line_break",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -3553,8 +3665,8 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "line_break",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },
@@ -3589,8 +3701,8 @@
                     "fault": "inline-role-not-allowed",
                     "kind": "line_break",
                     "role": "CONTENT",
-                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening.",
-                    "class": "inline-role-repaired-to-content"
+                    "class": "inline-role-repaired-to-content",
+                    "closedBy": "11c - the same three causes as L5's family. A region whose owner a postprocess freed, or whose owner a postprocess shortened, is REPAIRED by giving it to the nearest ancestor whose scope contains it -- and where that ancestor is an inline node the role it lands with is the role it had, which its kind need not admit. Close the causes and the repairs stop happening."
                 }
             ]
         },

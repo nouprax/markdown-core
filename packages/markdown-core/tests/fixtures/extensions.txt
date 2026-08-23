@@ -974,12 +974,12 @@ Document scope=1:1..26:26 children=10
 │   └── Text scope=5:35..5:35 literal="." children=0
 ├── Paragraph scope=7:1..7:36 children=1
 │   └── Text scope=7:1..7:36 literal="This doesn't have a referent[^nope]." children=0
-├── FootnoteDefinition scope=10:1..11:0 label="other-note" identifier="^other-note" children=1
+├── FootnoteDefinition scope=10:1..10:66 label="other-note" identifier="^other-note" children=1
 │   └── Paragraph scope=10:22..10:66 children=1
 │       └── Text scope=10:22..10:66 literal="no code block here (spaces are stripped away)" children=0
-├── FootnoteDefinition scope=12:1..14:0 label="codeblock-note" identifier="^codeblock-note" children=1
-│   └── CodeBlock scope=13:9..14:0 info=null language=null literal="this is now a code block (8 spaces indentation)\n" fenced=false closed=true children=0
-├── FootnoteDefinition scope=15:1..16:0 label="1" identifier="^1" children=1
+├── FootnoteDefinition scope=12:1..13:55 label="codeblock-note" identifier="^codeblock-note" children=1
+│   └── CodeBlock scope=13:9..13:55 info=null language=null literal="this is now a code block (8 spaces indentation)\n" fenced=false closed=true children=0
+├── FootnoteDefinition scope=15:1..15:40 label="1" identifier="^1" children=1
 │   └── Paragraph scope=15:7..15:40 children=3
 │       ├── Text scope=15:7..15:11 literal="Some " children=0
 │       ├── Emphasis scope=15:12..15:19 children=1
@@ -987,11 +987,11 @@ Document scope=1:1..26:26 children=10
 │       └── Text scope=15:20..15:40 literal=" footnote definition." children=0
 ├── Paragraph scope=17:1..17:3 children=1
 │   └── Text scope=17:1..17:3 literal="Hi!" children=0
-├── FootnoteDefinition scope=19:1..25:0 label="footnote" identifier="^footnote" children=3
+├── FootnoteDefinition scope=19:1..24:37 label="footnote" identifier="^footnote" children=3
 │   ├── BlockQuote scope=20:5..20:39 children=1
 │   │   └── Paragraph scope=20:7..20:39 children=1
 │   │       └── Text scope=20:7..20:39 literal="Blockquotes can be in a footnote." children=0
-│   ├── CodeBlock scope=22:9..23:0 info=null language=null literal="as well as code blocks\n" fenced=false closed=true children=0
+│   ├── CodeBlock scope=22:9..22:30 info=null language=null literal="as well as code blocks\n" fenced=false closed=true children=0
 │   └── Paragraph scope=24:5..24:37 children=1
 │       └── Text scope=24:5..24:37 literal="or, naturally, simple paragraphs." children=0
 └── FootnoteDefinition scope=26:1..26:26 label="unused" identifier="^unused" children=1
@@ -1121,7 +1121,7 @@ Show a regular (non task) list to show that it has the same structure
 - [@] bim
 .
 Document scope=1:1..10:9 children=3
-├── List scope=1:1..5:0 flavor=bullet start=null tight=true children=2
+├── List scope=1:1..4:9 flavor=bullet start=null tight=true children=2
 │   ├── ListItem scope=1:1..3:11 checked=true children=2
 │   │   ├── Paragraph scope=1:7..1:9 children=1
 │   │   │   └── Text scope=1:7..1:9 literal="foo" children=0
@@ -1132,7 +1132,7 @@ Document scope=1:1..10:9 children=3
 │   │       └── ListItem scope=3:3..3:11 checked=true children=1
 │   │           └── Paragraph scope=3:9..3:11 children=1
 │   │               └── Text scope=3:9..3:11 literal="baz" children=0
-│   └── ListItem scope=4:1..5:0 checked=false children=1
+│   └── ListItem scope=4:1..4:9 checked=false children=1
 │       └── Paragraph scope=4:7..4:9 children=1
 │           └── Text scope=4:7..4:9 literal="bim" children=0
 ├── Paragraph scope=6:1..6:69 children=1
@@ -1168,7 +1168,7 @@ Show a regular (non task) list to show that it has the same structure
 - [@] bim
 .
 Document scope=1:1..10:9 children=3
-├── List scope=1:1..5:0 flavor=bullet start=null tight=true children=2
+├── List scope=1:1..4:9 flavor=bullet start=null tight=true children=2
 │   ├── ListItem scope=1:1..3:13 checked=true children=2
 │   │   ├── Paragraph scope=1:7..1:9 children=1
 │   │   │   └── Text scope=1:7..1:9 literal="foo" children=0
@@ -1179,7 +1179,7 @@ Document scope=1:1..10:9 children=3
 │   │       └── ListItem scope=3:5..3:13 checked=true children=1
 │   │           └── Paragraph scope=3:11..3:13 children=1
 │   │               └── Text scope=3:11..3:13 literal="baz" children=0
-│   └── ListItem scope=4:1..5:0 checked=false children=1
+│   └── ListItem scope=4:1..4:9 checked=false children=1
 │       └── Paragraph scope=4:7..4:9 children=1
 │           └── Text scope=4:7..4:9 literal="bim" children=0
 ├── Paragraph scope=6:1..6:69 children=1

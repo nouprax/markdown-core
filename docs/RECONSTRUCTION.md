@@ -24,7 +24,7 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), **11b** (§4.14.11b), **11c** (§4.14.11c), **12.1** (§4.14.12a), **12.2's locator** (§4.14.12b) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), **11b** (§4.14.11b), **11c** (§4.14.11c), **12.1** (§4.14.12a), **12.2's locator** (§4.14.12b), **`end-at-line-ending` CLOSED** (§4.14.11c2) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
 | Next action | **Step 12.2's bindings**, and the API question §4.14.12b puts to the owner first: whether `Document.parse` returns `{semantic, concrete}` (literal, breaks every consumer in three languages) or the document value stays the semantic view and gains `.concrete` (nothing existing moves; the recommendation). **12.1 is LANDED** (§4.14.12a) and so is the LOCATOR (§4.14.12b): the C facade has both views, the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 reads 69/69 there and fails `conformance` — and a region names its owner by a path that survives being copied. Then `13 14 15C`. **Step 9b is LANDED whole** (§4.14.9b1–9b2): the definition and both references are nodes, five kinds carry an association, **D9 and D30 are closed**, the **mdast backlog is EMPTY**, and `fuzz-parity --oracle mdast` — one of §0's six known-red checks — is green. **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), Step 9b (§4.14.9b1–9b2), **Step 11b** (§4.14.11b) — which added TWO laws, L5 and L6, because L1–L4 are all true of the day before it — and **Step 11c** (§4.14.11c), whose engine change is NOTHING because 9b.1 had already made its requirement true; what it adds is the gate that would notice if it stopped. **11c also inherits four families** and they are named in its record. Remaining: `12.2 13 14 15C`. Acceptance is **§4.8's checklist**, not the mdast backlog |
@@ -76,13 +76,13 @@ node scripts/audit-scope-sanity.mjs        # 1 unresolved row, 5453 scanned, onl
 node scripts/audit-inline-sourcepos.mjs    # 40 rows registered, 68 scanned — and
                                           # for the first time they are rows where THIS
                                           # side is right and upstream is not (§4.14.8a)
-node scripts/audit-scope-containment.mjs   # 9 rows registered, 4223 scanned
-node scripts/audit-position-places.mjs     # 57 rows registered, 4446 scanned
+node scripts/audit-scope-containment.mjs   # 8 rows registered, 4225 scanned
+node scripts/audit-position-places.mjs     # 0 rows registered, 4451 scanned -- EMPTY since §4.14.11c2
 
 # Requirement 11a's four laws over the concrete record set, landed at 11a
 # (§4.14.11a). L1 and L3 have no rows and hold by construction; L4 is checked
 # by re-parsing every line-boundary prefix.
-node scripts/audit-concrete-records.mjs   # 267 rows registered, 5852 regions
+node scripts/audit-concrete-records.mjs   # 277 rows registered, 5860 regions
 
 # D9's pin. It was REGISTERED RED from 0a.8 to 9b.2 and is now GREEN with an
 # EMPTY ledger -- still fail-closed, so a row appearing fails the run. Deleting
@@ -6207,11 +6207,13 @@ in two (§4.14.11b) was that the BLOCK attribution keeps it. Trading a family of
 57 position rows for 26 rows of the one law that has none is not a step
 forward, so the attempt is reverted again rather than landed at 32.
 
-What the third attempt needs is the piece none of these had: **why the walk
+What the third attempt needed was the piece none of these had: **why the walk
 fires in a PREFIX where it does not fire in the whole document.** The witness is
 `    Foo⏎    ---⏎⏎    Foo⏎---⏎` at byte 15 — the `\n` ending line 2 — which the
-prefix of lines 1–2 calls `DISCARDED` and the whole document calls `CONTENT`.
-Start there.
+prefix of lines 1–3 called `DISCARDED` and the whole document calls `CONTENT`.
+**§4.14.11c2 started there and closed the family**: the walk was right and both
+of its details were wrong. Working the witness by hand rather than by count is
+what found them, and the owner asking for the example is what prompted it.
 
 
 #### 4.14.11b Step 11b: the inline phase owns its bytes, and two laws that say so
@@ -6559,6 +6561,110 @@ view on its wire, Swift calls the C functions; the three mechanisms differ and
 the value types do not.
 
 
+#### 4.14.11c2 `end-at-line-ending` closed: the direction was right and BOTH details were wrong
+
+**`specs/positions/places.json` is EMPTY.** The oracle that began Stage 0a with
+131 rows in six families, and was down to one family of 57 at §4.14.9b3, has
+zero. The owner asked for a worked example to check the direction, and the
+example is what found the error in it.
+
+##### The defect, in three lines
+
+```
+- a⏎⏎b        List      1:1..2:0     its last byte is at 1:3
+    code⏎⏎x   CodeBlock 1:5..2:0     its last byte is at 1:8
+> q⏎⏎x        BlockQuote 1:1..1:3    RIGHT -- a blank line CLOSES a block quote
+```
+
+Every scope end in this engine names the LAST BYTE — `hello` is `1:1..1:5`.
+Column 0 is not one. The family is exactly the blocks that survive a blank line
+and are closed a line later, so `line_number - 1` lands on the blank.
+
+##### The two errors, and neither was the direction
+
+Attempts one to four (§4.14.9b3) stalled at 52 rows cleared against 32
+appearing, of which 26 broke L4's block half. Working the witness by hand
+instead of by count found both:
+
+**ERROR ONE — the cut point.** The handback took the block's bytes from its
+LAST BYTE, which takes its own line ending away too, and only from blocks whose
+end walked back. Every other block in this engine owns the line ending of its
+own last line: `hello` is one paragraph owning six bytes. The cut belongs at the
+LINE BOUNDARY — the block owns its lines whole, and what it does not own is the
+blank lines after them.
+
+```
+    Foo⏎    ---⏎⏎    Foo⏎---        byte 15 is the ⏎ ending line 2
+prefix (lines 1-3)  cut at last byte:  DISCARDED, the document's
+whole document                      :  CONTENT, the code block's
+prefix (lines 1-3)  cut at line end :  CONTENT   <- agrees
+```
+
+26 L4 rows → 14.
+
+**ERROR TWO — the recipient.** The bytes went to `b->parent`, and a block can be
+finalized while a descendant of it is still OPEN: a list closes when a code
+block opens beside it, and its item closes after — so the item handed its
+trailing blank to a list whose end was already settled. They go to the nearest
+ancestor that actually COVERS them, and an ancestor still open is fine because
+its own handback runs later. 4 L2 rows → 0.
+
+**And branch 2, which is H14.** With both corrected, five rows were left: four
+setext headings and one unclosed fence inside a block quote, all reported at
+`L:0` by `S_set_end_to_current_line` — §11.4's *"Branch 2 … reports the current
+line, which is right for a fence closed on its own fence and wrong for a setext
+heading closed later."* The same walk in that branch clears all five and moves
+nothing. **`audit-scope-containment.mjs` goes 9 → 8 with it**: the fenced code
+block inside a block quote no longer outreaches its own parent.
+
+##### THE MUTANT THAT MATTERS
+
+| mutant | what saw it |
+|---|---|
+| **M31** no walk-back at all | 57 places rows appear, and the goldens go red |
+| **M32** cut at the last byte instead of the line boundary — *the error above* | `correctness` **69/69**, `audit-position-places` **green at 0** — and `audit-concrete-records.mjs` reports **17 rows**, 13 of them L4's block half |
+
+M32 is the argument for 11b's L4 split in one line: the wrong cut is invisible
+to every golden and to the position oracle, and the only thing that can see it
+is the law that says a prefix and the whole document attribute a byte the same
+way.
+
+##### Thirty-seven golden examples moved, and the claim is mechanised
+
+31 in `spec.txt`, 3 in `regression.txt`, 3 in `extensions.txt`, and three
+canonical `.ast` files. Every changed line differs in exactly one way: a scope
+END moved from `L:0` to a real last byte on an EARLIER line, with the start and
+every other field unchanged. **37 of 37, 0 unexplained.**
+
+##### Sixteen rows registered, and both are what they are
+
+- **14 L4 `blank-line-is-interior-or-trailing-only-at-close`.** A blank line
+  inside an indented code block, a fenced block, an HTML block or a loose list
+  item is that block's CONTENT; the same blank line at the END is trailing and
+  `remove_trailing_blank_lines` takes it back out. Which one it is depends on
+  the line AFTER it, so a prefix that ends on the blank cannot agree. **Same
+  shape as `reference-recognition-is-document-scoped`** and registered the same
+  way.
+- **2 L2 `document-does-not-reach-its-trailing-blank-line`.** A block that gives
+  its trailing blank up hands it to the document, whose own end is the last line
+  it had content on. Before the handback the block kept the byte and its own end
+  was column 0 — which made the containment check pass **by accident**, and is
+  the clearest statement of why the family was worth closing.
+
+Two other families shrank as a side effect: `html-block-end-before-its-content`
+8 → 7 and `indent-after-container-closed` 8 → 3.
+
+##### Gates
+
+`correctness` 69/69, asan 60/60, ubsan 60/60 (both trees deleted and
+reconfigured), `conformance` 2/2, canonical-ast 32 kinds / 62 fields,
+projections 32 over 12 surfaces, both fuzz oracles 300/300, upstream 888/888
+with 10/10 and 4/4, mdast 110/110 with an empty backlog, scope-sanity 1,
+inline-sourcepos 40, **containment 8**, **places 0**, concrete records 277,
+reference-order 0, `lint-c`, `pnpm -w run lint`, `leaks --atExit` 0, and the
+Swift, Kotlin and ES suites green.
+
+
 #### 4.14.11a2 Q44 answered: an autocompleted table cell sits where it was completed
 
 **Owner ruling, 2026-08-23, and it supplied the criterion the question was
@@ -6609,13 +6715,11 @@ registered in `containment.json` carrying that reasoning rather than hidden.
 **Mutant.** Putting the cells back at column 0 moves nine `places` rows and
 fails `spec_commonmark` and `extensions_gfm`.
 
-**What this leaves.** `specs/positions/places.json` is down to **one** family:
+**What this leaves.** `specs/positions/places.json` was down to **one** family:
 57 rows of `end-at-line-ending`, of which 57 are a block's end — H14's
-neighbour (§11.4). The oracle that began Stage 0a with 131 rows in six families
-now has one, and **that one is owned by 11c** as of the scoping pass in
-§4.14.9b3, which measured why it is a region-ownership fix and not a position
-fix: correcting the end alone clears 51 of the 57 and makes **37**
-`region-after-owner` rows appear.
+neighbour (§11.4). §4.14.9b3 scoped it and measured four attempts that all
+stalled; **§4.14.11c2 CLOSED it and the ledger is now EMPTY.** The oracle that
+began Stage 0a with 131 rows in six families has none.
 
 ---
 
