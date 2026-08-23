@@ -6550,15 +6550,68 @@ precedent is that those are the owner's. The cost of reading 1 is measurable and
 is the reason: three model declarations, three decoders, three dumpers, three
 conformance suites and every consumer example.
 
+##### OWNER RULING, 2026-08-23: READING 1. The recommendation above was WRONG.
+
+*"We are under semver and targeting a new major version now. Why do you think
+breaking a consumer is blocking under the current context?"*
+
+It is not, and **§4.10 of this document already said so** — three paragraphs
+that this record failed to apply:
+
+> **The ABI break window is not a constraint.** … Shipping 3.0 from this base
+> means the surface is free to change as the design requires, and the discipline
+> that remains is only that it changes *deliberately* and the bindings follow.
+
+`VERSION` is `3.0.0`. §4.1's row 12 budgets the break. The surface breaks at
+Step 7, at 9b, at 12 and at 13 regardless (§4.5.6). **The cost I priced —
+three declarations, three decoders, three suites, the examples — is a DIFF, and
+I presented it as a compatibility problem.** Those are different things, and
+under a major version only the second one counts. Nothing in the list is a cost
+the major bump has not already authorised.
+
+Reading 2 also has a defect the cost argument hid: it makes the markup
+`Document` node carry a `concrete` field its contract does not have, permitted
+only by the projection audit's model check being one-directional *by design*
+(*"the models may carry members the contract does not name"*) — an allowance for
+constructors and conveniences, not for a second total view of the parse.
+Reading 1 needs no allowance.
+
+##### What reading 1 costs, and the three things measurement decided
+
+**The markup node keeps the name `Document`, and that is settled by a gate, not
+by taste.** `audit-ast-projections.mjs` requires each of the three models to
+declare a type named for every contract kind, and `Document` is a contract kind
+whose name is also the dump string in every golden. So the PARSE RESULT is the
+thing that needs a name, and it is **`ParsedDocument`**, with `parse` on it:
+`Document` becomes an ordinary kind carrying no parser, which is what every
+other kind already is.
+
+**`.concrete` is INDEX-ADDRESSED, not an array of objects, and the C surface
+chose that first.** `markdown_core_document_region_count` / `_region_at` /
+`_region_owner_path` are index-based, and mirroring them is both faithful and
+cheap. Measured density on real prose — `README.md` 484 regions / 8633 bytes,
+`canonical-ast.md` 840 / 13294, this document 40252 / 673903 — is **one region
+per 17 bytes**. Materialising a `Region` object per region eagerly costs roughly
+**8× the source** in ES; the columnar form is start/length/role plus a flat
+owner path with offsets, and costs about **25 bytes a region**. A `Region` value
+is built on access and is still a value: the arrays are the copy, and they
+outlive the handle.
+
+**The source is BYTES.** Region offsets index the normalized source, and a
+binding that hands back a `String` invites indexing it — which is the §0 trap
+that reports false failures on `\u00a0`. `Concrete.source` is `Uint8Array`,
+`ByteArray`, `[UInt8]`.
+
 ##### What 12 still owes, precisely
 
-The three bindings, each: a `Concrete` value type (`source`, `lines`,
-`regions`), a `Region` value type (`start`, `length`, `role`, `owner` as the
-path), the copy at parse time, and a test that reads a region AFTER the native
-handle is freed — which is the requirement's own sentence and the only part of
-it a C test cannot make. ES reads the wasm accessors directly, Kotlin needs the
-view on its wire, Swift calls the C functions; the three mechanisms differ and
-the value types do not.
+The three bindings, each: `ParsedDocument` (`semantic`, `concrete`) carrying
+`parse`, a `Concrete` value type (`source` as bytes, `lineCount`/`lineStart`,
+`regionCount`/`region(index)`), a `Region` value type (`start`, `length`,
+`role`, `owner` as the path), the copy at parse time, and a test that reads a
+region AFTER the native handle is freed — which is the requirement's own
+sentence and the only part of it a C test cannot make. ES reads the wasm
+accessors directly, Kotlin needs the view on its wire, Swift calls the C
+functions; the three mechanisms differ and the value types do not.
 
 
 #### 4.14.11c2 `end-at-line-ending` closed: the direction was right and BOTH details were wrong
