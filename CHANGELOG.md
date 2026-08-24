@@ -21,6 +21,20 @@ longer exists.
   emphasis means when they are attached.
 - Test the flanking scan's bound before reading it, and stop the directive
   extension registering a byte its inline matcher cannot consume.
+- The directive grammar is rebuilt against the syntax it claims to implement.
+  `#name` and `.name` are `id` and `class`, `class` accumulates across an
+  attribute list where every other name is last-wins, and `.` `:` `-` `_` are
+  ordinary name characters from the second character on, so `{a:b}` is one
+  attribute rather than the start of a nested directive. An attribute name may
+  not begin with punctuation, an `=` promises a value, an unquoted value holds
+  no `<` `>` `=` or backtick, and a quoted value needs whitespace or `}` after
+  it. An attribute list the parser refuses leaves the directive standing and
+  its braces beside it as text instead of taking the directive down, and a text
+  directive's colon has no colon beside it, so `x ::a y` is text.
+- A formula body that begins and ends with a space or a line ending, and is not
+  all whitespace, loses one from each end. It is both ends or neither:
+  `text $$ mid$$ text` reports `" mid"`, because the space the rule wants at the
+  end is not there.
 - Report an ordered list of diagnostics beside the parsed document —
   `(severity, code, scope, message)` — covering the eight places where a
   construct the author wrote did not become one and neither the tree nor the
@@ -43,12 +57,31 @@ longer exists.
 - `markdown_core_document_root` is renamed `markdown_core_document_semantic`,
   because the parse now has two total views and the old name did not say which
   one it returned.
+- A link reference definition is a node. `ReferenceDefinition` sits at the byte
+  where its `[` was written, in the container it was written in, carrying
+  `label`, `identifier`, `destination` and `title`, which
+  `markdown_core_node_definition_resource` reads. The baseline harvested the
+  definition and discarded it, so nothing in the tree said the source had one.
+- A reference is a node too. `LinkReference` and `ImageReference` carry the
+  label as written, the identifier it matches by, and the `form` it was spelled
+  in — `full`, `collapsed` or `shortcut` — instead of being flattened into a
+  `Link` or an `Image` with the definition's destination copied into them.
+  `markdown_core_node_reference_form` reads the form.
+- A directive's label is a node of its own, `DirectiveLabel`, and its attributes
+  are a list of name/value pairs rather than a string of normalized JSON.
+  `markdown_core_node_directive_attribute_at` reads one pair, and the dump
+  prints `attributes=[class="x" k="v"]` where it printed JSON object text.
+- `mode` is removed from `Code`, `CodeBlock`, `Directive`, `DirectiveBlock` and
+  `FormulaBlock`, where it could only ever hold the one value its kind implies.
+  `Formula` keeps it, because a formula is the one kind where it varies.
 - `markdown_core_node_footnote_id` is replaced by
   `markdown_core_node_association`, which answers for all five kinds carrying a
   label and reports the label as written beside the normalized identifier it
   matches by. `markdown_core_node_directive_first_label_child` and
   `markdown_core_node_directive_first_content_child` are removed: a directive's
-  label is an ordinary node in the child list.
+  label is an ordinary node in the child list. `FootnoteDefinition.id` and
+  `FootnoteReference.id` become `label` and `identifier` in all three bindings
+  for the same reason.
 - `ParseOptions.dollarFormulaDelimiters` and
   `ParseOptions.latexFormulaDelimiters` are removed from Swift, Kotlin and
   ECMAScript. Attaching `formula` is the only switch the extension has.
@@ -67,6 +100,15 @@ longer exists.
   `[a](<>)` wrote a destination and wrote nothing in it, so both report `""`;
   a link with no destination at all is a `LinkReference`. The dump prints
   `destination=""` where it printed `destination=null`.
+- `markdown_core_string_view` is renamed `markdown_core_string`. The `_view`
+  suffix named a C++ type this is not; that the bytes are lent by the document
+  rather than copied out of it is said in the header instead of in the name.
+- The Swift binding says what the canonical AST contract says. `children` is
+  `content` on every kind that has it, `List.isTight`, `ListItem.isChecked`,
+  `CodeBlock.isFenced` and `CodeBlock.isClosed` drop an `is` the contract never
+  had, and `List` reaches its `items` through the typed `[ListItem]` edge the
+  contract names rather than through a generic child list. Kotlin and
+  ECMAScript already agreed; the Swift model had drifted.
 
 ## 1.0.3 - 2026-07-15
 
