@@ -42,6 +42,21 @@ longer exists.
   passed in wherever it held a NUL. The per-byte region set and its
   `RegionRole`, `Region`, `regionCount`, `region(...)` and `ownerOf(...)`
   surface are removed from C, Swift, Kotlin and ECMAScript.
+- A parse failure carries no scope. `markdown_core_error_get_scope` and
+  `ParseError.scope` are removed from C, Swift, Kotlin and ECMAScript: an input
+  the parser could not turn into a document has no extent to point at, and a
+  failure the author could act on would have been a diagnostic instead.
+- `null` and `""` are different answers everywhere, and nothing folds one into
+  the other. `null` means the source did not write the field; `""` means it
+  wrote it and it was empty. An optional string is reported as
+  `markdown_core_optional_string_view` in C — a value beside a presence flag,
+  matching the optional Int and optional Bool the header already had — so
+  `CodeBlock.info`, `CodeBlock.language`, `Link.title`, `Image.title` and
+  `ReferenceDefinition.title` state which of the two they are.
+- `Link.destination` and `Image.source` are no longer optional. `[a]()` and
+  `[a](<>)` wrote a destination and wrote nothing in it, so both report `""`;
+  a link with no destination at all is a `LinkReference`. The dump prints
+  `destination=""` where it printed `destination=null`.
 
 ## 1.0.3 - 2026-07-15
 

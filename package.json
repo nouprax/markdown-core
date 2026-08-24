@@ -43,7 +43,7 @@
         "conformance:kotlin-jvm": "scripts/gradle.sh :packages:kotlin-markdown-core:jvmConformanceTest",
         "conformance:kotlin-linux-x64": "scripts/gradle.sh :packages:kotlin-markdown-core:linuxX64ConformanceTest",
         "conformance:kotlin-macos-arm64": "scripts/gradle.sh :packages:kotlin-markdown-core:macosArm64ConformanceTest",
-        "conformance:swift-ios-simulator": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache xcodebuild test -scheme swift-markdown-core-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' -derivedDataPath build/xcode-tests -only-testing:MarkdownCoreConformanceTests",
+        "conformance:swift-ios-simulator": "scripts/run-swift-ios-tests.sh MarkdownCoreConformanceTests",
         "conformance:swift-macos": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --filter '^MarkdownCoreConformanceTests\\.'",
         "coverage:es-node": "scripts/coverage-es-node.sh",
         "coverage:kotlin-jvm": "scripts/coverage-kotlin-jvm.sh",
@@ -76,7 +76,7 @@
         "test:kotlin-jvm": "scripts/gradle.sh :packages:kotlin-markdown-core:jvmTest",
         "test:kotlin-linux-x64": "scripts/gradle.sh :packages:kotlin-markdown-core:linuxX64Test",
         "test:kotlin-macos-arm64": "scripts/gradle.sh :packages:kotlin-markdown-core:macosArm64Test",
-        "test:swift-ios-simulator": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache xcodebuild test -scheme swift-markdown-core-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' -derivedDataPath build/xcode-tests -only-testing:MarkdownCoreTests",
+        "test:swift-ios-simulator": "scripts/run-swift-ios-tests.sh MarkdownCoreTests",
         "test:swift-macos": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --filter '^MarkdownCoreTests\\.' && CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --package-path packages/swift-markdown-core/Tests/Consumer",
         "verify": "pnpm run format:check && pnpm run lint && pnpm run check:contracts && pnpm run check:gradle-model && pnpm run release:check-version && pnpm run audit:repository && pnpm run audit:ci && pnpm run audit:tests && pnpm run audit:surface && pnpm run audit:packages"
     },

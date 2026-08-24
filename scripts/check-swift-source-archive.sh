@@ -67,10 +67,14 @@ printf '%s\n' \
     '        )' \
     '    ]' \
     ')' >"$consumer/Package.swift"
+# `Document.parse` is the entry point Step 12 settled. This snippet was
+# restored from `main`, where `Document` had a throwing string initializer, and
+# it named a symbol this branch does not have -- so the gate failed on the
+# CONSUMER after the archive itself had already built clean.
 printf '%s\n' \
     'import MarkdownCore' \
     '' \
-    'let document = try Document("## archived consumer")' \
+    'let document = try Document.parse("## archived consumer")' \
     'guard (document.content.first as? Heading)?.level == 2 else { fatalError("parse failed") }' \
     'print(document.dump())' >"$consumer/Sources/Consumer/main.swift"
 
