@@ -91,6 +91,107 @@ function reach(before, after) {
     return a.length - common;
 }
 
+/**
+ * THE OPEN SPINE is the rightmost path of the tree: the last node at every
+ * depth, walking back from the end. Everything else has CLOSED — no later line
+ * can extend it, because a later line can only attach under the rightmost path.
+ *
+ * This is the distinction the acceptance criterion turns on. The old criterion
+ * compared a snapshot with a one-shot of the same prefix, which forces the open
+ * block to be closed speculatively — a paragraph that a following `===` would
+ * turn into a heading has to be published as a paragraph and then retracted.
+ * The criterion is now: A CLOSED BLOCK AND A CLOSED DOCUMENT MATCH THE ONE-SHOT.
+ * An open block is in progress and is not claimed to be anything yet.
+ */
+const BLOCK_KINDS = new Set([
+    "Document",
+    "BlockQuote",
+    "List",
+    "ListItem",
+    "Paragraph",
+    "Heading",
+    "CodeBlock",
+    "HTMLBlock",
+    "ThematicBreak",
+    "Table",
+    "TableRow",
+    "TableCell",
+    "FootnoteDefinition",
+    "DirectiveBlock",
+    "FormulaBlock",
+    "ReferenceDefinition"
+]);
+
+/**
+ * The index at which the OPEN SUBTREE begins. Everything before it has closed.
+ *
+ * The open block is the deepest BLOCK on the rightmost path — the one still
+ * accepting lines — and in document order every node after it is one of its
+ * descendants, so one index separates closed from open.
+ *
+ * THE INLINE CHILDREN OF THE OPEN BLOCK ARE OPEN, and the fifth cut of this
+ * probe had them closed: it took the rightmost path alone, so `Text "**foo "`
+ * inside a still-open paragraph counted as settled and every emphasis or code
+ * span that closed on a later line read as a violation. A paragraph that can
+ * still take lines can still re-parse all of its inline content.
+ */
+function openFrom(lines) {
+    const depths = lines.map((line) => Number(shape(line).split(":", 1)[0]));
+    let open = 0;
+    let depth = Infinity;
+    for (let i = lines.length - 1; i >= 0; i--) {
+        if (depths[i] >= depth) continue;
+        depth = depths[i];
+        const kind = shape(lines[i]).split(":", 2)[1]?.split(" ", 1)[0] ?? "";
+        if (BLOCK_KINDS.has(kind)) {
+            open = i;
+            break;
+        }
+    }
+    return open;
+}
+
+/**
+ * How far back the earliest change to an already-CLOSED node is, as an index
+ * from the start; -1 when the append touched nothing closed.
+ *
+ * AN INDEX AND NOT A COUNT, because a count is not shift-immune and the fourth
+ * cut of this probe used one: turning one `Text` into a `LinkReference` inserts
+ * a child, every later index moves by one, and a single late definition scored
+ * 6,399 "changed" closed nodes in a 6,403-node document. It changed two. The
+ * position is the meaningful number — it says how far back the append reached,
+ * and it does not move when the tree shifts under it.
+ */
+function closedReach(before, after) {
+    const open = openFrom(before);
+    const spine = rightmostPath(before);
+    const a = before.map(shape);
+    const b = after.map(shape);
+    for (let i = 0; i < open; i++) {
+        // ANCESTORS OF THE OPEN BLOCK ARE OPEN TOO, and the sixth cut of this
+        // probe had them closed: a `List` whose `tight` flag flips is still
+        // accepting items, so every loose-list example read as a violation.
+        // Open is the rightmost path plus everything under the open block.
+        if (spine.has(i)) continue;
+        if (i >= b.length || a[i] !== b[i]) return i;
+    }
+    return -1;
+}
+
+/** Indices of the rightmost path: the open block and all of its ancestors. */
+function rightmostPath(lines) {
+    const path = new Set();
+    let depth = Infinity;
+    for (let i = lines.length - 1; i >= 0; i--) {
+        const d = Number(shape(lines[i]).split(":", 1)[0]);
+        if (d < depth) {
+            path.add(i);
+            depth = d;
+        }
+    }
+    return path;
+}
+
 /** Lines whose shape is identical but whose scope or child count moved. */
 function spineChurn(before, after) {
     let churn = 0;
@@ -115,6 +216,7 @@ function measure(text, profile) {
                 line: i,
                 reach: r,
                 churn: spineChurn(previous, current),
+                closed: closedReach(previous, current),
                 emitted: previous.length,
                 changed: [...previous.slice(from).map(shape), "=>", ...current.slice(from, from + r + 1).map(shape)]
             });
@@ -139,6 +241,7 @@ function growth(profile) {
             kind: "late reference definition",
             size: n * 2 + 2,
             reach: reach(before, after),
+            closed: closedReach(before, after),
             emitted: before.length
         });
     }
@@ -146,7 +249,13 @@ function growth(profile) {
         const body = `${Array.from({ length: n }, () => "Foo").join("\n")}\n`;
         const before = dump(body, profile);
         const after = dump(`${body}===\n`, profile);
-        rows.push({ kind: "setext underline", size: n, reach: reach(before, after), emitted: before.length });
+        rows.push({
+            kind: "setext underline",
+            size: n,
+            reach: reach(before, after),
+            closed: closedReach(before, after),
+            emitted: before.length
+        });
     }
     return rows;
 }
@@ -165,6 +274,8 @@ let appends = 0;
 let additive = 0;
 let churnTotal = 0;
 let churnMax = 0;
+let closedViolations = 0;
+const closedWorst = [];
 
 for (const file of files) {
     for (const example of readExamples(root, file)) {
@@ -174,6 +285,14 @@ for (const file of files) {
             appends++;
             if (row.reach === 0) additive++;
             churnTotal += row.churn;
+            if (row.closed >= 0) {
+                closedViolations++;
+                closedWorst.push({
+                    n: row.closed,
+                    at: `${example.source} line ${String(row.line)}`,
+                    input: example.input
+                });
+            }
             if (row.churn > churnMax) churnMax = row.churn;
             const key =
                 row.reach === 0
@@ -210,6 +329,17 @@ for (const key of ["0 (append only)", "1-2", "3-8", "9-32", ">32"]) {
     if (buckets.has(key)) process.stdout.write(`  reach ${key.padEnd(16)} ${String(buckets.get(key))}\n`);
 }
 
+process.stdout.write(`\n  UNDER THE CRITERION THAT MATTERS — did the append change anything already CLOSED?\n`);
+process.stdout.write(
+    `    appends that touched a closed node: ${String(closedViolations)} = ${((100 * closedViolations) / appends).toFixed(2)}%\n`
+);
+closedWorst.sort((a, b) => a.n - b.n);
+for (const row of closedWorst.slice(0, 10)) {
+    process.stdout.write(
+        `      ${String(row.n).padStart(3)} nodes  ${row.at.padEnd(38)} ${JSON.stringify(row.input.split("\n")[0].slice(0, 40))}\n`
+    );
+}
+
 process.stdout.write(`\n  what a reach of 1-2 actually is:\n`);
 for (const sample of samples) {
     process.stdout.write(`    ${sample.at}\n      ${sample.changed.join("  |  ").slice(0, 150)}\n`);
@@ -230,6 +360,6 @@ process.stdout.write(
 );
 for (const row of growth(profile)) {
     process.stdout.write(
-        `    ${row.kind.padEnd(28)} ${String(row.size).padStart(6)} ${String(row.reach).padStart(7)} ${String(row.emitted).padStart(8)}\n`
+        `    ${row.kind.padEnd(28)} ${String(row.size).padStart(6)} ${String(row.reach).padStart(7)} ${String(row.closed).padStart(7)} ${String(row.emitted).padStart(8)}\n`
     );
 }

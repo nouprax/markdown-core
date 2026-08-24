@@ -96,9 +96,12 @@ Nothing here is checked. Each line says what it is; the section says why.
 > actually has, and it is what rules out re-deriving a paragraph's inlines from
 > its accumulated buffer on every line.
 
-**Which constructs break that, and how far back they reach, is now MEASURED —
-§11.9.** Two of them are unbounded, one of them is not in §11.4's twenty
-hazards, and `scripts/poc/stage1-tail-reach.mjs` reproduces all of it.
+**Which constructs break that is now MEASURED — §11.9, and the answer is one
+of them.** Under the criterion that a CLOSED block and a CLOSED document match
+the one-shot, **1.00% of single-line appends touch a closed node and every one
+is late resolution**. Setext, list tightness and inline constructs spanning a
+line boundary are the open spine resolving, not history being rewritten.
+`scripts/poc/stage1-tail-reach.mjs` reproduces it.
 
 `streaming-inline-frontier` and `streaming-every-partition` are kept as records
 of the abandoned program, which measured adjacent things before it was dropped
@@ -1079,9 +1082,36 @@ CommonMark and GFM surface, remark/mdast for the model — not agreement with th
 repository's own goldens. A golden can be regenerated into agreement with a
 defect; an external oracle cannot.
 
-> For every partition of the input **on line boundaries**, the resulting tree
-> must equal a one-shot parse of the same bytes — and that one-shot parse must
-> itself still satisfy every parity gate.
+> **A CLOSED BLOCK AND A CLOSED DOCUMENT MATCH THE ONE-SHOT.** For every
+> partition of the input on line boundaries: every block that has CLOSED equals
+> what a one-shot parse produces for it, and at end of stream the whole tree
+> equals a one-shot parse of the same bytes — which must itself still satisfy
+> every parity gate.
+>
+> **An OPEN block is not compared.** It is in progress and nothing about it has
+> been claimed yet.
+
+**The open block is excluded deliberately, and the earlier form of this
+criterion was wrong.** It said the tree at every boundary must equal a one-shot
+of the same prefix — and a one-shot of a prefix CLOSES the trailing block at end
+of input. Requiring that forces the streaming parser to close the open block
+speculatively: `Foo` must be published as a `Paragraph`, and then retracted when
+`===` arrives and makes it a `Heading`. **Eager closure and retraction is what
+the previous program died of** (§1), and the criterion was asking for it.
+
+**Measured, §11.9: the change is worth 71.47% → 99.00%.** Under the old form,
+28.53% of single-line appends disturbed an already-emitted node. Under this one,
+**1.00% do — and every one of them is late resolution.** Setext, list
+tightness and inline constructs spanning a line boundary all stop being
+violations, because they are the open spine resolving rather than history being
+rewritten.
+
+**What this means for the goldens and the oracles.** The line-boundary
+equivalence gate must compare the CLOSED prefix of a snapshot, not the whole
+snapshot — a golden that pins an open block's contents at a boundary is pinning
+a speculative close, and a parity oracle fed a prefix must be compared against
+the closed portion only. The end-of-stream comparison is unchanged and stays
+byte-exact against the one-shot.
 
 **2. Performance: the cost of a document is the sum of the cost of its lines.**
 
@@ -10570,80 +10600,76 @@ mutation, or be undoable. That is §4.13's question.
 
 ---
 
-### 11.9 MEASURED: how far back an append reaches, and the two that are unbounded
+### 11.9 MEASURED: under the right criterion, the correctness problem is late resolution and nothing else
 
 `scripts/poc/stage1-tail-reach.mjs`, run against `d03ce2c`. It answers the
 question §0's requirement asks and §11.4 does not: **when line *i+1* arrives,
-which already-emitted nodes change?**
+which already-CLOSED nodes change?**
 
-A one-shot parse of lines 1…*i* is exactly what a snapshot at boundary *i* must
-equal, so the probe needs no engine change: dump every prefix, compare
-consecutive dumps, and report **reach** — the distance from the first changed
-node to the end of the earlier dump. Reach 0 means the append only added.
+A one-shot parse of lines 1…*i* is what a snapshot at boundary *i* must equal,
+so the probe needs no engine change: dump every prefix, compare consecutive
+dumps, and ask whether anything outside the open spine moved.
 
-#### The method took four cuts, and the first three each produced a plausible wrong number
+#### It took six cuts, and the first five each produced a plausible wrong number
 
-Worth recording, because every one of them looked like a finding:
+Recorded because every one of them looked like a finding, and three of them were
+measuring the dump's rendering rather than the tree:
 
 | cut | reported | what it was actually measuring |
 |---|---|---|
-| 1 | **0.00%** append-only | the root's `scope=1:1..N:M` grows with the document, so line 0 always differs and reach is the whole dump every time |
-| 2 | 26.76% | `└──` becomes `├──` when a sibling is added, so every node made non-last read as rewritten |
-| 3 | 26.76%, 64% at reach 1–2 | `split("\n")` leaves `""` at the end of every dump; any append that adds a node displaces it |
-| 4 | **71.47%** | shape only: depth plus node text, with `scope=`, `children=` and the connectors stripped |
+| 1 | **0.00%** append-only | the root's `scope=1:1..N:M` grows, so line 0 always differs and reach is the whole dump |
+| 2 | 26.76% | `└──` becomes `├──` when a sibling is added, so a node made non-last read as rewritten |
+| 3 | 71.47% | `split("\n")` leaves `""` at the end; any append that adds a node displaces it |
+| 4 | 3.14%, and "6,399 nodes changed" | a COUNT is not shift-immune — one `Text` becoming a `LinkReference` moves every later index. It changed two |
+| 5 | 3.14% | the inline children of an OPEN paragraph counted as closed, so every emphasis or code span closing on a later line was a violation |
+| 6 | **1.00%** | ancestors of the open block counted as closed, so every loose-list `tight` flip was a violation |
 
-#### What the corpus says — 1,304 single-line appends, `--profile gfm`
+**Closed is: not on the rightmost path, and not under the open block.** The
+rightmost path is the open block and its ancestors; everything after the open
+block is its descendants; everything else has closed and can never move again.
 
-| reach | appends |
+#### The result — 1,304 single-line appends, `--profile gfm`
+
+| | |
 |---|---|
-| **0 — append only** | **932 = 71.47%** |
-| 1–2 | 298 |
-| 3–8 | 68 |
-| 9–32 | 6 |
-| >32 | 0 |
+| appends that touch a CLOSED node | **13 = 1.00%** |
+| and what they are | `[foo][bar]`, `[^1]`, `[^citation]`, `[Freedom Planet 2][]`, the autolinker — **late resolution, every one** |
 
 Spine churn — nodes whose shape is identical but whose `scope` end or child
-count moved — is **mean 2.81, max 32**. That is the O(depth) term the model
+count moved — is mean 2.81, max 32. That is the O(depth) term the model
 predicts, and it is not a violation.
 
-#### Three classes change an already-emitted node, and they are not equal
+#### What stopped being a hazard, and this is the point
 
-1. **The open block accumulating its own content.** `CodeBlock literal="foo\n"`
-   becomes `literal="foo\nbar\n"`. Reach 1, it *is* the open block, and that is
-   what an open block is for. Not a hazard.
-2. **A kind flip.** `Paragraph → Heading level=2` when the next line is `---`;
-   list tight → loose; paragraph → table when the delimiter row arrives.
-3. **Late resolution.** A footnote or link-reference definition arriving later
-   turns `Text` into a reference — reach up to 24 in the corpus.
+| construct | old criterion | this criterion |
+|---|---|---|
+| setext underline, 256-line paragraph | reach 512 of 513 | **touches nothing closed, at every size** |
+| list tight → loose | violation | the `List` is an ancestor of the open block |
+| emphasis or a code span closing on a later line | violation | inline children of an open paragraph |
+| the open block accumulating its own literal | violation | it *is* the open block |
 
-#### The two that are UNBOUNDED, and this is the finding
+None of those is history being rewritten. They are the open spine resolving,
+which is what an open spine is for — and the old criterion called them
+violations only because it compared against a one-shot that had closed the
+block at end of input.
 
-| construct | size | reach | emitted |
+#### The one that remains, and it is unbounded
+
+| construct | size | reaches back to | of |
 |---|---|---|---|
-| late reference definition | 22 lines | 21 | 23 |
-| late reference definition | 402 | 401 | 403 |
-| late reference definition | **6,402** | **6,401** | 6,403 |
-| setext underline | 1 paragraph line | 2 | 3 |
-| setext underline | 16 | 32 | 33 |
-| setext underline | **256** | **512** | 513 |
+| late reference definition | 22 lines | node 2 | 23 |
+| late reference definition | 402 | node 2 | 403 |
+| late reference definition | **6,402** | **node 2** | 6,403 |
 
-**A late definition's change begins at the second node of the document,
-whatever the document's size.** **A setext underline's reach is 2n+1 in the
-paragraph's own length** — appending `===` after a 256-line paragraph moves all
-513 of its emitted nodes, because the `Paragraph` becomes a `Heading` and every
-child goes with it.
-
-**SETEXT IS NOT IN §11.4's TWENTY HAZARDS.** H1–H20 contains nothing of the form
-*"a following line changes the KIND of a block that already closed"*. It is a
-new hazard, found by measuring rather than by re-reading, and it is squarely a
-Stage 1 blocker: it is not late resolution, it needs no map, and **no carried
-state fixes it** — the answer for lines 1…*i* genuinely depends on line *i+1*.
+**A definition arriving at the end changes a node at the top, at any document
+size.** No carried state fixes it — the answer for lines 1…*i* genuinely depends
+on line *i+1* — and it is the only construct measured here that reaches past the
+open spine at all.
 
 #### What this settles
 
-The requirement — *a complete line is settled the moment it completes* — is
-**not what the engine does**, and the exceptions are now named and bounded:
-71.47% of appends already satisfy it, one class is benign and is the open block
-doing its job, and **two classes are unbounded and have to be dealt with by
-construction rather than by cost.** That is Stage 1's actual problem statement,
-and it is narrower and sharper than "make the parser resumable".
+Stage 1's correctness problem is **late resolution and nothing else**, at 1.00%
+of appends. That is narrower than §11.4's twenty hazards suggest and it agrees
+with §11.5's ranking, which put the reference map ahead of the inline phase on
+three independent grounds. **99% of single-line appends already satisfy the
+criterion today.**
