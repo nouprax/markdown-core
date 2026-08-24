@@ -357,9 +357,9 @@ export class NodeDecoder {
         // A raw wasm export answers with 0 or 1, not with a JS boolean.
         const present =
             this.native.es_string(object, field, this.scratch, this.scratch + Uint32Array.BYTES_PER_ELEMENT) !== 0;
-        const view = this.dataView();
-        const data = view.getUint32(this.scratch, true);
-        const length = view.getUint32(this.scratch + Uint32Array.BYTES_PER_ELEMENT, true);
+        const memory = this.dataView();
+        const data = memory.getUint32(this.scratch, true);
+        const length = memory.getUint32(this.scratch + Uint32Array.BYTES_PER_ELEMENT, true);
         if (!present) {
             if (data !== 0 || length !== 0) throw new Error("native parser returned an invalid string");
             return null;

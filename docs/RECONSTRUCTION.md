@@ -7895,9 +7895,17 @@ after the type they produced, and it no longer exists. They are
 the ES bridge's `es_write_view` / `es_write_optional_view`, six locals called
 `view` across `ast.c` and three test runners, and four prose mentions of a
 *"string view"* in the public header, `core/blocks.c` and the C++ layout
-assertion. What stayed is every unrelated use of the word: the document's
-CONCRETE view, a JavaScript `DataView`, and `spec_runner.c`'s *"a view into the
-whole file"*.
+assertion. One more turned up in the ES runtime on a second look:
+`parser.ts`'s `viewOutput`, the scratch buffer for `es_document_source`'s two
+out-params, named after the type it used to receive — it is `sourceOutput`, and
+the `DataView` local beside it that was called `view` is `memory`.
+
+What stayed is every unrelated use of the word, and the distinction is worth
+stating because it is where a blanket rename would have gone wrong:
+`DataView` and `dataView()` are the **JavaScript built-in** and a helper that
+returns one, so neither can move; the document's **CONCRETE view** is a
+different noun with its own contract; and `spec_runner.c`'s *"a view into the
+whole file"* describes a chunk.
 
 Behaviour-neutral by construction — a `typedef` name is not in the ABI, no
 exported function name moved, and `audit-public-surface.sh` compares the header

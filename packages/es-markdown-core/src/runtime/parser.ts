@@ -80,12 +80,12 @@ function withConcrete(root: Omit<Document, "concrete">, concrete: Concrete): Doc
 }
 
 function readConcrete(documentPointer: number): Concrete {
-    const viewOutput = allocate(Uint32Array.BYTES_PER_ELEMENT * 2);
+    const sourceOutput = allocate(Uint32Array.BYTES_PER_ELEMENT * 2);
     let lineOutput = 0;
     try {
-        native.es_document_source(documentPointer, viewOutput, viewOutput + 4);
-        const sourcePointer = dataView().getUint32(viewOutput, true);
-        const sourceLength = dataView().getUint32(viewOutput + 4, true);
+        native.es_document_source(documentPointer, sourceOutput, sourceOutput + 4);
+        const sourcePointer = dataView().getUint32(sourceOutput, true);
+        const sourceLength = dataView().getUint32(sourceOutput + 4, true);
         const source = new Uint8Array(native.memory.buffer, sourcePointer, sourceLength).slice();
 
         const lineCount = native.es_document_line_count(documentPointer);
@@ -95,7 +95,7 @@ function readConcrete(documentPointer: number): Concrete {
 
         return new Concrete(source, lineStarts);
     } finally {
-        for (const pointer of [lineOutput, viewOutput]) {
+        for (const pointer of [lineOutput, sourceOutput]) {
             if (pointer) native.free(pointer);
         }
     }
