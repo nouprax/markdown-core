@@ -2,6 +2,7 @@
 #include "syntax_extension.h"
 
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,32 +19,35 @@
 
 #include "ext_scanners.h"
 
+/* THE ATTRIBUTE LIST IS AN ORDERED MAP, because that is exactly what the
+ * grammar asks for: a name appears once, `{a=1 b=2 a=3}` keeps `a=3`, `class`
+ * accumulates, and the model is sorted by name (Q19).
+ *
+ * It used to be a linked list with one node per SOURCE OCCURRENCE, folded
+ * afterwards by a hash pass that marked the losers inactive. That built what it
+ * then had to throw away -- a directive of 1.4 million duplicate attributes
+ * allocated 1.4 million nodes, hashed all of them, deactivated all but 64, and
+ * sorted all 1.4 million anyway. Deduplicating on insert never builds them.
+ *
+ * CONTIGUOUS and not linked, which is what makes `attribute_at(i)` a subscript.
+ * Linked, every consumer that reads attributes in order -- the dump and all
+ * three bindings -- walked from the head per index and was quadratic: 269 s to
+ * read a 6.8 MB directive. There is no `active` flag because there is nothing
+ * inactive, and no `index` field because order is the array's. */
 typedef struct directive_attribute {
     markdown_core_chunk name;
     markdown_core_chunk value;
-    size_t index;
-    int active;
-    struct directive_attribute *next;
 } directive_attribute;
 
 typedef struct {
+    directive_attribute *items;
+    size_t count;
+    size_t capacity;
+} directive_attributes;
+
+typedef struct {
     markdown_core_chunk name;
-    directive_attribute *attributes;
-    /* WHERE THE LAST `attribute_at` STOPPED. Every consumer of the attribute
-     * list -- the dump, all three bindings -- asks for index 0, then 1, then 2,
-     * and `attribute_at` walked from the head each time, which is O(n^2) over a
-     * directive with n attributes. Measured before this cursor existed: a 6.8 MB
-     * directive of unique attributes took 269 s, and doubling the input
-     * quadrupled the time. The cursor makes a forward walk O(1) per step and
-     * leaves random access exactly as correct as it was.
-     *
-     * `cursor_index` is the ACTIVE index of `cursor`, counting only active
-     * attributes, which is what `attribute_at` indexes by. Both are cleared by
-     * `invalidate_attribute_cursor` at every site that relinks, reorders or
-     * deactivates -- a stale cursor would hand back the wrong attribute, so it
-     * is cleared on mutation rather than validated on read. */
-    directive_attribute *cursor;
-    size_t cursor_index;
+    directive_attributes attributes;
     int fence_length;
     int closed;
     int consume_line;
@@ -58,7 +62,7 @@ typedef struct {
     bufsize_t label_len;
     int has_label;
     int has_attributes;
-    directive_attribute *attributes;
+    directive_attributes attributes;
     bufsize_t end;
     /* Set when attribute parsing failed from allocation loss rather than
      * invalid syntax; the caller flags the parser instead of silently
@@ -274,14 +278,19 @@ static int replace_chunk_bytes(markdown_core_mem *mem, markdown_core_chunk *chun
     return 1;
 }
 
-static void free_attribute_list(markdown_core_mem *mem, directive_attribute *attr) {
-    while (attr) {
-        directive_attribute *next = attr->next;
-        markdown_core_chunk_free(mem, &attr->name);
-        markdown_core_chunk_free(mem, &attr->value);
-        mem->free(attr);
-        attr = next;
+static void free_attribute_list(markdown_core_mem *mem, directive_attributes *attrs) {
+    size_t i;
+    if (!attrs) {
+        return;
     }
+    for (i = 0; i < attrs->count; i++) {
+        markdown_core_chunk_free(mem, &attrs->items[i].name);
+        markdown_core_chunk_free(mem, &attrs->items[i].value);
+    }
+    mem->free(attrs->items);
+    attrs->items = NULL;
+    attrs->count = 0;
+    attrs->capacity = 0;
 }
 
 /* Scans an attribute name from `pos`. */
@@ -333,292 +342,177 @@ static int attribute_name_is_valid(const unsigned char *name, bufsize_t name_len
     return name_len > 0 && scan_attr_name(name, name_len, 0) == name_len;
 }
 
-static int append_attribute(markdown_core_mem *mem, directive_attribute **head, directive_attribute **tail,
-                            const unsigned char *name, bufsize_t name_len, const unsigned char *value,
-                            bufsize_t value_len, size_t index, int *oom) {
-    directive_attribute *attr;
-    markdown_core_strbuf decoded;
-    int stored;
-    if (!attribute_name_is_valid(name, name_len)) {
-        return 0;
+/* The name is looked up in an index while one can be built and by scan when it
+ * cannot. An insert that fails -- the map reports engineered hash clustering
+ * that way -- drops to the scan for the rest of this directive rather than
+ * bringing in a second algorithm, and the entries already inserted stay
+ * findable because the scan does not consult the index. */
+typedef struct {
+    directive_attributes list;
+    /* Maps a name to its SLOT NUMBER PLUS ONE, not to a pointer: the entries
+     * are contiguous and move when the array grows, so a stored pointer would
+     * dangle on the next insert. Plus one because the map reports "absent" as
+     * a null value and slot zero is a real slot. */
+    markdown_core_key_index index;
+    int indexed;
+} attribute_builder;
+
+#define ATTRIBUTE_SLOT_NONE ((size_t)-1)
+
+static size_t attribute_find(attribute_builder *builder, const unsigned char *name, bufsize_t name_len) {
+    size_t i;
+    if (builder->indexed) {
+        void *found = markdown_core_key_index_lookup(&builder->index, name, name_len);
+        return found ? (size_t)(uintptr_t)found - 1 : ATTRIBUTE_SLOT_NONE;
     }
-    attr = (directive_attribute *)mem->calloc(1, sizeof(*attr));
-    if (!attr) {
-        if (oom) {
-            *oom = 1;
+    for (i = 0; i < builder->list.count; i++) {
+        const markdown_core_chunk *have = &builder->list.items[i].name;
+        if (have->len == name_len && memcmp(have->data, name, (size_t)name_len) == 0) {
+            return i;
         }
+    }
+    return ATTRIBUTE_SLOT_NONE;
+}
+
+static int attribute_reserve(markdown_core_mem *mem, directive_attributes *attrs) {
+    size_t capacity;
+    directive_attribute *grown;
+    if (attrs->count < attrs->capacity) {
+        return 1;
+    }
+    capacity = attrs->capacity ? attrs->capacity * 2 : 8;
+    grown = (directive_attribute *)mem->realloc(attrs->items, capacity * sizeof(*grown));
+    if (!grown) {
         return 0;
     }
-    /* Q20: A VALUE IS DECODED, A NAME IS NOT. mdast-util-directive decodes
-     * exactly three things -- an attribute's value and the `#id` and `.class`
-     * shorthand values -- and this is where all three arrive. The decoder is
-     * the engine's one entity decoder, the same call a link destination, a
-     * link title and a code fence's info string already make; the alternative
-     * was a second entity rule living in this file (§4.14.7c).
-     *
-     * It runs AFTER the raw scan, never during it, which is what makes
-     * `{a=x&#125;y}` one attribute whose value contains a `}` rather than a
-     * block that ended early. */
-    markdown_core_strbuf_init(mem, &decoded, value_len + 1);
-    houdini_unescape_html_f(&decoded, value, value_len);
-    stored = !decoded.oom && replace_chunk_bytes(mem, &attr->name, name, name_len) &&
-             replace_chunk_bytes(mem, &attr->value, decoded.ptr, decoded.size);
-    markdown_core_strbuf_free(&decoded);
-    if (!stored) {
-        if (oom) {
-            *oom = 1;
-        }
-        free_attribute_list(mem, attr);
-        return 0;
-    }
-    attr->index = index;
-    attr->active = 1;
-    if (*tail) {
-        (*tail)->next = attr;
-    } else {
-        *head = attr;
-    }
-    *tail = attr;
+    attrs->items = grown;
+    attrs->capacity = capacity;
     return 1;
+}
+
+static int attribute_name_is_class(const unsigned char *name, bufsize_t name_len) {
+    return name_len == 5 && memcmp(name, "class", 5) == 0;
 }
 
 /* `class` is the ONE name whose repeats accumulate, in source order, whether
  * they were written as `.x` or as `class=x`. Every other name keeps the last
- * value, which is what normalize_duplicate_attributes does -- so the folding
- * happens first and leaves at most one `class` behind for it to find.
+ * value.
  *
  * The separator goes before every value once something has accumulated, an
  * empty one included: `{.a class="" .b}` is `class="a  b"`. An empty value at
  * the FRONT accumulates nothing, so it contributes no leading separator and
  * `{class="" .b}` is `class="b"`. Both are oracle rows; the rule is "join what
- * is there", not "join what was written". */
-static int accumulate_class_attributes(markdown_core_mem *mem, directive_attribute *head, size_t *count) {
-    directive_attribute *first = NULL;
-    directive_attribute *attr;
+ * is there", not "join what was written" -- which is why the first value is
+ * stored as it comes and only later ones are joined onto it. */
+static int attribute_accumulate_class(markdown_core_mem *mem, markdown_core_chunk *into, const unsigned char *value,
+                                      bufsize_t value_len) {
     markdown_core_strbuf joined;
-    int changed = 0;
+    int stored;
+    markdown_core_strbuf_init(mem, &joined, into->len + value_len + 2);
+    markdown_core_strbuf_put(&joined, into->data, into->len);
+    if (joined.size > 0) {
+        markdown_core_strbuf_putc(&joined, ' ');
+    }
+    markdown_core_strbuf_put(&joined, value, value_len);
+    stored = !joined.oom && replace_chunk_bytes(mem, into, joined.ptr, joined.size);
+    markdown_core_strbuf_free(&joined);
+    return stored;
+}
 
-    for (attr = head; attr; attr = attr->next) {
-        if (attr->name.len != 5 || memcmp(attr->name.data, "class", 5) != 0) {
-            continue;
-        }
-        if (!first) {
-            first = attr;
-            continue;
-        }
-        changed = 1;
-    }
-    if (!changed) {
-        return 1;
-    }
-
-    markdown_core_strbuf_init(mem, &joined, 32);
-    for (attr = first; attr; attr = attr->next) {
-        if (attr->name.len != 5 || memcmp(attr->name.data, "class", 5) != 0) {
-            continue;
-        }
-        if (joined.size > 0) {
-            markdown_core_strbuf_putc(&joined, ' ');
-        }
-        markdown_core_strbuf_put(&joined, attr->value.data, attr->value.len);
-    }
-    if (joined.oom || !replace_chunk_bytes(mem, &first->value, joined.ptr, joined.size)) {
-        markdown_core_strbuf_free(&joined);
+/* Q20: A VALUE IS DECODED, A NAME IS NOT. mdast-util-directive decodes exactly
+ * three things -- an attribute's value and the `#id` and `.class` shorthand
+ * values -- and this is where all three arrive. The decoder is the engine's one
+ * entity decoder, the same call a link destination, a link title and a code
+ * fence's info string already make; the alternative was a second entity rule
+ * living in this file (§4.14.7c).
+ *
+ * It runs AFTER the raw scan, never during it, which is what makes
+ * `{a=x&#125;y}` one attribute whose value contains a `}` rather than a block
+ * that ended early. */
+static int upsert_attribute(markdown_core_mem *mem, attribute_builder *builder, const unsigned char *name,
+                            bufsize_t name_len, const unsigned char *value, bufsize_t value_len, int *oom) {
+    markdown_core_strbuf decoded;
+    directive_attribute *slot;
+    size_t at;
+    int stored;
+    if (!attribute_name_is_valid(name, name_len)) {
         return 0;
     }
-    markdown_core_strbuf_free(&joined);
-
-    /* The folded ones are UNLINKED, not merely deactivated. The duplicate
-     * normalizer that runs next walks the whole list and swaps the first
-     * occurrence's value for the last one's; a `class` it can still see would
-     * undo the accumulation the moment there were two of them. */
-    for (attr = first; attr && attr->next;) {
-        directive_attribute *dup = attr->next;
-        if (dup->name.len == 5 && memcmp(dup->name.data, "class", 5) == 0) {
-            attr->next = dup->next;
-            dup->next = NULL;
-            free_attribute_list(mem, dup);
-            (*count)--;
-            continue;
+    markdown_core_strbuf_init(mem, &decoded, value_len + 1);
+    houdini_unescape_html_f(&decoded, value, value_len);
+    if (decoded.oom) {
+        markdown_core_strbuf_free(&decoded);
+        if (oom) {
+            *oom = 1;
         }
-        attr = dup;
+        return 0;
     }
+
+    at = attribute_find(builder, name, name_len);
+    if (at != ATTRIBUTE_SLOT_NONE) {
+        slot = &builder->list.items[at];
+        stored = attribute_name_is_class(name, name_len)
+                     ? attribute_accumulate_class(mem, &slot->value, decoded.ptr, decoded.size)
+                     : replace_chunk_bytes(mem, &slot->value, decoded.ptr, decoded.size);
+        markdown_core_strbuf_free(&decoded);
+        if (!stored && oom) {
+            *oom = 1;
+        }
+        return stored;
+    }
+
+    if (!attribute_reserve(mem, &builder->list)) {
+        markdown_core_strbuf_free(&decoded);
+        if (oom) {
+            *oom = 1;
+        }
+        return 0;
+    }
+    slot = &builder->list.items[builder->list.count];
+    slot->name = markdown_core_chunk_literal("");
+    slot->value = markdown_core_chunk_literal("");
+    stored = replace_chunk_bytes(mem, &slot->name, name, name_len) &&
+             replace_chunk_bytes(mem, &slot->value, decoded.ptr, decoded.size);
+    markdown_core_strbuf_free(&decoded);
+    if (!stored) {
+        markdown_core_chunk_free(mem, &slot->name);
+        markdown_core_chunk_free(mem, &slot->value);
+        if (oom) {
+            *oom = 1;
+        }
+        return 0;
+    }
+    if (builder->indexed && !markdown_core_key_index_insert(&builder->index, slot->name.data, slot->name.len,
+                                                            (void *)(uintptr_t)(builder->list.count + 1), 0, NULL)) {
+        builder->indexed = 0;
+    }
+    builder->list.count++;
     return 1;
 }
 
 /* Q19: THE MODEL IS SORTED, and by name. Two orders is how a third order
- * appears in a binding -- after class-accumulation and last-value-wins the
- * list IS a map, and a map has no source order to preserve. remark's own
- * projection is sorted too, which is what the mdast oracle compares against.
+ * appears in a binding -- the map has no source order left to preserve once a
+ * name appears once -- and remark's own projection is sorted too, which is what
+ * the mdast oracle compares against.
  *
- * A LINKED-LIST MERGE SORT, not an array and qsort: the duplicate normalizer
- * above already has a no-allocation fallback for the case where the index
- * cannot be built, and a sort that could fail to allocate would put an
- * unsorted list back on the node with nothing to say so. This one cannot
- * fail. */
-static int attribute_name_before(const directive_attribute *a, const directive_attribute *b) {
-    bufsize_t common = a->name.len < b->name.len ? a->name.len : b->name.len;
-    int cmp = memcmp(a->name.data, b->name.data, (size_t)common);
-    if (cmp) {
-        return cmp < 0;
-    }
-    return a->name.len <= b->name.len;
-}
-
-static directive_attribute *merge_attribute_runs(directive_attribute *left, directive_attribute *right) {
-    directive_attribute *head = NULL;
-    directive_attribute **tail = &head;
-    while (left && right) {
-        directive_attribute **from = attribute_name_before(left, right) ? &left : &right;
-        *tail = *from;
-        *from = (*from)->next;
-        tail = &(*tail)->next;
-    }
-    *tail = left ? left : right;
-    return head;
-}
-
-static directive_attribute *sort_attributes_by_name(directive_attribute *head) {
-    directive_attribute *rest = head;
-    directive_attribute *runs[32];
-    size_t i;
-    size_t used = 0;
-
-    while (rest) {
-        directive_attribute *one = rest;
-        rest = rest->next;
-        one->next = NULL;
-        for (i = 0; i < used && runs[i]; i++) {
-            one = merge_attribute_runs(runs[i], one);
-            runs[i] = NULL;
-        }
-        if (i == sizeof(runs) / sizeof(runs[0])) {
-            /* 2^32 attributes in one `{...}` is not reachable in a bufsize_t
-             * document; merging into the last slot keeps the sort total even
-             * if it ever were. */
-            i--;
-            one = merge_attribute_runs(runs[i], one);
-        }
-        runs[i] = one;
-        if (i == used) {
-            used++;
-        }
-    }
-    head = NULL;
-    for (i = 0; i < used; i++) {
-        head = merge_attribute_runs(runs[i], head);
-    }
-    return head;
-}
-
-static int compare_attribute_ptrs(const void *left, const void *right) {
-    const directive_attribute *a = *(const directive_attribute *const *)left;
-    const directive_attribute *b = *(const directive_attribute *const *)right;
+ * `qsort` over the array, not a merge sort over a list: the entries are
+ * contiguous and there are no equal names to keep stable, because the map made
+ * them unique. */
+static int compare_attributes_by_name(const void *left, const void *right) {
+    const directive_attribute *a = (const directive_attribute *)left;
+    const directive_attribute *b = (const directive_attribute *)right;
     bufsize_t common = a->name.len < b->name.len ? a->name.len : b->name.len;
     int cmp = memcmp(a->name.data, b->name.data, (size_t)common);
     if (cmp) {
         return cmp;
     }
-    if (a->name.len != b->name.len) {
-        return a->name.len < b->name.len ? -1 : 1;
-    }
-    return a->index < b->index ? -1 : a->index > b->index;
+    return a->name.len < b->name.len ? -1 : a->name.len > b->name.len;
 }
 
-static int normalize_duplicate_attributes_sorted(markdown_core_mem *mem, directive_attribute *head, size_t count) {
-    directive_attribute **sorted;
-    directive_attribute *attr;
-    size_t i = 0;
-    if (count < 2) {
-        return 1;
+static void sort_attributes_by_name(directive_attributes *attrs) {
+    if (attrs->count > 1) {
+        qsort(attrs->items, attrs->count, sizeof(*attrs->items), compare_attributes_by_name);
     }
-    sorted = (directive_attribute **)mem->calloc(count, sizeof(*sorted));
-    if (!sorted) {
-        return 0;
-    }
-    for (attr = head; attr; attr = attr->next) {
-        sorted[i++] = attr;
-    }
-    qsort(sorted, count, sizeof(*sorted), compare_attribute_ptrs);
-    for (i = 0; i < count;) {
-        size_t end = i + 1;
-        while (end < count && sorted[i]->name.len == sorted[end]->name.len &&
-               memcmp(sorted[i]->name.data, sorted[end]->name.data, (size_t)sorted[i]->name.len) == 0) {
-            end++;
-        }
-        if (end - i > 1) {
-            markdown_core_chunk last_value = sorted[end - 1]->value;
-            size_t duplicate;
-            sorted[end - 1]->value = sorted[i]->value;
-            sorted[i]->value = last_value;
-            for (duplicate = i + 1; duplicate < end; duplicate++) {
-                sorted[duplicate]->active = 0;
-            }
-        }
-        i = end;
-    }
-    mem->free(sorted);
-    return 1;
-}
-
-static size_t attribute_index_expected_size(markdown_core_mem *mem, directive_attribute *head, size_t count) {
-    const size_t sample_limit = 1024;
-    markdown_core_key_index sample;
-    directive_attribute *attr;
-    size_t sampled = 0;
-    size_t unique;
-    if (count <= sample_limit) {
-        return count;
-    }
-    if (!markdown_core_key_index_init(&sample, mem, sample_limit)) {
-        return count;
-    }
-    for (attr = head; attr && sampled < sample_limit; attr = attr->next, sampled++) {
-        if (!markdown_core_key_index_insert(&sample, attr->name.data, attr->name.len, attr, 0, NULL)) {
-            markdown_core_key_index_free(&sample);
-            return count;
-        }
-    }
-    unique = sample.size;
-    markdown_core_key_index_free(&sample);
-    return unique > sampled / 2 ? count : unique;
-}
-
-static int normalize_duplicate_attributes(markdown_core_mem *mem, directive_attribute *head, size_t count) {
-    markdown_core_key_index index;
-    directive_attribute *attr;
-    size_t initial_size;
-    if (count < 2) {
-        return 1;
-    }
-    /* Unique-heavy inputs avoid repeated growth, while duplicate-heavy inputs
-     * pay for sampled unique keys rather than every source occurrence. */
-    initial_size = attribute_index_expected_size(mem, head, count);
-    if (!markdown_core_key_index_init(&index, mem, initial_size)) {
-        return normalize_duplicate_attributes_sorted(mem, head, count);
-    }
-    for (attr = head; attr; attr = attr->next) {
-        if (!markdown_core_key_index_insert(&index, attr->name.data, attr->name.len, attr, 0, NULL)) {
-            markdown_core_key_index_free(&index);
-            return normalize_duplicate_attributes_sorted(mem, head, count);
-        }
-    }
-    for (attr = head; attr; attr = attr->next) {
-        directive_attribute *first =
-            (directive_attribute *)markdown_core_key_index_lookup(&index, attr->name.data, attr->name.len);
-        /* Every key was inserted above and the index never deletes, so the
-         * lookup cannot miss; keep the release-build guard anyway so a future
-         * invariant break degrades to duplicate output instead of a crash. */
-        assert(first);
-        if (first && first != attr) {
-            markdown_core_chunk previous = first->value;
-            first->value = attr->value;
-            attr->value = previous;
-            attr->active = 0;
-        }
-    }
-    markdown_core_key_index_free(&index);
-    return 1;
 }
 
 const char *markdown_core_extensions_get_directive_name(markdown_core_node *node) {
@@ -682,59 +576,16 @@ int markdown_core_extensions_directive_has_attributes(markdown_core_node *node) 
     return directive && directive->has_attributes;
 }
 
-/* The list is walked rather than indexed. A directive's attribute count is the
- * size of one `{...}`, so the walk is short and a second array to index into
- * would be a third representation of the same list -- which is what the JSON
- * cache was. */
-static void invalidate_attribute_cursor(node_directive *directive) {
-    if (directive) {
-        directive->cursor = NULL;
-        directive->cursor_index = 0;
-    }
-}
-
 static directive_attribute *attribute_at(node_directive *directive, size_t index) {
-    directive_attribute *attr;
-    size_t remaining = index;
-    if (!directive) {
+    if (!directive || index >= directive->attributes.count) {
         return NULL;
     }
-    /* Resume from the cursor for any index at or after it, which is every
-     * forward walk. A backward or random index falls through to the head and
-     * costs exactly what it always did. */
-    if (directive->cursor && index >= directive->cursor_index) {
-        attr = directive->cursor;
-        remaining = index - directive->cursor_index;
-    } else {
-        attr = directive->attributes;
-        while (attr && !attr->active) {
-            attr = attr->next;
-        }
-    }
-    for (; attr; attr = attr->next) {
-        if (!attr->active) {
-            continue;
-        }
-        if (remaining == 0) {
-            directive->cursor = attr;
-            directive->cursor_index = index;
-            return attr;
-        }
-        remaining--;
-    }
-    return NULL;
+    return &directive->attributes.items[index];
 }
 
 size_t markdown_core_extensions_directive_attribute_count(markdown_core_node *node) {
     node_directive *directive = get_directive(node);
-    directive_attribute *attr;
-    size_t count = 0;
-    for (attr = directive ? directive->attributes : NULL; attr; attr = attr->next) {
-        if (attr->active) {
-            count++;
-        }
-    }
-    return count;
+    return directive ? directive->attributes.count : 0;
 }
 
 int markdown_core_extensions_directive_attribute_at(markdown_core_node *node, size_t index, const char **name,
@@ -767,7 +618,7 @@ static void directive_opaque_free(const markdown_core_syntax_extension *extensio
     }
 
     markdown_core_chunk_free(mem, &directive->name);
-    free_attribute_list(mem, directive->attributes);
+    free_attribute_list(mem, &directive->attributes);
     mem->free(directive);
 }
 
@@ -825,14 +676,16 @@ static int parse_attr_value(const unsigned char *data, bufsize_t len, bufsize_t 
 }
 
 static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, bufsize_t len,
-                            directive_attribute **result, int *oom) {
-    directive_attribute *attrs = NULL;
-    directive_attribute *tail = NULL;
+                            directive_attributes *result, int *oom) {
+    attribute_builder builder;
     bufsize_t pos = 0;
-    size_t count = 0;
     int ok = 1;
 
-    *result = NULL;
+    memset(&builder, 0, sizeof(builder));
+    /* An index that cannot be built is not a failure: `attribute_find` scans
+     * instead. Most `{...}` hold a handful of names and never notice. */
+    builder.indexed = markdown_core_key_index_init(&builder.index, mem, 8);
+    memset(result, 0, sizeof(*result));
     while (pos < len) {
         bufsize_t start;
         bufsize_t name_len;
@@ -856,8 +709,8 @@ static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, b
                 ok = 0;
                 break;
             }
-            if (!append_attribute(mem, &attrs, &tail, (const unsigned char *)shorthand_name,
-                                  (bufsize_t)strlen(shorthand_name), data + pos, shorthand_len, count++, oom)) {
+            if (!upsert_attribute(mem, &builder, (const unsigned char *)shorthand_name,
+                                  (bufsize_t)strlen(shorthand_name), data + pos, shorthand_len, oom)) {
                 ok = 0;
                 break;
             }
@@ -881,34 +734,29 @@ static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, b
                 break;
             }
         }
-        if (!append_attribute(mem, &attrs, &tail, data + start, name_len, value, value_len, count++, oom)) {
+        if (!upsert_attribute(mem, &builder, data + start, name_len, value, value_len, oom)) {
             ok = 0;
             break;
         }
     }
 
-    if (ok && !accumulate_class_attributes(mem, attrs, &count)) {
-        if (oom) {
-            *oom = 1;
-        }
-        ok = 0;
-    }
-    if (ok && !normalize_duplicate_attributes(mem, attrs, count)) {
-        if (oom) {
-            *oom = 1;
-        }
-        ok = 0;
+    if (builder.indexed) {
+        markdown_core_key_index_free(&builder.index);
+        builder.indexed = 0;
     }
     if (ok) {
-        *result = sort_attributes_by_name(attrs);
-        attrs = NULL;
+        /* Sorting last, and only here: the index maps a name to the slot it was
+         * inserted at, so it has to be gone before the entries move. */
+        sort_attributes_by_name(&builder.list);
+        *result = builder.list;
+        memset(&builder.list, 0, sizeof(builder.list));
     }
-    free_attribute_list(mem, attrs);
+    free_attribute_list(mem, &builder.list);
     return ok;
 }
 
 static void free_parsed_directive(markdown_core_mem *mem, parsed_directive *parsed) {
-    free_attribute_list(mem, parsed->attributes);
+    free_attribute_list(mem, &parsed->attributes);
 }
 
 static int parse_directive_suffix(markdown_core_mem *mem, unsigned char *data, bufsize_t len, bufsize_t pos,
@@ -1004,8 +852,7 @@ static int apply_parsed_directive(const markdown_core_syntax_extension *extensio
 
     if (parsed->has_attributes) {
         directive->attributes = parsed->attributes;
-        invalidate_attribute_cursor(directive);
-        parsed->attributes = NULL;
+        memset(&parsed->attributes, 0, sizeof(parsed->attributes));
     }
 
     if (parsed->has_label) {
@@ -1113,13 +960,15 @@ static markdown_core_node *match_colon_directive(const markdown_core_syntax_exte
     bufsize_t label_len = 0;
     bufsize_t label_open = 0;
     int has_label = 0;
-    directive_attribute *attributes = NULL;
+    directive_attributes attributes;
     int has_attributes = 0;
     markdown_core_node *node;
     markdown_core_node *label_node = NULL;
     node_directive *directive;
     int start_line = markdown_core_inline_parser_get_line(inline_parser);
     int start_column = markdown_core_inline_parser_get_column(inline_parser);
+
+    memset(&attributes, 0, sizeof(attributes));
 
     /* A TEXT DIRECTIVE'S COLON MAY NOT SIT NEXT TO ANOTHER COLON, on either
      * side. The trailing half keeps `:red:` available to emoji; the leading
@@ -1193,13 +1042,12 @@ static markdown_core_node *match_colon_directive(const markdown_core_syntax_exte
     node = make_directive_node(extension, parser, chunk->data + name_start, name_len, start_line, start_column,
                                start_line, start_column);
     if (!node) {
-        free_attribute_list(parser->mem, attributes);
+        free_attribute_list(parser->mem, &attributes);
         parser->oom = true;
         return NULL;
     }
     directive = get_directive(node);
     directive->attributes = attributes;
-    invalidate_attribute_cursor(directive);
     directive->has_attributes = has_attributes;
     directive->has_label = has_label;
 

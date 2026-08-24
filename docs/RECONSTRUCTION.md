@@ -8522,47 +8522,59 @@ bridge directly, handing it bytes the decoder never sees. `@JvmSynthetic` sets
 `ACC_SYNTHETIC`, which **javac refuses to resolve and JNI does not consult**:
 verified by `javap -v` showing the flag and by `jvmTest` still passing.
 
-##### And then the accessor, which is the real find
+##### And then the attribute list, which was the wrong data structure
 
-Reading a directive's attributes was **O(n²)**. `attribute_at(directive, index)`
-walked from the head on every call, and every consumer — the dump, all three
-bindings — asks for 0, then 1, then 2. It also skipped INACTIVE entries on every
-walk, so a duplicate-heavy directive walked all 1.4 million parsed attributes to
-find each of the 64 that survived folding.
+Reading a directive's attributes was **O(n²)**, and my first fix was a resume
+cursor on the walk. **The owner rejected it as patching the symptom**: what the
+grammar describes is an ordered map — a name appears once, `{a=1 b=2 a=3}` keeps
+`a=3`, `class` accumulates, and the model is sorted by name — and the code built
+a linked list with **one node per source occurrence**, then folded it afterwards.
 
-| input | before | after |
-|---|---|---|
-| 4 MiB of unique attributes | 21.6 s | 0.26 s |
-| 8 MiB | 67.9 s | 0.14 s |
-| **16 MiB** | **269.4 s** | **0.29 s — 942x** |
+That is the right reading, and it is worth stating what the old shape cost. A
+directive of 1.4 million duplicate attributes allocated 1.4 million nodes,
+hashed every one of them, deactivated all but 64, and then **sorted all 1.4
+million anyway**. Reading them back walked from the head per index, skipping the
+inactive ones, which is where the quadratic lived.
 
-Doubling the input quadrupled the time before (3.14x, 3.97x); it doubles now.
-The fix is a resume cursor on the directive, cleared at both sites that assign
-the list.
+**Deduplicating on insert never builds them.** The entries are contiguous, so
+`attribute_at(i)` is a subscript rather than a walk; the index maps a name to a
+SLOT NUMBER rather than a pointer, because the array moves when it grows. Two
+whole passes are gone — `accumulate_class_attributes` and
+`normalize_duplicate_attributes` with its sorted fallback and its sampling
+heuristic — along with the linked-list merge sort, the `active` flag, the `index`
+field, and the cursor. **238 lines replaced by 24**; the file is **−188 net**.
 
-**NOTHING IN THE REPOSITORY COULD SEE THIS.** `complexity_runner`'s `cc_measure`
-parses and frees — it never reads the tree — so `many_unique_attributes` reported
-linear scaling while dumping the same document took 269 seconds. **Parsing is not
-the only thing that has to scale**, and the suite had no case that said so. Two
-are added, `read_unique_attributes` and `read_duplicate_attributes`, which read
-every attribute through the public accessor. Mutant: with the cursor disabled
-both fail, `read_duplicate_attributes` at **7.454x** against the 4.0 bound.
+| workload | linked list | + cursor | ordered map |
+|---|---|---|---|
+| 16 MiB unique, read back | 269.4 s | 0.29 s | 0.31 s |
+| 8 MiB duplicate, parsed | 0.68 s | 0.68 s | **0.18 s** |
+| `many_unique_attributes` | 1.215x | 1.215x | 1.438x |
+| **`many_duplicate_attributes`** | 2.52x | 2.18x | **0.856x** |
 
-##### What is NOT fixed, and it is not this branch's
+Both curves are linear now — 2.12x, 2.15x, 2.07x and 1.92x, 1.89x, 2.03x per
+doubling.
 
-`Test - C / Windows · Static · Correctness` fails
-`pathological_complexity_many_duplicate_attributes` at **5.153x**; macOS reads
-2.2–2.5x. **The accessor fix does not touch it** — that case measures the parse,
-which never calls the accessor, and saying otherwise would be reading a noise
-difference as a result. Measured instead: the case, the 4.0 threshold and
-`normalize_duplicate_attributes` are all **byte-for-byte the 1.0.3 baseline's**,
-the parse curve is a stable ~2.2x per doubling (about n^1.13, not accelerating),
-and the runner's own header says the 32,768x span exists to make **n log n
-visible** — which normalizes to ~3.85x against a bound of 4.0. The case is
-marginal by construction and Windows' constants tip it over. What this branch
-added to that path, `accumulate_class_attributes`, returns after one scan when no
-`class` is present, which is this workload. **Left open and named rather than
-fixed by moving the bound.**
+##### AND IT FIXED THE WINDOWS FAILURE I HAD SAID WAS NOT FIXABLE HERE
+
+The paragraph that stood here argued `many_duplicate_attributes` at **5.153x on
+Windows** was marginal by construction, that the parse path was byte-for-byte the
+1.0.3 baseline's, and that the accessor fix could not touch it because the case
+never calls the accessor. **All of that was true and the conclusion was still
+wrong.** The case does not call the accessor, but it does pay for the list the
+accessor was built on: 1.4 million allocations, a hash pass over all of them and
+an n log n sort over all of them, to keep 64. The map deletes that work, and the
+case reads **0.856x** — from 2.18x locally, so the Windows reading should land
+near 2.0x against a bound of 4.0.
+
+**The lesson is the one the owner gave**: a cursor made the symptom linear and
+left the structure that produced it. The structure was the defect.
+
+Behaviour is unchanged and checked at the rows the class rule is pinned by:
+`{.x class="" .y}` is `class="x  y"` with the doubled space, `{class="" .b}` is
+`class="b"`, `{class=red .green class=blue}` is `class="red green blue"`, and
+`{k=1 j=2 k=3}` is `j="2" k="3"`. Every oracle reads exactly what it read before
+— upstream 892/892 with 10/10, mdast 112/112, both fuzz 300/300, all four
+position ledgers — with ASan, UBSan and `leaks --atExit` clean.
 
 #### 4.14.15I The PR's three review comments: one right, one right for the wrong reason, one wrong
 
