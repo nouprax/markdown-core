@@ -192,12 +192,12 @@ static size_t traverse(const markdown_core_node *node) {
         return 0;
     }
 
-    markdown_core_string view;
-    markdown_core_node_literal(node, &view);
+    markdown_core_string value;
+    markdown_core_node_literal(node, &value);
     int32_t level;
     markdown_core_node_heading_level(node, &level);
     markdown_core_placement_mode mode;
-    markdown_core_node_formula_properties(node, &mode, &view);
+    markdown_core_node_formula_properties(node, &mode, &value);
 
     size_t children = 0;
     const markdown_core_node *child = markdown_core_node_get_first_child(node);

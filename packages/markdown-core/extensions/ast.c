@@ -196,12 +196,12 @@ const markdown_core_node *markdown_core_document_semantic(const markdown_core_do
 }
 
 markdown_core_string markdown_core_document_source(const markdown_core_document *document) {
-    markdown_core_string view = {NULL, 0};
+    markdown_core_string value = {NULL, 0};
     if (document && document->concrete.source.ptr) {
-        view.data = document->concrete.source.ptr;
-        view.length = (size_t)document->concrete.source.size;
+        value.data = document->concrete.source.ptr;
+        value.length = (size_t)document->concrete.source.size;
     }
-    return view;
+    return value;
 }
 
 size_t markdown_core_document_line_count(const markdown_core_document *document) {
@@ -247,12 +247,12 @@ markdown_core_error_code markdown_core_error_get_code(const markdown_core_error 
 }
 
 markdown_core_string markdown_core_error_get_message(const markdown_core_error *error) {
-    markdown_core_string view = {NULL, 0};
+    markdown_core_string value = {NULL, 0};
     if (error && error->message) {
-        view.data = (const uint8_t *)error->message;
-        view.length = strlen(error->message);
+        value.data = (const uint8_t *)error->message;
+        value.length = strlen(error->message);
     }
-    return view;
+    return value;
 }
 
 void markdown_core_error_free(markdown_core_error *error) { free(error); }
@@ -468,16 +468,18 @@ bool markdown_core_node_list_item_checked(const markdown_core_node *node, markdo
     return true;
 }
 
-static void view_chunk(markdown_core_string *view, const markdown_core_chunk *chunk) {
-    view->data = chunk->data;
-    view->length = chunk->len < 0 ? 0 : (size_t)chunk->len;
+/* The chunk's bytes are LENT, not copied: `out` points into the document and
+ * dies with it, which is what `markdown_core_string` documents. */
+static void string_from_chunk(markdown_core_string *out, const markdown_core_chunk *chunk) {
+    out->data = chunk->data;
+    out->length = chunk->len < 0 ? 0 : (size_t)chunk->len;
 }
 
 /* THE FACADE FOLDS NOTHING (requirement 14). It carries the presence the
  * engine recorded and does not re-derive it from a length or a pointer. */
-static void view_optional_chunk(markdown_core_optional_string *view, const markdown_core_optional_chunk *chunk) {
-    view->has_value = chunk->has_value;
-    view_chunk(&view->value, &chunk->value);
+static void optional_string_from_chunk(markdown_core_optional_string *out, const markdown_core_optional_chunk *chunk) {
+    out->has_value = chunk->has_value;
+    string_from_chunk(&out->value, &chunk->value);
 }
 
 bool markdown_core_node_code_block_properties(const markdown_core_node *node, markdown_core_optional_string *info,
@@ -488,8 +490,8 @@ bool markdown_core_node_code_block_properties(const markdown_core_node *node, ma
     if (!node || node->type != MARKDOWN_CORE_NODE_CODE_BLOCK || !info || !language || !literal || !fenced || !closed) {
         return false;
     }
-    view_optional_chunk(info, &node->as.code.info);
-    view_chunk(literal, &node->as.code.literal);
+    optional_string_from_chunk(info, &node->as.code.info);
+    string_from_chunk(literal, &node->as.code.literal);
     /* `if (info->length == 0) info->data = NULL;` STOOD HERE, and it is the
      * fold requirement 14 names: the parse had already decided whether a fence
      * wrote an info string, and this line decided it again from a length. */
@@ -524,7 +526,7 @@ bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_st
     case MARKDOWN_CORE_NODE_TEXT:
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_CODE:
-        view_chunk(literal, &node->as.literal);
+        string_from_chunk(literal, &node->as.literal);
         return true;
     default:
         return false;
@@ -638,8 +640,8 @@ static bool link_properties(const markdown_core_node *node, uint16_t expected, m
     if (!node || node->type != expected || !url || !title) {
         return false;
     }
-    view_chunk(url, &node->as.link.url);
-    view_optional_chunk(title, &node->as.link.title);
+    string_from_chunk(url, &node->as.link.url);
+    optional_string_from_chunk(title, &node->as.link.title);
     return true;
 }
 
@@ -685,8 +687,8 @@ bool markdown_core_node_association(const markdown_core_node *node, markdown_cor
     default:
         return false;
     }
-    view_chunk(label, &association->label);
-    view_chunk(identifier, &association->identifier);
+    string_from_chunk(label, &association->label);
+    string_from_chunk(identifier, &association->identifier);
     return true;
 }
 
@@ -696,8 +698,8 @@ bool markdown_core_node_definition_resource(const markdown_core_node *node, mark
         !title) {
         return false;
     }
-    view_chunk(destination, &node->as.definition->url);
-    view_optional_chunk(title, &node->as.definition->title);
+    string_from_chunk(destination, &node->as.definition->url);
+    optional_string_from_chunk(title, &node->as.definition->title);
     return true;
 }
 

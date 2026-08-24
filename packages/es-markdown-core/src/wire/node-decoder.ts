@@ -361,15 +361,15 @@ export class NodeDecoder {
         const data = view.getUint32(this.scratch, true);
         const length = view.getUint32(this.scratch + Uint32Array.BYTES_PER_ELEMENT, true);
         if (!present) {
-            if (data !== 0 || length !== 0) throw new Error("native parser returned an invalid string view");
+            if (data !== 0 || length !== 0) throw new Error("native parser returned an invalid string");
             return null;
         }
         if (!data) {
-            if (length !== 0) throw new Error("native parser returned an invalid string view");
+            if (length !== 0) throw new Error("native parser returned an invalid string");
             return "";
         }
         if (length > this.native.memory.buffer.byteLength - data) {
-            throw new Error("native parser returned an out-of-bounds string view");
+            throw new Error("native parser returned an out-of-bounds string");
         }
         return this.utf8Decoder.decode(new Uint8Array(this.native.memory.buffer, data, length));
     }

@@ -26,7 +26,7 @@
  * multiple threads is safe. markdown_core_document_free is the only mutating
  * operation: the caller must ensure it happens after all other access to that
  * document has completed (external synchronization); no access is allowed
- * afterwards. Node handles and string views borrow from the owning document
+ * afterwards. Node handles and `markdown_core_string`s borrow from the owning document
  * and end with it.
  *
  * Errors: a markdown_core_error returned through an out-parameter is owned by
@@ -275,7 +275,8 @@ MARKDOWN_CORE_API void markdown_core_parse_options_init(markdown_core_parse_opti
 
 /**
  * Parses exactly `length` UTF-8 bytes. `options == NULL` selects the defaults.
- * The returned document owns all nodes and borrowed string views. On failure,
+ * The returned document owns every node and every `markdown_core_string`
+ * handed out of it. On failure,
  * NULL is returned and `*error` is set when `error` is non-NULL.
  */
 MARKDOWN_CORE_API markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,

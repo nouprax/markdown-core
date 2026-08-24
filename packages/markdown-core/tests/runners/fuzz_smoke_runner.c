@@ -22,7 +22,7 @@ static size_t nodes_visited;
 static int traverse(const markdown_core_node *node) {
     const markdown_core_node *child;
     markdown_core_scope scope;
-    markdown_core_string view;
+    markdown_core_string value;
     markdown_core_optional_bool checked;
     int32_t level;
     bool flag;
@@ -37,7 +37,7 @@ static int traverse(const markdown_core_node *node) {
     if (scope.start.line < 0 || scope.end.line < 0) {
         return -1;
     }
-    (void)markdown_core_node_literal(node, &view);
+    (void)markdown_core_node_literal(node, &value);
     (void)markdown_core_node_heading_level(node, &level);
     (void)markdown_core_node_list_item_checked(node, &checked);
     (void)markdown_core_node_table_row_is_header(node, &flag);

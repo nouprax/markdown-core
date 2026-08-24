@@ -23,9 +23,9 @@ enum es_string_field {
     ES_STRING_ASSOCIATION_IDENTIFIER
 };
 
-static bool es_write_view(markdown_core_string view, uintptr_t *data, size_t *length) {
-    *data = (uintptr_t)view.data;
-    *length = view.length;
+static bool es_write_string(markdown_core_string value, uintptr_t *data, size_t *length) {
+    *data = (uintptr_t)value.data;
+    *length = value.length;
     return true;
 }
 
@@ -33,13 +33,13 @@ static bool es_write_view(markdown_core_string view, uintptr_t *data, size_t *le
  * one channel for two facts -- a null `data` meant both "absent" and "present
  * but the bytes live nowhere" -- and requirement 14 says the two are different
  * answers, so `es_string` now says which it gave. */
-static bool es_write_optional_view(markdown_core_optional_string view, uintptr_t *data, size_t *length) {
-    if (!view.has_value) {
+static bool es_write_optional_string(markdown_core_optional_string value, uintptr_t *data, size_t *length) {
+    if (!value.has_value) {
         *data = 0;
         *length = 0;
         return false;
     }
-    return es_write_view(view.value, data, length);
+    return es_write_string(value.value, data, length);
 }
 
 markdown_core_document *es_document_parse(const uint8_t *source, size_t length, uint32_t flags,
@@ -65,7 +65,7 @@ const markdown_core_node *es_document_root(const markdown_core_document *documen
 }
 
 void es_document_source(const markdown_core_document *document, uintptr_t *data, size_t *length) {
-    es_write_view(markdown_core_document_source(document), data, length);
+    es_write_string(markdown_core_document_source(document), data, length);
 }
 
 size_t es_document_line_count(const markdown_core_document *document) {
@@ -216,10 +216,10 @@ bool es_string(const void *object, int32_t field, uintptr_t *data, size_t *lengt
     case ES_STRING_CODE_INFO:
     case ES_STRING_CODE_LANGUAGE:
         markdown_core_node_code_block_properties(node, &opt_first, &opt_second, &third, &first_bool, &second_bool);
-        return es_write_optional_view(field == ES_STRING_CODE_INFO ? opt_first : opt_second, data, length);
+        return es_write_optional_string(field == ES_STRING_CODE_INFO ? opt_first : opt_second, data, length);
     case ES_STRING_CODE_LITERAL:
         markdown_core_node_code_block_properties(node, &opt_first, &opt_second, &third, &first_bool, &second_bool);
-        return es_write_view(third, data, length);
+        return es_write_string(third, data, length);
     case ES_STRING_LITERAL:
         markdown_core_node_literal(node, &first);
         break;
@@ -241,19 +241,19 @@ bool es_string(const void *object, int32_t field, uintptr_t *data, size_t *lengt
         break;
     case ES_STRING_LINK_TITLE:
         markdown_core_node_link_properties(node, &first, &opt_first);
-        return es_write_optional_view(opt_first, data, length);
+        return es_write_optional_string(opt_first, data, length);
     case ES_STRING_IMAGE_SOURCE:
         markdown_core_node_image_properties(node, &first, &opt_first);
         break;
     case ES_STRING_IMAGE_TITLE:
         markdown_core_node_image_properties(node, &first, &opt_first);
-        return es_write_optional_view(opt_first, data, length);
+        return es_write_optional_string(opt_first, data, length);
     case ES_STRING_DEFINITION_DESTINATION:
         markdown_core_node_definition_resource(node, &first, &opt_first);
         break;
     case ES_STRING_DEFINITION_TITLE:
         markdown_core_node_definition_resource(node, &first, &opt_first);
-        return es_write_optional_view(opt_first, data, length);
+        return es_write_optional_string(opt_first, data, length);
     case ES_STRING_ASSOCIATION_LABEL:
     case ES_STRING_ASSOCIATION_IDENTIFIER:
         markdown_core_node_association(node, &first, &second);
@@ -265,5 +265,5 @@ bool es_string(const void *object, int32_t field, uintptr_t *data, size_t *lengt
     default:
         break;
     }
-    return es_write_view(first, data, length);
+    return es_write_string(first, data, length);
 }

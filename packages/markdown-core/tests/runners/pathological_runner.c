@@ -229,7 +229,7 @@ static int case_hard_link_emph(pc_context *context) {
     const markdown_core_node *text;
     const markdown_core_node *link;
     const markdown_core_node *emphasis;
-    markdown_core_string view;
+    markdown_core_string value;
     markdown_core_optional_string title;
 
     if (pc_build(context, "**x [a*b**c*](d)", "", 0, NULL) != 0) {
@@ -247,13 +247,13 @@ static int case_hard_link_emph(pc_context *context) {
     root = markdown_core_document_semantic(context->document);
     paragraph = markdown_core_node_get_first_child(root);
     text = markdown_core_node_get_first_child(paragraph);
-    if (!markdown_core_node_literal(text, &view) || view.length != 4 || memcmp(view.data, "**x ", 4) != 0) {
+    if (!markdown_core_node_literal(text, &value) || value.length != 4 || memcmp(value.data, "**x ", 4) != 0) {
         fprintf(stderr, "leading text is not the literal '**x '\n");
         return -1;
     }
     link = markdown_core_node_get_next_sibling(text);
     if (markdown_core_node_get_kind(link) != MARKDOWN_CORE_KIND_LINK ||
-        !markdown_core_node_link_properties(link, &view, &title) || view.length != 1 || view.data[0] != 'd') {
+        !markdown_core_node_link_properties(link, &value, &title) || value.length != 1 || value.data[0] != 'd') {
         fprintf(stderr, "link destination is not 'd'\n");
         return -1;
     }
@@ -413,7 +413,7 @@ static int case_unclosed_comment(pc_context *context) {
 static int case_tables(pc_context *context) {
     const markdown_core_node *root;
     const markdown_core_node *paragraph;
-    markdown_core_string view;
+    markdown_core_string value;
     if (pc_build(context, NULL, "aaa\rbbb\n-\x0b\n", 30000, NULL) != 0) {
         return -1;
     }
@@ -427,8 +427,8 @@ static int case_tables(pc_context *context) {
     root = markdown_core_document_semantic(context->document);
     paragraph = markdown_core_node_get_first_child(root);
     if (markdown_core_node_get_kind(paragraph) != MARKDOWN_CORE_KIND_PARAGRAPH ||
-        !markdown_core_node_literal(markdown_core_node_get_first_child(paragraph), &view) || view.length != 3 ||
-        memcmp(view.data, "aaa", 3) != 0) {
+        !markdown_core_node_literal(markdown_core_node_get_first_child(paragraph), &value) || value.length != 3 ||
+        memcmp(value.data, "aaa", 3) != 0) {
         fprintf(stderr, "leading paragraph is not the literal 'aaa'\n");
         return -1;
     }
@@ -457,10 +457,10 @@ typedef struct pc_uniform_text {
 static int pc_uniform_text_visit(const markdown_core_node *node, void *context) {
     pc_uniform_text *check = (pc_uniform_text *)context;
     if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_TEXT) {
-        markdown_core_string view;
+        markdown_core_string value;
         check->seen++;
-        if (!markdown_core_node_literal(node, &view) || view.length != check->expected_length ||
-            memcmp(view.data, check->expected, view.length) != 0) {
+        if (!markdown_core_node_literal(node, &value) || value.length != check->expected_length ||
+            memcmp(value.data, check->expected, value.length) != 0) {
             check->mismatch = 1;
             return 1;
         }

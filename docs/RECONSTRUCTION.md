@@ -7888,6 +7888,17 @@ as long as the `markdown_core_document` that produced it, is not
 NUL-terminated, and `length` is in bytes. A rename that drops information has
 to put it somewhere, and this one does.
 
+**A type rename leaves stale vocabulary behind it, and the owner caught that
+too.** `view_chunk` and `view_optional_chunk` in `extensions/ast.c` were named
+after the type they produced, and it no longer exists. They are
+`string_from_chunk` and `optional_string_from_chunk`, and the same sweep took
+the ES bridge's `es_write_view` / `es_write_optional_view`, six locals called
+`view` across `ast.c` and three test runners, and four prose mentions of a
+*"string view"* in the public header, `core/blocks.c` and the C++ layout
+assertion. What stayed is every unrelated use of the word: the document's
+CONCRETE view, a JavaScript `DataView`, and `spec_runner.c`'s *"a view into the
+whole file"*.
+
 Behaviour-neutral by construction — a `typedef` name is not in the ABI, no
 exported function name moved, and `audit-public-surface.sh` compares the header
 against both export lists unchanged. Every gate at its number, `format-swift`

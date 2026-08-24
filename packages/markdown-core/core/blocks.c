@@ -373,7 +373,7 @@ static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
 
 /* The message pool cap. A diagnostic says what the tree cannot; it does not
  * quote the document back. Cutting at a code-point boundary is not tidiness:
- * `message` is published as a UTF-8 string view, and a cut through a
+ * `message` is published as a UTF-8 `markdown_core_string`, and a cut through a
  * continuation byte would hand a consumer a sequence the engine itself would
  * have replaced on input. */
 #define MARKDOWN_CORE_DIAGNOSTIC_SUBJECT_MAX 40
