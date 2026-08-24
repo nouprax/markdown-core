@@ -7,10 +7,6 @@ MARKDOWN_CORE_1.0 {
     markdown_core_document_source;
     markdown_core_document_line_count;
     markdown_core_document_line_start;
-    markdown_core_document_region_count;
-    markdown_core_document_region_at;
-    markdown_core_document_region_owner_path;
-    markdown_core_document_region_owner_paths;
     markdown_core_document_diagnostic_count;
     markdown_core_document_diagnostic_at;
     markdown_core_diagnostic_code_name;

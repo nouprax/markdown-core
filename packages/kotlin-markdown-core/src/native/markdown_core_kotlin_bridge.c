@@ -298,22 +298,20 @@ static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
     }
 }
 
-/* THE CONCRETE VIEW, after the tree.
+/* THE SOURCE A SCOPE'S COORDINATES ARE COUNTED AGAINST, after the tree.
  *
- * The whole view goes on the wire in one payload: the JVM cannot hold a native
- * pointer past the parse, and the region owners are PATHS for the same reason.
- * Layout, little-endian throughout: the source length and its bytes, the line
- * count and one offset per line, the region count and (start, length, role) per
- * region, then `count + 1` path offsets and the flat path elements they cut. */
+ * It goes on the wire because the JVM cannot hold a native pointer past the
+ * parse. Layout, little-endian throughout: the source length and its bytes,
+ * then the line count and one offset per line. */
 static void write_concrete(bridge_buffer *buffer, const markdown_core_document *document) {
     size_t lines = markdown_core_document_line_count(document);
-    size_t regions = markdown_core_document_region_count(document);
     markdown_core_string_view source = markdown_core_document_source(document);
-    uint32_t *offsets;
-    int32_t *paths;
-    size_t total;
     size_t index;
 
+    if (source.length > INT32_MAX || lines > INT32_MAX) {
+        buffer->failed = true;
+        return;
+    }
     put_i32(buffer, (int32_t)source.length);
     put_bytes(buffer, source.data, source.length);
 
@@ -326,43 +324,6 @@ static void write_concrete(bridge_buffer *buffer, const markdown_core_document *
         }
         put_i32(buffer, (int32_t)offset);
     }
-
-    put_i32(buffer, (int32_t)regions);
-    for (index = 0; index < regions; index++) {
-        markdown_core_region region;
-        if (!markdown_core_document_region_at(document, index, &region)) {
-            buffer->failed = true;
-            return;
-        }
-        put_i32(buffer, (int32_t)region.start);
-        put_i32(buffer, (int32_t)region.length);
-        put_u8(buffer, (uint8_t)region.role);
-    }
-
-    offsets = (uint32_t *)malloc((regions + 1) * sizeof(uint32_t));
-    if (offsets == NULL) {
-        buffer->failed = true;
-        return;
-    }
-    /* Sizing first: the same call fills the offsets it refuses to write paths
-     * for, so the last one is how many the paths need. */
-    markdown_core_document_region_owner_paths(document, NULL, 0, offsets, regions + 1);
-    total = offsets[regions];
-    paths = (int32_t *)malloc((total == 0 ? 1 : total) * sizeof(int32_t));
-    if (paths == NULL || !markdown_core_document_region_owner_paths(document, paths, total, offsets, regions + 1)) {
-        free(paths);
-        free(offsets);
-        buffer->failed = true;
-        return;
-    }
-    for (index = 0; index <= regions; index++) {
-        put_i32(buffer, (int32_t)offsets[index]);
-    }
-    for (index = 0; index < total; index++) {
-        put_i32(buffer, paths[index]);
-    }
-    free(paths);
-    free(offsets);
 }
 
 static void apply_options(markdown_core_parse_options *options, uint32_t mask) {
@@ -379,8 +340,8 @@ static void apply_options(markdown_core_parse_options *options, uint32_t mask) {
 
 bool markdown_core_kotlin_parse(const uint8_t *source, size_t length, uint32_t options_mask, uint8_t **output,
                                 size_t *output_length) {
-    /* MKC3: the payload gained the concrete view at Step 12.2. */
-    static const uint8_t magic[] = {'M', 'K', 'C', '3'};
+    /* MKC4: the concrete view lost its regions when 11a-11c were retired. */
+    static const uint8_t magic[] = {'M', 'K', 'C', '4'};
     markdown_core_parse_options options;
     markdown_core_error *error = NULL;
     markdown_core_document *document;

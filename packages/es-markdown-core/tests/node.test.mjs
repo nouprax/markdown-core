@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TextEncoder } from "node:util";
-import { Document, RegionRole, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
+import { Document, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
 import { kindVisitor } from "./visitor.mjs";
 
 test("api: synchronous parse, typed visitor dispatch, and walker", () => {
@@ -83,7 +83,7 @@ test("robustness: repeated parse and release remains stable", () => {
 // The requirement's own sentence: the concrete view survives being copied into
 // value types and the handle being freed. `parse` frees it before it returns,
 // so everything below reads a view with no WASM memory left behind it.
-test("concrete: the view is total and its owners resolve after native release", () => {
+test("concrete: the normalized source and its line index survive the native release", () => {
     const source = [
         "# Heading ##",
         "",
@@ -110,46 +110,16 @@ test("concrete: the view is total and its owners resolve after native release", 
     assert.equal(concrete.lineStart(3), 14);
     assert.throws(() => concrete.lineStart(0), RangeError);
     assert.throws(() => concrete.lineStart(16), RangeError);
-    assert.throws(() => concrete.region(concrete.regionCount), RangeError);
 
-    let covered = 0;
-    let markers = 0;
-    for (let index = 0; index < concrete.regionCount; index += 1) {
-        const region = concrete.region(index);
-        assert.equal(region.start, covered);
-        assert.ok(region.length > 0);
-        covered += region.length;
-        assert.ok(document.ownerOf(region) !== undefined);
-        if (region.role === RegionRole.marker) markers += 1;
+    // Every line but the first begins after a line ending.
+    for (let line = 2; line <= concrete.lineCount; line += 1) {
+        const start = concrete.lineStart(line);
+        assert.ok(start > 0);
+        assert.equal(concrete.source[start - 1], "\n".charCodeAt(0));
     }
-    // The heading's closing `##`, the table's pipes and the definition's
-    // punctuation are in no literal anywhere in the semantic tree, and the line
-    // above says every byte of them is in a region here.
-    assert.equal(covered, concrete.source.length);
-    assert.ok(markers > 0);
-    assert.equal(document.ownerOf({ start: 0, length: 1, role: RegionRole.content, owner: [99] }), undefined);
-
-    // THE DESCENT IS THE C CHILD ORDER, not the value tree's named fields. A
-    // table holds its header BEFORE its rows, so byte 42 -- the `a` of the
-    // header row -- has to land on line 5 and not on line 7; a directive holds
-    // its LABEL before its content, so byte 106 -- the `B` of `Body` -- has to
-    // land on line 10 and not inside the label on line 9.
-    assert.deepEqual(ownerAt(document, 42).scope.start, { line: 5, column: 3 });
-    assert.deepEqual(ownerAt(document, 106).scope.start, { line: 10, column: 1 });
 
     // Nothing native is left: 300 more parses cannot move what was copied.
     for (let index = 0; index < 300; index += 1) Document.parse("# copy\n");
     assert.deepEqual(concrete.source, new TextEncoder().encode(source));
-    assert.equal(concrete.region(0).start, 0);
+    assert.equal(concrete.lineStart(3), 14);
 });
-
-/** The owner of the region the byte at `offset` belongs to. */
-function ownerAt(document, offset) {
-    for (let index = 0; index < document.concrete.regionCount; index += 1) {
-        const region = document.concrete.region(index);
-        if (offset >= region.start && offset < region.start + region.length) {
-            return document.ownerOf(region);
-        }
-    }
-    throw new Error(`no region holds byte ${offset}`);
-}

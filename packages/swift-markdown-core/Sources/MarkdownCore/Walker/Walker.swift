@@ -23,9 +23,9 @@ public struct Walker: Sendable {
     }
 }
 
-/// Every child of a node, in the order the C tree holds them -- which is
-/// what a region's owner path counts. `Walker` walks with it and
-/// `Document.owner(of:)` descends with it.
+/// Every child of a node, in the order the C tree holds them. `Walker` walks
+/// with it, so a walk and a hand-written descent cannot disagree about what a
+/// node's children are.
 struct ChildrenVisitor: MarkupVisitor {
     mutating func visit(_ node: Document) -> [any Markup] { node.content }
 

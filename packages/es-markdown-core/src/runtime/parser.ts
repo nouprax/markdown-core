@@ -1,7 +1,4 @@
 import { Concrete } from "../concrete.js";
-import type { Region } from "../concrete.js";
-import type { Markup } from "../model/markup.js";
-import { children } from "../walker.js";
 import type { Document } from "../model/document.js";
 import { ParseError } from "../parse-error.js";
 import type { ParseOptions } from "../parse-options.js";
@@ -70,41 +67,21 @@ export function parseDocument(source: string, parseOptions: ParseOptions = {}): 
  * of any size.
  */
 /**
- * The root, given its concrete view and the descent that reads it.
+ * The root, given the source its scopes are counted against.
  *
- * `concrete` is data and enumerates; `ownerOf` is behaviour and does not, the
- * same way `dump` does not -- a consumer that spreads a document gets its
- * fields and not its methods.
+ * Defined ON the decoded root rather than spread into a new object: `dump` is
+ * not enumerable, and a spread would leave it behind. `concrete` is data and
+ * enumerates.
  */
-function withConcrete(root: Omit<Document, "concrete" | "ownerOf">, concrete: Concrete): Document {
-    // Defined ON the decoded root rather than spread into a new object: `dump`
-    // is not enumerable, and a spread would leave it behind.
+function withConcrete(root: Omit<Document, "concrete">, concrete: Concrete): Document {
     const document = root as Document;
     Object.defineProperty(document, "concrete", { enumerable: true, value: concrete });
-    Object.defineProperty(document, "ownerOf", {
-        enumerable: false,
-        value: (region: Region): Markup | undefined => ownerOf(document, region)
-    });
     return document;
-}
-
-/** The descent a region's owner path names, from the root it was taken in. */
-function ownerOf(document: Document, region: Region): Markup | undefined {
-    let node: Markup = document;
-    for (const step of region.owner) {
-        const descendants = children(node);
-        if (step < 0 || step >= descendants.length) return undefined;
-        node = descendants[step]!;
-    }
-    return node;
 }
 
 function readConcrete(documentPointer: number): Concrete {
     const viewOutput = allocate(Uint32Array.BYTES_PER_ELEMENT * 2);
     let lineOutput = 0;
-    let regionOutput = 0;
-    let offsetOutput = 0;
-    let pathOutput = 0;
     try {
         native.es_document_source(documentPointer, viewOutput, viewOutput + 4);
         const sourcePointer = dataView().getUint32(viewOutput, true);
@@ -116,26 +93,9 @@ function readConcrete(documentPointer: number): Concrete {
         native.es_document_line_starts(documentPointer, lineOutput);
         const lineStarts = new Uint32Array(native.memory.buffer, lineOutput, lineCount).slice();
 
-        const regionCount = native.es_document_region_count(documentPointer);
-        regionOutput = allocate(Math.max(regionCount * 3, 1) * Uint32Array.BYTES_PER_ELEMENT);
-        native.es_document_regions(documentPointer, regionOutput);
-        const regions = new Uint32Array(native.memory.buffer, regionOutput, regionCount * 3).slice();
-
-        // Sizing first: the same call fills the offsets it refuses to write
-        // paths for, so the last one is how many the paths need.
-        offsetOutput = allocate((regionCount + 1) * Uint32Array.BYTES_PER_ELEMENT);
-        native.es_document_owner_paths(documentPointer, 0, 0, offsetOutput, regionCount + 1);
-        const ownerOffsets = new Uint32Array(native.memory.buffer, offsetOutput, regionCount + 1).slice();
-        const pathLength = ownerOffsets[regionCount]!;
-        pathOutput = allocate(Math.max(pathLength, 1) * Int32Array.BYTES_PER_ELEMENT);
-        if (!native.es_document_owner_paths(documentPointer, pathOutput, pathLength, offsetOutput, regionCount + 1)) {
-            throw new ParseError("internal", "the concrete view has an owner outside the semantic tree");
-        }
-        const ownerPaths = new Int32Array(native.memory.buffer, pathOutput, pathLength).slice();
-
-        return new Concrete(source, lineStarts, regions, ownerPaths, ownerOffsets);
+        return new Concrete(source, lineStarts);
     } finally {
-        for (const pointer of [pathOutput, offsetOutput, regionOutput, lineOutput, viewOutput]) {
+        for (const pointer of [lineOutput, viewOutput]) {
             if (pointer) native.free(pointer);
         }
     }

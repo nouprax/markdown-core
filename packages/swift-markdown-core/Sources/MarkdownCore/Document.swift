@@ -101,26 +101,6 @@ public struct Document: Markup {
 }
 
 extension Document {
-    /// The node a region's ``Region/owner`` path names, or `nil` when the path
-    /// names no node in this tree.
-    ///
-    /// The path counts children the way the C tree holds them, and the value
-    /// tree splits some of those runs into named fields -- a directive's label
-    /// and its content, a table's header and its rows -- so descending it is
-    /// not `content[i]` at every step. This is the descent.
-    public func owner(of region: Region) -> (any Markup)? {
-        var node: any Markup = self
-        for step in region.owner {
-            var visitor = ChildrenVisitor()
-            let children = node.accept(&visitor)
-            guard step >= 0, Int(step) < children.count else { return nil }
-            node = children[Int(step)]
-        }
-        return node
-    }
-}
-
-extension Document {
     init(from node: OpaquePointer, concrete: Concrete) {
         self.init(scope: Self.scope(from: node), content: Self.children(from: node), concrete: concrete)
     }

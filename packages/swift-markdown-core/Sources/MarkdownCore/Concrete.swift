@@ -1,79 +1,27 @@
 import MarkdownCoreC
 
-/// What a region's bytes are to their owner.
-public enum RegionRole: Int32, Sendable, Hashable {
-    /// Syntax the owner is made of: a fence, a bullet, a heading's `#`s.
-    case marker = 0
-    /// Bytes the owner's meaning is made of.
-    case content = 1
-    /// Bytes the owner consumed and kept nothing of.
-    case discarded = 2
-}
-
-/// One region of the concrete view: a byte range of the normalized source with
-/// exactly one owner and exactly one role.
+/// The text a ``Markup/scope``'s line and column numbers are counted against.
 ///
-/// `start` and `length` index ``Concrete/source``, which is bytes and not a
-/// `String`: the parser counts positions in bytes, and a `String` index would
-/// disagree with it on the first character outside ASCII.
-public struct Region: Sendable, Hashable {
-    public let start: Int
-    public let length: Int
-    public let role: RegionRole
-    /// The owner, as the path of child indices from the semantic root: `[]` is
-    /// the root and `[0, 2]` is the third child of the first.
-    ///
-    /// A pointer names a node only while the native handle is alive, and this
-    /// value type outlives it, so the path is the locator rather than the node.
-    public let owner: [Int32]
-
-    public init(start: Int, length: Int, role: RegionRole, owner: [Int32]) {
-        self.start = start
-        self.length = length
-        self.role = role
-        self.owner = owner
-    }
-}
-
-/// The concrete view of a parse: the normalized source, its line index, and
-/// every region of it.
-///
-/// Total, and that is the point of the pair: every byte of ``source`` lies in
-/// exactly one region and every region has exactly one owner in the semantic
-/// tree, so nothing the parser read is reachable through neither view.
-///
-/// The regions are stored as parallel arrays and a ``Region`` is built when it
-/// is asked for. Measured on this repository's own design document -- one
-/// region per 17 bytes of prose -- a stored `Region` per region costs several
-/// times the source it describes, and the arrays cost about 25 bytes each.
+/// A scope is a pair of BOUNDARIES — it says which line-and-column range an
+/// element occupies, and no substring is taken with it. Those numbers are not
+/// counted against the string you passed to ``Document/parse(_:options:)``:
+/// they are counted against the NORMALIZED source, which is what this carries,
+/// and the two differ wherever the input held a NUL.
 public struct Concrete: Sendable, Hashable {
-    /// The NORMALIZED source: UTF-8 validated, NUL replaced, every line ending
-    /// a single `\n`. Not the bytes the caller passed in.
+    /// The NORMALIZED source: UTF-8 as fed, every NUL replaced by the three
+    /// bytes of U+FFFD, every line ending a single `\n` and every line having
+    /// one. Not the bytes the caller passed in.
+    ///
+    /// Bytes and not a `String`: the parser counts columns in bytes, and a
+    /// `String` index would disagree with it on the first character outside
+    /// ASCII.
     public let source: [UInt8]
 
     private let lineStarts: [Int32]
-    private let regionStarts: [Int32]
-    private let regionLengths: [Int32]
-    private let regionRoles: [UInt8]
-    private let ownerPaths: [Int32]
-    private let ownerOffsets: [UInt32]
 
-    init(
-        source: [UInt8],
-        lineStarts: [Int32],
-        regionStarts: [Int32],
-        regionLengths: [Int32],
-        regionRoles: [UInt8],
-        ownerPaths: [Int32],
-        ownerOffsets: [UInt32]
-    ) {
+    init(source: [UInt8], lineStarts: [Int32]) {
         self.source = source
         self.lineStarts = lineStarts
-        self.regionStarts = regionStarts
-        self.regionLengths = regionLengths
-        self.regionRoles = regionRoles
-        self.ownerPaths = ownerPaths
-        self.ownerOffsets = ownerOffsets
     }
 
     /// How many lines the normalized source has.
@@ -85,32 +33,15 @@ public struct Concrete: Sendable, Hashable {
         guard line >= 1, line <= lineStarts.count else { return nil }
         return Int(lineStarts[line - 1])
     }
-
-    /// How many regions the view has. They are in source order.
-    public var regionCount: Int { regionStarts.count }
-
-    /// The region at `index`, counting from 0, or `nil` when there is none.
-    public func region(at index: Int) -> Region? {
-        guard index >= 0, index < regionStarts.count else { return nil }
-        let pathFrom = Int(ownerOffsets[index])
-        let pathTo = Int(ownerOffsets[index + 1])
-        return Region(
-            start: Int(regionStarts[index]),
-            length: Int(regionLengths[index]),
-            role: RegionRole(rawValue: Int32(regionRoles[index])) ?? .content,
-            owner: Array(ownerPaths[pathFrom..<pathTo])
-        )
-    }
 }
 
 extension Concrete {
-    /// Copies the whole view out of the native handle, which the caller frees
-    /// as soon as this returns.
+    /// Copies the source and its index out of the native handle, which the
+    /// caller frees as soon as this returns.
     init?(from document: OpaquePointer) {
         let text = markdown_core_document_source(document)
         guard let data = text.data else { return nil }
         let lineCount = markdown_core_document_line_count(document)
-        let regionCount = markdown_core_document_region_count(document)
 
         var lineStarts = [Int32]()
         lineStarts.reserveCapacity(lineCount)
@@ -122,37 +53,6 @@ extension Concrete {
             line += 1
         }
 
-        var starts = [Int32](repeating: 0, count: regionCount)
-        var lengths = [Int32](repeating: 0, count: regionCount)
-        var roles = [UInt8](repeating: 0, count: regionCount)
-        for index in 0..<regionCount {
-            var region = markdown_core_region()
-            guard markdown_core_document_region_at(document, index, &region) else { return nil }
-            starts[index] = Int32(region.start)
-            lengths[index] = Int32(region.length)
-            roles[index] = UInt8(region.role.rawValue)
-        }
-
-        // Sizing first: the same call fills the offsets it refuses to write
-        // paths for, so `offsets[regionCount]` is how many the paths need.
-        var offsets = [UInt32](repeating: 0, count: regionCount + 1)
-        _ = markdown_core_document_region_owner_paths(document, nil, 0, &offsets, offsets.count)
-        var paths = [Int32](repeating: 0, count: Int(offsets[regionCount]))
-        let filled = paths.withUnsafeMutableBufferPointer { buffer in
-            markdown_core_document_region_owner_paths(
-                document, buffer.baseAddress, buffer.count, &offsets, offsets.count
-            )
-        }
-        guard filled else { return nil }
-
-        self.init(
-            source: Array(UnsafeBufferPointer(start: data, count: text.length)),
-            lineStarts: lineStarts,
-            regionStarts: starts,
-            regionLengths: lengths,
-            regionRoles: roles,
-            ownerPaths: paths,
-            ownerOffsets: offsets
-        )
+        self.init(source: Array(UnsafeBufferPointer(start: data, count: text.length)), lineStarts: lineStarts)
     }
 }

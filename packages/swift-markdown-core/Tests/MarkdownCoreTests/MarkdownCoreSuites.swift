@@ -53,12 +53,12 @@ import Testing
 }
 
 @Suite("concrete") struct ConcreteSuite {
-    /// The requirement's own sentence: the concrete view survives being copied
-    /// into value types and the handle being freed. `parse` frees it before it
-    /// returns, so everything below reads a view that has no native anything
-    /// left behind it.
-    @Test("the concrete view is total and its owners resolve after native release")
-    func twoViews() throws {
+    /// The source a scope's coordinates are counted against, copied into value
+    /// types and read after the native handle is gone. `parse` frees the handle
+    /// before it returns, so everything below reads a value with no native
+    /// anything left behind it.
+    @Test("the normalized source and its line index survive the native release")
+    func sourceAndLines() throws {
         let source = """
             # Heading ##
 
@@ -85,48 +85,18 @@ import Testing
         #expect(concrete.lineStart(3) == 14)
         #expect(concrete.lineStart(0) == nil)
         #expect(concrete.lineStart(16) == nil)
-        #expect(concrete.region(at: -1) == nil)
-        #expect(concrete.region(at: concrete.regionCount) == nil)
 
-        var covered = 0
-        var resolved = 0
-        var markers = 0
-        for index in 0..<concrete.regionCount {
-            let region = try #require(concrete.region(at: index))
-            #expect(region.start == covered)
-            #expect(region.length > 0)
-            covered += region.length
-            if document.owner(of: region) != nil { resolved += 1 }
-            if region.role == .marker { markers += 1 }
+        // Every line but the first begins after a line ending.
+        for line in 2...concrete.lineCount {
+            let start = try #require(concrete.lineStart(line))
+            #expect(start > 0)
+            #expect(concrete.source[start - 1] == UInt8(ascii: "\n"))
         }
-        #expect(covered == concrete.source.count)
-        #expect(resolved == concrete.regionCount)
-        // The heading's closing `##`, the table's pipes and the definition's
-        // punctuation are in no literal anywhere in the semantic tree, and the
-        // count above says every byte of them is in a region here.
-        #expect(markers > 0)
-        #expect(document.owner(of: Region(start: 0, length: 1, role: .content, owner: [99])) == nil)
 
-        // THE DESCENT IS THE C CHILD ORDER, not the value tree's named fields.
-        // A table holds its header BEFORE its rows, so byte 42 -- the `a` of
-        // the header row -- has to land on line 5 and not on line 7.
-        #expect(owner(of: 42, in: document)?.scope.start == Position(line: 5, column: 3))
-        // A directive holds its LABEL before its content, so byte 106 -- the
-        // `B` of `Body` -- has to land on line 10 and not inside the label on
-        // line 9.
-        let body = try #require(owner(of: 106, in: document))
-        #expect(body.scope.start == Position(line: 10, column: 1))
-    }
-
-    /// The owner of the region the byte at `offset` belongs to.
-    private func owner(of offset: Int, in document: Document) -> (any Markup)? {
-        for index in 0..<document.concrete.regionCount {
-            guard let region = document.concrete.region(at: index) else { return nil }
-            if offset >= region.start, offset < region.start + region.length {
-                return document.owner(of: region)
-            }
-        }
-        return nil
+        // Copying is not borrowing: 300 further parses must not disturb it.
+        for _ in 0..<300 { _ = try Document.parse("# copy\n") }
+        #expect(concrete.source == Array(source.utf8))
+        #expect(concrete.lineStart(3) == 14)
     }
 }
 

@@ -10,11 +10,11 @@
  * both ways over the same bytes.
  *
  *   D1  NEUTRALITY, and it is the whole of "a lost diagnostic is not a lost
- *       parse" that a corpus can see: for every input the semantic tree AND
- *       the concrete records are byte-identical with diagnostics on and off.
- *       Checked by running `--concrete` twice — which prints the record set
- *       and then the tree — and requiring the two outputs to differ by exactly
- *       the diagnostic rows. An engine that reported a diagnostic by changing
+ *       parse" that a corpus can see: for every input the semantic tree AND the bytes
+ *       its scopes index are byte-identical with diagnostics on and off.
+ *       Checked by running `--source-index` twice — which prints the source
+ *       size, the line index and then the tree — and requiring the two outputs
+ *       to differ by exactly the diagnostic rows. An engine that reported a diagnostic by changing
  *       what it built would fail here and nowhere else.
  *
  *   D2  EVERY SCOPE IS A PLACE in the normalized source: both ends name a real
@@ -58,14 +58,14 @@ const HEADER = /^diagnostics count=(\d+)$/;
 
 /**
  * The byte length of each line of the normalized source, EXCLUDING its line
- * ending — read out of the `--concrete` header and line index rather than
+ * ending — read out of the `--source-index` header and line index rather than
  * recomputed from the input, because the source a diagnostic's scope indexes
  * is the normalized one and the two differ wherever a NUL or a CRLF was.
  */
-function lineContentLengths(concreteText) {
-    const lines = concreteText.split("\n");
-    const header = /^concrete source=(\d+) lines=(\d+) regions=(\d+)$/.exec(lines[0]);
-    if (header === null) throw new Error("--concrete did not begin with its header");
+function lineContentLengths(indexText) {
+    const lines = indexText.split("\n");
+    const header = /^concrete source=(\d+) lines=(\d+)$/.exec(lines[0]);
+    if (header === null) throw new Error("--source-index did not begin with its header");
     const size = Number(header[1]);
     const offsets = [];
     for (const line of lines.slice(1)) {
@@ -81,7 +81,7 @@ function lineContentLengths(concreteText) {
     });
 }
 
-/** Split a `--concrete --diagnostics` run into its diagnostic rows and the rest. */
+/** Split a `--source-index --diagnostics` run into its diagnostic rows and the rest. */
 function partition(text) {
     const kept = [];
     const rows = [];
@@ -110,8 +110,8 @@ let inversions = 0;
 
 for (const example of fixtureCorpus(root)) {
     examples += 1;
-    const silent = runBinary(ours, ["--concrete"], example.input);
-    const loud = runBinary(ours, ["--concrete", "--diagnostics"], example.input);
+    const silent = runBinary(ours, ["--source-index"], example.input);
+    const loud = runBinary(ours, ["--source-index", "--diagnostics"], example.input);
     const { rest, rows } = partition(loud);
 
     // D1.
@@ -218,5 +218,5 @@ if (verbose) {
 }
 process.stdout.write(
     `diagnostics: ${String(total)} over ${String(examples)} examples, ${String(perCode.size)} of 8 codes exercised, ` +
-        `${String(inversions)} out of source order — the tree and the records are byte-identical either way.\n`
+        `${String(inversions)} out of source order — the tree and the source index are byte-identical either way.\n`
 );

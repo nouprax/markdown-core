@@ -40,7 +40,7 @@ void print_usage(void) {
     printf("  --smart           Use smart punctuation\n");
     printf("  --validate-utf8   Replace UTF-8 invalid sequences with U+FFFD\n");
     printf("  --strip-html-comments Strip HTML comment nodes from the parsed AST\n"
-           "  --concrete        Print the concrete record set before the tree\n"
+           "  --source-index    Print the normalized source size and line index before the tree\n"
            "  --diagnostics     Record diagnostics and print them before the tree\n");
     printf("  --extension, -e EXTENSION_NAME  Specify an extension name to use\n");
     printf("  --list-extensions               List available extensions and quit\n");
@@ -51,10 +51,10 @@ void print_usage(void) {
 }
 
 static bool print_document(markdown_core_node *document) {
-    /* The CLI dumps the SEMANTIC view only; its concrete view is printed
-     * straight from the parser by `--concrete`, so the field is zeroed here
-     * rather than filled and `markdown_core_document_free` is never called on
-     * this stack value. */
+    /* The CLI dumps the tree only; the source and its line index are printed
+     * straight from the parser by `--source-index`, so the fields are zeroed
+     * here rather than filled and `markdown_core_document_free` is never called
+     * on this stack value. */
     markdown_core_document facade_document = {document, {0}, {0}};
     markdown_core_error *error = NULL;
     uint8_t *dump = NULL;
@@ -88,7 +88,7 @@ int main(int argc, char *argv[]) {
     int *files;
     char buffer[4096];
     markdown_core_parser *parser = NULL;
-    bool concrete = false;
+    bool source_index = false;
     bool diagnostics_wanted = false;
     markdown_core_diagnostics diagnostics = {0};
     size_t bytes;
@@ -157,16 +157,14 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Unknown profile %s\n", argv[i]);
                 goto failure;
             }
-        } else if (strcmp(argv[i], "--concrete") == 0) {
-            /* Print the CONCRETE RECORD SET instead of the tree: the
-             * normalized source's line index and every region, in source
-             * order, with each region's owner named by tree path. There is no
-             * public reader yet -- requirement 12 is where a document keeps
-             * this view -- so the only consumer is the gate that checks
-             * requirement 11a's four laws over the fixture corpus. */
-            concrete = true;
+        } else if (strcmp(argv[i], "--source-index") == 0) {
+            /* What a scope's coordinates index INTO: the size of the
+             * normalized source and where each of its lines begins. The
+             * document publishes both; this prints them so a gate can check
+             * that recording diagnostics changes neither. */
+            source_index = true;
         } else if (strcmp(argv[i], "--diagnostics") == 0) {
-            /* REQUIREMENT 13. Unlike `--concrete`, which only asks `finish` to
+            /* REQUIREMENT 13. Unlike `--source-index`, which only asks `finish` to
              * write what it already has, this has to be asked for BEFORE the
              * first byte is fed: recording happens as the lines are read, and
              * the law of the step is that a run without it builds the same
@@ -279,7 +277,7 @@ int main(int argc, char *argv[]) {
     }
 #endif
 
-    if (concrete) {
+    if (source_index) {
         parser->concrete_out = stdout;
     }
     document = markdown_core_parser_finish(parser);

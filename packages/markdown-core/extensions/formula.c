@@ -573,11 +573,6 @@ static delimiter *insert_formula(const markdown_core_syntax_extension *extension
          * the bytes between them are its content. `free_nodes_through` below
          * frees EVERY node the span was built from, so without these claims the
          * whole construct would fall back to the block. */
-        markdown_core_parser_claim_inline(parser, formula, body_start - markdown_core_delimiter_length(opener),
-                                          body_start, MARKDOWN_CORE_REGION_ROLE_MARKER);
-        markdown_core_parser_claim_inline(parser, formula, body_start, body_end, MARKDOWN_CORE_REGION_ROLE_CONTENT);
-        markdown_core_parser_claim_inline(parser, formula, body_end, markdown_core_delimiter_position(closer),
-                                          MARKDOWN_CORE_REGION_ROLE_MARKER);
         free_nodes_through(opener_node, closer_node);
     } else {
         markdown_core_node_free(formula);
@@ -653,7 +648,6 @@ static int replace_with_formula_block(const markdown_core_syntax_extension *exte
     if (markdown_core_node_replace(oldnode, formula)) {
         /* The bytes did not change hands, the node did. Said before the free,
          * because after it there is nothing left to name. */
-        markdown_core_parser_transfer_regions(parser, oldnode, formula);
         markdown_core_node_free(oldnode);
         return 1;
     }

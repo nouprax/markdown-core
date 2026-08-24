@@ -29,9 +29,9 @@ export class Walker {
     }
 }
 
-/** Every child of a node, in the order the C tree holds them -- which is what
- * a region's owner path counts. `Walker` walks with it and
- * `Document.ownerOf` descends with it. */
+/** Every child of a node, in the order the C tree holds them. `Walker` walks
+ * with it, so a walk and a hand-written descent cannot disagree about what a
+ * node's children are. */
 export function children(node: Markup): readonly Markup[] {
     switch (node.kind) {
         case "document":

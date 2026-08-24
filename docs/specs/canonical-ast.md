@@ -174,10 +174,10 @@ validates the owning edge: the value in `Table.header` is true and values in
 ## ParseOptions
 
 `Document.parse(source, options = ParseOptions.default)` is the only parsing
-entry point. A parse is TWO TOTAL VIEWS: the `Document` this table describes,
-and `Document.concrete` — the normalized source with every byte of it in exactly
-one region. This table is the semantic view's contract; the concrete view has no
-kinds and no fields of its own, and `concrete` is not a dumped field. `ParseOptions` is immutable and contains exactly these booleans:
+entry point. A parse is the `Document` this table describes,
+and `Document.concrete` — the normalized source its scopes are counted against,
+and that source's line index. This table is the AST's contract; `concrete` has no
+kinds and no fields of its own, and it is not a dumped field. `ParseOptions` is immutable and contains exactly these booleans:
 
 | Field | Default |
 | --- | --- |

@@ -442,29 +442,6 @@ int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, markd
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_core_node *node, int line, int column);
 
-MARKDOWN_CORE_EXPORT
-void markdown_core_parser_transfer_regions(markdown_core_parser *parser, markdown_core_node *from,
-                                           markdown_core_node *to);
-
-/** Requirement 11b: claim the bytes [`from`, `to`) of the block currently being
- * inline-parsed for `owner`, in role `role` (0 MARKER, 1 CONTENT).
- *
- * The offsets are into the OWNING BLOCK'S CONTENT BUFFER, not the source: the
- * inline phase reads that buffer and the content-to-source map is what turns an
- * offset in it into source bytes. Claims accumulate and are resolved when the
- * block's inlines are finished, LATER CLAIMS WINNING over earlier ones for any
- * byte they both name -- which is what lets a `*` be claimed as a `Text` when it
- * is read and re-claimed as an `Emphasis`'s marker when it turns out to open
- * one.
- *
- * A byte no claim names stays the BLOCK'S, in role CONTENT, which is the other
- * half of 11b's law: every byte of a block's content belongs to exactly one
- * inline node or to the block itself.
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_parser_claim_inline(markdown_core_parser *parser, markdown_core_node *owner, bufsize_t from,
-                                       bufsize_t to, int role);
-
 /** Name the source line and BYTE column, both counted from 1, of the byte at
  * 'content_offset' in 'node''s content buffer, and return 1. Returns 0,
  * leaving both outputs untouched, for a node that never took a line.

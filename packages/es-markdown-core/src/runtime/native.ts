@@ -8,15 +8,6 @@ export interface NativeExports extends WebAssembly.Exports {
     es_document_source(document: number, dataOutput: number, lengthOutput: number): void;
     es_document_line_count(document: number): number;
     es_document_line_starts(document: number, output: number): void;
-    es_document_region_count(document: number): number;
-    es_document_regions(document: number, output: number): void;
-    es_document_owner_paths(
-        document: number,
-        paths: number,
-        pathsCapacity: number,
-        offsets: number,
-        offsetsCapacity: number
-    ): number;
     es_error_code(error: number): number;
     es_error_free(error: number): void;
     es_node_kind(node: number): number;

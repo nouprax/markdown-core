@@ -70,30 +70,6 @@ void es_document_line_starts(const markdown_core_document *document, uint32_t *o
     }
 }
 
-size_t es_document_region_count(const markdown_core_document *document) {
-    return markdown_core_document_region_count(document);
-}
-
-/* start, length and role for every region, in source order: three uint32 each. */
-void es_document_regions(const markdown_core_document *document, uint32_t *out) {
-    size_t count = markdown_core_document_region_count(document);
-    size_t index;
-    for (index = 0; index < count; index++) {
-        markdown_core_region region;
-        if (!markdown_core_document_region_at(document, index, &region)) {
-            return;
-        }
-        out[index * 3] = (uint32_t)region.start;
-        out[index * 3 + 1] = (uint32_t)region.length;
-        out[index * 3 + 2] = (uint32_t)region.role;
-    }
-}
-
-int32_t es_document_owner_paths(const markdown_core_document *document, int32_t *paths, size_t paths_capacity,
-                                uint32_t *offsets, size_t offsets_capacity) {
-    return markdown_core_document_region_owner_paths(document, paths, paths_capacity, offsets, offsets_capacity);
-}
-
 int32_t es_error_code(const markdown_core_error *error) { return (int32_t)markdown_core_error_get_code(error); }
 
 void es_error_free(markdown_core_error *error) { markdown_core_error_free(error); }

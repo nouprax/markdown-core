@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), **11a** (§4.14.11a, §4.14.11a2), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), **11b** (§4.14.11b), **11c** (§4.14.11c), **12.1** (§4.14.12a), **12.2's locator** (§4.14.12b), **`end-at-line-ending` CLOSED** (§4.14.11c2), **13.1** (§4.14.13a) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), ~~**11a**~~ (RETIRED, §4.14.11d), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), ~~**11b**~~ ~~**11c**~~ (RETIRED with 11a, §4.14.11d), **12.1** (§4.14.12a), **12.2's locator** (§4.14.12b), **`end-at-line-ending` CLOSED** (§4.14.11c2), **13.1** (§4.14.13a) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 13.2** (the three bindings), then `14 15C`. **13.1 IS LANDED** (§4.14.13a): eight diagnostic codes, the rule that decided them (*a diagnostic exists exactly where the two total views cannot say what happened*), and **the owner's 2026-08-24 ruling that there is NO FALLBACK ON OOM**, which struck row 13's truncation-marker clause and deleted the sweep that had been built for it. **What the ruling opens is measured and named** in §4.14.13a: 10 of 501 injected failures still succeed losslessly, and the step that makes them terminal owns the gate that replaces `fallback_runner`. **STEP 12 IS LANDED WHOLE** (§4.14.12a–12c): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 and M33 both read 69/69 there and fail `conformance` — a region names its owner by a path that survives being copied, `markdown_core_document_region_owner_paths` answers for every region in **1.13 ms against the 96.8 ms the singular call costs in a loop**, and all three bindings carry `concrete` and `parse` on `Document` itself. **The owner ruled the surface and I read it wrong twice**: the semver question killed my *reason*, not reading 2, and §4.14.12c records both misreadings. **`specs/positions/places.json` IS EMPTY** (§4.14.11c2). **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), **Step 9b** whole (§4.14.9b1–9b2) — the definition and both references are nodes, **D9 and D30 closed**, the **mdast backlog EMPTY** — **Step 11b** (§4.14.11b), which added L5 and L6 because L1–L4 are all true of the day before it, and **Step 11c** (§4.14.11c). Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 14**, then `15C`. **11a, 11b and 11c ARE RETIRED** (§4.14.11d) by owner ruling of 2026-08-24: the requirement is *"take an element and find its way back to the source"*, `node.scope` answers it, and the record set answered the inverse question with no consumer anywhere in this file. **−1,803 lines of C and NOT ONE GOLDEN ROW MOVED for it.** The same ruling settled what a scope IS — **a pair of BOUNDARIES, not a byte range** — which deleted `S_end_at_last_byte_taken`, moved **71 golden rows** back to cmark-gfm's shape, took `places`' zero-column rule and Q40's exception with it, and took `containment` 8 → 9 with a row upstream reproduces byte for byte. 13.2's binding work landed inside it, so what 13 still owes is only the `markdown_core_error_get_scope` deletion. **13.1 IS LANDED** (§4.14.13a): eight diagnostic codes, the rule that decided them (*a diagnostic exists exactly where the two total views cannot say what happened*), and **the owner's 2026-08-24 ruling that there is NO FALLBACK ON OOM**, which struck row 13's truncation-marker clause and deleted the sweep that had been built for it. **What the ruling opens is measured and named** in §4.14.13a: 10 of 501 injected failures still succeed losslessly, and the step that makes them terminal owns the gate that replaces `fallback_runner`. **STEP 12 IS LANDED WHOLE** (§4.14.12a–12c): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 and M33 both read 69/69 there and fail `conformance` — a region names its owner by a path that survives being copied, `markdown_core_document_region_owner_paths` answers for every region in **1.13 ms against the 96.8 ms the singular call costs in a loop**, and all three bindings carry `concrete` and `parse` on `Document` itself. **The owner ruled the surface and I read it wrong twice**: the semver question killed my *reason*, not reading 2, and §4.14.12c records both misreadings. **`specs/positions/places.json` IS EMPTY** (§4.14.11c2). **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), **Step 9b** whole (§4.14.9b1–9b2) — the definition and both references are nodes, **D9 and D30 closed**, the **mdast backlog EMPTY** — **Step 11b** (§4.14.11b), which added L5 and L6 because L1–L4 are all true of the day before it, and **Step 11c** (§4.14.11c). Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -1110,12 +1110,12 @@ Seven defects that this restatement found by measurement are numbered **D18–D2
 | **7** | **Deliverable #1.** The directive grammar of micromark-extension-directive 4.0.0 and mdast-util-directive 3.1.0, applied to **code points**: name rules, one/two/three-colon forms, `#`/`.` shorthand, `class` accumulation, last-value-wins elsewhere, and **degradation** — a malformed label or attribute block leaves the directive standing and the punctuation as prose. `DirectiveLabel` is a visible node whose scope spans its brackets. A container's closing fence **closes it and every block open inside it** (D21). A directive that consumes a span containing a line ending leaves the subject's position honest (D22). Attributes are an ordered key/value sequence; the JSON round-trip is deleted. | ~530 written · **+150 net** | 3. 15A (this is the first step that changes the node inventory). 0a.6's newline-adjust mechanism is live, or Step 7 lands it (D22). |
 | ✅ **10** | For any block node with a content buffer and any byte offset within it, the engine can name the **source line and column** of that byte. Every node synthesized from a content offset carries a position that is a place: the split-off table lead, its inline children, the recovered header row and cells, and any paragraph whose front was consumed (D18). The lead keeps its authored spelling. | ~110 | **Nothing.** Every mechanism exists at the baseline; both consumers run while the marks would be live. |
 | ✅ **9a** | A footnote definition is a block node at the byte where its `[` was written, in the container it was written in, and it **stays there**. No pass runs after the parse that moves, reorders, drops or re-parents any node. Every definition the author wrote is in the tree. The reference map never owns a node. A reference carries **the label the author wrote**; numbering is derived, not stored. A `[…]` is a footnote call only if it opens with a **raw** `^` and the document defines that label; otherwise the brackets take the ordinary unmatched-`[` path and nothing frees children core already built. | **+90 / −290** | 0a.2's D10 fix, so a reference's label is sliced from the parser's own buffer. |
-| ✅ **11a** | A parse produces, beside the tree, a **concrete record set** in which every block-level byte of the normalized source is owned by exactly one node, in exactly one of three roles (`MARKER`, `CONTENT`, `DISCARDED`). Three laws hold over every corpus: **L1** the regions on a line tile it exactly; **L2** every region lies inside its owner's scope and descendants lie inside their ancestor's `CONTENT`; **L3** concatenating the regions in order reproduces the normalized source byte for byte. **L4 — added by the owner before the step was written, and the reason the other three are not enough: the records are complete for lines 1…N once line N has been fed.** The first three constrain the RESULT and not when it is built, so a close-time construction satisfies all of them and recreates §11.5's quadratic cheat one level down. The document **retains** that normalized source and its line index. A region may be *refined* — split, never moved, never deleted — which is how extensions capture without breaking L1. | ~600 + ~350 gate | 0a (an L3 gate written over the unfixed engine would encode D10/D11's loss as expected). 5 (no node without source bytes). 10 (the content-to-source marks 11a retains — **Q22**). |
-| ✅ **8** | **The inline position model.** An inline node's position is a *projection* of the byte range it covers, not a counter each handler maintains: one `seek` primitive, one newline index, offsets stored on the node, and one constructor for a delimiter run. `adjust_subj_node_newlines`, `count_newlines`, `subj->column_offset`, `subj->block_offset` and the three hand-written `make_delimiter_text` copies cease to exist. Subsumes D3, D7, D12 and D19/D20/D23 by construction. | **+330 / −245** | 3 (rules exist). 6, 7 (the grammars are settled, so the extensions are rewritten once). 11a (the retained `CONTENT` records are what make the projection exact on continuation lines). |
+| ~~**11a**~~ | ~~A parse produces, beside the tree, a **concrete record set** in which every block-level byte is owned by exactly one node, in one of three roles.~~ **RETIRED 2026-08-24 BY OWNER RULING**, together with 11b and 11c. The requirement is *"a consumer maps an element back to the source it came from"*, and a node's `scope` answers it; the record set answers the INVERSE — which element owns a given byte — and nothing in this document ever named a consumer for that. Q24's recorded reason (*"diagnostics have nowhere to point without it"*) was measured FALSE at 13.1: not one diagnostic reads a region. What survives is the document RETAINING the normalized source and its line index (Q23), because a scope's line and column are counted against those bytes and not against the caller's. §4.14.11d records the deletion, its measurements, and the two circular arguments that had been defending it. | ~~600 + 350 gate~~ **−1,803** | — |
+| ✅ **8** | **The inline position model.** An inline node's position is a *projection* of the byte range it covers, not a counter each handler maintains: one `seek` primitive, one newline index, offsets stored on the node, and one constructor for a delimiter run. `adjust_subj_node_newlines`, `count_newlines`, `subj->column_offset`, `subj->block_offset` and the three hand-written `make_delimiter_text` copies cease to exist. Subsumes D3, D7, D12 and D19/D20/D23 by construction. | **+330 / −245** | 3 (rules exist). 6, 7 (the grammars are settled, so the extensions are rewritten once). |
 | **9b** | One reference model for both kinds. A link reference definition is a **node** at the byte where its `[` was written. Five kinds carry an **association**: `label` as authored, `identifier` as the match key, neither derivable from the other. A reference holds **no destination** — resolution is the consumer's, and is derivable as "group by identifier, first in document order". The map holds no resource, so D9's expansion budget has nothing to charge and is deleted. The dump and the facade speak one vocabulary (`label=`, not `id=`). | **+450 / −180** C | 9a (the tree is source-ordered and the winner is derivable from it). 10 (a harvested definition needs a source position and the surviving paragraph needs rebasing). 15A. |
-| **11b** | Every byte of every block's `CONTENT` region is owned by exactly one inline node or by the block itself, and inline records are expressed in **source** coordinates, not content coordinates. Delimiter runs, brackets, escapes, entities, destinations, titles and smart-punctuation substitutions are all `MARKER`; the text between is `CONTENT`. | ~500 + ~200 gate | 11a. 8 (a position is a projection of a range, so the lift has one answer, not two). |
-| **11c** | A reference definition and a footnote definition own their source bytes, so the block partition is total for real documents. A definition that lost a duplicate-label contest keeps its bytes. | ~150 | 9b (a node exists to own them). 11a (refinement exists and cannot move a boundary). |
-| **12** | The public surface presents **one parse under two total views** — `document.semantic` (policy applied, may omit bytes) and `document.concrete` (the normalized source, its line index, and every node's regions; omits nothing) — and states the law that binds them: every byte is in exactly one region and every region has exactly one owner, so the pair is complete. The concrete view survives being copied into value types and the handle being freed. | ~400 | 6, 7 (the surface is not renamed twice). 11b, and 11c for definition-bearing documents. 15A. |
+| ~~**11b**~~ | ~~Every byte of a block's `CONTENT` region is owned by exactly one inline node.~~ **RETIRED with 11a.** Its claim/paint/refine machinery was 346 + 122 + 115 lines whose only consumer was the record set it fed. | ~~500 + 200 gate~~ | — |
+| ~~**11c**~~ | ~~A reference definition and a footnote definition own their source bytes.~~ **RETIRED with 11a.** §4.14.11c's own finding was that the behaviour was already true at 9b.1 and that the step WAS the gate; the gate goes with the requirement it gated. | ~~150~~ | — |
+| ✅ **12** | The public surface presents the parse and **what its coordinates are counted against**: `document.semantic` is the tree, and `document.concrete` is the normalized source with its line index — ~~and every node's regions~~, deleted with 11a. A scope is a pair of BOUNDARIES saying which line-and-column range an element occupies (owner ruling, 2026-08-24), so what a consumer needs beside it is the text those numbers are counted against, which is NOT the buffer it passed: an input holding a NUL has different columns. It survives being copied into value types and the handle being freed. | ~400 | 6, 7 (the surface is not renamed twice). 15A. |
 | **13** | **Deliverable #3.** A parse produces an ordered list of diagnostics — `(severity, code, scope, message)` — and one law governs them: ~~a lost diagnostic is not a lost parse~~ **RECORDING THEM CHANGES NOTHING THE PARSE BUILDS.** For every input and option set the semantic tree and the concrete records are byte-identical with diagnostics on and off; ~~if the buffer cannot be allocated the parse still returns a complete document with a truncation marker~~ — **OWNER RULING, 2026-08-24: NO FALLBACK ON OOM.** *"We do not want fallback when OOM happens. The parser should return an error rather than return a fallback."* An allocation the diagnostic list cannot make abandons the parse, exactly as one the region set cannot make does; there is no truncation marker and no partial list, and what survives of the law is that **recording changes nothing the parse builds**. Its converse is equally normative: **a parse failure is not a diagnostic** — `markdown_core_error` means there is no document, and it carries no scope. | ~430 + ~150 gate | 7 (its 51 oracle examples are the enumeration of degradation cases). 12 (a scope is resolvable without a node handle). |
 | **14** | `null` means "the source did not write this"; `""` means "the source wrote it and it was empty". The distinction is **structural**: an optional field cannot be assigned a value that does not state whether it is present, so a write site that does not say so **does not compile**. No transformation and **no read** collapses it. The facade folds nothing. | ~150 C + bindings | 9b (the optional field set is complete). 12 (the accessors are the target accessors). 15A. |
 | **15C** | The 3.0 release obligations: one contract, all seventeen defects closed or carried with a registered gate, both deliverables measured against the 96 whitelisted examples with every staleness recorded, every §4.8 gate green and non-vacuous, release plumbing pointing at live paths, and `check-release-version.mjs` passing with no `--skip-*`. | ~150 + notes | 12, 13, 14. |
@@ -6944,6 +6944,123 @@ stalled; **§4.14.11c2 CLOSED it and the ledger is now EMPTY.** The oracle that
 began Stage 0a with 131 rows in six families has none.
 
 
+
+#### 4.14.11d 11a, 11b and 11c retired: a scope was always the answer, and the record set answered a question nobody asked
+
+**OWNER RULING, 2026-08-24, in two parts.** The first retired the requirement:
+
+> *"What is wanted is: take an element and find its way back to the source."*
+> …
+> *"11a / 11b / 11c retire as a whole. `markdown_core_region_role` is a new API
+> you published into 3.0 on your own initiative; 3.0 is not merged so it can be
+> changed at any time. Get rid of it."*
+
+And the second fixed what a scope IS:
+
+> *"A scope's line and column do not stand for any source subrange, and no
+> subrange can be taken with them. What they are for is telling an editor which
+> line-and-column range this element occupies. So they are BOUNDARIES, not the
+> byte range you took them for."*
+
+##### What the criterion needs, and what the record set was answering instead
+
+Element → source is `node.scope`. Byte → element, plus a `MARKER`/`CONTENT`/
+`DISCARDED` classification of every byte, is what the region set answered, and
+**no requirement row, no ledger entry and no owner statement in this file ever
+named a consumer for it.** Q24's recorded justification — *"diagnostics on
+directive attributes have nowhere to point without it"* — was measured false at
+13.1: every diagnostic's scope comes from Step 10's content-to-source map plus
+the line index, and **not one diagnostic reads a region.**
+
+##### TWO CIRCULAR ARGUMENTS HAD BEEN DEFENDING IT, and both were mine
+
+**One: "nothing else can see inline attribution."** Mutant M26 deleted 11b's
+refinement and only `audit-concrete-records` noticed — which is true of deleting
+ANY feature, because the only gate that can see a feature is the gate written
+for it. A tautology presented as a finding.
+
+**Two: "removing the end walk-back breaks three golden suites and the places
+oracle."** The goldens were regenerated WITH the walk-back at §4.14.11c2, so
+their failure proves only that they encode it; and `audit-position-places`'
+rule — *"Every scope end in this engine names the LAST BYTE"* — is this plan's
+sentence, not the engine's requirement. Two self-tests offered as independent
+evidence.
+
+The owner stopped both. They are recorded because the shape recurs: **a gate
+written for a feature cannot be evidence that the feature is wanted.**
+
+##### What went, measured
+
+| | |
+|---|---|
+| `core/blocks.c` | thirteen functions — `S_claim_region`, `S_reown_regions`, `S_disown_regions`, `_absorb_regions`, `_transfer_regions`, `S_region_is_refinable`, `S_reseat_inline_regions`, `S_merge_adjacent_regions`, `markdown_core_parser_refine_inline_regions` (326 lines alone), `markdown_core_parser_claim_inline`, `S_partition_definition_regions`, `S_write_node_path`, `S_definition_run` — and every call site |
+| the rest of the engine | `S_claim` and 24 call sites in `core/inlines.c`, the dispatch's fallback-role machinery, consolidation's region cursor in `core/iterator.c`, the extension API's two declarations, and the claims in `formula.c`, `directive.c` and `strikethrough.c` |
+| public surface | `markdown_core_region`, `markdown_core_region_role`, `_region_count`, `_region_at`, `_region_owner_path`, `_region_owner_paths`, from the header and BOTH export lists |
+| bindings | Swift `Concrete` 7 arrays → 2 and `Document.owner(of:)` gone; Kotlin the same plus `RegionRole`, `Region`, `ownerOf` and the wire section, `MKC3` → **`MKC4`**; ES the same plus three `es_*` exports, their `native.ts` declarations, their `build.mjs` entries and `RegionRole` out of `audit-public-surface.sh`'s runtime list |
+| gates | `scripts/audit-concrete-records.mjs` (528 lines) and `specs/concrete/` deleted, with their rows in `gates.sh`, `package.json` and `ci.yml` |
+| CLI | `--concrete` → `--source-index`, printing the source size and the line index and nothing else |
+
+**−1,803 lines in the C engine alone, and NOT ONE GOLDEN ROW MOVED for any of
+it** — `correctness` read 69/69 the moment it compiled. That is the sharpest
+measurement in this record: the region set produced nothing the tree, the
+goldens or either parity oracle depended on.
+
+##### A scope is a boundary pair, and 71 golden rows say so
+
+The second ruling deleted `S_end_at_last_byte_taken`, which walked an
+`end_column == 0` back to the previous line's last byte. Under boundary
+semantics `4:0` is not a degenerate value, it is *"ended where line 3 ended"* —
+and it is what cmark-gfm reports.
+
+```
+                                   before             after / upstream
+[^a]: def, blank line, next        3:1..3:9           3:1..4:0
+text, blank, "    code", blank     3:5..3:8           3:5..4:0
+```
+
+**Measured against cmark-gfm 0.29.0.gfm.13**: `<code_block sourcepos="3:5-4:0">`
+on both sides now, byte for byte. Over `spec.txt` upstream reports **55 of 3303
+nodes ending at column 0**, in eight kinds — it is its convention, not a defect,
+and calling it one was the fourth correction in this session.
+
+**59 golden rows in the fixtures and 12 in the canonical-AST cases**, 71 in all,
+reviewed by hand and every one the same shape: `ListItem` 18, `CodeBlock` 15,
+`List` 11, `FootnoteDefinition` 7, `Heading` 4, `Document` 2, `ThematicBreak` 1,
+`HTMLBlock` 1 (fixtures), and `ListItem` 4, `List` 3, `ThematicBreak` 2,
+`CodeBlock` 1, `FootnoteDefinition` 1 (canonical). Upstream parity holds at
+**891/891** across the change.
+
+`audit-position-places.mjs` now checks boundaries: a line of L bytes carries
+columns 1 through **L+1**, and column 0 is the boundary before a line's first.
+Its `zero-column` fault and **Q40's narrow `SoftBreak`/`LineBreak` exception**
+are both gone — under boundary semantics L+1 is the last boundary of every line
+and needs no exception. **0 rows over 4,464 scopes**, so the ledger stays empty.
+
+`audit-scope-containment` goes **8 → 9**: `> ```⏎> aaa⏎⏎bbb` gives
+`CodeBlock 1:3..3:0` inside `BlockQuote 1:1..2:5`, a child ending past its
+parent. Registered with its reason, which is that **upstream reports the
+identical pair byte for byte** — measured, not assumed.
+
+##### What is kept, and why each
+
+`document.source` and its line index STAY. A scope's columns are counted against
+the NORMALIZED source, and an input containing a NUL has a buffer whose columns
+no longer agree with the parser's — so a consumer mapping our coordinates onto
+its own text needs to know what they were counted against. Step 10's
+`line_marks` stay for the same reason one level in: every inline node's scope is
+a projection through them, and so is every diagnostic's.
+
+##### Gates after
+
+`correctness` 69/69, asan 60/60, ubsan 60/60, `conformance` 2/2, canonical-ast
+32 kinds / 62 fields / 6 cases, projections 32 over 12 surfaces, public surface
+(three lists), both fuzz oracles 300/300, upstream **891/891** with 10/10, mdast
+112/112 with an empty backlog, scope-sanity 1, inline-sourcepos 40, containment
+**9**, places **0**, diagnostics 38 over 891, reference-order 0, test topology,
+formatters, `lint-c`, `pnpm -w run lint`, and the binding suites: **ES 11 + 9**,
+**Swift 6 + 1 + 3**, **Kotlin 11 + 4**.
+
+
 #### 4.14.13a Step 13.1: a diagnostic is what the two total views cannot say
 
 **Requirement 13's C half.** A parse produces an ordered list of
@@ -7850,7 +7967,7 @@ following, together:
 **Deliverables**
 - [x] **Directive grammar conformance (Step 7) — deliverable #1. LANDED**, §4.14.7a–e. Nothing carried: **D36** closed at 7e and **Q43** answered with it.
 - [x] **The formula fix (Step 6) — deliverable #2. LANDED, §4.14.6.**
-- [ ] CST concrete records (11a, 11b, 11c) and diagnostics (13) — deliverable #3. **11a, 11b and 11c are LANDED** (§4.14.11a, §4.14.11b, §4.14.11c); **13.1 is LANDED** (§4.14.13a) and 13.2, the bindings, is not
+- [x] ~~CST concrete records (11a, 11b, 11c)~~ **RETIRED by owner ruling** (§4.14.11d) and diagnostics (13) — deliverable #3. **13.1 is LANDED** (§4.14.13a) and its binding work landed with the retirement; what 13 still owes is the `markdown_core_error_get_scope` deletion
 - [x] The reference model (9a, 9b) and the positions that depend on it — **10, 9a and 9b are all LANDED** (§4.14.10, §4.14.9a1–9a2, §4.14.9b1–9b2)
 - [ ] The facade (12), the null/empty rule (14) — **12 is LANDED WHOLE** (§4.14.12a–12c): two total views in C and in all three bindings, and §4.10's ruling that the break window is not a constraint is what let 12.2 take the literal reading; 14 is not
 - [ ] Bindings, specs and docs regenerated (15)
@@ -8544,11 +8661,11 @@ which is why they kept getting re-argued:
 |---|---|---|---|---|
 | **Q8** | May the reconstruction take code from existing commits? | **SETTLED 2026-08-20 — NO.** See §4.9. Ignore every existing commit except the formula fix and the directive syntax fix. Everything else is designed and written fresh. | owner | the entire port list |
 | **Q9** | What is the extension attach order? (D15) | **SETTLED 2026-08-20 — table LAST, with a test. IMPLEMENTED 0a.11**, and the ruling is load-bearing: all six inputs whose parse the reorder moves are a line inside an OPEN table that a narrower extension also claims, which D8's fix does not touch. Every other extension's position is measured to be free — moving `directive` changes 0 of 4,000 random `:`/URL documents (§4.2.17). A decided order, not an inheritance: a table's row opener matches any line inside an open table, so every narrower claim attaches first. D15's CLI/facade disagreement is fixed in the same step. | owner | Step 3, 0a.5, **0a.11** |
-| **Q40** | Is a line ending a place? (D26) | **PROPOSED, taken at 0a.12b — YES, and only for a node that IS one.** A line of L bytes has L+1 boundaries and the last is where the line ending lives, so a `SoftBreak` or `LineBreak` at column L+1 is a place. The GENERAL form was measured before it was rejected: admitting L+1 for every kind would have excused **twelve** rows already in `specs/positions/places.json` — eleven `Text` and one `Emphasis` — that are wrong for other reasons. The narrow form excuses none of them, because no break node was ever registered there. `scripts/audit-position-places.mjs` carries the rule and says so. | 0a.12b | Step 5, which owns the dump spelling that would make the question moot |
+| ~~**Q40**~~ | Is a line ending a place? (D26) | **SUPERSEDED 2026-08-24: a scope is a boundary pair, so column L+1 is the last boundary of EVERY line and the narrow exception has nothing left to except (§4.14.11d).** ~~PROPOSED, taken at 0a.12b — YES, and only for a node that IS one.~~ A line of L bytes has L+1 boundaries and the last is where the line ending lives, so a `SoftBreak` or `LineBreak` at column L+1 is a place. The GENERAL form was measured before it was rejected: admitting L+1 for every kind would have excused **twelve** rows already in `specs/positions/places.json` — eleven `Text` and one `Emphasis` — that are wrong for other reasons. The narrow form excuses none of them, because no break node was ever registered there. `scripts/audit-position-places.mjs` carries the rule and says so. | 0a.12b | Step 5, which owns the dump spelling that would make the question moot |
 | **Q38** | Does removing the empty `Text` node get registered against upstream, and how? | **TAKEN at 0a.14 — as a PROJECTION, not as inputs.** Without it `check-upstream-parity.mjs` reads 806/817 with eleven inputs diverging (eight autolink, three hard-break and shortcut-reference), which is §4.2.3's number reproduced. The difference appears wherever the construct does, so it is a model difference and a list of inputs would go stale as the corpus grew: `normalize` drops an empty-literal `Text` from BOTH sides, `empty-text-node` joins `NORMALIZED_DELTAS`, and both delta files carry the entry. **The cost is stated rather than hidden**: with it projected, re-introducing this side's empty node is invisible to upstream parity — measured — and the goldens are the only gate. | 0a.14 | — |
 | **Q11–Q29** | Nineteen decisions the requirement restatement exposed | **PROPOSED** unless listed below, each with a recommendation in §4.1.6 | §4.1.6 | their owning steps |
 | **Q14** | The option surface | **SETTLED 2026-08-20 — DELETE ALL OF IT.** See §4.11. | owner | 3, 6, 7, 12, 15 |
-| **Q24** | Is the concrete view opt-in? | **SETTLED 2026-08-20 — NO. It is not optional; it is part of the model.** Diagnostics on directive attributes have nowhere to point without it. | owner | 12, 13 |
+| ~~**Q24**~~ | Is the concrete view opt-in? | **MOOT 2026-08-24: the thing it was about is retired.** It was SETTLED 2026-08-20 — *"not optional; it is part of the model. Diagnostics on directive attributes have nowhere to point without it"* — and **the reason was measured false at 13.1**: not one diagnostic reads a region. 11a–11c are retired (§4.14.11d) and what remains of `concrete` is the normalized source and its line index, which are not optional either, for a reason that survives: a scope's columns are counted against them. | owner | — |
 | **Q25** | When are defects fixed? | **SETTLED 2026-08-20 — ALL of them, before any other task.** Not just D16's two sites: every defect that *can* be fixed at the baseline moves into Stage 0a. See §4.12. | owner | Stage 0a |
 | **Q26** | Do `Link.destination`, `Image.source`, `ReferenceDefinition.destination` stay optional? | **SETTLED 2026-08-20 — NO, all three are required.** Q7's argument generalises: a value reachable only through allocation loss is not optionality, it is a node that lies. | owner | 9b, 14 |
 | **Q46** | Are diagnostics switchable, and how? | **TAKEN at 13.1 — a RETAIN CALL, not an option.** `markdown_core_parser_retain_diagnostics` mirrors `markdown_core_parser_retain_concrete` exactly: the parser records only when asked, `finish` moves the list at the same moment and on the same terms, and the FACADE always asks. It is the only shape that satisfies three settled rulings at once — Q14 deletes the option surface, Q24 makes the second view part of the model rather than a choice, and row 13's law quantifies over *"diagnostics on and off"* and so needs an axis to quantify over. The switch exists so the LAW can be checked, not so a consumer can choose a different engine. | 13.1 | 13 |

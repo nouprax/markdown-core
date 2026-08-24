@@ -96,7 +96,6 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(root->content.mem);
     markdown_core_event_type ev_type;
     markdown_core_node *cur, *tmp, *next;
-    bufsize_t region_cursor = -1;
     int ok = 1;
 
     if (!iter) {
@@ -116,7 +115,6 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
         if (cur->next && cur->next->type == MARKDOWN_CORE_NODE_TEXT) {
             markdown_core_strbuf_clear(&buf);
             markdown_core_strbuf_put(&buf, cur->as.literal.data, cur->as.literal.len);
-            region_cursor = -1;
             tmp = cur->next;
             while (tmp && tmp->type == MARKDOWN_CORE_NODE_TEXT) {
                 /* Bring `tmp` to its own EXIT before freeing it: two events
@@ -138,7 +136,6 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
                 }
                 next = tmp->next;
                 if (parser) {
-                    markdown_core_parser_absorb_regions(parser, tmp, cur, &region_cursor);
                 }
                 markdown_core_node_free(tmp);
                 tmp = next;

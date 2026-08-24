@@ -161,189 +161,52 @@ done:
 
 /* Is `node` in `root`'s tree? A region's owner must be, or the two views are
  * not one parse. */
-static int reachable(const markdown_core_node *root, const markdown_core_node *node) {
-    const markdown_core_node *child;
-    if (root == node) {
-        return 1;
-    }
-    for (child = markdown_core_node_get_first_child(root); child; child = markdown_core_node_get_next_sibling(child)) {
-        if (reachable(child, node)) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-/* REQUIREMENT 12'S LAW, through the public surface and nothing else.
- *
- * The tree may omit bytes; the concrete view may not. Stated as three checks
- * that a consumer could make for itself:
- *
- *   the regions TILE the source -- no gap, no overlap, nothing past the end;
- *   every region's OWNER is a node of this document's semantic view;
- *   the line index agrees with the source, line for line.
- *
- * The corpus is deliberately one of everything the tree DOES omit: a fence's
- * backticks, an ATX heading's closing hashes, a link's brackets and
- * destination, an emphasis delimiter, a definition, an entity. If the pair were
- * incomplete this is where it would show.
- */
-static void check_two_views(void) {
-    static const uint8_t source[] = "# Heading ##\n"
-                                    "\n"
-                                    "> quoted *em* and `code`\n"
-                                    "\n"
-                                    "```c\n"
-                                    "x\n"
-                                    "```\n"
-                                    "\n"
-                                    "[a]: /u \"t\"\n"
-                                    "\n"
-                                    "see [a] and &amp; and [b](/v).\n";
-    markdown_core_document *document = markdown_core_document_parse(source, sizeof(source) - 1, NULL, NULL);
+/* WHAT A SCOPE INDEXES INTO. A scope names a place in the NORMALIZED source --
+ * not in the bytes the caller passed -- so a consumer that follows one back to
+ * the source needs those bytes and the index that turns a line into an offset
+ * into them. This asserts that the two are there, agree with each other, and
+ * refuse what is not a line. */
+static void check_source_and_lines(void) {
+    static const char *const SOURCE = "# heading ##\n"
+                                      "\n"
+                                      "para *em* text\n"
+                                      "\n"
+                                      "```js\n"
+                                      "code\n"
+                                      "```\n"
+                                      "\n"
+                                      "[a]: /u\n"
+                                      "\n"
+                                      "see [a] here\n";
+    markdown_core_document *document;
     markdown_core_string_view text;
-    const markdown_core_node *root;
-    size_t count;
-    size_t at = 0;
-    size_t index;
+    size_t at;
     size_t line;
-    int tiled = 1;
-    int owned = 1;
     int lines_agree = 1;
 
-    check(document != NULL, "two-views corpus parses");
+    document = markdown_core_document_parse((const uint8_t *)SOURCE, strlen(SOURCE), NULL, NULL);
+    check(document != NULL, "the corpus parses");
     if (!document) {
         return;
     }
-    root = markdown_core_document_semantic(document);
     text = markdown_core_document_source(document);
-    count = markdown_core_document_region_count(document);
-    check(text.length > 0 && count > 0, "the concrete view is populated");
-
-    for (index = 0; index < count; index++) {
-        markdown_core_region region;
-        if (!markdown_core_document_region_at(document, index, &region)) {
-            tiled = 0;
-            break;
-        }
-        if (region.start != at || region.length == 0) {
-            tiled = 0;
-        }
-        at = region.start + region.length;
-        if (!region.owner || !reachable(root, region.owner)) {
-            owned = 0;
-        }
-    }
-    check(tiled && at == text.length, "every byte of the source is in exactly one region");
-    check(owned, "every region has exactly one owner in the semantic view");
-
-    /* The tree omits bytes and the pair does not: the closing `##`, the fence
-     * and the definition's punctuation are in no literal anywhere, and every
-     * one of them is in a region above. */
+    check(text.length == strlen(SOURCE) && memcmp(text.data, SOURCE, text.length) == 0,
+          "the source is the normalized source, byte for byte");
     check(markdown_core_document_line_count(document) == 11, "the line index counts the source's lines");
-    for (line = 1; line <= markdown_core_document_line_count(document); line++) {
-        size_t offset = 0;
-        if (!markdown_core_document_line_start(document, line, &offset) || offset > text.length) {
-            lines_agree = 0;
-            break;
-        }
-        if (line > 1 && text.data[offset - 1] != '\n') {
+    for (line = 2; line <= markdown_core_document_line_count(document); line++) {
+        size_t start = 0;
+        if (!markdown_core_document_line_start(document, line, &start) || start == 0 ||
+            text.data[start - 1] != (uint8_t)'\n') {
             lines_agree = 0;
         }
     }
     check(lines_agree, "every line but the first begins after a line ending");
+    check(markdown_core_document_line_start(document, 1, &at) && at == 0, "line one begins at offset zero");
     check(!markdown_core_document_line_start(document, 0, &at), "line zero is not a line");
     check(!markdown_core_document_line_start(document, 12, &at), "a line past the end is not a line");
-    {
-        markdown_core_region region;
-        check(!markdown_core_document_region_at(document, count, &region), "a region past the end is not a region");
-    }
-    /* THE LOCATOR THAT SURVIVES THE COPY. Every binding copies the tree into
-     * value types and frees the handle, so a region's owner has to be nameable
-     * by something that is not a pointer -- and the path has to lead back to
-     * the same node. Checked by walking it. */
-    {
-        int32_t path[32];
-        size_t depth = 0;
-        int resolves = 1;
-        for (index = 0; index < count; index++) {
-            markdown_core_region region;
-            const markdown_core_node *walk;
-            size_t step;
-            if (!markdown_core_document_region_at(document, index, &region) ||
-                !markdown_core_document_region_owner_path(document, index, path, 32, &depth)) {
-                resolves = 0;
-                break;
-            }
-            walk = root;
-            for (step = 0; step < depth && walk; step++) {
-                int32_t position = path[step];
-                walk = markdown_core_node_get_first_child(walk);
-                while (walk && position-- > 0) {
-                    walk = markdown_core_node_get_next_sibling(walk);
-                }
-            }
-            if (walk != region.owner) {
-                resolves = 0;
-                break;
-            }
-        }
-        check(resolves, "every region's owner path leads back to its owner");
-        check(!markdown_core_document_region_owner_path(document, count, path, 32, &depth),
-              "a region past the end has no owner path");
-        check(!markdown_core_document_region_owner_path(document, count - 1, path, 0, &depth),
-              "a path that does not fit is refused rather than truncated");
-    }
-    /* THE SAME ANSWER IN ONE PASS. A binding copies every region, and counting
-     * previous siblings from scratch for each one is quadratic; the bulk call
-     * remembers where the last one stopped, so it has to be checked against the
-     * one that does not. */
-    {
-        uint32_t *offsets = (uint32_t *)malloc((count + 1) * sizeof(uint32_t));
-        int32_t *paths;
-        size_t total;
-        int agrees = 1;
-        check(offsets != NULL, "the offset buffer allocates");
-        if (!offsets) {
-            markdown_core_document_free(document);
-            return;
-        }
-        check(!markdown_core_document_region_owner_paths(document, NULL, 0, offsets, count + 1),
-              "sizing refuses to write paths it has no room for");
-        total = offsets[count];
-        check(total > 0 && offsets[0] == 0, "the sizing pass fills the offsets it refused on");
-        check(!markdown_core_document_region_owner_paths(document, NULL, 0, offsets, count),
-              "an offset buffer one short is refused");
-        paths = (int32_t *)malloc(total * sizeof(int32_t));
-        check(paths != NULL, "the path buffer allocates");
-        if (!paths) {
-            free(offsets);
-            markdown_core_document_free(document);
-            return;
-        }
-        check(!markdown_core_document_region_owner_paths(document, paths, total - 1, offsets, count + 1),
-              "a path buffer one short is refused rather than truncated");
-        check(markdown_core_document_region_owner_paths(document, paths, total, offsets, count + 1),
-              "every owner path fits in one pass");
-        for (index = 0; index < count; index++) {
-            int32_t one[32];
-            size_t depth = 0;
-            if (!markdown_core_document_region_owner_path(document, index, one, 32, &depth) ||
-                depth != offsets[index + 1] - offsets[index] ||
-                memcmp(one, paths + offsets[index], depth * sizeof(int32_t)) != 0) {
-                agrees = 0;
-                break;
-            }
-        }
-        check(agrees, "the one-pass paths are the same paths");
-        free(paths);
-        free(offsets);
-    }
-    markdown_core_document_free(document);
-
     check(markdown_core_document_source(NULL).data == NULL, "a null document has no source");
-    check(markdown_core_document_region_count(NULL) == 0, "a null document has no regions");
     check(markdown_core_document_line_count(NULL) == 0, "a null document has no lines");
+    markdown_core_document_free(document);
 }
 
 static void check_api(void) {
@@ -503,7 +366,7 @@ int main(int argc, char **argv) {
     }
     fixture_dir = argv[2];
     check_api();
-    check_two_views();
+    check_source_and_lines();
     check_diagnostics();
     for (i = 3; i < argc; i += 2) {
         check_fixture(fixture_dir, argv[i], argv[i + 1]);

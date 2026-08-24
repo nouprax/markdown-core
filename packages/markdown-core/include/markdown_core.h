@@ -164,36 +164,6 @@ typedef enum markdown_core_table_alignment {
     MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT = 3
 } markdown_core_table_alignment;
 
-/** THE ROLE A REGION'S BYTES PLAYED. Not what they look like -- what they DID.
- *
- * MARKER     the bytes that made the owner the kind of thing it is and are not
- *            its content: `> `, `- `, a fence, `[^label]:`, a link's brackets,
- *            an emphasis delimiter, an entity, a backslash escape.
- * CONTENT    the bytes that went into the owner's content, and so are the bytes
- *            its children are cut from.
- * DISCARDED  the bytes the parse read and kept nowhere -- indentation stripped
- *            from a continuation line, the trailing hashes of a closed ATX
- *            heading, a line ending nothing owns. They still have an owner.
- */
-#ifndef MARKDOWN_CORE_REGION_ROLE_TYPEDEF
-#define MARKDOWN_CORE_REGION_ROLE_TYPEDEF
-typedef enum markdown_core_region_role {
-    MARKDOWN_CORE_REGION_ROLE_MARKER = 0,
-    MARKDOWN_CORE_REGION_ROLE_CONTENT = 1,
-    MARKDOWN_CORE_REGION_ROLE_DISCARDED = 2
-} markdown_core_region_role;
-#endif
-
-/** One region of the concrete view: a byte range of the normalized source with
- * exactly one owner and exactly one role. `start` and `length` index
- * `markdown_core_document_source`, never the caller's own buffer. */
-typedef struct markdown_core_region {
-    size_t start;
-    size_t length;
-    markdown_core_region_role role;
-    const markdown_core_node *owner;
-} markdown_core_region;
-
 /** A PARSE PRODUCES AN ORDERED LIST OF DIAGNOSTICS, and one law governs it:
  *
  *   RECORDING THE LIST CHANGES NOTHING THE PARSE BUILDS.
@@ -290,78 +260,37 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_document_parse(const uin
 MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *document);
 
 /**
- * ONE PARSE UNDER TWO TOTAL VIEWS, and the law that binds them.
+ * THE PARSE, AND WHAT ITS COORDINATES ARE COUNTED AGAINST.
  *
- * `markdown_core_document_semantic` is the tree: policy applied, and it MAY
- * omit bytes -- a fence's backticks are in no node's literal, and the closing
- * hashes of an ATX heading are in nothing at all.
+ * `markdown_core_document_semantic` is the tree. Every node carries a `scope`,
+ * and a scope exists for one purpose: SO A CONSUMER CAN MAP AN ELEMENT BACK TO
+ * THE SOURCE IT CAME FROM.
  *
- * The concrete view -- `_source`, `_line_count`, `_line_start`, `_region_count`
- * and `_region_at` -- OMITS NOTHING, and that is not a promise about intent but
- * a checkable law:
+ * A SCOPE IS A PAIR OF BOUNDARIES, NOT A BYTE RANGE. Owner ruling, 2026-08-24:
+ * a scope's line and column do not stand for any source subrange and no
+ * subrange can be taken with them; what they are for is telling an editor which
+ * line-and-column range an element occupies. So a line of L bytes carries
+ * boundaries 1 through L+1, and an end at column 0 of line N says the element
+ * stopped where line N-1 ended.
  *
- *   EVERY BYTE of `markdown_core_document_source` lies in exactly one region,
- *   and every region has exactly one owner in the semantic tree.
+ * They are counted against the NORMALIZED source -- UTF-8 as fed, every NUL
+ * replaced by the three bytes of U+FFFD, every line ending a single `\n` and
+ * every line having one -- and NOT against the buffer you passed, which is why
+ * `markdown_core_document_source` publishes it: a caller whose input contained
+ * a NUL has a buffer whose columns no longer agree with ours.
+ * `_line_count` and `_line_start` are that source's line index.
  *
- * So the pair is complete: a consumer that wants meaning reads the tree, one
- * that wants provenance reads the regions, and no byte of the input is
- * reachable through neither. The source is the NORMALIZED source -- UTF-8
- * validated, NUL replaced, every line ending a single `\n` -- and not the bytes
- * the caller passed, because that is what the tree's positions and the regions
- * both index.
- *
- * Both views end with the document. A region's `owner` is a node of the same
- * document and is valid for exactly as long as it is.
+ * All of it ends with the document.
  */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_semantic(const markdown_core_document *document);
-/** The normalized source. Empty, never null, for a document that parsed no bytes. */
+/** The normalized source: the text every scope's coordinates are counted
+ * against. Empty, never null, for a document that parsed no bytes. */
 MARKDOWN_CORE_API markdown_core_string_view markdown_core_document_source(const markdown_core_document *document);
 /** How many lines the normalized source has. */
 MARKDOWN_CORE_API size_t markdown_core_document_line_count(const markdown_core_document *document);
 /** Where line `line` begins in the source, counting lines from 1. */
 MARKDOWN_CORE_API bool markdown_core_document_line_start(const markdown_core_document *document, size_t line,
                                                          size_t *offset);
-/** How many regions the concrete view has. They are in source order. */
-MARKDOWN_CORE_API size_t markdown_core_document_region_count(const markdown_core_document *document);
-/** The region at `index`, counting from 0. */
-MARKDOWN_CORE_API bool markdown_core_document_region_at(const markdown_core_document *document, size_t index,
-                                                        markdown_core_region *region);
-/** The owner of region `index`, as the PATH of child indices from the semantic
- * root: `{}` is the root, `{0, 2}` is the third child of the first.
- *
- * A pointer names a node only while the handle is alive, and every binding
- * copies the tree into value types and frees the handle -- so a pointer is
- * exactly the locator that does not survive the copy, and this is the one that
- * does. It is an ordinal, which §5.8 rejected for the reference model, and the
- * difference is that this one names a node inside ONE immutable snapshot rather
- * than across edits: nothing filters or slices a parsed document.
- *
- * `capacity` is how many `int32_t` `path` can hold. `*length` receives the
- * depth, and the call fails without writing if the path is deeper than that --
- * ask again with more room. Traversal here is the RAW tree's, the same one the
- * regions were recorded against, not the canonical traversal
- * `markdown_core_node_get_first_child` performs. */
-MARKDOWN_CORE_API bool markdown_core_document_region_owner_path(const markdown_core_document *document, size_t index,
-                                                                int32_t *path, size_t capacity, size_t *length);
-/** EVERY region's owner path, in one pass.
- *
- * `offsets` takes `markdown_core_document_region_count() + 1` entries and is
- * filled whenever it is large enough, even when `paths` is not: `offsets[i]` is
- * where region `i`'s path begins in `paths` and `offsets[i + 1]` is where it
- * ends, so `offsets[count]` is how many elements `paths` needs. Call once with
- * `paths_capacity` 0 to learn that number, then again with the buffer.
- *
- * This is not a convenience over the singular call, it is a different cost. A
- * node knows its parent but not its own index among its siblings, so each
- * singular call counts previous siblings from scratch; a pass in SOURCE ORDER
- * can start where the last one stopped. Measured on this repository's own
- * 674 KB design document, 52853 regions: the loop costs 96.8 ms against a
- * 30.8 ms parse, and both calls of this one together cost 1.13 ms. Bindings
- * copy every region, so this is the call they make. */
-MARKDOWN_CORE_API bool markdown_core_document_region_owner_paths(const markdown_core_document *document, int32_t *paths,
-                                                                 size_t paths_capacity, uint32_t *offsets,
-                                                                 size_t offsets_capacity);
-
 /** How many diagnostics the parse recorded. They are in the order they were
  * recorded, which is source order for everything the block phase reports and
  * block-then-inline order otherwise. */

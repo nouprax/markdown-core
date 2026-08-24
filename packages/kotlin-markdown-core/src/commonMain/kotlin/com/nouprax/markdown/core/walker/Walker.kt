@@ -30,7 +30,8 @@ public object Walker {
 /**
  * Every child of a node, in the order the C tree holds them -- which is what a
  * region's owner path counts. [Walker] walks with it and
- * [Document.ownerOf] descends with it, so the two cannot disagree.
+ * so a walk and a hand-written descent cannot disagree about what a node's
+ * children are.
  */
 internal fun Markup.children(): kotlin.collections.List<Markup> =
     when (this) {

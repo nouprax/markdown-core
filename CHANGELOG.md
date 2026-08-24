@@ -33,6 +33,15 @@ longer exists.
 - Report an allocation loss as `MARKDOWN_CORE_ERROR_ALLOCATION_FAILED` rather
   than as `MARKDOWN_CORE_ERROR_INTERNAL`, and stop the failure reporter needing
   an allocation of its own to say so.
+- A node's `scope` is a pair of line/column BOUNDARIES saying which range of the
+  source an element occupies — not a byte range, and no substring is taken with
+  it. A block closed by a blank line therefore ends at column 0 of that line,
+  which is what cmark-gfm reports and what an editor needs.
+- `Document.concrete` is the normalized source and its line index: the text a
+  scope's coordinates are counted against, which is not the string that was
+  passed in wherever it held a NUL. The per-byte region set and its
+  `RegionRole`, `Region`, `regionCount`, `region(...)` and `ownerOf(...)`
+  surface are removed from C, Swift, Kotlin and ECMAScript.
 
 ## 1.0.3 - 2026-07-15
 

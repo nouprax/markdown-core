@@ -2,33 +2,37 @@
 /**
  * Position oracle (c): a position must be a place.
  *
- * The engine's positions are (line, column) pairs counted in BYTES from 1, so
- * a coordinate is a place exactly when its line exists in the input and its
- * column names a byte on that line. Nothing checked that, and it is the
- * cheapest possible statement about a position: it needs no authority, no
- * second parser and no model of what the node ought to cover. It is also the
- * only one of the three oracles that reads the INPUT, which is why it catches
- * defects the other two cannot — a consumed span that crossed a line ending
- * and was reported on the start line lands past the end of that line, and both
- * the tree's geometry and upstream agree with it.
+ * OWNER RULING, 2026-08-24, and it is what this oracle now checks:
  *
- * Three faults, and the split matters because they have different owners:
+ *   "A scope's line and column do not stand for any source subrange, and no
+ *    subrange can be taken with them. What they are for is telling an editor
+ *    which line-and-column range this element occupies. So they are
+ *    BOUNDARIES, not the byte range you took them for."
+ *
+ * A SCOPE IS A BOUNDARY PAIR, not a byte range. It tells an editor which
+ * (line, column) rectangle an element occupies; it is not something a consumer
+ * takes a substring with, and it never was. So a line of L bytes has L+1
+ * boundaries on it, column 0 is the boundary before a line's first — which is
+ * how "ended at the end of the line above" is spelled — and both are places.
+ *
+ * ~~Three faults~~ TWO, because `zero-column` was this plan's rule and not the
+ * engine's: it said "there is no column 0", the 57 rows it produced were closed
+ * at §4.14.11c2 by walking every such end back to the previous line's last
+ * byte, and the walk is deleted with the ruling. What upstream cmark-gfm
+ * reports — `code_block sourcepos="3:5-4:0"` for an indented block closed by a
+ * blank line — is the boundary form, and it is correct.
  *
  *   off-line     the line is not in the document at all.
- *   off-column   the column is past the end of a line that exists.
- *   zero-column  column 0 on a line that exists. There is no column 0; it is
- *                how "ends at the line ending" and "covers nothing" get
- *                spelled when the only vocabulary available is a coordinate.
+ *   off-column   the column is past the LAST BOUNDARY of a line that exists,
+ *                which is L+1 and not L.
  *
- * ONE EXCEPTION, taken at 0a.12b and narrow on purpose (Q40). A line of L bytes
- * has L+1 boundaries, and the last of them is where the line ending lives. So
- * column L+1 IS a place — but only for a node that IS a line ending, i.e. a
- * SoftBreak or a LineBreak. The general form of the rule was measured before it
- * was rejected: admitting L+1 for every kind would have excused TWELVE rows
- * already in this ledger (eleven Text, one Emphasis) that are wrong for other
- * reasons. The narrow form excuses none of them, because no break node was ever
- * registered here — before 0a.12b they all carried 0:0..0:0 and were deferred to
- * scripts/audit-scope-sanity.mjs.
+ * Q40's narrow exception goes with the same ruling: it admitted column L+1 for
+ * a `SoftBreak` and a `LineBreak` alone, on the reading that L+1 was a place
+ * only for a node that IS a line ending. Under boundary semantics L+1 is the
+ * last boundary of every line and needs no exception. The twelve rows that
+ * reading was protecting (eleven `Text`, one `Emphasis`) are long gone — this
+ * ledger has been EMPTY since §4.14.11c2 — so nothing is excused by widening
+ * it, which is the same test 0a.12b applied and failed.
  *
  * What this oracle deliberately does NOT count is a coordinate on line zero.
  * `scripts/audit-scope-sanity.mjs` owns those — the `0:0..0:0` sentinel and
@@ -65,16 +69,14 @@ const verbose = process.argv.includes("--verbose");
 
 const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdown-core", "pnpm build:c");
 
-/* Q40, and nothing wider: only these two kinds may sit on a line ending. */
-const LINE_ENDING_KINDS = new Set(["SoftBreak", "LineBreak"]);
-
-const fault = ([line, column], lengths, kind) => {
+/* A line of L bytes carries boundaries 1 through L+1. Column 0 is the boundary
+ * before a line's first, and an END there says the element stopped at the end
+ * of the line above — so it is a place on any line the document could reach,
+ * including the one past the last. */
+const fault = ([line, column], lengths) => {
+    if (column === 0) return line >= 1 && line <= lengths.length + 1 ? "place" : "off-line";
     if (line > lengths.length) return "off-line";
-    if (column === 0) return "zero-column";
-    if (column > lengths[line - 1]) {
-        return LINE_ENDING_KINDS.has(kind) && column === lengths[line - 1] + 1 ? "place" : "off-column";
-    }
-    return "place";
+    return column > lengths[line - 1] + 1 ? "off-column" : "place";
 };
 
 const measured = [];
@@ -94,8 +96,8 @@ for (const example of fixtureCorpus(root)) {
             continue;
         }
         scanned += 1;
-        const start = fault(scope.start, lengths, node.kind);
-        const end = fault(scope.end, lengths, node.kind);
+        const start = fault(scope.start, lengths);
+        const end = fault(scope.end, lengths);
         if (start === "place" && end === "place") continue;
         findings.push({
             nodePath,

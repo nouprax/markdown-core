@@ -125,13 +125,13 @@ class RobustnessTest {
 }
 
 /**
- * The requirement's own sentence: the concrete view survives being copied into
- * value types and the handle being freed. `parse` frees it before it returns,
- * so everything below reads a view with no native anything left behind it.
+ * The source a scope's coordinates are counted against, copied into value types
+ * and read after the native handle is gone. `parse` frees the handle before it
+ * returns, so everything below reads a value with no native anything behind it.
  */
 class ConcreteTest {
     @Test
-    fun theViewIsTotalAndItsOwnersResolveAfterNativeRelease() {
+    fun theSourceAndItsLineIndexSurviveTheNativeRelease() {
         val source =
             listOf(
                 "# Heading ##",
@@ -159,47 +159,17 @@ class ConcreteTest {
         assertEquals(14, concrete.lineStart(3))
         assertFailsWith<IndexOutOfBoundsException> { concrete.lineStart(0) }
         assertFailsWith<IndexOutOfBoundsException> { concrete.lineStart(16) }
-        assertFailsWith<IndexOutOfBoundsException> { concrete.region(concrete.regionCount) }
 
-        var covered = 0
-        var markers = 0
-        repeat(concrete.regionCount) { index ->
-            val region = concrete.region(index)
-            assertEquals(covered, region.start)
-            assertTrue(region.length > 0)
-            covered += region.length
-            assertTrue(document.ownerOf(region) != null)
-            if (region.role == RegionRole.MARKER) markers += 1
+        // Every line but the first begins after a line ending.
+        for (line in 2..concrete.lineCount) {
+            val start = concrete.lineStart(line)
+            assertTrue(start > 0)
+            assertEquals('\n'.code.toByte(), concrete.source[start - 1])
         }
-        // The heading's closing `##`, the table's pipes and the definition's
-        // punctuation are in no literal anywhere in the semantic tree, and the
-        // line above says every byte of them is in a region here.
-        assertEquals(concrete.source.size, covered)
-        assertTrue(markers > 0)
-        assertEquals(null, document.ownerOf(Region(0, 1, RegionRole.CONTENT, listOf(99))))
-
-        // THE DESCENT IS THE C CHILD ORDER, not the value tree's named fields.
-        // A table holds its header BEFORE its rows, so byte 42 -- the `a` of
-        // the header row -- has to land on line 5 and not on line 7; a
-        // directive holds its LABEL before its content, so byte 106 -- the `B`
-        // of `Body` -- has to land on line 10 and not inside the label on 9.
-        assertEquals(Position(5, 3), document.ownerAt(42).scope.start)
-        assertEquals(Position(10, 1), document.ownerAt(106).scope.start)
 
         // Nothing native is left: 300 more parses cannot move what was copied.
         repeat(300) { Document.parse("# copy\n") }
         assertContentEquals(source.encodeToByteArray(), concrete.source)
-        assertEquals(0, concrete.region(0).start)
-    }
-
-    /** The owner of the region the byte at [offset] belongs to. */
-    private fun Document.ownerAt(offset: Int): Markup {
-        repeat(concrete.regionCount) { index ->
-            val region = concrete.region(index)
-            if (offset >= region.start && offset < region.start + region.length) {
-                return requireNotNull(ownerOf(region))
-            }
-        }
-        error("no region holds byte $offset")
+        assertEquals(14, concrete.lineStart(3))
     }
 }

@@ -66,8 +66,8 @@ try {
                     "if (d.content[0].kind !== 'heading') process.exit(2);",
                     "if ('memory' in api || 'initialize' in api) process.exit(3);",
                     "if (d.dump() !== api.TreeDumper.dump(d)) process.exit(4);",
-                    "if (d.concrete.region(0).start !== 0 || d.concrete.source.length !== 15) process.exit(5);",
-                    "if (d.ownerOf(d.concrete.region(0)) === undefined) process.exit(6);"
+                    "if (d.concrete.lineStart(1) !== 0 || d.concrete.source.length !== 15) process.exit(5);",
+                    "if (d.concrete.lineCount !== 2) process.exit(6);"
                 ].join("\n")
             ],
             { cwd: temporary, encoding: "utf8" }

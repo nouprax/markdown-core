@@ -1,8 +1,8 @@
 package com.nouprax.markdown.core
 
 internal object WireDecoder {
-    /** `MKC3`: the payload gained the concrete view at Step 12.2. */
-    private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x33)
+    /** `MKC4`: the concrete view lost its regions when 11a-11c were retired. */
+    private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x34)
 
     fun decodeDocument(bytes: ByteArray): Document {
         val reader = WireReader(bytes)
@@ -38,26 +38,14 @@ private fun WireReader.document(): Document {
 }
 
 /**
- * The concrete view, as [write_concrete] lays it out: the source length and its
- * bytes, the line count and one offset per line, the region count and
- * (start, length, role) per region, then `count + 1` path offsets and the flat
- * path elements they cut.
+ * The source a scope's coordinates are counted against, as `write_concrete`
+ * lays it out: the source length and its bytes, then the line count and one
+ * offset per line.
  */
 private fun WireReader.concrete(): Concrete {
     val source = bytes(int())
     val lineStarts = IntArray(count()) { int() }
-    val regionCount = count()
-    val starts = IntArray(regionCount)
-    val lengths = IntArray(regionCount)
-    val roles = ByteArray(regionCount)
-    repeat(regionCount) { index ->
-        starts[index] = int()
-        lengths[index] = int()
-        roles[index] = byte()
-    }
-    val ownerOffsets = IntArray(regionCount + 1) { int() }
-    val ownerPaths = IntArray(ownerOffsets[regionCount]) { int() }
-    return Concrete(source, lineStarts, starts, lengths, roles, ownerPaths, ownerOffsets)
+    return Concrete(source, lineStarts)
 }
 
 private fun WireReader.count(): Int = int().also { require(it >= 0) { "invalid native count" } }

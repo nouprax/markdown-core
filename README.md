@@ -20,21 +20,23 @@ divergence history, and license relationship.
 All platform APIs have one synchronous parse entry point: `Document.parse` in
 Swift, Kotlin, and ECMAScript, and `markdown_core_document_parse` in C.
 
-A parse produces **two total views of one document**. `semantic` is the AST with
-policy applied and may omit bytes: a fence, a bullet and a reference
-definition's punctuation are in no literal anywhere. `concrete` omits nothing —
-the normalized source, its line index, and every byte of it in exactly one
-region with exactly one owner in the semantic tree. The pair is complete, so
-nothing the parser read is reachable through neither.
+A parse produces the AST, and every node carries a **`scope`**: the pair of
+`(line, column)` **boundaries** the element occupies. A scope is what a consumer
+follows to map an element back to the source it came from — it is not a byte
+range, and no substring is taken with it.
 
-A `Document` IS the semantic view and carries `concrete` beside its `content`.
-In C the two are siblings — a `markdown_core_document` is a handle and the root
-is a node it lends out — and in the bindings they are not, because the handle is
-gone by the time `parse` returns. The Swift, Kotlin, and ECMAScript bindings copy
-both views into platform values and retain no native parser handle after the parse returns —
-which is why a region names its owner by the PATH of child indices from the
-semantic root rather than by a pointer. The C API exposes an owned document with
-borrowed node views.
+Those numbers are counted against the **normalized source**, not against the
+string you passed: UTF-8 as fed, every NUL replaced by the three bytes of
+U+FFFD, every line ending a single `\n` and every line having one. `concrete`
+publishes that source and its line index, because an input containing a NUL has
+a buffer whose columns no longer agree with the parser's.
+
+A `Document` IS the AST and carries `concrete` beside its `content`. In C the
+two are siblings — a `markdown_core_document` is a handle and the root is a node
+it lends out — and in the bindings they are not, because the handle is gone by
+the time `parse` returns. The Swift, Kotlin, and ECMAScript bindings copy both
+into platform values and retain no native parser handle afterwards. The C API
+exposes an owned document with borrowed node views.
 
 The default parse options enable smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas (including
@@ -60,7 +62,7 @@ let document = try Document.parse(
     options: ParseOptions(directives: false)
 )
 print(document.dump())
-print(document.concrete.regionCount)
+print(document.concrete.lineCount)
 ```
 
 The Swift AST is an immutable, `Sendable` value tree. The module also provides
@@ -89,7 +91,7 @@ val document = Document.parse(
     ParseOptions(directives = false),
 )
 println(document.dump())
-println(document.concrete.regionCount)
+println(document.concrete.lineCount)
 ```
 
 The published targets are Android (API 21 or later), JVM 17, macOS arm64, and
@@ -114,7 +116,7 @@ new Walker().walk(document, (event, node) => {
   console.log(event, node.kind, node.scope);
 });
 console.log(TreeDumper.dump(document));
-console.log(document.concrete.regionCount);
+console.log(document.concrete.lineCount);
 ```
 
 The package supports Node.js 20 or later and browser environments that can load

@@ -1208,10 +1208,6 @@ static markdown_core_node *match_colon_directive(const markdown_core_syntax_exte
          * the enclosing paragraph's claim run, because they are not part of
          * the label's own content buffer -- the label was made from what is
          * between them. */
-        markdown_core_parser_claim_inline(parser, label_node, label_start - 1, label_start,
-                                          MARKDOWN_CORE_REGION_ROLE_MARKER);
-        markdown_core_parser_claim_inline(parser, label_node, label_start + label_len, label_start + label_len + 1,
-                                          MARKDOWN_CORE_REGION_ROLE_MARKER);
     }
     return node;
 }

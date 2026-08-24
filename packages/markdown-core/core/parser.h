@@ -13,70 +13,6 @@ extern "C" {
 
 #define MAX_LINK_LABEL_LENGTH 1000
 
-/* THE CONCRETE RECORD SET (requirement 11a).
- *
- * A region is a byte range of the normalized source with exactly one owner and
- * exactly one role. Every block-level byte is in exactly one region, so the
- * regions on a line tile it and the regions in order reproduce the source.
- *
- * The three roles are what the byte DID, not what it looks like:
- *
- *   MARKER     the bytes that made the owner the kind of thing it is, and are
- *              not its content: `> `, `- `, `#`s, a fence, `[^label]:`.
- *   CONTENT    the bytes that went into the owner's content buffer, and so are
- *              the bytes its children are cut from.
- *   DISCARDED  the bytes the parse read and kept nowhere -- indentation
- *              stripped from a continuation line, the trailing hashes of a
- *              closed ATX heading, a line ending nothing owns. They still have
- *              an owner: the block they were read inside.
- *
- * A region may be REFINED -- split into adjacent regions covering the same
- * bytes -- which is how an extension takes credit for part of a span without
- * breaking the tiling. It may never be moved and never be deleted. */
-#ifndef MARKDOWN_CORE_REGION_ROLE_TYPEDEF
-#define MARKDOWN_CORE_REGION_ROLE_TYPEDEF
-typedef enum markdown_core_region_role {
-    MARKDOWN_CORE_REGION_ROLE_MARKER = 0,
-    MARKDOWN_CORE_REGION_ROLE_CONTENT = 1,
-    MARKDOWN_CORE_REGION_ROLE_DISCARDED = 2
-} markdown_core_region_role;
-#endif
-
-typedef struct {
-    /* Offset in the parser's normalized source, and the length in bytes. */
-    bufsize_t start;
-    bufsize_t length;
-    /* The node these bytes belong to. Never NULL: bytes that belong to no
-     * block belong to the document. */
-    struct markdown_core_node *owner;
-    uint8_t role;
-} markdown_core_region_record;
-
-/* ONE INLINE CLAIM: the bytes [`from`, `to`) of the block's CONTENT buffer are
- * `owner`'s, in role `role`.
- *
- * Requirement 11b's law is that every byte of every block's CONTENT region is
- * owned by exactly one INLINE node or by the block itself, and the inline phase
- * is the only thing that knows which. Claims are made as the bytes are read,
- * accumulated for the block being parsed, and applied once when its inlines are
- * done -- because emphasis and brackets are resolved at the END of the block,
- * and a `*` that turns out to open an emphasis was a `Text` node when it was
- * read. LATER CLAIMS WIN, which is exactly that: `S_insert_emph` re-claims the
- * delimiter bytes for the node it just made.
- *
- * THE ROLE IS DERIVABLE AND IS STATED ONCE: a byte is CONTENT when it survives
- * into a node's literal AS ITSELF, and MARKER when it does not. That decides
- * every case the requirement enumerates without a second list -- a matched
- * delimiter run, a matched bracket, a backslash, an entity, a destination, a
- * title and a smart-punctuation substitution all fail it; an UNMATCHED `*`
- * passes it, because the node's literal is that byte. */
-typedef struct {
-    bufsize_t from;
-    bufsize_t to;
-    struct markdown_core_node *owner;
-    uint8_t role;
-} markdown_core_inline_claim;
-
 /* THE DIAGNOSTIC LIST (requirement 13).
  *
  * A parse produces, beside the two total views, an ORDERED list of
@@ -89,7 +25,7 @@ typedef struct {
  * list an observation rather than a second engine.
  *
  * THERE IS NO TRUNCATED LIST. An allocation this list cannot afford abandons
- * the parse, exactly as one the region set cannot afford does -- OWNER RULING,
+ * the parse, exactly as one the line index cannot afford does -- OWNER RULING,
  * 2026-08-24: "we do not want fallback when OOM happens; the parser should
  * return an error rather than return a fallback." Either the parse produced its
  * complete diagnostics, or there is no document to hang them on.
@@ -184,24 +120,22 @@ typedef struct {
     markdown_core_strbuf messages;
 } markdown_core_diagnostics;
 
-/* THE CONCRETE VIEW, moved out of the parser and into the document.
+/* THE NORMALIZED SOURCE AND ITS LINE INDEX, moved out of the parser and into
+ * the document.
  *
- * Requirement 12: one parse under two TOTAL views. The semantic one is the
- * tree; this is the other -- the normalized source, its line index, and every
- * region -- and the law that binds them is that every byte of the source is in
- * exactly one region and every region has exactly one owner, so the pair omits
- * nothing. It lived and died with the parser until Step 12, which is why 11a's
- * comment says "requirement 12 is where a document keeps this view".
+ * A scope says WHERE an element is, as a pair of (line, column) BOUNDARIES --
+ * not as a byte range, and nothing takes a substring with it (owner ruling,
+ * 2026-08-24). What the coordinates are COUNTED AGAINST is this: the normalized
+ * source -- UTF-8 as fed, every NUL replaced by three bytes, every line ending
+ * one `\n` and every line having one -- which is NOT the buffer the caller
+ * passed, and that difference is the whole reason a document publishes it.
  *
- * The regions name NODES, so whoever holds this must hold the tree: the
- * document owns both, and freeing it frees both. */
+ * It lived and died with the parser until Step 12, which is what moves it. */
 typedef struct {
     markdown_core_mem *mem;
     markdown_core_strbuf source;
     bufsize_t *line_starts;
     bufsize_t line_starts_size;
-    markdown_core_region_record *regions;
-    bufsize_t regions_size;
 } markdown_core_concrete;
 
 /* Where one source line's bytes landed in a block's content buffer.
@@ -262,15 +196,15 @@ struct markdown_core_parser {
     /* THE NORMALIZED SOURCE: every line exactly as S_process_line normalized
      * it -- UTF-8 validated if the option is on, NUL replaced, the line ending
      * a single '\n' whether the author wrote one, wrote CRLF, or wrote nothing
-     * at all -- concatenated in order. The document retains it because the
-     * concrete record set indexes it: a region is a byte range in HERE, not in
-     * whatever buffer the caller fed, and requirement 11a's L3 says the regions
-     * in order reproduce it byte for byte.
+     * at all -- concatenated in order. The document retains it because a SCOPE
+     * is counted against it: `Text scope=2:2..2:4` names lines and columns of
+     * HERE, not of whatever buffer the caller fed -- an input with a NUL in it
+     * has different columns on that line.
      *
      * It is NOT the caller's bytes. `markdown_core_parser_feed` may be called
      * with any split, the caller's buffer may be freed the moment feed returns,
      * and two different inputs normalize to the same source -- which is the
-     * point: what the tree describes is this. */
+     * point: what the tree's positions describe is this. */
     markdown_core_strbuf source;
     /* Where each line begins in `source`: line N starts at line_starts[N - 1].
      * The line index the same requirement names, and the only thing that can
@@ -278,18 +212,9 @@ struct markdown_core_parser {
     bufsize_t *line_starts;
     bufsize_t line_starts_size;
     bufsize_t line_starts_alloc;
-    /* The concrete record set (see markdown_core_region_record), in source order, and
-     * how far the line in hand has been attributed. Regions are emitted while
-     * the line that contains them is being processed and never afterwards,
-     * which is L4: the record set is complete for lines 1..N once line N has
-     * been fed. */
-    markdown_core_region_record *regions;
-    bufsize_t regions_size;
-    bufsize_t regions_alloc;
-    bufsize_t region_cursor;
-    /* When set, markdown_core_parser_finish MOVES the normalized source, the
-     * line index and the region set here instead of releasing them, and the
-     * caller becomes their owner (requirement 12). */
+    /* When set, markdown_core_parser_finish MOVES the normalized source and its
+     * line index here instead of releasing them, and the caller becomes their
+     * owner (requirement 12). */
     markdown_core_concrete *concrete_retain;
     /* REQUIREMENT 13's list, and the switch that decides whether it is built.
      *
@@ -338,31 +263,11 @@ struct markdown_core_parser {
     markdown_core_line_mark *line_marks;
     bufsize_t line_marks_size;
     bufsize_t line_marks_alloc;
-    /* Requirement 11b's inline claims for the block being parsed, and the
-     * scratch that resolves them. Both are reused block to block and grow to
-     * the largest block seen; neither survives the parse. `paint` is one
-     * claim index per CONTENT byte, which is what makes "later claims win" a
-     * single pass rather than an interval structure. */
-    markdown_core_inline_claim *inline_claims;
-    bufsize_t inline_claims_size;
-    bufsize_t inline_claims_alloc;
-    int32_t *inline_paint;
-    bufsize_t inline_paint_alloc;
 };
 
-/* Requirement 11b: resolve the inline claims made while `block`'s inlines were
- * parsed and refine its CONTENT regions into them. Implemented beside the rest
- * of the region set in core/blocks.c and called once per block by
- * markdown_core_parse_inlines. */
-/* `base` is the claim count at the start of this block's inline parse: the
- * claim list is a STACK, because a directive's label is inline-parsed from
- * inside its own paragraph's inline parse and the inner call must not resolve
- * -- or discard -- the outer one's claims. */
-void markdown_core_parser_refine_inline_regions(markdown_core_parser *parser, markdown_core_node *block,
-                                                bufsize_t base);
-
-/* Ask `finish` to hand the concrete view over rather than release it. `out` is
- * zeroed here and filled at finish; a parse that fails leaves it empty. */
+/* Ask `finish` to hand the normalized source and its line index over rather
+ * than release them. `out` is zeroed here and filled at finish; a parse that
+ * fails leaves it empty. */
 void markdown_core_parser_retain_concrete(markdown_core_parser *parser, markdown_core_concrete *out);
 void markdown_core_concrete_dispose(markdown_core_concrete *concrete);
 
@@ -402,11 +307,6 @@ void markdown_core_diagnostics_write(const markdown_core_diagnostics *diagnostic
 /* The stable spelling of a code, for the wire format and for a consumer that
  * would otherwise keep its own table. NULL for a value no version defines. */
 const char *markdown_core_diagnostic_code_string(markdown_core_diagnostic_code code);
-
-/* `to` takes `from`'s regions, with a forward-only cursor shared across a run
- * of merges. Pass -1 to have it initialised from `from`'s own start. */
-void markdown_core_parser_absorb_regions(markdown_core_parser *parser, markdown_core_node *from, markdown_core_node *to,
-                                         bufsize_t *cursor);
 
 #ifdef __cplusplus
 }

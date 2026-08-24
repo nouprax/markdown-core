@@ -1,13 +1,11 @@
 import {
     Concrete,
     Document,
-    RegionRole,
     TreeDumper,
     visit,
     Walker,
     type Heading,
     type Markup,
-    type Region,
     type Table,
     type TableCell,
     type TableRow,
@@ -20,20 +18,16 @@ const diagnostic: string = document.dump();
 const explicitDiagnostic: string = TreeDumper.dump(document);
 void diagnostic;
 void explicitDiagnostic;
-// The concrete view is bytes, a line index and regions, and its owners are
-// paths that outlive the WASM handle.
+// The source a scope is counted against is bytes and a line index, and both
+// outlive the WASM handle.
 const source: Uint8Array = concrete.source;
-const region: Region = concrete.region(0);
-const owner: Markup | undefined = document.ownerOf(region);
-const role: RegionRole = region.role;
-const ownerPath: readonly number[] = region.owner;
+const lineStart: number = concrete.lineStart(1);
+const lineCount: number = concrete.lineCount;
 void source;
-void owner;
-void role;
-void ownerPath;
-void concrete.lineStart(1);
-// @ts-expect-error a region's fields are readonly
-region.start = 1;
+void lineStart;
+void lineCount;
+// @ts-expect-error the source is readonly
+concrete.source = source;
 // @ts-expect-error the concrete view is readonly
 document.concrete = concrete;
 const visitor: Visitor<string> = {

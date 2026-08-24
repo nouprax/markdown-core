@@ -1,5 +1,4 @@
-export { Concrete, RegionRole } from "./concrete.js";
-export type { Region } from "./concrete.js";
+export { Concrete } from "./concrete.js";
 export { Document } from "./document.js";
 export type { BlockQuote } from "./model/block-quote.js";
 export type { CodeBlock } from "./model/code-block.js";
