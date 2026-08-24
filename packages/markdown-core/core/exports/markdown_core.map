@@ -12,7 +12,6 @@ MARKDOWN_CORE_1.0 {
     markdown_core_diagnostic_code_name;
     markdown_core_error_get_code;
     markdown_core_error_get_message;
-    markdown_core_error_get_scope;
     markdown_core_error_free;
     markdown_core_node_get_kind;
     markdown_core_node_kind_name;

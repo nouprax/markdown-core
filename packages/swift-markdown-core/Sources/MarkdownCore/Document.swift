@@ -40,10 +40,14 @@ public enum ParseErrorCode: Int32, Sendable {
     case `internal` = 3
 }
 
+/// A parse failure, and nothing else.
+///
+/// It carries no scope: an input the parser could not turn into a document has
+/// no extent to point at, and a failure the author could act on would have been
+/// a diagnostic instead.
 public struct ParseError: Error, Sendable, CustomStringConvertible {
     public let code: ParseErrorCode
     public let message: String
-    public let scope: Scope?
 
     public var description: String { message }
 }
@@ -94,7 +98,7 @@ public struct Document: Markup {
             markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT,
             let concrete = Concrete(from: nativeDocument)
         else {
-            throw ParseError(code: .internal, message: "parser returned an invalid document tree", scope: nil)
+            throw ParseError(code: .internal, message: "parser returned an invalid document tree")
         }
         return Document(from: root, concrete: concrete)
     }

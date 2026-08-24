@@ -3,19 +3,14 @@ import MarkdownCoreC
 extension ParseError {
     init(from error: OpaquePointer?) {
         guard let error else {
-            self.init(code: .internal, message: "markdown parsing failed", scope: nil)
+            self.init(code: .internal, message: "markdown parsing failed")
             return
         }
         let rawCode = markdown_core_error_get_code(error).rawValue
         let code = ParseErrorCode(rawValue: Int32(rawCode)) ?? .internal
-        var nativeScope = markdown_core_scope()
-        let parsedScope =
-            markdown_core_error_get_scope(error, &nativeScope)
-            ? Scope(from: nativeScope) : nil
         self.init(
             code: code,
-            message: markdown_core_error_get_message(error).requiredString,
-            scope: parsedScope
+            message: markdown_core_error_get_message(error).requiredString
         )
     }
 }

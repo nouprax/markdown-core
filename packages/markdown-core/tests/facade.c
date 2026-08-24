@@ -343,13 +343,19 @@ static void check_diagnostics(void) {
     }
 
     /* THE CONVERSE. A parse failure is not a diagnostic: there is no document,
-     * so there is no list to read, and the error carries no scope. */
+     * so there is no list to read.
+     *
+     * "A parse failure carries no scope" USED TO BE A CHECK HERE and is now the
+     * shape of the type: `markdown_core_error_get_scope` is deleted, the two
+     * fields behind it with it, and what a caller can ask an error for is its
+     * code and its message. A check cannot assert the absence of a symbol; the
+     * header is the statement. */
     {
-        markdown_core_scope scope;
         markdown_core_error *refusal = NULL;
         markdown_core_document *none = markdown_core_document_parse(NULL, 8, NULL, &refusal);
         check(none == NULL && refusal != NULL, "an invalid argument produces an error and no document");
-        check(!markdown_core_error_get_scope(refusal, &scope), "a parse failure carries no scope");
+        check(markdown_core_error_get_code(refusal) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+              "and the error says which failure it was");
         markdown_core_error_free(refusal);
     }
     check(markdown_core_document_diagnostic_count(NULL) == 0, "a null document has no diagnostics");

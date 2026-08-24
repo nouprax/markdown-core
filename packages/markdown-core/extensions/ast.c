@@ -16,10 +16,13 @@
 #include <node.h>
 #include <parser.h>
 
-/* A parse failure, and NOTHING ELSE. It carries no scope -- requirement 13's
- * converse -- and the two fields that used to offer one were never written by
- * any path in the library, so `markdown_core_error_get_scope` returned false
- * for every error it could ever be handed.
+/* A parse failure, and NOTHING ELSE. Requirement 13's converse is that a parse
+ * failure is not a diagnostic: `markdown_core_error` means there is no
+ * document, and an input the parser could not turn into a document has no
+ * extent to point at. There is therefore no scope here to offer, and no
+ * accessor to offer one -- the two fields that used to be here were never
+ * written by any path in the library, and they went with
+ * `markdown_core_error_get_scope` at Step 13.
  *
  * `message` is a STRING LITERAL and is not copied. Every one of the eight
  * failures this file can report names a constant, and the copy was the second
@@ -30,15 +33,6 @@
 struct markdown_core_error {
     markdown_core_error_code code;
     const char *message;
-    /* DEAD, and requirement 13's converse says so: a parse failure carries no
-     * scope, because an input the parser could not turn into a document has no
-     * extent to point at. No path in the library has ever written these, so
-     * `markdown_core_error_get_scope` returns false for every error it can be
-     * handed. They go with the binding that mirrors them (13.2), because
-     * deleting the accessor here alone would leave the Swift and Kotlin
-     * bridges calling a symbol that is not there. */
-    bool has_scope;
-    markdown_core_scope scope;
 };
 
 typedef struct dump_buffer {
@@ -259,14 +253,6 @@ markdown_core_string_view markdown_core_error_get_message(const markdown_core_er
         view.length = strlen(error->message);
     }
     return view;
-}
-
-bool markdown_core_error_get_scope(const markdown_core_error *error, markdown_core_scope *scope) {
-    if (!error || !error->has_scope || !scope) {
-        return false;
-    }
-    *scope = error->scope;
-    return true;
 }
 
 void markdown_core_error_free(markdown_core_error *error) { free(error); }

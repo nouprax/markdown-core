@@ -1,8 +1,11 @@
 package com.nouprax.markdown.core
 
 internal object WireDecoder {
-    /** `MKC4`: the concrete view lost its regions when 11a-11c were retired. */
-    private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x34)
+    /**
+     * `MKC5`: an error lost its scope byte at Step 13, which deleted
+     * `markdown_core_error_get_scope` -- a parse failure carries no scope.
+     */
+    private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x35)
 
     fun decodeDocument(bytes: ByteArray): Document {
         val reader = WireReader(bytes)
@@ -58,9 +61,8 @@ private fun WireReader.error(): ParseException {
             else -> ParseErrorCode.INTERNAL
         }
     val message = requiredString()
-    val errorScope = if (boolean()) scope() else null
     require(finished) { "invalid native error payload" }
-    return ParseException(code, message, errorScope)
+    return ParseException(code, message)
 }
 
 internal class WireReader(

@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), ~~**11a**~~ (RETIRED, §4.14.11d), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), ~~**11b**~~ ~~**11c**~~ (RETIRED with 11a, §4.14.11d), **12.1** (§4.14.12a), **12.2's locator** (§4.14.12b), **`end-at-line-ending` CLOSED** (§4.14.11c2), **13.1** (§4.14.13a) |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), ~~**11a**~~ (RETIRED, §4.14.11d), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), ~~**11b**~~ ~~**11c**~~ (RETIRED with 11a, §4.14.11d), **12.1** (§4.14.12a), **12.2's locator** (§4.14.12b), **`end-at-line-ending` CLOSED** (§4.14.11c2), **13.1** (§4.14.13a), **13.2** (§4.14.13b) — **STEP 13 IS WHOLE** |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 14**, then `15C`. **11a, 11b and 11c ARE RETIRED** (§4.14.11d) by owner ruling of 2026-08-24: the requirement is *"take an element and find its way back to the source"*, `node.scope` answers it, and the record set answered the inverse question with no consumer anywhere in this file. **−1,803 lines of C and NOT ONE GOLDEN ROW MOVED for it.** The same ruling settled what a scope IS — **a pair of BOUNDARIES, not a byte range** — which deleted `S_end_at_last_byte_taken`, moved **71 golden rows** back to cmark-gfm's shape, took `places`' zero-column rule and Q40's exception with it, and took `containment` 8 → 9 with a row upstream reproduces byte for byte. 13.2's binding work landed inside it, so what 13 still owes is only the `markdown_core_error_get_scope` deletion. **13.1 IS LANDED** (§4.14.13a): eight diagnostic codes, the rule that decided them (*a diagnostic exists exactly where the two total views cannot say what happened*), and **the owner's 2026-08-24 ruling that there is NO FALLBACK ON OOM**, which struck row 13's truncation-marker clause and deleted the sweep that had been built for it. **What the ruling opens is measured and named** in §4.14.13a: 10 of 501 injected failures still succeed losslessly, and the step that makes them terminal owns the gate that replaces `fallback_runner`. **STEP 12 IS LANDED WHOLE** (§4.14.12a–12c): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 and M33 both read 69/69 there and fail `conformance` — a region names its owner by a path that survives being copied, `markdown_core_document_region_owner_paths` answers for every region in **1.13 ms against the 96.8 ms the singular call costs in a loop**, and all three bindings carry `concrete` and `parse` on `Document` itself. **The owner ruled the surface and I read it wrong twice**: the semver question killed my *reason*, not reading 2, and §4.14.12c records both misreadings. **`specs/positions/places.json` IS EMPTY** (§4.14.11c2). **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), **Step 9b** whole (§4.14.9b1–9b2) — the definition and both references are nodes, **D9 and D30 closed**, the **mdast backlog EMPTY** — **Step 11b** (§4.14.11b), which added L5 and L6 because L1–L4 are all true of the day before it, and **Step 11c** (§4.14.11c). Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **Step 14**, then `15C`. **11a, 11b and 11c ARE RETIRED** (§4.14.11d) by owner ruling of 2026-08-24: the requirement is *"take an element and find its way back to the source"*, `node.scope` answers it, and the record set answered the inverse question with no consumer anywhere in this file. **−1,803 lines of C and NOT ONE GOLDEN ROW MOVED for it.** The same ruling settled what a scope IS — **a pair of BOUNDARIES, not a byte range** — which deleted `S_end_at_last_byte_taken`, moved **71 golden rows** back to cmark-gfm's shape, took `places`' zero-column rule and Q40's exception with it, and took `containment` 8 → 9 with a row upstream reproduces byte for byte. 13.2's binding work landed inside it, and **the `markdown_core_error_get_scope` deletion landed at 13.2** (§4.14.13b), which closes Step 13 whole: the accessor, its two never-written fields, both export entries and `ParseError.scope` in all three bindings are gone, and the Kotlin wire is `MKC5`. **That run also found `pnpm run test:es-node` RED at `239ab31`** — §0's *"ES 11 + 9"* counts `node.test.mjs` alone, and `packaging.mjs`'s consumer stage was asserting `lineCount === 2` for a one-line document; the assertion was wrong, the engine was not, and it is repaired with both arms proved live. **13.1 IS LANDED** (§4.14.13a): eight diagnostic codes, the rule that decided them (*a diagnostic exists exactly where the two total views cannot say what happened*), and **the owner's 2026-08-24 ruling that there is NO FALLBACK ON OOM**, which struck row 13's truncation-marker clause and deleted the sweep that had been built for it. **What the ruling opens is measured and named** in §4.14.13a: 10 of 501 injected failures still succeed losslessly, and the step that makes them terminal owns the gate that replaces `fallback_runner`. **STEP 12 IS LANDED WHOLE** (§4.14.12a–12c): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 and M33 both read 69/69 there and fail `conformance` — a region names its owner by a path that survives being copied, `markdown_core_document_region_owner_paths` answers for every region in **1.13 ms against the 96.8 ms the singular call costs in a loop**, and all three bindings carry `concrete` and `parse` on `Document` itself. **The owner ruled the surface and I read it wrong twice**: the semver question killed my *reason*, not reading 2, and §4.14.12c records both misreadings. **`specs/positions/places.json` IS EMPTY** (§4.14.11c2). **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), **Step 9b** whole (§4.14.9b1–9b2) — the definition and both references are nodes, **D9 and D30 closed**, the **mdast backlog EMPTY** — **Step 11b** (§4.14.11b), which added L5 and L6 because L1–L4 are all true of the day before it, and **Step 11c** (§4.14.11c). Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -1231,7 +1231,7 @@ Q10 removes a constraint the plan was shaped around. Four things move and three 
 
 **R11 stops being a risk and becomes a build-time assert.** Option-struct layout across three bindings was a hazard because a break was expensive. With the surface free, the bridge asserts are the mechanism, and they fail loudly at build time in the same commit that changes the struct (15B).
 
-**The option surface shrinks, and every deletion is an application of one rule — attachment is the only gate.** `MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS` and `_LATEX_FORMULA_DELIMITERS` (Step 6), `MARKDOWN_CORE_OPT_DIRECTIVE` (Step 7), `markdown_core_enable_safety_checks` (3b), `markdown_core_register_plugin` and the whole runtime-registration surface (3), `markdown_core_get_arena_mem_allocator` and the arena entry points (3a), `markdown_core_parser_feed_reentrant` (11a, **Q28**), and `markdown_core_error_get_scope` (12 — `has_scope` is never set to `true` anywhere, so the function is unconditionally dead). The public `delimiter` struct, annotated *"Exposed raw for now"* since 1.0, is hidden behind accessors (3).
+**The option surface shrinks, and every deletion is an application of one rule — attachment is the only gate.** `MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS` and `_LATEX_FORMULA_DELIMITERS` (Step 6), `MARKDOWN_CORE_OPT_DIRECTIVE` (Step 7), `markdown_core_enable_safety_checks` (3b), `markdown_core_register_plugin` and the whole runtime-registration surface (3), `markdown_core_get_arena_mem_allocator` and the arena entry points (3a), `markdown_core_parser_feed_reentrant` (11a, **Q28**), and `markdown_core_error_get_scope` (assigned to 12, **taken at 13.2** — `has_scope` is never set to `true` anywhere, so the function is unconditionally dead). The public `delimiter` struct, annotated *"Exposed raw for now"* since 1.0, is hidden behind accessors (3).
 
 **The facade changes deliberately, in five named places**, each in the step that owns it: `markdown_core_document_root` → `_semantic` plus `_concrete` (12); `markdown_core_node_footnote_id` deleted in favour of `label` + `identifier` on five kinds (9b); the directive label-hiding accessors deleted and `DirectiveLabel` made visible (7); directive attributes retyped from a JSON `String?` to a key/value sequence (7); optional strings given an explicit presence bit instead of a NULL sentinel (14). The dump renames `id=` → `label=` (Q5, 9b).
 
@@ -7363,6 +7363,87 @@ contract *"no injected failure produces a successful parse"* is not vacuous, it
 is the ruling itself, and something has to say it.
 
 
+#### 4.14.13b Step 13.2 landed: the accessor is gone, and the absence is the type
+
+**What 13 owed, and it is now paid.** §4.1.5 assigned the deletion of
+`markdown_core_error_get_scope` to Step 12; Step 12 did not take it, and 13.1
+deliberately did not either, because 13.1 only ADDED and the Swift binding and
+the Kotlin bridge both CALLED the symbol. This commit deletes it and both
+mirrors in one move.
+
+**What went.** The declaration in `include/markdown_core.h`, the definition in
+`extensions/ast.c`, the `has_scope` and `scope` members of
+`struct markdown_core_error`, the name from BOTH export lists
+(`markdown_core.map` and `markdown_core.exports` — the Mach-O list has been
+compared since 13.1's first gate hole), `ParseError.scope` in Swift, ES's
+`ParseError.scope` with its constructor parameter and its now-unused `Scope`
+import, and Kotlin's `ParseException.scope`.
+
+**It is a wire change, and the magic moved.** The Kotlin bridge put a
+`has_scope` byte on the wire after every error message — always zero, because
+nothing ever set the field. The byte is gone and the magic is `MKC4` → `MKC5`
+in both places that spell it: `src/native/markdown_core_kotlin_bridge.c` and
+`wire/WireDecoder.kt`.
+
+**The mutant, and it kills.** Leaving `WireDecoder.kt` at `MKC4` while the
+bridge writes `MKC5` takes `jvmTest` from **11 passed / 0 failed** to **10
+failures across 6 of its 6 classes**. That is the only mechanised claim in this
+commit that has a kill: the deletion itself is the removal of dead code, and
+**no mutant of it kills anything**, because there is no behaviour to change —
+`has_scope` was never written, so the accessor answered `false` for every error
+the library could ever hand it. Saying that plainly is the point. What replaced
+the check is not a check.
+
+**A check cannot assert the absence of a symbol.** `tests/facade.c` asserted
+`!markdown_core_error_get_scope(refusal, &scope)` under the heading *"a parse
+failure carries no scope"*. With the accessor deleted that sentence is the
+shape of the type rather than a runtime fact, and the header is where it is
+now stated. The block keeps the half a test can still make — an invalid
+argument produces an error and no document — and gains the code assertion
+(`MARKDOWN_CORE_ERROR_INVALID_ARGUMENT`) that the old line crowded out.
+
+##### `pnpm run test:es-node` WAS RED AT `239ab31`, and §0 did not say so
+
+Running the binding suites for this commit found the ES suite failing at
+HEAD **before any of this change was applied** — measured by stashing, deleting
+`packages/es-markdown-core/dist` and re-running. §0's row reads *"ES 11 + 9"*
+and both of those numbers are real, but they count only `tests/node.test.mjs`;
+`test:es-node` also runs `tests/packaging.mjs all`, whose third stage packs the
+npm artifact and consumes it, and that stage exited 6.
+
+**Exit 6 is `d.concrete.lineCount !== 2` for the input `# npm consumer`, and
+the assertion was wrong, not the engine.** Measured through the packed
+artifact: the normalization appends the missing final newline, so
+`concrete.source` is `"# npm consumer\n"` and 15 bytes — which is why exit 5's
+length check passed — but a trailing newline **terminates the line it ends and
+does not open another**. The engine answers `lineCount` 1 here and 2 for
+`a\nb\n`, which is four bytes and two lines, and C and ES are the same code
+path: `es_document_line_count` calls `markdown_core_document_line_count`, which
+returns `concrete.line_starts_size`.
+
+The assertion is repaired to 1 and a second one is added beside it — `a\nb\n`
+is two lines — so the pin states the RULE rather than a number. **Both arms are
+live, measured**: forcing either expected value to 9 exits 6 and 7 respectively,
+and restoring both makes the consumer stage pass.
+
+##### Gates after
+
+Every gate re-run with all three presets rebuilt. `correctness` **69/69**,
+`correctness-asan` **60/60**, `correctness-ubsan` **60/60**, `conformance` 2/2,
+canonical-ast 32 kinds / 62 fields / 6 cases, projections 32 over 12 surfaces,
+source lists 22 / 4 of 5, public surface (all three lists, one name lighter),
+special chars, attach order, plan graph 22/45, both fuzz oracles 300/300,
+upstream **891/891** with 10/10, mdast **112/112** with an empty backlog,
+scope-sanity 1, inline-sourcepos 40, containment 9, places 0, diagnostics 38
+over 891 with 7 of 8 codes, reference-order 0, test topology, `format-c`,
+`format-cmake`, `lint-c`, `pnpm -w run lint`. **No golden row moved**, and none
+could: nothing in the dump ever spelled an error.
+
+Bindings: **ES 11 + 9** and `packaging.mjs` now green for the first time on this
+branch, **Swift 6 + 1 + 3**, **Kotlin 11 across six classes + 4** — counted from
+`build/test-results/*/TEST-*.xml`, not from `BUILD SUCCESSFUL`.
+
+
 ---
 
 ### 4.3 The ordering argument
@@ -7967,7 +8048,7 @@ following, together:
 **Deliverables**
 - [x] **Directive grammar conformance (Step 7) — deliverable #1. LANDED**, §4.14.7a–e. Nothing carried: **D36** closed at 7e and **Q43** answered with it.
 - [x] **The formula fix (Step 6) — deliverable #2. LANDED, §4.14.6.**
-- [x] ~~CST concrete records (11a, 11b, 11c)~~ **RETIRED by owner ruling** (§4.14.11d) and diagnostics (13) — deliverable #3. **13.1 is LANDED** (§4.14.13a) and its binding work landed with the retirement; what 13 still owes is the `markdown_core_error_get_scope` deletion
+- [x] ~~CST concrete records (11a, 11b, 11c)~~ **RETIRED by owner ruling** (§4.14.11d) and diagnostics (13) — deliverable #3. **13 is LANDED WHOLE** — 13.1 (§4.14.13a) and 13.2 (§4.14.13b), which deleted `markdown_core_error_get_scope`, its two never-written fields and `ParseError.scope` in all three bindings, and bumped the Kotlin wire to `MKC5`
 - [x] The reference model (9a, 9b) and the positions that depend on it — **10, 9a and 9b are all LANDED** (§4.14.10, §4.14.9a1–9a2, §4.14.9b1–9b2)
 - [ ] The facade (12), the null/empty rule (14) — **12 is LANDED WHOLE** (§4.14.12a–12c): two total views in C and in all three bindings, and §4.10's ruling that the break window is not a constraint is what let 12.2 take the literal reading; 14 is not
 - [ ] Bindings, specs and docs regenerated (15)

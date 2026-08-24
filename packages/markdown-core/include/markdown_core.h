@@ -307,9 +307,6 @@ MARKDOWN_CORE_API const char *markdown_core_diagnostic_code_name(markdown_core_d
  * failure the author could act on would have been a diagnostic instead. */
 MARKDOWN_CORE_API markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error);
 MARKDOWN_CORE_API markdown_core_string_view markdown_core_error_get_message(const markdown_core_error *error);
-/** Always false. Kept only until the bindings that mirror it are rewritten
- * (13.2); requirement 13's converse is that a parse failure carries no scope. */
-MARKDOWN_CORE_API bool markdown_core_error_get_scope(const markdown_core_error *error, markdown_core_scope *scope);
 MARKDOWN_CORE_API void markdown_core_error_free(markdown_core_error *error);
 
 MARKDOWN_CORE_API markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *node);

@@ -67,7 +67,12 @@ try {
                     "if ('memory' in api || 'initialize' in api) process.exit(3);",
                     "if (d.dump() !== api.TreeDumper.dump(d)) process.exit(4);",
                     "if (d.concrete.lineStart(1) !== 0 || d.concrete.source.length !== 15) process.exit(5);",
-                    "if (d.concrete.lineCount !== 2) process.exit(6);"
+                    // ONE line, not two. The normalization appends the missing final newline, so
+                    // the source is 15 bytes -- but a trailing newline TERMINATES the line it ends
+                    // and does not open another: `a\nb\n` is 4 bytes and two lines, measured. This
+                    // asserted 2 and `pnpm run test:es-node` was red at 239ab31 because of it.
+                    "if (d.concrete.lineCount !== 1) process.exit(6);",
+                    "if (api.Document.parse('a\\nb\\n').concrete.lineCount !== 2) process.exit(7);"
                 ].join("\n")
             ],
             { cwd: temporary, encoding: "utf8" }

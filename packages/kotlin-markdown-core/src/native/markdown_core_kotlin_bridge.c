@@ -340,8 +340,9 @@ static void apply_options(markdown_core_parse_options *options, uint32_t mask) {
 
 bool markdown_core_kotlin_parse(const uint8_t *source, size_t length, uint32_t options_mask, uint8_t **output,
                                 size_t *output_length) {
-    /* MKC4: the concrete view lost its regions when 11a-11c were retired. */
-    static const uint8_t magic[] = {'M', 'K', 'C', '4'};
+    /* MKC5: an error lost its scope byte when Step 13 deleted
+     * `markdown_core_error_get_scope` -- a parse failure carries no scope. */
+    static const uint8_t magic[] = {'M', 'K', 'C', '5'};
     markdown_core_parse_options options;
     markdown_core_error *error = NULL;
     markdown_core_document *document;
@@ -359,8 +360,6 @@ bool markdown_core_kotlin_parse(const uint8_t *source, size_t length, uint32_t o
 
     put_bytes(&buffer, magic, sizeof(magic));
     if (document == NULL) {
-        markdown_core_scope scope;
-        bool has_scope = error != NULL && markdown_core_error_get_scope(error, &scope);
         put_u8(&buffer, 1);
         put_i32(&buffer, error == NULL ? MARKDOWN_CORE_ERROR_INTERNAL : markdown_core_error_get_code(error));
         if (error == NULL) {
@@ -368,10 +367,6 @@ bool markdown_core_kotlin_parse(const uint8_t *source, size_t length, uint32_t o
             put_string(&buffer, fallback, true);
         } else {
             put_string(&buffer, markdown_core_error_get_message(error), true);
-        }
-        put_u8(&buffer, has_scope ? 1 : 0);
-        if (has_scope) {
-            put_scope(&buffer, scope);
         }
         markdown_core_error_free(error);
     } else {
