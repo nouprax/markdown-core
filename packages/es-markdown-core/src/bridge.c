@@ -23,9 +23,23 @@ enum es_string_field {
     ES_STRING_ASSOCIATION_IDENTIFIER
 };
 
-static void es_write_view(markdown_core_string_view view, uintptr_t *data, size_t *length) {
+static bool es_write_view(markdown_core_string_view view, uintptr_t *data, size_t *length) {
     *data = (uintptr_t)view.data;
     *length = view.length;
+    return true;
+}
+
+/* PRESENCE IS THE RETURN VALUE, not the pointer. This boundary used to have
+ * one channel for two facts -- a null `data` meant both "absent" and "present
+ * but the bytes live nowhere" -- and requirement 14 says the two are different
+ * answers, so `es_string` now says which it gave. */
+static bool es_write_optional_view(markdown_core_optional_string_view view, uintptr_t *data, size_t *length) {
+    if (!view.has_value) {
+        *data = 0;
+        *length = 0;
+        return false;
+    }
+    return es_write_view(view.value, data, length);
 }
 
 markdown_core_document *es_document_parse(const uint8_t *source, size_t length, uint32_t flags,
@@ -136,7 +150,8 @@ int32_t es_node_checked(const markdown_core_node *node) {
 }
 
 int32_t es_node_code_flag(const markdown_core_node *node, int32_t field) {
-    markdown_core_string_view info, language, literal;
+    markdown_core_optional_string_view info, language;
+    markdown_core_string_view literal;
     bool fenced, closed;
     markdown_core_node_code_block_properties(node, &info, &language, &literal, &fenced, &closed);
     return field == 0 ? fenced : closed;
@@ -190,8 +205,9 @@ static size_t es_attribute_index = 0;
 
 void es_set_attribute_index(int32_t index) { es_attribute_index = index < 0 ? 0 : (size_t)index; }
 
-void es_string(const void *object, int32_t field, uintptr_t *data, size_t *length) {
+bool es_string(const void *object, int32_t field, uintptr_t *data, size_t *length) {
     markdown_core_string_view first = {NULL, 0}, second = {NULL, 0}, third = {NULL, 0};
+    markdown_core_optional_string_view opt_first = {false, {NULL, 0}}, opt_second = {false, {NULL, 0}};
     const markdown_core_node *node = (const markdown_core_node *)object;
     bool first_bool, second_bool;
     markdown_core_placement_mode mode;
@@ -199,13 +215,11 @@ void es_string(const void *object, int32_t field, uintptr_t *data, size_t *lengt
     switch (field) {
     case ES_STRING_CODE_INFO:
     case ES_STRING_CODE_LANGUAGE:
+        markdown_core_node_code_block_properties(node, &opt_first, &opt_second, &third, &first_bool, &second_bool);
+        return es_write_optional_view(field == ES_STRING_CODE_INFO ? opt_first : opt_second, data, length);
     case ES_STRING_CODE_LITERAL:
-        markdown_core_node_code_block_properties(node, &first, &second, &third, &first_bool, &second_bool);
-        es_write_view(field == ES_STRING_CODE_INFO       ? first
-                      : field == ES_STRING_CODE_LANGUAGE ? second
-                                                         : third,
-                      data, length);
-        return;
+        markdown_core_node_code_block_properties(node, &opt_first, &opt_second, &third, &first_bool, &second_bool);
+        return es_write_view(third, data, length);
     case ES_STRING_LITERAL:
         markdown_core_node_literal(node, &first);
         break;
@@ -223,20 +237,23 @@ void es_string(const void *object, int32_t field, uintptr_t *data, size_t *lengt
         first = field == ES_STRING_DIRECTIVE_ATTRIBUTE_NAME ? first : second;
         break;
     case ES_STRING_LINK_DESTINATION:
+        markdown_core_node_link_properties(node, &first, &opt_first);
+        break;
     case ES_STRING_LINK_TITLE:
-        markdown_core_node_link_properties(node, &first, &second);
-        first = field == ES_STRING_LINK_DESTINATION ? first : second;
-        break;
+        markdown_core_node_link_properties(node, &first, &opt_first);
+        return es_write_optional_view(opt_first, data, length);
     case ES_STRING_IMAGE_SOURCE:
+        markdown_core_node_image_properties(node, &first, &opt_first);
+        break;
     case ES_STRING_IMAGE_TITLE:
-        markdown_core_node_image_properties(node, &first, &second);
-        first = field == ES_STRING_IMAGE_SOURCE ? first : second;
-        break;
+        markdown_core_node_image_properties(node, &first, &opt_first);
+        return es_write_optional_view(opt_first, data, length);
     case ES_STRING_DEFINITION_DESTINATION:
-    case ES_STRING_DEFINITION_TITLE:
-        markdown_core_node_definition_resource(node, &first, &second);
-        first = field == ES_STRING_DEFINITION_DESTINATION ? first : second;
+        markdown_core_node_definition_resource(node, &first, &opt_first);
         break;
+    case ES_STRING_DEFINITION_TITLE:
+        markdown_core_node_definition_resource(node, &first, &opt_first);
+        return es_write_optional_view(opt_first, data, length);
     case ES_STRING_ASSOCIATION_LABEL:
     case ES_STRING_ASSOCIATION_IDENTIFIER:
         markdown_core_node_association(node, &first, &second);
@@ -248,5 +265,5 @@ void es_string(const void *object, int32_t field, uintptr_t *data, size_t *lengt
     default:
         break;
     }
-    es_write_view(first, data, length);
+    return es_write_view(first, data, length);
 }

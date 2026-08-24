@@ -24,10 +24,10 @@ only as a record.
 | | |
 |---|---|
 | Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), ~~**11a**~~ (RETIRED, §4.14.11d), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), ~~**11b**~~ ~~**11c**~~ (RETIRED with 11a, §4.14.11d), **12.1** (§4.14.12a), **12.2's locator** (§4.14.12b), **`end-at-line-ending` CLOSED** (§4.14.11c2), **13.1** (§4.14.13a), **13.2** (§4.14.13b) — **STEP 13 IS WHOLE** |
+| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), ~~**11a**~~ (RETIRED, §4.14.11d), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), ~~**11b**~~ ~~**11c**~~ (RETIRED with 11a, §4.14.11d), **12.1** (§4.14.12a), **12.2's locator** (§4.14.12b), **`end-at-line-ending` CLOSED** (§4.14.11c2), **13.1** (§4.14.13a), **13.2** (§4.14.13b) — **STEP 13 IS WHOLE** —, **14** (§4.14.14) |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **Step 14**, then `15C`. **11a, 11b and 11c ARE RETIRED** (§4.14.11d) by owner ruling of 2026-08-24: the requirement is *"take an element and find its way back to the source"*, `node.scope` answers it, and the record set answered the inverse question with no consumer anywhere in this file. **−1,803 lines of C and NOT ONE GOLDEN ROW MOVED for it.** The same ruling settled what a scope IS — **a pair of BOUNDARIES, not a byte range** — which deleted `S_end_at_last_byte_taken`, moved **71 golden rows** back to cmark-gfm's shape, took `places`' zero-column rule and Q40's exception with it, and took `containment` 8 → 9 with a row upstream reproduces byte for byte. 13.2's binding work landed inside it, and **the `markdown_core_error_get_scope` deletion landed at 13.2** (§4.14.13b), which closes Step 13 whole: the accessor, its two never-written fields, both export entries and `ParseError.scope` in all three bindings are gone, and the Kotlin wire is `MKC5`. **That run also found `pnpm run test:es-node` RED at `239ab31`** — §0's *"ES 11 + 9"* counts `node.test.mjs` alone, and `packaging.mjs`'s consumer stage was asserting `lineCount === 2` for a one-line document; the assertion was wrong, the engine was not, and it is repaired with both arms proved live. **13.1 IS LANDED** (§4.14.13a): eight diagnostic codes, the rule that decided them (*a diagnostic exists exactly where the two total views cannot say what happened*), and **the owner's 2026-08-24 ruling that there is NO FALLBACK ON OOM**, which struck row 13's truncation-marker clause and deleted the sweep that had been built for it. **What the ruling opens is measured and named** in §4.14.13a: 10 of 501 injected failures still succeed losslessly, and the step that makes them terminal owns the gate that replaces `fallback_runner`. **STEP 12 IS LANDED WHOLE** (§4.14.12a–12c): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 and M33 both read 69/69 there and fail `conformance` — a region names its owner by a path that survives being copied, `markdown_core_document_region_owner_paths` answers for every region in **1.13 ms against the 96.8 ms the singular call costs in a loop**, and all three bindings carry `concrete` and `parse` on `Document` itself. **The owner ruled the surface and I read it wrong twice**: the semver question killed my *reason*, not reading 2, and §4.14.12c records both misreadings. **`specs/positions/places.json` IS EMPTY** (§4.14.11c2). **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), **Step 9b** whole (§4.14.9b1–9b2) — the definition and both references are nodes, **D9 and D30 closed**, the **mdast backlog EMPTY** — **Step 11b** (§4.14.11b), which added L5 and L6 because L1–L4 are all true of the day before it, and **Step 11c** (§4.14.11c). Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **`15C`**. **STEP 14 IS LANDED** (§4.14.14): `null` and `""` are separated by a TYPE — `markdown_core_optional_chunk` in the engine and `markdown_core_optional_string_view` on the surface, both `{value, has_value}` like the two optionals the header already had — so a write site that does not state presence does not compile, and the three folds that used to compensate are gone. **Q26 is taken**: a destination is required, three `spec.txt` rows moved `destination=null` -> `destination=""`, and Q26's recorded reason is measured too narrow for two of its three fields. **The projection audit could not see nullability at all** — §4.1's rule 4 names it and the audit compared field NAMES; it now compares optionality across all three models, four mutants killed. It costs **8 bytes on every node (168 -> 176)** and no measurable wall clock. **The OOM sweep caught a defect in the change itself.** **11a, 11b and 11c ARE RETIRED** (§4.14.11d) by owner ruling of 2026-08-24: the requirement is *"take an element and find its way back to the source"*, `node.scope` answers it, and the record set answered the inverse question with no consumer anywhere in this file. **−1,803 lines of C and NOT ONE GOLDEN ROW MOVED for it.** The same ruling settled what a scope IS — **a pair of BOUNDARIES, not a byte range** — which deleted `S_end_at_last_byte_taken`, moved **71 golden rows** back to cmark-gfm's shape, took `places`' zero-column rule and Q40's exception with it, and took `containment` 8 → 9 with a row upstream reproduces byte for byte. 13.2's binding work landed inside it, and **the `markdown_core_error_get_scope` deletion landed at 13.2** (§4.14.13b), which closes Step 13 whole: the accessor, its two never-written fields, both export entries and `ParseError.scope` in all three bindings are gone, and the Kotlin wire is `MKC5`. **That run also found `pnpm run test:es-node` RED at `239ab31`** — §0's *"ES 11 + 9"* counts `node.test.mjs` alone, and `packaging.mjs`'s consumer stage was asserting `lineCount === 2` for a one-line document; the assertion was wrong, the engine was not, and it is repaired with both arms proved live. **13.1 IS LANDED** (§4.14.13a): eight diagnostic codes, the rule that decided them (*a diagnostic exists exactly where the two total views cannot say what happened*), and **the owner's 2026-08-24 ruling that there is NO FALLBACK ON OOM**, which struck row 13's truncation-marker clause and deleted the sweep that had been built for it. **What the ruling opens is measured and named** in §4.14.13a: 10 of 501 injected failures still succeed losslessly, and the step that makes them terminal owns the gate that replaces `fallback_runner`. **STEP 12 IS LANDED WHOLE** (§4.14.12a–12c): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 and M33 both read 69/69 there and fail `conformance` — a region names its owner by a path that survives being copied, `markdown_core_document_region_owner_paths` answers for every region in **1.13 ms against the 96.8 ms the singular call costs in a loop**, and all three bindings carry `concrete` and `parse` on `Document` itself. **The owner ruled the surface and I read it wrong twice**: the semver question killed my *reason*, not reading 2, and §4.14.12c records both misreadings. **`specs/positions/places.json` IS EMPTY** (§4.14.11c2). **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), **Step 9b** whole (§4.14.9b1–9b2) — the definition and both references are nodes, **D9 and D30 closed**, the **mdast backlog EMPTY** — **Step 11b** (§4.14.11b), which added L5 and L6 because L1–L4 are all true of the day before it, and **Step 11c** (§4.14.11c). Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -1281,7 +1281,7 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | ~~**Q44**~~ | What does a node with NO SOURCE BYTES report as its position? | 11a | **ANSWERED BY THE OWNER 2026-08-23**, and the answer came with the criterion the question was missing: *a scope is what a consumer follows to map an element back to source*, so a node completion invented points AT the place it was completed — the end of its row. Both spellings 11a had measured were asking which coordinate pair is least wrong about the EXTENT of something with no extent, and that was the wrong question. Taken at §4.14.11a2: `places` 66 → 57 and down to one family, `containment` 21 → 9, and the six sibling-overlap rows it costs are registered with the reasoning that accepts them. |
 | **Q41** | Does the repository keep swift-format's `AllPublicDeclarationsHaveDocumentation`? | 15A / 15C | **OPEN, and it is the owner's.** It is a required CI health check that has been failing: 184 findings at `46e20f2`, 170 after 15A.2, 163 after Step 6, **164** after Step 7.2. Satisfying it means writing a doc comment on every public declaration in the Swift binding, and for a projection layer most of those can only restate the signature — the pass this repository rejected once already. **Recommend: scope the rule to types and functions, or turn it off**, and say so in `.swift-format` rather than leaving a required check red. Whichever way it goes, it is an owner decision and §4.8 needs an answer before Stage 0 closes. |
 | **Q38** | Does the empty `Text` node D13 removes become a registered divergence from cmark-gfm? | 0a.14 | **OPEN.** Upstream emits the node too, so removing it costs one normalizer projection, one `NORMALIZED_DELTAS` name and one `deltas.json` entry. Measured at §4.2.3. Owed by the commit that lands D13. |
-| **Q39** | `[foo]: <>` resolves to `destination=null`, not `destination=""`. Is that right, when the destination WAS written and was empty? | 0a.7 | **TAKEN 2026-08-21, at 0a.7: yes, on consistency grounds, and the limit is stated.** `markdown_core_clean_url` folds a zero-length destination to `CHUNK_EMPTY` before it ever reaches the map — the same fold `clean_title` does — so `<>` is indistinguishable from *no destination* by the time the reference path sees it, and the inline path already answers `[a](<>)` with `destination=null`. Making `chunk_clone` preserve absence made the two paths agree. **This is consistency, not correctness:** a rule that truly separates "written and empty" from "not written" requires the folds to stop, which is Step 14's structural job, and this row is the one input in the corpus that will move again there. It is one row, `spec.txt` example 169. |
+| **Q39** | `[foo]: <>` resolves to `destination=null`, not `destination=""`. Is that right, when the destination WAS written and was empty? | 0a.7 | **TAKEN 2026-08-21, at 0a.7: yes, on consistency grounds, and the limit is stated.** `markdown_core_clean_url` folds a zero-length destination to `CHUNK_EMPTY` before it ever reaches the map — the same fold `clean_title` does — so `<>` is indistinguishable from *no destination* by the time the reference path sees it, and the inline path already answers `[a](<>)` with `destination=null`. Making `chunk_clone` preserve absence made the two paths agree. **This is consistency, not correctness:** a rule that truly separates "written and empty" from "not written" requires the folds to stop, which is Step 14's structural job, and this row is the one input in the corpus that will move again there. It is one row, `spec.txt` example 169. **RE-MEASURED AT STEP 14 AND IT HAD ALREADY MOVED**: `[foo]: <>` answers `destination=""` at `239ab31`, because the definition dump prints its destination as a required string. What Step 14 moved is the INLINE path this row does not name (§4.14.14). |
 
 ---
 
@@ -7444,6 +7444,220 @@ branch, **Swift 6 + 1 + 3**, **Kotlin 11 across six classes + 4** — counted fr
 `build/test-results/*/TEST-*.xml`, not from `BUILD SUCCESSFUL`.
 
 
+#### 4.14.14 Step 14 landed: the rule is a TYPE, and the gate that should have caught its drift could not
+
+**Requirement 14 in one sentence.** `null` means the source did not write this;
+`""` means it wrote it and it was empty; and the distinction is **structural** —
+a write site that does not say which it means **does not compile**.
+
+##### What the two facts shared, and what they share now
+
+Before this step both were one representation: a `markdown_core_chunk` whose
+`data` was NULL. A required string and an optional one had the same type, so a
+write site could store either without stating which, and **three separate reads
+folded one into the other to compensate**:
+
+| Fold | Where | What it said |
+|---|---|---|
+| `if (info->length == 0) info->data = NULL;` | `markdown_core_node_code_block_properties` | the parse already knew whether a fence wrote an info string; this decided it again from a length |
+| `if (url->len == 0) return MARKDOWN_CORE_CHUNK_EMPTY;` | `markdown_core_clean_url` | `[a]()` wrote no destination — when the empty parentheses ARE the destination it wrote |
+| `buffer_optional_string` testing `value.data` | the dump | absence read off a pointer, for two fields whose absence is not a pointer fact |
+
+What replaces them is **`markdown_core_optional_chunk`** in the engine and
+**`markdown_core_optional_string_view`** on the public surface, both
+`{ value, has_value }` — which is the shape `markdown_core_optional_i64` and
+`markdown_core_optional_bool` have carried since before this branch. **String
+was the one optional that cheated.** Three node fields take it: `code.info`,
+`link.title` and `definition->title`. `code.language` is derived from `info` and
+is present exactly when it is.
+
+**`has_value` is a byte and not a newtype over the old convention, for a reason
+that is not style**: a present-and-empty value whose one-byte buffer could not
+be allocated has NULL data and is still present, and under the no-fallback
+ruling that parse must fail rather than quietly report absence.
+
+##### The compiler found every site, and only `-Werror` saw half of them
+
+Changing the three field types produced **7 assignment errors** in the Release
+build — those are hard errors — and **18 `-Wincompatible-pointer-types`
+warnings** that Release only warns about, across `core/node.c`,
+`core/iterator.c`, `extensions/ast.c`, `extensions/formula.c` and
+`tests/runners/fallback_runner.c`. `scripts/lint-c.sh` is `-Werror` and would
+have failed on all eighteen; §0's *"a preset that builds clean is not the preset
+CI runs"* is the reason that matters here rather than being a note.
+
+Swift then refused the same way — four `cannot convert value of type
+'UnsafeMutablePointer<markdown_core_string_view>'` errors — and the ES bridge
+refused twice. **Three languages, one mechanism, no search required.**
+
+##### Q26 taken: a destination is REQUIRED, and its recorded reason was too narrow
+
+Q26 settled that `Link.destination`, `Image.source` and
+`ReferenceDefinition.destination` are all required, on the argument that *"a
+value reachable only through allocation loss is not optionality, it is a node
+that lies."* That argument is TRUE of the definition and **measured false of
+the other two**: `[link]()` answered `destination=null` on a perfectly ordinary
+parse, no allocation involved. The decision stands and is right — mdast's
+`link.url` is a required string and cmark-gfm renders `href=""` — but it is
+right for a different reason, and it is worth saying which: **the empty
+parentheses are the destination the author wrote.**
+
+`clean_url` now answers `markdown_core_chunk_literal("")` for an empty
+destination, which allocates nothing and leaves no NULL for a later reader to
+interpret.
+
+##### What moved, and it is four rows
+
+`spec.txt` **3 rows**, all one kind — `[link]()`, `[link](<>)` and `[foo]()`
+going `destination=null` → `destination=""`. Reviewed by hand: each is the
+source having written a destination and written nothing in it. `regression.txt`
+gains the new witness example below. No other golden moved, and
+`specs/canonical-ast/*.ast` is untouched.
+
+**NEITHER PARITY ORACLE CAN SEE ANY OF THIS.**
+`scripts/lib/upstream-cmark.mjs:186` folds `""` to `"null"` on BOTH sides before
+comparing, for every field but `literal`, and line 187 does it again for
+`title`. Upstream stayed 891/891 and mdast 112/112 across the whole change,
+measured. This is D6's class exactly, and it means **the goldens and the facade
+test are the only gate there is** — which is why this step adds to both.
+
+##### The corpus could see almost none of the rule, and now it does
+
+Counted before the change, over every fixture and every canonical-AST golden:
+
+| | rows before | rows after |
+|---|---|---|
+| `title=""` | **1**, and it was in `specs/canonical-ast/completeness.ast` | 4 |
+| `title=null` | 198 | 200 |
+| `destination=""` | 4 | 7 |
+| `destination=null` | 0 (it was 3 before the fix, and they are the rows that moved) | 0 |
+| `source=""` | **0** | 2 |
+| `info=""` | 0 — and it is UNREACHABLE, see below | 0 |
+
+`regression.txt` gains one example carrying every arm at once: five links, four
+images and three definitions spanning written/unwritten × empty/non-empty. The
+scopes in it were written by hand and **four of them were wrong** — the
+regeneration corrected `![f]()` from 6 columns to 5 and everything after it on
+that line — while **every field value was right**, which is the split a golden
+regeneration is supposed to expose.
+
+##### THE PROJECTION AUDIT COULD NOT SEE NULLABILITY, AND §4.1's RULE 4 NAMES IT
+
+§4.1's standing rule 4 says *"a change to the node inventory, to a field's name,
+type, **nullability** or category … lands its contract edit, all six
+projections … in the same commit. No commit may leave `audit-ast-projections.mjs`
+red."* **The audit read field NAMES only.** Measured: flipping
+`Link.destination` to `optional: true` in `docs/specs/canonical-ast.json` while
+all three models declared it required left the audit **GREEN**.
+
+So requirement 14's contract half had no gate at all, and this step writes one.
+Each model projection now reads the field's TYPE beside its name and answers
+whether the platform declared it optional — Swift and Kotlin by a trailing `?`,
+ES by `?:` or a `| null` union — and compares it with the contract's `optional`.
+
+**Four mutants, four kills, one per surface plus the contract:**
+
+| Mutant | Result |
+|---|---|
+| contract says `Link.destination` optional, models say required | **3 failures**, one per model — this is the mutant that was green before |
+| Swift `public let destination: String?` | `Swift model: Link.destination is declared optional and the contract says required` |
+| Kotlin `public val destination: String?` | the Kotlin row |
+| ES `readonly destination: string \| null` | the ES row |
+
+##### A second new gate, because a dump can only show what it renders
+
+`facade_test` gains `check_null_and_empty`: fourteen cases read through
+`markdown_core_node_link_properties`, `_image_properties`,
+`_definition_resource` and `_code_block_properties`, asserting `has_value`
+directly rather than its rendering. A fold reinstated between the node and the
+caller is invisible to a golden that only ever sees the dump.
+
+**The mutants, and one of them kills NOTHING — which is the finding, not a gap:**
+
+| Mutant | Killed by |
+|---|---|
+| fold an empty `title` back to absent in `link_properties` | `conformance` **2/2 → 0/2** (both `facade_native` and `facade_dump_cli`) and `correctness` **69 → 68**; witness confirmed live through the binary, `title=""` → `title=null` |
+| make the info write site claim presence always (`else if (false)`) | `correctness` **69 → 68**, `conformance` **2/2 → 1/2**; witness `info=null` → `info=""` |
+| **reinstate the info fold in `code_block_properties`** | **NOTHING.** 69/69 and 2/2 |
+
+The third is a no-op on every input, and the reason is worth stating: **a
+present-and-empty info string is unreachable.** A fence's info string is the
+trimmed remainder of its opening line, so whitespace-only is absent and anything
+else is non-empty. The facade fold existed to compensate for the OPEN site
+writing `markdown_core_chunk_literal("")` — an empty STRING, which claimed the
+source had written one — and with that site writing absence the fold has nothing
+left to fold. Removing it is correctness-neutral; what carries the fact is the
+write site, and that IS gated, by the mutant above it.
+
+##### The OOM sweep caught a defect in this very change
+
+`regression_fallback_oom_sweep` failed at injected allocation **130 of 451**:
+*"lossy document reported as success"*, on a code block whose info string was
+`info string` (11 bytes). Splitting the length test out of
+`markdown_core_chunk_buf_detach` lost the distinction that function had been
+carrying for free — a buffer that could not be grown has `size == 0` and that is
+**not** an absent info string, it is one the parse lost. The write site now asks
+about `tmp.oom` before it asks about the length. Two more fallback tests failed
+with it and all three are green.
+
+##### What it costs, measured on both axes
+
+`markdown_core_optional_chunk` is **24 bytes** where a chunk is 16, so
+`markdown_core_code` — the widest arm of `node.as` — goes **40 → 48** and every
+node in the document goes **168 → 176 bytes (+4.8%)**. `markdown_core_link` goes
+32 → 40 and `markdown_core_definition` 64 → 72; neither widens the union.
+`node.h`'s boxing comment cited the old two numbers and now cites the new ones.
+
+Wall clock, `bench_runner --repeats 5 --warmup 2`, each side a `rm -rf
+build/cmake` and a full configure and build (§0's stash trap), median ms:
+
+| case | before | after | |
+|---|---|---|---|
+| inline-newlines.md | 0.600 | 0.620 | +3.3% |
+| lorem1.md | 2.409 | 2.389 | **−0.8%** |
+| rawtabs.md | 0.356 | 0.363 | +2.0% |
+| large_document@128 / @256 / @512 | 20.715 / 42.142 / 85.787 | 21.149 / 42.789 / 87.195 | +2.1% / +1.5% / +1.6% |
+| deep_nesting@8192 / @16384 / @32768 | 0.537 / 0.936 / 1.912 | 0.467 / 0.964 / 1.967 | **−13.0%** / +3.0% / +2.9% |
+| extensions@100 / @200 / @400 | 2.331 / 4.687 / 9.328 | 2.358 / 4.806 / 9.527 | +1.2% / +2.5% / +2.1% |
+| adversarial@16384 / @32768 / @65536 | 2.743 / 5.286 / 10.410 | 2.718 / 5.514 / 10.951 | −0.9% / +4.3% / +5.2% |
+
+**The sign is not consistent** — two arms are faster and one by 13% — so these
+are single medians inside their own noise and the honest reading is *no
+measurable wall-clock cost, and 8 bytes per node that is not noise at all*. The
+memory number is the one to quote.
+
+##### Q39 was already taken by the time this step reached it
+
+Q39 recorded that `[foo]: <>` answers `destination=null`, that this is
+consistency rather than correctness, and that *"a rule that truly separates
+written-and-empty from not-written requires the folds to stop, which is Step
+14's structural job, and this row is the one input in the corpus that will move
+again there."* **Re-measured before touching anything: it had already moved.**
+`[foo]: <>` answers `destination=""` at `239ab31`, because the definition dump
+prints its destination as a required string and `buffer_json_string` renders a
+NULL view as `""`. The row did not move again here. What moved instead is the
+INLINE path Q39's note did not name, and the engine now stores what the dump was
+already printing.
+
+##### Gates after
+
+`correctness` **69/69**, `correctness-asan` **60/60**, `correctness-ubsan`
+**60/60**, `conformance` 2/2, canonical-ast 32 kinds / 62 fields / 6 cases,
+projections 32 over 12 surfaces **now including nullability**, source lists 22 /
+4 of 5, public surface, special chars, attach order, plan graph 22/45, both
+fuzz oracles 300/300 (upstream now 1290 fragments), upstream **892/892** with
+10/10, mdast **112/112** with an empty backlog, scope-sanity 1 over 5506,
+inline-sourcepos 40, containment 9 over 4278, places 0 over 4494, diagnostics
+**38 over 892** with 7 of 8 codes, reference-order 0, test topology, `format-c`,
+`format-cmake`, `lint-c`, `pnpm -w run lint`, `leaks --atExit` **0 leaks** on
+`facade_test`. Bindings **ES 11 + 9** with packaging green, **Swift 6 + 1 + 3**,
+**Kotlin 11 across six classes + 4**.
+
+The three corpus counts that moved are the new example's: upstream parity
+891 → **892** inputs, the diagnostics census 891 → **892** examples, and the
+three position oracles' scanned totals.
+
+
 ---
 
 ### 4.3 The ordering argument
@@ -8050,7 +8264,7 @@ following, together:
 - [x] **The formula fix (Step 6) — deliverable #2. LANDED, §4.14.6.**
 - [x] ~~CST concrete records (11a, 11b, 11c)~~ **RETIRED by owner ruling** (§4.14.11d) and diagnostics (13) — deliverable #3. **13 is LANDED WHOLE** — 13.1 (§4.14.13a) and 13.2 (§4.14.13b), which deleted `markdown_core_error_get_scope`, its two never-written fields and `ParseError.scope` in all three bindings, and bumped the Kotlin wire to `MKC5`
 - [x] The reference model (9a, 9b) and the positions that depend on it — **10, 9a and 9b are all LANDED** (§4.14.10, §4.14.9a1–9a2, §4.14.9b1–9b2)
-- [ ] The facade (12), the null/empty rule (14) — **12 is LANDED WHOLE** (§4.14.12a–12c): two total views in C and in all three bindings, and §4.10's ruling that the break window is not a constraint is what let 12.2 take the literal reading; 14 is not
+- [x] The facade (12), the null/empty rule (14) — **12 is LANDED WHOLE** (§4.14.12a–12c): two total views in C and in all three bindings, and §4.10's ruling that the break window is not a constraint is what let 12.2 take the literal reading. **14 is LANDED** (§4.14.14): the rule is a type, Q26 is taken, and the projection audit checks nullability for the first time
 - [ ] Bindings, specs and docs regenerated (15)
 
 **Defects** — **all thirty-six of §2** closed, or explicitly carried with a
@@ -8748,7 +8962,7 @@ which is why they kept getting re-argued:
 | **Q14** | The option surface | **SETTLED 2026-08-20 — DELETE ALL OF IT.** See §4.11. | owner | 3, 6, 7, 12, 15 |
 | ~~**Q24**~~ | Is the concrete view opt-in? | **MOOT 2026-08-24: the thing it was about is retired.** It was SETTLED 2026-08-20 — *"not optional; it is part of the model. Diagnostics on directive attributes have nowhere to point without it"* — and **the reason was measured false at 13.1**: not one diagnostic reads a region. 11a–11c are retired (§4.14.11d) and what remains of `concrete` is the normalized source and its line index, which are not optional either, for a reason that survives: a scope's columns are counted against them. | owner | — |
 | **Q25** | When are defects fixed? | **SETTLED 2026-08-20 — ALL of them, before any other task.** Not just D16's two sites: every defect that *can* be fixed at the baseline moves into Stage 0a. See §4.12. | owner | Stage 0a |
-| **Q26** | Do `Link.destination`, `Image.source`, `ReferenceDefinition.destination` stay optional? | **SETTLED 2026-08-20 — NO, all three are required.** Q7's argument generalises: a value reachable only through allocation loss is not optionality, it is a node that lies. | owner | 9b, 14 |
+| **Q26** | Do `Link.destination`, `Image.source`, `ReferenceDefinition.destination` stay optional? | **SETTLED 2026-08-20 — NO, all three are required. IMPLEMENTED at Step 14** (§4.14.14). Q7's argument generalises: a value reachable only through allocation loss is not optionality, it is a node that lies. **That reason is measured TOO NARROW for two of the three**: `[link]()` answered `destination=null` on an ordinary parse with no allocation involved. The call stands and is right for a better reason — *the empty parentheses are the destination the author wrote* — which is also mdast's (`link.url` is a required string) and cmark-gfm's (`href=""`). Three `spec.txt` rows moved. | owner | 9b, 14 |
 | **Q46** | Are diagnostics switchable, and how? | **TAKEN at 13.1 — a RETAIN CALL, not an option.** `markdown_core_parser_retain_diagnostics` mirrors `markdown_core_parser_retain_concrete` exactly: the parser records only when asked, `finish` moves the list at the same moment and on the same terms, and the FACADE always asks. It is the only shape that satisfies three settled rulings at once — Q14 deletes the option surface, Q24 makes the second view part of the model rather than a choice, and row 13's law quantifies over *"diagnostics on and off"* and so needs an axis to quantify over. The switch exists so the LAW can be checked, not so a consumer can choose a different engine. | 13.1 | 13 |
 | **Q47** | What decides whether a site gets a diagnostic? | **TAKEN at 13.1 — a diagnostic exists exactly where the TWO TOTAL VIEWS CANNOT SAY WHAT HAPPENED**, with the corollary that it needs EVIDENCE the author meant the construct and the evidence is the construct's own unambiguous opener. It derives the eight codes and, more usefully, the exclusions: an unclosed fence is not diagnosed because `closed` is on the node, a duplicate definition is not because both are nodes and 9b's model derives the winner, a shortcut reference is not because `[a]` is also prose. The wide rule was measured before it was rejected: including the shortcut form moves **88 census rows** over 891 examples (§4.14.13a). | 13.1 | 13 |
 | **Q48** | How many severities, and what decides one? | **TAKEN at 13.1 — two.** ERROR when the author NAMED something that does not exist; WARNING when the author WROTE something the engine did not read the way they meant. Those are the two things a consumer does differently. There is no fatal level, because a parse failure is not a diagnostic. | 13.1 | 13 |

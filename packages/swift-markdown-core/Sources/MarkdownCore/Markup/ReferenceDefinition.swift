@@ -28,7 +28,7 @@ extension ReferenceDefinition {
         var label = markdown_core_string_view()
         var identifier = markdown_core_string_view()
         var destination = markdown_core_string_view()
-        var title = markdown_core_string_view()
+        var title = markdown_core_optional_string_view()
         markdown_core_node_association(node, &label, &identifier)
         markdown_core_node_definition_resource(node, &destination, &title)
         self.init(
@@ -36,7 +36,7 @@ extension ReferenceDefinition {
             label: label.requiredString,
             identifier: identifier.requiredString,
             destination: destination.requiredString,
-            title: title.optionalString
+            title: title.string
         )
     }
 }

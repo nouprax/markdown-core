@@ -179,14 +179,14 @@ export class NodeDecoder {
             case "link":
                 return {
                     ...this.base(node, kind),
-                    destination: this.readString(node, stringField.linkDestination),
+                    destination: this.requiredString(node, stringField.linkDestination),
                     title: this.readString(node, stringField.linkTitle),
                     content: this.content(node)
                 };
             case "image":
                 return {
                     ...this.base(node, kind),
-                    source: this.readString(node, stringField.imageSource),
+                    source: this.requiredString(node, stringField.imageSource),
                     title: this.readString(node, stringField.imageTitle),
                     content: this.content(node)
                 };
@@ -352,13 +352,21 @@ export class NodeDecoder {
 
     private readString(object: number, field: number): string | null {
         this.requireLive();
-        this.native.es_string(object, field, this.scratch, this.scratch + Uint32Array.BYTES_PER_ELEMENT);
+        // PRESENCE IS THE RETURN VALUE. It used to be read off the pointer,
+        // which gave one channel for the two answers requirement 14 separates.
+        // A raw wasm export answers with 0 or 1, not with a JS boolean.
+        const present =
+            this.native.es_string(object, field, this.scratch, this.scratch + Uint32Array.BYTES_PER_ELEMENT) !== 0;
         const view = this.dataView();
         const data = view.getUint32(this.scratch, true);
         const length = view.getUint32(this.scratch + Uint32Array.BYTES_PER_ELEMENT, true);
+        if (!present) {
+            if (data !== 0 || length !== 0) throw new Error("native parser returned an invalid string view");
+            return null;
+        }
         if (!data) {
             if (length !== 0) throw new Error("native parser returned an invalid string view");
-            return null;
+            return "";
         }
         if (length > this.native.memory.buffer.byteLength - data) {
             throw new Error("native parser returned an out-of-bounds string view");

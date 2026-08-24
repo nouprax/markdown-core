@@ -133,14 +133,14 @@ const dumpVisitor: Visitor<DumpRecord> = {
         record(
             "Link",
             node,
-            [`destination=${optionalString(node.destination)}`, `title=${optionalString(node.title)}`],
+            [`destination=${jsonString(node.destination)}`, `title=${optionalString(node.title)}`],
             node.content.length
         ),
     visitImage: (node: Image) =>
         record(
             "Image",
             node,
-            [`source=${optionalString(node.source)}`, `title=${optionalString(node.title)}`],
+            [`source=${jsonString(node.source)}`, `title=${optionalString(node.title)}`],
             node.content.length
         ),
     visitDirective: (node: Directive) =>

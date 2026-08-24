@@ -206,8 +206,11 @@ int markdown_core_node_own(markdown_core_node *root) {
                 markdown_core_chunk_set_cstr(mem, &cur->as.link.url, NULL);
                 ok = 0;
             }
-            if (!markdown_core_chunk_to_cstr(mem, &cur->as.link.title)) {
-                markdown_core_chunk_set_cstr(mem, &cur->as.link.title, NULL);
+            /* Only a title the source WROTE has bytes to own; an absent one
+             * has nothing to copy and losing the copy makes it absent, which
+             * would be indistinguishable from the source having written none. */
+            if (cur->as.link.title.has_value && !markdown_core_chunk_to_cstr(mem, &cur->as.link.title.value)) {
+                markdown_core_optional_chunk_free(mem, &cur->as.link.title);
                 ok = 0;
             }
             break;

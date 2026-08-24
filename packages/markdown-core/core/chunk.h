@@ -3,6 +3,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <assert.h>
 #include "markdown-core.h"
 #include "buffer.h"
@@ -16,6 +17,48 @@ typedef struct markdown_core_chunk {
     bufsize_t alloc; // also implies a NULL-terminated string
 } markdown_core_chunk;
 
+/* AN OPTIONAL CHUNK, and it is a DIFFERENT TYPE from a chunk on purpose.
+ *
+ * Requirement 14: `null` means the source did not write this and `""` means
+ * the source wrote it and it was empty. Before this type the two shared one
+ * representation -- a chunk whose `data` was NULL -- so a write site could
+ * store either without saying which it meant, and three separate reads folded
+ * one into the other to compensate. A field of this type cannot be assigned a
+ * chunk: the write site must name `_present` or `_absent`, and a site that
+ * does not say which DOES NOT COMPILE. That is the whole mechanism.
+ *
+ * `has_value` is not derived from `value.data`. It cannot be, and that is why
+ * it is a separate byte rather than a newtype over the old convention: a
+ * present-and-empty value whose one-byte buffer could not be allocated has
+ * NULL data and is still PRESENT, and under the no-fallback ruling that parse
+ * fails rather than quietly reporting absence.
+ *
+ * It costs eight bytes on `markdown_core_code`, which is the widest arm of
+ * `node.as`, and therefore eight bytes on every node in the document. That is
+ * measured, not estimated, and section 4.14.14 states the number. */
+typedef struct markdown_core_optional_chunk {
+    markdown_core_chunk value;
+    bool has_value;
+} markdown_core_optional_chunk;
+
+static MARKDOWN_CORE_INLINE markdown_core_optional_chunk markdown_core_optional_chunk_absent(void) {
+    markdown_core_optional_chunk o;
+    o.value.data = NULL;
+    o.value.len = 0;
+    o.value.alloc = 0;
+    o.has_value = false;
+    return o;
+}
+
+/* The source wrote this. Whether it wrote any BYTES is a different question
+ * and this constructor deliberately does not ask it: `c` may be empty. */
+static MARKDOWN_CORE_INLINE markdown_core_optional_chunk markdown_core_optional_chunk_present(markdown_core_chunk c) {
+    markdown_core_optional_chunk o;
+    o.value = c;
+    o.has_value = true;
+    return o;
+}
+
 static MARKDOWN_CORE_INLINE void markdown_core_chunk_free(markdown_core_mem *mem, markdown_core_chunk *c) {
     if (c->alloc) {
         mem->free(c->data);
@@ -24,6 +67,12 @@ static MARKDOWN_CORE_INLINE void markdown_core_chunk_free(markdown_core_mem *mem
     c->data = NULL;
     c->alloc = 0;
     c->len = 0;
+}
+
+static MARKDOWN_CORE_INLINE void markdown_core_optional_chunk_free(markdown_core_mem *mem,
+                                                                   markdown_core_optional_chunk *o) {
+    markdown_core_chunk_free(mem, &o->value);
+    o->has_value = false;
 }
 
 static MARKDOWN_CORE_INLINE void markdown_core_chunk_ltrim(markdown_core_chunk *c) {

@@ -246,6 +246,21 @@ typedef struct markdown_core_optional_bool {
     bool value;
 } markdown_core_optional_bool;
 
+/** An optional string, and the ONLY way this library reports one.
+ *
+ * `has_value == false` means the source did not write this. `has_value ==
+ * true` with a zero-length `value` means the source wrote it and it was
+ * empty. The two are different facts and nothing here folds one into the
+ * other -- an accessor that answers with this type cannot be handed a plain
+ * `markdown_core_string_view`, which is what makes the distinction survive.
+ *
+ * `value.data` is NOT the presence flag. A caller that tests it instead of
+ * `has_value` has re-invented the convention this type replaced. */
+typedef struct markdown_core_optional_string_view {
+    bool has_value;
+    markdown_core_string_view value;
+} markdown_core_optional_string_view;
+
 /** Initializes every field to the frozen Markdown Core defaults. */
 MARKDOWN_CORE_API void markdown_core_parse_options_init(markdown_core_parse_options *options);
 
@@ -324,9 +339,13 @@ MARKDOWN_CORE_API bool markdown_core_node_list_properties(const markdown_core_no
                                                           markdown_core_optional_i64 *start, bool *tight);
 MARKDOWN_CORE_API bool markdown_core_node_list_item_checked(const markdown_core_node *node,
                                                             markdown_core_optional_bool *checked);
+/** `info` and `language` are OPTIONAL: a fence with nothing but whitespace
+ * after it wrote no info string, and an indented block has no fence to write
+ * one on. `language` is the info string's first word and is present exactly
+ * when `info` is. */
 MARKDOWN_CORE_API bool markdown_core_node_code_block_properties(const markdown_core_node *node,
-                                                                markdown_core_string_view *info,
-                                                                markdown_core_string_view *language,
+                                                                markdown_core_optional_string_view *info,
+                                                                markdown_core_optional_string_view *language,
                                                                 markdown_core_string_view *literal, bool *fenced,
                                                                 bool *closed);
 MARKDOWN_CORE_API bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_string_view *literal);
@@ -346,12 +365,17 @@ MARKDOWN_CORE_API bool markdown_core_node_directive_properties(const markdown_co
 MARKDOWN_CORE_API bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, size_t index,
                                                                  markdown_core_string_view *name,
                                                                  markdown_core_string_view *value);
+/** A destination is REQUIRED and a title is OPTIONAL (Q26, requirement 14).
+ * `[a]()` and `[a](<>)` wrote a destination and wrote nothing in it, so they
+ * answer with the empty string; there is no inline link whose author wrote no
+ * destination, because the shortcut and collapsed forms are `LinkReference`
+ * and carry none. `[a](/u)` wrote no title; `[a](/u "")` wrote an empty one. */
 MARKDOWN_CORE_API bool markdown_core_node_link_properties(const markdown_core_node *node,
                                                           markdown_core_string_view *destination,
-                                                          markdown_core_string_view *title);
+                                                          markdown_core_optional_string_view *title);
 MARKDOWN_CORE_API bool markdown_core_node_image_properties(const markdown_core_node *node,
                                                            markdown_core_string_view *source,
-                                                           markdown_core_string_view *title);
+                                                           markdown_core_optional_string_view *title);
 /** The association a reference or a definition carries. Answers for
  * `ReferenceDefinition`, `LinkReference`, `ImageReference`,
  * `FootnoteDefinition` and `FootnoteReference`, and refuses every other kind.
@@ -382,7 +406,7 @@ MARKDOWN_CORE_API bool markdown_core_node_association(const markdown_core_node *
  * wrote an empty one. */
 MARKDOWN_CORE_API bool markdown_core_node_definition_resource(const markdown_core_node *node,
                                                               markdown_core_string_view *destination,
-                                                              markdown_core_string_view *title);
+                                                              markdown_core_optional_string_view *title);
 /** The form a `LinkReference` or `ImageReference` was written in. */
 MARKDOWN_CORE_API bool markdown_core_node_reference_form(const markdown_core_node *node,
                                                          markdown_core_reference_form *form);

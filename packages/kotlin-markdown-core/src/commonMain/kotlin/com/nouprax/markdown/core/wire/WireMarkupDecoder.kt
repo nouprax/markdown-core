@@ -126,11 +126,11 @@ internal fun WireReader.markup(): Markup {
         }
 
         WireKind.LINK -> {
-            Link(string(), string(), markupList(), nodeScope)
+            Link(requiredString(), string(), markupList(), nodeScope)
         }
 
         WireKind.IMAGE -> {
-            Image(string(), string(), markupList(), nodeScope)
+            Image(requiredString(), string(), markupList(), nodeScope)
         }
 
         WireKind.DIRECTIVE -> {

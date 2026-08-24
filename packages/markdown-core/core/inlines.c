@@ -1117,14 +1117,19 @@ static markdown_core_node *handle_entity(subject *subj) {
 
 // Clean a URL: remove surrounding whitespace, and remove \ that escape
 // punctuation.
+//
+// A DESTINATION IS REQUIRED (Q26), so there is no absence to report and the
+// empty answer is the empty STRING. `[a]()` and `[a](<>)` both wrote a
+// destination and wrote nothing in it; returning `MARKDOWN_CORE_CHUNK_EMPTY`
+// here handed back NULL data, which every reader downstream had to decide the
+// meaning of for itself, and the dump decided `null`.
 markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_core_chunk *url, int *lost) {
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(mem);
 
     markdown_core_chunk_trim(url);
 
     if (url->len == 0) {
-        markdown_core_chunk result = MARKDOWN_CORE_CHUNK_EMPTY;
-        return result;
+        return markdown_core_chunk_literal("");
     }
 
     houdini_unescape_html_f(&buf, url->data, url->len);
@@ -1136,13 +1141,18 @@ markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_cor
     return markdown_core_chunk_buf_detach(&buf);
 }
 
-markdown_core_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_core_chunk *title, int *lost) {
+// A TITLE IS OPTIONAL, and this is the one place that knows which of the two
+// answers the source gave. A title is delimited -- `"..."`, `'...'`, `(...)`
+// -- so the shortest one the source can write is two bytes; a zero-length
+// `title` means the scan found no title syntax at all, which is ABSENT, and
+// everything else is PRESENT even when the delimiters enclose nothing.
+// Nothing downstream re-derives this, which is requirement 14.
+markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_core_chunk *title, int *lost) {
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(mem);
     unsigned char first, last;
 
     if (title->len == 0) {
-        markdown_core_chunk result = MARKDOWN_CORE_CHUNK_EMPTY;
-        return result;
+        return markdown_core_optional_chunk_absent();
     }
 
     first = title->data[0];
@@ -1159,7 +1169,7 @@ markdown_core_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_c
     if (buf.oom && lost) {
         *lost = 1;
     }
-    return markdown_core_chunk_buf_detach(&buf);
+    return markdown_core_optional_chunk_present(markdown_core_chunk_buf_detach(&buf));
 }
 
 // Parse an autolink or HTML tag.
@@ -1413,7 +1423,8 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     int matched_reference = 0;
     markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
     markdown_core_chunk url_chunk, title_chunk;
-    markdown_core_chunk url, title;
+    markdown_core_chunk url;
+    markdown_core_optional_chunk title;
     bracket *opener;
     markdown_core_node *inl;
     markdown_core_chunk raw_label;
@@ -1724,7 +1735,7 @@ match:
     if (!inl) {
         subj->oom = 1;
         markdown_core_chunk_free(subj->mem, &url);
-        markdown_core_chunk_free(subj->mem, &title);
+        markdown_core_optional_chunk_free(subj->mem, &title);
         pop_bracket(subj);
         subj->pos = initial_pos;
         return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));

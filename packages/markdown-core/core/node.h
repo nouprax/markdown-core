@@ -25,7 +25,10 @@ typedef struct {
 } markdown_core_list;
 
 typedef struct {
-    markdown_core_chunk info;
+    /* OPTIONAL, and the type says so (requirement 14). A fence with nothing
+     * after it wrote no info string; `` ``` `` and an indented block are both
+     * absent, and `js` is present. */
+    markdown_core_optional_chunk info;
     markdown_core_chunk literal;
     uint8_t fence_length;
     uint8_t fence_offset;
@@ -40,8 +43,13 @@ typedef struct {
 } markdown_core_heading;
 
 typedef struct {
+    /* REQUIRED (Q26). `[a]()` and `[a](<>)` wrote a destination and it was
+     * empty; there is no link whose author wrote no destination at all,
+     * because the shortcut and collapsed forms are references and carry none. */
     markdown_core_chunk url;
-    markdown_core_chunk title;
+    /* OPTIONAL (requirement 14): `[a](/u)` wrote no title and `[a](/u "")`
+     * wrote an empty one. */
+    markdown_core_optional_chunk title;
 } markdown_core_link;
 
 /* THE ASSOCIATION every reference and definition carries. TWO values, and
@@ -97,13 +105,21 @@ typedef struct {
  * parser-private map and leaves no node behind.
  *
  * BOXED, and the reason is measured rather than stylistic: `markdown_core_code`
- * is 40 bytes, which is the widest arm `node.as` has, and this is 64. Storing
+ * is 48 bytes, which is the widest arm `node.as` has, and this is 72. Storing
  * it inline would grow EVERY node in the document by 24 bytes to carry a
- * payload that appears once per definition. A reference is 40 and fits. */
+ * payload that appears once per definition. A reference is 40 and fits.
+ *
+ * ~~40~~ and ~~64~~ were true until Step 14: an optional chunk is 24 bytes
+ * where a chunk is 16, so `code.info` took the widest arm 40 -> 48 and a node
+ * 168 -> 176. Both numbers are re-measured, and section 4.14.14 states what
+ * that cost on the benchmark. */
 typedef struct {
     markdown_core_association association;
+    /* REQUIRED (Q7, Q26): a definition that could not build a destination is
+     * not emitted, so an empty one here means the source wrote `<>`. */
     markdown_core_chunk url;
-    markdown_core_chunk title;
+    /* OPTIONAL (requirement 14). */
+    markdown_core_optional_chunk title;
 } markdown_core_definition;
 
 enum markdown_core_node__internal_flags {

@@ -148,8 +148,8 @@ error rather than silently dropping a value.
 | `Emphasis` | `content: [Markup]` | inline content |
 | `Strong` | `content: [Markup]` | inline content |
 | `Strikethrough` | `content: [Markup]` | inline content |
-| `Link` | `destination: String?`, `title: String?`, `content: [Markup]` | absent and empty title remain distinct; inline content |
-| `Image` | `source: String?`, `title: String?`, `content: [Markup]` | content is parsed alt-text inline content |
+| `Link` | `destination: String`, `title: String?`, `content: [Markup]` | `destination` is never absent (Q26): `[a]()` and `[a](<>)` wrote one and wrote nothing in it, and a link with no destination at all is a `LinkReference`; absent and empty title remain distinct; inline content |
+| `Image` | `source: String`, `title: String?`, `content: [Markup]` | `source` is never absent, for the reason `Link.destination` is not; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `LinkReference` | `label: String`, `identifier: String`, `form: ReferenceForm`, `content: [Markup]` | `label` and `identifier` are exactly as on `ReferenceDefinition`; the node carries NO destination — the destination is stated once, at the definition; `form` records which of the three spellings the source used, and all three resolve identically; inline content |
 | `ImageReference` | `label: String`, `identifier: String`, `form: ReferenceForm`, `content: [Markup]` | as `LinkReference`; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?` | attributes is an ordered sequence of name/value pairs sorted by name; label is a node whose scope spans its brackets; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |

@@ -134,7 +134,7 @@ markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
 static void free_node_as(markdown_core_node *node) {
     switch (node->type) {
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        markdown_core_chunk_free(NODE_MEM(node), &node->as.code.info);
+        markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.code.info);
         markdown_core_chunk_free(NODE_MEM(node), &node->as.code.literal);
         break;
     case MARKDOWN_CORE_NODE_TEXT:
@@ -154,13 +154,13 @@ static void free_node_as(markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_IMAGE:
         markdown_core_chunk_free(NODE_MEM(node), &node->as.link.url);
-        markdown_core_chunk_free(NODE_MEM(node), &node->as.link.title);
+        markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.link.title);
         break;
     case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
         if (node->as.definition) {
             markdown_core_association_free(NODE_MEM(node), &node->as.definition->association);
             markdown_core_chunk_free(NODE_MEM(node), &node->as.definition->url);
-            markdown_core_chunk_free(NODE_MEM(node), &node->as.definition->title);
+            markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.definition->title);
             NODE_MEM(node)->free(node->as.definition);
             node->as.definition = NULL;
         }
@@ -588,7 +588,13 @@ const char *markdown_core_node_get_fence_info(markdown_core_node *node) {
     }
 
     if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
-        return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.code.info);
+        /* ABSENT IS NULL. `markdown_core_chunk_to_cstr` allocates a `""` for a
+         * chunk with no data, which would answer "the source wrote an empty
+         * info string" for a fence that wrote none (requirement 14). */
+        if (!node->as.code.info.has_value) {
+            return NULL;
+        }
+        return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.code.info.value);
     } else {
         return NULL;
     }
@@ -600,7 +606,13 @@ int markdown_core_node_set_fence_info(markdown_core_node *node, const char *info
     }
 
     if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
-        return markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.code.info, info);
+        /* A NULL argument is ABSENCE and anything else is presence, including
+         * `""`; the caller states which, and this is the write site. */
+        if (!markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.code.info.value, info)) {
+            return 0;
+        }
+        node->as.code.info.has_value = info != NULL;
+        return 1;
     } else {
         return 0;
     }
@@ -689,7 +701,11 @@ const char *markdown_core_node_get_title(markdown_core_node *node) {
     switch (node->type) {
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_IMAGE:
-        return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.link.title);
+        /* ABSENT IS NULL, for the reason `get_fence_info` states. */
+        if (!node->as.link.title.has_value) {
+            return NULL;
+        }
+        return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.link.title.value);
     default:
         break;
     }
@@ -705,7 +721,11 @@ int markdown_core_node_set_title(markdown_core_node *node, const char *title) {
     switch (node->type) {
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_IMAGE:
-        return markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.link.title, title);
+        if (!markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.link.title.value, title)) {
+            return 0;
+        }
+        node->as.link.title.has_value = title != NULL;
+        return 1;
     default:
         break;
     }

@@ -230,7 +230,7 @@ static int case_hard_link_emph(pc_context *context) {
     const markdown_core_node *link;
     const markdown_core_node *emphasis;
     markdown_core_string_view view;
-    markdown_core_string_view title;
+    markdown_core_optional_string_view title;
 
     if (pc_build(context, "**x [a*b**c*](d)", "", 0, NULL) != 0) {
         return -1;

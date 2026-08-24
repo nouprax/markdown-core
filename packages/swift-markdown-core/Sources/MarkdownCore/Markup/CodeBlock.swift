@@ -13,8 +13,8 @@ public struct CodeBlock: Markup {
 
 extension CodeBlock {
     init(from node: OpaquePointer) {
-        var info = markdown_core_string_view()
-        var language = markdown_core_string_view()
+        var info = markdown_core_optional_string_view()
+        var language = markdown_core_optional_string_view()
         var literal = markdown_core_string_view()
         var fenced = false
         var closed = false
@@ -28,8 +28,8 @@ extension CodeBlock {
         )
         self.init(
             scope: Self.scope(from: node),
-            info: info.optionalString,
-            language: language.optionalString,
+            info: info.string,
+            language: language.string,
             literal: literal.requiredString,
             fenced: fenced,
             closed: closed

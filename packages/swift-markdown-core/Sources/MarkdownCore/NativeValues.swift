@@ -33,9 +33,9 @@ extension markdown_core_string_view {
         return String(decoding: UnsafeBufferPointer(start: data, count: length), as: UTF8.self)
     }
 
-    var optionalString: String? {
-        data == nil ? nil : requiredString
-    }
+    /* `optionalString` USED TO LIVE HERE and read absence off the pointer.
+     * Requirement 14 moved that question to the value itself: see
+     * `markdown_core_optional_string_view.string`. */
 }
 
 extension PlacementMode {
@@ -52,5 +52,13 @@ extension TableAlignment {
         case MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT: self = .right
         default: self = .none
         }
+    }
+}
+
+extension markdown_core_optional_string_view {
+    /// `nil` when the source did not write this, and `""` when it wrote it and
+    /// it was empty. The presence flag decides; the pointer never does.
+    var string: String? {
+        has_value ? value.requiredString : nil
     }
 }

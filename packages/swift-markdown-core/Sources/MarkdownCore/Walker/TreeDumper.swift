@@ -225,7 +225,7 @@ private struct DumpVisitor: MarkupVisitor {
             "Link",
             node,
             fields: [
-                "destination=\(optionalString(node.destination))",
+                "destination=\(jsonString(node.destination))",
                 "title=\(optionalString(node.title))",
             ],
             children: node.content.count
@@ -236,7 +236,7 @@ private struct DumpVisitor: MarkupVisitor {
         record(
             "Image",
             node,
-            fields: ["source=\(optionalString(node.source))", "title=\(optionalString(node.title))"],
+            fields: ["source=\(jsonString(node.source))", "title=\(optionalString(node.title))"],
             children: node.content.count
         )
     }

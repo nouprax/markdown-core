@@ -473,33 +473,42 @@ static void view_chunk(markdown_core_string_view *view, const markdown_core_chun
     view->length = chunk->len < 0 ? 0 : (size_t)chunk->len;
 }
 
-bool markdown_core_node_code_block_properties(const markdown_core_node *node, markdown_core_string_view *info,
-                                              markdown_core_string_view *language, markdown_core_string_view *literal,
-                                              bool *fenced, bool *closed) {
+/* THE FACADE FOLDS NOTHING (requirement 14). It carries the presence the
+ * engine recorded and does not re-derive it from a length or a pointer. */
+static void view_optional_chunk(markdown_core_optional_string_view *view, const markdown_core_optional_chunk *chunk) {
+    view->has_value = chunk->has_value;
+    view_chunk(&view->value, &chunk->value);
+}
+
+bool markdown_core_node_code_block_properties(const markdown_core_node *node, markdown_core_optional_string_view *info,
+                                              markdown_core_optional_string_view *language,
+                                              markdown_core_string_view *literal, bool *fenced, bool *closed) {
     size_t start = 0;
     size_t end;
     if (!node || node->type != MARKDOWN_CORE_NODE_CODE_BLOCK || !info || !language || !literal || !fenced || !closed) {
         return false;
     }
-    view_chunk(info, &node->as.code.info);
+    view_optional_chunk(info, &node->as.code.info);
     view_chunk(literal, &node->as.code.literal);
-    if (info->length == 0) {
-        info->data = NULL;
-    }
-    language->data = NULL;
-    language->length = 0;
-    while (start < info->length && (info->data[start] == ' ' || info->data[start] == '\t' ||
-                                    info->data[start] == '\n' || info->data[start] == '\r')) {
+    /* `if (info->length == 0) info->data = NULL;` STOOD HERE, and it is the
+     * fold requirement 14 names: the parse had already decided whether a fence
+     * wrote an info string, and this line decided it again from a length. */
+    language->has_value = false;
+    language->value.data = NULL;
+    language->value.length = 0;
+    while (start < info->value.length && (info->value.data[start] == ' ' || info->value.data[start] == '\t' ||
+                                          info->value.data[start] == '\n' || info->value.data[start] == '\r')) {
         start++;
     }
     end = start;
-    while (end < info->length && info->data[end] != ' ' && info->data[end] != '\t' && info->data[end] != '\n' &&
-           info->data[end] != '\r') {
+    while (end < info->value.length && info->value.data[end] != ' ' && info->value.data[end] != '\t' &&
+           info->value.data[end] != '\n' && info->value.data[end] != '\r') {
         end++;
     }
-    if (end > start) {
-        language->data = info->data + start;
-        language->length = end - start;
+    if (info->has_value && end > start) {
+        language->has_value = true;
+        language->value.data = info->value.data + start;
+        language->value.length = end - start;
     }
     *fenced = node->as.code.fenced != 0;
     *closed = !*fenced || node->as.code.fence_closed != 0;
@@ -625,22 +634,22 @@ bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, s
 }
 
 static bool link_properties(const markdown_core_node *node, uint16_t expected, markdown_core_string_view *url,
-                            markdown_core_string_view *title) {
+                            markdown_core_optional_string_view *title) {
     if (!node || node->type != expected || !url || !title) {
         return false;
     }
     view_chunk(url, &node->as.link.url);
-    view_chunk(title, &node->as.link.title);
+    view_optional_chunk(title, &node->as.link.title);
     return true;
 }
 
 bool markdown_core_node_link_properties(const markdown_core_node *node, markdown_core_string_view *destination,
-                                        markdown_core_string_view *title) {
+                                        markdown_core_optional_string_view *title) {
     return link_properties(node, MARKDOWN_CORE_NODE_LINK, destination, title);
 }
 
 bool markdown_core_node_image_properties(const markdown_core_node *node, markdown_core_string_view *source,
-                                         markdown_core_string_view *title) {
+                                         markdown_core_optional_string_view *title) {
     return link_properties(node, MARKDOWN_CORE_NODE_IMAGE, source, title);
 }
 
@@ -682,13 +691,13 @@ bool markdown_core_node_association(const markdown_core_node *node, markdown_cor
 }
 
 bool markdown_core_node_definition_resource(const markdown_core_node *node, markdown_core_string_view *destination,
-                                            markdown_core_string_view *title) {
+                                            markdown_core_optional_string_view *title) {
     if (!node || node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION || !node->as.definition || !destination ||
         !title) {
         return false;
     }
     view_chunk(destination, &node->as.definition->url);
-    view_chunk(title, &node->as.definition->title);
+    view_optional_chunk(title, &node->as.definition->title);
     return true;
 }
 
@@ -793,11 +802,14 @@ static void buffer_json_string(dump_buffer *buffer, markdown_core_string_view va
     buffer_cstr(buffer, "\"");
 }
 
-static void buffer_optional_string(dump_buffer *buffer, markdown_core_string_view value) {
-    if (!value.data) {
+/* `null` and `""` are two answers, not one, and this reads the presence flag
+ * rather than the pointer -- which is the same rule the dump already applied
+ * to an optional Int and an optional Bool (requirement 14). */
+static void buffer_optional_string(dump_buffer *buffer, markdown_core_optional_string_view value) {
+    if (!value.has_value) {
         buffer_cstr(buffer, "null");
     } else {
-        buffer_json_string(buffer, value);
+        buffer_json_string(buffer, value.value);
     }
 }
 
@@ -851,7 +863,8 @@ static const char *mode_name(markdown_core_placement_mode mode) {
 }
 
 static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, markdown_core_node_kind kind) {
-    markdown_core_string_view a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0}, d = {NULL, 0};
+    markdown_core_string_view a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0};
+    markdown_core_optional_string_view oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
     markdown_core_optional_i64 start;
     markdown_core_optional_bool checked;
     markdown_core_list_flavor flavor;
@@ -889,11 +902,11 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         }
         break;
     case MARKDOWN_CORE_KIND_CODE_BLOCK:
-        markdown_core_node_code_block_properties(node, &a, &b, &c, &x, &y);
+        markdown_core_node_code_block_properties(node, &oa, &ob, &c, &x, &y);
         buffer_cstr(buffer, " info=");
-        buffer_optional_string(buffer, a);
+        buffer_optional_string(buffer, oa);
         buffer_cstr(buffer, " language=");
-        buffer_optional_string(buffer, b);
+        buffer_optional_string(buffer, ob);
         buffer_cstr(buffer, " literal=");
         buffer_json_string(buffer, c);
         buffer_cstr(buffer, " fenced=");
@@ -994,7 +1007,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         break;
     case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
         markdown_core_node_association(node, &a, &b);
-        markdown_core_node_definition_resource(node, &c, &d);
+        markdown_core_node_definition_resource(node, &c, &oa);
         buffer_cstr(buffer, " label=");
         buffer_json_string(buffer, a);
         buffer_cstr(buffer, " identifier=");
@@ -1005,21 +1018,24 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " destination=");
         buffer_json_string(buffer, c);
         buffer_cstr(buffer, " title=");
-        buffer_optional_string(buffer, d);
+        buffer_optional_string(buffer, oa);
         break;
+    /* A DESTINATION IS REQUIRED (Q26) and prints as a string. `[a]()` used to
+     * print `destination=null`, which said the author wrote no destination
+     * when the empty parentheses are the destination they wrote. */
     case MARKDOWN_CORE_KIND_LINK:
-        markdown_core_node_link_properties(node, &a, &b);
+        markdown_core_node_link_properties(node, &a, &oa);
         buffer_cstr(buffer, " destination=");
-        buffer_optional_string(buffer, a);
+        buffer_json_string(buffer, a);
         buffer_cstr(buffer, " title=");
-        buffer_optional_string(buffer, b);
+        buffer_optional_string(buffer, oa);
         break;
     case MARKDOWN_CORE_KIND_IMAGE:
-        markdown_core_node_image_properties(node, &a, &b);
+        markdown_core_node_image_properties(node, &a, &oa);
         buffer_cstr(buffer, " source=");
-        buffer_optional_string(buffer, a);
+        buffer_json_string(buffer, a);
         buffer_cstr(buffer, " title=");
-        buffer_optional_string(buffer, b);
+        buffer_optional_string(buffer, oa);
         break;
     default:
         break;

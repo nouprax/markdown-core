@@ -118,7 +118,7 @@ function dumpGrammarDefinition() {
 }
 
 /** Locates each kind's declaration in one platform and reads its field names. */
-function projection({ label, directories, declaration, field }) {
+function projection({ label, directories, declaration, field, optional }) {
     const files = [];
     for (const directory of directories) {
         const absolute = path.join(root, directory);
@@ -146,7 +146,7 @@ function projection({ label, directories, declaration, field }) {
                     .map((m) => m.index + from + 1)
                     .find((index) => index > from + match[0].length);
                 const body = text.slice(from, next ?? text.length);
-                return new Set([...body.matchAll(field)].map((m) => m[1]));
+                return new Map([...body.matchAll(field)].map((m) => [m[1], optional(m)]));
             }
             return null;
         }
@@ -177,7 +177,8 @@ const modelProjections = [
         // type cannot release — while every other kind is a struct. Both are
         // declarations; only the keyword differs.
         declaration: (kind) => new RegExp(`public (?:final class|struct) ${kind}\\b[^\\n]*\\{`),
-        field: /public (?:let|var) ([A-Za-z]+)\s*:/g
+        field: /public (?:let|var) ([A-Za-z]+)\s*:\s*([^\n]+)/g,
+        optional: (m) => m[2].trim().endsWith("?")
     }),
     projection({
         label: "Kotlin model",
@@ -186,7 +187,8 @@ const modelProjections = [
         // extension kinds take a plain one. A reader that knew only the first
         // reported them as missing.
         declaration: (kind) => new RegExp(`public class ${kind}\\b[^\\n]*\\(`),
-        field: /(?:public |override )?val ([A-Za-z]+)\s*:/g
+        field: /(?:public |override )?val ([A-Za-z]+)\s*:\s*([^\n]+?),?\s*$/gm,
+        optional: (m) => m[2].trim().endsWith("?")
     }),
     projection({
         label: "ES model",
@@ -195,7 +197,8 @@ const modelProjections = [
         // the correct TypeScript for it, and reads as "declared with zero
         // fields", not as "missing".
         declaration: (kind) => new RegExp(`export (?:interface ${kind}\\b[^\\n]*\\{|type ${kind}\\s*=)`),
-        field: /readonly ([A-Za-z]+)\s*[?]?\s*:/g
+        field: /readonly ([A-Za-z]+)\s*([?]?)\s*:\s*([^\n;]+);/g,
+        optional: (m) => m[2] === "?" || /\|\s*null\b/.test(m[3])
     })
 ];
 
@@ -424,6 +427,18 @@ for (const { label, expect, actual } of kindSurfaces) {
     }
 }
 
+/* NULLABILITY IS PART OF THE CONTRACT and until Step 14 no gate read it.
+ *
+ * §4.1's standing rule 4 names "a field's name, type, NULLABILITY or category"
+ * and says no commit may leave this audit red -- but the audit compared field
+ * NAMES only, so flipping `Link.destination` to optional in the contract and
+ * leaving all three models required passed, measured. Requirement 14's whole
+ * deliverable is that `null` and `""` are different facts, and a contract
+ * nothing checks cannot carry that. */
+const optionality = new Map(
+    contract.kinds.map((kind) => [kind.name, new Map(kind.fields.map((f) => [f.name, f.optional === true]))])
+);
+
 for (const { label, fieldsOf } of modelProjections) {
     for (const [kind, expected] of kinds) {
         const declared = fieldsOf(kind);
@@ -436,6 +451,17 @@ for (const { label, fieldsOf } of modelProjections) {
         if (missing.length) {
             console.error(`${label}: ${kind} does not declare ${missing.join(", ")}`);
             failed = true;
+        }
+        for (const name of expected) {
+            if (!declared.has(name)) continue;
+            const wanted = optionality.get(kind).get(name);
+            if (declared.get(name) !== wanted) {
+                console.error(
+                    `${label}: ${kind}.${name} is declared ${declared.get(name) ? "optional" : "required"} and the ` +
+                        `contract says ${wanted ? "optional" : "required"}`
+                );
+                failed = true;
+            }
         }
     }
 }

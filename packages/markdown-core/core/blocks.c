@@ -1096,9 +1096,33 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
             houdini_unescape_html_f(&tmp, node_content->ptr, pos);
             markdown_core_strbuf_trim(&tmp);
             markdown_core_strbuf_unescape(&tmp);
-            b->as.code.info = markdown_core_chunk_buf_detach(&tmp);
-            if (!b->as.code.info.data) {
+            /* WHETHER THE SOURCE WROTE AN INFO STRING IS DECIDED HERE, ONCE.
+             * A fence with nothing but whitespace after it wrote none, and
+             * this is the only place that still knows the difference between
+             * that and the `js` in ```` ```js ````. The facade used to decide
+             * it again by testing the length, which is the fold requirement 14
+             * forbids. */
+            if (tmp.oom) {
+                /* THE SWEEP FOUND THIS. A buffer that could not be grown has
+                 * `size == 0` and it is NOT an absent info string -- it is an
+                 * info string the parse lost, and reporting absence here made
+                 * `fallback_runner` see a lossy document returned as a
+                 * success. `markdown_core_chunk_buf_detach` used to carry the
+                 * distinction for free by answering NULL; splitting the
+                 * length test out from it dropped that, so the length test
+                 * has to ask about the loss first. */
                 parser->oom = true;
+                markdown_core_strbuf_free(&tmp);
+                b->as.code.info = markdown_core_optional_chunk_absent();
+            } else if (tmp.size == 0) {
+                markdown_core_strbuf_free(&tmp);
+                b->as.code.info = markdown_core_optional_chunk_absent();
+            } else {
+                markdown_core_chunk info = markdown_core_chunk_buf_detach(&tmp);
+                if (!info.data) {
+                    parser->oom = true;
+                }
+                b->as.code.info = markdown_core_optional_chunk_present(info);
             }
 
             if (node_content->ptr[pos] == '\r') {
@@ -1953,7 +1977,11 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             (*container)->as.code.fence_length = (matched > 255) ? 255 : (uint8_t)matched;
             (*container)->as.code.fence_offset = (int8_t)(parser->first_nonspace - parser->offset);
             (*container)->as.code.fence_closed = false;
-            (*container)->as.code.info = markdown_core_chunk_literal("");
+            /* Nothing is known about an info string until the fence line is
+             * read; ABSENT is the honest state, and the close either replaces
+             * it or leaves it. It used to open as an empty STRING, which said
+             * the source had written one. */
+            (*container)->as.code.info = markdown_core_optional_chunk_absent();
             S_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
 
         } else if (!indented && ((matched = scan_html_block_start(input, parser->first_nonspace)) ||
@@ -2110,7 +2138,9 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             (*container)->as.code.fence_length = 0;
             (*container)->as.code.fence_offset = 0;
             (*container)->as.code.fence_closed = false;
-            (*container)->as.code.info = markdown_core_chunk_literal("");
+            /* An indented code block has no fence and therefore no info
+             * string, ever. */
+            (*container)->as.code.info = markdown_core_optional_chunk_absent();
         } else {
             markdown_core_llist *tmp;
             markdown_core_node *new_container = NULL;

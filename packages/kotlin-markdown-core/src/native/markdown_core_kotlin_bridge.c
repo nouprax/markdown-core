@@ -75,6 +75,8 @@ static void put_scope(bridge_buffer *buffer, markdown_core_scope scope) {
     put_i32(buffer, scope.end.column);
 }
 
+static void put_optional_string(bridge_buffer *buffer, markdown_core_optional_string_view value);
+
 static void put_string(bridge_buffer *buffer, markdown_core_string_view value, bool present) {
     if (!present) {
         put_i32(buffer, -1);
@@ -86,6 +88,14 @@ static void put_string(bridge_buffer *buffer, markdown_core_string_view value, b
     }
     put_i32(buffer, (int32_t)value.length);
     put_bytes(buffer, value.data, value.length);
+}
+
+/* PRESENCE COMES FROM THE VALUE, not from its pointer. Every call site used to
+ * spell `value.data != NULL`, which is the convention requirement 14 replaced;
+ * length -1 on the wire already carried absence and only the source of the
+ * answer was wrong. */
+static void put_optional_string(bridge_buffer *buffer, markdown_core_optional_string_view value) {
+    put_string(buffer, value.value, value.has_value);
 }
 
 static void write_node(bridge_buffer *buffer, const markdown_core_node *node);
@@ -116,7 +126,8 @@ static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
     markdown_core_string_view first = {0};
     markdown_core_string_view second = {0};
     markdown_core_string_view third = {0};
-    markdown_core_string_view fourth = {0};
+    markdown_core_optional_string_view optional_first = {0};
+    markdown_core_optional_string_view optional_second = {0};
 
     put_u8(buffer, (uint8_t)kind);
     put_scope(buffer, markdown_core_node_scope(node));
@@ -164,9 +175,9 @@ static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
     case MARKDOWN_CORE_KIND_CODE_BLOCK: {
         bool fenced = false;
         bool closed = false;
-        markdown_core_node_code_block_properties(node, &first, &second, &third, &fenced, &closed);
-        put_string(buffer, first, first.data != NULL);
-        put_string(buffer, second, second.data != NULL);
+        markdown_core_node_code_block_properties(node, &optional_first, &optional_second, &third, &fenced, &closed);
+        put_optional_string(buffer, optional_first);
+        put_optional_string(buffer, optional_second);
         put_string(buffer, third, true);
         put_u8(buffer, fenced ? 1 : 0);
         put_u8(buffer, closed ? 1 : 0);
@@ -256,11 +267,11 @@ static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
         break;
     case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
         markdown_core_node_association(node, &first, &second);
-        markdown_core_node_definition_resource(node, &third, &fourth);
+        markdown_core_node_definition_resource(node, &third, &optional_first);
         put_string(buffer, first, true);
         put_string(buffer, second, true);
         put_string(buffer, third, true);
-        put_string(buffer, fourth, fourth.data != NULL);
+        put_optional_string(buffer, optional_first);
         break;
     case MARKDOWN_CORE_KIND_LINK_REFERENCE:
     case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: {
@@ -273,16 +284,17 @@ static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
         write_children(buffer, node);
         break;
     }
+    /* A DESTINATION IS REQUIRED (Q26) and always has a length on the wire. */
     case MARKDOWN_CORE_KIND_LINK:
-        markdown_core_node_link_properties(node, &first, &second);
-        put_string(buffer, first, first.data != NULL);
-        put_string(buffer, second, second.data != NULL);
+        markdown_core_node_link_properties(node, &first, &optional_first);
+        put_string(buffer, first, true);
+        put_optional_string(buffer, optional_first);
         write_children(buffer, node);
         break;
     case MARKDOWN_CORE_KIND_IMAGE:
-        markdown_core_node_image_properties(node, &first, &second);
-        put_string(buffer, first, first.data != NULL);
-        put_string(buffer, second, second.data != NULL);
+        markdown_core_node_image_properties(node, &first, &optional_first);
+        put_string(buffer, first, true);
+        put_optional_string(buffer, optional_first);
         write_children(buffer, node);
         break;
     case MARKDOWN_CORE_KIND_TABLE_ROW: {

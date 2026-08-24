@@ -28,7 +28,10 @@ export interface NativeExports extends WebAssembly.Exports {
     es_node_directive_mode(node: number): number;
     es_node_directive_attribute_count(node: number): number;
     es_set_attribute_index(index: number): void;
-    es_string(object: number, field: number, dataOutput: number, lengthOutput: number): void;
+    /** Returns whether the field was PRESENT. A `false` answer means the source
+     * did not write it; a `true` answer with length 0 means it wrote it and it
+     * was empty, and the two are different facts (requirement 14). */
+    es_string(object: number, field: number, dataOutput: number, lengthOutput: number): number;
 }
 
 const wasmURL = new URL("../markdown-core.wasm", import.meta.url);

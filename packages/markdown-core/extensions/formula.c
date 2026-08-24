@@ -608,8 +608,9 @@ static int accepts_lines(const markdown_core_syntax_extension *extension, markdo
     return node && node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK;
 }
 
-static int info_is_formula(markdown_core_chunk *info) {
-    return info->len == 7 && memcmp(info->data, "formula", 7) == 0;
+/* An absent info string is not the word `formula`; it is no word at all. */
+static int info_is_formula(const markdown_core_optional_chunk *info) {
+    return info->has_value && info->value.len == 7 && memcmp(info->value.data, "formula", 7) == 0;
 }
 
 static markdown_core_node *new_formula_block_from_literal(const markdown_core_syntax_extension *extension,

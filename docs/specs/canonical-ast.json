@@ -410,7 +410,7 @@
                 {
                     "name": "destination",
                     "type": "String",
-                    "optional": true
+                    "optional": false
                 },
                 {
                     "name": "title",
@@ -431,7 +431,7 @@
                 {
                     "name": "source",
                     "type": "String",
-                    "optional": true
+                    "optional": false
                 },
                 {
                     "name": "title",

@@ -214,7 +214,7 @@ private class DumpVisitor : Visitor<DumpRecord> {
             node,
             fields =
                 listOf(
-                    "destination=${optionalString(node.destination)}",
+                    "destination=${jsonString(node.destination)}",
                     "title=${optionalString(node.title)}",
                 ),
             children = node.content.size,
@@ -226,7 +226,7 @@ private class DumpVisitor : Visitor<DumpRecord> {
             node,
             fields =
                 listOf(
-                    "source=${optionalString(node.source)}",
+                    "source=${jsonString(node.source)}",
                     "title=${optionalString(node.title)}",
                 ),
             children = node.content.size,

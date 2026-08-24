@@ -163,9 +163,11 @@ static int cc_expansion_visit(const markdown_core_node *node, void *context) {
     cc_expansion *total = (cc_expansion *)context;
     markdown_core_string_view first;
     markdown_core_string_view second;
-    if (markdown_core_node_link_properties(node, &first, &second) ||
-        markdown_core_node_image_properties(node, &first, &second) ||
-        markdown_core_node_association(node, &first, &second)) {
+    markdown_core_optional_string_view title;
+    if (markdown_core_node_link_properties(node, &first, &title) ||
+        markdown_core_node_image_properties(node, &first, &title)) {
+        total->bytes += first.length + (title.has_value ? title.value.length : 0);
+    } else if (markdown_core_node_association(node, &first, &second)) {
         total->bytes += first.length + second.length;
     }
     return 0;

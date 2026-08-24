@@ -681,6 +681,10 @@ static markdown_core_node *fb_sweep_parse(markdown_core_mem *mem) { return fb_sw
 /* Allocation-free comparison: the sweep allocator is still armed while
  * comparing, so the comparator must not allocate (public literal accessors
  * do). */
+/* Presence first: two titles that are both empty are the same only if the
+ * source wrote both or neither (requirement 14). */
+static int fb_optional_chunk_equal(const markdown_core_optional_chunk *a, const markdown_core_optional_chunk *b);
+
 static int fb_chunk_equal(const markdown_core_chunk *a, const markdown_core_chunk *b) {
     if (a->len != b->len) {
         return 0;
@@ -694,6 +698,13 @@ static int fb_chunk_equal(const markdown_core_chunk *a, const markdown_core_chun
     return memcmp(a->data, b->data, (size_t)a->len) == 0;
 }
 
+static int fb_optional_chunk_equal(const markdown_core_optional_chunk *a, const markdown_core_optional_chunk *b) {
+    if (a->has_value != b->has_value) {
+        return 0;
+    }
+    return !a->has_value || fb_chunk_equal(&a->value, &b->value);
+}
+
 static int fb_association_equal(const markdown_core_association *a, const markdown_core_association *b) {
     return fb_chunk_equal(&a->label, &b->label) && fb_chunk_equal(&a->identifier, &b->identifier);
 }
@@ -705,7 +716,8 @@ static int fb_node_payload_equal(markdown_core_node *a, markdown_core_node *b) {
         return fb_chunk_equal(&a->as.literal, &b->as.literal);
     }
     if (type == MARKDOWN_CORE_NODE_LINK || type == MARKDOWN_CORE_NODE_IMAGE) {
-        return fb_chunk_equal(&a->as.link.url, &b->as.link.url) && fb_chunk_equal(&a->as.link.title, &b->as.link.title);
+        return fb_chunk_equal(&a->as.link.url, &b->as.link.url) &&
+               fb_optional_chunk_equal(&a->as.link.title, &b->as.link.title);
     }
     /* D30's shape, one node further out: a definition whose destination or
      * title was lost to a refused allocation is a document that LIES, and the
@@ -718,7 +730,7 @@ static int fb_node_payload_equal(markdown_core_node *a, markdown_core_node *b) {
         }
         return fb_association_equal(&a->as.definition->association, &b->as.definition->association) &&
                fb_chunk_equal(&a->as.definition->url, &b->as.definition->url) &&
-               fb_chunk_equal(&a->as.definition->title, &b->as.definition->title);
+               fb_optional_chunk_equal(&a->as.definition->title, &b->as.definition->title);
     }
     if (type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION || type == MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE) {
         return fb_association_equal(&a->as.association, &b->as.association);

@@ -209,6 +209,111 @@ static void check_source_and_lines(void) {
     markdown_core_document_free(document);
 }
 
+/* REQUIREMENT 14 THROUGH THE ACCESSORS, which is where it has to be checked.
+ *
+ * The dump renders `null` and `""` differently and the goldens pin that, but a
+ * dump can only show what it chooses to print: the accessor answers with
+ * `has_value`, and a fold reinstated anywhere between the node and the caller
+ * would be invisible to a golden that only ever sees the rendering. Both arms
+ * of every optional string are asserted here, and so is the fact that a
+ * destination has no absent arm at all (Q26). */
+static void check_null_and_empty(void) {
+    static const struct {
+        const char *source;
+        markdown_core_node_kind kind;
+        const char *destination;
+        bool title_written;
+        const char *title;
+    } CASES[] = {
+        {"[a]()\n", MARKDOWN_CORE_KIND_LINK, "", false, ""},
+        {"[a](<>)\n", MARKDOWN_CORE_KIND_LINK, "", false, ""},
+        {"[a](/u)\n", MARKDOWN_CORE_KIND_LINK, "/u", false, ""},
+        {"[a](/u \"\")\n", MARKDOWN_CORE_KIND_LINK, "/u", true, ""},
+        {"[a](/u \"t\")\n", MARKDOWN_CORE_KIND_LINK, "/u", true, "t"},
+        {"![a]()\n", MARKDOWN_CORE_KIND_IMAGE, "", false, ""},
+        {"![a](/s \"\")\n", MARKDOWN_CORE_KIND_IMAGE, "/s", true, ""},
+        {"[a]: <>\n", MARKDOWN_CORE_KIND_REFERENCE_DEFINITION, "", false, ""},
+        {"[a]: <> \"\"\n", MARKDOWN_CORE_KIND_REFERENCE_DEFINITION, "", true, ""},
+        {"[a]: /u \"t\"\n", MARKDOWN_CORE_KIND_REFERENCE_DEFINITION, "/u", true, "t"},
+    };
+    static const struct {
+        const char *source;
+        bool info_written;
+        const char *info;
+    } INFO_CASES[] = {
+        {"```\nx\n```\n", false, ""},
+        {"```   \nx\n```\n", false, ""},
+        {"    x\n", false, ""},
+        {"```js\nx\n```\n", true, "js"},
+    };
+    size_t index;
+
+    for (index = 0; index < sizeof(CASES) / sizeof(CASES[0]); ++index) {
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)CASES[index].source, strlen(CASES[index].source), NULL, NULL);
+        const markdown_core_node *node = NULL;
+        markdown_core_string_view destination = {NULL, 0};
+        markdown_core_optional_string_view title = {false, {NULL, 0}};
+        bool read;
+        if (!document) {
+            check(false, "requirement 14 case parses");
+            continue;
+        }
+        node = markdown_core_node_get_first_child(markdown_core_document_semantic(document));
+        if (CASES[index].kind != MARKDOWN_CORE_KIND_REFERENCE_DEFINITION) {
+            node = markdown_core_node_get_first_child(node);
+        }
+        check(markdown_core_node_get_kind(node) == CASES[index].kind, "requirement 14 case has the expected kind");
+        read = CASES[index].kind == MARKDOWN_CORE_KIND_LINK
+                   ? markdown_core_node_link_properties(node, &destination, &title)
+               : CASES[index].kind == MARKDOWN_CORE_KIND_IMAGE
+                   ? markdown_core_node_image_properties(node, &destination, &title)
+                   : markdown_core_node_definition_resource(node, &destination, &title);
+        check(read, "the resource accessor answers");
+        /* A DESTINATION IS NEVER ABSENT. There is no `has_value` to test,
+         * because the type does not offer one -- that IS the assertion. */
+        check(destination.length == strlen(CASES[index].destination) &&
+                  (destination.length == 0 ||
+                   memcmp(destination.data, CASES[index].destination, destination.length) == 0),
+              "a destination is required and empty means empty");
+        check(title.has_value == CASES[index].title_written, "presence is what the source wrote, not what it wrote in");
+        if (title.has_value) {
+            check(
+                title.value.length == strlen(CASES[index].title) &&
+                    (title.value.length == 0 || memcmp(title.value.data, CASES[index].title, title.value.length) == 0),
+                "a written title keeps its bytes, including none of them");
+        }
+        markdown_core_document_free(document);
+    }
+
+    for (index = 0; index < sizeof(INFO_CASES) / sizeof(INFO_CASES[0]); ++index) {
+        markdown_core_document *document = markdown_core_document_parse((const uint8_t *)INFO_CASES[index].source,
+                                                                        strlen(INFO_CASES[index].source), NULL, NULL);
+        const markdown_core_node *node;
+        markdown_core_optional_string_view info = {false, {NULL, 0}};
+        markdown_core_optional_string_view language = {false, {NULL, 0}};
+        markdown_core_string_view literal = {NULL, 0};
+        bool fenced = false;
+        bool closed = false;
+        if (!document) {
+            check(false, "requirement 14 info case parses");
+            continue;
+        }
+        node = markdown_core_node_get_first_child(markdown_core_document_semantic(document));
+        check(markdown_core_node_code_block_properties(node, &info, &language, &literal, &fenced, &closed),
+              "the code-block accessor answers");
+        check(info.has_value == INFO_CASES[index].info_written,
+              "a fence with only whitespace after it wrote no info string");
+        check(language.has_value == info.has_value, "language is present exactly when the info string is");
+        if (info.has_value) {
+            check(info.value.length == strlen(INFO_CASES[index].info) &&
+                      memcmp(info.value.data, INFO_CASES[index].info, info.value.length) == 0,
+                  "a written info string keeps its bytes");
+        }
+        markdown_core_document_free(document);
+    }
+}
+
 static void check_api(void) {
     static const uint8_t source[] = "# Heading\n\n- [ ] task\n";
     markdown_core_parse_options options;
@@ -372,6 +477,7 @@ int main(int argc, char **argv) {
     }
     fixture_dir = argv[2];
     check_api();
+    check_null_and_empty();
     check_source_and_lines();
     check_diagnostics();
     for (i = 3; i < argc; i += 2) {
