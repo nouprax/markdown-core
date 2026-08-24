@@ -1,30 +1,18 @@
 import groovy.json.JsonSlurper
 import org.gradle.api.DefaultTask
-import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.RegularFileProperty
-import org.gradle.api.provider.Property
-import org.gradle.api.provider.Provider
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.CacheableTask
-import org.gradle.api.tasks.Classpath
-import org.gradle.api.tasks.CompileClasspath
-import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
-import org.gradle.api.tasks.InputFile
-import org.gradle.api.tasks.InputFiles
-import org.gradle.api.tasks.Nested
-import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.TaskAction
 import org.gradle.jvm.tasks.Jar
-import org.gradle.jvm.toolchain.JavaCompiler
-import org.gradle.jvm.toolchain.JavaLanguageVersion
-import org.gradle.jvm.toolchain.JavaToolchainService
 import org.gradle.language.jvm.tasks.ProcessResources
-import org.gradle.process.ExecOperations
 import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
 import org.gradle.testing.jacoco.tasks.JacocoReport
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -33,13 +21,7 @@ import org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
-import java.io.ByteArrayOutputStream
-import java.io.DataInputStream
-import java.io.File
-import java.util.Properties
-import java.util.SortedSet
 import java.util.zip.ZipFile
-import javax.inject.Inject
 
 @CacheableTask
 abstract class GenerateCanonicalAstFixtures : DefaultTask() {
@@ -81,14 +63,13 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
             listOf(
                 "smartPunctuation",
                 "footnotes",
+                "stripHTMLComments",
                 "tables",
                 "strikethrough",
                 "autolinks",
                 "taskLists",
                 "formulas",
                 "directives",
-                "crossLinks",
-                "embeds",
             )
         val lines =
             mutableListOf(
@@ -143,19 +124,38 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
     ) {
         lines += "            $name ="
         lines += "                buildString {"
-        // Chunks split on code-point boundaries, never inside a surrogate
-        // pair: a lone surrogate cannot survive the UTF-8 encoding of the
-        // generated source file.
-        var start = 0
-        while (start < value.length) {
-            var end = minOf(start + 30, value.length)
-            if (end < value.length && value[end - 1].isHighSurrogate() && value[end].isLowSurrogate()) {
-                end += 1
-            }
-            lines += "                    append(${kotlinLiteral(value.substring(start, end))})"
-            start = end
+        for (chunk in chunkedOnCodePoints(value, 30)) {
+            lines += "                    append(${kotlinLiteral(chunk)})"
         }
         lines += "                },"
+    }
+
+    /**
+     * Split [value] into pieces of at most [size] UTF-16 units, never between a
+     * surrogate pair.
+     *
+     * `String.chunked` indexes by UTF-16 unit, so a supplementary character
+     * starting on the boundary is cut in half; `writeText` then encodes each
+     * lone surrogate as U+FFFD and the generated fixture tests DIFFERENT BYTES
+     * from the shared manifest, silently. The manifest carries no supplementary
+     * character today -- 164 strings, zero surrogates -- so this changes not one
+     * byte of what is generated. It is here so that adding one never does.
+     */
+    private fun chunkedOnCodePoints(
+        value: String,
+        size: Int,
+    ): kotlin.collections.List<String> {
+        val chunks = mutableListOf<String>()
+        var start = 0
+        while (start < value.length) {
+            var end = minOf(start + size, value.length)
+            if (end < value.length && value[end - 1].isHighSurrogate()) {
+                end--
+            }
+            chunks += value.substring(start, end)
+            start = end
+        }
+        return chunks
     }
 
     private fun kotlinLiteral(value: String): String =
@@ -197,363 +197,16 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
         }
 }
 
-private object JavaAbi {
-    fun surface(roots: Set<File>): kotlin.collections.List<String> {
-        val lines = mutableListOf<String>()
-        for (root in roots.sortedBy(File::getAbsolutePath)) {
-            if (root.isDirectory) {
-                for (classFile in root.walkTopDown().filter { it.isFile && it.extension == "class" }) {
-                    lines += classSurface(classFile.readBytes())
-                }
-            } else {
-                ZipFile(root).use { archive ->
-                    for (entry in archive.entries()) {
-                        if (entry.name.endsWith(".class") && entry.name.startsWith("com/nouprax/")) {
-                            lines += classSurface(archive.getInputStream(entry).use { it.readBytes() })
-                        }
-                    }
-                }
-            }
-        }
-        return lines
-            .filter {
-                it.startsWith("class com/nouprax/") ||
-                    it.startsWith("  field com/nouprax/") ||
-                    it.startsWith("  method com/nouprax/")
-            }.sorted()
-    }
-
-    /**
-     * The classes Java source can actually USE: public, and carrying at least
-     * one member Java can name.
-     *
-     * The member requirement is not a nicety. Kotlin emits a public class for
-     * a `@JvmMultifileClass` facade whether or not anything public lands in
-     * it, so a facade holding only `@JvmSynthetic` internals is a public class
-     * name with nothing behind it — javac can import it and then do nothing
-     * with it. Counting it as surface would force it into the public API dump,
-     * which would be a lie about what the library offers.
-     */
-    fun classes(surface: kotlin.collections.List<String>): Set<String> {
-        val withMembers =
-            surface
-                .asSequence()
-                .filter { it.startsWith("  ") }
-                .map { it.trim().substringAfter(' ').substringBefore('.') }
-                .toSet()
-        return surface
-            .asSequence()
-            .filter { it.startsWith("class ") }
-            .map { it.substringAfter("class ").substringBefore(' ') }
-            .filter { it in withMembers }
-            .toSortedSet()
-    }
-
-    fun officialClasses(apiFile: File): Set<String> =
-        apiFile
-            .readLines()
-            .asSequence()
-            .filter { it.startsWith("public ") && " class " in it }
-            .map { it.substringAfter(" class ").substringBefore(' ') }
-            .toSortedSet()
-
-    private fun classSurface(bytes: ByteArray): kotlin.collections.List<String> {
-        val input = DataInputStream(bytes.inputStream())
-        require(input.readInt() == -0x35014542) { "not a class file" }
-        input.readUnsignedShort()
-        input.readUnsignedShort()
-        val poolCount = input.readUnsignedShort()
-        val pool = arrayOfNulls<Any?>(poolCount)
-        val classRefs = IntArray(poolCount)
-        var slot = 1
-        while (slot < poolCount) {
-            when (val tag = input.readUnsignedByte()) {
-                1 -> {
-                    pool[slot] = input.readUTF()
-                }
-
-                7 -> {
-                    classRefs[slot] = input.readUnsignedShort()
-                }
-
-                8, 16, 19, 20 -> {
-                    input.skipBytes(2)
-                }
-
-                15 -> {
-                    input.skipBytes(3)
-                }
-
-                3, 4, 9, 10, 11, 12, 17, 18 -> {
-                    input.skipBytes(4)
-                }
-
-                5, 6 -> {
-                    input.skipBytes(8)
-                    slot += 1
-                }
-
-                else -> {
-                    error("unsupported constant pool tag $tag")
-                }
-            }
-            slot += 1
-        }
-
-        fun utf8At(index: Int): String = pool[index] as? String ?: error("constant pool index $index is not utf8")
-
-        val access = input.readUnsignedShort()
-        val thisClass = input.readUnsignedShort()
-        val className = utf8At(classRefs[thisClass])
-        val public = (access and 0x0001) != 0
-        val synthetic = (access and 0x1000) != 0
-        if (!public || synthetic) {
-            return emptyList()
-        }
-        val superName =
-            input.readUnsignedShort().let { index ->
-                if (index == 0) "-" else utf8At(classRefs[index])
-            }
-        val interfaces =
-            (0 until input.readUnsignedShort())
-                .map { utf8At(classRefs[input.readUnsignedShort()]) }
-                .sorted()
-        val members = mutableListOf<String>()
-        for (section in listOf("field", "method")) {
-            repeat(input.readUnsignedShort()) {
-                val memberAccess = input.readUnsignedShort()
-                val name = utf8At(input.readUnsignedShort())
-                val descriptor = utf8At(input.readUnsignedShort())
-                repeat(input.readUnsignedShort()) {
-                    input.skipBytes(2)
-                    input.skipBytes(input.readInt())
-                }
-                val visible = (memberAccess and 0x0005) != 0
-                val synthetic = (memberAccess and 0x1000) != 0
-                if (visible && !synthetic) {
-                    members += "  $section $className.$name $descriptor"
-                }
-            }
-        }
-        return listOf(
-            "class $className extends $superName implements ${interfaces.joinToString(",")}",
-        ) + members
-    }
-}
-
-@CacheableTask
-abstract class VerifyJavaImplementationHidden : DefaultTask() {
-    @get:Nested
-    abstract val javaCompiler: Property<JavaCompiler>
-
-    // JavaCompiler's documented nested metadata does not expose the concrete
-    // vendor and full runtime build as stable inputs. Both can still change
-    // javac's output, so record them explicitly in this cacheable task.
-    @get:Input
-    abstract val javaCompilerVendor: Property<String>
-
-    @get:Input
-    abstract val javaCompilerRuntimeVersion: Property<String>
-
-    @get:Input
-    abstract val javaRelease: Property<Int>
-
-    @get:Classpath
-    abstract val libraryClasses: ConfigurableFileCollection
-
-    @get:InputFile
-    @get:PathSensitive(PathSensitivity.RELATIVE)
-    abstract val officialApiFile: RegularFileProperty
-
-    @get:CompileClasspath
-    abstract val compileClasspath: ConfigurableFileCollection
-
-    @get:OutputDirectory
-    abstract val outputDirectory: DirectoryProperty
-
-    @get:Inject
-    abstract val execOperations: ExecOperations
-
-    @TaskAction
-    fun verify() {
-        val outputRoot = outputDirectory.get().asFile
-        check(!outputRoot.exists() || outputRoot.deleteRecursively()) {
-            "could not clear ${outputRoot.absolutePath}"
-        }
-        val sourceDirectory = outputRoot.resolve("source").apply { mkdirs() }
-        val classesDirectory = outputRoot.resolve("classes").apply { mkdirs() }
-        val classpath = (libraryClasses + compileClasspath).filter(File::exists).asPath
-
-        val actualClasses = JavaAbi.classes(JavaAbi.surface(libraryClasses.files))
-        val officialClasses = JavaAbi.officialClasses(officialApiFile.get().asFile)
-        check(actualClasses == officialClasses) {
-            val undocumented = (actualClasses - officialClasses).joinToString("\n")
-            val missing = (officialClasses - actualClasses).joinToString("\n")
-            "$path Java classes differ from the official API dump.\n" +
-                "Undocumented:\n$undocumented\nMissing:\n$missing"
-        }
-
-        fun compile(
-            name: String,
-            source: String,
-        ): Pair<Int, String> {
-            val sourceFile = sourceDirectory.resolve("$name.java")
-            sourceFile.writeText(source)
-            val output = ByteArrayOutputStream()
-            val result =
-                execOperations.exec {
-                    executable(javaCompiler.get().executablePath.asFile)
-                    args(
-                        "--release",
-                        javaRelease.get().toString(),
-                        "-proc:none",
-                        "-classpath",
-                        classpath,
-                        "-d",
-                        classesDirectory.absolutePath,
-                        sourceFile.absolutePath,
-                    )
-                    standardOutput = output
-                    errorOutput = output
-                    isIgnoreExitValue = true
-                }
-            return result.exitValue to output.toString(Charsets.UTF_8)
-        }
-
-        val (positiveResult, positiveOutput) =
-            compile(
-                "PublicApiProbe",
-                """
-                import com.nouprax.markdown.core.Document;
-
-                final class PublicApiProbe {
-                    Document parse() {
-                        return new Document("visible");
-                    }
-
-                    long append(Document document) {
-                        Document next = document.append("visible again");
-                        long revision = next.revisionBits();
-                        next.close();
-                        return revision;
-                    }
-                }
-                """.trimIndent(),
-            )
-        check(positiveResult == 0) {
-            "Java public-API control failed to compile:\n$positiveOutput"
-        }
-
-        val hiddenTypes =
-            listOf(
-                "AndroidNativeLoader",
-                "Built",
-                "DesktopNativeLoader",
-                "JvmNative",
-                "MarkdownCoreKt__CBridgeKt",
-                "MarkdownCoreKt__CBridge_androidKt",
-                "MarkdownCoreKt__CBridge_jvmKt",
-                "MarkdownCoreKt__CBridge_jvmSharedKt",
-                "MarkdownCoreKt__DiagnosticKt",
-                "MarkdownCoreKt__DocumentKt",
-                "MarkdownCoreKt__HTMLBlockKt",
-                "MarkdownCoreKt__ImmutableListKt",
-                "MarkdownCoreKt__MarkupDumperKt",
-                "MarkdownCoreKt__MarkupKt",
-                "MarkdownCoreKt__ParseOptionsKt",
-                "MarkdownCoreKt__WireDecoderKt",
-                "MarkupDumper${'$'}WhenMappings",
-                "MarkupDumperKt",
-                "MarkupKt",
-                "ParseOptionsKt",
-                "RootSink",
-                "WireKind",
-                "WireReader",
-            )
-        for (type in hiddenTypes) {
-            val (result, output) =
-                compile(
-                    "Hidden${type}Probe",
-                    """
-                    import com.nouprax.markdown.core.$type;
-
-                    final class Hidden${type}Probe {
-                        $type value;
-                    }
-                    """.trimIndent(),
-                )
-            check(result != 0) {
-                "Java source unexpectedly imported implementation type $type"
-            }
-            check(output.contains(type)) {
-                "Java rejected $type for an unrelated reason:\n$output"
-            }
-        }
-
-        val hiddenMembers =
-            listOf(
-                Triple(
-                    "DocumentHandleProbe",
-                    "getHandle",
-                    """
-                    import com.nouprax.markdown.core.Document;
-
-                    final class DocumentHandleProbe {
-                        Object handle(Document document) {
-                            return document.getHandle();
-                        }
-                    }
-                    """.trimIndent(),
-                ),
-                Triple(
-                    "BridgeFunctionProbe",
-                    "cOpen",
-                    """
-                    import com.nouprax.markdown.core.MarkdownCoreKt;
-                    import com.nouprax.markdown.core.ParseOptions;
-
-                    final class BridgeFunctionProbe {
-                        Object open() {
-                            return MarkdownCoreKt.cOpen(new byte[0], new ParseOptions());
-                        }
-                    }
-                    """.trimIndent(),
-                ),
-            )
-        for ((name, expectedSymbol, source) in hiddenMembers) {
-            val (result, output) = compile(name, source)
-            check(result != 0) {
-                "Java source unexpectedly called synthetic implementation member from $name"
-            }
-            check(output.contains(expectedSymbol)) {
-                "Java rejected $name for an unrelated reason:\n$output"
-            }
-        }
-    }
-}
-
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.ktlint)
-    alias(libs.plugins.dokka)
     jacoco
     `maven-publish`
 }
 
 group = "com.nouprax"
 version = rootProject.file("VERSION").readText().trim()
-
-dokka {
-    dokkaSourceSets.configureEach {
-        // The entire public API lives in commonMain; the platform source
-        // sets hold internal actuals only (and the two Kotlin/Native sets
-        // share one source root, which Dokka rejects outright).
-        if (name != "commonMain") {
-            suppress.set(true)
-        }
-    }
-}
 
 dependencyLocking {
     lockAllConfigurations()
@@ -565,58 +218,27 @@ val generatedCanonicalAstSource =
     layout.buildDirectory.file(
         "generated/canonicalAstCommonTest/kotlin/com/nouprax/markdown/core/CanonicalAstCases.kt",
     )
-
-// The one closed model of supported build hosts. Every host-dependent
-// decision — JNI resource path, native library file name, Kotlin/Native
-// test target, managed-device ABI, publish-local target — derives from this
-// object, and a host outside the support matrix stops configuration here
-// instead of silently producing artifacts labeled for another platform.
-data class HostTriple(
-    val os: String,
-    val architecture: String,
-) {
-    val platform: String get() = "$os-$architecture"
-    val kotlinNativeTarget: String get() = if (os == "macos") "macosArm64" else "linuxX64"
-    val managedDeviceAbi: String get() = if (architecture == "arm64") "arm64-v8a" else "x86_64"
-    val nativeLibraryFileName: String
-        get() = if (os == "macos") "libmarkdown_core_kotlin.dylib" else "libmarkdown_core_kotlin.so"
-}
-
-val supportedHostTriples =
-    setOf(
-        HostTriple("macos", "arm64"),
-        HostTriple("linux", "x64"),
-    )
-
-val hostTriple =
-    run {
-        val osName = System.getProperty("os.name").lowercase()
-        val architectureName = System.getProperty("os.arch").lowercase()
-        val os =
-            when {
-                osName.contains("mac") -> "macos"
-                osName.contains("linux") -> "linux"
-                osName.contains("windows") -> "windows"
-                else -> osName
-            }
-        val architecture =
-            when (architectureName) {
-                "aarch64", "arm64" -> "arm64"
-                "amd64", "x86_64" -> "x64"
-                else -> architectureName
-            }
-        val triple = HostTriple(os, architecture)
-        require(triple in supportedHostTriples) {
-            "Unsupported build host: $osName/$architectureName. Supported hosts: " +
-                supportedHostTriples.joinToString { it.platform } + "."
-        }
-        triple
+val hostOs = System.getProperty("os.name").lowercase()
+val hostArchitecture = System.getProperty("os.arch").lowercase()
+val androidManagedDeviceTestAbi =
+    when (hostArchitecture) {
+        "aarch64", "arm64" -> "arm64-v8a"
+        "amd64", "x86_64" -> "x86_64"
+        else -> error("Unsupported Android managed-device host architecture: $hostArchitecture")
     }
-
-val androidManagedDeviceTestAbi = hostTriple.managedDeviceAbi
 val jvmNativeBuildDirectory = layout.buildDirectory.dir("native/jvm")
 val jvmNativeResourceDirectory = layout.buildDirectory.dir("generated/jvmResources")
-val desktopPlatform = hostTriple.platform
+val desktopPlatform =
+    when {
+        System.getProperty("os.name").lowercase().contains("mac") &&
+            hostArchitecture in setOf("aarch64", "arm64") -> "macos-arm64"
+
+        System.getProperty("os.name").lowercase().contains("mac") -> "macos-x64"
+
+        System.getProperty("os.name").lowercase().contains("windows") -> "windows-x64"
+
+        else -> "linux-x64"
+    }
 val nativeOutputDirectory =
     jvmNativeResourceDirectory.map {
         it.dir("com/nouprax/markdown/core/native/$desktopPlatform")
@@ -701,8 +323,18 @@ fun KotlinNativeTarget.configureNativeBridge() {
     }
 }
 
-val hostNativeTest = "${hostTriple.kotlinNativeTarget}Test"
-val hostNativeConformanceTest = "${hostTriple.kotlinNativeTarget}ConformanceTest"
+val hostNativeTest =
+    when {
+        hostOs.contains("mac") -> "macosArm64Test"
+        hostOs.contains("linux") -> "linuxX64Test"
+        else -> null
+    }
+val hostNativeConformanceTest =
+    when {
+        hostOs.contains("mac") -> "macosArm64ConformanceTest"
+        hostOs.contains("linux") -> "linuxX64ConformanceTest"
+        else -> null
+    }
 
 val configureJvmNative =
     tasks.register<Exec>("configureJvmNative") {
@@ -752,9 +384,14 @@ val buildJvmNative =
 
 kotlin {
     explicitApi()
-    // Kotlin's metadata-aware gate covers the supported Kotlin/JVM and KLIB
-    // surfaces. Preserve reference dumps for targets unavailable on this host;
-    // the bytecode-level JVM gate below remains intentionally complementary.
+
+    // WHAT JAVA ACTUALLY SEES, which the Kotlin source cannot show. `internal`
+    // has no JVM equivalent: it lowers to `public` with a mangled name, so an
+    // implementation class or member can be callable from Java without one line
+    // of this package saying so. A dump is the only way to look at it.
+    //
+    // `keepLocallyUnsupportedTargets` preserves the reference for targets this
+    // host cannot build, so a macOS run does not delete the Linux entries.
     @OptIn(ExperimentalAbiValidation::class)
     abiValidation {
         keepLocallyUnsupportedTargets.set(true)
@@ -765,13 +402,7 @@ kotlin {
     }
 
     jvm {
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_17)
-            // jvmTarget only pins the classfile version; -Xjdk-release also
-            // pins the JDK API surface, so a reference to a post-17 Java API
-            // fails compilation instead of shipping silently.
-            freeCompilerArgs.add("-Xjdk-release=17")
-        }
+        compilerOptions.jvmTarget.set(JvmTarget.JVM_17)
         withSourcesJar(publish = true)
         testRuns["test"].executionTask.configure {
             useJUnitPlatform()
@@ -830,12 +461,6 @@ kotlin {
             }
         }
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
-        optimization {
-            consumerKeepRules.apply {
-                publish = true
-                file("consumer-rules.pro")
-            }
-        }
     }
 
     macosArm64 {
@@ -847,32 +472,11 @@ kotlin {
         testRuns.create("conformance")
     }
 
-    // A custom JVM/Android source set disables automatic application of the
-    // default Native hierarchy unless the template is reapplied explicitly.
-    // Keep the standard nativeMain/nativeTest graph, then add only the one
-    // reviewed JVM-bytecode edge below.
-    applyDefaultHierarchyTemplate()
-
     sourceSets {
-        commonMain.dependencies {
-            api(libs.kotlin.stdlib)
-        }
-        // Both the desktop JVM and Android targets compile to JVM bytecode
-        // against the same JNI bridge; raw-handle operations and the
-        // host-library extraction helper live once here, leaving only an
-        // expect/actual loader per target.
-        val jvmSharedMain =
-            create("jvmSharedMain") {
-                dependsOn(commonMain.get())
-            }
-        jvmMain.get().dependsOn(jvmSharedMain)
-        getByName("androidMain").dependsOn(jvmSharedMain)
+        commonMain.dependencies { api(libs.kotlin.stdlib) }
         commonTest {
             kotlin.srcDir(layout.buildDirectory.dir("generated/canonicalAstCommonTest/kotlin"))
-            dependencies {
-                implementation(kotlin("test"))
-                implementation(libs.kotlinx.coroutines.test)
-            }
+            dependencies { implementation(kotlin("test")) }
         }
         jvmTest.dependencies { implementation(kotlin("test-junit5")) }
         getByName("androidDeviceTest").dependencies {
@@ -883,19 +487,6 @@ kotlin {
             implementation(
                 project.dependencies.project(":packages:kotlin-markdown-core:android-runtime"),
             )
-        }
-        // The Kotlin classes and the JNI payload they call are one artifact
-        // published as two modules, so a consumer must not be able to pair
-        // halves from different releases — highest-version-wins, a BOM, or a
-        // `force` would otherwise do it silently. A project dependency
-        // publishes only `requires`, so the strict version travels as a
-        // constraint, and Gradle fails the resolution instead.
-        project.dependencies.constraints.add(
-            "androidMainImplementation",
-            "com.nouprax:kotlin-markdown-core-android-runtime",
-        ) {
-            version { strictly(project.version.toString()) }
-            because("the Kotlin classes and the JNI payload are one artifact split in two")
         }
         macosArm64Main { kotlin.srcDir("src/nativePlatformMain/kotlin") }
         linuxX64Main { kotlin.srcDir("src/nativePlatformMain/kotlin") }
@@ -916,28 +507,6 @@ tasks.named<ProcessResources>("jvmProcessResources") {
 
 val jvmTarget = kotlin.targets.getByName("jvm") as KotlinJvmTarget
 val jvmMainCompilation = jvmTarget.compilations.getByName("main")
-val jvmTestCompilation = jvmTarget.compilations.getByName("test")
-val androidMainCompilation =
-    kotlin.targets
-        .getByName("android")
-        .compilations
-        .getByName("main")
-val jvmLibraryJar = tasks.named<Jar>("jvmJar").flatMap { it.archiveFile }
-tasks.register<Sync>("stageJvmTestArtifact") {
-    dependsOn("jvmTestClasses", "jvmProcessResources")
-    into(layout.buildDirectory.dir("ci-test-artifact/jvm"))
-    from(jvmMainCompilation.output.allOutputs) { into("classes") }
-    from(jvmTestCompilation.output.allOutputs) { into("classes") }
-    from(jvmTestCompilation.runtimeDependencyFiles.filter(File::isFile)) { into("lib") }
-}
-
-val stageAndroidHostTestArtifact =
-    tasks.register<Sync>("stageAndroidHostTestArtifact") {
-        dependsOn(buildJvmNative, "compileAndroidHostTest")
-        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-        into(layout.buildDirectory.dir("ci-test-artifact/android-host"))
-        from(nativeOutputDirectory) { into("native") }
-    }
 val benchmarkCompilation =
     jvmTarget.compilations.create("benchmark") {
         associateWith(jvmTarget.compilations.getByName("main"))
@@ -957,79 +526,8 @@ tasks.register<JavaExec>("kotlinBenchmark") {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
-tasks.register<Sync>("stageJvmBenchmarkArtifact") {
-    dependsOn(benchmarkCompilation.compileTaskProvider, "jvmProcessResources")
-    into(layout.buildDirectory.dir("ci-test-artifact/jvm-benchmark"))
-    from(jvmMainCompilation.output.allOutputs) { into("classes") }
-    from(benchmarkCompilation.output.allOutputs) { into("classes") }
-    from(benchmarkCompilation.runtimeDependencyFiles.filter(File::isFile)) { into("lib") }
-}
-
 tasks.withType<Test>().configureEach {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
-}
-
-// JVM-target coverage for the repository's one coverage gate.
-//
-// The Android and Native targets compile the same commonMain sources, so
-// one instrumented JVM run measures the shared binding logic once rather than
-// reporting every common file four times under four toolchains. The
-// target-specific sources each keep their own gate through their own platform.
-//
-// Kover would be the idiomatic choice and is deliberately not used: it refuses
-// to configure against the AGP Kotlin-multiplatform Android target this module
-// declares, because it looks for the legacy `android` extension that target
-// does not create.
-jacoco {
-    toolVersion = libs.versions.jacoco.get()
-}
-
-// Instrumentation is off unless the coverage run asks for it. Applying the
-// JaCoCo plugin otherwise attaches the agent to every Test task, which would
-// silently change what `pnpm test:kotlin-jvm` executes — the frozen test
-// architecture owns that path, and a coverage tool is not entitled to alter
-// it.
-val coverageRequested = providers.gradleProperty("markdownCoreCoverage").isPresent()
-tasks.withType<Test>().configureEach {
-    extensions.configure<JacocoTaskExtension> { isEnabled = coverageRequested }
-}
-
-tasks.register<JacocoReport>("jvmCoverageReport") {
-    group = "verification"
-    description = "Aggregates JVM correctness and conformance coverage into one JaCoCo XML report."
-    val correctness = tasks.named<Test>("jvmTest")
-    val conformance = tasks.named<Test>("jvmConformanceTest")
-    dependsOn(correctness, conformance)
-    // Captured as a local so the task action holds a boolean rather than a
-    // reference to this build script, which the configuration cache rejects.
-    val instrumented = coverageRequested
-    // Declaring the switch as an input is what makes the guard below reachable:
-    // without it the task stays up to date across a toggle and would hand back
-    // a report produced by an earlier instrumented run.
-    inputs.property("markdownCoreCoverage", instrumented)
-    doFirst {
-        check(instrumented) {
-            "jvmCoverageReport needs instrumentation: run it with -PmarkdownCoreCoverage, " +
-                "or through scripts/coverage-kotlin-jvm.sh, which passes it."
-        }
-    }
-    executionData.setFrom(
-        correctness.map { it.extensions.getByType<JacocoTaskExtension>().destinationFile!! },
-        conformance.map { it.extensions.getByType<JacocoTaskExtension>().destinationFile!! },
-    )
-    // Every source set that compiles into the measured classes, jvmSharedMain
-    // included: it holds the JNI entry points and the loader, and leaving it
-    // out did not stop JaCoCo analysing its classes — it only left the report
-    // naming a file the gate could not resolve.
-    sourceDirectories.setFrom(
-        files("src/commonMain/kotlin", "src/jvmSharedMain/kotlin", "src/jvmMain/kotlin"),
-    )
-    classDirectories.setFrom(jvmMainCompilation.output.classesDirs)
-    reports {
-        xml.required.set(true)
-        html.required.set(false)
-        csv.required.set(false)
-    }
 }
 
 for (target in listOf("macosArm64", "linuxX64")) {
@@ -1045,8 +543,15 @@ val hostNativeLibraryPath =
     nativeOutputDirectory
         .get()
         .asFile
-        .resolve(hostTriple.nativeLibraryFileName)
-        .absolutePath
+        .resolve(
+            if (desktopPlatform.startsWith("macos")) {
+                "libmarkdown_core_kotlin.dylib"
+            } else if (desktopPlatform.startsWith("windows")) {
+                "markdown_core_kotlin.dll"
+            } else {
+                "libmarkdown_core_kotlin.so"
+            },
+        ).absolutePath
 tasks.withType<Test>().matching { it.name == "testAndroidHostTest" }.configureEach {
     dependsOn(buildJvmNative)
     filter.excludeTestsMatching("*AstTest*")
@@ -1076,19 +581,43 @@ afterEvaluate {
 val javadocJar =
     tasks.register<Jar>("javadocJar") {
         archiveClassifier.set("javadoc")
-        // Real generated API reference first; the canonical AST spec and
-        // README ride along as supplementary content.
-        from(tasks.named("dokkaGeneratePublicationHtml"))
         from(repositoryRoot.file("docs/specs/canonical-ast.md"))
         from(layout.projectDirectory.file("README.md"))
     }
 
-extra["markdownCorePomName"] = "Kotlin Markdown Core"
-extra["markdownCorePomDescription"] = "Immutable Kotlin Multiplatform AST bindings for Markdown Core."
-apply(from = "maven-pom-conventions.gradle.kts")
-
 publishing {
+    repositories {
+        providers.gradleProperty("releaseRepositoryDir").orNull?.let { repositoryDirectory ->
+            maven {
+                name = "releaseStaging"
+                url = uri(repositoryDirectory)
+            }
+        }
+    }
     publications.withType<MavenPublication>().configureEach {
+        pom {
+            name.set("Kotlin Markdown Core")
+            description.set("Immutable Kotlin Multiplatform AST bindings for Markdown Core.")
+            url.set("https://github.com/nouprax/markdown-core")
+            licenses {
+                license {
+                    name.set("BSD-2-Clause")
+                    url.set("https://github.com/nouprax/markdown-core/blob/main/COPYING")
+                }
+            }
+            scm {
+                connection.set("scm:git:https://github.com/nouprax/markdown-core.git")
+                developerConnection.set("scm:git:ssh://git@github.com/nouprax/markdown-core.git")
+                url.set("https://github.com/nouprax/markdown-core")
+            }
+            developers {
+                developer {
+                    id.set("nouprax")
+                    name.set("Nouprax")
+                    url.set("https://github.com/nouprax")
+                }
+            }
+        }
         artifact(javadocJar)
     }
 }
@@ -1108,292 +637,10 @@ tasks.withType<com.android.build.gradle.internal.tasks.ManagedDeviceInstrumentat
     testedAbi.set(androidManagedDeviceTestAbi)
 }
 
-// Complements Kotlin's metadata-aware ABI dumps by comparing the classes
-// ordinary Java source can use in the JVM and Android outputs against that
-// dump's inventory. javac deliberately hides ACC_SYNTHETIC classes/members;
-// explicit negative compile probes below pin that boundary as well.
-// Module-internal top-level declarations live in package-private multifile
-// parts, while their synthetic forwarders share one MarkdownCoreKt owner
-// carrying no member Java can name.
-val javaToolchains = extensions.getByType<JavaToolchainService>()
-val javaProbeCompiler =
-    javaToolchains.compilerFor {
-        languageVersion.set(JavaLanguageVersion.of(libs.versions.jdk.get()))
-    }
-
-fun VerifyJavaImplementationHidden.useJavaCompiler(
-    compiler: Provider<JavaCompiler>,
-    release: Provider<String>,
-) {
-    javaCompiler.set(compiler)
-    javaCompilerVendor.set(compiler.map { it.metadata.vendor })
-    javaCompilerRuntimeVersion.set(compiler.map { it.metadata.javaRuntimeVersion })
-    javaRelease.set(release.map { it.toInt() })
-}
-
-/**
- * Fails when the Android classes reference a platform type the floor they
- * declare did not have.
- *
- * Nothing else catches this. ktlint reads formatting; the host tests run on a
- * real JDK, where every `java.*` type exists whatever `minSdk` says; and every
- * managed device sits above the floor — which is how a call to an API-33 class
- * shipped in an artifact advertising API 21. The SDK ships the answer in
- * `api-versions.xml`, so the check is a lookup, not a heuristic.
- *
- * Two sources, because a type can reach the pool by either. A call, a field
- * access, a `new`, a cast and a supertype all become a class entry — that is
- * what the runtime failure looks like, a class the verifier cannot resolve.
- * A type named only in a descriptor never becomes one: a method that returns a
- * newer platform type and whose body returns null puts that type in a UTF-8
- * entry and nowhere else, and it is still API the artifact declares. So the
- * UTF-8 entries are read for descriptor forms too. Matching against the SDK's
- * own class list is what keeps that from over-reaching: a UTF-8 run has to
- * name a real platform type to count.
- */
-@CacheableTask
-abstract class VerifyAndroidApiFloor : DefaultTask() {
-    private companion object {
-        /**
-         * The one family this reads that never reaches a device.
-         *
-         * Kotlin compiles lambdas and string concatenation to `invokedynamic`,
-         * whose bootstrap metadata names `MethodHandle`, `MethodType` and
-         * `CallSite` — all API 26 — in almost every class here. D8 rewrites
-         * every one of them into concrete classes below API 26, and does so
-         * unconditionally rather than as the core-library desugaring this
-         * project does not enable. Reading JVM bytecode rather than DEX is
-         * what makes them visible at all.
-         *
-         * The cost is real and bounded: an explicit `MethodHandles.lookup()`
-         * would be waved through. Nothing here has one, and the families D8
-         * only desugars on request — `java.time`, `java.util.stream`,
-         * `java.util.function` — stay checked.
-         */
-        const val DESUGARED_PREFIX = "java/lang/invoke/"
-    }
-
-    @get:InputFiles
-    @get:PathSensitive(PathSensitivity.RELATIVE)
-    abstract val libraryClasses: ConfigurableFileCollection
-
-    @get:InputFile
-    @get:PathSensitive(PathSensitivity.NONE)
-    abstract val apiVersions: RegularFileProperty
-
-    @get:Input
-    abstract val minSdk: Property<Int>
-
-    @get:OutputFile
-    abstract val reportFile: RegularFileProperty
-
-    @TaskAction
-    fun verify() {
-        val floor = minSdk.get()
-        val introducedIn = platformApiLevels(apiVersions.get().asFile)
-        val violations = sortedMapOf<String, SortedSet<String>>()
-        var scanned = 0
-        for (root in libraryClasses.files) {
-            if (!root.isDirectory) {
-                continue
-            }
-            root
-                .walkTopDown()
-                .filter { it.isFile && it.extension == "class" }
-                .forEach { classFile ->
-                    scanned += 1
-                    val owner =
-                        classFile
-                            .toRelativeString(root)
-                            .removeSuffix(".class")
-                            .replace(File.separatorChar, '/')
-                    for (referenced in referencedClasses(classFile.readBytes())) {
-                        if (referenced.startsWith(DESUGARED_PREFIX)) {
-                            continue
-                        }
-                        val level = introducedIn[referenced] ?: continue
-                        if (level > floor) {
-                            violations
-                                .getOrPut("$referenced (API $level)") { sortedSetOf() }
-                                .add(owner)
-                        }
-                    }
-                }
-        }
-        check(scanned > 0) { "no Android classes to check; the compilation produced nothing" }
-        val report =
-            buildString {
-                appendLine("minSdk=$floor classes=$scanned violations=${violations.size}")
-                violations.forEach { (reference, owners) ->
-                    appendLine("$reference used by ${owners.joinToString(", ")}")
-                }
-            }
-        reportFile
-            .get()
-            .asFile
-            .apply { parentFile.mkdirs() }
-            .writeText(report)
-        check(violations.isEmpty()) {
-            "the Android artifact declares minSdk $floor and references newer platform types:\n$report"
-        }
-        logger.lifecycle("Android API floor verified: $scanned classes against minSdk $floor.")
-    }
-
-    /** `<class name="…" since="N">` rows; a class with no `since` has been
-     * there since API 1. */
-    private fun platformApiLevels(file: File): Map<String, Int> {
-        val row = Regex("""<class name="([^"]+)"(?:[^>]*\ssince="(\d+)")?""")
-        val levels = HashMap<String, Int>()
-        file.forEachLine { line ->
-            val match = row.find(line) ?: return@forEachLine
-            levels[match.groupValues[1]] = match.groupValues[2].toIntOrNull() ?: 1
-        }
-        check(levels.isNotEmpty()) { "no class rows in ${file.absolutePath}" }
-        return levels
-    }
-
-    private fun referencedClasses(bytes: ByteArray): Set<String> {
-        val input = DataInputStream(bytes.inputStream())
-        require(input.readInt() == -0x35014542) { "not a class file" }
-        input.readUnsignedShort()
-        input.readUnsignedShort()
-        val poolCount = input.readUnsignedShort()
-        val text = arrayOfNulls<String>(poolCount)
-        // A class entry may name a slot the walk has not reached, so the names
-        // are resolved after the pool is complete.
-        val nameSlots = mutableListOf<Int>()
-        var slot = 1
-        while (slot < poolCount) {
-            when (val tag = input.readUnsignedByte()) {
-                1 -> {
-                    text[slot] = input.readUTF()
-                }
-
-                7 -> {
-                    nameSlots += input.readUnsignedShort()
-                }
-
-                8, 16, 19, 20 -> {
-                    input.skipBytes(2)
-                }
-
-                15 -> {
-                    input.skipBytes(3)
-                }
-
-                3, 4, 9, 10, 11, 12, 17, 18 -> {
-                    input.skipBytes(4)
-                }
-
-                5, 6 -> {
-                    input.skipBytes(8)
-                    slot += 1
-                }
-
-                else -> {
-                    error("unsupported constant pool tag $tag")
-                }
-            }
-            slot += 1
-        }
-        val referenced = mutableSetOf<String>()
-        nameSlots
-            .mapNotNull { text[it] }
-            // An array type carries its own class entry; the platform answers
-            // for the element type.
-            .map { it.trimStart('[') }
-            .mapTo(referenced) {
-                if (it.startsWith("L") && it.endsWith(";")) it.substring(1, it.length - 1) else it
-            }
-        // Descriptors and generic signatures live in UTF-8 entries and name
-        // their types the same way: `Lpkg/Name;`, or `Lpkg/Name<` once type
-        // arguments follow.
-        val descriptor = Regex("L([A-Za-z0-9_/\$]+)[;<]")
-        for (entry in text) {
-            if (entry == null) {
-                continue
-            }
-            descriptor.findAll(entry).forEach { referenced += it.groupValues[1] }
-        }
-        return referenced
-    }
-}
-
-/** The SDK the Android tooling would use, from the same places it looks. */
-val androidSdkDirectory: File? =
-    sequenceOf(
-        providers.gradleProperty("sdk.dir").orNull,
-        rootProject.file("local.properties").takeIf { it.isFile }?.let { file ->
-            val properties = Properties()
-            file.inputStream().use { properties.load(it) }
-            properties.getProperty("sdk.dir")
-        },
-        providers.environmentVariable("ANDROID_HOME").orNull,
-        providers.environmentVariable("ANDROID_SDK_ROOT").orNull,
-    ).filterNotNull()
-        .map(::File)
-        .firstOrNull(File::isDirectory)
-
-val verifyAndroidApiFloor =
-    tasks.register<VerifyAndroidApiFloor>("verifyAndroidApiFloor") {
-        group = "verification"
-        description = "Proves the Android classes reference no platform type newer than minSdk."
-        libraryClasses.from(androidMainCompilation.output.classesDirs)
-        minSdk.set(
-            libs.versions.android.min.sdk
-                .map(String::toInt),
-        )
-        val compileSdk =
-            libs.versions.android.compile.sdk
-                .get()
-        val sdk =
-            androidSdkDirectory
-                ?: error(
-                    "no Android SDK found for verifyAndroidApiFloor; set ANDROID_HOME or sdk.dir in local.properties",
-                )
-        val versions = File(sdk, "platforms/android-$compileSdk/data/api-versions.xml")
-        check(versions.isFile) { "missing ${versions.absolutePath}; install the android-$compileSdk platform" }
-        apiVersions.set(versions)
-        reportFile.set(layout.buildDirectory.file("verification/android-api-floor.txt"))
-    }
-
-val verifyJvmImplementationHidden =
-    tasks.register<VerifyJavaImplementationHidden>("verifyJvmImplementationHidden") {
-        group = "verification"
-        description = "Proves ordinary Java source cannot use Kotlin/JVM implementation types or members."
-        useJavaCompiler(javaProbeCompiler, libs.versions.jvm.bytecode)
-        libraryClasses.from(jvmLibraryJar)
-        officialApiFile.set(layout.projectDirectory.file("api/jvm/kotlin-markdown-core.api"))
-        compileClasspath.from(jvmMainCompilation.compileDependencyFiles)
-        outputDirectory.set(layout.buildDirectory.dir("verification/jvm-implementation-hidden"))
-    }
-
-val verifyAndroidImplementationHidden =
-    tasks.register<VerifyJavaImplementationHidden>("verifyAndroidImplementationHidden") {
-        group = "verification"
-        description = "Proves ordinary Java source cannot use Kotlin/Android implementation types or members."
-        useJavaCompiler(javaProbeCompiler, libs.versions.jvm.bytecode)
-        libraryClasses.from(androidMainCompilation.output.classesDirs)
-        officialApiFile.set(layout.projectDirectory.file("api/jvm/kotlin-markdown-core.api"))
-        compileClasspath.from(androidMainCompilation.compileDependencyFiles)
-        outputDirectory.set(layout.buildDirectory.dir("verification/android-implementation-hidden"))
-    }
-
 tasks.register("kotlinTest") {
     group = "verification"
-    description = "Runs JVM, Android host, Native correctness, packaging, and ABI checks."
-    dependsOn(
-        listOfNotNull(
-            "jvmTest",
-            "testAndroidHostTest",
-            hostNativeTest,
-            "verifyKotlinNativePackaging",
-            verifyJvmImplementationHidden,
-            verifyAndroidImplementationHidden,
-            verifyAndroidApiFloor,
-            "checkKotlinAbi",
-        ),
-    )
+    description = "Runs JVM, Android host, and the current host's Kotlin/Native correctness suites."
+    dependsOn(listOfNotNull("jvmTest", "testAndroidHostTest", hostNativeTest, "verifyKotlinNativePackaging"))
 }
 
 tasks.register("allKotlinTests") {
@@ -1422,85 +669,41 @@ tasks.register("verifyKotlinNativePackaging") {
     val runtimeAarFile = androidRuntimeAar.get().asFile
     val desktopOutputDirectory = nativeOutputDirectory.get().asFile
     val expectedDesktopPlatform = desktopPlatform
-    val desktopLibrary = hostTriple.nativeLibraryFileName
-    val expectedDesktopArchitecture =
-        if (hostTriple.os == "macos") "macho-${hostTriple.architecture}" else "elf-${hostTriple.architecture}"
     inputs.file(runtimeAarFile)
 
     doLast {
-        // Reads enough of an ELF or Mach-O header to name the machine architecture,
-        // so packaging checks verify what a native library is, not merely that a
-        // file with the right name exists.
-        fun binaryArchitecture(bytes: ByteArray): String {
-            require(bytes.size >= 20) { "native library header is truncated" }
-
-            fun u16(offset: Int) = (bytes[offset].toInt() and 0xff) or ((bytes[offset + 1].toInt() and 0xff) shl 8)
-
-            fun u32(offset: Int) =
-                (bytes[offset].toInt() and 0xff) or ((bytes[offset + 1].toInt() and 0xff) shl 8) or
-                    ((bytes[offset + 2].toInt() and 0xff) shl 16) or ((bytes[offset + 3].toInt() and 0xff) shl 24)
-            return when {
-                bytes[0] == 0x7f.toByte() && bytes[1] == 'E'.code.toByte() &&
-                    bytes[2] == 'L'.code.toByte() && bytes[3] == 'F'.code.toByte() -> {
-                    when (u16(18)) {
-                        0x3e -> "elf-x64"
-                        0xb7 -> "elf-arm64"
-                        0x28 -> "elf-arm32"
-                        0x03 -> "elf-x86"
-                        else -> "elf-unknown-${u16(18)}"
-                    }
-                }
-
-                u32(0) == 0xfeedfacf.toInt() -> {
-                    when (u32(4)) {
-                        0x0100000c -> "macho-arm64"
-                        0x01000007 -> "macho-x64"
-                        else -> "macho-unknown-${u32(4)}"
-                    }
-                }
-
-                else -> {
-                    "unknown"
-                }
+        val expectedAndroidEntries =
+            setOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64").map {
+                "jni/$it/libmarkdown_core_kotlin.so"
             }
-        }
-
-        val expectedAndroidArchitectures =
-            mapOf(
-                "arm64-v8a" to "elf-arm64",
-                "armeabi-v7a" to "elf-arm32",
-                "x86" to "elf-x86",
-                "x86_64" to "elf-x64",
-            )
         ZipFile(runtimeAarFile).use { archive ->
-            for ((abi, expectedArchitecture) in expectedAndroidArchitectures) {
-                val entry =
-                    archive.getEntry("jni/$abi/libmarkdown_core_kotlin.so")
-                        ?: error("Android runtime AAR is missing jni/$abi/libmarkdown_core_kotlin.so")
-                val header = archive.getInputStream(entry).use { it.readNBytes(20) }
-                val architecture = binaryArchitecture(header)
-                check(architecture == expectedArchitecture) {
-                    "Android $abi payload has architecture $architecture, expected $expectedArchitecture"
-                }
+            val entries =
+                archive
+                    .entries()
+                    .asSequence()
+                    .map { it.name }
+                    .toSet()
+            check(entries.containsAll(expectedAndroidEntries)) {
+                "Android runtime AAR is missing: ${expectedAndroidEntries - entries}"
             }
         }
 
-        val desktopFile = desktopOutputDirectory.resolve(desktopLibrary)
-        check(desktopFile.isFile) {
+        val desktopLibrary =
+            when {
+                expectedDesktopPlatform.startsWith("macos") -> "libmarkdown_core_kotlin.dylib"
+                expectedDesktopPlatform.startsWith("windows") -> "markdown_core_kotlin.dll"
+                else -> "libmarkdown_core_kotlin.so"
+            }
+        check(desktopOutputDirectory.resolve(desktopLibrary).isFile) {
             "JVM native payload is missing for $expectedDesktopPlatform"
-        }
-        val desktopArchitecture = binaryArchitecture(desktopFile.inputStream().use { it.readNBytes(20) })
-        check(desktopArchitecture == expectedDesktopArchitecture) {
-            "JVM native payload for $expectedDesktopPlatform has architecture " +
-                "$desktopArchitecture, expected $expectedDesktopArchitecture"
         }
     }
 }
 
 tasks.withType<org.gradle.api.publish.maven.tasks.PublishToMavenLocal>().configureEach {
     when {
-        name.contains("LinuxX64") && hostTriple.os != "linux" -> enabled = false
-        name.contains("MacosArm64") && hostTriple.os != "macos" -> enabled = false
+        name.contains("LinuxX64") && !hostOs.contains("linux") -> enabled = false
+        name.contains("MacosArm64") && !hostOs.contains("mac") -> enabled = false
     }
 }
 
@@ -1511,7 +714,95 @@ tasks.register("publishKotlinToMavenLocal") {
         "publishKotlinMultiplatformPublicationToMavenLocal",
         "publishJvmPublicationToMavenLocal",
         "publishAndroidPublicationToMavenLocal",
-        "publish${hostTriple.kotlinNativeTarget.replaceFirstChar { it.uppercase() }}PublicationToMavenLocal",
+        if (hostOs.contains("mac")) {
+            "publishMacosArm64PublicationToMavenLocal"
+        } else {
+            "publishLinuxX64PublicationToMavenLocal"
+        },
         ":packages:kotlin-markdown-core:android-runtime:publishToMavenLocal",
     )
+}
+
+// STAGING FOR THE BUILD-ONCE / RUN-ELSEWHERE CI SPLIT. `ci.yml` builds test
+// artifacts in one job and runs them in another, and
+// scripts/build-kotlin-host-test-artifact.sh names these three tasks -- but the
+// 1.0 baseline's build defines none of them, so Step 0's scripts/ restore left
+// the workflow calling into nothing. Third instance of section 0's "scripts/ IS
+// NOT ONE THING" rule, and unlike checkKotlinAbi there is no baseline shape to
+// restore to: the whole artifact split postdates 580d10c.
+val jvmTestCompilation = jvmTarget.compilations.getByName("test")
+
+tasks.register<Sync>("stageJvmTestArtifact") {
+    dependsOn("jvmTestClasses", "jvmProcessResources")
+    into(layout.buildDirectory.dir("ci-test-artifact/jvm"))
+    from(jvmMainCompilation.output.allOutputs) { into("classes") }
+    from(jvmTestCompilation.output.allOutputs) { into("classes") }
+    from(jvmTestCompilation.runtimeDependencyFiles.filter(File::isFile)) { into("lib") }
+}
+
+tasks.register<Sync>("stageJvmBenchmarkArtifact") {
+    dependsOn(benchmarkCompilation.compileTaskProvider, "jvmProcessResources")
+    into(layout.buildDirectory.dir("ci-test-artifact/jvm-benchmark"))
+    from(jvmMainCompilation.output.allOutputs) { into("classes") }
+    from(benchmarkCompilation.output.allOutputs) { into("classes") }
+    from(benchmarkCompilation.runtimeDependencyFiles.filter(File::isFile)) { into("lib") }
+}
+
+// The CLASSES are added in `afterEvaluate` below, not here: the Android host
+// test task does not exist yet at this point, and staging only the native
+// payload produces an artifact whose runner finds no tests -- which is exactly
+// what CI reported.
+val stageAndroidHostTestArtifact =
+    tasks.register<Sync>("stageAndroidHostTestArtifact") {
+        dependsOn(buildJvmNative, "compileAndroidHostTest")
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        into(layout.buildDirectory.dir("ci-test-artifact/android-host"))
+        from(nativeOutputDirectory) { into("native") }
+    }
+
+jacoco { toolVersion = libs.versions.jacoco.get() }
+
+// INSTRUMENTATION IS OPT-IN so that adding a coverage gate cannot silently
+// change what `pnpm test:kotlin-jvm` executes. The frozen test architecture
+// owns that path and a coverage tool is not entitled to alter it.
+val coverageRequested = providers.gradleProperty("markdownCoreCoverage").isPresent()
+
+tasks.withType<Test>().configureEach {
+    extensions.configure<JacocoTaskExtension> { isEnabled = coverageRequested }
+}
+
+tasks.register<JacocoReport>("jvmCoverageReport") {
+    group = "verification"
+    description = "Aggregates JVM correctness and conformance coverage into one JaCoCo XML report."
+    val correctness = tasks.named<Test>("jvmTest")
+    val conformance = tasks.named<Test>("jvmConformanceTest")
+    dependsOn(correctness, conformance)
+    // A local, not a reference to this build script, which the configuration
+    // cache rejects.
+    val instrumented = coverageRequested
+    // Declaring the switch as an input is what makes the check below
+    // reachable: without it the task stays up to date across a toggle and
+    // hands back a report an earlier instrumented run produced.
+    inputs.property("markdownCoreCoverage", instrumented)
+    doFirst {
+        check(instrumented) {
+            "jvmCoverageReport needs instrumentation: run it with -PmarkdownCoreCoverage, " +
+                "or through scripts/coverage-kotlin-jvm.sh, which passes it."
+        }
+    }
+    executionData.setFrom(
+        correctness.map { it.extensions.getByType<JacocoTaskExtension>().destinationFile!! },
+        conformance.map { it.extensions.getByType<JacocoTaskExtension>().destinationFile!! },
+    )
+    // Every source set that compiles into the measured classes, jvmSharedMain
+    // included: it holds the JNI entry points and the loader.
+    sourceDirectories.setFrom(
+        files("src/commonMain/kotlin", "src/jvmSharedMain/kotlin", "src/jvmMain/kotlin"),
+    )
+    classDirectories.setFrom(jvmMainCompilation.output.classesDirs)
+    reports {
+        xml.required.set(true)
+        html.required.set(false)
+        csv.required.set(false)
+    }
 }

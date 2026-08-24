@@ -1,4 +1,3 @@
-#include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -6,11 +5,20 @@
 #include "config.h"
 #include "markdown-core.h"
 #include "node.h"
-#include "extension.h"
+#include "markdown-core-extension-api.h"
+#include "syntax_extension.h"
 #include "parser.h"
 
 #include "../extensions/markdown-core-extensions.h"
 #include "../extensions/ast_internal.h"
+
+#if defined(__OpenBSD__)
+#include <sys/param.h>
+#if OpenBSD >= 201605
+#define USE_PLEDGE
+#include <unistd.h>
+#endif
+#endif
 
 #if defined(__OpenBSD__)
 #include <sys/param.h>
@@ -25,58 +33,38 @@
 #include <fcntl.h>
 #endif
 
-// The CLI is a diagnostic dump tool: it parses with a named option profile and
-// prints the canonical AST dump.
-//
-// `default` is the canonical default options and every bundled extension,
-// exactly like the platform bindings' default ParseOptions. `gfm` is the subset
-// Markdown Core shares with upstream cmark-gfm — this repository's own
-// extensions off, and smart punctuation off because upstream defaults it off
-// too. It exists so a reader can reproduce what the
-// upstream-parity check compares (scripts/check-upstream-parity.mjs), and so
-// any question about "is this ours or GFM's?" can be answered by running both.
-// `gfm-smart` is that same subset with smart punctuation on, which upstream
-// also offers as an opt-in flag; it exists so the smart-punctuation fixture has
-// an upstream to be compared against rather than only its own golden dump.
 void print_usage(void) {
-    printf("Usage:   markdown-core [--profile NAME] [FILE*]\n");
-    printf("Parses Markdown from FILE arguments (or stdin) and prints the\n");
-    printf("canonical AST dump.\n");
+    printf("Usage:   markdown-core [FILE*]\n");
     printf("Options:\n");
-    printf("  --profile NAME   Option profile:\n");
-    printf("                     default       every option and extension\n");
-    printf("                     gfm           only what upstream cmark-gfm parses\n");
-    printf("                     gfm-smart     gfm plus smart punctuation\n");
-    printf("                     gfm-extended  gfm plus this repository's own extensions\n");
+    printf("  --profile PROFILE named option set: default | gfm | gfm-smart | gfm-extended\n");
+    printf("  --smart           Use smart punctuation\n");
+    printf("  --validate-utf8   Replace UTF-8 invalid sequences with U+FFFD\n");
+    printf("  --strip-html-comments Strip HTML comment nodes from the parsed AST\n"
+           "  --source-index    Print the normalized source size and line index before the tree\n"
+           "  --diagnostics     Record diagnostics and print them before the tree\n");
+    printf("  --extension, -e EXTENSION_NAME  Specify an extension name to use\n");
+    printf("  --list-extensions               List available extensions and quit\n");
+    printf("  --strikethrough-double-tilde    Only parse strikethrough (if enabled)\n");
+    printf("                                  with two tildes\n");
     printf("  --help, -h       Print usage information\n");
     printf("  --version        Print version\n");
 }
 
-static bool attach_extension(markdown_core_parser *parser, const char *name) {
-    markdown_core_extension *extension = markdown_core_extension_find(name);
-
-    if (!extension) {
-        fprintf(stderr, "Unknown extension %s\n", name);
-        return false;
-    }
-
-    return markdown_core_parser_attach_extension(parser, extension) != 0;
-}
-
 static bool print_document(markdown_core_node *document) {
+    /* The CLI dumps the tree only; the source and its line index are printed
+     * straight from the parser by `--source-index`, so the fields are zeroed
+     * here rather than filled and `markdown_core_document_free` is never called
+     * on this stack value. */
+    markdown_core_document facade_document = {document, {0}, {0}};
     markdown_core_error *error = NULL;
     uint8_t *dump = NULL;
     size_t length = 0;
     markdown_core_string message;
 
-    if (!markdown_core_ast_dump_root(document, &dump, &length, &error)) {
+    if (!markdown_core_document_dump(&facade_document, &dump, &length, &error)) {
         message = markdown_core_error_get_message(error);
-        fprintf(
-            stderr,
-            "AST dump failed: %.*s\n",
-            (int)message.length,
-            message.data ? (const char *)message.data : "unknown error"
-        );
+        fprintf(stderr, "AST dump failed: %.*s\n", (int)message.length,
+                message.data ? (const char *)message.data : "unknown error");
         markdown_core_error_free(error);
         return false;
     }
@@ -85,16 +73,36 @@ static bool print_document(markdown_core_node *document) {
     return true;
 }
 
+static void print_extensions(void) {
+    size_t i;
+    const char *name;
+
+    printf("Available extensions:\nfootnotes\n");
+    for (i = 0; (name = markdown_core_core_extensions_name_at(i)) != NULL; i++) {
+        printf("%s\n", name);
+    }
+}
+
 int main(int argc, char *argv[]) {
     int i, numfps = 0;
     int *files;
     char buffer[4096];
     markdown_core_parser *parser = NULL;
+    bool source_index = false;
+    bool diagnostics_wanted = false;
+    markdown_core_diagnostics diagnostics = {0};
     size_t bytes;
     markdown_core_node *document = NULL;
-    int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_DIRECTIVE;
-    bool gfm_profile = false;
+    int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS |
+                  MARKDOWN_CORE_OPT_VALIDATE_UTF8;
     int res = 1;
+
+#ifdef USE_PLEDGE
+    if (pledge("stdio rpath", NULL) != 0) {
+        perror("pledge");
+        return 1;
+    }
+#endif
 
 #ifdef USE_PLEDGE
     if (pledge("stdio rpath", NULL) != 0) {
@@ -108,16 +116,27 @@ int main(int argc, char *argv[]) {
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
 
+    bool gfm_profile = false;
+    unsigned requested_extensions = 0;
+    unsigned extensions;
+
     files = (int *)calloc(argc, sizeof(*files));
 
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--version") == 0) {
-            printf("markdown-core %s\n", MARKDOWN_CORE_VERSION_STRING);
-            goto success;
-        } else if ((strcmp(argv[i], "--help") == 0) || (strcmp(argv[i], "-h") == 0)) {
-            print_usage();
+            printf("markdown-core %s", MARKDOWN_CORE_VERSION_STRING);
+            printf(" - CommonMark with GitHub Flavored Markdown converter\n(C) 2014-2016 John "
+                   "MacFarlane\n");
             goto success;
         } else if (strcmp(argv[i], "--profile") == 0) {
+            /* A NAMED OPTION SET, so a comparison harness can ask for exactly
+             * one language without knowing which flags spell it. `gfm` is the
+             * subset shared with upstream cmark-gfm — this repository's own
+             * extensions off, so a parity run compares one language and not
+             * two. `gfm-extended` is that plus this repository's own.
+             *
+             * Every existing invocation is unaffected: without this flag the
+             * parser is built exactly as before. */
             if (i + 1 >= argc) {
                 print_usage();
                 goto failure;
@@ -130,10 +149,67 @@ int main(int argc, char *argv[]) {
                 gfm_profile = true;
                 options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_SMART;
             } else if (strcmp(argv[i], "gfm-extended") == 0) {
-                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_DIRECTIVE;
+                /* `gfm_profile` stays false, and that is what attaches this
+                 * repository's own two extensions below -- there is no option
+                 * bit left to spell it with (Q14). */
+                options = MARKDOWN_CORE_OPT_FOOTNOTES;
             } else if (strcmp(argv[i], "default") != 0) {
                 fprintf(stderr, "Unknown profile %s\n", argv[i]);
                 goto failure;
+            }
+        } else if (strcmp(argv[i], "--source-index") == 0) {
+            /* What a scope's coordinates index INTO: the size of the
+             * normalized source and where each of its lines begins. The
+             * document publishes both; this prints them so a gate can check
+             * that recording diagnostics changes neither. */
+            source_index = true;
+        } else if (strcmp(argv[i], "--diagnostics") == 0) {
+            /* REQUIREMENT 13. Unlike `--source-index`, which only asks `finish` to
+             * write what it already has, this has to be asked for BEFORE the
+             * first byte is fed: recording happens as the lines are read, and
+             * the law of the step is that a run without it builds the same
+             * tree and the same records as a run with it. */
+            diagnostics_wanted = true;
+        } else if (strcmp(argv[i], "--list-extensions") == 0) {
+            print_extensions();
+            goto success;
+        } else if (strcmp(argv[i], "--strikethrough-double-tilde") == 0) {
+            options |= MARKDOWN_CORE_OPT_STRIKETHROUGH_DOUBLE_TILDE;
+        } else if (strcmp(argv[i], "--smart") == 0) {
+            options |= MARKDOWN_CORE_OPT_SMART;
+        } else if (strcmp(argv[i], "--strip-html-comments") == 0) {
+            options |= MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
+        } else if (strcmp(argv[i], "--validate-utf8") == 0) {
+            options |= MARKDOWN_CORE_OPT_VALIDATE_UTF8;
+        } else if (strcmp(argv[i], "--liberal-html-tag") == 0) {
+            options |= MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG;
+        } else if ((strcmp(argv[i], "--help") == 0) || (strcmp(argv[i], "-h") == 0)) {
+            print_usage();
+            goto success;
+        } else if ((strcmp(argv[i], "-e") == 0) || (strcmp(argv[i], "--extension") == 0)) {
+            i += 1;
+
+            /* `-e NAME` is a request for an extension, not for a position in
+             * the attach order. Turning the name into a BIT is what keeps that
+             * true: the extension attaches where `core-extensions.c` puts it,
+             * not where the flag appeared, and this file has no way to say
+             * otherwise -- which is the whole of D15's fix. It used to attach
+             * by name in a second pass, i.e. after everything else, so
+             * `-e formula` under `--profile gfm` bought a different language
+             * from the one the same set gives the facade. */
+            if (i >= argc) {
+                fprintf(stderr, "No argument provided for %s\n", argv[i - 1]);
+                goto failure;
+            }
+            if (strcmp(argv[i], "footnotes") == 0) {
+                options |= MARKDOWN_CORE_OPT_FOOTNOTES;
+            } else {
+                unsigned bit = markdown_core_core_extensions_bit(argv[i]);
+                if (!bit) {
+                    fprintf(stderr, "Unknown extension %s\n", argv[i]);
+                    goto failure;
+                }
+                requested_extensions |= bit;
             }
         } else if (*argv[i] == '-') {
             print_usage();
@@ -144,19 +220,27 @@ int main(int argc, char *argv[]) {
     }
 
     parser = markdown_core_parser_new(options);
-
-    // Attachment order is priority, and `table` goes last for the reason given
-    // in extensions/document.c: its row opener matches any line inside an open
-    // table, so every narrower claim has to come first. The others here are
-    // cmark-gfm's own; the repository's own extensions are off under the gfm
-    // profile so a comparison against upstream compares the same language.
-    if (!attach_extension(parser, "strikethrough") || !attach_extension(parser, "autolink") ||
-        !attach_extension(parser, "tasklist")) {
-        goto failure;
+    if (parser && diagnostics_wanted) {
+        markdown_core_parser_retain_diagnostics(parser, &diagnostics);
     }
-    if ((!gfm_profile && (!attach_extension(parser, "formula") || !attach_extension(parser, "directive") ||
-                          !attach_extension(parser, "cross_link") || !attach_extension(parser, "embed"))) ||
-        !attach_extension(parser, "table")) {
+
+    /* The CLI says WHICH extensions and cannot say in what order; the order is
+     * `core-extensions.c`'s, and it is the facade's too. Before D15 was fixed
+     * these were two different orders and therefore two different languages --
+     * the CLI attached `directive` FIRST, the facade attached it LAST, and
+     * every binding goes through the facade.
+     *
+     * This repository's own two are off under the gfm profiles so a parity run
+     * against upstream compares one language; the condition is exactly the one
+     * the two old attach sites spelled between them. */
+    extensions = MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
+                 MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK | MARKDOWN_CORE_CORE_EXTENSION_TASKLIST;
+    if (!gfm_profile) {
+        extensions |= MARKDOWN_CORE_CORE_EXTENSION_FORMULA | MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE;
+    }
+    extensions |= requested_extensions;
+
+    if (!markdown_core_core_extensions_attach(parser, extensions)) {
         goto failure;
     }
 
@@ -193,7 +277,14 @@ int main(int argc, char *argv[]) {
     }
 #endif
 
+    if (source_index) {
+        parser->concrete_out = stdout;
+    }
     document = markdown_core_parser_finish(parser);
+
+    if (diagnostics_wanted) {
+        markdown_core_diagnostics_write(document ? &diagnostics : NULL, stdout);
+    }
 
     if (!document || !print_document(document)) {
         goto failure;
@@ -204,6 +295,10 @@ success:
 
 failure:
 
+    if (diagnostics_wanted) {
+        markdown_core_diagnostics_dispose(&diagnostics);
+    }
+
     if (parser) {
         markdown_core_parser_free(parser);
     }
@@ -211,6 +306,9 @@ failure:
     if (document) {
         markdown_core_node_free(document);
     }
+
+    // Registered extensions are process-lifetime by contract; the OS reclaims
+    // them at exit.
 
     free(files);
 

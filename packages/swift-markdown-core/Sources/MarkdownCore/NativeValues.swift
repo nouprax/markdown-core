@@ -8,7 +8,10 @@ extension ParseError {
         }
         let rawCode = markdown_core_error_get_code(error).rawValue
         let code = ParseErrorCode(rawValue: Int32(rawCode)) ?? .internal
-        self.init(code: code, message: markdown_core_error_get_message(error).string)
+        self.init(
+            code: code,
+            message: markdown_core_error_get_message(error).requiredString
+        )
     }
 }
 
@@ -22,21 +25,17 @@ extension Scope {
 }
 
 extension markdown_core_string {
-    var string: String {
+    var requiredString: String {
         guard let data else { return "" }
-        // Well-formed by construction, not by validation: every entry point
-        // into this package takes a Swift `String`, so the bytes the facade
-        // hands back are the ones it was given. The facade itself neither
-        // validates nor replaces (incremental-canonical-ast.md 7.1), so this
-        // initializer's replacement semantics are a decoder default that
-        // nothing is expected to reach, not a backstop for a facade contract.
+        // The native facade has already validated UTF-8 and this initializer also
+        // gives deterministic replacement semantics if that contract regresses.
         // swiftlint:disable:next optional_data_string_conversion
         return String(decoding: UnsafeBufferPointer(start: data, count: length), as: UTF8.self)
     }
 
-    var optional: String? {
-        data == nil ? nil : string
-    }
+    // `optionalString` USED TO LIVE HERE and read absence off the pointer.
+    // Requirement 14 moved that question to the value itself: see
+    // `markdown_core_optional_string.string`.
 }
 
 extension PlacementMode {
@@ -53,5 +52,13 @@ extension TableAlignment {
         case MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT: self = .right
         default: self = .none
         }
+    }
+}
+
+extension markdown_core_optional_string {
+    /// `nil` when the source did not write this, and `""` when it wrote it and
+    /// it was empty. The presence flag decides; the pointer never does.
+    var string: String? {
+        has_value ? value.requiredString : nil
     }
 }

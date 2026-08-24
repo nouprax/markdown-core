@@ -1,42 +1,36 @@
 import MarkdownCoreC
 
-/// A table column's declared alignment.
+/// One column's alignment, as its delimiter row spelled it.
 public enum TableAlignment: String, Sendable {
+    /// The delimiter row carried no colon for this column.
     case none
+    /// `:---`
     case left
+    /// `:---:`
     case center
+    /// `---:`
     case right
 }
 
-/// A pipe table (the tables extension) with one header row.
+/// A GFM table. Requires the `tables` extension.
 public struct Table: Markup {
-    /// The node's series-scoped identity; see ``MarkupID``.
-    public let id: MarkupID
-    /// The document revision at which this node's content last changed.
-    public let revision: UInt64
-    /// The node's absolute source extent, both bounds inclusive of the
-    /// construct's own markers.
-    ///
-    /// A property OF the node, not of a lookup: a document is an immutable
-    /// projection of one text, so a node in it does not move. It is
-    /// deliberately absent from `==` — position is not content — so an
-    /// append that only grows this node's extent leaves every reactive
-    /// comparison untouched.
-    public let scope: Scope
-    /// Per-column alignments, one entry per column.
+    /// One entry per column, from the delimiter row. A row may hold fewer
+    /// cells than this; the trailing columns are simply absent from it.
     public let alignments: [TableAlignment]
-    /// The single header row.
+    /// The header row. A table cannot exist without one — the delimiter row is
+    /// what makes the line above it a header rather than a paragraph.
     public let header: TableRow
-    /// The body rows, header excluded.
+    /// The body rows, header excluded. Empty is a valid table.
     public let rows: [TableRow]
+    /// Where it is. See ``Scope`` — boundaries, not a byte range.
+    public let scope: Scope
 
-    /// Dispatches this node to `visitor`'s matching `visit` overload.
+    /// Dispatches to the visitor's `Table` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension Table {
-    init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let track = builder.track(of: node)
+    init(from node: OpaquePointer) {
         var count = 0
         markdown_core_node_table_column_count(node, &count)
         let alignments = (0..<count).map { index in
@@ -44,89 +38,59 @@ extension Table {
             markdown_core_node_table_alignment_at(node, index, &alignment)
             return TableAlignment(from: alignment)
         }
-        let rows = builder.children(node).map { child -> TableRow in
-            guard let row = child as? TableRow else {
-                preconditionFailure("table contains a non-row node")
-            }
-            return row
-        }
+        let rows: [TableRow] = Self.typedChildren(from: node)
         let headers = rows.filter(\.isHeader)
         precondition(headers.count == 1, "table must contain exactly one header row")
         self.init(
-            id: track.id,
-            revision: track.revision,
-            scope: track.scope,
             alignments: alignments,
             header: headers[0],
-            rows: rows.filter { !$0.isHeader }
+            rows: rows.filter { !$0.isHeader },
+            scope: Self.scope(from: node)
         )
     }
 }
 
 /// One row of a ``Table``.
 public struct TableRow: Markup {
-    /// The node's series-scoped identity; see ``MarkupID``.
-    public let id: MarkupID
-    /// The document revision at which this node's content last changed.
-    public let revision: UInt64
-    /// The node's absolute source extent, both bounds inclusive of the
-    /// construct's own markers.
-    ///
-    /// A property OF the node, not of a lookup: a document is an immutable
-    /// projection of one text, so a node in it does not move. It is
-    /// deliberately absent from `==` — position is not content — so an
-    /// append that only grows this node's extent leaves every reactive
-    /// comparison untouched.
-    public let scope: Scope
-    /// Whether this is the table's header row.
+    /// True only for the row reached through ``Table/header``, and false for
+    /// every entry in ``Table/rows``.
     public let isHeader: Bool
-    /// The row's cells in column order.
+    /// The row's cells, in source order. A row may be short; it is not padded.
     public let cells: [TableCell]
+    /// Where it is. See ``Scope`` — boundaries, not a byte range.
+    public let scope: Scope
 
-    /// Dispatches this node to `visitor`'s matching `visit` overload.
+    /// Dispatches to the visitor's `TableRow` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension TableRow {
-    init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let track = builder.track(of: node)
+    init(from node: OpaquePointer) {
         var header = false
         markdown_core_node_table_row_is_header(node, &header)
-        let cells = builder.children(node).map { child -> TableCell in
-            guard let cell = child as? TableCell else {
-                preconditionFailure("table row contains a non-cell node")
-            }
-            return cell
-        }
-        self.init(id: track.id, revision: track.revision, scope: track.scope, isHeader: header, cells: cells)
+        let cells: [TableCell] = Self.typedChildren(from: node)
+        self.init(
+            isHeader: header,
+            cells: cells,
+            scope: Self.scope(from: node)
+        )
     }
 }
 
 /// One cell of a ``TableRow``.
 public struct TableCell: Markup {
-    /// The node's series-scoped identity; see ``MarkupID``.
-    public let id: MarkupID
-    /// The document revision at which this node's content last changed.
-    public let revision: UInt64
-    /// The node's absolute source extent, both bounds inclusive of the
-    /// construct's own markers.
-    ///
-    /// A property OF the node, not of a lookup: a document is an immutable
-    /// projection of one text, so a node in it does not move. It is
-    /// deliberately absent from `==` — position is not content — so an
-    /// append that only grows this node's extent leaves every reactive
-    /// comparison untouched.
-    public let scope: Scope
     /// The cell's inline content.
     public let content: [any Markup]
+    /// Where it is. A cell the parser completed to fill a short row has a
+    /// scope but no source behind it. See ``Scope``.
+    public let scope: Scope
 
-    /// Dispatches this node to `visitor`'s matching `visit` overload.
+    /// Dispatches to the visitor's `TableCell` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension TableCell {
-    init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let track = builder.track(of: node)
-        self.init(id: track.id, revision: track.revision, scope: track.scope, content: builder.children(node))
+    init(from node: OpaquePointer) {
+        self.init(content: Self.children(from: node), scope: Self.scope(from: node))
     }
 }

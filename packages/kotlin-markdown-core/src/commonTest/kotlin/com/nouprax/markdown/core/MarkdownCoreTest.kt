@@ -1,149 +1,52 @@
 package com.nouprax.markdown.core
 
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
-import kotlin.test.assertNotEquals
-import kotlin.test.assertNull
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class ApiTest {
     @Test
     fun defaultsAndOptionGates() {
         val defaults = ParseOptions()
-        assertTrue(defaults.smartPunctuation && defaults.footnotes)
+        assertTrue(defaults.smartPunctuation && defaults.footnotes && defaults.stripHTMLComments)
         assertTrue(defaults.tables && defaults.strikethrough && defaults.autolinks)
         assertTrue(defaults.taskLists && defaults.formulas && defaults.directives)
-        assertTrue(defaults.crossLinks && defaults.embeds)
 
         val markdown = "| a |\n| --- |\n| b |\n"
-        assertIs<Table>(Document(markdown).content.first())
-        assertIs<Paragraph>(Document(markdown, ParseOptions(tables = false)).content.first())
-    }
-
-    @Test
-    fun crossReferencesAreTypedSourceFaithfulAndIndependentlyGated() {
-        val source =
-            "before [[folder/note#^block|display]] and ![[folder/note#^block|display]] after\n"
-        val paragraph = assertIs<Paragraph>(Document(source).content.first())
-        val crossLink = assertIs<CrossLink>(paragraph.content[1])
-        val embed = assertIs<Embed>(paragraph.content[3])
-        assertEquals("folder/note#^block|display", crossLink.reference)
-        assertEquals("folder/note#^block|display", embed.reference)
-
-        val linksDisabled =
-            assertIs<Paragraph>(
-                Document(source, ParseOptions(crossLinks = false)).content.first(),
-            )
-        assertIs<Embed>(linksDisabled.content[1])
-
-        val embedsDisabled =
-            assertIs<Paragraph>(
-                Document(source, ParseOptions(embeds = false)).content.first(),
-            )
-        assertIs<CrossLink>(embedsDisabled.content[1])
-    }
-
-    @Test
-    fun formulasOptionGatesEverySupportedSyntax() {
-        val inlineDollar = Document("\$x\$\n")
-        val blockDollar = Document("\$\$x\$\$\n")
-        val inlineLaTeX = Document("\\\\(x\\\\)\n")
-        val blockLaTeX = Document("\\\\[x\\\\]\n")
-        val fenced = Document("```formula\nx\n```\n")
-
-        assertIs<Formula>((inlineDollar.content.first() as Paragraph).content.first())
-        assertIs<FormulaBlock>(blockDollar.content.first())
-        assertIs<Formula>((inlineLaTeX.content.first() as Paragraph).content.first())
-        assertIs<FormulaBlock>(blockLaTeX.content.first())
-        assertIs<FormulaBlock>(fenced.content.first())
-
-        val disabled = ParseOptions(formulas = false)
-        assertIs<Text>((Document("\$x\$\n", disabled).content.first() as Paragraph).content.first())
-        assertIs<Paragraph>(Document("\$\$x\$\$\n", disabled).content.first())
-        assertIs<Text>(
-            (Document("\\\\(x\\\\)\n", disabled).content.first() as Paragraph).content.first(),
+        assertIs<Table>(
+            Document
+                .parse(markdown)
+                .content
+                .first(),
         )
-        assertIs<Paragraph>(Document("\\\\[x\\\\]\n", disabled).content.first())
-        assertIs<CodeBlock>(Document("```formula\nx\n```\n", disabled).content.first())
+        assertIs<Paragraph>(
+            Document
+                .parse(markdown, ParseOptions(tables = false))
+                .content
+                .first(),
+        )
     }
 
     @Test
     fun visitorAndWalkerAreTypedAndDepthFirst() {
-        val document = Document("# Heading\n\nBody\n")
+        val document = Document.parse("# Heading\n\nBody\n")
         val visitor = KindVisitor()
         assertEquals("heading:1", document.content.first().accept(visitor))
         val recordingVisitor = RecordingVisitor()
-        MarkupWalker.walk(document, recordingVisitor)
+        Walker.walk(document, recordingVisitor)
         assertEquals("Document", recordingVisitor.visited.first())
         assertTrue("Heading" in recordingVisitor.visited && "Text" in recordingVisitor.visited)
-    }
-}
-
-class IdentityTest {
-    @Test
-    fun equalityIsSeriesSaltedIdentityPlusRevision() {
-        Document("Same *content* twice.\n").use { first ->
-            Document("Same *content* twice.\n").use { second ->
-                // Identical content from different parses never compares equal.
-                assertNotEquals<Markup>(first, second)
-                assertNotEquals<Markup>(first.content[0], second.content[0])
-                // Within one document, identity is value equality.
-                assertEquals(first.content[0], first.content[0])
-                assertNotEquals(first.id.series, second.id.series)
-                // An id from another series is not this document's to answer.
-                assertNull(first.node(second.content[0].id))
-            }
-        }
-    }
-
-    @Test
-    fun documentsAreValuesAndIdsAreStableMapKeys() {
-        Document("").use { empty ->
-            assertTrue(empty.content.isEmpty())
-            empty.append("Alpha\n").use { document ->
-                val paragraph = assertIs<Paragraph>(document.content[0])
-                val byId = hashMapOf(paragraph.id to "paragraph")
-                assertEquals(paragraph.id, document.node(paragraph.id)?.id)
-                // The root answers for itself, which is what a consumer
-                // reconciling by id needs when the top-level list changes.
-                assertEquals(document.id, document.node(document.id)?.id)
-                assertEquals("paragraph", byId[paragraph.id])
-                assertNull(document.node(MarkupID(document.series + 1UL, paragraph.id.rawValue)))
-            }
-        }
-    }
-
-    @Test
-    fun diagnosticsTravelWithTheDocumentThatRaisedThem() {
-        // The one thing an editor underlines: a directive's `{...}` did not
-        // parse, so the braces stayed literal text. Invisible in the tree —
-        // the node simply has no attributes — which is why it is reported.
-        val before = Document(":::note{= bad}\nbody\n:::\n")
-        assertEquals(listOf(DiagnosticCode.DIRECTIVE_ATTRIBUTES), before.diagnostics.map { it.code })
-        assertEquals(Scope(Position(1, 8), Position(1, 14)), before.diagnostics.single().scope)
-
-        // A well-formed directive raises nothing...
-        Document(":::note{a=1}\nbody\n:::\n").use { clean ->
-            assertTrue(clean.diagnostics.isEmpty())
-        }
-        // ...and appending carries the raiser's diagnostic forward, because
-        // the text that raised it is still in the document.
-        before.append("\ntail\n").use { after ->
-            assertEquals(1, after.diagnostics.size)
-        }
-        // The predecessor keeps reporting its own: diagnostics are values it
-        // copied out at parse time, like every other part of it.
-        assertEquals(1, before.diagnostics.size)
-        before.close()
     }
 }
 
 class UnicodeTest {
     @Test
     fun standardUtf8SurvivesTheNativeBoundary() {
-        val document = Document("héllo 🚀 中文\n")
+        val document = Document.parse("héllo 🚀 中文\n")
         val paragraph = assertIs<Paragraph>(document.content.first())
         assertEquals("héllo 🚀 中文", assertIs<Text>(paragraph.content.first()).literal)
     }
@@ -152,119 +55,251 @@ class UnicodeTest {
 class ErrorsTest {
     @Test
     fun emptyInputIsAValidDocument() {
-        assertTrue(Document("").content.isEmpty())
+        assertTrue(
+            Document
+                .parse("")
+                .content
+                .isEmpty(),
+        )
     }
 
     @Test
     fun corruptedNativePayloadFailsInsteadOfProducingAPartialTree() {
         assertFailsWith<IllegalArgumentException> {
-            decodeWire(byteArrayOf(0x4d, 0x4b, 0x43)) { _, _, _, _, _, _, _ ->
-                error("a truncated payload reached the build step")
-            }
+            WireDecoder.decodeDocument(byteArrayOf(0x4d, 0x4b, 0x43))
         }
     }
 
     @Test
-    fun aDecodeFailurePastTheHandleReleasesTheParseItCouldNotDeliver() {
-        // A REAL parse whose payload is then cut off right behind the handle
-        // — magic(4) + status(1) + handle(8) — so the decoder holds a live
-        // native document and the very next read throws. The release this
-        // forces runs against a handle the engine really issued; freeing a
-        // wrong or already-freed one would take the suite down natively.
-        val payload = cOpen("# leak window\n".encodeToByteArray(), ParseOptions())
+    fun everyWireGuardFiresWhenTheNativeSideAnswersOutOfRange() {
+        // The two sides of the wire are versioned separately -- MKC5 is that
+        // hazard made concrete -- and a decoder that mapped an unknown value
+        // instead of refusing it turns a protocol mismatch into a wrong
+        // document. Nothing proved any of these fired.
+        assertFailsWith<IllegalStateException> { WireKind.from(0) }
+        assertFailsWith<IllegalStateException> { WireKind.from(33) }
+        assertEquals(WireKind.IMAGE_REFERENCE, WireKind.from(32))
+
+        // A header the decoder accepts, followed by nothing it can read.
         assertFailsWith<IllegalArgumentException> {
-            decodeWire(payload.copyOf(13)) { _, _, _, _, _, _, _ ->
-                error("a truncated payload reached the build step")
-            }
+            WireDecoder.decodeDocument("MKC5".encodeToByteArray())
         }
     }
 
     @Test
-    fun aThrowingBuildStepReleasesTheParseAndRethrowsTheCallersFailure() {
-        // The other half of the window: the whole payload decodes and the
-        // build step itself throws. The parse is released and the caller's
-        // own exception surfaces unwrapped.
-        val payload = cOpen("# leak window\n".encodeToByteArray(), ParseOptions())
+    fun everyRefusalTheWireReaderCanMakeIsReachedByAPayload() {
+        // The reader is one `require` after another and a corpus reaches none
+        // of them: every payload the bridge actually writes is well formed. So
+        // write the malformed ones by hand. `MKC5` is the magic; the byte after
+        // it is the status, and 1 means the payload is an error rather than a
+        // document.
+        fun payload(vararg parts: Any): ByteArray {
+            val out = mutableListOf<Byte>()
+            for (part in parts) {
+                when (part) {
+                    is String -> out += part.encodeToByteArray().toList()
+                    is Byte -> out += part
+                    is Int -> repeat(4) { shift -> out += ((part shr (shift * 8)) and 0xff).toByte() }
+                    else -> error("unsupported payload part")
+                }
+            }
+            return out.toByteArray()
+        }
+
+        // A native error crosses as a code and a message, which is the only
+        // path that builds a ParseException.
         val failure =
-            assertFailsWith<IllegalStateException> {
-                decodeWire(payload) { _, _, _, _, _, _, _ ->
-                    error("the build step failed after a complete decode")
-                }
+            assertFailsWith<ParseException> {
+                WireDecoder.decodeDocument(payload("MKC5", 1.toByte(), 1, 3, "bad"))
             }
-        assertEquals("the build step failed after a complete decode", failure.message)
-    }
+        assertEquals(ParseErrorCode.INVALID_ARGUMENT, failure.code)
+        assertEquals("bad", failure.message)
+        assertEquals(
+            ParseErrorCode.INTERNAL,
+            assertFailsWith<ParseException> {
+                WireDecoder.decodeDocument(payload("MKC5", 1.toByte(), 99, 1, "x"))
+            }.code,
+        )
 
-    @Test
-    fun aCraftedPayloadWithoutAParseFreesNothing() {
-        // Zero is never a valid handle: a hand-built payload that carries
-        // none must fail its decode without a release call reaching the
-        // native side.
-        val zeroHandle = byteArrayOf(0x4d, 0x4b, 0x43, 0x35, 0x00, 0, 0, 0, 0, 0, 0, 0, 0)
+        // A status that is neither, a magic from the wrong wire version, a
+        // root that is not a document, and a payload that stops mid-value.
+        assertFailsWith<IllegalStateException> {
+            WireDecoder.decodeDocument(payload("MKC5", 2.toByte()))
+        }
         assertFailsWith<IllegalArgumentException> {
-            decodeWire(zeroHandle) { _, _, _, _, _, _, _ ->
-                error("a truncated payload reached the build step")
-            }
+            WireDecoder.decodeDocument(payload("MKC4", 0.toByte()))
+        }
+        assertFailsWith<IllegalArgumentException> {
+            WireDecoder.decodeDocument(payload("MKC5", 0.toByte(), 3.toByte()))
+        }
+        assertFailsWith<IllegalArgumentException> {
+            WireDecoder.decodeDocument(payload("MKC5", 0.toByte(), 1.toByte(), 1, 1))
+        }
+        assertFailsWith<IllegalArgumentException> {
+            WireDecoder.decodeDocument(payload("MKC5", 1.toByte(), 1, -2))
         }
     }
 
     @Test
-    fun aDeliveryLostStatusSurfacesThroughItsHandler() {
-        // Status 2: the native mutation succeeded but its payload was lost —
-        // the wire's whole answer is the one byte, routed to the caller's
-        // handler; without one it is an unsupported status.
-        assertFailsWith<IllegalStateException> {
-            decodeWire(
-                byteArrayOf(0x4d, 0x4b, 0x43, 0x35, 0x02),
-                onDeliveryLost = { throw IllegalStateException("the chain is done") },
-            ) { _, _, _, _, _, _, _ ->
-                error("a delivery-lost payload reached the build step")
-            }
-        }
-        assertFailsWith<IllegalStateException> {
-            decodeWire(byteArrayOf(0x4d, 0x4b, 0x43, 0x35, 0x02)) { _, _, _, _, _, _, _ ->
-                error("a delivery-lost payload reached the build step")
-            }
-        }
+    fun aParseFailureCarriesItsCodeAndMessageAndNothingElse() {
+        // A parse fails only when an allocation does, so no input a caller can
+        // write reaches this type through `Document.parse`.
+        val failure = ParseException(ParseErrorCode.ALLOCATION_FAILED, "out of memory")
+        assertEquals(ParseErrorCode.ALLOCATION_FAILED, failure.code)
+        assertEquals("out of memory", failure.message)
     }
+}
 
+class WireCoverageTest {
     @Test
-    fun aNativeFailureStatusSurfacesAsAParseExceptionCarryingItsCodeAndMessage() {
-        // Status 1: the native call failed and the payload is the error
-        // record itself — an int code, then the engine's one English message.
-        // Codes 1 and 2 are the engine's named failures; everything else,
-        // including the engine's own 3, is a bug and decodes as INTERNAL.
-        fun errorPayload(
-            rawCode: Int,
-            message: String,
-        ): ByteArray {
-            fun int(value: Int) =
-                byteArrayOf(
-                    value.toByte(),
-                    (value ushr 8).toByte(),
-                    (value ushr 16).toByte(),
-                    (value ushr 24).toByte(),
-                )
-            val text = message.encodeToByteArray()
-            return byteArrayOf(0x4d, 0x4b, 0x43, 0x35, 0x01) + int(rawCode) + int(text.size) + text
-        }
-
-        val cases =
+    fun everyKindThisBranchAddedDecodesDumpsAndWalks() {
+        // The kinds Step 7 and Step 9b added -- a definition, both reference
+        // spellings and their forms, a directive label -- plus the enum arms
+        // nothing else in this suite writes: a standalone formula, an ordered
+        // list's start, and every table alignment.
+        val source =
             listOf(
-                1 to ParseErrorCode.INVALID_ARGUMENT,
-                2 to ParseErrorCode.ALLOCATION_FAILED,
-                3 to ParseErrorCode.INTERNAL,
-                99 to ParseErrorCode.INTERNAL,
+                "[foo]: /url \"t\"",
+                "",
+                ":::note[Title]{kind=demo}",
+                "Body",
+                ":::",
+                "",
+                "See [foo], [foo][foo], ![foo] and \$\$x\$\$.",
+                "",
+                "3. one",
+                "4. two",
+                "",
+                "| a | b | c | d |",
+                "| :- | :-: | -: | --- |",
+                "| 1 | 2 | 3 | 4 |",
+                "",
+            ).joinToString("\n")
+        val document = Document.parse(source)
+
+        val definition = assertIs<ReferenceDefinition>(document.content[0])
+        assertEquals("foo", definition.label)
+        assertEquals("/url", definition.destination)
+        assertEquals("t", definition.title)
+
+        val block = assertIs<DirectiveBlock>(document.content[1])
+        assertIs<DirectiveLabel>(assertNotNull(block.label))
+        assertEquals("kind", block.attributes?.first()?.name)
+
+        val inlines = assertIs<Paragraph>(document.content[2]).content
+        val references = inlines.filterIsInstance<LinkReference>()
+        assertEquals(listOf(ReferenceForm.SHORTCUT, ReferenceForm.FULL), references.map { it.form })
+        assertEquals(ReferenceForm.SHORTCUT, inlines.filterIsInstance<ImageReference>().single().form)
+        assertEquals(PlacementMode.STANDALONE, inlines.filterIsInstance<Formula>().single().mode)
+
+        // Fully qualified: the model's `List` shadows `kotlin.collections.List`.
+        val list = assertIs<com.nouprax.markdown.core.List>(document.content[3])
+        assertEquals(ListFlavor.ORDERED, list.flavor)
+        assertEquals(3, list.start)
+
+        val table = assertIs<Table>(document.content[4])
+        assertEquals(
+            listOf(
+                TableAlignment.LEFT,
+                TableAlignment.CENTER,
+                TableAlignment.RIGHT,
+                TableAlignment.NONE,
+            ),
+            table.alignments,
+        )
+
+        // The dump and the walk both have a branch per kind, and neither is
+        // reached by a corpus that never writes one.
+        val dump = document.dump()
+        for (fragment in listOf("ReferenceDefinition", "LinkReference", "ImageReference", "DirectiveLabel")) {
+            assertTrue(dump.contains(fragment), "dump is missing $fragment")
+        }
+        val entered = mutableListOf<String>()
+        Walker.walk(document) { event, node ->
+            if (event == WalkEvent.ENTERING) entered += node::class.simpleName.orEmpty()
+        }
+        assertTrue(entered.contains("DirectiveLabel"))
+        assertTrue(entered.contains("ReferenceDefinition"))
+    }
+
+    @Test
+    fun aDirectiveBlockWithNoLabelTakesTheOtherArm() {
+        val bare = assertIs<DirectiveBlock>(Document.parse(":::note\nBody\n:::\n").content.single())
+        assertEquals(null, bare.label)
+        assertTrue(bare.dump().contains("children=1"))
+    }
+
+    @Test
+    fun everyOptionalFieldIsReadBothPresentAndAbsent() {
+        // Requirement 14 gives every optional field two answers and the decoder
+        // an arm for each. A corpus that always writes the field takes one arm
+        // and never the other, so write both and compare them side by side.
+        val withEverything =
+            Document.parse(
+                listOf(
+                    "``` kotlin",
+                    "code",
+                    "```",
+                    "",
+                    "[a](/u \"t\") ![b](/s \"u\") `c`",
+                    "",
+                    ":::note{k=v}",
+                    "body",
+                    ":::",
+                    "",
+                    "- [x] done",
+                    "",
+                ).joinToString("\n"),
             )
-        for ((rawCode, expected) in cases) {
-            val payload = errorPayload(rawCode, "the engine's account of failure $rawCode")
-            val failure =
-                assertFailsWith<ParseException> {
-                    decodeWire(payload) { _, _, _, _, _, _, _ ->
-                        error("an error payload reached the build step")
-                    }
-                }
-            assertEquals(expected, failure.code)
-            assertEquals("the engine's account of failure $rawCode", failure.message)
+        val withNothing =
+            Document.parse(
+                listOf(
+                    "```",
+                    "code",
+                    "```",
+                    "",
+                    "[a](/u) ![b](/s)",
+                    "",
+                    ":::note",
+                    "body",
+                    ":::",
+                    "",
+                    "- plain",
+                    "",
+                ).joinToString("\n"),
+            )
+
+        val fenced = assertIs<CodeBlock>(withEverything.content[0])
+        assertEquals("kotlin", fenced.language)
+        assertEquals("kotlin", fenced.info)
+        val bare = assertIs<CodeBlock>(withNothing.content[0])
+        assertEquals(null, bare.language)
+        assertEquals(null, bare.info)
+
+        val rich = assertIs<Paragraph>(withEverything.content[1]).content
+        assertEquals("t", rich.filterIsInstance<Link>().single().title)
+        assertEquals("u", rich.filterIsInstance<Image>().single().title)
+        val plain = assertIs<Paragraph>(withNothing.content[1]).content
+        assertEquals(null, plain.filterIsInstance<Link>().single().title)
+        assertEquals(null, plain.filterIsInstance<Image>().single().title)
+
+        assertNotNull(assertIs<DirectiveBlock>(withEverything.content[2]).attributes)
+        assertEquals(null, assertIs<DirectiveBlock>(withNothing.content[2]).attributes)
+
+        val checked = assertIs<com.nouprax.markdown.core.List>(withEverything.content[3])
+        assertEquals(true, checked.items.single().checked)
+        val unchecked = assertIs<com.nouprax.markdown.core.List>(withNothing.content[3])
+        assertEquals(null, unchecked.items.single().checked)
+    }
+
+    @Test
+    fun theDumpEscapesEveryCharacterJsonCannotCarryLiterally() {
+        // A fenced code block carries its literal through untouched, so it is
+        // the one place a test can put every escape the dumper knows.
+        val literal = "a\"b\\c\td\u0008e\u000cf\u0001g"
+        val dump = Document.parse("```\n$literal\n```\n").dump()
+        for (escape in listOf("\\\"", "\\\\", "\\t", "\\b", "\\f", "\\n", "\\u0001")) {
+            assertTrue(dump.contains(escape), "dump is missing the escape $escape")
         }
     }
 }
@@ -272,14 +307,14 @@ class ErrorsTest {
 class OwnershipTest {
     @Test
     fun returnedTreesOutliveEveryNativeDocument() {
-        val documents = kotlin.collections.List(300) { Document("# Copy\n\n- [x] item\n") }
+        val documents = kotlin.collections.List(300) { Document.parse("# Copy\n\n- [x] item\n") }
         assertTrue(documents.all { it.content.size == 2 })
         assertEquals(1, assertIs<Heading>(documents.last().content.first()).level)
     }
 
     @Test
     fun readOnlyCollectionsDoNotLeakMutableImplementations() {
-        val content = Document("one *two* three\n").content
+        val content = Document.parse("one *two* three\n").content
         assertFailsWith<ClassCastException> {
             @Suppress("UNCHECKED_CAST")
             (content as MutableList<Markup>).clear()
@@ -291,14 +326,18 @@ class RobustnessTest {
     @Test
     fun largeDocumentsCopyCompletelyBeforeNativeRelease() {
         val unit = "## Section\n\nParagraph with **strong**, [link](https://example.com), and 🚀.\n\n"
-        val document = Document(unit.repeat(5_000))
+        val document = Document.parse(unit.repeat(5_000))
         assertEquals(10_000, document.content.size)
     }
 
     @Test
     fun deepBlockQuoteNestingRemainsTraversable() {
         val depth = 128
-        var node: Markup = Document("> ".repeat(depth) + "leaf\n").content.single()
+        var node: Markup =
+            Document
+                .parse("> ".repeat(depth) + "leaf\n")
+                .content
+                .single()
         repeat(depth) {
             val quote = assertIs<BlockQuote>(node)
             node = quote.content.first()
@@ -309,7 +348,62 @@ class RobustnessTest {
     @Test
     fun repeatedParseAndReleaseRemainsStable() {
         repeat(2_000) {
-            assertEquals(2, Document("# Copy\n\n- [x] item 🚀\n").content.size)
+            assertEquals(
+                2,
+                Document
+                    .parse("# Copy\n\n- [x] item 🚀\n")
+                    .content.size,
+            )
         }
+    }
+}
+
+/**
+ * The source a scope's coordinates are counted against, copied into value types
+ * and read after the native handle is gone. `parse` frees the handle before it
+ * returns, so everything below reads a value with no native anything behind it.
+ */
+class ConcreteTest {
+    @Test
+    fun theSourceAndItsLineIndexSurviveTheNativeRelease() {
+        val source =
+            listOf(
+                "# Heading ##",
+                "",
+                "> quoted *em* and `code`",
+                "",
+                "| a | b |",
+                "| --- | --- |",
+                "| c | d |",
+                "",
+                ":::container[Title]{kind=demo}",
+                "Body",
+                ":::",
+                "",
+                """[a]: /u "t"""",
+                "",
+                "see [a].",
+                "",
+            ).joinToString("\n")
+        val document = Document.parse(source)
+        val concrete = document.concrete
+        assertContentEquals(source.encodeToByteArray(), concrete.source)
+        assertEquals(15, concrete.lineCount)
+        assertEquals(0, concrete.lineStart(1))
+        assertEquals(14, concrete.lineStart(3))
+        assertFailsWith<IndexOutOfBoundsException> { concrete.lineStart(0) }
+        assertFailsWith<IndexOutOfBoundsException> { concrete.lineStart(16) }
+
+        // Every line but the first begins after a line ending.
+        for (line in 2..concrete.lineCount) {
+            val start = concrete.lineStart(line)
+            assertTrue(start > 0)
+            assertEquals('\n'.code.toByte(), concrete.source[start - 1])
+        }
+
+        // Nothing native is left: 300 more parses cannot move what was copied.
+        repeat(300) { Document.parse("# copy\n") }
+        assertContentEquals(source.encodeToByteArray(), concrete.source)
+        assertEquals(14, concrete.lineStart(3))
     }
 }

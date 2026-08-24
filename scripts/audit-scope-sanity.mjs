@@ -17,10 +17,11 @@ import process from "node:process";
 //
 // THE SUBJECT SURVIVES; THE CURE THIS FILE NAMED DOES NOT. It used to say
 // "neither survives M3: an extent is (identity, length) and expresses length
-// zero natively", and cited docs/reviews/2026-08-05-m3-endstate-poc.md as the
-// elimination path. That design was reverted on 2026-08-07 — see
-// docs/reviews/2026-08-07-requirement-audit.md — and no extent sequence is
-// coming to fix this.
+// zero natively", and cited two review documents as the elimination path. That
+// design was reverted on 2026-08-07 and no extent sequence is coming to fix
+// this. NEITHER REVIEW IS IN THIS REPOSITORY -- `docs/deprecated/reviews/` does
+// not exist, and the citations outlived the documents; Step 15A found that
+// while making sure no executable file points into docs/deprecated/.
 //
 // What is still true is why the ratchet exists: a source position is the
 // input's row and column and nothing else, so a row that reads like a
@@ -92,6 +93,7 @@ for (const [dir, entry] of sources) {
     const text = await readFile(path.join(root, relative), "utf8");
     let sentinel = 0;
     let negative = 0;
+    let partial = 0;
     for (const line of dumpLines(text, relative.endsWith(".txt"))) {
         const scope = line.match(scopePattern);
         if (scope === null) continue;
@@ -99,12 +101,20 @@ for (const [dir, entry] of sources) {
         const [startLine, startColumn, endLine, endColumn] = scope.slice(1).map(Number);
         if (startLine === 0 && startColumn === 0 && endLine === 0 && endColumn === 0) sentinel += 1;
         else if (endLine < startLine || (endLine === startLine && endColumn < startColumn)) negative += 1;
+        // A THIRD CLASS THIS GATE USED TO MISS. Line zero with a NON-zero column
+        // — `scope=0:0..0:13` — is neither of the two above: not all four
+        // coordinates are zero, and the end is after the start, so both tests
+        // pass it as an ordinary position. There is no line zero. It is written
+        // when a node is calloc'd and its start is never assigned while its end
+        // is, which is what a synthesized replacement node does.
+        else if (startLine === 0 || endLine === 0) partial += 1;
     }
-    if (sentinel > 0 || negative > 0) measured[relative] = { sentinel, negative };
+    if (sentinel > 0 || negative > 0 || partial > 0) measured[relative] = { sentinel, negative, partial };
 }
 
 const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
-const total = (counts) => Object.values(counts).reduce((sum, entry) => sum + entry.sentinel + entry.negative, 0);
+const total = (counts) =>
+    Object.values(counts).reduce((sum, entry) => sum + entry.sentinel + entry.negative + (entry.partial ?? 0), 0);
 
 if (update) {
     ledger.budget = measured;
@@ -116,8 +126,14 @@ if (update) {
     const failures = [];
     const slack = [];
     for (const [relative, counts] of Object.entries(measured)) {
-        const budget = ledger.budget[relative] ?? { sentinel: 0, negative: 0 };
-        for (const kind of ["sentinel", "negative"]) {
+        const budget = ledger.budget[relative] ?? { sentinel: 0, negative: 0, partial: 0 };
+        /* `partial` -- a coordinate on line zero with a non-zero column -- was
+           MEASURED, stored and counted in the total, and never compared against
+           the budget. It could therefore grow without limit while this gate
+           stayed green, which is the one thing this ledger exists to prevent: a
+           fix that moves a row from one not-a-place class to another looks free.
+           Found at 0a.12b, where D26 moved exactly one row that way. */
+        for (const kind of ["sentinel", "negative", "partial"]) {
             if (counts[kind] > budget[kind])
                 failures.push(`${relative}: ${kind} rows grew ${budget[kind]} -> ${counts[kind]}`);
             else if (counts[kind] < budget[kind])
@@ -130,7 +146,7 @@ if (update) {
     }
     if (failures.length > 0)
         throw new Error(
-            `${failures.join("\n")}\nA scope that is a sentinel or a negative range is not a position. See ${ledger.rule}`
+            `${failures.join("\n")}\nA sentinel, a negative range and a line-zero column are all not positions. See ${ledger.rule}`
         );
     if (slack.length > 0) {
         throw new Error(

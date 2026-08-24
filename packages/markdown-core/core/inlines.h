@@ -7,42 +7,32 @@ extern "C" {
 
 #include "references.h"
 
-struct markdown_core_inline_config;
-
-struct markdown_core_inline_config *markdown_core_inlines_new_config(markdown_core_mem *mem);
-
 markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_core_chunk *url, int *lost);
-markdown_core_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_core_chunk *title, int *lost);
+markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_core_chunk *title, int *lost);
 
 MARKDOWN_CORE_EXPORT
-void markdown_core_parse_inlines(
-    markdown_core_parser *parser,
-    markdown_core_node *parent,
-    markdown_core_map *refmap,
-    int options
-);
+void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap,
+                                 int options);
 
-/** Where a parsed reference definition's spellings sit in the input chunk,
- * so the caller can capture them as concrete records: [0, label_end)
- * spells `[label]:`, [url_start, url_end) the destination exactly as
- * written (angle brackets included), and [title_start, title_end) the
- * title with its delimiters — both zero when the definition carries none,
- * including when a trailing title candidate was rewound back into the
- * paragraph. Meaningful only when the parse returns nonzero. */
-typedef struct markdown_core_reference_spans {
-    markdown_core_bufsize label_end;
-    markdown_core_bufsize url_start;
-    markdown_core_bufsize url_end;
-    markdown_core_bufsize title_start;
-    markdown_core_bufsize title_end;
-} markdown_core_reference_spans;
+/* Reads ONE link reference definition off the front of `input`, registers it in
+ * `refmap`, and returns the number of bytes it consumed -- 0 if the front of
+ * `input` is not a definition. `parts`, when non-NULL, is filled with the three
+ * chunks AS WRITTEN, so the caller can build the node that owns those bytes
+ * without parsing the line a second time. */
+bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
+                                               markdown_core_map *refmap, markdown_core_reference_parts *parts);
 
-markdown_core_bufsize markdown_core_parse_reference_inline(
-    markdown_core_mem *mem,
-    markdown_core_chunk *input,
-    markdown_core_map *refmap,
-    markdown_core_reference_spans *spans
-);
+/* The special-character tables live in the parser (parser-local, never
+ * process-global); reset installs the core defaults. */
+void markdown_core_inlines_reset_special_chars(markdown_core_parser *parser);
+/* One function per table, because they answer different questions. Both refuse
+ * a byte the core already owns: `is_core_special_character` is what keeps an
+ * extension from making `\` or `]` mean something else, and it guarded both
+ * tables when they were written together. */
+void markdown_core_inlines_add_text_terminator(markdown_core_parser *parser, unsigned char c);
+void markdown_core_inlines_remove_text_terminator(markdown_core_parser *parser, unsigned char c);
+void markdown_core_inlines_add_flanking_transparent(markdown_core_parser *parser, unsigned char c);
+void markdown_core_inlines_remove_flanking_transparent(markdown_core_parser *parser, unsigned char c);
 
 #ifdef __cplusplus
 }

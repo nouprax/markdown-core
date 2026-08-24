@@ -1,11 +1,11 @@
 package consumer
 
 import com.nouprax.markdown.core.Document
-import com.nouprax.markdown.core.MarkupDumper
+import com.nouprax.markdown.core.TreeDumper
 
 fun main() {
-    Document("héllo 🚀\n").use { document ->
-        check(document.content.size == 1)
-        check(document.dump() == MarkupDumper.dump(document))
-    }
+    val document = Document.parse("héllo 🚀\n")
+    check(document.content.size == 1)
+    check(document.dump() == TreeDumper.dump(document))
+    check(document.concrete.source.size == "héllo 🚀\n".encodeToByteArray().size)
 }

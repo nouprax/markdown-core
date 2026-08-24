@@ -54,7 +54,7 @@ Document scope=1:1..1:20 children=1
 \\[x+y\\]
 .
 Document scope=1:1..1:9 children=1
-└── FormulaBlock scope=1:1..1:9 mode=standalone literal="x+y" children=0
+└── FormulaBlock scope=1:1..1:9 literal="x+y" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -63,7 +63,7 @@ x+y
 \\]
 .
 Document scope=1:1..3:3 children=1
-└── FormulaBlock scope=1:1..3:3 mode=standalone literal="x+y" children=0
+└── FormulaBlock scope=1:1..3:3 literal="x+y" children=0
 ````````````````````````````````
 
 Display formula blocks bind before Markdown block syntax inside the body.
@@ -76,7 +76,7 @@ Display formula blocks bind before Markdown block syntax inside the body.
 \\]
 .
 Document scope=1:1..5:3 children=1
-└── FormulaBlock scope=1:1..5:3 mode=standalone literal="\\\\nabla \\\\times \\\\boldsymbol{E}\n=\n-\\\\frac{\\\\partial \\\\boldsymbol{B}}{\\\\partial t}" children=0
+└── FormulaBlock scope=1:1..5:3 literal="\\\\nabla \\\\times \\\\boldsymbol{E}\n=\n-\\\\frac{\\\\partial \\\\boldsymbol{B}}{\\\\partial t}" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -99,7 +99,7 @@ $$
 $$
 .
 Document scope=1:1..5:2 children=1
-└── FormulaBlock scope=1:1..5:2 mode=standalone literal="\\\\nabla \\\\times \\\\boldsymbol{E}\n=\n-\\\\frac{\\\\partial \\\\boldsymbol{B}}{\\\\partial t}" children=0
+└── FormulaBlock scope=1:1..5:2 literal="\\\\nabla \\\\times \\\\boldsymbol{E}\n=\n-\\\\frac{\\\\partial \\\\boldsymbol{B}}{\\\\partial t}" children=0
 ````````````````````````````````
 
 Escaped backslash closers are body text, not delimiters.
@@ -135,4 +135,33 @@ Document scope=1:1..1:19 children=1
     ├── Text scope=1:1..1:5 literal="Text " children=0
     ├── Formula scope=1:6..1:14 mode=standalone literal="a\\\\]b" children=0
     └── Text scope=1:15..1:19 literal=" end." children=0
+````````````````````````````````
+
+Q18's padding rule applies to the backslash forms exactly as it does to the
+dollar ones: a body that begins and ends with a space or a line ending loses one
+from each end, and nothing else moves. No oracle row covered this, which is why
+these two are pinned here.
+
+```````````````````````````````` example
+Inline \\( x \\) and \\(  y  \\).
+.
+Document scope=1:1..1:33 children=1
+└── Paragraph scope=1:1..1:33 children=5
+    ├── Text scope=1:1..1:7 literal="Inline " children=0
+    ├── Formula scope=1:8..1:16 mode=embedded literal="x" children=0
+    ├── Text scope=1:17..1:21 literal=" and " children=0
+    ├── Formula scope=1:22..1:32 mode=embedded literal=" y " children=0
+    └── Text scope=1:33..1:33 literal="." children=0
+````````````````````````````````
+
+```````````````````````````````` example
+Display \\[
+z
+\\] end.
+.
+Document scope=1:1..3:8 children=1
+└── Paragraph scope=1:1..3:8 children=3
+    ├── Text scope=1:1..1:8 literal="Display " children=0
+    ├── Formula scope=1:9..3:3 mode=standalone literal="z" children=0
+    └── Text scope=3:4..3:8 literal=" end." children=0
 ````````````````````````````````

@@ -120,8 +120,18 @@ if grep -Eq '\.testTarget|MarkdownCoreBenchmarks|Conformance|Plugins|Tools' \
 fi
 grep -Fq 'auditProductArchive' scripts/audit-maven-publications.mjs
 grep -Fq 'publishes a test framework dependency' scripts/audit-maven-publications.mjs
+# THESE TWO TEST A STRING IN A SIBLING SCRIPT, NOT THAT THE TASK EXISTS, which
+# is how the release job stayed broken while this audit was green (§4.14.15H).
+# The task is real now -- `abiValidation` is configured -- so the third line
+# below is the one that would have caught it.
 grep -Fq ':packages:kotlin-markdown-core:checkKotlinAbi' scripts/stage-maven-publications.sh
 grep -Fq '"${abi_tasks[@]}"' scripts/stage-maven-publications.sh
+scripts/gradle.sh --quiet :packages:kotlin-markdown-core:tasks --all |
+    grep -Fq checkKotlinAbi ||
+    {
+        echo "stage-maven-publications.sh names checkKotlinAbi and the build defines no such task" >&2
+        exit 1
+    }
 if grep -Eq 'bundle-conformance|run-tests|run-conformance' scripts/build-es-product-artifact.sh; then
     echo "ES product build contains test-only work" >&2
     exit 1
@@ -354,8 +364,8 @@ grep -Fq 'name: release-central-deployment' "$release"
 search 'gh run download "\$SOURCE_RUN_ID" --name release-central-deployment' "$release"
 grep -Fq 'test "$bound_tag" = "$RELEASE_TAG"' "$release"
 grep -Fq 'test "$bound_version" = "$(cat VERSION)"' "$release"
-grep -Fq 'test -s "docs/releases/$(cat VERSION).md"' "$release"
-grep -Fq -- '--notes-file "docs/releases/$(cat VERSION).md"' "$release"
+grep -Fq 'test -s "docs/deprecated/releases/$(cat VERSION).md"' "$release"
+grep -Fq -- '--notes-file "docs/deprecated/releases/$(cat VERSION).md"' "$release"
 if search -- '--generate-notes' "$release"; then
     echo "formal release workflow must use curated release notes" >&2
     exit 1

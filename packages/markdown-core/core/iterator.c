@@ -4,6 +4,7 @@
 #include "config.h"
 #include "node.h"
 #include "markdown-core.h"
+#include "parser.h"
 #include "iterator.h"
 
 markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
@@ -11,7 +12,7 @@ markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
         return NULL;
     }
     markdown_core_mem *mem = root->content.mem;
-    markdown_core_iter *iter = (markdown_core_iter *)mem->calloc(mem, 1, sizeof(markdown_core_iter));
+    markdown_core_iter *iter = (markdown_core_iter *)mem->calloc(1, sizeof(markdown_core_iter));
     if (!iter) {
         return NULL;
     }
@@ -24,18 +25,7 @@ markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
     return iter;
 }
 
-void markdown_core_iter_free(markdown_core_iter *iter) { iter->mem->free(iter->mem, iter); }
-
-void markdown_core_iter_reset(
-    markdown_core_iter *iter,
-    markdown_core_node *current,
-    markdown_core_event_type event_type
-) {
-    iter->cur.ev_type = event_type;
-    iter->cur.node = current;
-    iter->next.ev_type = event_type;
-    iter->next.node = current;
-}
+void markdown_core_iter_free(markdown_core_iter *iter) { iter->mem->free(iter); }
 
 markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
     markdown_core_event_type ev_type = iter->next.ev_type;
@@ -49,13 +39,6 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
     }
 
     /* roll forward to next item, setting both fields */
-    /* EVERY node is entered and exited. Upstream skipped the exit for eight
-     * node types it called leaves, which is a renderer's distinction -- a text
-     * node has no closing tag, so the event was waste for every renderer cmark
-     * ships. It was never a structural one: a non-leaf type with no children
-     * got an exit anyway, so the rule was "my type is on a list", not "nothing
-     * is below me". A consumer asking the structural question -- am I finished
-     * with this node -- had to carry that list around to ask it. */
     if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
         if (node->first_child == NULL) {
             /* stay on this node but exit */
@@ -83,98 +66,164 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
     return ev_type;
 }
 
-markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter) { return iter->cur.node; }
-
-int markdown_core_node_consolidate_texts(markdown_core_node *root) {
-    return markdown_core_node_consolidate_texts_from(root, NULL);
+void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_node *current,
+                              markdown_core_event_type event_type) {
+    iter->next.ev_type = event_type;
+    iter->next.node = current;
+    markdown_core_iter_next(iter);
 }
 
-/* THE SAME WALK, OVER THE FRONTIER ONLY. A refine that kept a unit's
- * settled prefix must not walk it again — that walk is what makes a tick
- * cost the whole leaf — and it need not: the prefix was consolidated when
- * it settled, and a settle point is a LINE START, so the child before the
- * frontier is a break and never a Text that could merge across it. */
-int markdown_core_node_consolidate_texts_from(markdown_core_node *root, markdown_core_node *after) {
+markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter) { return iter->cur.node; }
+
+markdown_core_event_type markdown_core_iter_get_event_type(markdown_core_iter *iter) { return iter->cur.ev_type; }
+
+markdown_core_node *markdown_core_iter_get_root(markdown_core_iter *iter) { return iter->root; }
+
+int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
+    return markdown_core_consolidate_text_nodes_with_parser(NULL, root);
+}
+
+/* Consolidation frees every text node but the first of each run, and since
+ * requirement 11b those nodes OWN REGIONS. `parser` is how the survivor takes
+ * them: one node replacing another, roles kept, bounded by the freed node's own
+ * lines. NULL is the public entry point's answer -- a caller outside a parse
+ * has no region set to keep. */
+int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parser, markdown_core_node *root) {
     if (root == NULL) {
         return 1;
     }
-    if (after) {
-        markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(root->content.mem);
-        markdown_core_node *child = after->next;
-        int ok = 1;
-        while (child) {
-            markdown_core_node *next = child->next;
-            /* Each new child's own subtree, whole — they are this refine's
-             * and none of them is the settled prefix. */
-            if (child->first_child && !markdown_core_node_consolidate_texts(child)) {
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(root->content.mem);
+    markdown_core_event_type ev_type;
+    markdown_core_node *cur, *tmp, *next;
+    int ok = 1;
+
+    if (!iter) {
+        return 0;
+    }
+
+    /* EXIT, not ENTER, and that is Step 5's mutation rule: the only node a walk
+     * may free is the one whose EXIT is current. `TEXT` was in the old
+     * `S_is_leaf` list, so its EXIT was suppressed and freeing at ENTER
+     * happened to be safe; with the contract total it is a use-after-free. */
+    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        cur = markdown_core_iter_get_node(iter);
+        if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->type != MARKDOWN_CORE_NODE_TEXT) {
+            continue;
+        }
+
+        if (cur->next && cur->next->type == MARKDOWN_CORE_NODE_TEXT) {
+            markdown_core_strbuf_clear(&buf);
+            markdown_core_strbuf_put(&buf, cur->as.literal.data, cur->as.literal.len);
+            tmp = cur->next;
+            while (tmp && tmp->type == MARKDOWN_CORE_NODE_TEXT) {
+                /* Bring `tmp` to its own EXIT before freeing it: two events
+                 * now, where a suppressed EXIT used to make one enough. */
+                markdown_core_iter_next(iter); /* tmp ENTER */
+                markdown_core_iter_next(iter); /* tmp EXIT  */
+                markdown_core_strbuf_put(&buf, tmp->as.literal.data, tmp->as.literal.len);
+                // ONLY AN OPERAND THAT OWNS BYTES CAN SAY WHERE THE RUN ENDS.
+                // An empty one has no last byte to end at, and the empties in
+                // this tree carry a zeroed position rather than an honest one,
+                // so taking their end put `1:1..1:0` on a run of four real
+                // characters. And the end is a LINE and a column together: this
+                // used to carry the column forward and leave the line behind,
+                // which is why a merged run crossing a line ending reported the
+                // first operand's line with the last operand's column.
+                if (tmp->as.literal.len > 0) {
+                    cur->end_line = tmp->end_line;
+                    cur->end_column = tmp->end_column;
+                }
+                next = tmp->next;
+                if (parser) {
+                }
+                markdown_core_node_free(tmp);
+                tmp = next;
+            }
+            /* Every node the loop freed was ahead of the cursor and is now
+             * unlinked, so the cursor sits at the last one's EXIT. Re-establish
+             * `cur`'s EXIT: it recomputes the lookahead from the siblings that
+             * survived, and it is what makes the drop below legal under the
+             * rule rather than merely safe. */
+            markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
+            markdown_core_chunk_free(iter->mem, &cur->as.literal);
+            cur->as.literal = markdown_core_chunk_buf_detach(&buf);
+            if (!cur->as.literal.data) {
+                // The buffer was poisoned, so this run's bytes are LOST rather
+                // than absent. Report it and leave the node where it is: the
+                // drop below must only ever remove a node that is honestly
+                // empty, never one an allocation failure emptied.
+                ok = 0;
+                continue;
+            }
+        }
+
+        // A `TEXT` NODE THAT OWNS NO BYTES IS NOT A NODE. It has no literal to
+        // render and no source to point at, so the only position it can carry
+        // is borrowed or zeroed -- and a consumer that walks children sees a
+        // child that is not there. Dropping it here also makes the third
+        // producer unreachable by construction: a run of empties can no longer
+        // merge into an empty, because the operands are gone before the merge.
+        //
+        // Freeing here is legal because `cur`'s EXIT is current -- Step 5's
+        // mutation rule -- so `iter->next` already names a node outside this
+        // one's subtree.
+        if (cur->as.literal.len == 0) {
+            markdown_core_chunk_free(iter->mem, &cur->as.literal);
+            markdown_core_node_free(cur);
+        }
+    }
+
+    markdown_core_strbuf_free(&buf);
+    markdown_core_iter_free(iter);
+    return ok;
+}
+
+int markdown_core_node_own(markdown_core_node *root) {
+    int ok = 1;
+    if (root == NULL) {
+        return 1;
+    }
+    /* Traverses via the parent/next pointers instead of an iterator so that
+     * taking ownership never needs to allocate; a chunk copy that cannot be
+     * allocated is emptied rather than left borrowing the source buffer. */
+    markdown_core_mem *mem = root->content.mem;
+    markdown_core_node *cur = root;
+
+    while (cur) {
+        switch (cur->type) {
+        case MARKDOWN_CORE_NODE_TEXT:
+        case MARKDOWN_CORE_NODE_HTML:
+        case MARKDOWN_CORE_NODE_CODE:
+        case MARKDOWN_CORE_NODE_HTML_BLOCK:
+            if (!markdown_core_chunk_to_cstr(mem, &cur->as.literal)) {
+                markdown_core_chunk_set_cstr(mem, &cur->as.literal, NULL);
                 ok = 0;
             }
-            /* And the run itself, merged in place: never across `after`,
-             * whose bytes are settled and whose successor at a settle point
-             * is a line break in any case. */
-            if (child->type == MARKDOWN_CORE_NODE_TEXT && next && next->type == MARKDOWN_CORE_NODE_TEXT) {
-                markdown_core_strbuf_clear(&buf);
-                markdown_core_strbuf_put(&buf, child->as.literal.data, child->as.literal.len);
-                while (next && next->type == MARKDOWN_CORE_NODE_TEXT) {
-                    markdown_core_node *after_next = next->next;
-                    markdown_core_strbuf_put(&buf, next->as.literal.data, next->as.literal.len);
-                    child->end_column = next->end_column;
-                    markdown_core_node_free(next);
-                    next = after_next;
-                }
-                markdown_core_chunk_free(root->content.mem, &child->as.literal);
-                child->as.literal = markdown_core_chunk_buf_detach(&buf);
-                if (!child->as.literal.data) {
-                    ok = 0;
-                }
+            break;
+        case MARKDOWN_CORE_NODE_LINK:
+            if (!markdown_core_chunk_to_cstr(mem, &cur->as.link.url)) {
+                markdown_core_chunk_set_cstr(mem, &cur->as.link.url, NULL);
+                ok = 0;
             }
-            child = next;
-        }
-        markdown_core_strbuf_free(&buf);
-        return ok;
-    }
-    {
-        markdown_core_iter *iter = markdown_core_iter_new(root);
-        markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(root->content.mem);
-        markdown_core_event_type ev_type;
-        markdown_core_node *cur, *tmp, *next;
-        int ok = 1;
-
-        if (!iter) {
-            return 0;
-        }
-
-        while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-            cur = markdown_core_iter_get_node(iter);
-            if (ev_type == MARKDOWN_CORE_EVENT_ENTER && cur->type == MARKDOWN_CORE_NODE_TEXT && cur->next &&
-                cur->next->type == MARKDOWN_CORE_NODE_TEXT) {
-                markdown_core_strbuf_clear(&buf);
-                markdown_core_strbuf_put(&buf, cur->as.literal.data, cur->as.literal.len);
-                tmp = cur->next;
-                while (tmp && tmp->type == MARKDOWN_CORE_NODE_TEXT) {
-                    markdown_core_strbuf_put(&buf, tmp->as.literal.data, tmp->as.literal.len);
-                    cur->end_column = tmp->end_column;
-                    next = tmp->next;
-                    markdown_core_node_free(tmp);
-                    tmp = next;
-                }
-                /* Every node the iterator could still be pointing at has just been
-                 * freed, so the successor it computed before handing us this ENTER
-                 * is stale. Re-seat on `cur`, the one node in the run that
-                 * survives: the walk recomputes from a sibling chain that now ends
-                 * the run at `cur`, and the re-delivered ENTER falls straight
-                 * through the guard above because `cur->next` is no longer TEXT. */
-                markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_ENTER);
-                markdown_core_chunk_free(iter->mem, &cur->as.literal);
-                cur->as.literal = markdown_core_chunk_buf_detach(&buf);
-                if (!cur->as.literal.data) {
-                    ok = 0;
-                }
+            /* Only a title the source WROTE has bytes to own; an absent one
+             * has nothing to copy and losing the copy makes it absent, which
+             * would be indistinguishable from the source having written none. */
+            if (cur->as.link.title.has_value && !markdown_core_chunk_to_cstr(mem, &cur->as.link.title.value)) {
+                markdown_core_optional_chunk_free(mem, &cur->as.link.title);
+                ok = 0;
             }
+            break;
         }
 
-        markdown_core_strbuf_free(&buf);
-        markdown_core_iter_free(iter);
-        return ok;
+        if (cur->first_child) {
+            cur = cur->first_child;
+        } else {
+            while (cur != root && cur->next == NULL) {
+                cur = cur->parent;
+            }
+            cur = (cur == root) ? NULL : cur->next;
+        }
     }
+    return ok;
 }

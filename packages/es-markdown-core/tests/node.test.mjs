@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DiagnosticCode, Document, MarkupDumper, visit, MarkupWalker, WalkEvent } from "../dist/index.js";
-import { unprunedDecode } from "../dist/document.js";
+import { TextEncoder } from "node:util";
+import { Document, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
+// Past index.js for the instance itself: the heap is what this asserts about,
+// and it is observable without the source carrying anything for the test.
+import { native } from "../dist/runtime/native.js";
+import { NodeDecoder } from "../dist/wire/node-decoder.js";
 import { kindVisitor } from "./visitor.mjs";
 
 test("api: synchronous parse, typed visitor dispatch, and walker", () => {
-    const document = Document("# Heading\n\nBody\n");
+    const document = Document.parse("# Heading\n\nBody\n");
     assert.equal(
         visit(document.content[0], {
             ...kindVisitor,
@@ -14,229 +18,59 @@ test("api: synchronous parse, typed visitor dispatch, and walker", () => {
         "heading:1"
     );
     const events = [];
-    new MarkupWalker().walk(document, (event, node) => events.push(`${event}-${node.kind}`));
+    new Walker().walk(document, (event, node) => events.push(`${event}-${node.kind}`));
     assert.equal(events[0], `${WalkEvent.entering}-document`);
     assert.equal(events.at(-1), `${WalkEvent.exiting}-document`);
 });
 
-test("api: the walker's typed-visitor overload dispatches once per node in preorder", () => {
-    // The scope-free overload: no events, no scopes, one exhaustive visitor
-    // call per node in preorder. Table rows and cells are first-class here,
-    // which is what a consumer relying on exhaustive dispatch depends on.
-    const document = Document("| a |\n| --- |\n| b |\n");
-    const visited = [];
-    new MarkupWalker().walk(document, {
-        ...kindVisitor,
-        visitDocument: (node) => visited.push(node.kind),
-        visitTable: (node) => visited.push(node.kind),
-        visitTableRow: (node) => visited.push(node.kind),
-        visitTableCell: (node) => visited.push(node.kind),
-        visitText: (node) => visited.push(node.kind)
-    });
-    assert.deepEqual(visited, ["document", "table", "tableRow", "tableCell", "text", "tableRow", "tableCell", "text"]);
-});
-
 test("api: options gate extensions", () => {
     const markdown = "| a |\n| --- |\n| b |\n";
-    assert.equal(Document(markdown).content[0].kind, "table");
-    assert.equal(Document(markdown, { tables: false }).content[0].kind, "paragraph");
-
-    const directive = "Use :note[text].\n";
-    assert.equal(Document(directive).dump().includes("Directive"), true);
-    assert.equal(Document(directive, { directives: false }).dump().includes("Directive"), false);
-
-    const source = "before [[folder/note#^block|display]] and ![[folder/note#^block|display]] after\n";
-    const paragraph = Document(source).content[0];
-    assert.equal(paragraph.content[1].kind, "crossLink");
-    assert.equal(paragraph.content[1].reference, "folder/note#^block|display");
-    assert.equal(paragraph.content[3].kind, "embed");
-    assert.equal(paragraph.content[3].reference, "folder/note#^block|display");
-    const linksDisabled = Document(source, { crossLinks: false }).content[0];
-    assert.equal(linksDisabled.content[1].kind, "embed");
-    const embedsDisabled = Document(source, { embeds: false }).content[0];
-    assert.equal(embedsDisabled.content[1].kind, "crossLink");
-});
-
-test("api: formulas gates every formula syntax", () => {
-    const markdown = [
-        "Inline $d$ and \\\\(l\\\\).",
-        "",
-        "$$",
-        "display-dollar",
-        "$$",
-        "",
-        "\\\\[",
-        "display-latex",
-        "\\\\]",
-        "",
-        "```formula",
-        "fenced",
-        "```",
-        ""
-    ].join("\n");
-    const enabled = Document(markdown);
-    assert.deepEqual(
-        enabled.content.map((node) => node.kind),
-        ["paragraph", "formulaBlock", "formulaBlock", "formulaBlock"]
-    );
-    assert.deepEqual(
-        enabled.content[0].content.filter((node) => node.kind === "formula").map((node) => node.literal),
-        ["d", "l"]
-    );
-
-    const disabled = Document(markdown, { formulas: false });
-    assert.equal(disabled.dump().includes("Formula"), false);
-    assert.equal(disabled.content.at(-1).kind, "codeBlock");
+    assert.equal(Document.parse(markdown).content[0].kind, "table");
+    assert.equal(Document.parse(markdown, { tables: false }).content[0].kind, "paragraph");
 });
 
 test("ast: typed fields are copied from direct WASM accessors", () => {
-    const document = Document("3. item\n\n| a |\n| :-: |\n| b |\n");
+    const document = Document.parse("3. item\n\n| a |\n| :-: |\n| b |\n");
     assert.equal(document.content[0].flavor, "ordered");
     assert.equal(document.content[0].start, 3);
     assert.deepEqual(document.content[1].alignments, ["center"]);
 });
 
-test("ast: the document mediates the canonical diagnostic dump", () => {
-    const document = Document("Lead\n\n# Heading\n");
-    assert.equal(document.dump(), MarkupDumper.dump(document));
-    // A subtree dump prints scopes with the subtree as origin.
-    assert.match(MarkupDumper.dump(document, document.content[1]), /^Heading scope=1:1\.\.1:9 level=1/);
-    // The mediators are non-enumerable; the data — scope included — is not.
+test("ast: every Markup exposes the canonical diagnostic dump", () => {
+    const document = Document.parse("# Heading\n");
+    assert.equal(document.dump(), TreeDumper.dump(document));
+    assert.match(document.content[0].dump(), /^Heading scope=/);
     assert.equal(Object.keys(document).includes("dump"), false);
-    assert.equal(Object.keys(document).includes("scope"), true);
-});
-
-test("ast: nodes carry identity and their own extent", () => {
-    const document = Document("Lead\n\n# Heading\n");
-    assert.equal(typeof document.id.series, "string");
-    assert.match(document.id.series, /^[0-9a-f]{16}$/);
-    assert.equal(typeof document.id.rawValue, "number");
-    assert.equal(typeof document.revision, "number");
-    // The extent is a property OF the node, read without a lookup and
-    // without the document that produced it.
-    assert.deepEqual(document.content[1].scope, {
-        start: { line: 3, column: 1 },
-        end: { line: 3, column: 9 }
-    });
-    // Separate parses never share identity.
-    assert.notEqual(Document("# Heading\n").id.series, document.id.series);
-});
-
-test("ast: a document survives JSON and its ids come back usable", () => {
-    const document = Document("# Title\n\nBody with *emphasis* and `code`.\n");
-    // The whole point of rendering the salt as text: no custom serializer,
-    // and a round trip that is the document rather than a picture of it.
-    const revived = JSON.parse(JSON.stringify(document));
-    assert.deepEqual(revived, JSON.parse(JSON.stringify(document)));
-    assert.deepEqual(revived.content[1].scope, document.content[1].scope);
-    // An id read back out of JSON is the same identity, so the live document
-    // still answers for it — as a new object, which is why it is resolved
-    // rather than compared by reference.
-    const heading = revived.content[0];
-    assert.notEqual(heading.id, document.content[0].id);
-    assert.deepEqual(heading.id, document.content[0].id);
-    assert.equal(document.node(heading.id), document.content[0]);
-    // And an id from another series is still not this document's to answer.
-    const other = Document("# Other\n");
-    assert.equal(document.node(JSON.parse(JSON.stringify(other)).content[0].id), null);
-    other.close();
-    document.close();
-});
-
-test("ast: diagnostics travel with the document that raised them", () => {
-    // The one thing an editor underlines: a directive's `{...}` did not
-    // parse, so the braces stayed literal text. Invisible in the tree — the
-    // node simply has no attributes — which is why it is reported.
-    const flagged = Document(":::note{= bad}\nbody\n:::\n");
-    assert.deepEqual(
-        flagged.diagnostics.map((diagnostic) => diagnostic.code),
-        [DiagnosticCode.directiveAttributes]
-    );
-    assert.deepEqual(flagged.diagnostics[0].scope, {
-        start: { line: 1, column: 8 },
-        end: { line: 1, column: 14 }
-    });
-
-    // A document chain grows one way: append. Replacing the text is a new
-    // document (new chain, new series) — and the fixed text reports nothing.
-    const fixed = Document(":::note{a=1}\nbody\n:::\n");
-    assert.equal(fixed.diagnostics.length, 0);
-    // The flagged document keeps reporting its own: diagnostics are values
-    // it copied out at parse time, like every other part of it.
-    assert.equal(flagged.diagnostics.length, 1);
-    fixed.close();
-    flagged.close();
 });
 
 test("unicode: UTF-8 survives native document release", () => {
-    const document = Document("héllo 🚀 中文\n");
+    const document = Document.parse("héllo 🚀 中文\n");
     assert.equal(document.content[0].content[0].literal, "héllo 🚀 中文");
-    for (let index = 0; index < 300; index += 1) Document("# copy\n");
+    for (let index = 0; index < 300; index += 1) Document.parse("# copy\n");
     assert.equal(document.content[0].content[0].literal, "héllo 🚀 中文");
-});
-
-test("unicode: a surrogate pair split across appends reassembles intact", () => {
-    // Each append's chunk crosses the boundary as UTF-8 on its own, so a
-    // non-BMP character torn between two chunks would become U+FFFD twice.
-    // The binding holds an unpaired trailing high surrogate back one append
-    // — the parsed text trails by at most that one code unit — and the pair
-    // reaches the encoder whole when its low half arrives.
-    const source = "pre 😀🚀 post\n";
-    const whole = Document(source);
-    let document = Document("");
-    for (let index = 0; index < source.length; index += 1) {
-        // Per UTF-16 code unit — unlike `for...of`, this tears every pair.
-        const previous = document;
-        document = document.append(source[index]);
-        previous.close();
-        // The value mirror holds on every tick, held unit or not: the
-        // pruned decode deep-equals a mirror-free decode of the same parse.
-        assert.deepStrictEqual(document, unprunedDecode(document));
-    }
-    assert.equal(document.content[0].content[0].literal, "pre 😀🚀 post");
-    assert.equal(document.dump(), whole.dump());
-    whole.close();
-    document.close();
-});
-
-test("unicode: a lone low surrogate still encodes to U+FFFD", () => {
-    // Nothing held and nothing to wait for: no later chunk can complete a
-    // low surrogate, so it is the caller's garbage, and it crosses the
-    // boundary exactly as TextEncoder always sent it — as U+FFFD.
-    const opened = Document("");
-    const next = opened.append("a\uDE00");
-    assert.equal(next.content[0].content[0].literal, "a�");
-    opened.close();
-    next.close();
 });
 
 test("errors: empty input is valid and arguments are checked", () => {
-    assert.deepEqual(Document("").content, []);
-    assert.throws(() => Document(null), TypeError);
-    assert.throws(() => Document("x", { tables: "yes" }), TypeError);
-    assert.throws(() => Document("x", { tables: null }), TypeError);
-    assert.throws(() => new Document(), TypeError);
-    // append checks its own argument before the surrogate hold-back can
-    // coerce a non-string into a string chunk.
-    const document = Document("");
-    assert.throws(() => document.append(1), TypeError);
-    document.close();
+    assert.deepEqual(Document.parse("").content, []);
+    assert.throws(() => Document.parse(null), TypeError);
+    assert.throws(() => Document.parse("x", { tables: "yes" }), TypeError);
+    assert.throws(() => Document.parse("x", { tables: null }), TypeError);
 });
 
 test("ownership: declarations are readonly without runtime freeze", () => {
-    const document = Document("text\n");
+    const document = Document.parse("text\n");
     assert.equal(Object.isFrozen(document), false);
     assert.equal(Object.isFrozen(document.content), false);
 });
 
 test("robustness: large documents copy completely before native release", () => {
     const unit = "## Section\n\nParagraph with **strong**, [link](https://example.com), and 🚀.\n\n";
-    assert.equal(Document(unit.repeat(5_000)).content.length, 10_000);
+    assert.equal(Document.parse(unit.repeat(5_000)).content.length, 10_000);
 });
 
 test("robustness: deep block quote nesting remains traversable", () => {
     const depth = 128;
-    let node = Document("> ".repeat(depth) + "leaf\n").content[0];
+    let node = Document.parse("> ".repeat(depth) + "leaf\n").content[0];
     for (let index = 0; index < depth; index += 1) {
         assert.equal(node.kind, "blockQuote");
         node = node.content[0];
@@ -246,96 +80,142 @@ test("robustness: deep block quote nesting remains traversable", () => {
 
 test("robustness: repeated parse and release remains stable", () => {
     for (let index = 0; index < 2_000; index += 1) {
-        assert.equal(Document("# Copy\n\n- [x] item 🚀\n").content.length, 2);
+        assert.equal(Document.parse("# Copy\n\n- [x] item 🚀\n").content.length, 2);
     }
 });
 
-test("robustness: worker threads own isolated engine instances", async () => {
-    // The engine holds no process-global state and the module instantiates
-    // one WASM instance per JS context: workers parsing with disagreeing
-    // option sets must reproduce the main thread's dumps byte-for-byte.
-    const { Worker } = await import("node:worker_threads");
-    const sources = [
-        "# Heading\n\nPlain *emphasis* and **strong** text with `code`.\n",
-        "| a | b |\n| --- | :-: |\n| 1 | 2 |\n\n~~struck~~ and *a~b*c~ mix.\n",
-        "Formula $x^2$ inline and *a$b*c$ flanking.\n\n$$\nx = y\n$$\n",
-        ':::note[Label]{id=1 title="T"}\ncontent *here*\n:::\n\nInline :dir[text]{k=v} tail.\n'
-    ];
-    const variants = [
-        undefined,
-        {
-            smartPunctuation: false,
-            footnotes: false,
-            tables: false,
-            strikethrough: false,
-            autolinks: false,
-            taskLists: false,
-            formulas: false,
-            directives: false,
-            crossLinks: false,
-            embeds: false
-        },
-        {
-            strikethrough: false,
-            formulas: false
-        }
-    ];
-    const jobs = sources.flatMap((source) => variants.map((options) => ({ source, options })));
-    const references = jobs.map(({ source, options }) => Document(source, options).dump());
+// The requirement's own sentence: the concrete view survives being copied into
+// value types and the handle being freed. `parse` frees it before it returns,
+// so everything below reads a view with no WASM memory left behind it.
+test("concrete: the normalized source and its line index survive the native release", () => {
+    const source = [
+        "# Heading ##",
+        "",
+        "> quoted *em* and `code`",
+        "",
+        "| a | b |",
+        "| --- | --- |",
+        "| c | d |",
+        "",
+        ":::container[Title]{kind=demo}",
+        "Body",
+        ":::",
+        "",
+        '[a]: /u "t"',
+        "",
+        "see [a].",
+        ""
+    ].join("\n");
+    const document = Document.parse(source);
+    const concrete = document.concrete;
+    assert.deepEqual(concrete.source, new TextEncoder().encode(source));
+    assert.equal(concrete.lineCount, 15);
+    assert.equal(concrete.lineStart(1), 0);
+    assert.equal(concrete.lineStart(3), 14);
+    assert.throws(() => concrete.lineStart(0), RangeError);
+    assert.throws(() => concrete.lineStart(16), RangeError);
 
-    const workers = Array.from(
-        { length: 4 },
-        () =>
-            new Promise((resolve, reject) => {
-                const worker = new Worker(new URL("./worker-parse.mjs", import.meta.url), {
-                    workerData: { jobs }
-                });
-                worker.once("message", resolve);
-                worker.once("error", reject);
-            })
-    );
-    for (const dumps of await Promise.all(workers)) {
-        assert.deepEqual(dumps, references);
+    // Every line but the first begins after a line ending.
+    for (let line = 2; line <= concrete.lineCount; line += 1) {
+        const start = concrete.lineStart(line);
+        assert.ok(start > 0);
+        assert.equal(concrete.source[start - 1], "\n".charCodeAt(0));
     }
 
-    // The same corpus reached by line-by-line APPENDS instead of one-shot
-    // parses, still one WASM instance per thread: incremental state is per
-    // instance, so four threads appending at once must land on the same
-    // trees a one-shot parse produces.
-    const appenders = Array.from(
-        { length: 4 },
-        () =>
-            new Promise((resolve, reject) => {
-                const worker = new Worker(new URL("./worker-append.mjs", import.meta.url), {
-                    workerData: { jobs }
-                });
-                worker.once("message", resolve);
-                worker.once("error", reject);
-            })
-    );
-    for (const dumps of await Promise.all(appenders)) {
-        assert.deepEqual(dumps, references);
-    }
+    // Nothing native is left: 300 more parses cannot move what was copied.
+    for (let index = 0; index < 300; index += 1) Document.parse("# copy\n");
+    assert.deepEqual(concrete.source, new TextEncoder().encode(source));
+    assert.equal(concrete.lineStart(3), 14);
 });
 
-test("robustness: worker threads never mint the same document series", async () => {
-    const { Worker } = await import("node:worker_threads");
-    // Each worker is a fresh WASM instance whose allocator state and coarse
-    // clocks repeat exactly across threads, so only host entropy can keep
-    // their salts apart. If it cannot, two unrelated documents' identities
-    // compare equal — raw values restart at 1 for every series.
-    const series = await Promise.all(
-        Array.from(
-            { length: 8 },
-            () =>
-                new Promise((resolve, reject) => {
-                    const worker = new Worker(new URL("./worker-series.mjs", import.meta.url));
-                    worker.once("message", resolve);
-                    worker.once("error", reject);
-                })
-        )
+test("robustness: the heap grows, and a document larger than the initial one parses", () => {
+    // The default heap is 16 MiB and a parse needs several times its input, so
+    // before -sALLOW_MEMORY_GROWTH=1 anything past about 1.6 MiB did not fail --
+    // it stopped returning. A fixed reservation only moves that cliff.
+    const paragraph = "lorem ipsum dolor sit amet consectetur adipiscing elit\n\n";
+    const source = paragraph.repeat(Math.round((4 * 1024 * 1024) / paragraph.length));
+    const before = native.memory.buffer.byteLength;
+
+    const document = Document.parse(source);
+
+    // The heap GREW rather than merely having been large enough to start with,
+    // which is the other way this could have been made to pass and is the one
+    // that leaves the cliff in place.
+    assert.ok(native.memory.buffer.byteLength > before, "parsing 4 MiB must have grown the heap");
+    assert.equal(document.content.length, Math.round((4 * 1024 * 1024) / paragraph.length));
+    assert.equal(document.content[0].kind, "paragraph");
+
+    // Read a string AFTER the growth: every view this runtime takes must be
+    // constructed after the last call that could have detached the buffer, and
+    // a stale one throws here rather than anywhere a user would see it.
+    const withLink = Document.parse(`${source}[a](/u "t")\n`);
+    const link = withLink.content.at(-1).content[0];
+    assert.equal(link.kind, "link");
+    assert.equal(link.destination, "/u");
+    assert.equal(link.title, "t");
+});
+
+test("ast: the decoder's reference, formula, list and empty-string arms are exercised", () => {
+    // Four decoder arms that no other suite reaches, and each is an ordinary
+    // language feature rather than a defensive branch: a reference's form, a
+    // formula's placement, an ordered list's flavour, and requirement 14's
+    // "written and empty" answer, which is the one a `null` would be confused
+    // with.
+    const document = Document.parse(
+        ['[foo]: /url "t"', "", "See [foo] and $$x$$ and [a]().", "", "3. one", "4. two", ""].join("\n")
     );
-    assert.equal(series.length, 8);
-    assert.ok(series.every((value) => value !== "0"));
-    assert.equal(new Set(series).size, 8);
+
+    const [definition, paragraph, list] = document.content;
+    assert.equal(definition.kind, "referenceDefinition");
+    assert.equal(definition.label, "foo");
+    assert.equal(definition.destination, "/url");
+
+    const reference = paragraph.content.find((node) => node.kind === "linkReference");
+    assert.equal(reference.form, "shortcut");
+    assert.equal(reference.identifier, "foo");
+
+    const formula = paragraph.content.find((node) => node.kind === "formula");
+    assert.equal(formula.mode, "standalone");
+    assert.equal(formula.literal, "x");
+
+    // `[a]()` WROTE a destination and wrote nothing in it. Empty is not absent.
+    const link = paragraph.content.find((node) => node.kind === "link");
+    assert.equal(link.destination, "");
+    assert.notEqual(link.destination, null);
+
+    assert.equal(list.kind, "list");
+    assert.equal(list.flavor, "ordered");
+    assert.equal(list.start, 3);
+    assert.equal(list.items.length, 2);
+});
+
+test("errors: every wire guard fires when the native side answers out of range", () => {
+    // These guards exist because the two sides of the wire are versioned
+    // separately -- the Kotlin bridge's bump to MKC5 is the same hazard -- and
+    // a decoder that silently mapped an unknown value would turn a protocol
+    // mismatch into a wrong document. Nothing proved any of them fires, so a
+    // renumbering could have removed the check and stayed green.
+    const decoder = new NodeDecoder(native);
+    try {
+        assert.throws(() => decoder.referenceForm(9), /invalid reference form 9/u);
+        assert.throws(() => decoder.placement(9), /invalid placement mode 9/u);
+        assert.throws(() => decoder.listFlavor(9), /invalid list flavor 9/u);
+        assert.throws(() => decoder.tableAlignment(9), /invalid table alignment 9/u);
+        assert.throws(() => decoder.boolean(9, "checked"), /invalid checked 9/u);
+        assert.throws(() => decoder.count(-1, "column count"), /invalid column count -1/u);
+
+        // The valid answers still map, so the guards reject rather than
+        // everything throwing for some unrelated reason.
+        assert.equal(decoder.referenceForm(3), "shortcut");
+        assert.equal(decoder.placement(2), "standalone");
+        assert.equal(decoder.listFlavor(2), "ordered");
+        assert.equal(decoder.tableAlignment(0), "none");
+        assert.equal(decoder.nullableBoolean(-1, "checked"), null);
+    } finally {
+        decoder.dispose();
+    }
+
+    // A disposed decoder holds a freed scratch pointer, and reading through it
+    // would be a use-after-free in WASM memory rather than an error.
+    assert.throws(() => decoder.requireLive(), /decoder has been disposed/u);
 });

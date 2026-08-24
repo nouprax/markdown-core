@@ -1,12 +1,21 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-// Product-only mirror of the repository root /Package.swift: the two target
-// definitions below must stay byte-identical to their root counterparts —
-// SwiftPM manifests cannot share target definitions, so edit both files
-// together. scripts/check-swift-source-archive.sh ships this file as the
-// release archive's Package.swift and builds it against an external
-// consumer, which is where any drift surfaces.
+// THE RELEASE MANIFEST: the same two targets the root `Package.swift`
+// declares, and NOTHING ELSE. `scripts/check-swift-source-archive.sh` copies
+// this file in as the archive's `Package.swift`, and
+// `scripts/audit-ci-policy.sh` refuses it if it names a test target, the
+// benchmarks, the conformance suite, a plugin or a tool -- so the product
+// build cannot reach any of them even by accident.
+//
+// It is a SECOND FILE rather than a conditional in the root manifest because
+// SwiftPM evaluates a manifest with no arguments of its own: there is nowhere
+// to put "and not the tests" that a `swift build` of the archive would see.
+//
+// The paths are the archive's layout, which is this repository's layout with
+// everything but `core`, `extensions`, `include` and `Sources/MarkdownCore`
+// removed -- so they are the root manifest's paths unchanged, and the two
+// files can be diffed.
 let package = Package(
     name: "swift-markdown-core",
     platforms: [
@@ -21,16 +30,14 @@ let package = Package(
             name: "MarkdownCoreC",
             path: "packages/markdown-core",
             sources: [
-                "core/markdown_core.c", "core/node.c", "core/concrete_records.c",
-                "core/iterator.c", "core/blocks.c", "core/inlines.c",
-                "core/delimiter.c", "core/scanners.c", "core/utf8.c",
-                "core/buffer.c", "core/references.c", "core/map.c",
-                "core/houdini_html_u.c", "core/markdown_core_ctype.c", "core/linked_list.c",
-                "extensions/ast.c", "extensions/document.c", "extensions/arena.c",
-                "extensions/source.c", "extensions/concrete.c", "extensions/diff.c",
-                "extensions/core-extensions.c", "extensions/table.c", "extensions/strikethrough.c",
+                "core/markdown_core.c", "core/node.c", "core/iterator.c", "core/blocks.c",
+                "core/inlines.c", "core/scanners.c", "core/utf8.c", "core/buffer.c",
+                "core/references.c", "core/map.c",
+                "core/houdini_html_u.c", "core/markdown_core_ctype.c",
+                "core/linked_list.c", "extensions/core-extensions.c",
+                "extensions/ast.c", "extensions/table.c", "extensions/strikethrough.c",
                 "extensions/autolink.c", "extensions/formula.c", "extensions/directive.c",
-                "extensions/cross_reference.c", "extensions/ext_scanners.c", "extensions/tasklist.c",
+                "extensions/ext_scanners.c", "extensions/tasklist.c",
             ],
             publicHeadersPath: "include",
             cSettings: [

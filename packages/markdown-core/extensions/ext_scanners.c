@@ -3,9 +3,9 @@
 #include "ext_scanners.h"
 #include <stdlib.h>
 
-markdown_core_bufsize markdown_core_ext_scan_at(markdown_core_bufsize (*scanner)(const unsigned char *),
-                       unsigned char *ptr, int len, markdown_core_bufsize offset) {
-  markdown_core_bufsize res;
+bufsize_t _ext_scan_at(bufsize_t (*scanner)(const unsigned char *),
+                       unsigned char *ptr, int len, bufsize_t offset) {
+  bufsize_t res;
 
   if (ptr == NULL || offset >= len) {
     return 0;
@@ -19,7 +19,7 @@ markdown_core_bufsize markdown_core_ext_scan_at(markdown_core_bufsize (*scanner)
 
   return res;
 }
-markdown_core_bufsize markdown_core_scan_table_start(const unsigned char *p) {
+bufsize_t _scan_table_start(const unsigned char *p) {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
 
@@ -175,7 +175,7 @@ markdown_core_bufsize markdown_core_scan_table_start(const unsigned char *p) {
   yy11:
     ++p;
     {
-      return (markdown_core_bufsize)(p - start);
+      return (bufsize_t)(p - start);
     }
   yy12:
     yych = *++p;
@@ -212,7 +212,7 @@ markdown_core_bufsize markdown_core_scan_table_start(const unsigned char *p) {
   }
 }
 
-markdown_core_bufsize markdown_core_scan_table_cell(const unsigned char *p) {
+bufsize_t _scan_table_cell(const unsigned char *p) {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
 
@@ -300,7 +300,7 @@ markdown_core_bufsize markdown_core_scan_table_cell(const unsigned char *p) {
           goto yy34;
       }
     }
-  yy18: { return (markdown_core_bufsize)(p - start); }
+  yy18: { return (bufsize_t)(p - start); }
   yy19:
     yyaccept = 0;
     yych = *(marker = ++p);
@@ -451,7 +451,7 @@ markdown_core_bufsize markdown_core_scan_table_cell(const unsigned char *p) {
   }
 }
 
-markdown_core_bufsize markdown_core_scan_table_cell_end(const unsigned char *p) {
+bufsize_t _scan_table_cell_end(const unsigned char *p) {
   const unsigned char *start = p;
 
   {
@@ -482,12 +482,12 @@ markdown_core_bufsize markdown_core_scan_table_cell_end(const unsigned char *p) 
     if (yybm[0 + yych] & 128)
       goto yy36;
     {
-      return (markdown_core_bufsize)(p - start);
+      return (bufsize_t)(p - start);
     }
   }
 }
 
-markdown_core_bufsize markdown_core_scan_table_row_end(const unsigned char *p) {
+bufsize_t _scan_table_row_end(const unsigned char *p) {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
 
@@ -535,7 +535,7 @@ markdown_core_bufsize markdown_core_scan_table_row_end(const unsigned char *p) {
   yy41:
     ++p;
     {
-      return (markdown_core_bufsize)(p - start);
+      return (bufsize_t)(p - start);
     }
   yy42:
     yych = *++p;
@@ -564,7 +564,7 @@ markdown_core_bufsize markdown_core_scan_table_row_end(const unsigned char *p) {
   }
 }
 
-markdown_core_bufsize markdown_core_scan_tasklist(const unsigned char *p) {
+bufsize_t _scan_tasklist(const unsigned char *p) {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
 
@@ -617,12 +617,12 @@ markdown_core_bufsize markdown_core_scan_tasklist(const unsigned char *p) {
     if (yybm[0 + yych] & 128)
       goto yy53;
     {
-      return (markdown_core_bufsize)(p - start);
+      return (bufsize_t)(p - start);
     }
   }
 }
 
-markdown_core_bufsize markdown_core_scan_formula_dollar_inline_open(const unsigned char *p) {
+bufsize_t _scan_formula_dollar_inline_open(const unsigned char *p) {
   const unsigned char *start = p;
 
   {
@@ -637,12 +637,12 @@ markdown_core_bufsize markdown_core_scan_formula_dollar_inline_open(const unsign
   yy55:
     ++p;
     {
-      return (markdown_core_bufsize)(p - start);
+      return (bufsize_t)(p - start);
     }
   }
 }
 
-markdown_core_bufsize markdown_core_scan_formula_dollar_display_open(const unsigned char *p) {
+bufsize_t _scan_formula_dollar_backtick_open(const unsigned char *p) {
   const unsigned char *start = p;
 
   {
@@ -654,44 +654,37 @@ markdown_core_bufsize markdown_core_scan_formula_dollar_display_open(const unsig
   yy57: { return 0; }
   yy58:
     yych = *++p;
-    if (yych != '$')
+    if (yych != '`')
       goto yy57;
     ++p;
     {
-      return (markdown_core_bufsize)(p - start);
+      return (bufsize_t)(p - start);
     }
   }
 }
 
-markdown_core_bufsize markdown_core_scan_formula_latex_backslash_inline_open(const unsigned char *p) {
-  const unsigned char *marker = NULL;
+bufsize_t _scan_formula_dollar_display_open(const unsigned char *p) {
   const unsigned char *start = p;
 
   {
     unsigned char yych;
     yych = *p;
-    if (yych == '\\')
+    if (yych == '$')
       goto yy61;
     ++p;
   yy60: { return 0; }
   yy61:
-    yych = *(marker = ++p);
-    if (yych != '\\')
-      goto yy60;
     yych = *++p;
-    if (yych == '(')
-      goto yy62;
-    p = marker;
-    goto yy60;
-  yy62:
+    if (yych != '$')
+      goto yy60;
     ++p;
     {
-      return (markdown_core_bufsize)(p - start);
+      return (bufsize_t)(p - start);
     }
   }
 }
 
-markdown_core_bufsize markdown_core_scan_formula_latex_backslash_display_open(const unsigned char *p) {
+bufsize_t _scan_formula_latex_backslash_inline_open(const unsigned char *p) {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
 
@@ -699,64 +692,51 @@ markdown_core_bufsize markdown_core_scan_formula_latex_backslash_display_open(co
     unsigned char yych;
     yych = *p;
     if (yych == '\\')
-      goto yy65;
+      goto yy64;
     ++p;
-  yy64: { return 0; }
-  yy65:
+  yy63: { return 0; }
+  yy64:
     yych = *(marker = ++p);
     if (yych != '\\')
-      goto yy64;
+      goto yy63;
     yych = *++p;
-    if (yych == '[')
-      goto yy66;
+    if (yych == '(')
+      goto yy65;
     p = marker;
-    goto yy64;
-  yy66:
+    goto yy63;
+  yy65:
     ++p;
     {
-      return (markdown_core_bufsize)(p - start);
+      return (bufsize_t)(p - start);
     }
   }
 }
 
-markdown_core_bufsize markdown_core_scan_directive_name(const unsigned char *p) {
+bufsize_t _scan_formula_latex_backslash_display_open(const unsigned char *p) {
+  const unsigned char *marker = NULL;
   const unsigned char *start = p;
 
   {
     unsigned char yych;
-    static const unsigned char yybm[256] = {
-        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-        0,   0,   0,   128, 0,   0,   128, 128, 128, 128, 128, 128, 128, 128,
-        128, 128, 0,   0,   0,   0,   0,   0,   0,   128, 128, 128, 128, 128,
-        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
-        128, 128, 128, 128, 128, 128, 128, 0,   0,   0,   0,   128, 0,   128,
-        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
-        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 0,   0,   0,
-        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-        0,   0,   0,   0};
     yych = *p;
-    if (yybm[0 + yych] & 128)
+    if (yych == '\\')
       goto yy68;
     ++p;
-    {
-      return 0;
-    }
+  yy67: { return 0; }
   yy68:
+    yych = *(marker = ++p);
+    if (yych != '\\')
+      goto yy67;
     yych = *++p;
-    if (yybm[0 + yych] & 128)
-      goto yy68;
+    if (yych == '[')
+      goto yy69;
+    p = marker;
+    goto yy67;
+  yy69:
+    ++p;
     {
-      return (markdown_core_bufsize)(p - start);
+      return (bufsize_t)(p - start);
     }
   }
 }
+

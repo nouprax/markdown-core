@@ -1,544 +1,320 @@
+import type { MarkupBase } from "../model/base.js";
+import type { DirectiveAttribute } from "../model/directive-attribute.js";
+import type { DirectiveLabel } from "../model/directive-label.js";
 import type { Document } from "../model/document.js";
 import type { Markup } from "../model/markup.js";
-import type { MarkupID } from "../model/markup-id.js";
 import type { TableCell, TableRow } from "../model/table.js";
 import { ParseError, type ParseErrorCode } from "../parse-error.js";
-import type { ListFlavor, PlacementMode, Scope, TableAlignment } from "../values.js";
+import type { ListFlavor, PlacementMode, ReferenceForm, Scope, TableAlignment } from "../values.js";
 import type { NativeExports } from "../runtime/native.js";
+import { TreeDumper } from "../tree-dumper.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
-/** A decoded document before `adopt` wires its mediators — node, append,
- * close, dump — to the parse it came from. */
-export type DocumentValue = Pick<Document, "kind" | "id" | "revision" | "scope" | "content">;
+/* THE THREE MEMBERS A DECODED VALUE DOES NOT CARRY. `dump` is defined on every
+ * node after the copy, and `concrete` and `ownerOf` on the ROOT once the
+ * concrete view has been read -- which is after the tree, and out of the
+ * decoder's reach. */
+type MarkupValue = Markup extends infer Node
+    ? Node extends Markup
+        ? Omit<Node, "dump" | "concrete" | "ownerOf">
+        : never
+    : never;
+type MarkupValueOf<Kind extends Markup["kind"]> = Extract<MarkupValue, { readonly kind: Kind }>;
 
-/**
- * One decode pass over the native tree. A document's projection is a function
- * of its text and its options, not of how the caller reached it — which is
- * exactly what lets `reuse` swap a decode for the predecessor's identical
- * value without the projection being able to tell.
- */
-export interface DecodeContext {
-    /** Series-interned identity for a raw id: the same identity is always
-     * the same `MarkupID` object. */
-    readonly ids: (rawValue: number) => MarkupID;
-    /** Completes the decoded root into the document value. */
-    readonly adopt: (value: DocumentValue) => Document;
-    /** The document's id → node index, filled as the walk decodes. */
-    readonly index: Map<number, Markup>;
-    /**
-     * Consulted once per non-root node, before any of it is decoded: a
-     * non-null return is taken as the node's whole value and the subtree
-     * under it is never visited — the caller vouches, per the engine's
-     * (id, revision) ledger, that the value it hands back is content- and
-     * position-identical to what a decode would build. `scope` is the
-     * node's freshly read extent, handed over because the pair alone
-     * cannot vouch for position — the decoder pays for the read either
-     * way. The hook owns indexing whatever it returns; the decoder indexes
-     * only what it decodes.
-     */
-    readonly reuse?: (rawValue: number, revision: number, scope: Scope) => Markup | null;
+interface DirectiveFields {
+    readonly name: string;
+    readonly attributes: readonly DirectiveAttribute[] | null;
+    readonly label: DirectiveLabel | null;
+    readonly content: readonly Markup[];
 }
 
 const stringField = {
-    literal: 1,
-    formulaLiteral: 2,
-    linkDestination: 3,
-    linkTitle: 4,
-    imageSource: 5,
-    imageTitle: 6,
-    footnoteLabel: 7,
-    crossLinkReference: 8,
-    embedReference: 9,
-    errorMessage: 10,
-    definitionLabel: 11,
-    definitionDestination: 12,
-    definitionTitle: 13,
-    referenceLabel: 14
+    codeInfo: 1,
+    codeLanguage: 2,
+    codeLiteral: 3,
+    literal: 4,
+    formulaLiteral: 5,
+    directiveName: 6,
+    directiveAttributeName: 7,
+    directiveAttributeValue: 8,
+    linkDestination: 9,
+    linkTitle: 10,
+    imageSource: 11,
+    imageTitle: 12,
+    errorMessage: 14,
+    definitionDestination: 15,
+    definitionTitle: 16,
+    associationLabel: 17,
+    associationIdentifier: 18
 } as const;
 
-const referenceForms = ["full", "collapsed", "shortcut"] as const;
-
-const scratchSize = 4 * BigUint64Array.BYTES_PER_ELEMENT;
-
-/** One explicit decode-stack entry; `values` collects the direct child
- * values until the node itself can be assembled. */
-interface DecodeFrame {
-    readonly node: number;
-    readonly id: MarkupID;
-    readonly revision: number;
-    readonly scope: Scope;
-    readonly pointers: readonly number[];
-    readonly values: Markup[];
-    index: number;
-}
-
 export class NodeDecoder {
-    private readonly scratch: number;
-    private context: DecodeContext | null = null;
-    private cachedView: DataView | null = null;
+    private scratch: number;
     private readonly utf8Decoder = new TextDecoder("utf-8", { fatal: false });
 
     constructor(private readonly native: NativeExports) {
-        this.scratch = native.malloc(scratchSize);
+        this.scratch = native.malloc(2 * Uint32Array.BYTES_PER_ELEMENT);
         if (!this.scratch) throw new ParseError("allocationFailed", "failed to allocate WASM memory");
     }
 
-    /** The scratch block shared with the document boundary. Allocated once
-     * in the constructor and held for the module's lifetime — the decoder is
-     * a singleton over one WASM instance, so there is nothing to release it
-     * to. Holds four little-endian 64-bit slots. */
-    get scratchPointer(): number {
-        return this.scratch;
+    dispose(): void {
+        if (!this.scratch) return;
+        this.native.free(this.scratch);
+        this.scratch = 0;
     }
 
-    decodeDocument(root: number, context: DecodeContext): Document {
-        if (this.kind(root) !== "document") {
+    /** The root, without its concrete view: `parseDocument` attaches that. */
+    decodeDocument(node: number): Omit<Document, "concrete" | "ownerOf"> {
+        const document = this.copyMarkup(node);
+        if (document.kind !== "document") {
             throw new ParseError("internal", "parser returned an invalid document tree");
         }
-        this.context = context;
-        try {
-            const document = context.adopt({
-                kind: "document",
-                id: context.ids(this.rawId(root)),
-                revision: this.revisionOf(root),
-                scope: this.scopeOf(root),
-                content: this.decodeChildren(root)
-            });
-            return document;
-        } finally {
-            this.context = null;
-        }
+        return document;
     }
 
     parseError(error: number): ParseError {
         if (!error) return new ParseError("internal", "markdown parsing failed");
         const code = errorCode(this.native.es_error_code(error));
-        const message = this.readString(error, stringField.errorMessage) ?? "markdown parsing failed";
-        return new ParseError(code, message);
+        return new ParseError(code, this.readString(error, stringField.errorMessage) ?? "markdown parsing failed");
     }
 
-    toSafeNumber(value: bigint, field: string): number {
-        const converted = Number(value);
-        if (!Number.isSafeInteger(converted) || converted < 0) {
-            throw new Error(`native parser returned ${field} ${value} beyond JavaScript integer precision`);
-        }
-        return converted;
-    }
-
-    rawId(node: number): number {
-        return this.toSafeNumber(this.native.es_node_id(node), "node id");
-    }
-
-    revisionOf(node: number): number {
-        return this.toSafeNumber(this.native.es_node_revision(node), "node revision");
-    }
-
-    /** The node's own absolute extent, read in O(1) off the node. */
-    scopeOf(node: number): Scope {
-        this.native.es_node_scope(node, this.scratch);
-        const view = this.dataView();
-        return {
-            start: {
-                line: view.getInt32(this.scratch, true),
-                column: view.getInt32(this.scratch + 4, true)
-            },
-            end: {
-                line: view.getInt32(this.scratch + 8, true),
-                column: view.getInt32(this.scratch + 12, true)
+    private copyMarkup(node: number): Markup {
+        const value = this.copyMarkupValue(node);
+        Object.defineProperty(value, "dump", {
+            enumerable: false,
+            value(this: Markup): string {
+                return TreeDumper.dump(this);
             }
-        };
+        });
+        return value as Markup;
     }
 
-    /** One decode frame: a node whose value is assembled once every direct
-     * child value in `values` is ready. */
-    private static frame(node: number, id: MarkupID, revision: number, scope: Scope, pointers: number[]): DecodeFrame {
-        return { node, id, revision, scope, pointers, values: [], index: 0 };
-    }
-
-    /**
-     * Decodes the direct children of `parent` post-order over an explicit
-     * frame stack: nesting depth is input-controlled, so the decoder must
-     * not grow the JavaScript call stack with it.
-     */
-    private decodeChildren(parent: number): Markup[] {
-        const context = this.context!;
-        const stack: DecodeFrame[] = [
-            NodeDecoder.frame(
-                parent,
-                context.ids(this.rawId(parent)),
-                this.revisionOf(parent),
-                this.scopeOf(parent),
-                this.childPointers(parent)
-            )
-        ];
-        while (true) {
-            const top = stack[stack.length - 1]!;
-            if (top.index < top.pointers.length) {
-                const pointer = top.pointers[top.index]!;
-                top.index += 1;
-                const rawId = this.rawId(pointer);
-                const revision = this.revisionOf(pointer);
-                const scope = this.scopeOf(pointer);
-                const reused = context.reuse?.(rawId, revision, scope);
-                if (reused) {
-                    // The whole point of the hook: the pair and the extent
-                    // proved the subtree, so these three native reads are
-                    // all this node — and everything under it — ever costs.
-                    top.values.push(reused);
-                    continue;
-                }
-                stack.push(
-                    NodeDecoder.frame(pointer, context.ids(rawId), revision, scope, this.childPointers(pointer))
-                );
-                continue;
-            }
-            stack.pop();
-            if (stack.length === 0) return top.values;
-            const value = this.decodeValue(top.node, top.id, top.revision, top.scope, top.values);
-            context.index.set(top.id.rawValue, value);
-            stack[stack.length - 1]!.values.push(value);
-        }
-    }
-
-    /**
-     * Assembles one node's value from its native fields and its ready direct
-     * child values.
-     */
-    decodeValue(node: number, id: MarkupID, revision: number, scope: Scope, children: readonly Markup[]): Markup {
+    private copyMarkupValue(node: number): MarkupValue {
         const kind = this.kind(node);
         switch (kind) {
             case "document":
-                throw new Error("native parser returned a nested document node");
+                return { ...this.base(node, kind), content: this.content(node) };
             case "blockQuote":
-                return { kind, id, revision, scope, content: children };
+                return { ...this.base(node, kind), content: this.content(node) };
             case "paragraph":
-                return { kind, id, revision, scope, content: children };
+                return { ...this.base(node, kind), content: this.content(node) };
             case "heading": {
                 const level = this.native.es_node_heading_level(node);
                 if (!Number.isInteger(level) || level < 1 || level > 6) {
                     throw new Error(`native parser returned an invalid heading level ${level}`);
                 }
-                return { kind, id, revision, scope, level, content: children };
+                return { ...this.base(node, kind), level, content: this.content(node) };
             }
             case "thematicBreak":
-                return { kind, id, revision, scope };
+                return this.base(node, kind);
             case "list":
-                return this.copyList(node, id, revision, scope, children);
+                return this.copyList(node);
             case "listItem":
                 return {
-                    kind,
-                    id,
-                    revision,
-                    scope,
+                    ...this.base(node, kind),
                     checked: this.nullableBoolean(this.native.es_node_checked(node), "list item checked state"),
-                    content: children
+                    content: this.content(node)
                 };
             case "codeBlock":
-                return this.copyCodeBlock(node, id, revision, scope);
-            case "htmlBlock": {
-                const literal = this.requiredString(node, stringField.literal);
-                return { kind, id, revision, scope, comment: this.native.es_node_html_comment(node) !== 0, literal };
-            }
-            case "formulaBlock": {
-                const mode = this.placement(this.native.es_node_formula_mode(node));
-                if (mode !== "standalone") throw new Error("native parser returned an embedded formula block");
                 return {
-                    kind,
-                    id,
-                    revision,
-                    scope,
-                    mode,
+                    ...this.base(node, kind),
+                    info: this.readString(node, stringField.codeInfo),
+                    language: this.readString(node, stringField.codeLanguage),
+                    literal: this.requiredString(node, stringField.codeLiteral),
+                    fenced: this.boolean(this.native.es_node_code_flag(node, 0), "code fenced state"),
+                    closed: this.boolean(this.native.es_node_code_flag(node, 1), "code closed state")
+                };
+            case "htmlBlock":
+                return { ...this.base(node, kind), literal: this.requiredString(node, stringField.literal) };
+            case "formulaBlock":
+                // No `mode`: a formula block is always standalone -- the engine
+                // refuses any other value for this kind -- so the assertion that
+                // used to guard the constant guarded nothing (Q29).
+                return {
+                    ...this.base(node, kind),
                     literal: this.requiredString(node, stringField.formulaLiteral)
                 };
-            }
             case "table":
-                return this.copyTable(node, id, revision, scope, children);
-            case "directiveBlock": {
-                const fields = this.directiveFields(node, children);
-                if (fields.mode !== "standalone") {
-                    throw new Error("native parser returned an embedded directive block");
-                }
-                return { kind, id, revision, scope, ...fields };
-            }
+                return this.copyTable(node);
+            case "directiveBlock":
+                return { ...this.base(node, kind), ...this.directiveFields(node) };
             case "footnoteDefinition":
                 return {
-                    kind,
-                    id,
-                    revision,
-                    scope,
-                    label: this.requiredString(node, stringField.footnoteLabel),
-                    content: children
+                    ...this.base(node, kind),
+                    ...this.association(node),
+                    content: this.content(node)
+                };
+            case "referenceDefinition":
+                return {
+                    ...this.base(node, kind),
+                    ...this.association(node),
+                    destination: this.requiredString(node, stringField.definitionDestination),
+                    title: this.readString(node, stringField.definitionTitle)
                 };
             case "text":
-                return { kind, id, revision, scope, literal: this.requiredString(node, stringField.literal) };
+                return { ...this.base(node, kind), literal: this.requiredString(node, stringField.literal) };
             case "softBreak":
-                return { kind, id, revision, scope };
+                return this.base(node, kind);
             case "lineBreak":
-                return { kind, id, revision, scope };
+                return this.base(node, kind);
             case "code":
                 return {
-                    kind,
-                    id,
-                    revision,
-                    scope,
-                    mode: "embedded",
+                    ...this.base(node, kind),
                     literal: this.requiredString(node, stringField.literal)
                 };
-            case "html": {
-                const literal = this.requiredString(node, stringField.literal);
-                return { kind, id, revision, scope, comment: this.native.es_node_html_comment(node) !== 0, literal };
-            }
+            case "html":
+                return { ...this.base(node, kind), literal: this.requiredString(node, stringField.literal) };
             case "formula":
                 return {
-                    kind,
-                    id,
-                    revision,
-                    scope,
+                    ...this.base(node, kind),
                     mode: this.placement(this.native.es_node_formula_mode(node)),
                     literal: this.requiredString(node, stringField.formulaLiteral)
                 };
             case "emphasis":
-                return { kind, id, revision, scope, content: children };
+                return { ...this.base(node, kind), content: this.content(node) };
             case "strong":
-                return { kind, id, revision, scope, content: children };
+                return { ...this.base(node, kind), content: this.content(node) };
             case "strikethrough":
-                return { kind, id, revision, scope, content: children };
+                return { ...this.base(node, kind), content: this.content(node) };
             case "link":
                 return {
-                    kind,
-                    id,
-                    revision,
-                    scope,
+                    ...this.base(node, kind),
                     destination: this.requiredString(node, stringField.linkDestination),
                     title: this.readString(node, stringField.linkTitle),
-                    content: children
+                    content: this.content(node)
                 };
             case "image":
                 return {
-                    kind,
-                    id,
-                    revision,
-                    scope,
+                    ...this.base(node, kind),
                     source: this.requiredString(node, stringField.imageSource),
                     title: this.readString(node, stringField.imageTitle),
-                    content: children
+                    content: this.content(node)
                 };
             case "directive": {
-                const fields = this.directiveFields(node, children);
-                if (fields.mode !== "embedded") throw new Error("native parser returned a standalone directive");
+                const fields = this.directiveFields(node);
                 if (fields.content.length !== 0) throw new Error("inline directive contains block content");
                 return {
-                    kind,
-                    id,
-                    revision,
-                    scope,
-                    mode: fields.mode,
+                    ...this.base(node, kind),
                     name: fields.name,
                     attributes: fields.attributes,
                     label: fields.label
                 };
             }
             case "footnoteReference":
-                return { kind, id, revision, scope, label: this.requiredString(node, stringField.footnoteLabel) };
-            case "crossLink":
-                return {
-                    kind,
-                    id,
-                    revision,
-                    scope,
-                    reference: this.requiredString(node, stringField.crossLinkReference)
-                };
-            case "embed":
-                return { kind, id, revision, scope, reference: this.requiredString(node, stringField.embedReference) };
-            case "referenceDefinition":
-                return {
-                    kind,
-                    id,
-                    revision,
-                    scope,
-                    label: this.requiredString(node, stringField.definitionLabel),
-                    destination: this.requiredString(node, stringField.definitionDestination),
-                    title: this.readString(node, stringField.definitionTitle)
-                };
+                return { ...this.base(node, kind), ...this.association(node) };
             case "linkReference":
             case "imageReference":
                 return {
-                    kind,
-                    id,
-                    revision,
-                    scope,
-                    label: this.requiredString(node, stringField.referenceLabel),
-                    form: referenceForms[this.native.es_node_reference_form(node)] ?? "shortcut",
-                    content: children
+                    ...this.base(node, kind),
+                    ...this.association(node),
+                    form: this.referenceForm(this.native.es_node_reference_form(node)),
+                    content: this.content(node)
                 };
             case "tableRow":
-                return this.copyTableRow(node, id, revision, scope, children);
+                return this.copyTableRow(node);
             case "tableCell":
-                return this.copyTableCell(id, revision, scope, children);
+                return this.copyTableCell(node);
             case "directiveLabel":
-                return { kind, id, revision, scope, content: children };
+                return { ...this.base(node, kind), content: this.content(node) };
         }
         return unreachable(kind);
     }
 
-    /** One packed crossing for every code-block field; scratch layout
-     * mirrors `es_node_code_properties`. */
-    private copyCodeBlock(
-        node: number,
-        id: MarkupID,
-        revision: number,
-        scope: Scope
-    ): Extract<Markup, { kind: "codeBlock" }> {
-        this.native.es_node_code_properties(node, this.scratch);
-        const view = this.dataView();
-        const literal = this.scratchString(view, 16);
-        if (literal === null) throw new Error("native parser returned a missing string");
-        return {
-            kind: "codeBlock",
-            id,
-            revision,
-            scope,
-            mode: "standalone",
-            info: this.scratchString(view, 0),
-            language: this.scratchString(view, 8),
-            literal,
-            fenced: this.boolean(view.getInt32(this.scratch + 24, true), "code fenced state"),
-            closed: this.boolean(view.getInt32(this.scratch + 28, true), "code closed state")
-        };
-    }
-
-    private copyList(
-        node: number,
-        id: MarkupID,
-        revision: number,
-        scope: Scope,
-        children: readonly Markup[]
-    ): Extract<Markup, { kind: "list" }> {
-        this.native.es_node_list_properties(node, this.scratch);
-        const view = this.dataView();
-        const flavor = this.listFlavor(view.getInt32(this.scratch, true));
-        const tight = this.boolean(view.getInt32(this.scratch + 4, true), "list tight state");
-        let start: number | null = null;
-        if (this.boolean(view.getInt32(this.scratch + 8, true), "list start state")) {
-            const value = Number(view.getBigInt64(this.scratch + 16, true));
-            if (!Number.isSafeInteger(value)) {
-                throw new Error("native list start exceeds JavaScript integer precision");
-            }
-            start = value;
-        }
+    private copyList(node: number): MarkupValueOf<"list"> {
+        const flavor = this.listFlavor(this.native.es_node_list_flavor(node));
+        const start = this.readStart(node);
         if (flavor === "bullet" && start !== null) {
             throw new Error("native parser returned a start value for a bullet list");
         }
-        const items = children.map((item) => {
+        const items = this.childPointers(node).map((child) => {
+            const item = this.copyMarkup(child);
             if (item.kind !== "listItem") throw new Error("list contains a non-item node");
             return item;
         });
-        return { kind: "list", id, revision, scope, flavor, start, tight, items };
+        return {
+            ...this.base(node, "list"),
+            flavor,
+            start,
+            tight: this.boolean(this.native.es_node_list_tight(node), "list tight state"),
+            items
+        };
     }
 
-    private copyTable(
-        node: number,
-        id: MarkupID,
-        revision: number,
-        scope: Scope,
-        children: readonly Markup[]
-    ): Extract<Markup, { kind: "table" }> {
+    private copyTable(node: number): MarkupValueOf<"table"> {
         const columnCount = this.count(this.native.es_node_table_column_count(node), "table column count");
         const alignments = Array.from({ length: columnCount }, (_, index) =>
             this.tableAlignment(this.native.es_node_table_alignment(node, index))
         );
-        const rows = children.map((row) => {
+        const rows = this.childPointers(node).map((child) => {
+            const row = this.copyMarkup(child);
             if (row.kind !== "tableRow") throw new Error("table contains a non-row node");
             return row;
         });
         const headers = rows.filter((row) => row.isHeader);
         if (headers.length !== 1) throw new Error(`table contains ${headers.length} header rows`);
         return {
-            kind: "table",
-            id,
-            revision,
-            scope,
+            ...this.base(node, "table"),
             alignments,
             header: headers[0]!,
             rows: rows.filter((row) => !row.isHeader)
         };
     }
 
-    private copyTableRow(
-        node: number,
-        id: MarkupID,
-        revision: number,
-        scope: Scope,
-        children: readonly Markup[]
-    ): TableRow {
+    private copyTableRow(node: number): Omit<TableRow, "dump"> {
+        if (this.kind(node) !== "tableRow") throw new Error("table contains a non-row node");
         return {
-            kind: "tableRow",
-            id,
-            revision,
-            scope,
+            ...this.base(node, "tableRow"),
             isHeader: this.boolean(this.native.es_node_table_row_header(node), "table header state"),
-            cells: children.map((cell) => {
+            cells: this.childPointers(node).map((child) => {
+                const cell = this.copyMarkup(child);
                 if (cell.kind !== "tableCell") throw new Error("table row contains a non-cell node");
                 return cell;
             })
         };
     }
 
-    private copyTableCell(id: MarkupID, revision: number, scope: Scope, children: readonly Markup[]): TableCell {
-        return { kind: "tableCell", id, revision, scope, content: children };
+    private copyTableCell(node: number): Omit<TableCell, "dump"> {
+        if (this.kind(node) !== "tableCell") throw new Error("table row contains a non-cell node");
+        return { ...this.base(node, "tableCell"), content: this.content(node) };
     }
 
-    private directiveFields(
-        node: number,
-        children: readonly Markup[]
-    ): {
-        readonly mode: PlacementMode;
-        readonly name: string;
-        readonly attributes: Readonly<Record<string, string>> | null;
-        readonly label: Extract<Markup, { kind: "directiveLabel" }> | null;
-        readonly content: readonly Markup[];
-    } {
-        // One packed crossing for mode, name, presence and count; scratch
-        // layout mirrors `es_node_directive_properties`. Everything is read
-        // out before the pair loop, which reuses the same scratch block.
-        this.native.es_node_directive_properties(node, this.scratch);
-        const view = this.dataView();
-        const mode = this.placement(view.getInt32(this.scratch, true));
-        const present = view.getUint32(this.scratch + 4, true) !== 0;
-        const name = this.scratchString(view, 8);
-        if (name === null) throw new Error("native parser returned a missing string");
-        const count = this.count(view.getUint32(this.scratch + 16, true), "directive attribute count");
-        const attributes = present ? this.directiveAttributes(node, count) : null;
-        const firstChild = children[0];
-        const label = firstChild?.kind === "directiveLabel" ? firstChild : null;
-        const content = label === null ? children : children.slice(1);
-        if (content.some((child) => child.kind === "directiveLabel")) {
-            throw new Error("native parser returned a misplaced directive label");
+    private directiveFields(node: number): DirectiveFields {
+        const childPointers = this.childPointers(node);
+        // The label is the first child when it is there at all. Until Step 7
+        // the C facade spliced the node out and named its count instead, and
+        // this had to slice the run out of a flat child list.
+        const first = childPointers.length > 0 ? this.copyMarkup(childPointers[0]!) : null;
+        const label = first !== null && first.kind === "directiveLabel" ? first : null;
+        return {
+            name: this.requiredString(node, stringField.directiveName),
+            attributes: this.directiveAttributes(node),
+            label,
+            content: childPointers.slice(label === null ? 0 : 1).map((child) => this.copyMarkup(child))
+        };
+    }
+
+    private directiveAttributes(node: number): readonly DirectiveAttribute[] | null {
+        const count = this.native.es_node_directive_attribute_count(node);
+        if (!Number.isInteger(count) || count < -1) {
+            throw new Error(`native parser returned an invalid directive attribute count ${String(count)}`);
         }
-        return { mode, name, attributes, label, content };
-    }
-
-    /** The attribute pairs, one crossing each, in the source order the engine
-     * holds them. The grammar has no duplicate name to represent, so a plain
-     * object IS the value rather than a rendering of it. */
-    private directiveAttributes(node: number, count: number): Record<string, string> {
-        const attributes: Record<string, string> = {};
-        for (let index = 0; index < count; index += 1) {
-            if (!this.native.es_node_directive_attribute_at(node, index, this.scratch)) {
-                throw new Error("native parser returned fewer directive attributes than it counted");
-            }
-            const view = this.dataView();
-            const key = this.scratchString(view, 0);
-            const value = this.scratchString(view, 8);
-            if (key === null || value === null) {
-                throw new Error("native parser returned a missing string");
-            }
-            attributes[key] = value;
+        if (count < 0) return null;
+        const attributes: DirectiveAttribute[] = [];
+        for (let index = 0; index < count; index++) {
+            this.native.es_set_attribute_index(index);
+            attributes.push({
+                name: this.requiredString(node, stringField.directiveAttributeName),
+                value: this.requiredString(node, stringField.directiveAttributeValue)
+            });
         }
-        return attributes;
+        return Object.freeze(attributes);
     }
 
-    childPointers(node: number): number[] {
+    private content(node: number): readonly Markup[] {
+        return this.childPointers(node).map((child) => this.copyMarkup(child));
+    }
+
+    private childPointers(node: number): number[] {
         const result: number[] = [];
         for (
             let child = this.native.es_node_first_child(node);
@@ -550,6 +326,10 @@ export class NodeDecoder {
         return result;
     }
 
+    private base<Kind extends Markup["kind"]>(node: number, kind: Kind): Omit<MarkupBase<Kind>, "dump"> {
+        return { kind, scope: this.scope(node) };
+    }
+
     private kind(node: number): NativeKind {
         const rawValue = this.native.es_node_kind(node);
         const kind = kinds[rawValue];
@@ -557,9 +337,41 @@ export class NodeDecoder {
         return kind;
     }
 
-    readString(object: number, field: number): string | null {
-        this.native.es_string(object, field, this.scratch, this.scratch + Uint32Array.BYTES_PER_ELEMENT);
-        return this.scratchString(this.dataView(), 0);
+    private scope(node: number): Scope {
+        return {
+            start: {
+                line: this.native.es_scope_coordinate(node, 0),
+                column: this.native.es_scope_coordinate(node, 1)
+            },
+            end: {
+                line: this.native.es_scope_coordinate(node, 2),
+                column: this.native.es_scope_coordinate(node, 3)
+            }
+        };
+    }
+
+    private readString(object: number, field: number): string | null {
+        this.requireLive();
+        // PRESENCE IS THE RETURN VALUE. It used to be read off the pointer,
+        // which gave one channel for the two answers requirement 14 separates.
+        // A raw wasm export answers with 0 or 1, not with a JS boolean.
+        const present =
+            this.native.es_string(object, field, this.scratch, this.scratch + Uint32Array.BYTES_PER_ELEMENT) !== 0;
+        const memory = this.dataView();
+        const data = memory.getUint32(this.scratch, true);
+        const length = memory.getUint32(this.scratch + Uint32Array.BYTES_PER_ELEMENT, true);
+        if (!present) {
+            if (data !== 0 || length !== 0) throw new Error("native parser returned an invalid string");
+            return null;
+        }
+        if (!data) {
+            if (length !== 0) throw new Error("native parser returned an invalid string");
+            return "";
+        }
+        if (length > this.native.memory.buffer.byteLength - data) {
+            throw new Error("native parser returned an out-of-bounds string");
+        }
+        return this.utf8Decoder.decode(new Uint8Array(this.native.memory.buffer, data, length));
     }
 
     private requiredString(object: number, field: number): string {
@@ -568,19 +380,29 @@ export class NodeDecoder {
         return value;
     }
 
-    /** Decodes the (data, length) string view stored at scratch `offset`;
-     * null for the null view. */
-    private scratchString(view: DataView, offset: number): string | null {
-        const data = view.getUint32(this.scratch + offset, true);
-        const length = view.getUint32(this.scratch + offset + Uint32Array.BYTES_PER_ELEMENT, true);
-        if (!data) {
-            if (length !== 0) throw new Error("native parser returned an invalid string view");
+    private readStart(node: number): number | null {
+        this.requireLive();
+        if (!this.boolean(this.native.es_node_list_start_state(node, this.scratch), "list start state")) {
             return null;
         }
-        if (length > this.native.memory.buffer.byteLength - data) {
-            throw new Error("native parser returned an out-of-bounds string view");
-        }
-        return this.utf8Decoder.decode(new Uint8Array(this.native.memory.buffer, data, length));
+        const value = Number(this.dataView().getBigInt64(this.scratch, true));
+        if (!Number.isSafeInteger(value)) throw new Error("native list start exceeds JavaScript integer precision");
+        return value;
+    }
+
+    /** The two halves of an association, which five kinds carry identically. */
+    private association(node: number): { readonly label: string; readonly identifier: string } {
+        return {
+            label: this.requiredString(node, stringField.associationLabel),
+            identifier: this.requiredString(node, stringField.associationIdentifier)
+        };
+    }
+
+    private referenceForm(rawValue: number): ReferenceForm {
+        if (rawValue === 1) return "full";
+        if (rawValue === 2) return "collapsed";
+        if (rawValue === 3) return "shortcut";
+        throw new Error(`native parser returned invalid reference form ${rawValue}`);
     }
 
     private placement(rawValue: number): PlacementMode {
@@ -620,16 +442,12 @@ export class NodeDecoder {
         return rawValue;
     }
 
-    /** A DataView over the current wasm memory. Cached per underlying
-     * buffer: growth replaces `memory.buffer` (detaching the old one), so
-     * revalidating against buffer identity on every access stays safe while
-     * dropping the per-scalar-read allocation. */
-    dataView(): DataView {
-        const buffer = this.native.memory.buffer;
-        if (this.cachedView === null || this.cachedView.buffer !== buffer) {
-            this.cachedView = new DataView(buffer);
-        }
-        return this.cachedView;
+    private dataView(): DataView {
+        return new DataView(this.native.memory.buffer);
+    }
+
+    private requireLive(): void {
+        if (!this.scratch) throw new Error("native decoder has been disposed");
     }
 }
 

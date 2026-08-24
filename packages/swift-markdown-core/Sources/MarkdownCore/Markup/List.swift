@@ -1,99 +1,77 @@
 import MarkdownCoreC
 
-/// Whether a list is bulleted or ordered.
+/// Whether a list is bulleted or numbered.
+///
+/// It does not record WHICH marker was used: `-`, `*` and `+` are all
+/// ``bullet``, and `1.` and `1)` are both ``ordered``.
 public enum ListFlavor: String, Sendable {
+    /// `-`, `*` or `+`.
     case bullet
+    /// A number followed by `.` or `)`.
     case ordered
 }
 
-/// A bullet or ordered list of ``ListItem`` values.
+/// A bulleted or numbered list.
 public struct List: Markup {
-    /// The node's series-scoped identity; see ``MarkupID``.
-    public let id: MarkupID
-    /// The document revision at which this node's content last changed.
-    public let revision: UInt64
-    /// The node's absolute source extent, both bounds inclusive of the
-    /// construct's own markers.
-    ///
-    /// A property OF the node, not of a lookup: a document is an immutable
-    /// projection of one text, so a node in it does not move. It is
-    /// deliberately absent from `==` — position is not content — so an
-    /// append that only grows this node's extent leaves every reactive
-    /// comparison untouched.
+    /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
-    /// Whether the list is bulleted or ordered.
-    public let flavor: ListFlavor
-    /// An ordered list's starting number; nil for bullet lists.
-    public let start: Int64?
-    /// Whether the list renders tight (no paragraph spacing between items).
-    public let tight: Bool
-    /// The list's items in source order.
+    /// A list owns `ListItem`s and nothing else. The contract has said so since
+    /// it was written; until Step 15A this was a flat `[any Markup]`, so the
+    /// type could not.
     public let items: [ListItem]
+    /// Bulleted or numbered.
+    public let flavor: ListFlavor
+    /// The first number an ordered list counts from, and `nil` for a bulleted
+    /// one — which is the only reason it is optional.
+    public let start: Int64?
+    /// Whether the source separated the items by blank lines. A loose list
+    /// wraps each item's text in a ``Paragraph``; a tight one does not, so
+    /// this is already visible in the tree and is stated here as well.
+    public let tight: Bool
 
-    /// Dispatches this node to `visitor`'s matching `visit` overload.
+    /// Dispatches to the visitor's `List` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension List {
-    init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let track = builder.track(of: node)
+    init(from node: OpaquePointer) {
         var flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET
         var start = markdown_core_optional_i64()
         var tight = false
         markdown_core_node_list_properties(node, &flavor, &start, &tight)
-        let items = builder.children(node).map { child -> ListItem in
-            guard let item = child as? ListItem else {
-                preconditionFailure("list contains a non-item node")
-            }
-            return item
-        }
         self.init(
-            id: track.id,
-            revision: track.revision,
-            scope: track.scope,
+            scope: Self.scope(from: node),
+            items: Self.typedChildren(from: node),
             flavor: flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? .ordered : .bullet,
             start: start.has_value ? start.value : nil,
-            tight: tight,
-            items: items
+            tight: tight
         )
     }
 }
 
 /// One item of a ``List``.
 public struct ListItem: Markup {
-    /// The node's series-scoped identity; see ``MarkupID``.
-    public let id: MarkupID
-    /// The document revision at which this node's content last changed.
-    public let revision: UInt64
-    /// The node's absolute source extent, both bounds inclusive of the
-    /// construct's own markers.
-    ///
-    /// A property OF the node, not of a lookup: a document is an immutable
-    /// projection of one text, so a node in it does not move. It is
-    /// deliberately absent from `==` — position is not content — so an
-    /// append that only grows this node's extent leaves every reactive
-    /// comparison untouched.
+    /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
-    /// A task-list item's checkbox state; nil for plain items.
-    public let checked: Bool?
-    /// The item's block content in source order.
+    /// The item's blocks. Block content, not inline.
     public let content: [any Markup]
+    /// `nil` when the item is not a task item at all. `[ ]` is `false` and
+    /// `[x]` is `true`, so all three states are distinct. Requires the
+    /// `taskLists` extension.
+    public let checked: Bool?
 
-    /// Dispatches this node to `visitor`'s matching `visit` overload.
+    /// Dispatches to the visitor's `ListItem` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension ListItem {
-    init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let track = builder.track(of: node)
+    init(from node: OpaquePointer) {
         var checked = markdown_core_optional_bool()
         markdown_core_node_list_item_checked(node, &checked)
         self.init(
-            id: track.id,
-            revision: track.revision,
-            scope: track.scope,
-            checked: checked.has_value ? checked.value : nil,
-            content: builder.children(node)
+            scope: Self.scope(from: node),
+            content: Self.children(from: node),
+            checked: checked.has_value ? checked.value : nil
         )
     }
 }

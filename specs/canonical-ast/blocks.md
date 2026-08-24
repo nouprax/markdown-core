@@ -14,4 +14,8 @@ let x = 1
 
 <section>raw</section>
 
+[note]: /destination "The title"
+
 [^note]: Footnote
+
+[a][note] [note][] [note] ![alt][note]

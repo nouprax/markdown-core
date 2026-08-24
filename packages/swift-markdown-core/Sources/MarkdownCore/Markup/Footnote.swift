@@ -1,91 +1,59 @@
 import MarkdownCoreC
 
-/// A footnote definition (`[^label]: …`), at the position it was written.
+/// A footnote definition.
 ///
-/// - Never moved to the document tail.
-/// - Never dropped when nothing references it.
-/// - Never reordered by use.
-///
-/// It carries no number, because a number is a rendering decision and the
-/// tree does not make one.
+/// `identifier` keeps the leading `^` that `label` does not carry, so a footnote
+/// and a link definition of one name cannot collide in a consumer's single map.
 public struct FootnoteDefinition: Markup {
-    /// The node's series-scoped identity; see ``MarkupID``.
-    public let id: MarkupID
-    /// The document revision at which this node's content last changed.
-    public let revision: UInt64
-    /// The node's absolute source extent, both bounds inclusive of the
-    /// construct's own markers.
-    ///
-    /// A property OF the node, not of a lookup: a document is an immutable
-    /// projection of one text, so a node in it does not move. It is
-    /// deliberately absent from `==` — position is not content — so an
-    /// append that only grows this node's extent leaves every reactive
-    /// comparison untouched.
+    /// The source range, from the opening bracket.
     public let scope: Scope
-    /// The label between `[^` and `]`, exactly as written and not normalized.
-    ///
-    /// A reference and a definition are paired case-folded, trimmed, and with
-    /// inner whitespace collapsed, so comparing two of these strings byte for
-    /// byte is a stricter test than the one that matched them.
-    public let label: String
-    /// The definition's block content in source order.
+    /// The definition's block content.
     public let content: [any Markup]
+    /// The label as written, delimiters and caret excluded.
+    public let label: String
+    /// The match key, which keeps the caret.
+    public let identifier: String
 
-    /// Dispatches this node to `visitor`'s matching `visit` overload.
+    /// Dispatches to the visitor's `FootnoteDefinition` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension FootnoteDefinition {
-    init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let track = builder.track(of: node)
+    init(from node: OpaquePointer) {
         var label = markdown_core_string()
-        markdown_core_node_footnote_id(node, &label)
+        var identifier = markdown_core_string()
+        markdown_core_node_association(node, &label, &identifier)
         self.init(
-            id: track.id,
-            revision: track.revision,
-            scope: track.scope,
-            label: label.string,
-            content: builder.children(node)
+            scope: Self.scope(from: node),
+            content: Self.children(from: node),
+            label: label.requiredString,
+            identifier: identifier.requiredString
         )
     }
 }
 
-/// A reference (`[^label]`) that resolves to a footnote definition.
-///
-/// A reference with no definition is not one: it stays the literal text the
-/// author typed, and that text is not reparsed — `[^~~x~~]` with nothing
-/// defining it is one ``Text`` holding no ``Strikethrough``. A consumer
-/// never meets an unresolvable reference node.
+/// A footnote call. There is one footnote syntax, so it carries no form.
 public struct FootnoteReference: Markup {
-    /// The node's series-scoped identity; see ``MarkupID``.
-    public let id: MarkupID
-    /// The document revision at which this node's content last changed.
-    public let revision: UInt64
-    /// The node's absolute source extent, both bounds inclusive of the
-    /// construct's own markers.
-    ///
-    /// A property OF the node, not of a lookup: a document is an immutable
-    /// projection of one text, so a node in it does not move. It is
-    /// deliberately absent from `==` — position is not content — so an
-    /// append that only grows this node's extent leaves every reactive
-    /// comparison untouched.
+    /// The source range, from the opening bracket to the closing one.
     public let scope: Scope
-    /// The label between `[^` and `]`, exactly as written and not normalized.
-    ///
-    /// A reference and a definition are paired case-folded, trimmed, and with
-    /// inner whitespace collapsed, so comparing two of these strings byte for
-    /// byte is a stricter test than the one that matched them.
+    /// The label as written, delimiters and caret excluded.
     public let label: String
+    /// The match key, which keeps the caret.
+    public let identifier: String
 
-    /// Dispatches this node to `visitor`'s matching `visit` overload.
+    /// Dispatches to the visitor's `FootnoteReference` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension FootnoteReference {
-    init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let track = builder.track(of: node)
+    init(from node: OpaquePointer) {
         var label = markdown_core_string()
-        markdown_core_node_footnote_id(node, &label)
-        self.init(id: track.id, revision: track.revision, scope: track.scope, label: label.string)
+        var identifier = markdown_core_string()
+        markdown_core_node_association(node, &label, &identifier)
+        self.init(
+            scope: Self.scope(from: node),
+            label: label.requiredString,
+            identifier: identifier.requiredString
+        )
     }
 }

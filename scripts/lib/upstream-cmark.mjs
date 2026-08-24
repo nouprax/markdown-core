@@ -135,7 +135,15 @@ export function parseCanonicalDump(dump) {
         const fields = {};
         // A bracketed group is ONE field even when it contains spaces: a
         // directive's attributes print as `[k="v" k2="v w"]`.
-        for (const field of body.matchAll(/([a-zA-Z]+)=("(?:[^"\\]|\\.)*"|\[(?:"(?:[^"\\]|\\.)*"|[^\]])*\]|[^\s]+)/g)) {
+        // `[^\]"]` and not `[^\]]`: a quote must go through the quoted branch or
+        // both alternatives can consume one, and a bracket that never closes
+        // makes the engine try every way to split the run into singles and
+        // pairs -- Fibonacci-many, 16 ms at 26 quotes and 528 ms at 38, which is
+        // CodeQL's `js/redos`. Excluding it changes nothing a dump can contain:
+        // every quote inside a bracketed group opens or closes a value.
+        for (const field of body.matchAll(
+            /([a-zA-Z]+)=("(?:[^"\\]|\\.)*"|\[(?:"(?:[^"\\]|\\.)*"|[^\]"])*\]|[^\s]+)/g
+        )) {
             fields[field[1]] = field[2].startsWith('"') ? JSON.parse(field[2]) : field[2];
         }
         const node = { kind: body.split(" ")[0], fields, children: [] };
@@ -145,10 +153,10 @@ export function parseCanonicalDump(dump) {
     return root;
 }
 
-export function normalize(node, side) {
+export function normalize(node, side, fired) {
     const children = [];
     for (const child of node.children) {
-        const normalized = normalize(child, side);
+        const normalized = normalize(child, side, fired);
         const previous = children[children.length - 1];
         // The two parsers split runs of text at different points around
         // entities, escapes, and extension boundaries. The character content
@@ -160,6 +168,19 @@ export function normalize(node, side) {
             children.push(normalized);
         }
     }
+    // `empty-text-node`, Q38. A `Text` that owns no bytes is dropped from BOTH
+    // sides. Upstream emits one wherever its autolink split or its hard-break
+    // stripping leaves a fragment with nothing in it; this repository stopped
+    // emitting them at 0a.14, because a child with no literal and no source is
+    // not a node. Projecting it away rather than registering eleven inputs is
+    // the right shape: it is a MODEL difference -- it appears wherever the
+    // construct does -- and a list of inputs would go stale the moment the
+    // corpus grew. Dropped after the run-joining above, so a merged run that
+    // came out empty goes too.
+    const kept = children.filter((child) => !(child.kind === "Text" && child.fields.literal === ""));
+    if (kept.length !== children.length) fired?.add("empty-text-node");
+    children.length = 0;
+    children.push(...kept);
     const fields = {};
     for (const key of COMPARED[node.kind] ?? []) {
         let value = node.fields[key];
@@ -188,7 +209,7 @@ export function normalize(node, side) {
  * lifted out and re-attached in one deterministic order, which compares their
  * *content* while deliberately not comparing their position.
  */
-export function liftFootnoteDefinitions(root) {
+export function liftFootnoteDefinitions(root, fired) {
     const definitions = [];
     const strip = (node) => {
         node.children = node.children.filter((child) => {
@@ -205,6 +226,7 @@ export function liftFootnoteDefinitions(root) {
     for (const definition of definitions) strip(definition);
     definitions.sort((left, right) => (render(left) < render(right) ? -1 : 1));
     root.children.push(...definitions);
+    if (definitions.length > 0) fired?.add("footnote-definition-placement");
     return root;
 }
 
@@ -221,21 +243,23 @@ export function liftFootnoteDefinitions(root) {
  * side so the gate compares the resolved language rather than two
  * representations of retention.
  */
-export function applyUpstreamFootnoteModel(root) {
+export function applyUpstreamFootnoteModel(root, fired) {
     // cmark matches footnote labels through the reference map's normalization:
     // case-folded with whitespace runs collapsed.
     const fold = (label) => label.trim().replace(/\s+/g, " ").toLowerCase();
     const referenced = new Set();
     const survey = (node) => {
-        if (node.kind === "FootnoteReference") referenced.add(fold(node.fields.id ?? ""));
+        if (node.kind === "FootnoteReference") referenced.add(fold(node.fields.label ?? ""));
         for (const child of node.children) survey(child);
     };
     survey(root);
 
     const rewrite = (node) => {
+        const before = node.children.length;
         node.children = node.children.filter(
-            (child) => !(child.kind === "FootnoteDefinition" && !referenced.has(fold(child.fields.id ?? "")))
+            (child) => !(child.kind === "FootnoteDefinition" && !referenced.has(fold(child.fields.label ?? "")))
         );
+        if (node.children.length !== before) fired?.add("footnote-resolution-model");
         for (const child of node.children) rewrite(child);
         return node;
     };
@@ -254,12 +278,21 @@ export function applyUpstreamFootnoteModel(root) {
  * document's own definitions, so a reference that resolved to the wrong
  * destination, or to none, still shows up as a difference.
  */
-export function applyUpstreamReferenceModel(root) {
-    const fold = (label) => label.trim().replace(/\s+/g, " ").toLowerCase();
+export function applyUpstreamReferenceModel(root, fired) {
     const definitions = new Map();
     const survey = (node) => {
         if (node.kind === "ReferenceDefinition") {
-            const key = fold(node.fields.label ?? "");
+            fired?.add("reference-definition-node");
+            // GROUPED BY `identifier`, WHICH THE ENGINE STATES. Folding the raw
+            // label here instead would need the full Unicode case fold: `[SS]`
+            // defines the label `[\u1e9e]` refers to, and JavaScript has no
+            // full case fold — `toLowerCase()` maps \u1e9e to \u00df, not to
+            // `ss`, so the projection would resolve to the wrong definition on
+            // an input cmark gets right. The check is not weakened by trusting
+            // the key: a reference that resolved to the WRONG definition names
+            // that one here, and its destination is still compared; one that
+            // resolved to none stays `Text` where upstream has a `Link`.
+            const key = node.fields.identifier ?? "";
             // The earliest definition of a label wins, in both models.
             if (!definitions.has(key)) definitions.set(key, node.fields);
         }
@@ -272,7 +305,8 @@ export function applyUpstreamReferenceModel(root) {
             .filter((child) => child.kind !== "ReferenceDefinition")
             .map((child) => {
                 if (child.kind === "LinkReference" || child.kind === "ImageReference") {
-                    const found = definitions.get(fold(child.fields.label ?? ""));
+                    fired?.add("reference-definition-node");
+                    const found = definitions.get(child.fields.identifier ?? "");
                     rewrite(child);
                     return {
                         kind: child.kind === "LinkReference" ? "Link" : "Image",

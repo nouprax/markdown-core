@@ -109,11 +109,20 @@ function compare(input) {
 
 // The oracle must be able to see a difference before its agreement means
 // anything. This is the difference it found when it was built — inline math
-// padding — with the fix reverted by hand on the remark side.
+// padding.
+//
+// RE-PINNED TO THE 1.0 BASELINE, 2026-08-20. The canary asserted the STRIPPED
+// form, `literal="mid"`, because the engine it was written against strips the
+// padding. The reset baseline does not: `strip_inline_math_padding` is Step 6a
+// of the reconstruction and has not been re-applied, so this engine emits
+// `literal="mid"` and so does remark. Until Step 6 this engine kept the padding
+// and the canary asserted the UNSTRIPPED form -- an oracle whose canary asserts
+// the defect, with a comment naming the step that would flip it. Step 6 landed
+// Q18's padding rule, and this is the flip.
 const selfTest = compare("text $$ mid $$ text\n");
 if (!selfTest.ours.includes('literal="mid"')) {
     process.stderr.write(
-        "mdast parity: the self-test input no longer produces the padded-and-stripped form.\n" +
+        "mdast parity: the self-test input no longer produces the padding-stripped form.\n" +
             "The comparison may be projecting away the field it is supposed to check.\n"
     );
     process.exit(1);
@@ -126,6 +135,17 @@ if (!selfTest.ours.includes('literal="mid"')) {
 // looked at since.
 const expected = new Map((policy.expectedDivergences ?? []).map((entry) => [entry.input, entry]));
 const reproduced = new Set();
+
+// THE RECONSTRUCTION BACKLOG, which is not the same thing as a divergence.
+// A registered divergence says "remark is not the authority here". A backlog
+// entry says "remark is right and this engine has not caught up yet", and
+// names the step that closes it. The gate knows about them so it can still
+// fail on a NEW divergence, and it requires each one to STILL diverge: an
+// entry that has quietly started agreeing is a step that landed without
+// deleting its own entry, which is a failure too. When the list is empty,
+// Stage 0 is done.
+const backlog = new Map((policy.baselineBacklog ?? []).map((entry) => [entry.input, entry]));
+const backlogSeen = new Set();
 
 // `--corpus` replaces the policy's corpus for one run; see the note in
 // scripts/check-upstream-parity.mjs.
@@ -146,6 +166,7 @@ for (const testCase of cases) {
     const registered = expected.get(testCase.input);
     if (result.remark !== result.ours) {
         if (registered) reproduced.add(registered.id);
+        else if (backlog.has(testCase.input)) backlogSeen.add(testCase.input);
         else divergent.push({ ...testCase, ...result });
     } else if (registered) {
         divergent.push({
@@ -173,6 +194,35 @@ process.stdout.write(
 process.stdout.write(`  corpus: ${policy.corpus.join(", ")}\n`);
 process.stdout.write(`  registered shape deltas: ${policy.deltas.map((d) => d.id).join(", ")}\n`);
 process.stdout.write(`  registered divergences: ${String(reproduced.size)}/${String(expected.size)} reproduced\n`);
+if (backlog.size) {
+    const byStep = new Map();
+    for (const entry of backlog.values()) byStep.set(entry.closedBy, (byStep.get(entry.closedBy) ?? 0) + 1);
+    process.stdout.write(
+        `  reconstruction backlog: ${String(backlogSeen.size)}/${String(backlog.size)} still diverging\n`
+    );
+    for (const [step, count] of [...byStep].sort()) {
+        process.stdout.write(`      ${String(count).padStart(2)}  ${step}\n`);
+    }
+    // A backlog entry stops being exercised for two different reasons, and
+    // only one of them is progress. Either the input still runs and the two
+    // now agree, or the input left the corpus — in which case nothing was
+    // proved and the entry must be retired on the record, not on a silence.
+    const corpusInputs = new Set(cases.map((testCase) => testCase.input));
+    // A retired entry left the backlog without ever agreeing. Nothing stops a
+    // later step from putting its input back into the corpus, where it would
+    // read as a NEW divergence with no owner -- so the retirement is checked,
+    // not merely written down.
+    for (const entry of policy.retiredBacklog ?? []) {
+        if (corpusInputs.has(entry.input)) {
+            divergent.push({ source: policyPath, input: entry.input, revivedBacklog: entry });
+        }
+    }
+    for (const [input, entry] of backlog) {
+        if (backlogSeen.has(input)) continue;
+        const key = corpusInputs.has(input) ? "settledBacklog" : "unreachableBacklog";
+        divergent.push({ source: policyPath, input, [key]: entry });
+    }
+}
 
 if (unmapped.size) {
     process.stderr.write(
@@ -188,6 +238,29 @@ if (divergent.length) {
         process.stderr.write(`\n  ${entry.source}\n${JSON.stringify(entry.input)}\n`);
         if (entry.failure) {
             process.stderr.write(`    harness error: ${entry.failure}\n`);
+            continue;
+        }
+        if (entry.settledBacklog) {
+            process.stderr.write(
+                `    backlog entry now AGREES with remark. ${entry.settledBacklog.closedBy} has landed;\n` +
+                    "    delete this entry from specs/mdast-parity/deltas.json in that same commit.\n"
+            );
+            continue;
+        }
+        if (entry.revivedBacklog) {
+            process.stderr.write(
+                `    retired backlog entry is back in the corpus. It was retired by\n` +
+                    `    ${entry.revivedBacklog.closedBy} on the record that it stays out; either take it out again\n` +
+                    "    or move it into expectedDivergences with an authority.\n"
+            );
+            continue;
+        }
+        if (entry.unreachableBacklog) {
+            process.stderr.write(
+                `    backlog entry is no longer in the corpus, so nothing checks whether it still\n` +
+                    `    diverges. ${entry.unreachableBacklog.closedBy} either moved the input out or must restore it;\n` +
+                    "    retiring the entry is a decision to record, not a silence to accept.\n"
+            );
             continue;
         }
         if (entry.unreachable) {

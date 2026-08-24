@@ -2,8 +2,6 @@
 # never implements a second test or benchmark runner: `make test` runs the
 # CTest `correctness` preset, `make bench` runs the CTest `benchmark` preset,
 # and the sanitizer targets reuse the same graph through their presets.
-# `scripts/check-generated-scanners.sh` is the maintenance guard that asserts
-# the committed scanners.c still matches the re2c rule below byte for byte.
 
 SRCDIR=packages/markdown-core/core
 EXTDIR=packages/markdown-core/extensions
@@ -11,16 +9,14 @@ BUILDDIR=build/cmake
 ASAN_BUILDDIR=build/asan
 UBSAN_BUILDDIR=build/ubsan
 TSAN_BUILDDIR=build/tsan
-AFL_BUILDDIR=build/afl
-LIBFUZZER_BUILDDIR=build/libfuzzer
 MARKDOWN_CORE=$(BUILDDIR)/packages/markdown-core/core/markdown-core
-AFL_MARKDOWN_CORE=$(AFL_BUILDDIR)/packages/markdown-core/core/markdown-core
-MARKDOWN_CORE_FUZZ=$(LIBFUZZER_BUILDDIR)/packages/markdown-core/core/markdown-core-fuzz
+MARKDOWN_CORE_FUZZ=$(BUILDDIR)/packages/markdown-core/core/markdown-core-fuzz
+SPEC=packages/markdown-core/tests/fixtures/spec.txt
 CLANG_CHECK?=clang-check
 AFL_PATH?=/usr/local/bin
 
 .PHONY: all build test bench asan-test ubsan-test tsan-test install clean distclean \
-	afl libFuzzer clang-check archive
+	afl libFuzzer clang-check archive update-spec
 
 all: build
 
@@ -55,28 +51,25 @@ install: build
 $(MARKDOWN_CORE): build
 
 # Explicit, non-default fuzz campaigns.  They reuse the corpus and dictionary
-# under packages/markdown-core/tests/core and write findings into their own
-# dedicated build trees (build/afl, build/libfuzzer), never into the shared
-# default-preset cache in build/cmake: reconfiguring build/cmake with fuzz
-# compilers or options would leave MARKDOWN_CORE_TESTS=0 or instrumentation
-# flags cached for later plain `make test` runs.
+# under packages/markdown-core/tests/core and write findings into the build
+# tree only.
 afl:
-	cmake -S . -B $(AFL_BUILDDIR) -DCMAKE_BUILD_TYPE=Release \
-	    -DMARKDOWN_CORE_TESTS=0 -DCMAKE_C_COMPILER=$(AFL_PATH)/afl-clang
-	cmake --build $(AFL_BUILDDIR) --parallel
+	@[ -n "$(AFL_PATH)" ] || { echo '$$AFL_PATH not set'; false; }
+	cmake --preset default -DMARKDOWN_CORE_TESTS=0 -DCMAKE_C_COMPILER=$(AFL_PATH)/afl-clang
+	cmake --build --preset default --parallel
 	$(AFL_PATH)/afl-fuzz \
 	    -i packages/markdown-core/tests/core/afl_test_cases \
-	    -o $(AFL_BUILDDIR)/afl_results \
+	    -o $(BUILDDIR)/afl_results \
 	    -x packages/markdown-core/tests/core/fuzzing_dictionary \
 	    $(AFL_OPTIONS) \
 	    -t 100 \
-	    $(AFL_MARKDOWN_CORE) $(MARKDOWN_CORE_OPTS)
+	    $(MARKDOWN_CORE) -e table -e strikethrough -e autolink $(MARKDOWN_CORE_OPTS)
 
 libFuzzer:
 	@[ -n "$(LIB_FUZZER_PATH)" ] || { echo '$$LIB_FUZZER_PATH not set'; false; }
-	cmake -S . -B $(LIBFUZZER_BUILDDIR) -DCMAKE_BUILD_TYPE=Asan \
-	    -DMARKDOWN_CORE_LIB_FUZZER=ON -DCMAKE_LIB_FUZZER_PATH=$(LIB_FUZZER_PATH)
-	cmake --build $(LIBFUZZER_BUILDDIR) --parallel --target markdown-core-fuzz
+	cmake --preset default -DCMAKE_BUILD_TYPE=Asan -DMARKDOWN_CORE_LIB_FUZZER=ON \
+	    -DCMAKE_LIB_FUZZER_PATH=$(LIB_FUZZER_PATH)
+	cmake --build --preset default --parallel --target markdown-core-fuzz
 	packages/markdown-core/tests/core/run-markdown-core-fuzz $(MARKDOWN_CORE_FUZZ)
 
 clang-check: all
@@ -114,3 +107,9 @@ $(EXTDIR)/ext_scanners.c: $(EXTDIR)/ext_scanners.re
 	esac
 	re2c --case-insensitive -b -i --no-generation-date -8 \
 		--encoding-policy substitute -o $@ $<
+
+# Explicit maintenance command; normal test and bench runs never touch the
+# network.
+update-spec:
+	curl 'https://raw.githubusercontent.com/jgm/CommonMark/master/spec.txt'\
+ > $(SPEC)

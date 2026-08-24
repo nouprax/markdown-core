@@ -23,7 +23,6 @@ option(MARKDOWN_CORE_STATIC "Build static libmarkdown-core library" ON)
 option(MARKDOWN_CORE_SHARED "Build shared libmarkdown-core library" ON)
 option(MARKDOWN_CORE_LIB_FUZZER "Build libFuzzer fuzzing harness" OFF)
 option(MARKDOWN_CORE_FUZZ_QUADRATIC "Build quadratic fuzzing harness" OFF)
-option(MARKDOWN_CORE_FUZZ_APPENDS "Build document append-script fuzzing harness" OFF)
 option(MARKDOWN_CORE_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 
 if(MARKDOWN_CORE_WARNINGS_AS_ERRORS)
@@ -36,14 +35,12 @@ endif()
 
 set(MARKDOWN_CORE_CORE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/core")
 set(MARKDOWN_CORE_CORE_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/core")
-# Checked-in public headers shared with the SwiftPM/Gradle/Emscripten builds.
-set(MARKDOWN_CORE_CORE_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/core/include")
 set(MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extensions")
 set(MARKDOWN_CORE_EXTENSIONS_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/extensions")
 set(MARKDOWN_CORE_TESTS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests")
 set(MARKDOWN_CORE_TESTS_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/tests")
 
-if(MARKDOWN_CORE_FUZZ_QUADRATIC OR MARKDOWN_CORE_FUZZ_APPENDS)
+if(MARKDOWN_CORE_FUZZ_QUADRATIC)
     set(FUZZER_FLAGS "-fsanitize=fuzzer-no-link,address -g")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${FUZZER_FLAGS}")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${FUZZER_FLAGS}")
@@ -63,18 +60,6 @@ if(CMAKE_BUILD_TYPE STREQUAL "Tsan")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=thread -g -O1 -fno-omit-frame-pointer")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=thread")
-endif()
-
-# The coverage build type instruments the same graph the sanitizer types do,
-# so the gate measures exactly the product sources the correctness and
-# conformance suites exercise. It is unoptimized on purpose: at -O2 clang
-# merges and clones regions, and the counters then describe the optimizer's
-# view of the code rather than the reviewed source.
-if(CMAKE_BUILD_TYPE STREQUAL "Coverage")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-instr-generate -fcoverage-mapping -O0 -g")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-instr-generate -fcoverage-mapping -O0 -g")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-instr-generate")
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fprofile-instr-generate")
 endif()
 
 add_subdirectory(core)
@@ -101,12 +86,12 @@ if(MARKDOWN_CORE_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
-if(MARKDOWN_CORE_FUZZ_QUADRATIC OR MARKDOWN_CORE_FUZZ_APPENDS)
+if(MARKDOWN_CORE_FUZZ_QUADRATIC)
     add_subdirectory(fuzz)
 endif()
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE
         "Release"
-        CACHE STRING "Choose the type of build, options are: Debug Profile Release Asan Ubsan Tsan Coverage." FORCE)
+        CACHE STRING "Choose the type of build, options are: Debug Profile Release Asan Ubsan." FORCE)
 endif(NOT CMAKE_BUILD_TYPE)

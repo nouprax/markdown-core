@@ -24,6 +24,3 @@
 packages/markdown-core/tests/fixtures/** text eol=lf
 packages/markdown-core/tests/fixtures/regression.txt -text
 packages/markdown-core/tests/canonical-ast/** text eol=lf
-
-# Kotlin's JVM ABI renderer terminates its generated dump with a blank separator.
-packages/kotlin-markdown-core/api/jvm/*.api whitespace=-blank-at-eof

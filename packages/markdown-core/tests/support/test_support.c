@@ -308,6 +308,8 @@ int ts_ast_enable(markdown_core_parse_options *options, const char *name) {
         options->smart_punctuation = true;
     } else if (strcmp(name, "footnotes") == 0) {
         options->footnotes = true;
+    } else if (strcmp(name, "strip-html-comments") == 0) {
+        options->strip_html_comments = true;
     } else if (strcmp(name, "table") == 0 || strcmp(name, "tables") == 0) {
         options->tables = true;
     } else if (strcmp(name, "strikethrough") == 0) {
@@ -320,13 +322,6 @@ int ts_ast_enable(markdown_core_parse_options *options, const char *name) {
         options->formulas = true;
     } else if (strcmp(name, "directive") == 0 || strcmp(name, "directives") == 0) {
         options->directives = true;
-    } else if (strcmp(name, "cross-link") == 0 || strcmp(name, "cross-links") == 0) {
-        options->cross_links = true;
-    } else if (strcmp(name, "embed") == 0 || strcmp(name, "embeds") == 0) {
-        options->embeds = true;
-    } else if (strcmp(name, "cross-links-and-embeds") == 0) {
-        options->cross_links = true;
-        options->embeds = true;
     } else {
         return -1;
     }
@@ -335,7 +330,7 @@ int ts_ast_enable(markdown_core_parse_options *options, const char *name) {
 
 markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length, const markdown_core_parse_options *options) {
     markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_new(mc_sv(bytes, length), options, &error);
+    markdown_core_document *document = markdown_core_document_parse(bytes, length, options, &error);
     if (!document) {
         markdown_core_string message = error ? markdown_core_error_get_message(error) : (markdown_core_string){NULL, 0};
         fprintf(stderr, "facade parse failed: ");
@@ -514,31 +509,6 @@ uint64_t ts_monotonic_ns(void) {
 #else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint64_t)ts.tv_sec * UINT64_C(1000000000) + (uint64_t)ts.tv_nsec;
-#endif
-}
-
-uint64_t ts_process_cpu_ns(void) {
-#if defined(_WIN32)
-    FILETIME created;
-    FILETIME exited;
-    FILETIME kernel;
-    FILETIME user;
-    ULARGE_INTEGER kernel_ticks;
-    ULARGE_INTEGER user_ticks;
-    if (!GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user)) {
-        abort();
-    }
-    kernel_ticks.LowPart = kernel.dwLowDateTime;
-    kernel_ticks.HighPart = kernel.dwHighDateTime;
-    user_ticks.LowPart = user.dwLowDateTime;
-    user_ticks.HighPart = user.dwHighDateTime;
-    return (kernel_ticks.QuadPart + user_ticks.QuadPart) * UINT64_C(100);
-#else
-    struct timespec ts;
-    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts) != 0) {
-        abort();
-    }
     return (uint64_t)ts.tv_sec * UINT64_C(1000000000) + (uint64_t)ts.tv_nsec;
 #endif
 }

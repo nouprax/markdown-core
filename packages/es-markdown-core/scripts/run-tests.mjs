@@ -7,11 +7,11 @@ const packageDirectory = path.resolve(fileURLToPath(new URL("..", import.meta.ur
 const correctnessSuites = [
     "api",
     "ast",
+    "concrete",
     "consumer",
     "errors",
     "ownership",
     "robustness",
-    "appends",
     "unicode",
     "types",
     "packaging"
@@ -34,6 +34,11 @@ function run(command, args) {
     if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
+// `--skip-build` runs against an artifact somebody else already built, which
+// is what CI does: the build job produces `dist/` and the test job consumes
+// it, so rebuilding here would be both wasted work and a different artifact
+// from the one under test. `scripts/audit-ci-policy.sh` requires the flag to
+// exist for exactly that reason.
 if (!process.argv.includes("--skip-build")) run("node", ["scripts/build.mjs"]);
 const selected = requested ? [requested] : suites;
 if (target === "browser") {
@@ -41,13 +46,10 @@ if (target === "browser") {
     process.exit(0);
 }
 const selectedNodeSuites = selected.filter((suite) =>
-    ["api", "ast", "errors", "ownership", "robustness", "unicode"].includes(suite)
+    ["api", "ast", "concrete", "errors", "ownership", "robustness", "unicode"].includes(suite)
 );
 if (selectedNodeSuites.length) {
     run("node", ["--test", `--test-name-pattern=^(${selectedNodeSuites.join("|")}):`, "tests/node.test.mjs"]);
-}
-if (selected.includes("appends")) {
-    run("node", ["--test", "tests/append.test.mjs"]);
 }
 const packageSuites = selected.filter((suite) => ["consumer", "types", "packaging"].includes(suite));
 if (packageSuites.length === 3) {

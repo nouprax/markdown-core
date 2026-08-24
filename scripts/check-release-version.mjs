@@ -26,7 +26,7 @@ assert.equal(npmManifest.publishConfig?.access, "public");
 assert.equal(npmManifest.repository?.url, "git+https://github.com/nouprax/markdown-core.git");
 assert.equal(npmManifest.repository?.directory, "packages/es-markdown-core");
 
-const releaseNotes = text(`docs/releases/${version}.md`);
+const releaseNotes = text(`docs/deprecated/releases/${version}.md`);
 assert.ok(releaseNotes.startsWith(`# Markdown Core ${version}\n`), "release notes must match VERSION");
 assert.doesNotMatch(
     releaseNotes,

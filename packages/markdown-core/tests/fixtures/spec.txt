@@ -369,14 +369,14 @@ spaces.)
 →foo→baz→→bim
 .
 Document scope=1:1..1:13 children=1
-└── CodeBlock scope=1:2..1:13 mode=standalone info=null language=null literal="foo\tbaz\t\tbim\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:2..1:13 info=null language=null literal="foo\tbaz\t\tbim\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
   →foo→baz→→bim
 .
 Document scope=1:1..1:15 children=1
-└── CodeBlock scope=1:4..1:15 mode=standalone info=null language=null literal="foo\tbaz\t\tbim\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:4..1:15 info=null language=null literal="foo\tbaz\t\tbim\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -384,7 +384,7 @@ Document scope=1:1..1:15 children=1
     ὐ→a
 .
 Document scope=1:1..2:9 children=1
-└── CodeBlock scope=1:5..2:9 mode=standalone info=null language=null literal="a\ta\nὐ\ta\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:5..2:9 info=null language=null literal="a\ta\nὐ\ta\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 In the following example, a continuation paragraph of a list
@@ -415,7 +415,7 @@ Document scope=1:1..3:5 children=1
     └── ListItem scope=1:1..3:5 checked=null children=2
         ├── Paragraph scope=1:3..1:5 children=1
         │   └── Text scope=1:3..1:5 literal="foo" children=0
-        └── CodeBlock scope=3:2..3:5 mode=standalone info=null language=null literal="  bar\n" fenced=false closed=true children=0
+        └── CodeBlock scope=3:2..3:5 info=null language=null literal="  bar\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 Normally the `>` that begins a block quote may be followed
@@ -432,7 +432,7 @@ code block starting with two spaces.
 .
 Document scope=1:1..1:6 children=1
 └── BlockQuote scope=1:1..1:6 children=1
-    └── CodeBlock scope=1:3..1:6 mode=standalone info=null language=null literal="  foo\n" fenced=false closed=true children=0
+    └── CodeBlock scope=1:3..1:6 info=null language=null literal="  foo\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -441,7 +441,7 @@ Document scope=1:1..1:6 children=1
 Document scope=1:1..1:6 children=1
 └── List scope=1:1..1:6 flavor=bullet start=null tight=true children=1
     └── ListItem scope=1:1..1:6 checked=null children=1
-        └── CodeBlock scope=1:3..1:6 mode=standalone info=null language=null literal="  foo\n" fenced=false closed=true children=0
+        └── CodeBlock scope=1:3..1:6 info=null language=null literal="  foo\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -450,7 +450,7 @@ Document scope=1:1..1:6 children=1
 →bar
 .
 Document scope=1:1..2:4 children=1
-└── CodeBlock scope=1:5..2:4 mode=standalone info=null language=null literal="foo\nbar\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:5..2:4 info=null language=null literal="foo\nbar\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -517,10 +517,10 @@ Document scope=1:1..2:6 children=1
 └── List scope=1:1..2:6 flavor=bullet start=null tight=true children=2
     ├── ListItem scope=1:1..1:6 checked=null children=1
     │   └── Paragraph scope=1:3..1:6 children=1
-    │       └── Text scope=1:4..1:6 literal="`one" children=0
+    │       └── Text scope=1:3..1:6 literal="`one" children=0
     └── ListItem scope=2:1..2:6 checked=null children=1
         └── Paragraph scope=2:3..2:6 children=1
-            └── Text scope=2:3..2:7 literal="two`" children=0
+            └── Text scope=2:3..2:6 literal="two`" children=0
 ````````````````````````````````
 
 
@@ -594,9 +594,9 @@ __
 Document scope=1:1..3:2 children=1
 └── Paragraph scope=1:1..3:2 children=5
     ├── Text scope=1:1..1:2 literal="--" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:3..1:3 children=0
     ├── Text scope=2:1..2:2 literal="**" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=2:3..2:3 children=0
     └── Text scope=3:1..3:2 literal="__" children=0
 ````````````````````````````````
 
@@ -621,7 +621,7 @@ Four spaces is too many:
     ***
 .
 Document scope=1:1..1:7 children=1
-└── CodeBlock scope=1:5..1:7 mode=standalone info=null language=null literal="***\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:5..1:7 info=null language=null literal="***\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -632,8 +632,8 @@ Foo
 Document scope=1:1..2:7 children=1
 └── Paragraph scope=1:1..2:7 children=3
     ├── Text scope=1:1..1:3 literal="Foo" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
-    └── Text scope=2:1..2:3 literal="***" children=0
+    ├── SoftBreak scope=1:4..1:4 children=0
+    └── Text scope=2:5..2:7 literal="***" children=0
 ````````````````````````````````
 
 
@@ -938,7 +938,7 @@ Four spaces are too much:
     # foo
 .
 Document scope=1:1..1:9 children=1
-└── CodeBlock scope=1:5..1:9 mode=standalone info=null language=null literal="# foo\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:5..1:9 info=null language=null literal="# foo\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -949,8 +949,8 @@ foo
 Document scope=1:1..2:9 children=1
 └── Paragraph scope=1:1..2:9 children=3
     ├── Text scope=1:1..1:3 literal="foo" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
-    └── Text scope=2:1..2:5 literal="# bar" children=0
+    ├── SoftBreak scope=1:4..1:4 children=0
+    └── Text scope=2:5..2:9 literal="# bar" children=0
 ````````````````````````````````
 
 
@@ -1140,7 +1140,7 @@ Document scope=1:1..3:4 children=1
     ├── Text scope=1:1..1:4 literal="Foo " children=0
     └── Emphasis scope=1:5..2:4 children=3
         ├── Text scope=1:6..1:8 literal="bar" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
+        ├── SoftBreak scope=1:9..1:9 children=0
         └── Text scope=2:1..2:3 literal="baz" children=0
 ````````````````````````````````
 
@@ -1157,10 +1157,10 @@ baz*→
 Document scope=1:1..3:4 children=1
 └── Heading scope=1:3..3:4 level=1 children=2
     ├── Text scope=1:3..1:6 literal="Foo " children=0
-    └── Emphasis scope=1:7..2:6 children=3
+    └── Emphasis scope=1:7..2:4 children=3
         ├── Text scope=1:8..1:10 literal="bar" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
-        └── Text scope=2:3..2:5 literal="baz" children=0
+        ├── SoftBreak scope=1:11..1:11 children=0
+        └── Text scope=2:1..2:3 literal="baz" children=0
 ````````````````````````````````
 
 
@@ -1214,7 +1214,7 @@ Four spaces indent is too much:
 ---
 .
 Document scope=1:1..5:3 children=2
-├── CodeBlock scope=1:5..4:7 mode=standalone info=null language=null literal="Foo\n---\n\nFoo\n" fenced=false closed=true children=0
+├── CodeBlock scope=1:5..4:7 info=null language=null literal="Foo\n---\n\nFoo\n" fenced=false closed=true children=0
 └── ThematicBreak scope=5:1..5:3 children=0
 ````````````````````````````````
 
@@ -1241,8 +1241,8 @@ Foo
 Document scope=1:1..2:7 children=1
 └── Paragraph scope=1:1..2:7 children=3
     ├── Text scope=1:1..1:3 literal="Foo" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
-    └── Text scope=2:1..2:3 literal="---" children=0
+    ├── SoftBreak scope=1:4..1:4 children=0
+    └── Text scope=2:5..2:7 literal="---" children=0
 ````````````````````````````````
 
 
@@ -1258,7 +1258,7 @@ Foo
 Document scope=1:1..5:5 children=3
 ├── Paragraph scope=1:1..2:3 children=3
 │   ├── Text scope=1:1..1:3 literal="Foo" children=0
-│   ├── SoftBreak scope=0:0..0:0 children=0
+│   ├── SoftBreak scope=1:4..1:4 children=0
 │   └── Text scope=2:1..2:3 literal="= =" children=0
 ├── Paragraph scope=4:1..4:3 children=1
 │   └── Text scope=4:1..4:3 literal="Foo" children=0
@@ -1304,9 +1304,9 @@ of dashes"/>
 .
 Document scope=1:1..7:12 children=4
 ├── Heading scope=1:1..3:1 level=2 children=1
-│   └── Text scope=1:2..1:4 literal="`Foo" children=0
+│   └── Text scope=1:1..1:4 literal="`Foo" children=0
 ├── Paragraph scope=3:1..3:1 children=1
-│   └── Text scope=3:2..3:2 literal="`" children=0
+│   └── Text scope=3:1..3:1 literal="`" children=0
 ├── Heading scope=5:1..7:12 level=2 children=1
 │   └── Text scope=5:1..5:15 literal="<a title=\"a lot" children=0
 └── Paragraph scope=7:1..7:12 children=1
@@ -1338,10 +1338,10 @@ Document scope=1:1..3:3 children=1
 └── BlockQuote scope=1:1..3:3 children=1
     └── Paragraph scope=1:3..3:3 children=5
         ├── Text scope=1:3..1:5 literal="foo" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
-        ├── Text scope=2:3..2:5 literal="bar" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
-        └── Text scope=3:3..3:5 literal="===" children=0
+        ├── SoftBreak scope=1:6..1:6 children=0
+        ├── Text scope=2:1..2:3 literal="bar" children=0
+        ├── SoftBreak scope=2:4..2:4 children=0
+        └── Text scope=3:1..3:3 literal="===" children=0
 ````````````````````````````````
 
 
@@ -1370,7 +1370,7 @@ Bar
 Document scope=1:1..3:3 children=1
 └── Heading scope=1:1..3:3 level=2 children=3
     ├── Text scope=1:1..1:3 literal="Foo" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:4..1:4 children=0
     └── Text scope=2:1..2:3 literal="Bar" children=0
 ````````````````````````````````
 
@@ -1441,7 +1441,7 @@ Document scope=1:1..2:5 children=2
 ---
 .
 Document scope=1:1..2:3 children=2
-├── CodeBlock scope=1:5..1:7 mode=standalone info=null language=null literal="foo\n" fenced=false closed=true children=0
+├── CodeBlock scope=1:5..1:7 info=null language=null literal="foo\n" fenced=false closed=true children=0
 └── ThematicBreak scope=2:1..2:3 children=0
 ````````````````````````````````
 
@@ -1525,7 +1525,7 @@ baz
 Document scope=1:1..6:3 children=3
 ├── Paragraph scope=1:1..2:3 children=3
 │   ├── Text scope=1:1..1:3 literal="Foo" children=0
-│   ├── SoftBreak scope=0:0..0:0 children=0
+│   ├── SoftBreak scope=1:4..1:4 children=0
 │   └── Text scope=2:1..2:3 literal="bar" children=0
 ├── ThematicBreak scope=4:1..5:0 children=0
 └── Paragraph scope=6:1..6:3 children=1
@@ -1545,7 +1545,7 @@ baz
 Document scope=1:1..4:3 children=3
 ├── Paragraph scope=1:1..2:3 children=3
 │   ├── Text scope=1:1..1:3 literal="Foo" children=0
-│   ├── SoftBreak scope=0:0..0:0 children=0
+│   ├── SoftBreak scope=1:4..1:4 children=0
 │   └── Text scope=2:1..2:3 literal="bar" children=0
 ├── ThematicBreak scope=3:1..3:5 children=0
 └── Paragraph scope=4:1..4:3 children=1
@@ -1564,11 +1564,11 @@ baz
 Document scope=1:1..4:3 children=1
 └── Paragraph scope=1:1..4:3 children=7
     ├── Text scope=1:1..1:3 literal="Foo" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:4..1:4 children=0
     ├── Text scope=2:1..2:3 literal="bar" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=2:4..2:4 children=0
     ├── Text scope=3:1..3:4 literal="---" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=3:5..3:5 children=0
     └── Text scope=4:1..4:3 literal="baz" children=0
 ````````````````````````````````
 
@@ -1593,7 +1593,7 @@ paragraph.)
       indented code block
 .
 Document scope=1:1..2:25 children=1
-└── CodeBlock scope=1:5..2:25 mode=standalone info=null language=null literal="a simple\n  indented code block\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:5..2:25 info=null language=null literal="a simple\n  indented code block\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -1644,7 +1644,7 @@ as Markdown:
     - one
 .
 Document scope=1:1..4:9 children=1
-└── CodeBlock scope=1:5..4:9 mode=standalone info=null language=null literal="<a/>\n*hi*\n\n- one\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:5..4:9 info=null language=null literal="<a/>\n*hi*\n\n- one\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -1660,7 +1660,7 @@ Here we have three chunks separated by blank lines:
     chunk3
 .
 Document scope=1:1..7:10 children=1
-└── CodeBlock scope=1:5..7:10 mode=standalone info=null language=null literal="chunk1\n\nchunk2\n\n\n\nchunk3\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:5..7:10 info=null language=null literal="chunk1\n\nchunk2\n\n\n\nchunk3\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -1673,7 +1673,7 @@ in interior blank lines:
       chunk2
 .
 Document scope=1:1..3:12 children=1
-└── CodeBlock scope=1:5..3:12 mode=standalone info=null language=null literal="chunk1\n  \n  chunk2\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:5..3:12 info=null language=null literal="chunk1\n  \n  chunk2\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -1688,8 +1688,8 @@ Foo
 Document scope=1:1..3:0 children=1
 └── Paragraph scope=1:1..2:7 children=3
     ├── Text scope=1:1..1:3 literal="Foo" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
-    └── Text scope=2:1..2:3 literal="bar" children=0
+    ├── SoftBreak scope=1:4..1:4 children=0
+    └── Text scope=2:5..2:7 literal="bar" children=0
 ````````````````````````````````
 
 
@@ -1702,7 +1702,7 @@ after indented code:
 bar
 .
 Document scope=1:1..2:3 children=2
-├── CodeBlock scope=1:5..1:7 mode=standalone info=null language=null literal="foo\n" fenced=false closed=true children=0
+├── CodeBlock scope=1:5..1:7 info=null language=null literal="foo\n" fenced=false closed=true children=0
 └── Paragraph scope=2:1..2:3 children=1
     └── Text scope=2:1..2:3 literal="bar" children=0
 ````````````````````````````````
@@ -1722,10 +1722,10 @@ Heading
 Document scope=1:1..6:4 children=5
 ├── Heading scope=1:1..1:9 level=1 children=1
 │   └── Text scope=1:3..1:9 literal="Heading" children=0
-├── CodeBlock scope=2:5..2:7 mode=standalone info=null language=null literal="foo\n" fenced=false closed=true children=0
+├── CodeBlock scope=2:5..2:7 info=null language=null literal="foo\n" fenced=false closed=true children=0
 ├── Heading scope=3:1..5:7 level=2 children=1
 │   └── Text scope=3:1..3:7 literal="Heading" children=0
-├── CodeBlock scope=5:5..5:7 mode=standalone info=null language=null literal="foo\n" fenced=false closed=true children=0
+├── CodeBlock scope=5:5..5:7 info=null language=null literal="foo\n" fenced=false closed=true children=0
 └── ThematicBreak scope=6:1..6:4 children=0
 ````````````````````````````````
 
@@ -1737,7 +1737,7 @@ The first line can be indented more than four spaces:
     bar
 .
 Document scope=1:1..2:7 children=1
-└── CodeBlock scope=1:5..2:7 mode=standalone info=null language=null literal="    foo\nbar\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:5..2:7 info=null language=null literal="    foo\nbar\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -1752,7 +1752,7 @@ are not included in it:
 
 .
 Document scope=1:1..5:0 children=1
-└── CodeBlock scope=3:5..5:0 mode=standalone info=null language=null literal="foo\n" fenced=false closed=true children=0
+└── CodeBlock scope=3:5..5:0 info=null language=null literal="foo\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -1762,7 +1762,7 @@ Trailing spaces are included in the code block's content:
     foo  
 .
 Document scope=1:1..1:9 children=1
-└── CodeBlock scope=1:5..1:9 mode=standalone info=null language=null literal="foo  \n" fenced=false closed=true children=0
+└── CodeBlock scope=1:5..1:9 info=null language=null literal="foo  \n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -1820,7 +1820,7 @@ Here is a simple example with backticks:
 ```
 .
 Document scope=1:1..4:3 children=1
-└── CodeBlock scope=1:1..4:3 mode=standalone info=null language=null literal="<\n >\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..4:3 info=null language=null literal="<\n >\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -1833,7 +1833,7 @@ With tildes:
 ~~~
 .
 Document scope=1:1..4:3 children=1
-└── CodeBlock scope=1:1..4:3 mode=standalone info=null language=null literal="<\n >\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..4:3 info=null language=null literal="<\n >\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 Fewer than three backticks is not enough:
@@ -1845,7 +1845,7 @@ foo
 .
 Document scope=1:1..3:2 children=1
 └── Paragraph scope=1:1..3:2 children=1
-    └── Code scope=1:3..3:0 mode=embedded literal="foo" children=0
+    └── Code scope=1:1..3:2 literal="foo" children=0
 ````````````````````````````````
 
 The closing code fence must use the same character as the opening
@@ -1858,7 +1858,7 @@ aaa
 ```
 .
 Document scope=1:1..4:3 children=1
-└── CodeBlock scope=1:1..4:3 mode=standalone info=null language=null literal="aaa\n~~~\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..4:3 info=null language=null literal="aaa\n~~~\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -1869,7 +1869,7 @@ aaa
 ~~~
 .
 Document scope=1:1..4:3 children=1
-└── CodeBlock scope=1:1..4:3 mode=standalone info=null language=null literal="aaa\n```\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..4:3 info=null language=null literal="aaa\n```\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -1882,7 +1882,7 @@ aaa
 ``````
 .
 Document scope=1:1..4:6 children=1
-└── CodeBlock scope=1:1..4:6 mode=standalone info=null language=null literal="aaa\n```\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..4:6 info=null language=null literal="aaa\n```\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -1893,7 +1893,7 @@ aaa
 ~~~~
 .
 Document scope=1:1..4:4 children=1
-└── CodeBlock scope=1:1..4:4 mode=standalone info=null language=null literal="aaa\n~~~\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..4:4 info=null language=null literal="aaa\n~~~\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -1904,7 +1904,7 @@ Unclosed code blocks are closed by the end of the document
 ```
 .
 Document scope=1:1..1:3 children=1
-└── CodeBlock scope=1:1..1:3 mode=standalone info=null language=null literal="" fenced=true closed=false children=0
+└── CodeBlock scope=1:1..1:3 info=null language=null literal="" fenced=true closed=false children=0
 ````````````````````````````````
 
 
@@ -1915,7 +1915,7 @@ Document scope=1:1..1:3 children=1
 aaa
 .
 Document scope=1:1..4:3 children=1
-└── CodeBlock scope=1:1..4:3 mode=standalone info=null language=null literal="\n```\naaa\n" fenced=true closed=false children=0
+└── CodeBlock scope=1:1..4:3 info=null language=null literal="\n```\naaa\n" fenced=true closed=false children=0
 ````````````````````````````````
 
 
@@ -1927,7 +1927,7 @@ bbb
 .
 Document scope=1:1..4:3 children=2
 ├── BlockQuote scope=1:1..2:5 children=1
-│   └── CodeBlock scope=1:3..3:0 mode=standalone info=null language=null literal="aaa\n" fenced=true closed=false children=0
+│   └── CodeBlock scope=1:3..3:0 info=null language=null literal="aaa\n" fenced=true closed=false children=0
 └── Paragraph scope=4:1..4:3 children=1
     └── Text scope=4:1..4:3 literal="bbb" children=0
 ````````````````````````````````
@@ -1942,7 +1942,7 @@ A code block can have all empty lines as its content:
 ```
 .
 Document scope=1:1..4:3 children=1
-└── CodeBlock scope=1:1..4:3 mode=standalone info=null language=null literal="\n  \n" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..4:3 info=null language=null literal="\n  \n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -1953,7 +1953,7 @@ A code block can be empty:
 ```
 .
 Document scope=1:1..2:3 children=1
-└── CodeBlock scope=1:1..2:3 mode=standalone info=null language=null literal="" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..2:3 info=null language=null literal="" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -1968,7 +1968,7 @@ aaa
 ```
 .
 Document scope=1:1..4:3 children=1
-└── CodeBlock scope=1:2..4:3 mode=standalone info=null language=null literal="aaa\naaa\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:2..4:3 info=null language=null literal="aaa\naaa\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -1980,7 +1980,7 @@ aaa
   ```
 .
 Document scope=1:1..5:5 children=1
-└── CodeBlock scope=1:3..5:5 mode=standalone info=null language=null literal="aaa\naaa\naaa\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:3..5:5 info=null language=null literal="aaa\naaa\naaa\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -1992,7 +1992,7 @@ Document scope=1:1..5:5 children=1
    ```
 .
 Document scope=1:1..5:6 children=1
-└── CodeBlock scope=1:4..5:6 mode=standalone info=null language=null literal="aaa\n aaa\naaa\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:4..5:6 info=null language=null literal="aaa\n aaa\naaa\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -2004,7 +2004,7 @@ Four spaces indentation produces an indented code block:
     ```
 .
 Document scope=1:1..3:7 children=1
-└── CodeBlock scope=1:5..3:7 mode=standalone info=null language=null literal="```\naaa\n```\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:5..3:7 info=null language=null literal="```\naaa\n```\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -2017,7 +2017,7 @@ aaa
   ```
 .
 Document scope=1:1..3:5 children=1
-└── CodeBlock scope=1:1..3:5 mode=standalone info=null language=null literal="aaa\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..3:5 info=null language=null literal="aaa\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -2027,7 +2027,7 @@ aaa
   ```
 .
 Document scope=1:1..3:5 children=1
-└── CodeBlock scope=1:4..3:5 mode=standalone info=null language=null literal="aaa\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:4..3:5 info=null language=null literal="aaa\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -2039,7 +2039,7 @@ aaa
     ```
 .
 Document scope=1:1..3:7 children=1
-└── CodeBlock scope=1:1..3:7 mode=standalone info=null language=null literal="aaa\n    ```\n" fenced=true closed=false children=0
+└── CodeBlock scope=1:1..3:7 info=null language=null literal="aaa\n    ```\n" fenced=true closed=false children=0
 ````````````````````````````````
 
 
@@ -2052,8 +2052,8 @@ aaa
 .
 Document scope=1:1..2:3 children=1
 └── Paragraph scope=1:1..2:3 children=3
-    ├── Code scope=1:4..1:4 mode=embedded literal=" " children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Code scope=1:1..1:7 literal=" " children=0
+    ├── SoftBreak scope=1:8..1:8 children=0
     └── Text scope=2:1..2:3 literal="aaa" children=0
 ````````````````````````````````
 
@@ -2064,7 +2064,7 @@ aaa
 ~~~ ~~
 .
 Document scope=1:1..3:6 children=1
-└── CodeBlock scope=1:1..3:6 mode=standalone info=null language=null literal="aaa\n~~~ ~~\n" fenced=true closed=false children=0
+└── CodeBlock scope=1:1..3:6 info=null language=null literal="aaa\n~~~ ~~\n" fenced=true closed=false children=0
 ````````````````````````````````
 
 
@@ -2081,7 +2081,7 @@ baz
 Document scope=1:1..5:3 children=3
 ├── Paragraph scope=1:1..1:3 children=1
 │   └── Text scope=1:1..1:3 literal="foo" children=0
-├── CodeBlock scope=2:1..4:3 mode=standalone info=null language=null literal="bar\n" fenced=true closed=true children=0
+├── CodeBlock scope=2:1..4:3 info=null language=null literal="bar\n" fenced=true closed=true children=0
 └── Paragraph scope=5:1..5:3 children=1
     └── Text scope=5:1..5:3 literal="baz" children=0
 ````````````````````````````````
@@ -2101,7 +2101,7 @@ bar
 Document scope=1:1..6:5 children=3
 ├── Heading scope=1:1..3:3 level=2 children=1
 │   └── Text scope=1:1..1:3 literal="foo" children=0
-├── CodeBlock scope=3:1..5:3 mode=standalone info=null language=null literal="bar\n" fenced=true closed=true children=0
+├── CodeBlock scope=3:1..5:3 info=null language=null literal="bar\n" fenced=true closed=true children=0
 └── Heading scope=6:1..6:5 level=1 children=1
     └── Text scope=6:3..6:5 literal="baz" children=0
 ````````````````````````````````
@@ -2122,7 +2122,7 @@ end
 ```
 .
 Document scope=1:1..5:3 children=1
-└── CodeBlock scope=1:1..5:3 mode=standalone info="ruby" language="ruby" literal="def foo(x)\n  return 3\nend\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..5:3 info="ruby" language="ruby" literal="def foo(x)\n  return 3\nend\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -2134,7 +2134,7 @@ end
 ~~~~~~~
 .
 Document scope=1:1..5:7 children=1
-└── CodeBlock scope=1:1..5:7 mode=standalone info="ruby startline=3 $%@#$" language="ruby" literal="def foo(x)\n  return 3\nend\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..5:7 info="ruby startline=3 $%@#$" language="ruby" literal="def foo(x)\n  return 3\nend\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -2143,7 +2143,7 @@ Document scope=1:1..5:7 children=1
 ````
 .
 Document scope=1:1..2:4 children=1
-└── CodeBlock scope=1:1..2:4 mode=standalone info=";" language=";" literal="" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..2:4 info=";" language=";" literal="" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -2155,8 +2155,8 @@ foo
 .
 Document scope=1:1..2:3 children=1
 └── Paragraph scope=1:1..2:3 children=3
-    ├── Code scope=1:4..1:7 mode=embedded literal="aa" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Code scope=1:1..1:10 literal="aa" children=0
+    ├── SoftBreak scope=1:11..1:11 children=0
     └── Text scope=2:1..2:3 literal="foo" children=0
 ````````````````````````````````
 
@@ -2169,7 +2169,7 @@ foo
 ~~~
 .
 Document scope=1:1..3:3 children=1
-└── CodeBlock scope=1:1..3:3 mode=standalone info="aa ``` ~~~" language="aa" literal="foo\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..3:3 info="aa ``` ~~~" language="aa" literal="foo\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -2181,7 +2181,7 @@ Closing code fences cannot have [info strings]:
 ```
 .
 Document scope=1:1..3:3 children=1
-└── CodeBlock scope=1:1..3:3 mode=standalone info=null language=null literal="``` aaa\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..3:3 info=null language=null literal="``` aaa\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -2264,14 +2264,14 @@ _world_.
 </td></tr></table>
 .
 Document scope=1:1..7:18 children=3
-├── HTMLBlock scope=1:1..3:10 comment=false literal="<table><tr><td>\n<pre>\n**Hello**,\n" children=0
+├── HTMLBlock scope=1:1..3:10 literal="<table><tr><td>\n<pre>\n**Hello**,\n" children=0
 ├── Paragraph scope=5:1..6:6 children=4
 │   ├── Emphasis scope=5:1..5:7 children=1
 │   │   └── Text scope=5:2..5:6 literal="world" children=0
 │   ├── Text scope=5:8..5:8 literal="." children=0
-│   ├── SoftBreak scope=0:0..0:0 children=0
-│   └── HTML scope=6:1..6:6 comment=false literal="</pre>" children=0
-└── HTMLBlock scope=7:1..7:18 comment=false literal="</td></tr></table>\n" children=0
+│   ├── SoftBreak scope=5:9..5:9 children=0
+│   └── HTML scope=6:1..6:6 literal="</pre>" children=0
+└── HTMLBlock scope=7:1..7:18 literal="</td></tr></table>\n" children=0
 ````````````````````````````````
 
 In this case, the HTML block is terminated by the newline — the `**Hello**`
@@ -2298,7 +2298,7 @@ of type 6:
 okay.
 .
 Document scope=1:1..9:5 children=2
-├── HTMLBlock scope=1:1..7:8 comment=false literal="<table>\n  <tr>\n    <td>\n           hi\n    </td>\n  </tr>\n</table>\n" children=0
+├── HTMLBlock scope=1:1..7:8 literal="<table>\n  <tr>\n    <td>\n           hi\n    </td>\n  </tr>\n</table>\n" children=0
 └── Paragraph scope=9:1..9:5 children=1
     └── Text scope=9:1..9:5 literal="okay." children=0
 ````````````````````````````````
@@ -2310,7 +2310,7 @@ Document scope=1:1..9:5 children=2
          <foo><a>
 .
 Document scope=1:1..3:17 children=1
-└── HTMLBlock scope=1:2..3:17 comment=false literal=" <div>\n  *hello*\n         <foo><a>\n" children=0
+└── HTMLBlock scope=1:2..3:17 literal=" <div>\n  *hello*\n         <foo><a>\n" children=0
 ````````````````````````````````
 
 
@@ -2321,7 +2321,7 @@ A block can also start with a closing tag:
 *foo*
 .
 Document scope=1:1..2:5 children=1
-└── HTMLBlock scope=1:1..2:5 comment=false literal="</div>\n*foo*\n" children=0
+└── HTMLBlock scope=1:1..2:5 literal="</div>\n*foo*\n" children=0
 ````````````````````````````````
 
 
@@ -2335,11 +2335,11 @@ Here we have two HTML blocks with a Markdown paragraph between them:
 </DIV>
 .
 Document scope=1:1..5:6 children=3
-├── HTMLBlock scope=1:1..1:17 comment=false literal="<DIV CLASS=\"foo\">\n" children=0
+├── HTMLBlock scope=1:1..1:17 literal="<DIV CLASS=\"foo\">\n" children=0
 ├── Paragraph scope=3:1..3:10 children=1
 │   └── Emphasis scope=3:1..3:10 children=1
 │       └── Text scope=3:2..3:9 literal="Markdown" children=0
-└── HTMLBlock scope=5:1..5:6 comment=false literal="</DIV>\n" children=0
+└── HTMLBlock scope=5:1..5:6 literal="</DIV>\n" children=0
 ````````````````````````````````
 
 
@@ -2352,7 +2352,7 @@ as it is split where there would be whitespace:
 </div>
 .
 Document scope=1:1..3:6 children=1
-└── HTMLBlock scope=1:1..3:6 comment=false literal="<div id=\"foo\"\n  class=\"bar\">\n</div>\n" children=0
+└── HTMLBlock scope=1:1..3:6 literal="<div id=\"foo\"\n  class=\"bar\">\n</div>\n" children=0
 ````````````````````````````````
 
 
@@ -2362,7 +2362,7 @@ Document scope=1:1..3:6 children=1
 </div>
 .
 Document scope=1:1..3:6 children=1
-└── HTMLBlock scope=1:1..3:6 comment=false literal="<div id=\"foo\" class=\"bar\n  baz\">\n</div>\n" children=0
+└── HTMLBlock scope=1:1..3:6 literal="<div id=\"foo\" class=\"bar\n  baz\">\n</div>\n" children=0
 ````````````````````````````````
 
 
@@ -2374,7 +2374,7 @@ An open tag need not be closed:
 *bar*
 .
 Document scope=1:1..4:5 children=2
-├── HTMLBlock scope=1:1..2:5 comment=false literal="<div>\n*foo*\n" children=0
+├── HTMLBlock scope=1:1..2:5 literal="<div>\n*foo*\n" children=0
 └── Paragraph scope=4:1..4:5 children=1
     └── Emphasis scope=4:1..4:5 children=1
         └── Text scope=4:2..4:4 literal="bar" children=0
@@ -2390,7 +2390,7 @@ in, garbage out):
 *hi*
 .
 Document scope=1:1..2:4 children=1
-└── HTMLBlock scope=1:1..2:4 comment=false literal="<div id=\"foo\"\n*hi*\n" children=0
+└── HTMLBlock scope=1:1..2:4 literal="<div id=\"foo\"\n*hi*\n" children=0
 ````````````````````````````````
 
 
@@ -2399,7 +2399,7 @@ Document scope=1:1..2:4 children=1
 foo
 .
 Document scope=1:1..2:3 children=1
-└── HTMLBlock scope=1:1..2:3 comment=false literal="<div class\nfoo\n" children=0
+└── HTMLBlock scope=1:1..2:3 literal="<div class\nfoo\n" children=0
 ````````````````````````````````
 
 
@@ -2411,7 +2411,7 @@ tag, as long as it starts like one:
 *foo*
 .
 Document scope=1:1..2:5 children=1
-└── HTMLBlock scope=1:1..2:5 comment=false literal="<div *???-&&&-<---\n*foo*\n" children=0
+└── HTMLBlock scope=1:1..2:5 literal="<div *???-&&&-<---\n*foo*\n" children=0
 ````````````````````````````````
 
 
@@ -2422,7 +2422,7 @@ itself:
 <div><a href="bar">*foo*</a></div>
 .
 Document scope=1:1..1:34 children=1
-└── HTMLBlock scope=1:1..1:34 comment=false literal="<div><a href=\"bar\">*foo*</a></div>\n" children=0
+└── HTMLBlock scope=1:1..1:34 literal="<div><a href=\"bar\">*foo*</a></div>\n" children=0
 ````````````````````````````````
 
 
@@ -2432,7 +2432,7 @@ foo
 </td></tr></table>
 .
 Document scope=1:1..3:18 children=1
-└── HTMLBlock scope=1:1..3:18 comment=false literal="<table><tr><td>\nfoo\n</td></tr></table>\n" children=0
+└── HTMLBlock scope=1:1..3:18 literal="<table><tr><td>\nfoo\n</td></tr></table>\n" children=0
 ````````````````````````````````
 
 
@@ -2449,7 +2449,7 @@ int x = 33;
 ```
 .
 Document scope=1:1..4:3 children=1
-└── HTMLBlock scope=1:1..4:3 comment=false literal="<div></div>\n``` c\nint x = 33;\n```\n" children=0
+└── HTMLBlock scope=1:1..4:3 literal="<div></div>\n``` c\nint x = 33;\n```\n" children=0
 ````````````````````````````````
 
 
@@ -2463,7 +2463,7 @@ itself on the first line (and it must be complete):
 </a>
 .
 Document scope=1:1..3:4 children=1
-└── HTMLBlock scope=1:1..3:4 comment=false literal="<a href=\"foo\">\n*bar*\n</a>\n" children=0
+└── HTMLBlock scope=1:1..3:4 literal="<a href=\"foo\">\n*bar*\n</a>\n" children=0
 ````````````````````````````````
 
 
@@ -2475,7 +2475,7 @@ In type 7 blocks, the [tag name] can be anything:
 </Warning>
 .
 Document scope=1:1..3:10 children=1
-└── HTMLBlock scope=1:1..3:10 comment=false literal="<Warning>\n*bar*\n</Warning>\n" children=0
+└── HTMLBlock scope=1:1..3:10 literal="<Warning>\n*bar*\n</Warning>\n" children=0
 ````````````````````````````````
 
 
@@ -2485,7 +2485,7 @@ Document scope=1:1..3:10 children=1
 </i>
 .
 Document scope=1:1..3:4 children=1
-└── HTMLBlock scope=1:1..3:4 comment=false literal="<i class=\"foo\">\n*bar*\n</i>\n" children=0
+└── HTMLBlock scope=1:1..3:4 literal="<i class=\"foo\">\n*bar*\n</i>\n" children=0
 ````````````````````````````````
 
 
@@ -2494,7 +2494,7 @@ Document scope=1:1..3:4 children=1
 *bar*
 .
 Document scope=1:1..2:5 children=1
-└── HTMLBlock scope=1:1..2:5 comment=false literal="</ins>\n*bar*\n" children=0
+└── HTMLBlock scope=1:1..2:5 literal="</ins>\n*bar*\n" children=0
 ````````````````````````````````
 
 
@@ -2510,7 +2510,7 @@ HTML block, because the `<del>` tag is on a line by itself:
 </del>
 .
 Document scope=1:1..3:6 children=1
-└── HTMLBlock scope=1:1..3:6 comment=false literal="<del>\n*foo*\n</del>\n" children=0
+└── HTMLBlock scope=1:1..3:6 literal="<del>\n*foo*\n</del>\n" children=0
 ````````````````````````````````
 
 
@@ -2526,11 +2526,11 @@ line).  So the contents get interpreted as CommonMark:
 </del>
 .
 Document scope=1:1..5:6 children=3
-├── HTMLBlock scope=1:1..1:5 comment=false literal="<del>\n" children=0
+├── HTMLBlock scope=1:1..1:5 literal="<del>\n" children=0
 ├── Paragraph scope=3:1..3:5 children=1
 │   └── Emphasis scope=3:1..3:5 children=1
 │       └── Text scope=3:2..3:4 literal="foo" children=0
-└── HTMLBlock scope=5:1..5:6 comment=false literal="</del>\n" children=0
+└── HTMLBlock scope=5:1..5:6 literal="</del>\n" children=0
 ````````````````````````````````
 
 
@@ -2544,10 +2544,10 @@ rather than an [HTML block].)
 .
 Document scope=1:1..1:16 children=1
 └── Paragraph scope=1:1..1:16 children=3
-    ├── HTML scope=1:1..1:5 comment=false literal="<del>" children=0
+    ├── HTML scope=1:1..1:5 literal="<del>" children=0
     ├── Emphasis scope=1:6..1:10 children=1
     │   └── Text scope=1:7..1:9 literal="foo" children=0
-    └── HTML scope=1:11..1:16 comment=false literal="</del>" children=0
+    └── HTML scope=1:11..1:16 literal="</del>" children=0
 ````````````````````````````````
 
 
@@ -2570,7 +2570,7 @@ main = print $ parseTags tags
 okay
 .
 Document scope=1:1..7:4 children=2
-├── HTMLBlock scope=1:1..5:29 comment=false literal="<pre language=\"haskell\"><code>\nimport Text.HTML.TagSoup\n\nmain :: IO ()\nmain = print $ parseTags tags\n</code></pre>\n" children=0
+├── HTMLBlock scope=1:1..5:29 literal="<pre language=\"haskell\"><code>\nimport Text.HTML.TagSoup\n\nmain :: IO ()\nmain = print $ parseTags tags\n</code></pre>\n" children=0
 └── Paragraph scope=7:1..7:4 children=1
     └── Text scope=7:1..7:4 literal="okay" children=0
 ````````````````````````````````
@@ -2587,7 +2587,7 @@ document.getElementById("demo").innerHTML = "Hello JavaScript!";
 okay
 .
 Document scope=1:1..6:4 children=2
-├── HTMLBlock scope=1:1..4:64 comment=false literal="<script type=\"text/javascript\">\n// JavaScript example\n\ndocument.getElementById(\"demo\").innerHTML = \"Hello JavaScript!\";\n</script>\n" children=0
+├── HTMLBlock scope=1:1..4:64 literal="<script type=\"text/javascript\">\n// JavaScript example\n\ndocument.getElementById(\"demo\").innerHTML = \"Hello JavaScript!\";\n</script>\n" children=0
 └── Paragraph scope=6:1..6:4 children=1
     └── Text scope=6:1..6:4 literal="okay" children=0
 ````````````````````````````````
@@ -2605,7 +2605,7 @@ p {color:blue;}
 okay
 .
 Document scope=1:1..7:4 children=2
-├── HTMLBlock scope=1:1..5:15 comment=false literal="<style\n  type=\"text/css\">\nh1 {color:red;}\n\np {color:blue;}\n</style>\n" children=0
+├── HTMLBlock scope=1:1..5:15 literal="<style\n  type=\"text/css\">\nh1 {color:red;}\n\np {color:blue;}\n</style>\n" children=0
 └── Paragraph scope=7:1..7:4 children=1
     └── Text scope=7:1..7:4 literal="okay" children=0
 ````````````````````````````````
@@ -2622,7 +2622,7 @@ or [list item][list items]):
 foo
 .
 Document scope=1:1..4:3 children=1
-└── HTMLBlock scope=1:1..4:3 comment=false literal="<style\n  type=\"text/css\">\n\nfoo\n" children=0
+└── HTMLBlock scope=1:1..4:3 literal="<style\n  type=\"text/css\">\n\nfoo\n" children=0
 ````````````````````````````````
 
 
@@ -2634,7 +2634,7 @@ bar
 .
 Document scope=1:1..4:3 children=2
 ├── BlockQuote scope=1:1..2:5 children=1
-│   └── HTMLBlock scope=1:3..2:5 comment=false literal="<div>\nfoo\n" children=0
+│   └── HTMLBlock scope=1:3..2:5 literal="<div>\nfoo\n" children=0
 └── Paragraph scope=4:1..4:3 children=1
     └── Text scope=4:1..4:3 literal="bar" children=0
 ````````````````````````````````
@@ -2647,7 +2647,7 @@ Document scope=1:1..4:3 children=2
 Document scope=1:1..2:5 children=1
 └── List scope=1:1..2:5 flavor=bullet start=null tight=true children=2
     ├── ListItem scope=1:1..1:7 checked=null children=1
-    │   └── HTMLBlock scope=1:3..1:7 comment=false literal="<div>\n" children=0
+    │   └── HTMLBlock scope=1:3..1:7 literal="<div>\n" children=0
     └── ListItem scope=2:1..2:5 checked=null children=1
         └── Paragraph scope=2:3..2:5 children=1
             └── Text scope=2:3..2:5 literal="foo" children=0
@@ -2661,7 +2661,7 @@ The end tag can occur on the same line as the start tag:
 *foo*
 .
 Document scope=1:1..2:5 children=2
-├── HTMLBlock scope=1:1..0:0 comment=false literal="<style>p{color:red;}</style>\n" children=0
+├── HTMLBlock scope=1:1..1:28 literal="<style>p{color:red;}</style>\n" children=0
 └── Paragraph scope=2:1..2:5 children=1
     └── Emphasis scope=2:1..2:5 children=1
         └── Text scope=2:2..2:4 literal="foo" children=0
@@ -2673,7 +2673,7 @@ Document scope=1:1..2:5 children=2
 *baz*
 .
 Document scope=1:1..2:5 children=2
-├── HTMLBlock scope=1:1..0:0 comment=false literal="<!-- foo -->*bar*\n" children=0
+├── HTMLBlock scope=1:1..1:17 literal="<!-- foo -->*bar*\n" children=0
 └── Paragraph scope=2:1..2:5 children=1
     └── Emphasis scope=2:1..2:5 children=1
         └── Text scope=2:2..2:4 literal="baz" children=0
@@ -2689,7 +2689,7 @@ foo
 </script>1. *bar*
 .
 Document scope=1:1..3:17 children=1
-└── HTMLBlock scope=1:1..2:3 comment=false literal="<script>\nfoo\n</script>1. *bar*\n" children=0
+└── HTMLBlock scope=1:1..2:3 literal="<script>\nfoo\n</script>1. *bar*\n" children=0
 ````````````````````````````````
 
 
@@ -2703,7 +2703,7 @@ bar
 okay
 .
 Document scope=1:1..5:4 children=2
-├── HTMLBlock scope=1:1..3:3 comment=true literal="<!-- Foo\n\nbar\n   baz -->\n" children=0
+├── HTMLBlock scope=1:1..3:3 literal="<!-- Foo\n\nbar\n   baz -->\n" children=0
 └── Paragraph scope=5:1..5:4 children=1
     └── Text scope=5:1..5:4 literal="okay" children=0
 ````````````````````````````````
@@ -2721,7 +2721,7 @@ A processing instruction (type 3):
 okay
 .
 Document scope=1:1..6:4 children=2
-├── HTMLBlock scope=1:1..4:0 comment=false literal="<?php\n\n  echo '>';\n\n?>\n" children=0
+├── HTMLBlock scope=1:1..4:0 literal="<?php\n\n  echo '>';\n\n?>\n" children=0
 └── Paragraph scope=6:1..6:4 children=1
     └── Text scope=6:1..6:4 literal="okay" children=0
 ````````````````````````````````
@@ -2733,7 +2733,7 @@ A declaration (type 4):
 <!DOCTYPE html>
 .
 Document scope=1:1..1:15 children=1
-└── HTMLBlock scope=1:1..0:0 comment=false literal="<!DOCTYPE html>\n" children=0
+└── HTMLBlock scope=1:1..1:15 literal="<!DOCTYPE html>\n" children=0
 ````````````````````````````````
 
 
@@ -2755,7 +2755,7 @@ function matchwo(a,b)
 okay
 .
 Document scope=1:1..13:4 children=2
-├── HTMLBlock scope=1:1..11:1 comment=false literal="<![CDATA[\nfunction matchwo(a,b)\n{\n  if (a < b && a < 0) then {\n    return 1;\n\n  } else {\n\n    return 0;\n  }\n}\n]]>\n" children=0
+├── HTMLBlock scope=1:1..11:1 literal="<![CDATA[\nfunction matchwo(a,b)\n{\n  if (a < b && a < 0) then {\n    return 1;\n\n  } else {\n\n    return 0;\n  }\n}\n]]>\n" children=0
 └── Paragraph scope=13:1..13:4 children=1
     └── Text scope=13:1..13:4 literal="okay" children=0
 ````````````````````````````````
@@ -2769,8 +2769,8 @@ The opening tag can be indented 1-3 spaces, but not 4:
     <!-- foo -->
 .
 Document scope=1:1..3:16 children=2
-├── HTMLBlock scope=1:3..0:0 comment=true literal="  <!-- foo -->\n" children=0
-└── CodeBlock scope=3:5..3:16 mode=standalone info=null language=null literal="<!-- foo -->\n" fenced=false closed=true children=0
+├── HTMLBlock scope=1:3..1:14 literal="  <!-- foo -->\n" children=0
+└── CodeBlock scope=3:5..3:16 info=null language=null literal="<!-- foo -->\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -2780,8 +2780,8 @@ Document scope=1:1..3:16 children=2
     <div>
 .
 Document scope=1:1..3:9 children=2
-├── HTMLBlock scope=1:3..1:7 comment=false literal="  <div>\n" children=0
-└── CodeBlock scope=3:5..3:9 mode=standalone info=null language=null literal="<div>\n" fenced=false closed=true children=0
+├── HTMLBlock scope=1:3..1:7 literal="  <div>\n" children=0
+└── CodeBlock scope=3:5..3:9 info=null language=null literal="<div>\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -2797,7 +2797,7 @@ bar
 Document scope=1:1..4:6 children=2
 ├── Paragraph scope=1:1..1:3 children=1
 │   └── Text scope=1:1..1:3 literal="Foo" children=0
-└── HTMLBlock scope=2:1..4:6 comment=false literal="<div>\nbar\n</div>\n" children=0
+└── HTMLBlock scope=2:1..4:6 literal="<div>\nbar\n</div>\n" children=0
 ````````````````````````````````
 
 
@@ -2812,7 +2812,7 @@ bar
 *foo*
 .
 Document scope=1:1..4:5 children=1
-└── HTMLBlock scope=1:1..4:5 comment=false literal="<div>\nbar\n</div>\n*foo*\n" children=0
+└── HTMLBlock scope=1:1..4:5 literal="<div>\nbar\n</div>\n*foo*\n" children=0
 ````````````````````````````````
 
 
@@ -2826,9 +2826,9 @@ baz
 Document scope=1:1..3:3 children=1
 └── Paragraph scope=1:1..3:3 children=5
     ├── Text scope=1:1..1:3 literal="Foo" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
-    ├── HTML scope=2:1..2:14 comment=false literal="<a href=\"bar\">" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:4..1:4 children=0
+    ├── HTML scope=2:1..2:14 literal="<a href=\"bar\">" children=0
+    ├── SoftBreak scope=2:15..2:15 children=0
     └── Text scope=3:1..3:3 literal="baz" children=0
 ````````````````````````````````
 
@@ -2871,12 +2871,12 @@ Compare:
 </div>
 .
 Document scope=1:1..5:6 children=3
-├── HTMLBlock scope=1:1..1:5 comment=false literal="<div>\n" children=0
+├── HTMLBlock scope=1:1..1:5 literal="<div>\n" children=0
 ├── Paragraph scope=3:1..3:18 children=2
 │   ├── Emphasis scope=3:1..3:12 children=1
 │   │   └── Text scope=3:2..3:11 literal="Emphasized" children=0
 │   └── Text scope=3:13..3:18 literal=" text." children=0
-└── HTMLBlock scope=5:1..5:6 comment=false literal="</div>\n" children=0
+└── HTMLBlock scope=5:1..5:6 literal="</div>\n" children=0
 ````````````````````````````````
 
 
@@ -2886,7 +2886,7 @@ Document scope=1:1..5:6 children=3
 </div>
 .
 Document scope=1:1..3:6 children=1
-└── HTMLBlock scope=1:1..3:6 comment=false literal="<div>\n*Emphasized* text.\n</div>\n" children=0
+└── HTMLBlock scope=1:1..3:6 literal="<div>\n*Emphasized* text.\n</div>\n" children=0
 ````````````````````````````````
 
 
@@ -2915,11 +2915,11 @@ Hi
 </table>
 .
 Document scope=1:1..11:8 children=5
-├── HTMLBlock scope=1:1..1:7 comment=false literal="<table>\n" children=0
-├── HTMLBlock scope=3:1..3:4 comment=false literal="<tr>\n" children=0
-├── HTMLBlock scope=5:1..7:5 comment=false literal="<td>\nHi\n</td>\n" children=0
-├── HTMLBlock scope=9:1..9:5 comment=false literal="</tr>\n" children=0
-└── HTMLBlock scope=11:1..11:8 comment=false literal="</table>\n" children=0
+├── HTMLBlock scope=1:1..1:7 literal="<table>\n" children=0
+├── HTMLBlock scope=3:1..3:4 literal="<tr>\n" children=0
+├── HTMLBlock scope=5:1..7:5 literal="<td>\nHi\n</td>\n" children=0
+├── HTMLBlock scope=9:1..9:5 literal="</tr>\n" children=0
+└── HTMLBlock scope=11:1..11:8 literal="</table>\n" children=0
 ````````````````````````````````
 
 
@@ -2941,11 +2941,11 @@ an indented code block:
 </table>
 .
 Document scope=1:1..11:8 children=5
-├── HTMLBlock scope=1:1..1:7 comment=false literal="<table>\n" children=0
-├── HTMLBlock scope=3:3..3:6 comment=false literal="  <tr>\n" children=0
-├── CodeBlock scope=5:5..8:0 mode=standalone info=null language=null literal="<td>\n  Hi\n</td>\n" fenced=false closed=true children=0
-├── HTMLBlock scope=9:3..9:7 comment=false literal="  </tr>\n" children=0
-└── HTMLBlock scope=11:1..11:8 comment=false literal="</table>\n" children=0
+├── HTMLBlock scope=1:1..1:7 literal="<table>\n" children=0
+├── HTMLBlock scope=3:3..3:6 literal="  <tr>\n" children=0
+├── CodeBlock scope=5:5..8:0 info=null language=null literal="<td>\n  Hi\n</td>\n" fenced=false closed=true children=0
+├── HTMLBlock scope=9:3..9:7 literal="  </tr>\n" children=0
+└── HTMLBlock scope=11:1..11:8 literal="</table>\n" children=0
 ````````````````````````````````
 
 
@@ -2979,9 +2979,9 @@ them.
 [foo]
 .
 Document scope=1:1..3:5 children=2
-├── ReferenceDefinition scope=1:1..1:19 label="foo" destination="/url" title="title" children=0
+├── ReferenceDefinition scope=1:1..1:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 └── Paragraph scope=3:1..3:5 children=1
-    └── LinkReference scope=3:1..3:5 label="foo" form=shortcut children=1
+    └── LinkReference scope=3:1..3:5 label="foo" identifier="foo" form=shortcut children=1
         └── Text scope=3:2..3:4 literal="foo" children=0
 ````````````````````````````````
 
@@ -2994,9 +2994,9 @@ Document scope=1:1..3:5 children=2
 [foo]
 .
 Document scope=1:1..5:5 children=2
-├── ReferenceDefinition scope=1:4..3:22 label="foo" destination="/url" title="the title" children=0
+├── ReferenceDefinition scope=1:4..3:24 label="foo" identifier="foo" destination="/url" title="the title" children=0
 └── Paragraph scope=5:1..5:5 children=1
-    └── LinkReference scope=5:1..5:5 label="foo" form=shortcut children=1
+    └── LinkReference scope=5:1..5:5 label="foo" identifier="foo" form=shortcut children=1
         └── Text scope=5:2..5:4 literal="foo" children=0
 ````````````````````````````````
 
@@ -3007,9 +3007,9 @@ Document scope=1:1..5:5 children=2
 [Foo*bar\]]
 .
 Document scope=1:1..3:11 children=2
-├── ReferenceDefinition scope=1:1..1:42 label="Foo*bar\\]" destination="my_(url)" title="title (with parens)" children=0
+├── ReferenceDefinition scope=1:1..1:42 label="Foo*bar\\]" identifier="foo*bar\\]" destination="my_(url)" title="title (with parens)" children=0
 └── Paragraph scope=3:1..3:11 children=1
-    └── LinkReference scope=3:1..3:11 label="Foo*bar\\]" form=shortcut children=1
+    └── LinkReference scope=3:1..3:11 label="Foo*bar\\]" identifier="foo*bar\\]" form=shortcut children=1
         └── Text scope=3:2..3:10 literal="Foo*bar]" children=0
 ````````````````````````````````
 
@@ -3022,9 +3022,9 @@ Document scope=1:1..3:11 children=2
 [Foo bar]
 .
 Document scope=1:1..5:9 children=2
-├── ReferenceDefinition scope=1:1..3:7 label="Foo bar" destination="my url" title="title" children=0
+├── ReferenceDefinition scope=1:1..3:7 label="Foo bar" identifier="foo bar" destination="my url" title="title" children=0
 └── Paragraph scope=5:1..5:9 children=1
-    └── LinkReference scope=5:1..5:9 label="Foo bar" form=shortcut children=1
+    └── LinkReference scope=5:1..5:9 label="Foo bar" identifier="foo bar" form=shortcut children=1
         └── Text scope=5:2..5:8 literal="Foo bar" children=0
 ````````````````````````````````
 
@@ -3041,9 +3041,9 @@ line2
 [foo]
 .
 Document scope=1:1..7:5 children=2
-├── ReferenceDefinition scope=1:1..5:1 label="foo" destination="/url" title="\ntitle\nline1\nline2\n" children=0
+├── ReferenceDefinition scope=1:1..5:1 label="foo" identifier="foo" destination="/url" title="\ntitle\nline1\nline2\n" children=0
 └── Paragraph scope=7:1..7:5 children=1
-    └── LinkReference scope=7:1..7:5 label="foo" form=shortcut children=1
+    └── LinkReference scope=7:1..7:5 label="foo" identifier="foo" form=shortcut children=1
         └── Text scope=7:2..7:4 literal="foo" children=0
 ````````````````````````````````
 
@@ -3076,9 +3076,9 @@ The title may be omitted:
 [foo]
 .
 Document scope=1:1..4:5 children=2
-├── ReferenceDefinition scope=1:1..2:4 label="foo" destination="/url" title=null children=0
+├── ReferenceDefinition scope=1:1..2:4 label="foo" identifier="foo" destination="/url" title=null children=0
 └── Paragraph scope=4:1..4:5 children=1
-    └── LinkReference scope=4:1..4:5 label="foo" form=shortcut children=1
+    └── LinkReference scope=4:1..4:5 label="foo" identifier="foo" form=shortcut children=1
         └── Text scope=4:2..4:4 literal="foo" children=0
 ````````````````````````````````
 
@@ -3106,9 +3106,9 @@ Document scope=1:1..3:5 children=2
 [foo]
 .
 Document scope=1:1..3:5 children=2
-├── ReferenceDefinition scope=1:1..1:9 label="foo" destination="" title=null children=0
+├── ReferenceDefinition scope=1:1..1:9 label="foo" identifier="foo" destination="" title=null children=0
 └── Paragraph scope=3:1..3:5 children=1
-    └── LinkReference scope=3:1..3:5 label="foo" form=shortcut children=1
+    └── LinkReference scope=3:1..3:5 label="foo" identifier="foo" form=shortcut children=1
         └── Text scope=3:2..3:4 literal="foo" children=0
 ````````````````````````````````
 
@@ -3123,7 +3123,7 @@ whitespace:
 Document scope=1:1..3:5 children=2
 ├── Paragraph scope=1:1..1:17 children=3
 │   ├── Text scope=1:1..1:7 literal="[foo]: " children=0
-│   ├── HTML scope=1:8..1:12 comment=false literal="<bar>" children=0
+│   ├── HTML scope=1:8..1:12 literal="<bar>" children=0
 │   └── Text scope=1:13..1:17 literal="(baz)" children=0
 └── Paragraph scope=3:1..3:5 children=1
     └── Text scope=3:1..3:5 literal="[foo]" children=0
@@ -3139,9 +3139,9 @@ and literal backslashes:
 [foo]
 .
 Document scope=1:1..3:5 children=2
-├── ReferenceDefinition scope=1:1..1:35 label="foo" destination="/url\\bar*baz" title="foo\"bar\\baz" children=0
+├── ReferenceDefinition scope=1:1..1:35 label="foo" identifier="foo" destination="/url\\bar*baz" title="foo\"bar\\baz" children=0
 └── Paragraph scope=3:1..3:5 children=1
-    └── LinkReference scope=3:1..3:5 label="foo" form=shortcut children=1
+    └── LinkReference scope=3:1..3:5 label="foo" identifier="foo" form=shortcut children=1
         └── Text scope=3:2..3:4 literal="foo" children=0
 ````````````````````````````````
 
@@ -3155,9 +3155,9 @@ A link can come before its corresponding definition:
 .
 Document scope=1:1..3:10 children=2
 ├── Paragraph scope=1:1..1:5 children=1
-│   └── LinkReference scope=1:1..1:5 label="foo" form=shortcut children=1
+│   └── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:10 label="foo" destination="url" title=null children=0
+└── ReferenceDefinition scope=3:1..3:10 label="foo" identifier="foo" destination="url" title=null children=0
 ````````````````````````````````
 
 
@@ -3172,10 +3172,10 @@ precedence:
 .
 Document scope=1:1..4:13 children=3
 ├── Paragraph scope=1:1..1:5 children=1
-│   └── LinkReference scope=1:1..1:5 label="foo" form=shortcut children=1
+│   └── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-├── ReferenceDefinition scope=3:1..3:12 label="foo" destination="first" title=null children=0
-└── ReferenceDefinition scope=4:1..4:13 label="foo" destination="second" title=null children=0
+├── ReferenceDefinition scope=3:1..3:12 label="foo" identifier="foo" destination="first" title=null children=0
+└── ReferenceDefinition scope=4:1..4:13 label="foo" identifier="foo" destination="second" title=null children=0
 ````````````````````````````````
 
 
@@ -3188,9 +3188,9 @@ case-insensitive (see [matches]).
 [Foo]
 .
 Document scope=1:1..3:5 children=2
-├── ReferenceDefinition scope=1:1..1:11 label="FOO" destination="/url" title=null children=0
+├── ReferenceDefinition scope=1:1..1:11 label="FOO" identifier="foo" destination="/url" title=null children=0
 └── Paragraph scope=3:1..3:5 children=1
-    └── LinkReference scope=3:1..3:5 label="Foo" form=shortcut children=1
+    └── LinkReference scope=3:1..3:5 label="Foo" identifier="foo" form=shortcut children=1
         └── Text scope=3:2..3:4 literal="Foo" children=0
 ````````````````````````````````
 
@@ -3201,9 +3201,9 @@ Document scope=1:1..3:5 children=2
 [αγω]
 .
 Document scope=1:1..3:8 children=2
-├── ReferenceDefinition scope=1:1..1:17 label="ΑΓΩ" destination="/φου" title=null children=0
+├── ReferenceDefinition scope=1:1..1:17 label="ΑΓΩ" identifier="αγω" destination="/φου" title=null children=0
 └── Paragraph scope=3:1..3:8 children=1
-    └── LinkReference scope=3:1..3:8 label="αγω" form=shortcut children=1
+    └── LinkReference scope=3:1..3:8 label="αγω" identifier="αγω" form=shortcut children=1
         └── Text scope=3:2..3:7 literal="αγω" children=0
 ````````````````````````````````
 
@@ -3215,7 +3215,7 @@ It contributes nothing to the document.
 [foo]: /url
 .
 Document scope=1:1..1:11 children=1
-└── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title=null children=0
+└── ReferenceDefinition scope=1:1..1:11 label="foo" identifier="foo" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -3228,7 +3228,7 @@ foo
 bar
 .
 Document scope=1:1..4:3 children=2
-├── ReferenceDefinition scope=1:1..3:7 label="\nfoo\n" destination="/url" title=null children=0
+├── ReferenceDefinition scope=1:1..3:7 label="foo" identifier="foo" destination="/url" title=null children=0
 └── Paragraph scope=4:1..4:3 children=1
     └── Text scope=4:1..4:3 literal="bar" children=0
 ````````````````````````````````
@@ -3253,7 +3253,7 @@ This is a link reference definition, but it has no title:
 "title" ok
 .
 Document scope=1:1..2:10 children=2
-├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title=null children=0
+├── ReferenceDefinition scope=1:1..1:11 label="foo" identifier="foo" destination="/url" title=null children=0
 └── Paragraph scope=2:1..2:10 children=1
     └── Text scope=2:1..2:10 literal="\"title\" ok" children=0
 ````````````````````````````````
@@ -3268,7 +3268,7 @@ four spaces:
 [foo]
 .
 Document scope=1:1..3:5 children=2
-├── CodeBlock scope=1:5..2:0 mode=standalone info=null language=null literal="[foo]: /url \"title\"\n" fenced=false closed=true children=0
+├── CodeBlock scope=1:5..2:0 info=null language=null literal="[foo]: /url \"title\"\n" fenced=false closed=true children=0
 └── Paragraph scope=3:1..3:5 children=1
     └── Text scope=3:1..3:5 literal="[foo]" children=0
 ````````````````````````````````
@@ -3285,7 +3285,7 @@ a code block:
 [foo]
 .
 Document scope=1:1..5:5 children=2
-├── CodeBlock scope=1:1..3:3 mode=standalone info=null language=null literal="[foo]: /url\n" fenced=true closed=true children=0
+├── CodeBlock scope=1:1..3:3 info=null language=null literal="[foo]: /url\n" fenced=true closed=true children=0
 └── Paragraph scope=5:1..5:5 children=1
     └── Text scope=5:1..5:5 literal="[foo]" children=0
 ````````````````````````````````
@@ -3302,7 +3302,7 @@ Foo
 Document scope=1:1..4:5 children=2
 ├── Paragraph scope=1:1..2:11 children=3
 │   ├── Text scope=1:1..1:3 literal="Foo" children=0
-│   ├── SoftBreak scope=0:0..0:0 children=0
+│   ├── SoftBreak scope=1:4..1:4 children=0
 │   └── Text scope=2:1..2:11 literal="[bar]: /baz" children=0
 └── Paragraph scope=4:1..4:5 children=1
     └── Text scope=4:1..4:5 literal="[bar]" children=0
@@ -3319,9 +3319,9 @@ and thematic breaks, and it need not be followed by a blank line.
 .
 Document scope=1:1..3:5 children=3
 ├── Heading scope=1:1..1:7 level=1 children=1
-│   └── LinkReference scope=1:3..1:7 label="Foo" form=shortcut children=1
+│   └── LinkReference scope=1:3..1:7 label="Foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:4..1:6 literal="Foo" children=0
-├── ReferenceDefinition scope=2:1..2:11 label="foo" destination="/url" title=null children=0
+├── ReferenceDefinition scope=2:1..2:11 label="foo" identifier="foo" destination="/url" title=null children=0
 └── BlockQuote scope=3:1..3:5 children=1
     └── Paragraph scope=3:3..3:5 children=1
         └── Text scope=3:3..3:5 literal="bar" children=0
@@ -3334,11 +3334,11 @@ bar
 [foo]
 .
 Document scope=1:1..4:5 children=3
-├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title=null children=0
+├── ReferenceDefinition scope=1:1..1:11 label="foo" identifier="foo" destination="/url" title=null children=0
 ├── Heading scope=2:1..4:5 level=1 children=1
 │   └── Text scope=2:1..2:3 literal="bar" children=0
 └── Paragraph scope=4:1..4:5 children=1
-    └── LinkReference scope=4:1..4:5 label="foo" form=shortcut children=1
+    └── LinkReference scope=4:1..4:5 label="foo" identifier="foo" form=shortcut children=1
         └── Text scope=4:2..4:4 literal="foo" children=0
 ````````````````````````````````
 
@@ -3348,12 +3348,12 @@ Document scope=1:1..4:5 children=3
 [foo]
 .
 Document scope=1:1..3:5 children=2
-├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title=null children=0
-└── Paragraph scope=1:13..3:5 children=3
-    ├── Text scope=1:13..1:15 literal="===" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
-    └── LinkReference scope=2:13..2:17 label="foo" form=shortcut children=1
-        └── Text scope=2:14..2:16 literal="foo" children=0
+├── ReferenceDefinition scope=1:1..1:11 label="foo" identifier="foo" destination="/url" title=null children=0
+└── Paragraph scope=2:1..3:5 children=3
+    ├── Text scope=2:1..2:3 literal="===" children=0
+    ├── SoftBreak scope=2:4..2:4 children=0
+    └── LinkReference scope=3:1..3:5 label="foo" identifier="foo" form=shortcut children=1
+        └── Text scope=3:2..3:4 literal="foo" children=0
 ````````````````````````````````
 
 
@@ -3371,19 +3371,19 @@ can occur one after another, without intervening blank lines.
 [baz]
 .
 Document scope=1:1..8:5 children=4
-├── ReferenceDefinition scope=1:1..1:21 label="foo" destination="/foo-url" title="foo" children=0
-├── ReferenceDefinition scope=2:1..3:7 label="bar" destination="/bar-url" title="bar" children=0
-├── ReferenceDefinition scope=4:1..4:15 label="baz" destination="/baz-url" title=null children=0
+├── ReferenceDefinition scope=1:1..1:21 label="foo" identifier="foo" destination="/foo-url" title="foo" children=0
+├── ReferenceDefinition scope=2:1..3:7 label="bar" identifier="bar" destination="/bar-url" title="bar" children=0
+├── ReferenceDefinition scope=4:1..4:15 label="baz" identifier="baz" destination="/baz-url" title=null children=0
 └── Paragraph scope=6:1..8:5 children=7
-    ├── LinkReference scope=6:1..6:5 label="foo" form=shortcut children=1
+    ├── LinkReference scope=6:1..6:5 label="foo" identifier="foo" form=shortcut children=1
     │   └── Text scope=6:2..6:4 literal="foo" children=0
     ├── Text scope=6:6..6:6 literal="," children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
-    ├── LinkReference scope=7:1..7:5 label="bar" form=shortcut children=1
+    ├── SoftBreak scope=6:7..6:7 children=0
+    ├── LinkReference scope=7:1..7:5 label="bar" identifier="bar" form=shortcut children=1
     │   └── Text scope=7:2..7:4 literal="bar" children=0
     ├── Text scope=7:6..7:6 literal="," children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
-    └── LinkReference scope=8:1..8:5 label="baz" form=shortcut children=1
+    ├── SoftBreak scope=7:7..7:7 children=0
+    └── LinkReference scope=8:1..8:5 label="baz" identifier="baz" form=shortcut children=1
         └── Text scope=8:2..8:4 literal="baz" children=0
 ````````````````````````````````
 
@@ -3400,10 +3400,10 @@ are defined:
 .
 Document scope=1:1..3:13 children=2
 ├── Paragraph scope=1:1..1:5 children=1
-│   └── LinkReference scope=1:1..1:5 label="foo" form=shortcut children=1
+│   └── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
 └── BlockQuote scope=3:1..3:13 children=1
-    └── ReferenceDefinition scope=3:3..3:13 label="foo" destination="/url" title=null children=0
+    └── ReferenceDefinition scope=3:3..3:13 label="foo" identifier="foo" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -3417,7 +3417,7 @@ no visible content:
 [foo]: /url
 .
 Document scope=1:1..1:11 children=1
-└── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title=null children=0
+└── ReferenceDefinition scope=1:1..1:11 label="foo" identifier="foo" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -3457,11 +3457,11 @@ ddd
 Document scope=1:1..5:3 children=2
 ├── Paragraph scope=1:1..2:3 children=3
 │   ├── Text scope=1:1..1:3 literal="aaa" children=0
-│   ├── SoftBreak scope=0:0..0:0 children=0
+│   ├── SoftBreak scope=1:4..1:4 children=0
 │   └── Text scope=2:1..2:3 literal="bbb" children=0
 └── Paragraph scope=4:1..5:3 children=3
     ├── Text scope=4:1..4:3 literal="ccc" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=4:4..4:4 children=0
     └── Text scope=5:1..5:3 literal="ddd" children=0
 ````````````````````````````````
 
@@ -3491,8 +3491,8 @@ Leading spaces are skipped:
 Document scope=1:1..2:4 children=1
 └── Paragraph scope=1:3..2:4 children=3
     ├── Text scope=1:3..1:5 literal="aaa" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
-    └── Text scope=2:3..2:5 literal="bbb" children=0
+    ├── SoftBreak scope=1:6..1:6 children=0
+    └── Text scope=2:2..2:4 literal="bbb" children=0
 ````````````````````````````````
 
 
@@ -3507,10 +3507,10 @@ aaa
 Document scope=1:1..3:42 children=1
 └── Paragraph scope=1:1..3:42 children=5
     ├── Text scope=1:1..1:3 literal="aaa" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
-    ├── Text scope=2:1..2:3 literal="bbb" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
-    └── Text scope=3:1..3:3 literal="ccc" children=0
+    ├── SoftBreak scope=1:4..1:4 children=0
+    ├── Text scope=2:14..2:16 literal="bbb" children=0
+    ├── SoftBreak scope=2:17..2:17 children=0
+    └── Text scope=3:40..3:42 literal="ccc" children=0
 ````````````````````````````````
 
 
@@ -3524,8 +3524,8 @@ bbb
 Document scope=1:1..2:3 children=1
 └── Paragraph scope=1:4..2:3 children=3
     ├── Text scope=1:4..1:6 literal="aaa" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
-    └── Text scope=2:4..2:6 literal="bbb" children=0
+    ├── SoftBreak scope=1:7..1:7 children=0
+    └── Text scope=2:1..2:3 literal="bbb" children=0
 ````````````````````````````````
 
 
@@ -3534,7 +3534,7 @@ Document scope=1:1..2:3 children=1
 bbb
 .
 Document scope=1:1..2:3 children=2
-├── CodeBlock scope=1:5..1:7 mode=standalone info=null language=null literal="aaa\n" fenced=false closed=true children=0
+├── CodeBlock scope=1:5..1:7 info=null language=null literal="aaa\n" fenced=false closed=true children=0
 └── Paragraph scope=2:1..2:3 children=1
     └── Text scope=2:1..2:3 literal="bbb" children=0
 ````````````````````````````````
@@ -3551,7 +3551,7 @@ bbb
 Document scope=1:1..2:8 children=1
 └── Paragraph scope=1:1..2:8 children=3
     ├── Text scope=1:1..1:8 literal="aaa" children=0
-    ├── LineBreak scope=0:0..0:0 children=0
+    ├── LineBreak scope=1:9..1:9 children=0
     └── Text scope=2:1..2:3 literal="bbb" children=0
 ````````````````````````````````
 
@@ -3660,7 +3660,7 @@ Document scope=1:1..4:15 children=1
     ├── TableRow scope=3:1..3:13 isHeader=false children=1
     │   └── TableCell scope=3:2..3:12 children=3
     │       ├── Text scope=3:3..3:4 literal="b " children=0
-    │       ├── Code scope=3:6..3:6 mode=embedded literal="|" children=0
+    │       ├── Code scope=3:5..3:7 literal="|" children=0
     │       └── Text scope=3:8..3:10 literal=" az" children=0
     └── TableRow scope=4:1..4:15 isHeader=false children=1
         └── TableCell scope=4:2..4:14 children=3
@@ -3719,7 +3719,7 @@ Document scope=1:1..6:3 children=2
 │   └── TableRow scope=4:1..4:3 isHeader=false children=2
 │       ├── TableCell scope=4:1..4:3 children=1
 │       │   └── Text scope=4:1..4:3 literal="bar" children=0
-│       └── TableCell scope=4:0..4:0 children=0
+│       └── TableCell scope=4:3..4:3 children=0
 └── Paragraph scope=6:1..6:3 children=1
     └── Text scope=6:1..6:3 literal="bar" children=0
 ````````````````````````````````
@@ -3735,9 +3735,9 @@ a table will not be recognized:
 Document scope=1:1..3:7 children=1
 └── Paragraph scope=1:1..3:7 children=5
     ├── Text scope=1:1..1:13 literal="| abc | def |" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:14..1:14 children=0
     ├── Text scope=2:1..2:7 literal="| --- |" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=2:8..2:8 children=0
     └── Text scope=3:1..3:7 literal="| bar |" children=0
 ````````````````````````````````
 
@@ -3761,7 +3761,7 @@ Document scope=1:1..4:19 children=1
     ├── TableRow scope=3:1..3:7 isHeader=false children=2
     │   ├── TableCell scope=3:2..3:6 children=1
     │   │   └── Text scope=3:3..3:5 literal="bar" children=0
-    │   └── TableCell scope=3:0..3:0 children=0
+    │   └── TableCell scope=3:7..3:7 children=0
     └── TableRow scope=4:1..4:19 isHeader=false children=2
         ├── TableCell scope=4:2..4:6 children=1
         │   └── Text scope=4:3..4:5 literal="bar" children=0
@@ -3847,7 +3847,7 @@ Document scope=1:1..3:5 children=1
     │   └── Text scope=1:5..1:7 literal="Foo" children=0
     └── Paragraph scope=2:3..3:5 children=3
         ├── Text scope=2:3..2:5 literal="bar" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
+        ├── SoftBreak scope=2:6..2:6 children=0
         └── Text scope=3:3..3:5 literal="baz" children=0
 ````````````````````````````````
 
@@ -3865,8 +3865,8 @@ Document scope=1:1..3:5 children=1
     │   └── Text scope=1:4..1:6 literal="Foo" children=0
     └── Paragraph scope=2:2..3:5 children=3
         ├── Text scope=2:2..2:4 literal="bar" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
-        └── Text scope=3:2..3:4 literal="baz" children=0
+        ├── SoftBreak scope=2:5..2:5 children=0
+        └── Text scope=3:3..3:5 literal="baz" children=0
 ````````````````````````````````
 
 
@@ -3883,8 +3883,8 @@ Document scope=1:1..3:6 children=1
     │   └── Text scope=1:8..1:10 literal="Foo" children=0
     └── Paragraph scope=2:6..3:6 children=3
         ├── Text scope=2:6..2:8 literal="bar" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
-        └── Text scope=3:6..3:8 literal="baz" children=0
+        ├── SoftBreak scope=2:9..2:9 children=0
+        └── Text scope=3:4..3:6 literal="baz" children=0
 ````````````````````````````````
 
 
@@ -3896,7 +3896,7 @@ Four spaces gives us a code block:
     > baz
 .
 Document scope=1:1..3:9 children=1
-└── CodeBlock scope=1:5..3:9 mode=standalone info=null language=null literal="> # Foo\n> bar\n> baz\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:5..3:9 info=null language=null literal="> # Foo\n> bar\n> baz\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -3914,8 +3914,8 @@ Document scope=1:1..3:3 children=1
     │   └── Text scope=1:5..1:7 literal="Foo" children=0
     └── Paragraph scope=2:3..3:3 children=3
         ├── Text scope=2:3..2:5 literal="bar" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
-        └── Text scope=3:3..3:5 literal="baz" children=0
+        ├── SoftBreak scope=2:6..2:6 children=0
+        └── Text scope=3:1..3:3 literal="baz" children=0
 ````````````````````````````````
 
 
@@ -3931,9 +3931,9 @@ Document scope=1:1..3:5 children=1
 └── BlockQuote scope=1:1..3:5 children=1
     └── Paragraph scope=1:3..3:5 children=5
         ├── Text scope=1:3..1:5 literal="bar" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
-        ├── Text scope=2:3..2:5 literal="baz" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
+        ├── SoftBreak scope=1:6..1:6 children=0
+        ├── Text scope=2:1..2:3 literal="baz" children=0
+        ├── SoftBreak scope=2:4..2:4 children=0
         └── Text scope=3:3..3:5 literal="foo" children=0
 ````````````````````````````````
 
@@ -3996,8 +3996,8 @@ subsequent lines of an indented or fenced code block:
 .
 Document scope=1:1..2:7 children=2
 ├── BlockQuote scope=1:1..1:9 children=1
-│   └── CodeBlock scope=1:7..1:9 mode=standalone info=null language=null literal="foo\n" fenced=false closed=true children=0
-└── CodeBlock scope=2:5..2:7 mode=standalone info=null language=null literal="bar\n" fenced=false closed=true children=0
+│   └── CodeBlock scope=1:7..1:9 info=null language=null literal="foo\n" fenced=false closed=true children=0
+└── CodeBlock scope=2:5..2:7 info=null language=null literal="bar\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -4008,10 +4008,10 @@ foo
 .
 Document scope=1:1..3:3 children=3
 ├── BlockQuote scope=1:1..1:5 children=1
-│   └── CodeBlock scope=1:3..2:3 mode=standalone info=null language=null literal="" fenced=true closed=false children=0
+│   └── CodeBlock scope=1:3..2:3 info=null language=null literal="" fenced=true closed=false children=0
 ├── Paragraph scope=2:1..2:3 children=1
 │   └── Text scope=2:1..2:3 literal="foo" children=0
-└── CodeBlock scope=3:1..3:3 mode=standalone info=null language=null literal="" fenced=true closed=false children=0
+└── CodeBlock scope=3:1..3:3 info=null language=null literal="" fenced=true closed=false children=0
 ````````````````````````````````
 
 
@@ -4026,8 +4026,8 @@ Document scope=1:1..2:9 children=1
 └── BlockQuote scope=1:1..2:9 children=1
     └── Paragraph scope=1:3..2:9 children=3
         ├── Text scope=1:3..1:5 literal="foo" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
-        └── Text scope=2:7..2:11 literal="- bar" children=0
+        ├── SoftBreak scope=1:6..1:6 children=0
+        └── Text scope=2:5..2:9 literal="- bar" children=0
 ````````````````````````````````
 
 
@@ -4109,7 +4109,7 @@ Document scope=1:1..2:5 children=1
 └── BlockQuote scope=1:1..2:5 children=1
     └── Paragraph scope=1:3..2:5 children=3
         ├── Text scope=1:3..1:5 literal="foo" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
+        ├── SoftBreak scope=1:6..1:6 children=0
         └── Text scope=2:3..2:5 literal="bar" children=0
 ````````````````````````````````
 
@@ -4175,8 +4175,8 @@ Document scope=1:1..2:3 children=1
 └── BlockQuote scope=1:1..2:3 children=1
     └── Paragraph scope=1:3..2:3 children=3
         ├── Text scope=1:3..1:5 literal="bar" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
-        └── Text scope=2:3..2:5 literal="baz" children=0
+        ├── SoftBreak scope=1:6..1:6 children=0
+        └── Text scope=2:1..2:3 literal="baz" children=0
 ````````````````````````````````
 
 
@@ -4222,8 +4222,8 @@ Document scope=1:1..2:3 children=1
         └── BlockQuote scope=1:5..2:3 children=1
             └── Paragraph scope=1:7..2:3 children=3
                 ├── Text scope=1:7..1:9 literal="foo" children=0
-                ├── SoftBreak scope=0:0..0:0 children=0
-                └── Text scope=2:7..2:9 literal="bar" children=0
+                ├── SoftBreak scope=1:10..1:10 children=0
+                └── Text scope=2:1..2:3 literal="bar" children=0
 ````````````````````````````````
 
 
@@ -4238,10 +4238,10 @@ Document scope=1:1..3:5 children=1
         └── BlockQuote scope=1:3..3:5 children=1
             └── Paragraph scope=1:5..3:5 children=5
                 ├── Text scope=1:5..1:7 literal="foo" children=0
-                ├── SoftBreak scope=0:0..0:0 children=0
-                ├── Text scope=2:5..2:7 literal="bar" children=0
-                ├── SoftBreak scope=0:0..0:0 children=0
-                └── Text scope=3:5..3:7 literal="baz" children=0
+                ├── SoftBreak scope=1:8..1:8 children=0
+                ├── Text scope=2:3..2:5 literal="bar" children=0
+                ├── SoftBreak scope=2:6..2:6 children=0
+                └── Text scope=3:3..3:5 literal="baz" children=0
 ````````````````````````````````
 
 
@@ -4257,7 +4257,7 @@ the `>`:
 .
 Document scope=1:1..3:13 children=2
 ├── BlockQuote scope=1:1..1:10 children=1
-│   └── CodeBlock scope=1:7..1:10 mode=standalone info=null language=null literal="code\n" fenced=false closed=true children=0
+│   └── CodeBlock scope=1:7..1:10 info=null language=null literal="code\n" fenced=false closed=true children=0
 └── BlockQuote scope=3:1..3:13 children=1
     └── Paragraph scope=3:6..3:13 children=1
         └── Text scope=3:6..3:13 literal="not code" children=0
@@ -4314,9 +4314,9 @@ with two lines.
 Document scope=1:1..6:16 children=3
 ├── Paragraph scope=1:1..2:15 children=3
 │   ├── Text scope=1:1..1:11 literal="A paragraph" children=0
-│   ├── SoftBreak scope=0:0..0:0 children=0
+│   ├── SoftBreak scope=1:12..1:12 children=0
 │   └── Text scope=2:1..2:15 literal="with two lines." children=0
-├── CodeBlock scope=4:5..5:0 mode=standalone info=null language=null literal="indented code\n" fenced=false closed=true children=0
+├── CodeBlock scope=4:5..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
 └── BlockQuote scope=6:1..6:16 children=1
     └── Paragraph scope=6:3..6:16 children=1
         └── Text scope=6:3..6:16 literal="A block quote." children=0
@@ -4340,9 +4340,9 @@ Document scope=1:1..6:20 children=1
     └── ListItem scope=1:1..6:20 checked=null children=3
         ├── Paragraph scope=1:5..2:19 children=3
         │   ├── Text scope=1:5..1:15 literal="A paragraph" children=0
-        │   ├── SoftBreak scope=0:0..0:0 children=0
+        │   ├── SoftBreak scope=1:16..1:16 children=0
         │   └── Text scope=2:5..2:19 literal="with two lines." children=0
-        ├── CodeBlock scope=4:9..5:0 mode=standalone info=null language=null literal="indented code\n" fenced=false closed=true children=0
+        ├── CodeBlock scope=4:9..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
         └── BlockQuote scope=6:5..6:20 children=1
             └── Paragraph scope=6:7..6:20 children=1
                 └── Text scope=6:7..6:20 literal="A block quote." children=0
@@ -4400,7 +4400,7 @@ Document scope=1:1..3:8 children=2
 │   └── ListItem scope=1:2..2:0 checked=null children=1
 │       └── Paragraph scope=1:7..1:9 children=1
 │           └── Text scope=1:7..1:9 literal="one" children=0
-└── CodeBlock scope=3:5..3:8 mode=standalone info=null language=null literal=" two\n" fenced=false closed=true children=0
+└── CodeBlock scope=3:5..3:8 info=null language=null literal=" two\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -4523,7 +4523,7 @@ Document scope=1:1..9:9 children=1
     └── ListItem scope=1:1..9:9 checked=null children=4
         ├── Paragraph scope=1:5..1:7 children=1
         │   └── Text scope=1:5..1:7 literal="foo" children=0
-        ├── CodeBlock scope=3:5..5:7 mode=standalone info=null language=null literal="bar\n" fenced=true closed=true children=0
+        ├── CodeBlock scope=3:5..5:7 info=null language=null literal="bar\n" fenced=true closed=true children=0
         ├── Paragraph scope=7:5..7:7 children=1
         │   └── Text scope=7:5..7:7 literal="baz" children=0
         └── BlockQuote scope=9:5..9:9 children=1
@@ -4548,7 +4548,7 @@ Document scope=1:1..6:9 children=1
     └── ListItem scope=1:1..6:9 checked=null children=2
         ├── Paragraph scope=1:3..1:5 children=1
         │   └── Text scope=1:3..1:5 literal="Foo" children=0
-        └── CodeBlock scope=3:7..6:9 mode=standalone info=null language=null literal="bar\n\n\nbaz\n" fenced=false closed=true children=0
+        └── CodeBlock scope=3:7..6:9 info=null language=null literal="bar\n\n\nbaz\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 Note that ordered list start numbers must be nine digits or less:
@@ -4634,7 +4634,7 @@ Document scope=1:1..3:9 children=1
     └── ListItem scope=1:1..3:9 checked=null children=2
         ├── Paragraph scope=1:3..1:5 children=1
         │   └── Text scope=1:3..1:5 literal="foo" children=0
-        └── CodeBlock scope=3:7..3:9 mode=standalone info=null language=null literal="bar\n" fenced=false closed=true children=0
+        └── CodeBlock scope=3:7..3:9 info=null language=null literal="bar\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -4650,7 +4650,7 @@ Document scope=1:1..3:14 children=1
     └── ListItem scope=1:3..3:14 checked=null children=2
         ├── Paragraph scope=1:8..1:10 children=1
         │   └── Text scope=1:8..1:10 literal="foo" children=0
-        └── CodeBlock scope=3:12..3:14 mode=standalone info=null language=null literal="bar\n" fenced=false closed=true children=0
+        └── CodeBlock scope=3:12..3:14 info=null language=null literal="bar\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -4666,10 +4666,10 @@ paragraph
     more code
 .
 Document scope=1:1..5:13 children=3
-├── CodeBlock scope=1:5..2:0 mode=standalone info=null language=null literal="indented code\n" fenced=false closed=true children=0
+├── CodeBlock scope=1:5..2:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
 ├── Paragraph scope=3:1..3:9 children=1
 │   └── Text scope=3:1..3:9 literal="paragraph" children=0
-└── CodeBlock scope=5:5..5:13 mode=standalone info=null language=null literal="more code\n" fenced=false closed=true children=0
+└── CodeBlock scope=5:5..5:13 info=null language=null literal="more code\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -4683,10 +4683,10 @@ Document scope=1:1..5:13 children=3
 Document scope=1:1..5:16 children=1
 └── List scope=1:1..5:16 flavor=ordered start=1 tight=false children=1
     └── ListItem scope=1:1..5:16 checked=null children=3
-        ├── CodeBlock scope=1:8..2:0 mode=standalone info=null language=null literal="indented code\n" fenced=false closed=true children=0
+        ├── CodeBlock scope=1:8..2:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
         ├── Paragraph scope=3:4..3:12 children=1
         │   └── Text scope=3:4..3:12 literal="paragraph" children=0
-        └── CodeBlock scope=5:8..5:16 mode=standalone info=null language=null literal="more code\n" fenced=false closed=true children=0
+        └── CodeBlock scope=5:8..5:16 info=null language=null literal="more code\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -4703,10 +4703,10 @@ inside the code block:
 Document scope=1:1..5:16 children=1
 └── List scope=1:1..5:16 flavor=ordered start=1 tight=false children=1
     └── ListItem scope=1:1..5:16 checked=null children=3
-        ├── CodeBlock scope=1:8..2:0 mode=standalone info=null language=null literal=" indented code\n" fenced=false closed=true children=0
+        ├── CodeBlock scope=1:8..2:0 info=null language=null literal=" indented code\n" fenced=false closed=true children=0
         ├── Paragraph scope=3:4..3:12 children=1
         │   └── Text scope=3:4..3:12 literal="paragraph" children=0
-        └── CodeBlock scope=5:8..5:16 mode=standalone info=null language=null literal="more code\n" fenced=false closed=true children=0
+        └── CodeBlock scope=5:8..5:16 info=null language=null literal="more code\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -4796,9 +4796,9 @@ Document scope=1:1..8:9 children=1
     │   └── Paragraph scope=2:3..2:5 children=1
     │       └── Text scope=2:3..2:5 literal="foo" children=0
     ├── ListItem scope=3:1..6:5 checked=null children=1
-    │   └── CodeBlock scope=4:3..6:5 mode=standalone info=null language=null literal="bar\n" fenced=true closed=true children=0
+    │   └── CodeBlock scope=4:3..6:5 info=null language=null literal="bar\n" fenced=true closed=true children=0
     └── ListItem scope=7:1..8:9 checked=null children=1
-        └── CodeBlock scope=8:7..8:9 mode=standalone info=null language=null literal="baz\n" fenced=false closed=true children=0
+        └── CodeBlock scope=8:7..8:9 info=null language=null literal="baz\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 When the list item starts with a blank line, the number of spaces
@@ -4912,11 +4912,11 @@ foo
 Document scope=1:1..5:2 children=2
 ├── Paragraph scope=1:1..2:1 children=3
 │   ├── Text scope=1:1..1:3 literal="foo" children=0
-│   ├── SoftBreak scope=0:0..0:0 children=0
+│   ├── SoftBreak scope=1:4..1:4 children=0
 │   └── Text scope=2:1..2:1 literal="*" children=0
 └── Paragraph scope=4:1..5:2 children=3
     ├── Text scope=4:1..4:3 literal="foo" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=4:4..4:4 children=0
     └── Text scope=5:1..5:2 literal="1." children=0
 ````````````````````````````````
 
@@ -4942,9 +4942,9 @@ Document scope=1:1..6:21 children=1
     └── ListItem scope=1:2..6:21 checked=null children=3
         ├── Paragraph scope=1:6..2:20 children=3
         │   ├── Text scope=1:6..1:16 literal="A paragraph" children=0
-        │   ├── SoftBreak scope=0:0..0:0 children=0
+        │   ├── SoftBreak scope=1:17..1:17 children=0
         │   └── Text scope=2:6..2:20 literal="with two lines." children=0
-        ├── CodeBlock scope=4:10..5:0 mode=standalone info=null language=null literal="indented code\n" fenced=false closed=true children=0
+        ├── CodeBlock scope=4:10..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
         └── BlockQuote scope=6:6..6:21 children=1
             └── Paragraph scope=6:8..6:21 children=1
                 └── Text scope=6:8..6:21 literal="A block quote." children=0
@@ -4966,9 +4966,9 @@ Document scope=1:1..6:22 children=1
     └── ListItem scope=1:3..6:22 checked=null children=3
         ├── Paragraph scope=1:7..2:21 children=3
         │   ├── Text scope=1:7..1:17 literal="A paragraph" children=0
-        │   ├── SoftBreak scope=0:0..0:0 children=0
+        │   ├── SoftBreak scope=1:18..1:18 children=0
         │   └── Text scope=2:7..2:21 literal="with two lines." children=0
-        ├── CodeBlock scope=4:11..5:0 mode=standalone info=null language=null literal="indented code\n" fenced=false closed=true children=0
+        ├── CodeBlock scope=4:11..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
         └── BlockQuote scope=6:7..6:22 children=1
             └── Paragraph scope=6:9..6:22 children=1
                 └── Text scope=6:9..6:22 literal="A block quote." children=0
@@ -4990,9 +4990,9 @@ Document scope=1:1..6:23 children=1
     └── ListItem scope=1:4..6:23 checked=null children=3
         ├── Paragraph scope=1:8..2:22 children=3
         │   ├── Text scope=1:8..1:18 literal="A paragraph" children=0
-        │   ├── SoftBreak scope=0:0..0:0 children=0
+        │   ├── SoftBreak scope=1:19..1:19 children=0
         │   └── Text scope=2:8..2:22 literal="with two lines." children=0
-        ├── CodeBlock scope=4:12..5:0 mode=standalone info=null language=null literal="indented code\n" fenced=false closed=true children=0
+        ├── CodeBlock scope=4:12..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
         └── BlockQuote scope=6:8..6:23 children=1
             └── Paragraph scope=6:10..6:23 children=1
                 └── Text scope=6:10..6:23 literal="A block quote." children=0
@@ -5010,7 +5010,7 @@ Four spaces indent gives a code block:
         > A block quote.
 .
 Document scope=1:1..6:24 children=1
-└── CodeBlock scope=1:5..6:24 mode=standalone info=null language=null literal="1.  A paragraph\n    with two lines.\n\n        indented code\n\n    > A block quote.\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:5..6:24 info=null language=null literal="1.  A paragraph\n    with two lines.\n\n        indented code\n\n    > A block quote.\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -5039,9 +5039,9 @@ Document scope=1:1..6:22 children=1
     └── ListItem scope=1:3..6:22 checked=null children=3
         ├── Paragraph scope=1:7..2:15 children=3
         │   ├── Text scope=1:7..1:17 literal="A paragraph" children=0
-        │   ├── SoftBreak scope=0:0..0:0 children=0
-        │   └── Text scope=2:7..2:21 literal="with two lines." children=0
-        ├── CodeBlock scope=4:11..5:0 mode=standalone info=null language=null literal="indented code\n" fenced=false closed=true children=0
+        │   ├── SoftBreak scope=1:18..1:18 children=0
+        │   └── Text scope=2:1..2:15 literal="with two lines." children=0
+        ├── CodeBlock scope=4:11..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
         └── BlockQuote scope=6:7..6:22 children=1
             └── Paragraph scope=6:9..6:22 children=1
                 └── Text scope=6:9..6:22 literal="A block quote." children=0
@@ -5059,8 +5059,8 @@ Document scope=1:1..2:19 children=1
     └── ListItem scope=1:3..2:19 checked=null children=1
         └── Paragraph scope=1:7..2:19 children=3
             ├── Text scope=1:7..1:17 literal="A paragraph" children=0
-            ├── SoftBreak scope=0:0..0:0 children=0
-            └── Text scope=2:11..2:25 literal="with two lines." children=0
+            ├── SoftBreak scope=1:18..1:18 children=0
+            └── Text scope=2:5..2:19 literal="with two lines." children=0
 ````````````````````````````````
 
 
@@ -5077,8 +5077,8 @@ Document scope=1:1..2:15 children=1
             └── BlockQuote scope=1:6..2:15 children=1
                 └── Paragraph scope=1:8..2:15 children=3
                     ├── Text scope=1:8..1:17 literal="Blockquote" children=0
-                    ├── SoftBreak scope=0:0..0:0 children=0
-                    └── Text scope=2:8..2:22 literal="continued here." children=0
+                    ├── SoftBreak scope=1:18..1:18 children=0
+                    └── Text scope=2:1..2:15 literal="continued here." children=0
 ````````````````````````````````
 
 
@@ -5093,8 +5093,8 @@ Document scope=1:1..2:17 children=1
             └── BlockQuote scope=1:6..2:17 children=1
                 └── Paragraph scope=1:8..2:17 children=3
                     ├── Text scope=1:8..1:17 literal="Blockquote" children=0
-                    ├── SoftBreak scope=0:0..0:0 children=0
-                    └── Text scope=2:8..2:22 literal="continued here." children=0
+                    ├── SoftBreak scope=1:18..1:18 children=0
+                    └── Text scope=2:3..2:17 literal="continued here." children=0
 ````````````````````````````````
 
 
@@ -5656,7 +5656,7 @@ The number of windows in my house is
 Document scope=1:1..2:30 children=1
 └── Paragraph scope=1:1..2:30 children=3
     ├── Text scope=1:1..1:36 literal="The number of windows in my house is" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:37..1:37 children=0
     └── Text scope=2:1..2:30 literal="14.  The number of doors is 6." children=0
 ````````````````````````````````
 
@@ -5748,7 +5748,7 @@ Document scope=1:1..7:5 children=3
 │   └── ListItem scope=2:1..3:0 checked=null children=1
 │       └── Paragraph scope=2:3..2:5 children=1
 │           └── Text scope=2:3..2:5 literal="bar" children=0
-├── HTMLBlock scope=4:1..3:0 comment=true literal="<!-- -->\n" children=0
+├── HTMLBlock scope=4:1..4:8 literal="<!-- -->\n" children=0
 └── List scope=6:1..7:5 flavor=bullet start=null tight=true children=2
     ├── ListItem scope=6:1..6:5 checked=null children=1
     │   └── Paragraph scope=6:3..6:5 children=1
@@ -5780,8 +5780,8 @@ Document scope=1:1..9:8 children=3
 │   └── ListItem scope=5:1..6:0 checked=null children=1
 │       └── Paragraph scope=5:5..5:7 children=1
 │           └── Text scope=5:5..5:7 literal="foo" children=0
-├── HTMLBlock scope=7:1..6:0 comment=true literal="<!-- -->\n" children=0
-└── CodeBlock scope=9:5..9:8 mode=standalone info=null language=null literal="code\n" fenced=false closed=true children=0
+├── HTMLBlock scope=7:1..7:8 literal="<!-- -->\n" children=0
+└── CodeBlock scope=9:5..9:8 info=null language=null literal="code\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -5870,8 +5870,8 @@ Document scope=1:1..5:7 children=1
     └── ListItem scope=4:4..5:7 checked=null children=1
         └── Paragraph scope=4:6..5:7 children=3
             ├── Text scope=4:6..4:6 literal="d" children=0
-            ├── SoftBreak scope=0:0..0:0 children=0
-            └── Text scope=5:10..5:12 literal="- e" children=0
+            ├── SoftBreak scope=4:7..4:7 children=0
+            └── Text scope=5:5..5:7 literal="- e" children=0
 ````````````````````````````````
 
 And here, `3. c` is treated as in indented code block,
@@ -5893,7 +5893,7 @@ Document scope=1:1..5:8 children=2
 │   └── ListItem scope=3:3..4:0 checked=null children=1
 │       └── Paragraph scope=3:6..3:6 children=1
 │           └── Text scope=3:6..3:6 literal="b" children=0
-└── CodeBlock scope=5:5..5:8 mode=standalone info=null language=null literal="3. c\n" fenced=false closed=true children=0
+└── CodeBlock scope=5:5..5:8 info=null language=null literal="3. c\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -5982,7 +5982,7 @@ Document scope=1:1..5:3 children=1
     ├── ListItem scope=2:1..4:13 checked=null children=2
     │   ├── Paragraph scope=2:3..2:3 children=1
     │   │   └── Text scope=2:3..2:3 literal="b" children=0
-    │   └── ReferenceDefinition scope=4:3..4:13 label="ref" destination="/url" title=null children=0
+    │   └── ReferenceDefinition scope=4:3..4:13 label="ref" identifier="ref" destination="/url" title=null children=0
     └── ListItem scope=5:1..5:3 checked=null children=1
         └── Paragraph scope=5:3..5:3 children=1
             └── Text scope=5:3..5:3 literal="d" children=0
@@ -6006,7 +6006,7 @@ Document scope=1:1..7:3 children=1
     │   └── Paragraph scope=1:3..1:3 children=1
     │       └── Text scope=1:3..1:3 literal="a" children=0
     ├── ListItem scope=2:1..6:5 checked=null children=1
-    │   └── CodeBlock scope=2:3..6:5 mode=standalone info=null language=null literal="b\n\n\n" fenced=true closed=true children=0
+    │   └── CodeBlock scope=2:3..6:5 info=null language=null literal="b\n\n\n" fenced=true closed=true children=0
     └── ListItem scope=7:1..7:3 checked=null children=1
         └── Paragraph scope=7:3..7:3 children=1
             └── Text scope=7:3..7:3 literal="c" children=0
@@ -6083,7 +6083,7 @@ Document scope=1:1..6:3 children=1
     │   ├── BlockQuote scope=2:3..2:5 children=1
     │   │   └── Paragraph scope=2:5..2:5 children=1
     │   │       └── Text scope=2:5..2:5 literal="b" children=0
-    │   └── CodeBlock scope=3:3..5:5 mode=standalone info=null language=null literal="c\n" fenced=true closed=true children=0
+    │   └── CodeBlock scope=3:3..5:5 info=null language=null literal="c\n" fenced=true closed=true children=0
     └── ListItem scope=6:1..6:3 checked=null children=1
         └── Paragraph scope=6:3..6:3 children=1
             └── Text scope=6:3..6:3 literal="d" children=0
@@ -6132,7 +6132,7 @@ two block elements in the list item:
 Document scope=1:1..5:6 children=1
 └── List scope=1:1..5:6 flavor=ordered start=1 tight=false children=1
     └── ListItem scope=1:1..5:6 checked=null children=2
-        ├── CodeBlock scope=1:4..3:6 mode=standalone info=null language=null literal="foo\n" fenced=true closed=true children=0
+        ├── CodeBlock scope=1:4..3:6 info=null language=null literal="foo\n" fenced=true closed=true children=0
         └── Paragraph scope=5:4..5:6 children=1
             └── Text scope=5:4..5:6 literal="bar" children=0
 ````````````````````````````````
@@ -6205,8 +6205,8 @@ Thus, for example, in
 .
 Document scope=1:1..1:7 children=1
 └── Paragraph scope=1:1..1:7 children=2
-    ├── Code scope=1:2..1:3 mode=embedded literal="hi" children=0
-    └── Text scope=1:5..1:8 literal="lo`" children=0
+    ├── Code scope=1:1..1:4 literal="hi" children=0
+    └── Text scope=1:5..1:7 literal="lo`" children=0
 ````````````````````````````````
 
 `hi` is parsed as code, leaving the backtick at the end as a literal
@@ -6255,21 +6255,21 @@ not have their usual Markdown meanings:
 Document scope=1:1..9:30 children=1
 └── Paragraph scope=1:1..9:30 children=17
     ├── Text scope=1:1..1:17 literal="*not emphasized*" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:18..1:18 children=0
     ├── Text scope=2:1..2:16 literal="<br/> not a tag" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=2:17..2:17 children=0
     ├── Text scope=3:1..3:19 literal="[not a link](/foo)" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
-    ├── Text scope=4:1..4:12 literal="`not code`" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=3:20..3:20 children=0
+    ├── Text scope=4:1..4:11 literal="`not code`" children=0
+    ├── SoftBreak scope=4:12..4:12 children=0
     ├── Text scope=5:1..5:14 literal="1. not a list" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=5:15..5:15 children=0
     ├── Text scope=6:1..6:13 literal="* not a list" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=6:14..6:14 children=0
     ├── Text scope=7:1..7:16 literal="# not a heading" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=7:17..7:17 children=0
     ├── Text scope=8:1..8:30 literal="[foo]: /url \"not a reference\"" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=8:31..8:31 children=0
     └── Text scope=9:1..9:30 literal="&ouml; not a character entity" children=0
 ````````````````````````````````
 
@@ -6296,8 +6296,8 @@ bar
 Document scope=1:1..2:3 children=1
 └── Paragraph scope=1:1..2:3 children=3
     ├── Text scope=1:1..1:3 literal="foo" children=0
-    ├── LineBreak scope=0:0..0:0 children=0
-    └── Text scope=1:6..1:8 literal="bar" children=0
+    ├── LineBreak scope=1:4..1:5 children=0
+    └── Text scope=2:1..2:3 literal="bar" children=0
 ````````````````````````````````
 
 
@@ -6309,7 +6309,7 @@ raw HTML:
 .
 Document scope=1:1..1:10 children=1
 └── Paragraph scope=1:1..1:10 children=1
-    └── Code scope=1:3..1:8 mode=embedded literal="\\[\\`" children=0
+    └── Code scope=1:1..1:10 literal="\\[\\`" children=0
 ````````````````````````````````
 
 
@@ -6317,7 +6317,7 @@ Document scope=1:1..1:10 children=1
     \[\]
 .
 Document scope=1:1..1:8 children=1
-└── CodeBlock scope=1:5..1:8 mode=standalone info=null language=null literal="\\[\\]\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:5..1:8 info=null language=null literal="\\[\\]\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -6327,7 +6327,7 @@ Document scope=1:1..1:8 children=1
 ~~~
 .
 Document scope=1:1..3:3 children=1
-└── CodeBlock scope=1:1..3:3 mode=standalone info=null language=null literal="\\[\\]\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..3:3 info=null language=null literal="\\[\\]\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -6345,7 +6345,7 @@ Document scope=1:1..1:28 children=1
 <a href="/bar\/)">
 .
 Document scope=1:1..1:18 children=1
-└── HTMLBlock scope=1:1..1:18 comment=false literal="<a href=\"/bar\\/)\">\n" children=0
+└── HTMLBlock scope=1:1..1:18 literal="<a href=\"/bar\\/)\">\n" children=0
 ````````````````````````````````
 
 
@@ -6369,9 +6369,9 @@ Document scope=1:1..1:23 children=1
 .
 Document scope=1:1..3:23 children=2
 ├── Paragraph scope=1:1..1:5 children=1
-│   └── LinkReference scope=1:1..1:5 label="foo" form=shortcut children=1
+│   └── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:23 label="foo" destination="/bar*" title="ti*tle" children=0
+└── ReferenceDefinition scope=3:1..3:23 label="foo" identifier="foo" destination="/bar*" title="ti*tle" children=0
 ````````````````````````````````
 
 
@@ -6381,7 +6381,7 @@ foo
 ```
 .
 Document scope=1:1..3:3 children=1
-└── CodeBlock scope=1:1..3:3 mode=standalone info="foo+bar" language="foo+bar" literal="foo\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..3:3 info="foo+bar" language="foo+bar" literal="foo\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -6420,9 +6420,9 @@ references and their corresponding code points.
 Document scope=1:1..3:32 children=1
 └── Paragraph scope=1:1..3:32 children=5
     ├── Text scope=1:1..1:36 literal="  & © Æ Ď" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:37..1:37 children=0
     ├── Text scope=2:1..2:39 literal="¾ ℋ ⅆ" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=2:40..2:40 children=0
     └── Text scope=3:1..3:32 literal="∲ ≧̸" children=0
 ````````````````````````````````
 
@@ -6470,11 +6470,11 @@ Here are some nonentities:
 Document scope=1:1..4:24 children=1
 └── Paragraph scope=1:1..4:24 children=7
     ├── Text scope=1:1..1:18 literal="&nbsp &x; &#; &#x;" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:19..1:19 children=0
     ├── Text scope=2:1..2:12 literal="&#987654321;" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=2:13..2:13 children=0
     ├── Text scope=3:1..3:10 literal="&#abcdef0;" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=3:11..3:11 children=0
     └── Text scope=4:1..4:24 literal="&ThisIsNotDefined; &hi?;" children=0
 ````````````````````````````````
 
@@ -6512,7 +6512,7 @@ URLs, [link titles], and [fenced code block][] [info strings]:
 <a href="&ouml;&ouml;.html">
 .
 Document scope=1:1..1:28 children=1
-└── HTMLBlock scope=1:1..1:28 comment=false literal="<a href=\"&ouml;&ouml;.html\">\n" children=0
+└── HTMLBlock scope=1:1..1:28 literal="<a href=\"&ouml;&ouml;.html\">\n" children=0
 ````````````````````````````````
 
 
@@ -6533,9 +6533,9 @@ Document scope=1:1..1:37 children=1
 .
 Document scope=1:1..3:37 children=2
 ├── Paragraph scope=1:1..1:5 children=1
-│   └── LinkReference scope=1:1..1:5 label="foo" form=shortcut children=1
+│   └── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:37 label="foo" destination="/föö" title="föö" children=0
+└── ReferenceDefinition scope=3:1..3:37 label="foo" identifier="foo" destination="/föö" title="föö" children=0
 ````````````````````````````````
 
 
@@ -6545,7 +6545,7 @@ foo
 ```
 .
 Document scope=1:1..3:3 children=1
-└── CodeBlock scope=1:1..3:3 mode=standalone info="föö" language="föö" literal="foo\n" fenced=true closed=true children=0
+└── CodeBlock scope=1:1..3:3 info="föö" language="föö" literal="foo\n" fenced=true closed=true children=0
 ````````````````````````````````
 
 
@@ -6557,7 +6557,7 @@ text in code spans and code blocks:
 .
 Document scope=1:1..1:15 children=1
 └── Paragraph scope=1:1..1:15 children=1
-    └── Code scope=1:2..1:14 mode=embedded literal="f&ouml;&ouml;" children=0
+    └── Code scope=1:1..1:15 literal="f&ouml;&ouml;" children=0
 ````````````````````````````````
 
 
@@ -6565,7 +6565,7 @@ Document scope=1:1..1:15 children=1
     f&ouml;f&ouml;
 .
 Document scope=1:1..1:18 children=1
-└── CodeBlock scope=1:5..1:18 mode=standalone info=null language=null literal="f&ouml;f&ouml;\n" fenced=false closed=true children=0
+└── CodeBlock scope=1:5..1:18 info=null language=null literal="f&ouml;f&ouml;\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 
@@ -6580,7 +6580,7 @@ documents.
 Document scope=1:1..2:5 children=1
 └── Paragraph scope=1:1..2:5 children=3
     ├── Text scope=1:1..1:13 literal="*foo*" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:14..1:14 children=0
     └── Emphasis scope=2:1..2:5 children=1
         └── Text scope=2:2..2:4 literal="foo" children=0
 ````````````````````````````````
@@ -6651,7 +6651,7 @@ This is a simple code span:
 .
 Document scope=1:1..1:5 children=1
 └── Paragraph scope=1:1..1:5 children=1
-    └── Code scope=1:2..1:4 mode=embedded literal="foo" children=0
+    └── Code scope=1:1..1:5 literal="foo" children=0
 ````````````````````````````````
 
 
@@ -6664,7 +6664,7 @@ trailing space:
 .
 Document scope=1:1..1:15 children=1
 └── Paragraph scope=1:1..1:15 children=1
-    └── Code scope=1:3..1:13 mode=embedded literal="foo ` bar" children=0
+    └── Code scope=1:1..1:15 literal="foo ` bar" children=0
 ````````````````````````````````
 
 
@@ -6676,7 +6676,7 @@ spaces:
 .
 Document scope=1:1..1:6 children=1
 └── Paragraph scope=1:1..1:6 children=1
-    └── Code scope=1:2..1:5 mode=embedded literal="``" children=0
+    └── Code scope=1:1..1:6 literal="``" children=0
 ````````````````````````````````
 
 Note that only *one* space is stripped:
@@ -6686,7 +6686,7 @@ Note that only *one* space is stripped:
 .
 Document scope=1:1..1:8 children=1
 └── Paragraph scope=1:1..1:8 children=1
-    └── Code scope=1:2..1:7 mode=embedded literal=" `` " children=0
+    └── Code scope=1:1..1:8 literal=" `` " children=0
 ````````````````````````````````
 
 The stripping only happens if the space is on both
@@ -6697,7 +6697,7 @@ sides of the string:
 .
 Document scope=1:1..1:4 children=1
 └── Paragraph scope=1:1..1:4 children=1
-    └── Code scope=1:2..1:3 mode=embedded literal=" a" children=0
+    └── Code scope=1:1..1:4 literal=" a" children=0
 ````````````````````````````````
 
 Only [spaces], and not [unicode whitespace] in general, are
@@ -6708,7 +6708,7 @@ stripped in this way:
 .
 Document scope=1:1..1:7 children=1
 └── Paragraph scope=1:1..1:7 children=1
-    └── Code scope=1:2..1:6 mode=embedded literal=" b " children=0
+    └── Code scope=1:1..1:7 literal=" b " children=0
 ````````````````````````````````
 
 No stripping occurs if the code span contains only spaces:
@@ -6719,9 +6719,9 @@ No stripping occurs if the code span contains only spaces:
 .
 Document scope=1:1..2:4 children=1
 └── Paragraph scope=1:1..2:4 children=3
-    ├── Code scope=1:2..1:3 mode=embedded literal=" " children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
-    └── Code scope=2:2..2:3 mode=embedded literal="  " children=0
+    ├── Code scope=1:1..1:4 literal=" " children=0
+    ├── SoftBreak scope=1:5..1:5 children=0
+    └── Code scope=2:1..2:4 literal="  " children=0
 ````````````````````````````````
 
 
@@ -6736,7 +6736,7 @@ baz
 .
 Document scope=1:1..5:2 children=1
 └── Paragraph scope=1:1..5:2 children=1
-    └── Code scope=1:3..5:0 mode=embedded literal="foo bar   baz" children=0
+    └── Code scope=1:1..5:2 literal="foo bar   baz" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -6746,7 +6746,7 @@ foo
 .
 Document scope=1:1..3:2 children=1
 └── Paragraph scope=1:1..3:2 children=1
-    └── Code scope=1:3..3:0 mode=embedded literal="foo " children=0
+    └── Code scope=1:1..3:2 literal="foo " children=0
 ````````````````````````````````
 
 
@@ -6758,7 +6758,7 @@ baz`
 .
 Document scope=1:1..2:4 children=1
 └── Paragraph scope=1:1..2:4 children=1
-    └── Code scope=1:2..2:3 mode=embedded literal="foo   bar  baz" children=0
+    └── Code scope=1:1..2:4 literal="foo   bar  baz" children=0
 ````````````````````````````````
 
 Note that browsers will typically collapse consecutive spaces
@@ -6776,8 +6776,8 @@ are treated literally:
 .
 Document scope=1:1..1:10 children=1
 └── Paragraph scope=1:1..1:10 children=2
-    ├── Code scope=1:2..1:5 mode=embedded literal="foo\\" children=0
-    └── Text scope=1:7..1:11 literal="bar`" children=0
+    ├── Code scope=1:1..1:6 literal="foo\\" children=0
+    └── Text scope=1:7..1:10 literal="bar`" children=0
 ````````````````````````````````
 
 
@@ -6790,7 +6790,7 @@ not contain any strings of exactly *n* backtick characters.
 .
 Document scope=1:1..1:11 children=1
 └── Paragraph scope=1:1..1:11 children=1
-    └── Code scope=1:3..1:9 mode=embedded literal="foo`bar" children=0
+    └── Code scope=1:1..1:11 literal="foo`bar" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -6798,7 +6798,7 @@ Document scope=1:1..1:11 children=1
 .
 Document scope=1:1..1:14 children=1
 └── Paragraph scope=1:1..1:14 children=1
-    └── Code scope=1:2..1:13 mode=embedded literal="foo `` bar" children=0
+    └── Code scope=1:1..1:14 literal="foo `` bar" children=0
 ````````````````````````````````
 
 
@@ -6813,7 +6813,7 @@ span:
 Document scope=1:1..1:7 children=1
 └── Paragraph scope=1:1..1:7 children=2
     ├── Text scope=1:1..1:4 literal="*foo" children=0
-    └── Code scope=1:6..1:6 mode=embedded literal="*" children=0
+    └── Code scope=1:5..1:7 literal="*" children=0
 ````````````````````````````````
 
 
@@ -6825,7 +6825,7 @@ And this is not parsed as a link:
 Document scope=1:1..1:20 children=1
 └── Paragraph scope=1:1..1:20 children=3
     ├── Text scope=1:1..1:7 literal="[not a " children=0
-    ├── Code scope=1:9..1:18 mode=embedded literal="link](/foo" children=0
+    ├── Code scope=1:8..1:19 literal="link](/foo" children=0
     └── Text scope=1:20..1:20 literal=")" children=0
 ````````````````````````````````
 
@@ -6838,8 +6838,8 @@ Thus, this is code:
 .
 Document scope=1:1..1:14 children=1
 └── Paragraph scope=1:1..1:14 children=2
-    ├── Code scope=1:2..1:10 mode=embedded literal="<a href=\"" children=0
-    └── Text scope=1:12..1:15 literal="\">`" children=0
+    ├── Code scope=1:1..1:11 literal="<a href=\"" children=0
+    └── Text scope=1:12..1:14 literal="\">`" children=0
 ````````````````````````````````
 
 
@@ -6850,8 +6850,8 @@ But this is an HTML tag:
 .
 Document scope=1:1..1:13 children=1
 └── Paragraph scope=1:1..1:13 children=2
-    ├── HTML scope=1:1..1:12 comment=false literal="<a href=\"`\">" children=0
-    └── Text scope=1:14..1:14 literal="`" children=0
+    ├── HTML scope=1:1..1:12 literal="<a href=\"`\">" children=0
+    └── Text scope=1:13..1:13 literal="`" children=0
 ````````````````````````````````
 
 
@@ -6862,8 +6862,8 @@ And this is code:
 .
 Document scope=1:1..1:23 children=1
 └── Paragraph scope=1:1..1:23 children=2
-    ├── Code scope=1:2..1:17 mode=embedded literal="<http://foo.bar." children=0
-    └── Text scope=1:19..1:24 literal="baz>`" children=0
+    ├── Code scope=1:1..1:18 literal="<http://foo.bar." children=0
+    └── Text scope=1:19..1:23 literal="baz>`" children=0
 ````````````````````````````````
 
 
@@ -6876,7 +6876,7 @@ Document scope=1:1..1:22 children=1
 └── Paragraph scope=1:1..1:22 children=2
     ├── Link scope=1:1..1:21 destination="http://foo.bar.`baz" title=null children=1
     │   └── Text scope=1:2..1:20 literal="http://foo.bar.`baz" children=0
-    └── Text scope=1:23..1:23 literal="`" children=0
+    └── Text scope=1:22..1:22 literal="`" children=0
 ````````````````````````````````
 
 
@@ -6888,7 +6888,7 @@ we just have literal backticks:
 .
 Document scope=1:1..1:8 children=1
 └── Paragraph scope=1:1..1:8 children=1
-    └── Text scope=1:4..1:9 literal="```foo``" children=0
+    └── Text scope=1:1..1:8 literal="```foo``" children=0
 ````````````````````````````````
 
 
@@ -6897,7 +6897,7 @@ Document scope=1:1..1:8 children=1
 .
 Document scope=1:1..1:4 children=1
 └── Paragraph scope=1:1..1:4 children=1
-    └── Text scope=1:2..1:4 literal="`foo" children=0
+    └── Text scope=1:1..1:4 literal="`foo" children=0
 ````````````````````````````````
 
 The following case also illustrates the need for opening and
@@ -6908,8 +6908,8 @@ closing backtick strings to be equal in length:
 .
 Document scope=1:1..1:11 children=1
 └── Paragraph scope=1:1..1:11 children=2
-    ├── Text scope=1:2..1:4 literal="`foo" children=0
-    └── Code scope=1:7..1:9 mode=embedded literal="bar" children=0
+    ├── Text scope=1:1..1:4 literal="`foo" children=0
+    └── Code scope=1:5..1:11 literal="bar" children=0
 ````````````````````````````````
 
 
@@ -7321,7 +7321,7 @@ A newline also counts as whitespace:
 Document scope=1:1..2:1 children=1
 └── Paragraph scope=1:1..2:1 children=3
     ├── Text scope=1:1..1:8 literal="*foo bar" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:9..1:9 children=0
     └── Text scope=2:1..2:1 literal="*" children=0
 ````````````````````````````````
 
@@ -7537,7 +7537,7 @@ foo bar__
 Document scope=1:1..2:9 children=1
 └── Paragraph scope=1:1..2:9 children=3
     ├── Text scope=1:1..1:2 literal="__" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:3..1:3 children=0
     └── Text scope=2:1..2:9 literal="foo bar__" children=0
 ````````````````````````````````
 
@@ -7668,7 +7668,7 @@ Document scope=1:1..2:25 children=1
         ├── Emphasis scope=1:17..1:42 children=1
         │   └── Text scope=1:18..1:41 literal="Gomphocarpus physocarpus" children=0
         ├── Text scope=1:43..1:48 literal=", syn." children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
+        ├── SoftBreak scope=1:49..1:49 children=0
         ├── Emphasis scope=2:1..2:22 children=1
         │   └── Text scope=2:2..2:21 literal="Asclepias physocarpa" children=0
         └── Text scope=2:23..2:23 literal=")" children=0
@@ -7813,7 +7813,7 @@ Document scope=1:1..2:4 children=1
 └── Paragraph scope=1:1..2:4 children=1
     └── Emphasis scope=1:1..2:4 children=3
         ├── Text scope=1:2..1:4 literal="foo" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
+        ├── SoftBreak scope=1:5..1:5 children=0
         └── Text scope=2:1..2:3 literal="bar" children=0
 ````````````````````````````````
 
@@ -7853,7 +7853,7 @@ __foo_ bar_
 Document scope=1:1..1:11 children=1
 └── Paragraph scope=1:1..1:11 children=1
     └── Emphasis scope=1:1..1:11 children=2
-        ├── Emphasis scope=1:1..1:6 children=1
+        ├── Emphasis scope=1:2..1:6 children=1
         │   └── Text scope=1:3..1:5 literal="foo" children=0
         └── Text scope=1:7..1:10 literal=" bar" children=0
 ````````````````````````````````
@@ -7866,7 +7866,7 @@ Document scope=1:1..1:11 children=1
 └── Paragraph scope=1:1..1:11 children=1
     └── Emphasis scope=1:1..1:11 children=2
         ├── Text scope=1:2..1:5 literal="foo " children=0
-        └── Emphasis scope=1:6..1:11 children=1
+        └── Emphasis scope=1:6..1:10 children=1
             └── Text scope=1:7..1:9 literal="bar" children=0
 ````````````````````````````````
 
@@ -7935,7 +7935,7 @@ omitted:
 Document scope=1:1..1:13 children=1
 └── Paragraph scope=1:1..1:13 children=1
     └── Emphasis scope=1:1..1:13 children=2
-        ├── Strong scope=1:1..1:8 children=1
+        ├── Strong scope=1:2..1:8 children=1
         │   └── Text scope=1:4..1:6 literal="foo" children=0
         └── Text scope=1:9..1:12 literal=" bar" children=0
 ````````````````````````````````
@@ -7948,7 +7948,7 @@ Document scope=1:1..1:13 children=1
 └── Paragraph scope=1:1..1:13 children=1
     └── Emphasis scope=1:1..1:13 children=2
         ├── Text scope=1:2..1:5 literal="foo " children=0
-        └── Strong scope=1:6..1:13 children=1
+        └── Strong scope=1:6..1:12 children=1
             └── Text scope=1:8..1:10 literal="bar" children=0
 ````````````````````````````````
 
@@ -7960,7 +7960,7 @@ Document scope=1:1..1:12 children=1
 └── Paragraph scope=1:1..1:12 children=1
     └── Emphasis scope=1:1..1:12 children=2
         ├── Text scope=1:2..1:4 literal="foo" children=0
-        └── Strong scope=1:5..1:12 children=1
+        └── Strong scope=1:5..1:11 children=1
             └── Text scope=1:7..1:9 literal="bar" children=0
 ````````````````````````````````
 
@@ -7976,7 +7976,7 @@ Document scope=1:1..1:15 children=1
 └── Paragraph scope=1:1..1:15 children=3
     ├── Text scope=1:1..1:3 literal="foo" children=0
     ├── Emphasis scope=1:4..1:12 children=1
-    │   └── Strong scope=1:4..1:12 children=1
+    │   └── Strong scope=1:5..1:11 children=1
     │       └── Text scope=1:7..1:9 literal="bar" children=0
     └── Text scope=1:13..1:15 literal="baz" children=0
 ````````````````````````````````
@@ -7987,11 +7987,11 @@ foo******bar*********baz
 Document scope=1:1..1:24 children=1
 └── Paragraph scope=1:1..1:24 children=3
     ├── Text scope=1:1..1:3 literal="foo" children=0
-    ├── Strong scope=1:4..1:21 children=1
-    │   └── Strong scope=1:4..1:21 children=1
-    │       └── Strong scope=1:4..1:21 children=1
+    ├── Strong scope=1:4..1:18 children=1
+    │   └── Strong scope=1:6..1:16 children=1
+    │       └── Strong scope=1:8..1:14 children=1
     │           └── Text scope=1:10..1:12 literal="bar" children=0
-    └── Text scope=1:13..1:24 literal="***baz" children=0
+    └── Text scope=1:19..1:24 literal="***baz" children=0
 ````````````````````````````````
 
 
@@ -8072,7 +8072,7 @@ Document scope=1:1..2:5 children=1
 └── Paragraph scope=1:1..2:5 children=1
     └── Strong scope=1:1..2:5 children=3
         ├── Text scope=1:3..1:5 literal="foo" children=0
-        ├── SoftBreak scope=0:0..0:0 children=0
+        ├── SoftBreak scope=1:6..1:6 children=0
         └── Text scope=2:1..2:3 literal="bar" children=0
 ````````````````````````````````
 
@@ -8112,7 +8112,7 @@ ____foo__ bar__
 Document scope=1:1..1:15 children=1
 └── Paragraph scope=1:1..1:15 children=1
     └── Strong scope=1:1..1:15 children=2
-        ├── Strong scope=1:1..1:9 children=1
+        ├── Strong scope=1:3..1:9 children=1
         │   └── Text scope=1:5..1:7 literal="foo" children=0
         └── Text scope=1:10..1:13 literal=" bar" children=0
 ````````````````````````````````
@@ -8125,7 +8125,7 @@ Document scope=1:1..1:15 children=1
 └── Paragraph scope=1:1..1:15 children=1
     └── Strong scope=1:1..1:15 children=2
         ├── Text scope=1:3..1:6 literal="foo " children=0
-        └── Strong scope=1:7..1:15 children=1
+        └── Strong scope=1:7..1:13 children=1
             └── Text scope=1:9..1:11 literal="bar" children=0
 ````````````````````````````````
 
@@ -8162,7 +8162,7 @@ Document scope=1:1..1:15 children=1
 Document scope=1:1..1:13 children=1
 └── Paragraph scope=1:1..1:13 children=1
     └── Strong scope=1:1..1:13 children=2
-        ├── Emphasis scope=1:1..1:7 children=1
+        ├── Emphasis scope=1:3..1:7 children=1
         │   └── Text scope=1:4..1:6 literal="foo" children=0
         └── Text scope=1:8..1:11 literal=" bar" children=0
 ````````````````````````````````
@@ -8175,7 +8175,7 @@ Document scope=1:1..1:13 children=1
 └── Paragraph scope=1:1..1:13 children=1
     └── Strong scope=1:1..1:13 children=2
         ├── Text scope=1:3..1:6 literal="foo " children=0
-        └── Emphasis scope=1:7..1:13 children=1
+        └── Emphasis scope=1:7..1:11 children=1
             └── Text scope=1:8..1:10 literal="bar" children=0
 ````````````````````````````````
 
@@ -8194,7 +8194,7 @@ Document scope=1:1..2:10 children=1
         │   ├── Text scope=1:8..1:11 literal="bar " children=0
         │   ├── Strong scope=1:12..1:18 children=1
         │   │   └── Text scope=1:14..1:16 literal="baz" children=0
-        │   ├── SoftBreak scope=0:0..0:0 children=0
+        │   ├── SoftBreak scope=1:19..1:19 children=0
         │   └── Text scope=2:1..2:3 literal="bim" children=0
         └── Text scope=2:5..2:8 literal=" bop" children=0
 ````````````````````````````````
@@ -8307,8 +8307,8 @@ emphasis, rather than inside it:
 .
 Document scope=1:1..1:6 children=1
 └── Paragraph scope=1:1..1:6 children=2
-    ├── Text scope=1:1..1:2 literal="*" children=0
-    └── Emphasis scope=1:1..1:6 children=1
+    ├── Text scope=1:1..1:1 literal="*" children=0
+    └── Emphasis scope=1:2..1:6 children=1
         └── Text scope=1:3..1:5 literal="foo" children=0
 ````````````````````````````````
 
@@ -8318,9 +8318,9 @@ Document scope=1:1..1:6 children=1
 .
 Document scope=1:1..1:6 children=1
 └── Paragraph scope=1:1..1:6 children=2
-    ├── Emphasis scope=1:1..1:6 children=1
+    ├── Emphasis scope=1:1..1:5 children=1
     │   └── Text scope=1:2..1:4 literal="foo" children=0
-    └── Text scope=1:5..1:6 literal="*" children=0
+    └── Text scope=1:6..1:6 literal="*" children=0
 ````````````````````````````````
 
 
@@ -8329,8 +8329,8 @@ Document scope=1:1..1:6 children=1
 .
 Document scope=1:1..1:8 children=1
 └── Paragraph scope=1:1..1:8 children=2
-    ├── Text scope=1:1..1:3 literal="*" children=0
-    └── Strong scope=1:1..1:8 children=1
+    ├── Text scope=1:1..1:1 literal="*" children=0
+    └── Strong scope=1:2..1:8 children=1
         └── Text scope=1:4..1:6 literal="foo" children=0
 ````````````````````````````````
 
@@ -8340,8 +8340,8 @@ Document scope=1:1..1:8 children=1
 .
 Document scope=1:1..1:8 children=1
 └── Paragraph scope=1:1..1:8 children=2
-    ├── Text scope=1:1..1:4 literal="***" children=0
-    └── Emphasis scope=1:1..1:8 children=1
+    ├── Text scope=1:1..1:3 literal="***" children=0
+    └── Emphasis scope=1:4..1:8 children=1
         └── Text scope=1:5..1:7 literal="foo" children=0
 ````````````````````````````````
 
@@ -8351,9 +8351,9 @@ Document scope=1:1..1:8 children=1
 .
 Document scope=1:1..1:8 children=1
 └── Paragraph scope=1:1..1:8 children=2
-    ├── Strong scope=1:1..1:8 children=1
+    ├── Strong scope=1:1..1:7 children=1
     │   └── Text scope=1:3..1:5 literal="foo" children=0
-    └── Text scope=1:6..1:8 literal="*" children=0
+    └── Text scope=1:8..1:8 literal="*" children=0
 ````````````````````````````````
 
 
@@ -8362,9 +8362,9 @@ Document scope=1:1..1:8 children=1
 .
 Document scope=1:1..1:8 children=1
 └── Paragraph scope=1:1..1:8 children=2
-    ├── Emphasis scope=1:1..1:8 children=1
+    ├── Emphasis scope=1:1..1:5 children=1
     │   └── Text scope=1:2..1:4 literal="foo" children=0
-    └── Text scope=1:5..1:8 literal="***" children=0
+    └── Text scope=1:6..1:8 literal="***" children=0
 ````````````````````````````````
 
 
@@ -8438,8 +8438,8 @@ __foo_
 .
 Document scope=1:1..1:6 children=1
 └── Paragraph scope=1:1..1:6 children=2
-    ├── Text scope=1:1..1:2 literal="_" children=0
-    └── Emphasis scope=1:1..1:6 children=1
+    ├── Text scope=1:1..1:1 literal="_" children=0
+    └── Emphasis scope=1:2..1:6 children=1
         └── Text scope=1:3..1:5 literal="foo" children=0
 ````````````````````````````````
 
@@ -8453,9 +8453,9 @@ _foo__
 .
 Document scope=1:1..1:6 children=1
 └── Paragraph scope=1:1..1:6 children=2
-    ├── Emphasis scope=1:1..1:6 children=1
+    ├── Emphasis scope=1:1..1:5 children=1
     │   └── Text scope=1:2..1:4 literal="foo" children=0
-    └── Text scope=1:5..1:6 literal="_" children=0
+    └── Text scope=1:6..1:6 literal="_" children=0
 ````````````````````````````````
 
 
@@ -8464,8 +8464,8 @@ ___foo__
 .
 Document scope=1:1..1:8 children=1
 └── Paragraph scope=1:1..1:8 children=2
-    ├── Text scope=1:1..1:3 literal="_" children=0
-    └── Strong scope=1:1..1:8 children=1
+    ├── Text scope=1:1..1:1 literal="_" children=0
+    └── Strong scope=1:2..1:8 children=1
         └── Text scope=1:4..1:6 literal="foo" children=0
 ````````````````````````````````
 
@@ -8475,8 +8475,8 @@ ____foo_
 .
 Document scope=1:1..1:8 children=1
 └── Paragraph scope=1:1..1:8 children=2
-    ├── Text scope=1:1..1:4 literal="___" children=0
-    └── Emphasis scope=1:1..1:8 children=1
+    ├── Text scope=1:1..1:3 literal="___" children=0
+    └── Emphasis scope=1:4..1:8 children=1
         └── Text scope=1:5..1:7 literal="foo" children=0
 ````````````````````````````````
 
@@ -8486,9 +8486,9 @@ __foo___
 .
 Document scope=1:1..1:8 children=1
 └── Paragraph scope=1:1..1:8 children=2
-    ├── Strong scope=1:1..1:8 children=1
+    ├── Strong scope=1:1..1:7 children=1
     │   └── Text scope=1:3..1:5 literal="foo" children=0
-    └── Text scope=1:6..1:8 literal="_" children=0
+    └── Text scope=1:8..1:8 literal="_" children=0
 ````````````````````````````````
 
 
@@ -8497,9 +8497,9 @@ _foo____
 .
 Document scope=1:1..1:8 children=1
 └── Paragraph scope=1:1..1:8 children=2
-    ├── Emphasis scope=1:1..1:8 children=1
+    ├── Emphasis scope=1:1..1:5 children=1
     │   └── Text scope=1:2..1:4 literal="foo" children=0
-    └── Text scope=1:5..1:8 literal="___" children=0
+    └── Text scope=1:6..1:8 literal="___" children=0
 ````````````````````````````````
 
 
@@ -8557,7 +8557,7 @@ switching delimiters:
 Document scope=1:1..1:11 children=1
 └── Paragraph scope=1:1..1:11 children=1
     └── Strong scope=1:1..1:11 children=1
-        └── Strong scope=1:1..1:11 children=1
+        └── Strong scope=1:3..1:9 children=1
             └── Text scope=1:5..1:7 literal="foo" children=0
 ````````````````````````````````
 
@@ -8568,7 +8568,7 @@ ____foo____
 Document scope=1:1..1:11 children=1
 └── Paragraph scope=1:1..1:11 children=1
     └── Strong scope=1:1..1:11 children=1
-        └── Strong scope=1:1..1:11 children=1
+        └── Strong scope=1:3..1:9 children=1
             └── Text scope=1:5..1:7 literal="foo" children=0
 ````````````````````````````````
 
@@ -8583,8 +8583,8 @@ delimiters:
 Document scope=1:1..1:15 children=1
 └── Paragraph scope=1:1..1:15 children=1
     └── Strong scope=1:1..1:15 children=1
-        └── Strong scope=1:1..1:15 children=1
-            └── Strong scope=1:1..1:15 children=1
+        └── Strong scope=1:3..1:13 children=1
+            └── Strong scope=1:5..1:11 children=1
                 └── Text scope=1:7..1:9 literal="foo" children=0
 ````````````````````````````````
 
@@ -8597,7 +8597,7 @@ Rule 14:
 Document scope=1:1..1:9 children=1
 └── Paragraph scope=1:1..1:9 children=1
     └── Emphasis scope=1:1..1:9 children=1
-        └── Strong scope=1:1..1:9 children=1
+        └── Strong scope=1:2..1:8 children=1
             └── Text scope=1:4..1:6 literal="foo" children=0
 ````````````````````````````````
 
@@ -8608,8 +8608,8 @@ _____foo_____
 Document scope=1:1..1:13 children=1
 └── Paragraph scope=1:1..1:13 children=1
     └── Emphasis scope=1:1..1:13 children=1
-        └── Strong scope=1:1..1:13 children=1
-            └── Strong scope=1:1..1:13 children=1
+        └── Strong scope=1:2..1:12 children=1
+            └── Strong scope=1:4..1:10 children=1
                 └── Text scope=1:6..1:8 literal="foo" children=0
 ````````````````````````````````
 
@@ -8694,7 +8694,7 @@ Document scope=1:1..1:17 children=1
 Document scope=1:1..1:27 children=1
 └── Paragraph scope=1:1..1:27 children=2
     ├── Text scope=1:1..1:1 literal="*" children=0
-    └── HTML scope=1:2..1:27 comment=false literal="<img src=\"foo\" title=\"*\"/>" children=0
+    └── HTML scope=1:2..1:27 literal="<img src=\"foo\" title=\"*\"/>" children=0
 ````````````````````````````````
 
 
@@ -8704,7 +8704,7 @@ Document scope=1:1..1:27 children=1
 Document scope=1:1..1:15 children=1
 └── Paragraph scope=1:1..1:15 children=2
     ├── Text scope=1:1..1:2 literal="**" children=0
-    └── HTML scope=1:3..1:15 comment=false literal="<a href=\"**\">" children=0
+    └── HTML scope=1:3..1:15 literal="<a href=\"**\">" children=0
 ````````````````````````````````
 
 
@@ -8714,7 +8714,7 @@ __<a href="__">
 Document scope=1:1..1:15 children=1
 └── Paragraph scope=1:1..1:15 children=2
     ├── Text scope=1:1..1:2 literal="__" children=0
-    └── HTML scope=1:3..1:15 comment=false literal="<a href=\"__\">" children=0
+    └── HTML scope=1:3..1:15 literal="<a href=\"__\">" children=0
 ````````````````````````````````
 
 
@@ -8725,7 +8725,7 @@ Document scope=1:1..1:7 children=1
 └── Paragraph scope=1:1..1:7 children=1
     └── Emphasis scope=1:1..1:7 children=2
         ├── Text scope=1:2..1:3 literal="a " children=0
-        └── Code scope=1:5..1:5 mode=embedded literal="*" children=0
+        └── Code scope=1:4..1:6 literal="*" children=0
 ````````````````````````````````
 
 
@@ -8736,7 +8736,7 @@ Document scope=1:1..1:7 children=1
 └── Paragraph scope=1:1..1:7 children=1
     └── Emphasis scope=1:1..1:7 children=2
         ├── Text scope=1:2..1:3 literal="a " children=0
-        └── Code scope=1:5..1:5 mode=embedded literal="_" children=0
+        └── Code scope=1:4..1:6 literal="_" children=0
 ````````````````````````````````
 
 
@@ -8946,7 +8946,7 @@ bar)
 Document scope=1:1..2:4 children=1
 └── Paragraph scope=1:1..2:4 children=3
     ├── Text scope=1:1..1:10 literal="[link](foo" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:11..1:11 children=0
     └── Text scope=2:1..2:4 literal="bar)" children=0
 ````````````````````````````````
 
@@ -8957,7 +8957,7 @@ bar>)
 Document scope=1:1..2:5 children=1
 └── Paragraph scope=1:1..2:5 children=3
     ├── Text scope=1:1..1:7 literal="[link](" children=0
-    ├── HTML scope=1:8..2:3 comment=false literal="<foo\nbar>" children=0
+    ├── HTML scope=1:8..2:4 literal="<foo\nbar>" children=0
     └── Text scope=2:5..2:5 literal=")" children=0
 ````````````````````````````````
 
@@ -8994,11 +8994,11 @@ is not matched properly:
 Document scope=1:1..3:9 children=1
 └── Paragraph scope=1:1..3:9 children=7
     ├── Text scope=1:1..1:8 literal="[a](<b)c" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:9..1:9 children=0
     ├── Text scope=2:1..2:9 literal="[a](<b)c>" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=2:10..2:10 children=0
     ├── Text scope=3:1..3:4 literal="[a](" children=0
-    ├── HTML scope=3:5..3:7 comment=false literal="<b>" children=0
+    ├── HTML scope=3:5..3:7 literal="<b>" children=0
     └── Text scope=3:8..3:9 literal="c)" children=0
 ````````````````````````````````
 
@@ -9140,10 +9140,10 @@ Document scope=1:1..3:20 children=1
 └── Paragraph scope=1:1..3:20 children=5
     ├── Link scope=1:1..1:20 destination="/url" title="title" children=1
     │   └── Text scope=1:2..1:5 literal="link" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:21..1:21 children=0
     ├── Link scope=2:1..2:20 destination="/url" title="title" children=1
     │   └── Text scope=2:2..2:5 literal="link" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=2:21..2:21 children=0
     └── Link scope=3:1..3:20 destination="/url" title="title" children=1
         └── Text scope=3:2..3:5 literal="link" children=0
 ````````````````````````````````
@@ -9221,7 +9221,7 @@ the same way in inline links and link reference definitions.)
 .
 Document scope=1:1..2:12 children=1
 └── Paragraph scope=1:1..2:12 children=1
-    └── Link scope=1:1..1:25 destination="/uri" title="title" children=1
+    └── Link scope=1:1..2:12 destination="/uri" title="title" children=1
         └── Text scope=1:2..1:5 literal="link" children=0
 ````````````````````````````````
 
@@ -9295,7 +9295,7 @@ Document scope=1:1..1:30 children=1
             ├── Strong scope=1:12..1:18 children=1
             │   └── Text scope=1:14..1:16 literal="bar" children=0
             ├── Text scope=1:19..1:19 literal=" " children=0
-            └── Code scope=1:21..1:21 mode=embedded literal="#" children=0
+            └── Code scope=1:20..1:22 literal="#" children=0
 ````````````````````````````````
 
 
@@ -9399,7 +9399,7 @@ and autolinks over link grouping:
 Document scope=1:1..1:24 children=1
 └── Paragraph scope=1:1..1:24 children=2
     ├── Text scope=1:1..1:5 literal="[foo " children=0
-    └── HTML scope=1:6..1:24 comment=false literal="<bar attr=\"](baz)\">" children=0
+    └── HTML scope=1:6..1:24 literal="<bar attr=\"](baz)\">" children=0
 ````````````````````````````````
 
 
@@ -9409,7 +9409,7 @@ Document scope=1:1..1:24 children=1
 Document scope=1:1..1:13 children=1
 └── Paragraph scope=1:1..1:13 children=2
     ├── Text scope=1:1..1:4 literal="[foo" children=0
-    └── Code scope=1:6..1:12 mode=embedded literal="](/uri)" children=0
+    └── Code scope=1:5..1:13 literal="](/uri)" children=0
 ````````````````````````````````
 
 
@@ -9462,9 +9462,9 @@ Here is a simple example:
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:10 children=1
-│   └── LinkReference scope=1:1..1:10 label="bar" form=full children=1
+│   └── LinkReference scope=1:1..1:10 label="bar" identifier="bar" form=full children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="bar" identifier="bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9481,9 +9481,9 @@ unless they are escaped:
 .
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:23 children=1
-│   └── LinkReference scope=1:1..1:23 label="ref" form=full children=1
+│   └── LinkReference scope=1:1..1:23 label="ref" identifier="ref" form=full children=1
 │       └── Text scope=1:2..1:17 literal="link [foo [bar]]" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9494,9 +9494,9 @@ Document scope=1:1..3:11 children=2
 .
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:17 children=1
-│   └── LinkReference scope=1:1..1:17 label="ref" form=full children=1
+│   └── LinkReference scope=1:1..1:17 label="ref" identifier="ref" form=full children=1
 │       └── Text scope=1:2..1:11 literal="link [bar" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9509,15 +9509,15 @@ The link text may contain inline content:
 .
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:29 children=1
-│   └── LinkReference scope=1:1..1:29 label="ref" form=full children=2
+│   └── LinkReference scope=1:1..1:29 label="ref" identifier="ref" form=full children=2
 │       ├── Text scope=1:2..1:6 literal="link " children=0
 │       └── Emphasis scope=1:7..1:23 children=4
 │           ├── Text scope=1:8..1:11 literal="foo " children=0
 │           ├── Strong scope=1:12..1:18 children=1
 │           │   └── Text scope=1:14..1:16 literal="bar" children=0
 │           ├── Text scope=1:19..1:19 literal=" " children=0
-│           └── Code scope=1:21..1:21 mode=embedded literal="#" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+│           └── Code scope=1:20..1:22 literal="#" children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9528,10 +9528,10 @@ Document scope=1:1..3:11 children=2
 .
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:24 children=1
-│   └── LinkReference scope=1:1..1:24 label="ref" form=full children=1
+│   └── LinkReference scope=1:1..1:24 label="ref" identifier="ref" form=full children=1
 │       └── Image scope=1:2..1:18 source="moon.jpg" title=null children=1
 │           └── Text scope=1:4..1:7 literal="moon" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9548,9 +9548,9 @@ Document scope=1:1..3:11 children=2
 │   ├── Link scope=1:6..1:16 destination="/uri" title=null children=1
 │   │   └── Text scope=1:7..1:9 literal="bar" children=0
 │   ├── Text scope=1:17..1:17 literal="]" children=0
-│   └── LinkReference scope=1:18..1:22 label="ref" form=shortcut children=1
+│   └── LinkReference scope=1:18..1:22 label="ref" identifier="ref" form=shortcut children=1
 │       └── Text scope=1:19..1:21 literal="ref" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9564,12 +9564,12 @@ Document scope=1:1..3:11 children=2
 │   ├── Text scope=1:1..1:5 literal="[foo " children=0
 │   ├── Emphasis scope=1:6..1:21 children=2
 │   │   ├── Text scope=1:7..1:10 literal="bar " children=0
-│   │   └── LinkReference scope=1:11..1:20 label="ref" form=full children=1
+│   │   └── LinkReference scope=1:11..1:20 label="ref" identifier="ref" form=full children=1
 │   │       └── Text scope=1:12..1:14 literal="baz" children=0
 │   ├── Text scope=1:22..1:22 literal="]" children=0
-│   └── LinkReference scope=1:23..1:27 label="ref" form=shortcut children=1
+│   └── LinkReference scope=1:23..1:27 label="ref" identifier="ref" form=shortcut children=1
 │       └── Text scope=1:24..1:26 literal="ref" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9587,9 +9587,9 @@ emphasis grouping:
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:12 children=2
 │   ├── Text scope=1:1..1:1 literal="*" children=0
-│   └── LinkReference scope=1:2..1:12 label="ref" form=full children=1
+│   └── LinkReference scope=1:2..1:12 label="ref" identifier="ref" form=full children=1
 │       └── Text scope=1:3..1:6 literal="foo*" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9600,9 +9600,9 @@ Document scope=1:1..3:11 children=2
 .
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:15 children=1
-│   └── LinkReference scope=1:1..1:15 label="ref" form=full children=1
+│   └── LinkReference scope=1:1..1:15 label="ref" identifier="ref" form=full children=1
 │       └── Text scope=1:2..1:9 literal="foo *bar" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9617,8 +9617,8 @@ and autolinks over link grouping:
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:24 children=2
 │   ├── Text scope=1:1..1:5 literal="[foo " children=0
-│   └── HTML scope=1:6..1:24 comment=false literal="<bar attr=\"][ref]\">" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+│   └── HTML scope=1:6..1:24 literal="<bar attr=\"][ref]\">" children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9630,8 +9630,8 @@ Document scope=1:1..3:11 children=2
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:12 children=2
 │   ├── Text scope=1:1..1:4 literal="[foo" children=0
-│   └── Code scope=1:6..1:11 mode=embedded literal="][ref]" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+│   └── Code scope=1:5..1:12 literal="][ref]" children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9645,7 +9645,7 @@ Document scope=1:1..3:11 children=2
 │   ├── Text scope=1:1..1:4 literal="[foo" children=0
 │   └── Link scope=1:5..1:39 destination="http://example.com/?search=][ref]" title=null children=1
 │       └── Text scope=1:6..1:38 literal="http://example.com/?search=][ref]" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="ref" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="ref" identifier="ref" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9658,9 +9658,9 @@ Matching is case-insensitive:
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:10 children=1
-│   └── LinkReference scope=1:1..1:10 label="BaR" form=full children=1
+│   └── LinkReference scope=1:1..1:10 label="BaR" identifier="bar" form=full children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="bar" identifier="bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9673,10 +9673,10 @@ Unicode case fold is used:
 .
 Document scope=1:1..3:20 children=2
 ├── Paragraph scope=1:1..1:47 children=2
-│   ├── LinkReference scope=1:1..1:28 label="Толпой" form=full children=1
+│   ├── LinkReference scope=1:1..1:28 label="Толпой" identifier="толпой" form=full children=1
 │   │   └── Text scope=1:2..1:13 literal="Толпой" children=0
 │   └── Text scope=1:29..1:47 literal=" is a Russian word." children=0
-└── ReferenceDefinition scope=3:1..3:20 label="ТОЛПОЙ" destination="/url" title=null children=0
+└── ReferenceDefinition scope=3:1..3:20 label="ТОЛПОЙ" identifier="толпой" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -9690,9 +9690,9 @@ purposes of determining matching:
 [Baz][Foo bar]
 .
 Document scope=1:1..4:14 children=2
-├── ReferenceDefinition scope=1:1..2:12 label="Foo\nbar" destination="/url" title=null children=0
+├── ReferenceDefinition scope=1:1..2:12 label="Foo\nbar" identifier="foo bar" destination="/url" title=null children=0
 └── Paragraph scope=4:1..4:14 children=1
-    └── LinkReference scope=4:1..4:14 label="Foo bar" form=full children=1
+    └── LinkReference scope=4:1..4:14 label="Foo bar" identifier="foo bar" form=full children=1
         └── Text scope=4:2..4:4 literal="Baz" children=0
 ````````````````````````````````
 
@@ -9708,9 +9708,9 @@ No [whitespace] is allowed between the [link text] and the
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:11 children=2
 │   ├── Text scope=1:1..1:6 literal="[foo] " children=0
-│   └── LinkReference scope=1:7..1:11 label="bar" form=shortcut children=1
+│   └── LinkReference scope=1:7..1:11 label="bar" identifier="bar" form=shortcut children=1
 │       └── Text scope=1:8..1:10 literal="bar" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="bar" identifier="bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9723,10 +9723,10 @@ Document scope=1:1..3:19 children=2
 Document scope=1:1..4:19 children=2
 ├── Paragraph scope=1:1..2:5 children=3
 │   ├── Text scope=1:1..1:5 literal="[foo]" children=0
-│   ├── SoftBreak scope=0:0..0:0 children=0
-│   └── LinkReference scope=2:1..2:5 label="bar" form=shortcut children=1
+│   ├── SoftBreak scope=1:6..1:6 children=0
+│   └── LinkReference scope=2:1..2:5 label="bar" identifier="bar" form=shortcut children=1
 │       └── Text scope=2:2..2:4 literal="bar" children=0
-└── ReferenceDefinition scope=4:1..4:19 label="bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=4:1..4:19 label="bar" identifier="bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9768,10 +9768,10 @@ the first is used:
 [bar][foo]
 .
 Document scope=1:1..5:10 children=3
-├── ReferenceDefinition scope=1:1..1:12 label="foo" destination="/url1" title=null children=0
-├── ReferenceDefinition scope=3:1..3:12 label="foo" destination="/url2" title=null children=0
+├── ReferenceDefinition scope=1:1..1:12 label="foo" identifier="foo" destination="/url1" title=null children=0
+├── ReferenceDefinition scope=3:1..3:12 label="foo" identifier="foo" destination="/url2" title=null children=0
 └── Paragraph scope=5:1..5:10 children=1
-    └── LinkReference scope=5:1..5:10 label="foo" form=full children=1
+    └── LinkReference scope=5:1..5:10 label="foo" identifier="foo" form=full children=1
         └── Text scope=5:2..5:4 literal="bar" children=0
 ````````````````````````````````
 
@@ -9788,7 +9788,7 @@ labels define equivalent inline content:
 Document scope=1:1..3:12 children=2
 ├── Paragraph scope=1:1..1:12 children=1
 │   └── Text scope=1:1..1:12 literal="[bar][foo!]" children=0
-└── ReferenceDefinition scope=3:1..3:12 label="foo!" destination="/url" title=null children=0
+└── ReferenceDefinition scope=3:1..3:12 label="foo!" identifier="foo!" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -9841,9 +9841,9 @@ Document scope=1:1..3:15 children=2
 .
 Document scope=1:1..3:13 children=2
 ├── Paragraph scope=1:1..1:12 children=1
-│   └── LinkReference scope=1:1..1:12 label="ref\\[" form=full children=1
+│   └── LinkReference scope=1:1..1:12 label="ref\\[" identifier="ref\\[" form=full children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:13 label="ref\\[" destination="/uri" title=null children=0
+└── ReferenceDefinition scope=3:1..3:13 label="ref\\[" identifier="ref\\[" destination="/uri" title=null children=0
 ````````````````````````````````
 
 
@@ -9855,9 +9855,9 @@ Note that in this example `]` is not backslash-escaped:
 [bar\\]
 .
 Document scope=1:1..3:7 children=2
-├── ReferenceDefinition scope=1:1..1:13 label="bar\\\\" destination="/uri" title=null children=0
+├── ReferenceDefinition scope=1:1..1:13 label="bar\\\\" identifier="bar\\\\" destination="/uri" title=null children=0
 └── Paragraph scope=3:1..3:7 children=1
-    └── LinkReference scope=3:1..3:7 label="bar\\\\" form=shortcut children=1
+    └── LinkReference scope=3:1..3:7 label="bar\\\\" identifier="bar\\\\" form=shortcut children=1
         └── Text scope=3:2..3:6 literal="bar\\" children=0
 ````````````````````````````````
 
@@ -9887,12 +9887,12 @@ Document scope=1:1..3:8 children=2
 Document scope=1:1..5:8 children=2
 ├── Paragraph scope=1:1..2:2 children=3
 │   ├── Text scope=1:1..1:1 literal="[" children=0
-│   ├── SoftBreak scope=0:0..0:0 children=0
-│   └── Text scope=2:1..2:1 literal="]" children=0
+│   ├── SoftBreak scope=1:2..1:2 children=0
+│   └── Text scope=2:2..2:2 literal="]" children=0
 └── Paragraph scope=4:1..5:8 children=3
     ├── Text scope=4:1..4:1 literal="[" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
-    └── Text scope=5:1..5:7 literal="]: /uri" children=0
+    ├── SoftBreak scope=4:2..4:2 children=0
+    └── Text scope=5:2..5:8 literal="]: /uri" children=0
 ````````````````````````````````
 
 
@@ -9912,9 +9912,9 @@ provided by the matching reference link definition.  Thus,
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:7 children=1
-│   └── LinkReference scope=1:1..1:7 label="foo" form=collapsed children=1
+│   └── LinkReference scope=1:1..1:7 label="foo" identifier="foo" form=collapsed children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9925,11 +9925,11 @@ Document scope=1:1..3:19 children=2
 .
 Document scope=1:1..3:25 children=2
 ├── Paragraph scope=1:1..1:13 children=1
-│   └── LinkReference scope=1:1..1:13 label="*foo* bar" form=collapsed children=2
+│   └── LinkReference scope=1:1..1:13 label="*foo* bar" identifier="*foo* bar" form=collapsed children=2
 │       ├── Emphasis scope=1:2..1:6 children=1
 │       │   └── Text scope=1:3..1:5 literal="foo" children=0
 │       └── Text scope=1:7..1:10 literal=" bar" children=0
-└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" identifier="*foo* bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9942,9 +9942,9 @@ The link labels are case-insensitive:
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:7 children=1
-│   └── LinkReference scope=1:1..1:7 label="Foo" form=collapsed children=1
+│   └── LinkReference scope=1:1..1:7 label="Foo" identifier="foo" form=collapsed children=1
 │       └── Text scope=1:2..1:4 literal="Foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9959,13 +9959,12 @@ allowed between the two sets of brackets:
 [foo]: /url "title"
 .
 Document scope=1:1..4:19 children=2
-├── Paragraph scope=1:1..2:2 children=4
-│   ├── LinkReference scope=1:1..1:5 label="foo" form=shortcut children=1
+├── Paragraph scope=1:1..2:2 children=3
+│   ├── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │   │   └── Text scope=1:2..1:4 literal="foo" children=0
-│   ├── Text scope=1:6..1:6 literal="" children=0
-│   ├── SoftBreak scope=0:0..0:0 children=0
+│   ├── SoftBreak scope=1:7..1:7 children=0
 │   └── Text scope=2:1..2:2 literal="[]" children=0
-└── ReferenceDefinition scope=4:1..4:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=4:1..4:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9985,9 +9984,9 @@ Thus, `[foo]` is equivalent to `[foo][]`.
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:5 children=1
-│   └── LinkReference scope=1:1..1:5 label="foo" form=shortcut children=1
+│   └── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -9998,11 +9997,11 @@ Document scope=1:1..3:19 children=2
 .
 Document scope=1:1..3:25 children=2
 ├── Paragraph scope=1:1..1:11 children=1
-│   └── LinkReference scope=1:1..1:11 label="*foo* bar" form=shortcut children=2
+│   └── LinkReference scope=1:1..1:11 label="*foo* bar" identifier="*foo* bar" form=shortcut children=2
 │       ├── Emphasis scope=1:2..1:6 children=1
 │       │   └── Text scope=1:3..1:5 literal="foo" children=0
 │       └── Text scope=1:7..1:10 literal=" bar" children=0
-└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" identifier="*foo* bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10014,12 +10013,12 @@ Document scope=1:1..3:25 children=2
 Document scope=1:1..3:25 children=2
 ├── Paragraph scope=1:1..1:13 children=3
 │   ├── Text scope=1:1..1:1 literal="[" children=0
-│   ├── LinkReference scope=1:2..1:12 label="*foo* bar" form=shortcut children=2
+│   ├── LinkReference scope=1:2..1:12 label="*foo* bar" identifier="*foo* bar" form=shortcut children=2
 │   │   ├── Emphasis scope=1:3..1:7 children=1
 │   │   │   └── Text scope=1:4..1:6 literal="foo" children=0
 │   │   └── Text scope=1:8..1:11 literal=" bar" children=0
 │   └── Text scope=1:13..1:13 literal="]" children=0
-└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" identifier="*foo* bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10031,9 +10030,9 @@ Document scope=1:1..3:25 children=2
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:11 children=2
 │   ├── Text scope=1:1..1:6 literal="[[bar " children=0
-│   └── LinkReference scope=1:7..1:11 label="foo" form=shortcut children=1
+│   └── LinkReference scope=1:7..1:11 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:8..1:10 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="foo" destination="/url" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="foo" identifier="foo" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -10046,9 +10045,9 @@ The link labels are case-insensitive:
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:5 children=1
-│   └── LinkReference scope=1:1..1:5 label="Foo" form=shortcut children=1
+│   └── LinkReference scope=1:1..1:5 label="Foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:2..1:4 literal="Foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10061,10 +10060,10 @@ A space after the link text should be preserved:
 .
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:9 children=2
-│   ├── LinkReference scope=1:1..1:5 label="foo" form=shortcut children=1
+│   ├── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │   │   └── Text scope=1:2..1:4 literal="foo" children=0
 │   └── Text scope=1:6..1:9 literal=" bar" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="foo" destination="/url" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="foo" identifier="foo" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -10079,7 +10078,7 @@ opening bracket to avoid links:
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:6 children=1
 │   └── Text scope=1:1..1:6 literal="[foo]" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10092,10 +10091,10 @@ following closing bracket:
 *[foo*]
 .
 Document scope=1:1..3:7 children=2
-├── ReferenceDefinition scope=1:1..1:12 label="foo*" destination="/url" title=null children=0
+├── ReferenceDefinition scope=1:1..1:12 label="foo*" identifier="foo*" destination="/url" title=null children=0
 └── Paragraph scope=3:1..3:7 children=2
     ├── Text scope=3:1..3:1 literal="*" children=0
-    └── LinkReference scope=3:2..3:7 label="foo*" form=shortcut children=1
+    └── LinkReference scope=3:2..3:7 label="foo*" identifier="foo*" form=shortcut children=1
         └── Text scope=3:3..3:6 literal="foo*" children=0
 ````````````````````````````````
 
@@ -10111,10 +10110,10 @@ references:
 .
 Document scope=1:1..4:12 children=3
 ├── Paragraph scope=1:1..1:10 children=1
-│   └── LinkReference scope=1:1..1:10 label="bar" form=full children=1
+│   └── LinkReference scope=1:1..1:10 label="bar" identifier="bar" form=full children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-├── ReferenceDefinition scope=3:1..3:12 label="foo" destination="/url1" title=null children=0
-└── ReferenceDefinition scope=4:1..4:12 label="bar" destination="/url2" title=null children=0
+├── ReferenceDefinition scope=3:1..3:12 label="foo" identifier="foo" destination="/url1" title=null children=0
+└── ReferenceDefinition scope=4:1..4:12 label="bar" identifier="bar" destination="/url2" title=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -10124,9 +10123,9 @@ Document scope=1:1..4:12 children=3
 .
 Document scope=1:1..3:12 children=2
 ├── Paragraph scope=1:1..1:7 children=1
-│   └── LinkReference scope=1:1..1:7 label="foo" form=collapsed children=1
+│   └── LinkReference scope=1:1..1:7 label="foo" identifier="foo" form=collapsed children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:12 label="foo" destination="/url1" title=null children=0
+└── ReferenceDefinition scope=3:1..3:12 label="foo" identifier="foo" destination="/url1" title=null children=0
 ````````````````````````````````
 
 Inline links also take precedence:
@@ -10140,7 +10139,7 @@ Document scope=1:1..3:12 children=2
 ├── Paragraph scope=1:1..1:7 children=1
 │   └── Link scope=1:1..1:7 destination="" title=null children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:12 label="foo" destination="/url1" title=null children=0
+└── ReferenceDefinition scope=3:1..3:12 label="foo" identifier="foo" destination="/url1" title=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -10150,10 +10149,10 @@ Document scope=1:1..3:12 children=2
 .
 Document scope=1:1..3:12 children=2
 ├── Paragraph scope=1:1..1:17 children=2
-│   ├── LinkReference scope=1:1..1:5 label="foo" form=shortcut children=1
+│   ├── LinkReference scope=1:1..1:5 label="foo" identifier="foo" form=shortcut children=1
 │   │   └── Text scope=1:2..1:4 literal="foo" children=0
 │   └── Text scope=1:6..1:17 literal="(not a link)" children=0
-└── ReferenceDefinition scope=3:1..3:12 label="foo" destination="/url1" title=null children=0
+└── ReferenceDefinition scope=3:1..3:12 label="foo" identifier="foo" destination="/url1" title=null children=0
 ````````````````````````````````
 
 In the following case `[bar][baz]` is parsed as a reference,
@@ -10167,9 +10166,9 @@ In the following case `[bar][baz]` is parsed as a reference,
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:15 children=2
 │   ├── Text scope=1:1..1:5 literal="[foo]" children=0
-│   └── LinkReference scope=1:6..1:15 label="baz" form=full children=1
+│   └── LinkReference scope=1:6..1:15 label="baz" identifier="baz" form=full children=1
 │       └── Text scope=1:7..1:9 literal="bar" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="baz" destination="/url" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="baz" identifier="baz" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -10184,12 +10183,12 @@ Here, though, `[foo][bar]` is parsed as a reference, since
 .
 Document scope=1:1..4:12 children=3
 ├── Paragraph scope=1:1..1:15 children=2
-│   ├── LinkReference scope=1:1..1:10 label="bar" form=full children=1
+│   ├── LinkReference scope=1:1..1:10 label="bar" identifier="bar" form=full children=1
 │   │   └── Text scope=1:2..1:4 literal="foo" children=0
-│   └── LinkReference scope=1:11..1:15 label="baz" form=shortcut children=1
+│   └── LinkReference scope=1:11..1:15 label="baz" identifier="baz" form=shortcut children=1
 │       └── Text scope=1:12..1:14 literal="baz" children=0
-├── ReferenceDefinition scope=3:1..3:12 label="baz" destination="/url1" title=null children=0
-└── ReferenceDefinition scope=4:1..4:12 label="bar" destination="/url2" title=null children=0
+├── ReferenceDefinition scope=3:1..3:12 label="baz" identifier="baz" destination="/url1" title=null children=0
+└── ReferenceDefinition scope=4:1..4:12 label="bar" identifier="bar" destination="/url2" title=null children=0
 ````````````````````````````````
 
 
@@ -10205,10 +10204,10 @@ is followed by a link label (even though `[bar]` is not defined):
 Document scope=1:1..4:12 children=3
 ├── Paragraph scope=1:1..1:15 children=2
 │   ├── Text scope=1:1..1:5 literal="[foo]" children=0
-│   └── LinkReference scope=1:6..1:15 label="baz" form=full children=1
+│   └── LinkReference scope=1:6..1:15 label="baz" identifier="baz" form=full children=1
 │       └── Text scope=1:7..1:9 literal="bar" children=0
-├── ReferenceDefinition scope=3:1..3:12 label="baz" destination="/url1" title=null children=0
-└── ReferenceDefinition scope=4:1..4:12 label="foo" destination="/url2" title=null children=0
+├── ReferenceDefinition scope=3:1..3:12 label="baz" identifier="baz" destination="/url1" title=null children=0
+└── ReferenceDefinition scope=4:1..4:12 label="foo" identifier="foo" destination="/url2" title=null children=0
 ````````````````````````````````
 
 
@@ -10242,11 +10241,11 @@ Document scope=1:1..1:20 children=1
 .
 Document scope=1:1..3:39 children=2
 ├── Paragraph scope=1:1..1:12 children=1
-│   └── ImageReference scope=1:1..1:12 label="foo *bar*" form=shortcut children=2
+│   └── ImageReference scope=1:1..1:12 label="foo *bar*" identifier="foo *bar*" form=shortcut children=2
 │       ├── Text scope=1:3..1:6 literal="foo " children=0
 │       └── Emphasis scope=1:7..1:11 children=1
 │           └── Text scope=1:8..1:10 literal="bar" children=0
-└── ReferenceDefinition scope=3:1..3:39 label="foo *bar*" destination="train.jpg" title="train & tracks" children=0
+└── ReferenceDefinition scope=3:1..3:39 label="foo *bar*" identifier="foo *bar*" destination="train.jpg" title="train & tracks" children=0
 ````````````````````````````````
 
 
@@ -10288,11 +10287,11 @@ content is rendered, without formatting.
 .
 Document scope=1:1..3:39 children=2
 ├── Paragraph scope=1:1..1:14 children=1
-│   └── ImageReference scope=1:1..1:14 label="foo *bar*" form=collapsed children=2
+│   └── ImageReference scope=1:1..1:14 label="foo *bar*" identifier="foo *bar*" form=collapsed children=2
 │       ├── Text scope=1:3..1:6 literal="foo " children=0
 │       └── Emphasis scope=1:7..1:11 children=1
 │           └── Text scope=1:8..1:10 literal="bar" children=0
-└── ReferenceDefinition scope=3:1..3:39 label="foo *bar*" destination="train.jpg" title="train & tracks" children=0
+└── ReferenceDefinition scope=3:1..3:39 label="foo *bar*" identifier="foo *bar*" destination="train.jpg" title="train & tracks" children=0
 ````````````````````````````````
 
 
@@ -10303,11 +10302,11 @@ Document scope=1:1..3:39 children=2
 .
 Document scope=1:1..3:36 children=2
 ├── Paragraph scope=1:1..1:20 children=1
-│   └── ImageReference scope=1:1..1:20 label="foobar" form=full children=2
+│   └── ImageReference scope=1:1..1:20 label="foobar" identifier="foobar" form=full children=2
 │       ├── Text scope=1:3..1:6 literal="foo " children=0
 │       └── Emphasis scope=1:7..1:11 children=1
 │           └── Text scope=1:8..1:10 literal="bar" children=0
-└── ReferenceDefinition scope=3:1..3:36 label="FOOBAR" destination="train.jpg" title="train & tracks" children=0
+└── ReferenceDefinition scope=3:1..3:36 label="FOOBAR" identifier="foobar" destination="train.jpg" title="train & tracks" children=0
 ````````````````````````````````
 
 
@@ -10360,9 +10359,9 @@ Reference-style:
 .
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:11 children=1
-│   └── ImageReference scope=1:1..1:11 label="bar" form=full children=1
+│   └── ImageReference scope=1:1..1:11 label="bar" identifier="bar" form=full children=1
 │       └── Text scope=1:3..1:5 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="bar" destination="/url" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="bar" identifier="bar" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -10373,9 +10372,9 @@ Document scope=1:1..3:11 children=2
 .
 Document scope=1:1..3:11 children=2
 ├── Paragraph scope=1:1..1:11 children=1
-│   └── ImageReference scope=1:1..1:11 label="bar" form=full children=1
+│   └── ImageReference scope=1:1..1:11 label="bar" identifier="bar" form=full children=1
 │       └── Text scope=1:3..1:5 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:11 label="BAR" destination="/url" title=null children=0
+└── ReferenceDefinition scope=3:1..3:11 label="BAR" identifier="bar" destination="/url" title=null children=0
 ````````````````````````````````
 
 
@@ -10388,9 +10387,9 @@ Collapsed:
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:8 children=1
-│   └── ImageReference scope=1:1..1:8 label="foo" form=collapsed children=1
+│   └── ImageReference scope=1:1..1:8 label="foo" identifier="foo" form=collapsed children=1
 │       └── Text scope=1:3..1:5 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10401,11 +10400,11 @@ Document scope=1:1..3:19 children=2
 .
 Document scope=1:1..3:25 children=2
 ├── Paragraph scope=1:1..1:14 children=1
-│   └── ImageReference scope=1:1..1:14 label="*foo* bar" form=collapsed children=2
+│   └── ImageReference scope=1:1..1:14 label="*foo* bar" identifier="*foo* bar" form=collapsed children=2
 │       ├── Emphasis scope=1:3..1:7 children=1
 │       │   └── Text scope=1:4..1:6 literal="foo" children=0
 │       └── Text scope=1:8..1:11 literal=" bar" children=0
-└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" identifier="*foo* bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10418,9 +10417,9 @@ The labels are case-insensitive:
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:8 children=1
-│   └── ImageReference scope=1:1..1:8 label="Foo" form=collapsed children=1
+│   └── ImageReference scope=1:1..1:8 label="Foo" identifier="foo" form=collapsed children=1
 │       └── Text scope=1:3..1:5 literal="Foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10434,13 +10433,12 @@ between the two sets of brackets:
 [foo]: /url "title"
 .
 Document scope=1:1..4:19 children=2
-├── Paragraph scope=1:1..2:2 children=4
-│   ├── ImageReference scope=1:1..1:6 label="foo" form=shortcut children=1
+├── Paragraph scope=1:1..2:2 children=3
+│   ├── ImageReference scope=1:1..1:6 label="foo" identifier="foo" form=shortcut children=1
 │   │   └── Text scope=1:3..1:5 literal="foo" children=0
-│   ├── Text scope=1:7..1:7 literal="" children=0
-│   ├── SoftBreak scope=0:0..0:0 children=0
+│   ├── SoftBreak scope=1:8..1:8 children=0
 │   └── Text scope=2:1..2:2 literal="[]" children=0
-└── ReferenceDefinition scope=4:1..4:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=4:1..4:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10453,9 +10451,9 @@ Shortcut:
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:6 children=1
-│   └── ImageReference scope=1:1..1:6 label="foo" form=shortcut children=1
+│   └── ImageReference scope=1:1..1:6 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:3..1:5 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10466,11 +10464,11 @@ Document scope=1:1..3:19 children=2
 .
 Document scope=1:1..3:25 children=2
 ├── Paragraph scope=1:1..1:12 children=1
-│   └── ImageReference scope=1:1..1:12 label="*foo* bar" form=shortcut children=2
+│   └── ImageReference scope=1:1..1:12 label="*foo* bar" identifier="*foo* bar" form=shortcut children=2
 │       ├── Emphasis scope=1:3..1:7 children=1
 │       │   └── Text scope=1:4..1:6 literal="foo" children=0
 │       └── Text scope=1:8..1:11 literal=" bar" children=0
-└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" identifier="*foo* bar" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10498,9 +10496,9 @@ The link labels are case-insensitive:
 .
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:6 children=1
-│   └── ImageReference scope=1:1..1:6 label="Foo" form=shortcut children=1
+│   └── ImageReference scope=1:1..1:6 label="Foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:3..1:5 literal="Foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10515,7 +10513,7 @@ backslash-escape the opening `[`:
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:7 children=1
 │   └── Text scope=1:1..1:7 literal="![foo]" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10530,9 +10528,9 @@ If you want a link after a literal `!`, backslash-escape the
 Document scope=1:1..3:19 children=2
 ├── Paragraph scope=1:1..1:7 children=2
 │   ├── Text scope=1:1..1:2 literal="!" children=0
-│   └── LinkReference scope=1:3..1:7 label="foo" form=shortcut children=1
+│   └── LinkReference scope=1:3..1:7 label="foo" identifier="foo" form=shortcut children=1
 │       └── Text scope=1:4..1:6 literal="foo" children=0
-└── ReferenceDefinition scope=3:1..3:19 label="foo" destination="/url" title="title" children=0
+└── ReferenceDefinition scope=3:1..3:19 label="foo" identifier="foo" destination="/url" title="title" children=0
 ````````````````````````````````
 
 
@@ -10931,8 +10929,7 @@ http://commonmark.org
 Anonymous FTP is available at ftp://foo.bar.baz.
 .
 Document scope=1:1..5:48 children=3
-├── Paragraph scope=1:1..1:21 children=2
-│   ├── Text scope=0:0..0:0 literal="" children=0
+├── Paragraph scope=1:1..1:21 children=1
 │   └── Link scope=1:1..1:21 destination="http://commonmark.org" title=null children=1
 │       └── Text scope=1:1..1:21 literal="http://commonmark.org" children=0
 ├── Paragraph scope=3:1..3:63 children=3
@@ -10965,11 +10962,9 @@ The scheme `mailto:` will automatically be added to the generated link:
 foo@bar.baz
 .
 Document scope=1:1..1:11 children=1
-└── Paragraph scope=1:1..1:11 children=3
-    ├── Text scope=0:0..0:0 literal="" children=0
-    ├── Link scope=1:1..1:11 destination="mailto:foo@bar.baz" title=null children=1
-    │   └── Text scope=1:1..1:11 literal="foo@bar.baz" children=0
-    └── Text scope=0:0..0:0 literal="" children=0
+└── Paragraph scope=1:1..1:11 children=1
+    └── Link scope=1:1..1:11 destination="mailto:foo@bar.baz" title=null children=1
+        └── Text scope=1:1..1:11 literal="foo@bar.baz" children=0
 ````````````````````````````````
 
 `+` can occur before the `@`, but not after.
@@ -10999,13 +10994,10 @@ a.b-c_d@a.b-
 a.b-c_d@a.b_
 .
 Document scope=1:1..7:12 children=4
-├── Paragraph scope=1:1..1:11 children=3
-│   ├── Text scope=0:0..0:0 literal="" children=0
-│   ├── Link scope=1:1..1:11 destination="mailto:a.b-c_d@a.b" title=null children=1
-│   │   └── Text scope=1:1..1:11 literal="a.b-c_d@a.b" children=0
-│   └── Text scope=0:0..0:0 literal="" children=0
-├── Paragraph scope=3:1..3:12 children=3
-│   ├── Text scope=0:0..0:0 literal="" children=0
+├── Paragraph scope=1:1..1:11 children=1
+│   └── Link scope=1:1..1:11 destination="mailto:a.b-c_d@a.b" title=null children=1
+│       └── Text scope=1:1..1:11 literal="a.b-c_d@a.b" children=0
+├── Paragraph scope=3:1..3:12 children=2
 │   ├── Link scope=3:1..3:11 destination="mailto:a.b-c_d@a.b" title=null children=1
 │   │   └── Text scope=3:1..3:11 literal="a.b-c_d@a.b" children=0
 │   └── Text scope=3:12..3:12 literal="." children=0
@@ -11096,9 +11088,9 @@ Here are some simple open tags:
 .
 Document scope=1:1..1:13 children=1
 └── Paragraph scope=1:1..1:13 children=3
-    ├── HTML scope=1:1..1:3 comment=false literal="<a>" children=0
-    ├── HTML scope=1:4..1:8 comment=false literal="<bab>" children=0
-    └── HTML scope=1:9..1:13 comment=false literal="<c2c>" children=0
+    ├── HTML scope=1:1..1:3 literal="<a>" children=0
+    ├── HTML scope=1:4..1:8 literal="<bab>" children=0
+    └── HTML scope=1:9..1:13 literal="<c2c>" children=0
 ````````````````````````````````
 
 
@@ -11109,8 +11101,8 @@ Empty elements:
 .
 Document scope=1:1..1:9 children=1
 └── Paragraph scope=1:1..1:9 children=2
-    ├── HTML scope=1:1..1:4 comment=false literal="<a/>" children=0
-    └── HTML scope=1:5..1:9 comment=false literal="<b2/>" children=0
+    ├── HTML scope=1:1..1:4 literal="<a/>" children=0
+    └── HTML scope=1:5..1:9 literal="<b2/>" children=0
 ````````````````````````````````
 
 
@@ -11122,8 +11114,8 @@ data="foo" >
 .
 Document scope=1:1..2:12 children=1
 └── Paragraph scope=1:1..2:12 children=2
-    ├── HTML scope=1:1..1:6 comment=false literal="<a  />" children=0
-    └── HTML scope=1:7..2:11 comment=false literal="<b2\ndata=\"foo\" >" children=0
+    ├── HTML scope=1:1..1:6 literal="<a  />" children=0
+    └── HTML scope=1:7..2:12 literal="<b2\ndata=\"foo\" >" children=0
 ````````````````````````````````
 
 
@@ -11135,7 +11127,7 @@ _boolean zoop:33=zoop:33 />
 .
 Document scope=1:1..2:27 children=1
 └── Paragraph scope=1:1..2:27 children=1
-    └── HTML scope=1:1..2:26 comment=false literal="<a foo=\"bar\" bam = 'baz <em>\"</em>'\n_boolean zoop:33=zoop:33 />" children=0
+    └── HTML scope=1:1..2:27 literal="<a foo=\"bar\" bam = 'baz <em>\"</em>'\n_boolean zoop:33=zoop:33 />" children=0
 ````````````````````````````````
 
 
@@ -11147,7 +11139,7 @@ Foo <responsive-image src="foo.jpg" />
 Document scope=1:1..1:38 children=1
 └── Paragraph scope=1:1..1:38 children=2
     ├── Text scope=1:1..1:4 literal="Foo " children=0
-    └── HTML scope=1:5..1:38 comment=false literal="<responsive-image src=\"foo.jpg\" />" children=0
+    └── HTML scope=1:5..1:38 literal="<responsive-image src=\"foo.jpg\" />" children=0
 ````````````````````````````````
 
 
@@ -11195,11 +11187,11 @@ bim!bop />
 Document scope=1:1..4:10 children=1
 └── Paragraph scope=1:1..4:10 children=7
     ├── Text scope=1:1..1:5 literal="< a><" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:6..1:6 children=0
     ├── Text scope=2:1..2:11 literal="foo><bar/ >" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=2:12..2:12 children=0
     ├── Text scope=3:1..3:12 literal="<foo bar=baz" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=3:13..3:13 children=0
     └── Text scope=4:1..4:10 literal="bim!bop />" children=0
 ````````````````````````````````
 
@@ -11222,8 +11214,8 @@ Closing tags:
 .
 Document scope=1:1..1:11 children=1
 └── Paragraph scope=1:1..1:11 children=2
-    ├── HTML scope=1:1..1:4 comment=false literal="</a>" children=0
-    └── HTML scope=1:5..1:11 comment=false literal="</foo >" children=0
+    ├── HTML scope=1:1..1:4 literal="</a>" children=0
+    └── HTML scope=1:5..1:11 literal="</foo >" children=0
 ````````````````````````````````
 
 
@@ -11247,7 +11239,7 @@ comment - with hyphens -->
 Document scope=1:1..2:26 children=1
 └── Paragraph scope=1:1..2:26 children=2
     ├── Text scope=1:1..1:4 literal="foo " children=0
-    └── HTML scope=1:5..2:25 comment=true literal="<!-- this is a --\ncomment - with hyphens -->" children=0
+    └── HTML scope=1:5..2:26 literal="<!-- this is a --\ncomment - with hyphens -->" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -11258,11 +11250,11 @@ foo <!---> foo -->
 Document scope=1:1..3:18 children=2
 ├── Paragraph scope=1:1..1:17 children=3
 │   ├── Text scope=1:1..1:4 literal="foo " children=0
-│   ├── HTML scope=1:5..1:9 comment=true literal="<!-->" children=0
+│   ├── HTML scope=1:5..1:9 literal="<!-->" children=0
 │   └── Text scope=1:10..1:17 literal=" foo -->" children=0
 └── Paragraph scope=3:1..3:18 children=3
     ├── Text scope=3:1..3:4 literal="foo " children=0
-    ├── HTML scope=3:5..3:10 comment=true literal="<!--->" children=0
+    ├── HTML scope=3:5..3:10 literal="<!--->" children=0
     └── Text scope=3:11..3:18 literal=" foo -->" children=0
 ````````````````````````````````
 
@@ -11275,7 +11267,7 @@ foo <?php echo $a; ?>
 Document scope=1:1..1:21 children=1
 └── Paragraph scope=1:1..1:21 children=2
     ├── Text scope=1:1..1:4 literal="foo " children=0
-    └── HTML scope=1:5..1:21 comment=false literal="<?php echo $a; ?>" children=0
+    └── HTML scope=1:5..1:21 literal="<?php echo $a; ?>" children=0
 ````````````````````````````````
 
 
@@ -11287,7 +11279,7 @@ foo <!ELEMENT br EMPTY>
 Document scope=1:1..1:23 children=1
 └── Paragraph scope=1:1..1:23 children=2
     ├── Text scope=1:1..1:4 literal="foo " children=0
-    └── HTML scope=1:5..1:23 comment=false literal="<!ELEMENT br EMPTY>" children=0
+    └── HTML scope=1:5..1:23 literal="<!ELEMENT br EMPTY>" children=0
 ````````````````````````````````
 
 
@@ -11299,7 +11291,7 @@ foo <![CDATA[>&<]]>
 Document scope=1:1..1:19 children=1
 └── Paragraph scope=1:1..1:19 children=2
     ├── Text scope=1:1..1:4 literal="foo " children=0
-    └── HTML scope=1:5..1:19 comment=false literal="<![CDATA[>&<]]>" children=0
+    └── HTML scope=1:5..1:19 literal="<![CDATA[>&<]]>" children=0
 ````````````````````````````````
 
 
@@ -11312,7 +11304,7 @@ foo <a href="&ouml;">
 Document scope=1:1..1:21 children=1
 └── Paragraph scope=1:1..1:21 children=2
     ├── Text scope=1:1..1:4 literal="foo " children=0
-    └── HTML scope=1:5..1:21 comment=false literal="<a href=\"&ouml;\">" children=0
+    └── HTML scope=1:5..1:21 literal="<a href=\"&ouml;\">" children=0
 ````````````````````````````````
 
 
@@ -11324,7 +11316,7 @@ foo <a href="\*">
 Document scope=1:1..1:17 children=1
 └── Paragraph scope=1:1..1:17 children=2
     ├── Text scope=1:1..1:4 literal="foo " children=0
-    └── HTML scope=1:5..1:17 comment=false literal="<a href=\"\\*\">" children=0
+    └── HTML scope=1:5..1:17 literal="<a href=\"\\*\">" children=0
 ````````````````````````````````
 
 
@@ -11377,7 +11369,7 @@ baz
 Document scope=1:1..2:3 children=1
 └── Paragraph scope=1:1..2:3 children=3
     ├── Text scope=1:1..1:5 literal="foo" children=0
-    ├── LineBreak scope=0:0..0:0 children=0
+    ├── LineBreak scope=1:6..1:6 children=0
     └── Text scope=2:1..2:3 literal="baz" children=0
 ````````````````````````````````
 
@@ -11392,8 +11384,8 @@ baz
 Document scope=1:1..2:3 children=1
 └── Paragraph scope=1:1..2:3 children=3
     ├── Text scope=1:1..1:3 literal="foo" children=0
-    ├── LineBreak scope=0:0..0:0 children=0
-    └── Text scope=1:6..1:8 literal="baz" children=0
+    ├── LineBreak scope=1:4..1:5 children=0
+    └── Text scope=2:1..2:3 literal="baz" children=0
 ````````````````````````````````
 
 
@@ -11406,7 +11398,7 @@ baz
 Document scope=1:1..2:3 children=1
 └── Paragraph scope=1:1..2:3 children=3
     ├── Text scope=1:1..1:10 literal="foo" children=0
-    ├── LineBreak scope=0:0..0:0 children=0
+    ├── LineBreak scope=1:11..1:11 children=0
     └── Text scope=2:1..2:3 literal="baz" children=0
 ````````````````````````````````
 
@@ -11420,8 +11412,8 @@ foo
 Document scope=1:1..2:8 children=1
 └── Paragraph scope=1:1..2:8 children=3
     ├── Text scope=1:1..1:5 literal="foo" children=0
-    ├── LineBreak scope=0:0..0:0 children=0
-    └── Text scope=2:1..2:3 literal="bar" children=0
+    ├── LineBreak scope=1:6..1:6 children=0
+    └── Text scope=2:6..2:8 literal="bar" children=0
 ````````````````````````````````
 
 
@@ -11432,8 +11424,8 @@ foo\
 Document scope=1:1..2:8 children=1
 └── Paragraph scope=1:1..2:8 children=3
     ├── Text scope=1:1..1:3 literal="foo" children=0
-    ├── LineBreak scope=0:0..0:0 children=0
-    └── Text scope=1:6..1:8 literal="bar" children=0
+    ├── LineBreak scope=1:4..1:5 children=0
+    └── Text scope=2:6..2:8 literal="bar" children=0
 ````````````````````````````````
 
 
@@ -11448,7 +11440,7 @@ Document scope=1:1..2:4 children=1
 └── Paragraph scope=1:1..2:4 children=1
     └── Emphasis scope=1:1..2:4 children=3
         ├── Text scope=1:2..1:6 literal="foo" children=0
-        ├── LineBreak scope=0:0..0:0 children=0
+        ├── LineBreak scope=1:7..1:7 children=0
         └── Text scope=2:1..2:3 literal="bar" children=0
 ````````````````````````````````
 
@@ -11459,10 +11451,10 @@ bar*
 .
 Document scope=1:1..2:4 children=1
 └── Paragraph scope=1:1..2:4 children=1
-    └── Emphasis scope=1:1..1:10 children=3
+    └── Emphasis scope=1:1..2:4 children=3
         ├── Text scope=1:2..1:4 literal="foo" children=0
-        ├── LineBreak scope=0:0..0:0 children=0
-        └── Text scope=1:7..1:9 literal="bar" children=0
+        ├── LineBreak scope=1:5..1:6 children=0
+        └── Text scope=2:1..2:3 literal="bar" children=0
 ````````````````````````````````
 
 
@@ -11474,7 +11466,7 @@ span`
 .
 Document scope=1:1..2:5 children=1
 └── Paragraph scope=1:1..2:5 children=1
-    └── Code scope=1:2..2:4 mode=embedded literal="code   span" children=0
+    └── Code scope=1:1..2:5 literal="code   span" children=0
 ````````````````````````````````
 
 
@@ -11484,7 +11476,7 @@ span`
 .
 Document scope=1:1..2:5 children=1
 └── Paragraph scope=1:1..2:5 children=1
-    └── Code scope=1:2..2:4 mode=embedded literal="code\\ span" children=0
+    └── Code scope=1:1..2:5 literal="code\\ span" children=0
 ````````````````````````````````
 
 
@@ -11496,7 +11488,7 @@ bar">
 .
 Document scope=1:1..2:5 children=1
 └── Paragraph scope=1:1..2:5 children=1
-    └── HTML scope=1:1..2:4 comment=false literal="<a href=\"foo  \nbar\">" children=0
+    └── HTML scope=1:1..2:5 literal="<a href=\"foo  \nbar\">" children=0
 ````````````````````````````````
 
 
@@ -11506,7 +11498,7 @@ bar">
 .
 Document scope=1:1..2:5 children=1
 └── Paragraph scope=1:1..2:5 children=1
-    └── HTML scope=1:1..2:4 comment=false literal="<a href=\"foo\\\nbar\">" children=0
+    └── HTML scope=1:1..2:5 literal="<a href=\"foo\\\nbar\">" children=0
 ````````````````````````````````
 
 
@@ -11565,7 +11557,7 @@ baz
 Document scope=1:1..2:3 children=1
 └── Paragraph scope=1:1..2:3 children=3
     ├── Text scope=1:1..1:3 literal="foo" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:4..1:4 children=0
     └── Text scope=2:1..2:3 literal="baz" children=0
 ````````````````````````````````
 
@@ -11580,8 +11572,8 @@ foo
 Document scope=1:1..2:4 children=1
 └── Paragraph scope=1:1..2:4 children=3
     ├── Text scope=1:1..1:4 literal="foo" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
-    └── Text scope=2:1..2:3 literal="baz" children=0
+    ├── SoftBreak scope=1:5..1:5 children=0
+    └── Text scope=2:2..2:4 literal="baz" children=0
 ````````````````````````````````
 
 

@@ -2,45 +2,58 @@
 #define MARKDOWN_CORE_REFERENCES_H
 
 #include "map.h"
+#include "node.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-struct markdown_core_reference {
-    markdown_core_map_entry entry;
+/* What a link reference definition was WRITTEN as: borrowed views into the
+ * block content it was read from, valid until that content is dropped.
+ *
+ * The map stores a normalized, owned key because that is what a lookup needs.
+ * The node stores what the author typed, because that is what a document is.
+ * Both are made from these three chunks, which is why the parse hands them out
+ * rather than each caller re-scanning the line. */
+typedef struct {
+    markdown_core_chunk label;
     markdown_core_chunk url;
     markdown_core_chunk title;
-};
+} markdown_core_reference_parts;
 
-typedef struct markdown_core_reference markdown_core_reference;
+/* Build the association a reference or a definition carries, from the label AS
+ * WRITTEN. `prefix` is prepended to the IDENTIFIER and not to the label: it is
+ * `^` for the two footnote kinds and 0 for the other three, which is how a
+ * footnote and a link definition of the same name stay apart in a consumer's
+ * single map (see markdown_core_association in node.h).
+ *
+ * Returns 0 having allocated nothing on failure -- an association with half a
+ * value is a node that lies, and there is no honest partial state. */
+int markdown_core_association_init(markdown_core_mem *mem, markdown_core_association *out,
+                                   const markdown_core_chunk *label, unsigned char prefix);
+void markdown_core_association_free(markdown_core_mem *mem, markdown_core_association *association);
 
-void markdown_core_reference_create(
-    markdown_core_map *map,
-    markdown_core_chunk *label,
-    markdown_core_chunk *url,
-    markdown_core_chunk *title
-);
+/* THE DEFINITION SETS. Both maps hold normalized labels and NOTHING ELSE.
+ *
+ * A map answers ONE question -- is this label defined -- and it is the only
+ * thing that can answer it while the inline phase is running. It holds no
+ * resource, which is what deletes D9: resolving a reference used to COPY the
+ * definition's destination and title into the node, so one definition with a
+ * long destination referenced many times turned a small document into a large
+ * tree, and the running expansion budget that bounded it made WHETHER A
+ * REFERENCE RESOLVES depend on how many resolved before it. A reference that
+ * NAMES its definition costs nothing to resolve, so there is nothing to charge
+ * and no budget to break resolution.
+ *
+ * It holds no NODE either: a map that owns a node is how a definition nested
+ * inside another came to be freed while the tree still pointed at it (D11).
+ * Because it holds no node and picks no winner between two definitions of one
+ * label, registration ORDER decides nothing -- which is measured, not assumed,
+ * and is why D11's ENTER-versus-EXIT question does not arise in this shape. */
 markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem);
-
-/* Footnote definitions live in a map of their own, never alongside link
- * reference definitions. Sharing one map would put `[x]:` and `[^x]:` in the
- * same label bucket, where a single winner has to stand for two independent
- * definedness answers, so one kind's presence could hide behind the other's.
- * Two maps make the collision unrepresentable rather than filtered.
- *
- * The entry type stays markdown_core_reference with an empty url and title. A
- * footnote reference resolves to a node, not to a destination, so there is no
- * payload to carry — but keeping the shape means the label normalization, the
- * winner election, and the free function run over either map unchanged. One
- * mechanism, two instances; a leaner entry would have bought a second one.
- *
- * Does nothing when the label normalizes to nothing (such a footnote names
- * nothing and can never be referenced) or the entry was lost to allocation
- * failure, which is reported through map->oom. A NULL map is tolerated on the
- * same terms as the reference map's. */
-void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label);
+void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label);
 markdown_core_map *markdown_core_footnote_definition_map_new(markdown_core_mem *mem);
+void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label);
 
 #ifdef __cplusplus
 }

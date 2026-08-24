@@ -1,56 +1,35 @@
 import MarkdownCoreC
 
-/// A container directive block (`:::name[label]{attributes}`).
+/// A container directive — `:::name[label]{key=value}` and its closing fence.
+///
+/// Requires the `directives` extension. A malformed label or attribute block
+/// leaves the directive standing and the punctuation as prose rather than
+/// failing the parse; a diagnostic says so.
 public struct DirectiveBlock: Markup {
-    /// The node's series-scoped identity; see ``MarkupID``.
-    public let id: MarkupID
-    /// The document revision at which this node's content last changed.
-    public let revision: UInt64
-    /// The node's absolute source extent, both bounds inclusive of the
-    /// construct's own markers.
-    ///
-    /// A property OF the node, not of a lookup: a document is an immutable
-    /// projection of one text, so a node in it does not move. It is
-    /// deliberately absent from `==` — position is not content — so an
-    /// append that only grows this node's extent leaves every reactive
-    /// comparison untouched.
+    /// Where it is, opening fence through closing fence. See ``Scope``.
     public let scope: Scope
-    /// Whether the construct is `embedded` in surrounding inline content or
-    /// stands alone as its own block.
-    ///
-    /// Always `standalone` for directive blocks.
-    public let mode: PlacementMode
-    /// The directive's name.
+    /// The directive's name, without its colons.
     public let name: String
-    /// The directive's attribute map in the grammar's own terms, or nil when
-    /// no `{...}` container was written.
-    ///
-    /// An empty container is an empty map.
-    public let attributes: [String: String]?
-    /// The directive's label; nil when the directive declares no label —
-    /// distinct from an explicit empty `[]`.
+    /// The attributes the source wrote, sorted by name, or `nil` when it wrote
+    /// no `{...}` at all.
+    public let attributes: [DirectiveAttribute]?
+    /// The bracketed label, or `nil` when the source wrote none.
     public let label: DirectiveLabel?
-    /// The directive's block content in source order, label excluded.
+    /// The block content the fence encloses.
     public let content: [any Markup]
 
-    /// Dispatches this node to `visitor`'s matching `visit` overload.
+    /// Dispatches to the visitor's `DirectiveBlock` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension DirectiveBlock {
-    init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let track = builder.track(of: node)
-        let values = DirectiveValues(from: node)
-        let (label, content) = values.partition(builder.children(node))
+    init(from node: OpaquePointer) {
         self.init(
-            id: track.id,
-            revision: track.revision,
-            scope: track.scope,
-            mode: values.mode,
-            name: values.name,
-            attributes: values.attributes,
-            label: label,
-            content: content
+            scope: Self.scope(from: node),
+            name: DirectiveValues(from: node).name,
+            attributes: DirectiveValues(from: node).attributes,
+            label: Self.directiveLabel(from: node),
+            content: Self.directiveContent(from: node)
         )
     }
 }

@@ -3,7 +3,6 @@
 #include <string.h>
 
 #include <markdown_core.h>
-#include "test_support.h"
 
 static int failures = 0;
 
@@ -42,17 +41,9 @@ static uint8_t *read_file(const char *path, size_t *length) {
 
 static int parse_option_mask(const char *mask, markdown_core_parse_options *options) {
     bool *fields[] = {
-        &options->smart_punctuation,
-        &options->footnotes,
-        &options->tables,
-        &options->strikethrough,
-        &options->autolinks,
-        &options->task_lists,
-        &options->formulas,
-        &options->directives,
-        &options->cross_links,
-        &options->embeds
-    };
+        &options->smart_punctuation, &options->footnotes, &options->strip_html_comments, &options->tables,
+        &options->strikethrough,     &options->autolinks, &options->task_lists,          &options->formulas,
+        &options->directives};
     size_t i;
     if (strlen(mask) != sizeof(fields) / sizeof(fields[0])) {
         return 0;
@@ -88,7 +79,7 @@ static void check_fixture(const char *fixture_dir, const char *name, const char 
 
     markdown_core_parse_options_init(&options);
     check(parse_option_mask(option_mask, &options), "manifest parse option mask is valid");
-    document = markdown_core_document_new(mc_sv(markdown, markdown_length), &options, &error);
+    document = markdown_core_document_parse(markdown, markdown_length, &options, &error);
     check(document != NULL && error == NULL, "manifest-configured facade parse succeeds");
     if (!document) {
         goto done;
@@ -116,9 +107,8 @@ typedef enum option_gate {
     GATE_TASK_LISTS,
     GATE_FORMULAS,
     GATE_DIRECTIVES,
-    GATE_CROSS_LINKS,
-    GATE_EMBEDS,
-    GATE_FOOTNOTES
+    GATE_FOOTNOTES,
+    GATE_STRIP_HTML_COMMENTS
 } option_gate;
 
 static void check_option_gate(option_gate gate, const char *source, const char *forbidden) {
@@ -147,17 +137,14 @@ static void check_option_gate(option_gate gate, const char *source, const char *
     case GATE_DIRECTIVES:
         options.directives = false;
         break;
-    case GATE_CROSS_LINKS:
-        options.cross_links = false;
-        break;
-    case GATE_EMBEDS:
-        options.embeds = false;
-        break;
     case GATE_FOOTNOTES:
         options.footnotes = false;
         break;
+    case GATE_STRIP_HTML_COMMENTS:
+        options.strip_html_comments = false;
+        break;
     }
-    document = markdown_core_document_new(mc_sv((const uint8_t *)source, strlen(source)), &options, &error);
+    document = markdown_core_document_parse((const uint8_t *)source, strlen(source), &options, &error);
     check(document != NULL && error == NULL, "disabled-option parse succeeds");
     if (!document) {
         goto done;
@@ -172,76 +159,163 @@ done:
     markdown_core_error_free(error);
 }
 
-/* Comments are never deleted: a default-options parse keeps the inline and
- * block comment nodes with their bytes, and the surrounding text is not
- * fused across where a comment sat. */
-static void check_html_comments_kept(void) {
-    static const char source[] = "x <!-- kept --> y\n"
-                                 "\n"
-                                 "<!-- block -->\n";
-    markdown_core_parse_options options;
+/* Is `node` in `root`'s tree? A region's owner must be, or the two views are
+ * not one parse. */
+/* WHAT A SCOPE INDEXES INTO. A scope names a place in the NORMALIZED source --
+ * not in the bytes the caller passed -- so a consumer that follows one back to
+ * the source needs those bytes and the index that turns a line into an offset
+ * into them. This asserts that the two are there, agree with each other, and
+ * refuse what is not a line. */
+static void check_source_and_lines(void) {
+    static const char *const SOURCE = "# heading ##\n"
+                                      "\n"
+                                      "para *em* text\n"
+                                      "\n"
+                                      "```js\n"
+                                      "code\n"
+                                      "```\n"
+                                      "\n"
+                                      "[a]: /u\n"
+                                      "\n"
+                                      "see [a] here\n";
     markdown_core_document *document;
-    markdown_core_error *error = NULL;
-    uint8_t *dump = NULL;
-    size_t length = 0;
-    markdown_core_parse_options_init(&options);
-    document = markdown_core_document_new(mc_sv((const uint8_t *)source, sizeof(source) - 1), &options, &error);
-    check(document != NULL && error == NULL, "default-options comment parse succeeds");
+    markdown_core_string text;
+    size_t at;
+    size_t line;
+    int lines_agree = 1;
+
+    document = markdown_core_document_parse((const uint8_t *)SOURCE, strlen(SOURCE), NULL, NULL);
+    check(document != NULL, "the corpus parses");
     if (!document) {
-        goto done;
+        return;
     }
-    check(markdown_core_document_dump(document, &dump, &length, &error), "comment dump succeeds");
-    if (dump) {
-        check(strstr((const char *)dump, "<!-- kept -->") != NULL, "the inline comment node survives by default");
-        check(strstr((const char *)dump, "<!-- block -->") != NULL, "the block comment node survives by default");
-        check(strstr((const char *)dump, "\"x  y\"") == NULL, "text is not fused across a comment");
-    }
-    {
-        bool comment = true;
-        check(
-            !markdown_core_node_html_comment(NULL, &comment) &&
-                !markdown_core_node_html_comment(markdown_core_document_root(document), &comment),
-            "the comment bit answers only for HTML kinds"
-        );
-    }
-    markdown_core_document_free(document);
-    document = NULL;
-    /* The classification's edges: surrounding whitespace trims (indent,
-     * trailing spaces and tab), and an unclosed comment block — no -->
-     * anywhere — is not a comment. */
-    {
-        static const char edges[] = "  <!-- pad -->  \t\n"
-                                    "\n"
-                                    "<!-- open\n";
-        const markdown_core_node *padded;
-        const markdown_core_node *unclosed;
-        bool comment = false;
-        document = markdown_core_document_new(mc_sv((const uint8_t *)edges, sizeof(edges) - 1), &options, &error);
-        check(document != NULL && error == NULL, "comment-edge parse succeeds");
-        if (!document) {
-            goto done;
+    text = markdown_core_document_source(document);
+    check(text.length == strlen(SOURCE) && memcmp(text.data, SOURCE, text.length) == 0,
+          "the source is the normalized source, byte for byte");
+    check(markdown_core_document_line_count(document) == 11, "the line index counts the source's lines");
+    for (line = 2; line <= markdown_core_document_line_count(document); line++) {
+        size_t start = 0;
+        if (!markdown_core_document_line_start(document, line, &start) || start == 0 ||
+            text.data[start - 1] != (uint8_t)'\n') {
+            lines_agree = 0;
         }
-        padded = markdown_core_node_get_first_child(markdown_core_document_root(document));
-        unclosed = padded ? markdown_core_node_get_next_sibling(padded) : NULL;
-        check(
-            padded && markdown_core_node_html_comment(padded, &comment) && comment,
-            "a padded comment block classifies as a comment"
-        );
-        check(
-            unclosed && markdown_core_node_html_comment(unclosed, &comment) && !comment,
-            "an unclosed comment block is not a comment"
-        );
-        check(padded && !markdown_core_node_html_comment(padded, NULL), "a missing out-param answers false");
     }
-done:
-    markdown_core_dump_free(dump);
+    check(lines_agree, "every line but the first begins after a line ending");
+    check(markdown_core_document_line_start(document, 1, &at) && at == 0, "line one begins at offset zero");
+    check(!markdown_core_document_line_start(document, 0, &at), "line zero is not a line");
+    check(!markdown_core_document_line_start(document, 12, &at), "a line past the end is not a line");
+    check(markdown_core_document_source(NULL).data == NULL, "a null document has no source");
+    check(markdown_core_document_line_count(NULL) == 0, "a null document has no lines");
     markdown_core_document_free(document);
-    markdown_core_error_free(error);
+}
+
+/* REQUIREMENT 14 THROUGH THE ACCESSORS, which is where it has to be checked.
+ *
+ * The dump renders `null` and `""` differently and the goldens pin that, but a
+ * dump can only show what it chooses to print: the accessor answers with
+ * `has_value`, and a fold reinstated anywhere between the node and the caller
+ * would be invisible to a golden that only ever sees the rendering. Both arms
+ * of every optional string are asserted here, and so is the fact that a
+ * destination has no absent arm at all (Q26). */
+static void check_null_and_empty(void) {
+    static const struct {
+        const char *source;
+        markdown_core_node_kind kind;
+        const char *destination;
+        bool title_written;
+        const char *title;
+    } CASES[] = {
+        {"[a]()\n", MARKDOWN_CORE_KIND_LINK, "", false, ""},
+        {"[a](<>)\n", MARKDOWN_CORE_KIND_LINK, "", false, ""},
+        {"[a](/u)\n", MARKDOWN_CORE_KIND_LINK, "/u", false, ""},
+        {"[a](/u \"\")\n", MARKDOWN_CORE_KIND_LINK, "/u", true, ""},
+        {"[a](/u \"t\")\n", MARKDOWN_CORE_KIND_LINK, "/u", true, "t"},
+        {"![a]()\n", MARKDOWN_CORE_KIND_IMAGE, "", false, ""},
+        {"![a](/s \"\")\n", MARKDOWN_CORE_KIND_IMAGE, "/s", true, ""},
+        {"[a]: <>\n", MARKDOWN_CORE_KIND_REFERENCE_DEFINITION, "", false, ""},
+        {"[a]: <> \"\"\n", MARKDOWN_CORE_KIND_REFERENCE_DEFINITION, "", true, ""},
+        {"[a]: /u \"t\"\n", MARKDOWN_CORE_KIND_REFERENCE_DEFINITION, "/u", true, "t"},
+    };
+    static const struct {
+        const char *source;
+        bool info_written;
+        const char *info;
+    } INFO_CASES[] = {
+        {"```\nx\n```\n", false, ""},
+        {"```   \nx\n```\n", false, ""},
+        {"    x\n", false, ""},
+        {"```js\nx\n```\n", true, "js"},
+    };
+    size_t index;
+
+    for (index = 0; index < sizeof(CASES) / sizeof(CASES[0]); ++index) {
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)CASES[index].source, strlen(CASES[index].source), NULL, NULL);
+        const markdown_core_node *node = NULL;
+        markdown_core_string destination = {NULL, 0};
+        markdown_core_optional_string title = {false, {NULL, 0}};
+        bool read;
+        if (!document) {
+            check(false, "requirement 14 case parses");
+            continue;
+        }
+        node = markdown_core_node_get_first_child(markdown_core_document_semantic(document));
+        if (CASES[index].kind != MARKDOWN_CORE_KIND_REFERENCE_DEFINITION) {
+            node = markdown_core_node_get_first_child(node);
+        }
+        check(markdown_core_node_get_kind(node) == CASES[index].kind, "requirement 14 case has the expected kind");
+        read = CASES[index].kind == MARKDOWN_CORE_KIND_LINK
+                   ? markdown_core_node_link_properties(node, &destination, &title)
+               : CASES[index].kind == MARKDOWN_CORE_KIND_IMAGE
+                   ? markdown_core_node_image_properties(node, &destination, &title)
+                   : markdown_core_node_definition_resource(node, &destination, &title);
+        check(read, "the resource accessor answers");
+        /* A DESTINATION IS NEVER ABSENT. There is no `has_value` to test,
+         * because the type does not offer one -- that IS the assertion. */
+        check(destination.length == strlen(CASES[index].destination) &&
+                  (destination.length == 0 ||
+                   memcmp(destination.data, CASES[index].destination, destination.length) == 0),
+              "a destination is required and empty means empty");
+        check(title.has_value == CASES[index].title_written, "presence is what the source wrote, not what it wrote in");
+        if (title.has_value) {
+            check(
+                title.value.length == strlen(CASES[index].title) &&
+                    (title.value.length == 0 || memcmp(title.value.data, CASES[index].title, title.value.length) == 0),
+                "a written title keeps its bytes, including none of them");
+        }
+        markdown_core_document_free(document);
+    }
+
+    for (index = 0; index < sizeof(INFO_CASES) / sizeof(INFO_CASES[0]); ++index) {
+        markdown_core_document *document = markdown_core_document_parse((const uint8_t *)INFO_CASES[index].source,
+                                                                        strlen(INFO_CASES[index].source), NULL, NULL);
+        const markdown_core_node *node;
+        markdown_core_optional_string info = {false, {NULL, 0}};
+        markdown_core_optional_string language = {false, {NULL, 0}};
+        markdown_core_string literal = {NULL, 0};
+        bool fenced = false;
+        bool closed = false;
+        if (!document) {
+            check(false, "requirement 14 info case parses");
+            continue;
+        }
+        node = markdown_core_node_get_first_child(markdown_core_document_semantic(document));
+        check(markdown_core_node_code_block_properties(node, &info, &language, &literal, &fenced, &closed),
+              "the code-block accessor answers");
+        check(info.has_value == INFO_CASES[index].info_written,
+              "a fence with only whitespace after it wrote no info string");
+        check(language.has_value == info.has_value, "language is present exactly when the info string is");
+        if (info.has_value) {
+            check(info.value.length == strlen(INFO_CASES[index].info) &&
+                      memcmp(info.value.data, INFO_CASES[index].info, info.value.length) == 0,
+                  "a written info string keeps its bytes");
+        }
+        markdown_core_document_free(document);
+    }
 }
 
 static void check_api(void) {
     static const uint8_t source[] = "# Heading\n\n- [ ] task\n";
-    static const uint8_t cross_reference_source[] = "[[folder/note#^block|display]] ![[folder/note#^block|display]]\n";
     markdown_core_parse_options options;
     markdown_core_document *document;
     markdown_core_error *error = NULL;
@@ -249,66 +323,30 @@ static void check_api(void) {
     const markdown_core_node *heading;
     markdown_core_scope scope;
     int32_t level = 0;
-    markdown_core_string reference_value = {0};
 
     memset(&options, 0, sizeof(options));
     markdown_core_parse_options_init(&options);
-    check(
-        options.smart_punctuation && options.footnotes && options.tables && options.strikethrough &&
-            options.autolinks && options.task_lists && options.formulas && options.directives && options.cross_links &&
-            options.embeds,
-        "parse option defaults are explicit and complete"
-    );
+    check(options.smart_punctuation && options.footnotes && options.strip_html_comments && options.tables &&
+              options.strikethrough && options.autolinks && options.task_lists && options.formulas &&
+              options.directives,
+          "parse option defaults are explicit and complete");
 
-    document = markdown_core_document_new(mc_sv(source, sizeof(source) - 1), &options, &error);
+    document = markdown_core_document_parse(source, sizeof(source) - 1, &options, &error);
     check(document != NULL && error == NULL, "typed-options parse succeeds");
     if (document) {
-        root = markdown_core_document_root(document);
+        root = markdown_core_document_semantic(document);
         heading = markdown_core_node_get_first_child(root);
         check(markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT, "document root kind is typed");
-        check(
-            markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING,
-            "first child traversal is read-only and typed"
-        );
-        check(
-            markdown_core_node_heading_level(heading, &level) && level == 1,
-            "heading accessor returns its behavior-bearing field"
-        );
+        check(markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING,
+              "first child traversal is read-only and typed");
+        check(markdown_core_node_heading_level(heading, &level) && level == 1,
+              "heading accessor returns its behavior-bearing field");
         scope = markdown_core_node_scope(heading);
         check(scope.start.line == 1 && scope.start.column == 1, "scope copies native coordinates");
         markdown_core_document_free(document);
     }
 
-    document =
-        markdown_core_document_new(mc_sv(cross_reference_source, sizeof(cross_reference_source) - 1), &options, &error);
-    check(document != NULL && error == NULL, "cross-reference parse succeeds");
-    if (document) {
-        const markdown_core_node *paragraph = markdown_core_node_get_first_child(markdown_core_document_root(document));
-        const markdown_core_node *cross_link = markdown_core_node_get_first_child(paragraph);
-        const markdown_core_node *embed = markdown_core_node_get_next_sibling(cross_link);
-        static const char expected_reference[] = "folder/note#^block|display";
-        check(
-            markdown_core_node_get_kind(cross_link) == MARKDOWN_CORE_KIND_CROSS_LINK,
-            "cross link has a distinct public kind"
-        );
-        check(
-            markdown_core_node_cross_link_reference(cross_link, &reference_value) &&
-                reference_value.length == sizeof(expected_reference) - 1 &&
-                memcmp(reference_value.data, expected_reference, sizeof(expected_reference) - 1) == 0,
-            "cross-link accessor preserves the source reference"
-        );
-        embed = markdown_core_node_get_next_sibling(embed);
-        check(markdown_core_node_get_kind(embed) == MARKDOWN_CORE_KIND_EMBED, "embed has a distinct public kind");
-        check(
-            markdown_core_node_embed_reference(embed, &reference_value) &&
-                reference_value.length == sizeof(expected_reference) - 1 &&
-                memcmp(reference_value.data, expected_reference, sizeof(expected_reference) - 1) == 0,
-            "embed accessor preserves the source reference"
-        );
-        markdown_core_document_free(document);
-    }
-
-    document = markdown_core_document_new(mc_sv(NULL, 1), NULL, &error);
+    document = markdown_core_document_parse(NULL, 1, NULL, &error);
     check(document == NULL && error != NULL, "invalid input produces an explicit error");
     check(markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "error exposes a stable code");
     check(markdown_core_error_get_message(error).length != 0, "error exposes a UTF-8 diagnostic view");
@@ -321,88 +359,113 @@ static void check_api(void) {
     check_option_gate(GATE_STRIKETHROUGH, "~~x~~\n", "Strikethrough scope=");
     check_option_gate(GATE_AUTOLINKS, "www.example.com\n", "Link scope=");
     check_option_gate(GATE_TASK_LISTS, "- [x] task\n", "checked=true");
-    check_option_gate(
-        GATE_FORMULAS,
-        "$x$\n\n$$\ny\n$$\n\n\\\\(z\\\\)\n\n\\\\[q\\\\]\n\n```formula\nw\n```\n",
-        "Formula"
-    );
+    check_option_gate(GATE_FORMULAS, "$x$\n", "Formula scope=");
     check_option_gate(GATE_DIRECTIVES, ":badge[label]\n", "Directive scope=");
-    check_option_gate(GATE_CROSS_LINKS, "[[reference]]\n", "CrossLink scope=");
-    check_option_gate(GATE_EMBEDS, "![[reference]]\n", "Embed scope=");
     check_option_gate(GATE_FOOTNOTES, "ref[^a]\n\n[^a]: note\n", "FootnoteReference scope=");
-    check_html_comments_kept();
+    check_option_gate(GATE_STRIP_HTML_COMMENTS, "before <!-- kept --> after\n", "literal=\"before  after\"");
 }
 
-/* Diagnostics: the one thing an editor underlines.
+/* REQUIREMENT 13 through the PUBLIC surface, which is the only place the law's
+ * two halves meet: a document that carries a diagnostic list, and an error that
+ * carries no scope because there is no document at all.
  *
- * Markdown's own "mistakes" are all defined outcomes, so this checks the
- * boundary as much as the report — a directive whose attributes DO parse, and
- * one with no attributes at all, must raise nothing. The block and inline
- * forms carry different extents on purpose: the block form loses the whole
- * construct, the inline form loses only its braces.
- */
+ * The `label-too-long` code is exercised HERE and not in a fixture, and the
+ * reason is the label: the cap is 1000 bytes, so a golden that showed it would
+ * carry an eleven-hundred-character line that no reviewer can read and every
+ * position oracle would then measure. Built in C it is three lines. */
 static void check_diagnostics(void) {
-    static const struct {
-        const char *markdown;
-        size_t count;
-        int start_column;
-        int end_column;
-    } cases[] = {
-        {":::note{= bad}\nbody\n:::\n", 1, 8, 14},
-        {":inline{= bad} tail\n", 1, 8, 8},
-        {":::note{a=1}\nbody\n:::\n", 0, 0, 0},
-        {":::note\nbody\n:::\n", 0, 0, 0},
-        {"plain paragraph\n", 0, 0, 0}
-    };
-    size_t c;
+    static const char *const SOURCE = ":note[unclosed label\n"
+                                      "\n"
+                                      ":other{=value}\n"
+                                      "\n"
+                                      "see [text][undefined] here\n"
+                                      "\n"
+                                      "and [^undefined] too\n";
+    markdown_core_document *document;
+    markdown_core_error *error = NULL;
+    markdown_core_diagnostic diagnostic;
+    size_t count;
+    size_t i;
+    int severities[3] = {0, 0, 0};
 
-    for (c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
-        markdown_core_parse_options options;
-        markdown_core_document *document;
-        const markdown_core_diagnostic *rows = NULL;
-        markdown_core_string text;
-        size_t count;
-
-        markdown_core_parse_options_init(&options);
-        text.data = (const uint8_t *)cases[c].markdown;
-        text.length = strlen(cases[c].markdown);
-        document = markdown_core_document_new(text, &options, NULL);
-        if (!document) {
-            fprintf(stderr, "diagnostics: case %zu did not parse\n", c);
-            failures++;
-            continue;
-        }
-        count = markdown_core_document_diagnostics(document, &rows);
-        if (count != cases[c].count) {
-            fprintf(stderr, "diagnostics: case %zu raised %zu, expected %zu\n", c, count, cases[c].count);
-            failures++;
-        } else if (count == 0) {
-            if (rows != NULL) {
-                fprintf(stderr, "diagnostics: case %zu reported none but handed back an array\n", c);
-                failures++;
-            }
-        } else if (
-            rows[0].code != MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES || rows[0].scope.start.line != 1 ||
-            rows[0].scope.start.column != cases[c].start_column || rows[0].scope.end.line != 1 ||
-            rows[0].scope.end.column != cases[c].end_column
-        ) {
-            fprintf(
-                stderr,
-                "diagnostics: case %zu reported code %d at %d:%d..%d:%d, expected code %d at 1:%d..1:%d\n",
-                c,
-                (int)rows[0].code,
-                rows[0].scope.start.line,
-                rows[0].scope.start.column,
-                rows[0].scope.end.line,
-                rows[0].scope.end.column,
-                (int)MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES,
-                cases[c].start_column,
-                cases[c].end_column
-            );
-            failures++;
-        }
-        markdown_core_document_free(document);
+    document = markdown_core_document_parse((const uint8_t *)SOURCE, strlen(SOURCE), NULL, &error);
+    check(document != NULL && error == NULL, "the diagnostics corpus parses");
+    if (!document) {
+        markdown_core_error_free(error);
+        return;
     }
+
+    count = markdown_core_document_diagnostic_count(document);
+    check(count == 4, "every degradation in the corpus is reported exactly once");
+
+    for (i = 0; i < count; i++) {
+        check(markdown_core_document_diagnostic_at(document, i, &diagnostic), "every index in range answers");
+        /* THE SCOPE IS RESOLVABLE WITHOUT A NODE HANDLE, which is what
+         * requirement 13 depends on 12 for: the line index turns the place
+         * back into an offset in the source the concrete view publishes. */
+        {
+            size_t offset = 0;
+            check(markdown_core_document_line_start(document, (size_t)diagnostic.scope.start.line, &offset),
+                  "a diagnostic's line is a line of the source");
+            check(offset + (size_t)diagnostic.scope.start.column - 1 < markdown_core_document_source(document).length,
+                  "a diagnostic's start is a byte of the source");
+        }
+        check(diagnostic.message.length > 0 && diagnostic.message.data != NULL, "a diagnostic carries a message");
+        check(markdown_core_diagnostic_code_name(diagnostic.code) != NULL, "every code has a name");
+        if (diagnostic.severity >= MARKDOWN_CORE_DIAGNOSTIC_WARNING &&
+            diagnostic.severity <= MARKDOWN_CORE_DIAGNOSTIC_ERROR) {
+            severities[diagnostic.severity]++;
+        }
+    }
+    check(severities[MARKDOWN_CORE_DIAGNOSTIC_WARNING] == 2 && severities[MARKDOWN_CORE_DIAGNOSTIC_ERROR] == 2,
+          "both severities are reachable, and each says what its rule says");
+    check(!markdown_core_document_diagnostic_at(document, count, &diagnostic), "an index past the end is refused");
+    check(!markdown_core_document_diagnostic_at(document, 0, NULL), "a null out-parameter is refused");
+    markdown_core_document_free(document);
+
+    /* THE ENGINE'S OWN CAP, and the code that separates it from "no such
+     * definition": the author's label is well formed and this library refused
+     * to look it up. */
+    {
+        char *source = (char *)malloc(1200);
+        markdown_core_document *capped;
+        check(source != NULL, "the long-label buffer allocates");
+        if (source) {
+            memcpy(source, "see [", 5);
+            memset(source + 5, 'a', 1100);
+            memcpy(source + 1105, "][] here\n", 9);
+            capped = markdown_core_document_parse((const uint8_t *)source, 1114, NULL, NULL);
+            check(capped != NULL, "an over-long label still parses");
+            if (capped) {
+                check(markdown_core_document_diagnostic_count(capped) == 1 &&
+                          markdown_core_document_diagnostic_at(capped, 0, &diagnostic) &&
+                          diagnostic.code == MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG,
+                      "a label the engine refused as too long says so, and does not say 'undefined'");
+                markdown_core_document_free(capped);
+            }
+            free(source);
+        }
+    }
+
+    /* THE CONVERSE. A parse failure is not a diagnostic: there is no document,
+     * so there is no list to read.
+     *
+     * "A parse failure carries no scope" USED TO BE A CHECK HERE and is now the
+     * shape of the type: `markdown_core_error_get_scope` is deleted, the two
+     * fields behind it with it, and what a caller can ask an error for is its
+     * code and its message. A check cannot assert the absence of a symbol; the
+     * header is the statement. */
+    {
+        markdown_core_error *refusal = NULL;
+        markdown_core_document *none = markdown_core_document_parse(NULL, 8, NULL, &refusal);
+        check(none == NULL && refusal != NULL, "an invalid argument produces an error and no document");
+        check(markdown_core_error_get_code(refusal) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+              "and the error says which failure it was");
+        markdown_core_error_free(refusal);
+    }
+    check(markdown_core_document_diagnostic_count(NULL) == 0, "a null document has no diagnostics");
+    check(markdown_core_diagnostic_code_name((markdown_core_diagnostic_code)99) == NULL,
+          "a code no version defines has no name");
 }
 
 int main(int argc, char **argv) {
@@ -414,6 +477,8 @@ int main(int argc, char **argv) {
     }
     fixture_dir = argv[2];
     check_api();
+    check_null_and_empty();
+    check_source_and_lines();
     check_diagnostics();
     for (i = 3; i < argc; i += 2) {
         check_fixture(fixture_dir, argv[i], argv[i + 1]);

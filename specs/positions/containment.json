@@ -1,0 +1,128 @@
+{
+    "schemaVersion": 1,
+    "script": "scripts/audit-scope-containment.mjs",
+    "subject": "Two geometric invariants over every fixture example: a child's extent lies inside its parent's, and no two siblings claim the same byte.",
+    "purpose": "Nine rows, two causes, and it was 58 before 0a.13, 45 before Step 10, 31 after it, 21 after 8.3 and 9 after Q44.\n\n   6  an autocompleted table cell overlapping the cell before it. Q44's COST, and the owner accepted it on 2026-08-23 with the reason that decides it: a scope is what a consumer follows to map a node back to the source, so a cell that completion invented should point AT the place it was completed -- the end of its row. That byte is also the previous cell's last. An empty range past it would need column len+1, which is off the line, and column 0 -- what it used to say -- is not a byte at all. Pointing at something beats pointing at nothing, and the overlap is registered here rather than hidden.\n   3  H14 (section 11.4) -- finalize reads an empty curline as end-of-input. Unowned by any step, and that is the honest state rather than a guess.\n\nThe sibling half is what earns this oracle. Containment alone cannot see the emphasis defect: ***a** gives a Text spanning columns 1..3 and a Strong starting at column 1, and both sit inside their paragraph, so the only statement that catches it is that two nodes claim one byte. That is exactly what it caught, and what 0a.13 then cleared: reverting the emphasis fix makes fourteen rows reappear here, and reverting only the ONE-LINE form of it that the plan originally named leaves SEVEN of the fourteen standing. Measured both ways. This cannot be an upstream comparison either -- cmark-gfm re-parents emphasis the same way and takes a link's start from the closing bracket the same way, so it would return agreement on exactly the rows that are wrong.\n\nNodes with no position are skipped, not judged. The run reports ZERO skipped child relations, where it used to skip the split-off table lead's.\n\nStep 10 cleared fourteen by making the inline phase read the content-to-source map. 8.3 cleared ten more, all a text run that began or ended with a backtick and reached one column past its own last byte. Q44 cleared eighteen and added six, which is the only time this ledger has gone up by design.",
+    "corpus": "every example in packages/markdown-core/tests/fixtures/*.txt",
+    "profile": "gfm-extended",
+    "expected": [
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:238",
+            "input": "| a | b | c |\n| --- | --- | ---\n| x\n| a | b\n| 1 | 2 | 3 | 4 | 5 |\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.1",
+                    "violation": "sibling-overlap",
+                    "kind": "TableCell",
+                    "scope": "3:3..3:3",
+                    "previousKind": "TableCell",
+                    "previousScope": "3:2..3:3",
+                    "closedBy": "Q44's cost, accepted by the owner 2026-08-23: an autocompleted cell points AT the place it was completed -- the row's last byte -- and the cell before it ends on that byte too. An empty range past it would need column len+1, which is off the line."
+                },
+                {
+                    "nodePath": "0.0.1.2",
+                    "violation": "sibling-overlap",
+                    "kind": "TableCell",
+                    "scope": "3:3..3:3",
+                    "previousKind": "TableCell",
+                    "previousScope": "3:3..3:3",
+                    "closedBy": "Q44's cost, accepted by the owner 2026-08-23: an autocompleted cell points AT the place it was completed -- the row's last byte -- and the cell before it ends on that byte too. An empty range past it would need column len+1, which is off the line."
+                },
+                {
+                    "nodePath": "0.0.2.2",
+                    "violation": "sibling-overlap",
+                    "kind": "TableCell",
+                    "scope": "4:7..4:7",
+                    "previousKind": "TableCell",
+                    "previousScope": "4:6..4:7",
+                    "closedBy": "Q44's cost, accepted by the owner 2026-08-23: an autocompleted cell points AT the place it was completed -- the row's last byte -- and the cell before it ends on that byte too. An empty range past it would need column len+1, which is off the line."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/extensions.txt:278",
+            "input": "| a | b |\n| --- | --- |\n| Escaped pipes are \\|okay\\|. | Like \\| this. |\n| Within `\\|code\\| is okay` too. |\n| _**`c\\|`**_ \\| complex\n| don't **\\_reparse\\_**\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.3.1",
+                    "violation": "sibling-overlap",
+                    "kind": "TableCell",
+                    "scope": "5:24..5:24",
+                    "previousKind": "TableCell",
+                    "previousScope": "5:2..5:24",
+                    "closedBy": "Q44's cost, accepted by the owner 2026-08-23: an autocompleted cell points AT the place it was completed -- the row's last byte -- and the cell before it ends on that byte too. An empty range past it would need column len+1, which is off the line."
+                },
+                {
+                    "nodePath": "0.0.4.1",
+                    "violation": "sibling-overlap",
+                    "kind": "TableCell",
+                    "scope": "6:23..6:23",
+                    "previousKind": "TableCell",
+                    "previousScope": "6:2..6:23",
+                    "closedBy": "Q44's cost, accepted by the owner 2026-08-23: an autocompleted cell points AT the place it was completed -- the row's last byte -- and the cell before it ends on that byte too. An empty range past it would need column len+1, which is off the line."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1922",
+            "input": "> ```\n> aaa\n\nbbb\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "violation": "containment",
+                    "kind": "CodeBlock",
+                    "scope": "1:3..3:0",
+                    "parentKind": "BlockQuote",
+                    "parentScope": "1:1..2:5",
+                    "closedBy": "none -- upstream cmark-gfm reports the identical pair, byte for byte",
+                    "class": "child-ends-at-a-boundary-its-parent-does-not-reach"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3699",
+            "input": "| abc | def |\n| --- | --- |\n| bar | baz |\nbar\n\nbar\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.2.1",
+                    "violation": "sibling-overlap",
+                    "kind": "TableCell",
+                    "scope": "4:3..4:3",
+                    "previousKind": "TableCell",
+                    "previousScope": "4:1..4:3",
+                    "closedBy": "Q44's cost, accepted by the owner 2026-08-23: an autocompleted cell points AT the place it was completed -- the row's last byte -- and the cell before it ends on that byte too. An empty range past it would need column len+1, which is off the line."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:4004",
+            "input": "> ```\nfoo\n```\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0",
+                    "violation": "containment",
+                    "kind": "CodeBlock",
+                    "scope": "1:3..2:3",
+                    "parentKind": "BlockQuote",
+                    "parentScope": "1:1..1:5",
+                    "closedBy": "H14 (\u00a711.4) \u2014 finalize reads an empty curline as end-of-input; unowned by any step"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:5231",
+            "input": "- # Foo\n- Bar\n  ---\n  baz\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.1",
+                    "violation": "sibling-overlap",
+                    "kind": "Paragraph",
+                    "scope": "4:3..4:5",
+                    "previousKind": "Heading",
+                    "previousScope": "2:3..4:5",
+                    "closedBy": "H14 (\u00a711.4) \u2014 finalize reads an empty curline as end-of-input; unowned by any step"
+                }
+            ]
+        }
+    ]
+}

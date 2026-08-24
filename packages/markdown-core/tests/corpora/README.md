@@ -27,7 +27,7 @@ data generated deterministically in-process.
     be imported.  Prefer project-authored, CC0/public-domain, MIT, BSD, or
     Apache-2.0 content.
   - `SHA256SUMS` — checksums for every imported file, verified by
-    `scripts/audit-test-layout.sh`.
+    `scripts/audit-test-topology.sh`.
 - Corpora are excluded from release packages.
 - The `packaging_corpus_guard` / `benchmark_corpus_guard` CTest tests fail
   any run that finds an unmanaged checkout, loose generated input, or a

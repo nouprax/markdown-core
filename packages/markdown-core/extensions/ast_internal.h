@@ -3,27 +3,30 @@
 
 #include "../include/markdown_core.h"
 #include <markdown-core.h>
+#include <parser.h>
 
-/** Dumps a bare parser tree. A `markdown_core_document` owns a whole
- * committed document now, so a caller holding only a root — the CLI, and the
- * extension-order runner — can no longer wrap one in an aggregate. */
-bool markdown_core_ast_dump_root(
-    const markdown_core_node *root,
-    uint8_t **output,
-    size_t *length,
-    markdown_core_error **error
-);
+/* C LINKAGE, AND WINDOWS IS THE ONLY PLACE THIS SHOWS. The Itanium ABI does not
+ * mangle a variable at global scope, so `MARKDOWN_CORE_EXTENSION_*` resolves on
+ * Linux and macOS whether or not the declaration says `extern "C"`; MSVC mangles
+ * every variable, and a C++ translation unit including this header without the
+ * guard fails to link with LNK2019. */
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-void markdown_core_ast_set_error(markdown_core_error **error, markdown_core_error_code code, const char *message);
+struct markdown_core_document {
+    markdown_core_node *root;
+    /* Requirement 12's other view. Moved out of the parser at `finish` and
+     * released with the tree it names. */
+    markdown_core_concrete concrete;
+    /* Requirement 13's list. Moved out of the parser at the same moment and on
+     * the same terms, and released with the document. Its messages borrow from
+     * its own pool, which is why it outlives nothing. */
+    markdown_core_diagnostics diagnostics;
+};
 
-/** Document.concrete (incremental-canonical-ast.md 0, 14.1.9): the unified
- * CST owner this document's semantic projection resolves from. There is one
- * physical tree — the concrete owner IS the tree the semantic root views, its
- * marker material hanging off each region node (concrete_records.h) — so the
- * accessor returns the retained owner, never a reconstruction: it allocates
- * nothing and advances no trace. Reachable from a document's committed view
- * exactly as from a one-shot parse; internal until M7 shapes the public
- * concrete interface. */
-const markdown_core_node *markdown_core_document_concrete(const markdown_core_document *document);
+#ifdef __cplusplus
+}
+#endif
 
 #endif

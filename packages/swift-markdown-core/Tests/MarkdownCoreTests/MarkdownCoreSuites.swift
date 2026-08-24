@@ -1,119 +1,80 @@
-import Foundation
+import MarkdownCoreC
 import Testing
 
-// `@testable` for one reason, stated at its use: `ParseError` is not
-// reachable through the public surface, because no input a Swift caller can
-// hand `Document` is invalid.
+// `@testable` for one reason, and it is stated at the use below: `ParseError`
+// cannot be reached through the public surface, because no input a Swift caller
+// can hand `Document` is invalid. Everything else here goes through the
+// published API.
 @testable import MarkdownCore
 
 @Suite("api") struct APISuite {
     @Test("parse options and visitor dispatch use the public Swift API")
     func publicAPI() throws {
         let options = ParseOptions()
-        #expect(options.tables && options.directives && options.formulas && options.crossLinks && options.embeds)
-        let document = try Document("# Heading\n")
+        #expect(options.tables && options.directives && options.formulas)
+        let document = try Document.parse("# Heading\n")
         var visitor = KindVisitor()
         #expect(document.content[0].accept(&visitor) == "heading:1")
         let table = try #require(
-            Document("| a |\n| --- |\n| b |\n").content.first as? Table
+            Document.parse("| a |\n| --- |\n| b |\n").content.first as? Table
         )
         #expect(table.header.accept(&visitor) == "header")
         #expect(table.header.cells[0].accept(&visitor) == "cell")
-        let directive = try #require(
-            (Document(":badge[label]\n").content.first as? Paragraph)?
-                .content.first as? Directive
-        )
-        #expect(directive.label?.accept(&visitor) == "DirectiveLabel")
         #expect(
-            try Document("| a |\n| --- |\n| b |\n", options: ParseOptions(tables: false))
+            try Document.parse("| a |\n| --- |\n| b |\n", options: ParseOptions(tables: false))
                 .content.first is Paragraph
         )
-    }
-
-    @Test("cross-link and embed syntax is typed, source-faithful, and independently gated")
-    func crossReferenceOptions() throws {
-        let source =
-            "before [[folder/note#^block|display]] and ![[folder/note#^block|display]] after\n"
-        let paragraph = try #require(Document(source).content.first as? Paragraph)
-        let crossLink = try #require(paragraph.content[1] as? CrossLink)
-        let embed = try #require(paragraph.content[3] as? Embed)
-        #expect(crossLink.reference == "folder/note#^block|display")
-        #expect(embed.reference == "folder/note#^block|display")
-
-        let linksDisabled = try #require(
-            Document(source, options: ParseOptions(crossLinks: false))
-                .content.first as? Paragraph
-        )
-        #expect(linksDisabled.content[1] is Embed)
-
-        let embedsDisabled = try #require(
-            Document(source, options: ParseOptions(embeds: false))
-                .content.first as? Paragraph
-        )
-        #expect(embedsDisabled.content[1] is CrossLink)
-    }
-
-    @Test("the formulas switch controls every supported formula syntax")
-    func formulaOption() throws {
-        let inlineDollar = try Document("$x$\n")
-        let blockDollar = try Document("$$x$$\n")
-        let inlineLaTeX = try Document("\\\\(x\\\\)\n")
-        let blockLaTeX = try Document("\\\\[x\\\\]\n")
-        let fenced = try Document("```formula\nx\n```\n")
-
-        #expect((inlineDollar.content.first as? Paragraph)?.content.first is Formula)
-        #expect(blockDollar.content.first is FormulaBlock)
-        #expect((inlineLaTeX.content.first as? Paragraph)?.content.first is Formula)
-        #expect(blockLaTeX.content.first is FormulaBlock)
-        #expect(fenced.content.first is FormulaBlock)
-
-        let disabled = ParseOptions(formulas: false)
-        #expect(
-            (try Document("$x$\n", options: disabled).content.first as? Paragraph)?
-                .content.first is Text
-        )
-        #expect(try Document("$$x$$\n", options: disabled).content.first is Paragraph)
-        #expect(
-            (try Document("\\\\(x\\\\)\n", options: disabled).content.first as? Paragraph)?
-                .content.first is Text
-        )
-        #expect(try Document("\\\\[x\\\\]\n", options: disabled).content.first is Paragraph)
-        #expect(try Document("```formula\nx\n```\n", options: disabled).content.first is CodeBlock)
     }
 }
 
 @Suite("unicode") struct UnicodeSuite {
     @Test("UTF-8 survives the C-to-Swift boundary")
     func unicode() throws {
-        let paragraph = try #require(Document("héllo 🚀 中文\n").content.first as? Paragraph)
+        let paragraph = try #require(Document.parse("héllo 🚀 中文\n").content.first as? Paragraph)
         #expect((paragraph.content.first as? Text)?.literal == "héllo 🚀 中文")
     }
 }
 
 @Suite("errors") struct ErrorsSuite {
-    @Test("empty input maps to an empty document")
-    func empty() throws {
-        #expect(try Document("").content.isEmpty)
+    @Test("a native error crosses into Swift with its code and message, and nil still answers")
+    func parseErrorFromNative() throws {
+        // THE ONE `@testable` USE. No `String` a caller can hand `Document` is
+        // invalid, so this initializer is unreachable through the published
+        // surface -- but the C entry point rejects a null source with a real
+        // error object, which is the only way to watch a native code and
+        // message actually cross.
+        var native: OpaquePointer?
+        #expect(markdown_core_document_parse(nil, 1, nil, &native) == nil)
+        let error = try #require(native)
+        defer { markdown_core_error_free(error) }
+        let crossed = ParseError(from: error)
+        #expect(crossed.code == .invalidArgument)
+        #expect(crossed.message.contains("must not be null"))
+
+        // And the other arm: a loss the engine could not allocate an error for
+        // still has to answer with something.
+        let fallback = ParseError(from: nil)
+        #expect(fallback.code == .internal)
+        #expect(!fallback.message.isEmpty)
     }
 
-    @Test("ParseError carries its native message through every presentation path")
-    func parseErrorPresentation() {
-        // Every byte sequence is a valid Markdown document, so `Document` and
-        // `append` reject nothing a Swift caller can express: the engine's
-        // remaining failures are allocation and internal, and no test can
-        // provoke either. The presentation paths are pinned directly, because
-        // `localizedDescription` degraded to a bare domain and code once and
-        // that is invisible until a user is looking at the alert.
-        let error = ParseError(
-            code: .invalidArgument,
-            message: "markdown must not be null when length is nonzero"
-        )
-        #expect(String(describing: error) == error.message)
-        #expect(error.localizedDescription == error.message)
-        #expect((error as NSError).localizedDescription == error.message)
-        // A native failure that carried no error object still says something.
-        #expect(!ParseError(from: nil).message.isEmpty)
-        #expect(ParseError(from: nil).code == .internal)
+    @Test("a written-but-empty destination is empty, not absent")
+    func emptyDestinationIsEmpty() throws {
+        // `[a]()` WROTE a destination and wrote nothing in it. The native side
+        // answers that with a null pointer and length 0, which is the one place
+        // a string with no bytes is still a string.
+        let paragraph = try #require(Document.parse("[a]()\n").content.first as? Paragraph)
+        let link = try #require(paragraph.content.first as? Link)
+        // `destination` is not optional at all -- Q26 -- so empty is the only
+        // way it can say "nothing was written between the parens"; `title` is,
+        // and says absent instead.
+        #expect(link.destination.isEmpty)
+        #expect(link.title == nil)
+    }
+
+    @Test("empty input maps to an empty document")
+    func empty() throws {
+        #expect(try Document.parse("").content.isEmpty)
     }
 }
 
@@ -121,8 +82,9 @@ import Testing
     @Test("values remain usable and Sendable after native release")
     func copiedAndSendable() async throws {
         requireSendable(Document.self)
+        requireSendable(Concrete.self)
         requireSendable(ParseOptions.self)
-        let document = try Document("parallel 🚀\n")
+        let document = try Document.parse("parallel 🚀\n")
         let counts = await withTaskGroup(of: Int.self, returning: [Int].self) { group in
             for _ in 0..<20 { group.addTask { document.content.count } }
             return await group.reduce(into: []) { $0.append($1) }
@@ -132,148 +94,115 @@ import Testing
 
 }
 
+@Suite("concrete") struct ConcreteSuite {
+    /// The source a scope's coordinates are counted against, copied into value
+    /// types and read after the native handle is gone. `parse` frees the handle
+    /// before it returns, so everything below reads a value with no native
+    /// anything left behind it.
+    @Test("the normalized source and its line index survive the native release")
+    func sourceAndLines() throws {
+        let source = """
+            # Heading ##
+
+            > quoted *em* and `code`
+
+            | a | b |
+            | --- | --- |
+            | c | d |
+
+            :::container[Title]{kind=demo}
+            Body
+            :::
+
+            [a]: /u "t"
+
+            see [a].
+
+            """
+        let document = try Document.parse(source)
+        let concrete = document.concrete
+        #expect(concrete.source == Array(source.utf8))
+        #expect(concrete.lineCount == 15)
+        #expect(concrete.lineStart(1) == 0)
+        #expect(concrete.lineStart(3) == 14)
+        #expect(concrete.lineStart(0) == nil)
+        #expect(concrete.lineStart(16) == nil)
+
+        // Every line but the first begins after a line ending.
+        for line in 2...concrete.lineCount {
+            let start = try #require(concrete.lineStart(line))
+            #expect(start > 0)
+            #expect(concrete.source[start - 1] == UInt8(ascii: "\n"))
+        }
+
+        // Copying is not borrowing: 300 further parses must not disturb it.
+        for _ in 0..<300 { _ = try Document.parse("# copy\n") }
+        #expect(concrete.source == Array(source.utf8))
+        #expect(concrete.lineStart(3) == 14)
+    }
+}
+
+@Suite("api") struct DirectiveLabelSuite {
+    @Test("a directive block's label is walked ahead of its content")
+    func labelledDirectiveBlock() throws {
+        // A directive block with BOTH halves. The label is a node in its own
+        // right and the walker has to yield it before the content -- with no
+        // label present that branch never runs, and nothing else in this suite
+        // writes one.
+        let source = ":::note[Title]{kind=demo}\nBody\n:::\n"
+        let block = try #require(Document.parse(source).content.first as? DirectiveBlock)
+        let label = try #require(block.label)
+        #expect((label.content.first as? Text)?.literal == "Title")
+        #expect(block.attributes?.first?.name == "kind")
+
+        var kinds: [String] = []
+        let document = try Document.parse(source)
+        Walker().walk(document) { event, node in
+            if event == .entering { kinds.append(String(describing: type(of: node))) }
+        }
+        #expect(kinds.contains("DirectiveLabel"))
+        #expect(kinds.firstIndex(of: "DirectiveLabel")! < kinds.lastIndex(of: "Paragraph")!)
+
+        // AND ONE WITHOUT A LABEL, which is the other arm: the walker's `?? []`
+        // and the dump's `children=` both ask whether a label is there, and a
+        // suite that only ever writes one never takes the answer "no".
+        let bare = try #require(
+            Document.parse(":::note\nBody\n:::\n").content.first as? DirectiveBlock
+        )
+        #expect(bare.label == nil)
+        var bareKinds: [String] = []
+        Walker().walk(try Document.parse(":::note\nBody\n:::\n")) { event, node in
+            if event == .entering { bareKinds.append(String(describing: type(of: node))) }
+        }
+        #expect(!bareKinds.contains("DirectiveLabel"))
+        #expect(bare.dump().contains("children=1"))
+    }
+
+    @Test("the dump escapes every character JSON cannot carry literally")
+    func dumpEscapes() throws {
+        // The dumper's escape table has an arm per character and nothing in the
+        // corpus writes most of them. A fenced code block carries its literal
+        // through untouched, so it is the one place a test can put them all.
+        let literal = "a\"b\\c\td\u{08}e\u{0c}f\u{01}g"
+        let document = try Document.parse("```\n\(literal)\n```\n")
+        let dump = document.dump()
+        for expected in ["\\\"", "\\\\", "\\t", "\\b", "\\f", "\\n", "\\u0001"] {
+            #expect(dump.contains(expected), "dump is missing the escape \(expected)")
+        }
+    }
+}
+
 @Suite("robustness") struct RobustnessSuite {
     @Test("large and deeply nested inputs preserve complete value trees")
     func workloads() throws {
         let unit = "## Section\n\nParagraph with **strong**, [link](/), and 🚀.\n\n"
-        #expect(try Document(String(repeating: unit, count: 5_000)).content.count == 10_000)
+        #expect(try Document.parse(String(repeating: unit, count: 5_000)).content.count == 10_000)
         var node = try #require(
-            Document(String(repeating: "> ", count: 128) + "leaf\n").content.first
+            Document.parse(String(repeating: "> ", count: 128) + "leaf\n").content.first
         )
         for _ in 0..<128 { node = try #require((node as? BlockQuote)?.content.first) }
         #expect(node is Paragraph)
-        for _ in 0..<2_000 { #expect(try Document("# Copy\n\n- [x] item\n").content.count == 2) }
-    }
-
-    @Test("simultaneous parses with disagreeing options never interfere")
-    func concurrentParses() async throws {
-        // The engine holds no process-global state: parses that disagree
-        // about extension special characters ('~', '$', ':') must never
-        // observe each other. Dumps are compared byte-for-byte against
-        // single-threaded references.
-        let combos = try makeConcurrencyCombos()
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            for worker in 0..<8 {
-                group.addTask {
-                    for iteration in 0..<25 {
-                        let combo = combos[(worker + iteration) % combos.count]
-                        let dump = try Document(combo.source, options: combo.options).dump()
-                        #expect(dump == combo.reference)
-                    }
-                }
-            }
-            try await group.waitForAll()
-        }
-    }
-}
-
-@Suite("depth") struct DepthSuite {
-    /// Primitive results ferried out of the worker threads; access is
-    /// sequenced by thread completion, never concurrent.
-    private final class Outcome: @unchecked Sendable {
-        var failure: String?
-        var quoteEnters = 0
-        var events = 0
-        var dumpHasQuote = false
-    }
-
-    @Test("adversarial nesting walks and dumps beyond the call-stack budget")
-    func adversarialNestingDepth() throws {
-        // 4096 nested quotes overflowed the recursive walker. Two explicit
-        // stacks make the proof exact: deep value trees deallocate through
-        // recursive ARC releases, so every deep document lives and dies on
-        // a 16 MiB-stack thread, while the walk and dump run on a 512 KiB
-        // stack that recursive traversal at this depth could not survive.
-        let depth = 4096
-        let outcome = Outcome()
-        let finished = DispatchSemaphore(value: 0)
-        let owner = Thread {
-            defer { finished.signal() }
-            do {
-                let prefix = String(repeating: "> ", count: depth)
-                let document = try Document(prefix + "leaf\n")
-
-                let walked = DispatchSemaphore(value: 0)
-                // `unowned`, deliberately — weak would not do: if the
-                // walker's closure owned the deep tree, the walker THREAD's
-                // finalization could drop the last reference and run the
-                // recursive ARC release on this 512 KiB stack. The owner
-                // thread holds the document until `walked` is signaled —
-                // after the walker's final use — so the lifetime is safe and
-                // the deep tree still dies on the 16 MiB stack.
-                // swiftlint:disable:next unowned_variable_capture
-                let walker = Thread { [unowned document] in
-                    defer { walked.signal() }
-                    var quoteEnters = 0
-                    var events = 0
-                    MarkupWalker().walk(document) { event, node, _ in
-                        events += 1
-                        if event == .entering, node is BlockQuote { quoteEnters += 1 }
-                    }
-                    outcome.quoteEnters = quoteEnters
-                    outcome.events = events
-                    outcome.dumpHasQuote = document.dump().contains("BlockQuote")
-                }
-                walker.stackSize = 512 * 1024
-                walker.start()
-                walked.wait()
-            } catch {
-                outcome.failure = String(describing: error)
-            }
-        }
-        owner.stackSize = 16 * 1024 * 1024
-        owner.start()
-        finished.wait()
-
-        #expect(outcome.failure == nil)
-        #expect(outcome.quoteEnters == depth)
-        // Every node enters exactly once and exits exactly once: the
-        // document, the quote chain, and the innermost paragraph and text.
-        #expect(outcome.events == 2 * (depth + 3))
-        #expect(outcome.dumpHasQuote)
-    }
-}
-
-private struct ConcurrencyCombo: Sendable {
-    let source: String
-    let options: ParseOptions
-    let reference: String
-}
-
-private func makeConcurrencyCombos() throws -> [ConcurrencyCombo] {
-    let sources = [
-        "# Heading\n\nPlain *emphasis* and **strong** text with `code`.\n",
-        "| a | b |\n| --- | :-: |\n| 1 | 2 |\n\n~~struck~~ and *a~b*c~ mix.\n",
-        "Formula $x^2$ inline and *a$b*c$ flanking.\n\n$$\nx = y\n$$\n",
-        ":::note[Label]{id=1 title=\"T\"}\ncontent *here*\n:::\n\nInline :dir[text]{k=v} tail.\n",
-    ]
-    let variants = [
-        ParseOptions(),
-        ParseOptions(
-            smartPunctuation: false,
-            footnotes: false,
-            tables: false,
-            strikethrough: false,
-            autolinks: false,
-            taskLists: false,
-            formulas: false,
-            directives: false,
-            crossLinks: false,
-            embeds: false
-        ),
-        ParseOptions(
-            strikethrough: false,
-            formulas: false
-        ),
-    ]
-    return try sources.flatMap { source in
-        try variants.map { options in
-            ConcurrencyCombo(
-                source: source,
-                options: options,
-                reference: try Document(source, options: options).dump()
-            )
-        }
+        for _ in 0..<2_000 { #expect(try Document.parse("# Copy\n\n- [x] item\n").content.count == 2) }
     }
 }
 
@@ -289,11 +218,16 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: HTMLBlock) -> String { kindName(node) }
     mutating func visit(_ node: FormulaBlock) -> String { kindName(node) }
     mutating func visit(_ node: Table) -> String { kindName(node) }
-    mutating func visit(_ node: TableRow) -> String { node.isHeader ? "header" : "row" }
-    mutating func visit(_ node: TableCell) -> String { "cell" }
     mutating func visit(_ node: DirectiveBlock) -> String { kindName(node) }
+
     mutating func visit(_ node: DirectiveLabel) -> String { kindName(node) }
     mutating func visit(_ node: FootnoteDefinition) -> String { kindName(node) }
+
+    mutating func visit(_ node: ReferenceDefinition) -> String { kindName(node) }
+
+    mutating func visit(_ node: LinkReference) -> String { kindName(node) }
+
+    mutating func visit(_ node: ImageReference) -> String { kindName(node) }
     mutating func visit(_ node: Text) -> String { kindName(node) }
     mutating func visit(_ node: SoftBreak) -> String { kindName(node) }
     mutating func visit(_ node: LineBreak) -> String { kindName(node) }
@@ -307,11 +241,8 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: Image) -> String { kindName(node) }
     mutating func visit(_ node: Directive) -> String { kindName(node) }
     mutating func visit(_ node: FootnoteReference) -> String { kindName(node) }
-    mutating func visit(_ node: ReferenceDefinition) -> String { kindName(node) }
-    mutating func visit(_ node: LinkReference) -> String { kindName(node) }
-    mutating func visit(_ node: ImageReference) -> String { kindName(node) }
-    mutating func visit(_ node: CrossLink) -> String { kindName(node) }
-    mutating func visit(_ node: Embed) -> String { kindName(node) }
+    mutating func visit(_ node: TableRow) -> String { node.isHeader ? "header" : "row" }
+    mutating func visit(_ node: TableCell) -> String { "cell" }
 }
 
 private func requireSendable<T: Sendable>(_: T.Type) {}

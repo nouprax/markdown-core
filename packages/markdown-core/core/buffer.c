@@ -14,21 +14,20 @@
 /* Used as default value for markdown_core_strbuf->ptr so that people can always
  * assume ptr is non-NULL and zero terminated even for new markdown_core_strbufs.
  */
-/* Immutable by contract: empty buffers borrow this sentinel and every write
- * path grows into owned storage first, so it lives in read-only memory and
- * any accidental store faults loudly. The mutable-pointer spelling in the
- * header keeps strbuf.ptr plumbing unchanged. */
 const unsigned char markdown_core_strbuf__initbuf[1] = {0};
 
 #ifndef MIN
 #define MIN(x, y) ((x < y) ? x : y)
 #endif
 
-void markdown_core_strbuf_init(markdown_core_mem *mem, markdown_core_strbuf *buf, markdown_core_bufsize initial_size) {
+void markdown_core_strbuf_init(markdown_core_mem *mem, markdown_core_strbuf *buf, bufsize_t initial_size) {
     buf->mem = mem;
     buf->asize = 0;
     buf->size = 0;
     buf->oom = 0;
+    /* The cast drops const and nothing writes through it: `asize` is 0 exactly
+     * while `ptr` is this sentinel, and every write path either grows first or
+     * is guarded by `asize > 0`. */
     buf->ptr = (unsigned char *)markdown_core_strbuf__initbuf;
 
     if (initial_size > 0) {
@@ -36,12 +35,28 @@ void markdown_core_strbuf_init(markdown_core_mem *mem, markdown_core_strbuf *buf
     }
 }
 
-static MARKDOWN_CORE_INLINE void S_strbuf_grow_by(markdown_core_strbuf *buf, markdown_core_bufsize add) {
+/* `bufsize_t` is int32_t, so `buf->size + add` is undefined behaviour once the
+ * sum passes INT32_MAX -- and the wrapped result is NEGATIVE, which
+ * markdown_core_strbuf_grow used to read as "already big enough". The caller
+ * then wrote `add` bytes past the end of a buffer that had not grown. Test
+ * against the room the cap leaves, BEFORE adding, so the sum never happens. */
+static MARKDOWN_CORE_INLINE void S_strbuf_grow_by(markdown_core_strbuf *buf, bufsize_t add) {
+    if (add < 0 || add > (bufsize_t)(INT32_MAX / 2) - buf->size) {
+        buf->oom = 1;
+        return;
+    }
     markdown_core_strbuf_grow(buf, buf->size + add);
 }
 
-void markdown_core_strbuf_grow(markdown_core_strbuf *buf, markdown_core_bufsize target_size) {
-    assert(target_size > 0);
+void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size) {
+    /* A non-positive target is a caller error, and it must poison rather than
+     * assert: the assert compiles out under NDEBUG, and the `target_size <
+     * buf->asize` test below then answers a negative target with "nothing to
+     * do" -- silently, with the buffer unchanged and its failure bit clear. */
+    if (target_size <= 0) {
+        buf->oom = 1;
+        return;
+    }
 
     if (buf->oom || target_size < buf->asize) {
         return;
@@ -49,18 +64,18 @@ void markdown_core_strbuf_grow(markdown_core_strbuf *buf, markdown_core_bufsize 
 
     /* Both the size cap and allocator failure poison the buffer instead of
      * aborting; existing contents stay valid and later writes are no-ops. */
-    if (target_size > (markdown_core_bufsize)(INT32_MAX / 2)) {
+    if (target_size > (bufsize_t)(INT32_MAX / 2)) {
         buf->oom = 1;
         return;
     }
 
     /* Oversize the buffer by 50% to guarantee amortized linear time
      * complexity on append operations. */
-    markdown_core_bufsize new_size = target_size + target_size / 2;
+    bufsize_t new_size = target_size + target_size / 2;
     new_size += 1;
     new_size = (new_size + 7) & ~7;
 
-    unsigned char *new_ptr = (unsigned char *)buf->mem->realloc(buf->mem, buf->asize ? buf->ptr : NULL, new_size);
+    unsigned char *new_ptr = (unsigned char *)buf->mem->realloc(buf->asize ? buf->ptr : NULL, new_size);
     if (!new_ptr) {
         buf->oom = 1;
         return;
@@ -69,13 +84,15 @@ void markdown_core_strbuf_grow(markdown_core_strbuf *buf, markdown_core_bufsize 
     buf->asize = new_size;
 }
 
+bufsize_t markdown_core_strbuf_len(const markdown_core_strbuf *buf) { return buf->size; }
+
 void markdown_core_strbuf_free(markdown_core_strbuf *buf) {
     if (!buf) {
         return;
     }
 
     if (buf->ptr != markdown_core_strbuf__initbuf) {
-        buf->mem->free(buf->mem, buf->ptr);
+        buf->mem->free(buf->ptr);
     }
 
     markdown_core_strbuf_init(buf->mem, buf, 0);
@@ -84,12 +101,20 @@ void markdown_core_strbuf_free(markdown_core_strbuf *buf) {
 void markdown_core_strbuf_clear(markdown_core_strbuf *buf) {
     buf->size = 0;
 
+    /* An allocation failure is a fact about the write that failed, not a
+     * property the buffer keeps. `oom` says "content was lost"; after a clear
+     * there is no content, so there is nothing left for it to say. It used to
+     * survive here, and `markdown_core_strbuf_detach` was the only operation
+     * that lifted it -- so a buffer cleared and reused across lines silently
+     * dropped every later write with the allocator working again. */
+    buf->oom = 0;
+
     if (buf->asize > 0) {
         buf->ptr[0] = '\0';
     }
 }
 
-void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *data, markdown_core_bufsize len) {
+void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len) {
     if (len <= 0 || data == NULL) {
         markdown_core_strbuf_clear(buf);
     } else {
@@ -108,7 +133,7 @@ void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *da
 }
 
 void markdown_core_strbuf_sets(markdown_core_strbuf *buf, const char *string) {
-    markdown_core_strbuf_set(buf, (const unsigned char *)string, string ? (markdown_core_bufsize)strlen(string) : 0);
+    markdown_core_strbuf_set(buf, (const unsigned char *)string, string ? (bufsize_t)strlen(string) : 0);
 }
 
 void markdown_core_strbuf_putc(markdown_core_strbuf *buf, int c) {
@@ -120,7 +145,7 @@ void markdown_core_strbuf_putc(markdown_core_strbuf *buf, int c) {
     buf->ptr[buf->size] = '\0';
 }
 
-void markdown_core_strbuf_put(markdown_core_strbuf *buf, const unsigned char *data, markdown_core_bufsize len) {
+void markdown_core_strbuf_put(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len) {
     if (len <= 0) {
         return;
     }
@@ -135,7 +160,35 @@ void markdown_core_strbuf_put(markdown_core_strbuf *buf, const unsigned char *da
 }
 
 void markdown_core_strbuf_puts(markdown_core_strbuf *buf, const char *string) {
-    markdown_core_strbuf_put(buf, (const unsigned char *)string, (markdown_core_bufsize)strlen(string));
+    markdown_core_strbuf_put(buf, (const unsigned char *)string, (bufsize_t)strlen(string));
+}
+
+void markdown_core_strbuf_copy_cstr(char *data, bufsize_t datasize, const markdown_core_strbuf *buf) {
+    bufsize_t copylen;
+
+    assert(buf);
+    if (!data || datasize <= 0) {
+        return;
+    }
+
+    data[0] = '\0';
+
+    if (buf->size == 0 || buf->asize <= 0) {
+        return;
+    }
+
+    copylen = buf->size;
+    if (copylen > datasize - 1) {
+        copylen = datasize - 1;
+    }
+    memmove(data, buf->ptr, copylen);
+    data[copylen] = '\0';
+}
+
+void markdown_core_strbuf_swap(markdown_core_strbuf *buf_a, markdown_core_strbuf *buf_b) {
+    markdown_core_strbuf t = *buf_a;
+    *buf_a = *buf_b;
+    *buf_b = t;
 }
 
 unsigned char *markdown_core_strbuf_detach(markdown_core_strbuf *buf) {
@@ -150,14 +203,53 @@ unsigned char *markdown_core_strbuf_detach(markdown_core_strbuf *buf) {
 
     if (buf->asize == 0) {
         /* return an empty string; NULL reports allocation failure */
-        return (unsigned char *)buf->mem->calloc(buf->mem, 1, 1);
+        return (unsigned char *)buf->mem->calloc(1, 1);
     }
 
     markdown_core_strbuf_init(buf->mem, buf, 0);
     return data;
 }
 
-void markdown_core_strbuf_truncate(markdown_core_strbuf *buf, markdown_core_bufsize len) {
+int markdown_core_strbuf_cmp(const markdown_core_strbuf *a, const markdown_core_strbuf *b) {
+    int result = memcmp(a->ptr, b->ptr, MIN(a->size, b->size));
+    return (result != 0) ? result : (a->size < b->size) ? -1 : (a->size > b->size) ? 1 : 0;
+}
+
+bufsize_t markdown_core_strbuf_strchr(const markdown_core_strbuf *buf, int c, bufsize_t pos) {
+    if (pos >= buf->size) {
+        return -1;
+    }
+    if (pos < 0) {
+        pos = 0;
+    }
+
+    const unsigned char *p = (unsigned char *)memchr(buf->ptr + pos, c, buf->size - pos);
+    if (!p) {
+        return -1;
+    }
+
+    return (bufsize_t)(p - (const unsigned char *)buf->ptr);
+}
+
+bufsize_t markdown_core_strbuf_strrchr(const markdown_core_strbuf *buf, int c, bufsize_t pos) {
+    if (pos < 0 || buf->size == 0) {
+        return -1;
+    }
+    if (pos >= buf->size) {
+        pos = buf->size - 1;
+    }
+
+    bufsize_t i;
+    for (i = pos; i >= 0; i--) {
+        if (buf->ptr[i] == (unsigned char)c) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+void markdown_core_strbuf_truncate(markdown_core_strbuf *buf, bufsize_t len) {
     if (len < 0) {
         len = 0;
     }
@@ -168,7 +260,7 @@ void markdown_core_strbuf_truncate(markdown_core_strbuf *buf, markdown_core_bufs
     }
 }
 
-void markdown_core_strbuf_drop(markdown_core_strbuf *buf, markdown_core_bufsize n) {
+void markdown_core_strbuf_drop(markdown_core_strbuf *buf, bufsize_t n) {
     if (n > 0) {
         if (n > buf->size) {
             n = buf->size;
@@ -199,7 +291,7 @@ void markdown_core_strbuf_rtrim(markdown_core_strbuf *buf) {
 }
 
 void markdown_core_strbuf_trim(markdown_core_strbuf *buf) {
-    markdown_core_bufsize i = 0;
+    bufsize_t i = 0;
 
     if (!buf->size) {
         return;
@@ -218,7 +310,7 @@ void markdown_core_strbuf_trim(markdown_core_strbuf *buf) {
 // space and newline characters into a single space.
 void markdown_core_strbuf_normalize_whitespace(markdown_core_strbuf *s) {
     bool last_char_was_space = false;
-    markdown_core_bufsize r, w;
+    bufsize_t r, w;
 
     for (r = 0, w = 0; r < s->size; ++r) {
         if (markdown_core_isspace(s->ptr[r])) {
@@ -237,7 +329,7 @@ void markdown_core_strbuf_normalize_whitespace(markdown_core_strbuf *s) {
 
 // Destructively unescape a string: remove backslashes before punctuation chars.
 extern void markdown_core_strbuf_unescape(markdown_core_strbuf *buf) {
-    markdown_core_bufsize r, w;
+    bufsize_t r, w;
 
     for (r = 0, w = 0; r < buf->size; ++r) {
         if (buf->ptr[r] == '\\' && markdown_core_ispunct(buf->ptr[r + 1])) {

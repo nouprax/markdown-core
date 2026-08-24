@@ -4,51 +4,26 @@ import process from "node:process";
 import { TextDecoder } from "node:util";
 
 const root = process.cwd();
-const contractPath = path.join(root, "docs/specs/canonical-ast.md");
+const proseContractPath = path.join(root, "docs/specs/canonical-ast.md");
+const contractPath = path.join(root, "docs/specs/canonical-ast.json");
 const specPath = path.join(root, "specs/canonical-ast");
 const manifestPath = path.join(specPath, "manifest.json");
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
-const [contract, manifestText, entries] = await Promise.all([
+const [proseContract, contractText, manifestText, entries] = await Promise.all([
+    readFile(proseContractPath, "utf8"),
     readFile(contractPath, "utf8"),
     readFile(manifestPath, "utf8"),
     readdir(specPath)
 ]);
 const manifest = JSON.parse(manifestText);
+const contract = JSON.parse(contractText);
 const failures = [];
 const difference = (left, right) => [...left].filter((value) => !right.has(value)).sort();
 const sameArray = (left, right) => left.length === right.length && left.every((value, index) => value === right[index]);
 const set = (values) => new Set(values);
-const parseDumpTree = (tree) => {
-    const roots = [];
-    const stack = [];
-    for (const line of tree.trimEnd().split("\n")) {
-        const branch = line.match(/^((?:│ {3}| {4})*)(?:├──|└──) (.*)$/);
-        const depth = branch === null ? 0 : branch[1].length / 4 + 1;
-        const payload = branch === null ? line : branch[2];
-        const match = payload.match(/^([A-Z][A-Za-z]+) .* children=(\d+)$/);
-        if (match === null) continue;
-        const node = { kind: match[1], declaredChildren: Number(match[2]), children: [] };
-        if (depth === 0) roots.push(node);
-        else stack[depth - 1]?.children.push(node);
-        stack.length = depth;
-        stack[depth] = node;
-    }
-    return roots;
-};
-const dumpNodes = (tree) => {
-    const nodes = [];
-    const stack = [...parseDumpTree(tree)];
-    while (stack.length > 0) {
-        const node = stack.pop();
-        nodes.push(node);
-        stack.push(...node.children);
-    }
-    return nodes;
-};
-const isDirective = (node) => node.kind === "Directive" || node.kind === "DirectiveBlock";
 
-const nodeTable = contract.match(/## Node inventory[\s\S]*?## ParseOptions/)?.[0];
+const nodeTable = proseContract.match(/## Node inventory[\s\S]*?## ParseOptions/)?.[0];
 if (nodeTable === undefined) throw new Error("Unable to locate the canonical node inventory");
 
 const rows = [...nodeTable.matchAll(/^\| `([A-Za-z]+)` \| ([^|]+) \|/gm)];
@@ -61,14 +36,13 @@ const canonicalFields = rows.flatMap((match) => fieldsByKind[match[1]].map((fiel
 const optionNames = [
     "smartPunctuation",
     "footnotes",
+    "stripHTMLComments",
     "tables",
     "strikethrough",
     "autolinks",
     "taskLists",
     "formulas",
-    "directives",
-    "crossLinks",
-    "embeds"
+    "directives"
 ];
 const stateValidators = {
     "placement.embedded": (tree) => / mode=embedded /.test(tree),
@@ -99,28 +73,43 @@ const stateValidators = {
     "directive.attributes.null": (tree) => /^.*Directive(?:Block)? scope=.* attributes=null /m.test(tree),
     "directive.attributes.empty": (tree) => /^.*Directive(?:Block)? scope=.* attributes=\[\] /m.test(tree),
     "directive.attributes.value": (tree) => /^.*Directive(?:Block)? scope=.* attributes=\[.+\] /m.test(tree),
+    // A label is a NODE now, so its three states are read off the tree rather
+    // than off a count on the parent: absent is a directive with no
+    // DirectiveLabel child, empty is one with `children=0`, populated is one
+    // with children.
     "directive.label.null": (tree) =>
-        dumpNodes(tree).some((node) => isDirective(node) && node.children[0]?.kind !== "DirectiveLabel"),
-    "directive.label.empty": (tree) =>
-        dumpNodes(tree).some((node) => node.kind === "DirectiveLabel" && node.declaredChildren === 0),
-    "directive.label.populated": (tree) =>
-        dumpNodes(tree).some((node) => node.kind === "DirectiveLabel" && node.declaredChildren > 0),
+        /^(.*)Directive(?:Block)? scope=[^\n]*\n(?!\1(?:\u2502|\|)?\s*(?:\u251c|\u2514)\u2500\u2500 DirectiveLabel )/m.test(
+            tree
+        ),
+    "directive.label.empty": (tree) => /DirectiveLabel scope=\S+ children=0$/m.test(tree),
+    "directive.label.populated": (tree) => /DirectiveLabel scope=\S+ children=[1-9]\d*$/m.test(tree),
+    "reference.form.full": (tree) => /^.*(?:Link|Image)Reference scope=.* form=full /m.test(tree),
+    "reference.form.collapsed": (tree) => /^.*(?:Link|Image)Reference scope=.* form=collapsed /m.test(tree),
+    "reference.form.shortcut": (tree) => /^.*(?:Link|Image)Reference scope=.* form=shortcut /m.test(tree),
     "link.title.null": (tree) => /^.*Link scope=.* title=null /m.test(tree),
     "link.title.empty": (tree) => /^.*Link scope=.* title="" /m.test(tree),
     "link.title.value": (tree) => /^.*Link scope=.* title=".+" /m.test(tree),
     "image.title.null": (tree) => /^.*Image scope=.* title=null /m.test(tree),
     "image.title.value": (tree) => /^.*Image scope=.* title=".+" /m.test(tree),
     "scope.positive": (tree) => / scope=[1-9]\d*:[1-9]\d*\.\./.test(tree),
-    "scope.zero": (tree) => / scope=0:0\.\.0:0 /.test(tree),
+    /* `scope.zero` was here, and it required the canonical corpus to demonstrate
+       a node with NO position -- 0:0..0:0. Its only two witnesses in that corpus
+       were the LineBreak and the SoftBreak in inlines.ast, and 0a.12b gave both
+       of them a real position (D26). The remaining producers of that shape are
+       D13's empty Text and the split-off table lead, and pinning either as
+       canonical coverage would bless a defect the stage is closing -- which is
+       exactly the trap section 4.4 of docs/RECONSTRUCTION.md names. The state is
+       therefore deleted rather than re-witnessed. This is a coverage obligation,
+       not a grammar or schema change: the dump still permits 0:0..0:0, so no
+       binding and no golden format moves. */
     "children.empty": (tree) => / children=0(?:\n|$)/.test(tree),
     "children.populated": (tree) => / children=[1-9]\d*(?:\n|$)/.test(tree),
     "escaping.empty-string": (tree) => /=""/.test(tree),
     "escaping.newline": (tree) => /\\n/.test(tree),
-    // A value that happens to CONTAIN JSON still escapes as a quoted string;
-    // the dump itself no longer wraps the map in one.
-    "escaping.json": (tree) => /attributes=\[[^\]]*="\{\\"/.test(tree),
-    "htmlComment.true": (tree) => / comment=true literal=/.test(tree),
-    "htmlComment.false": (tree) => / comment=false literal=/.test(tree)
+    // An attribute VALUE that contains a quote. It was called `escaping.json`
+    // when the whole attribute map was one JSON string; the escaping it checks
+    // is the dump's, and that is what it was always about.
+    "escaping.attribute-value": (tree) => /attributes=\[[^\]]*="[^\]]*\\"/.test(tree)
 };
 const orderValidators = {
     "document.source-order": (tree) => tree.startsWith("Document scope="),
@@ -129,10 +118,7 @@ const orderValidators = {
             tree
         ),
     "directive.label-before-content": (tree) =>
-        dumpNodes(tree).some(
-            (node) =>
-                node.kind === "DirectiveBlock" && node.children.length > 1 && node.children[0].kind === "DirectiveLabel"
-        ),
+        /DirectiveBlock scope=.* children=[2-9]\d*\n[\s\S]*DirectiveLabel scope=[\s\S]*Paragraph scope=/.test(tree),
     "inline.source-order": (tree) => /Paragraph scope=.* children=[2-9]\d*/.test(tree)
 };
 
@@ -229,47 +215,28 @@ for (const testCase of manifest.cases ?? []) {
         const kind = match[1];
         actualKinds.add(kind);
         for (const field of fieldsByKind[kind] ?? []) allObservedFields.add(`${kind}.${field}`);
-        // Strings first, then bracketed groups: a directive's attributes are
-        // ONE field whose contents are themselves `name="value"` pairs, and
-        // an attribute named `children` must not read as the record's own.
+        // Strings first, then bracketed groups: `attributes=[a="1" b="2"]` is
+        // ONE field, and without the second pass ` b=` reads as a second one.
         const lineWithoutStrings = line.replace(/"(?:\\.|[^"\\])*"/g, '""').replace(/=\[[^\]]*\]/g, "=[]");
         const fieldNames = [...lineWithoutStrings.matchAll(/ ([A-Za-z]+)=/g)].map((field) => field[1]);
-        const dumpFields = {
-            Document: [],
-            BlockQuote: [],
-            Paragraph: [],
-            Heading: ["level"],
-            ThematicBreak: [],
-            List: ["flavor", "start", "tight"],
-            ListItem: ["checked"],
-            CodeBlock: ["mode", "info", "language", "literal", "fenced", "closed"],
-            HTMLBlock: ["comment", "literal"],
-            FormulaBlock: ["mode", "literal"],
-            Table: ["alignments"],
-            TableRow: ["isHeader"],
-            TableCell: [],
-            DirectiveBlock: ["mode", "name", "attributes"],
-            DirectiveLabel: [],
-            FootnoteDefinition: ["id"],
-            Text: ["literal"],
-            SoftBreak: [],
-            LineBreak: [],
-            Code: ["mode", "literal"],
-            HTML: ["comment", "literal"],
-            Formula: ["mode", "literal"],
-            Emphasis: [],
-            Strong: [],
-            Strikethrough: [],
-            Link: ["destination", "title"],
-            Image: ["source", "title"],
-            Directive: ["mode", "name", "attributes"],
-            FootnoteReference: ["id"],
-            CrossLink: ["reference"],
-            Embed: ["reference"],
-            ReferenceDefinition: ["label", "destination", "title"],
-            LinkReference: ["label", "form"],
-            ImageReference: ["label", "form"]
-        };
+        // The dump's field names for a kind ARE the contract's, minus the
+        // fields that are the child structure itself. Until Step 15A this was a
+        // hand-written copy of the table -- a SEVENTH one -- and Q29 found it
+        // by deleting `mode` from the contract and watching this file disagree.
+        //
+        // A field is child structure when its type names a KIND. That used to
+        // be a regex listing four of them plus an explicit `label` exception,
+        // because a directive's label was a COUNT in the dump rather than a
+        // node; Step 7 made it a node and the exception became a lie.
+        const kindNames = new Set(contract.kinds.map((kind) => kind.name));
+        const isChildEdge = (type) =>
+            [...type.matchAll(/[A-Za-z]+/g)].some((word) => word[0] === "Markup" || kindNames.has(word[0]));
+        const dumpFields = Object.fromEntries(
+            contract.kinds.map((kind) => [
+                kind.name,
+                kind.fields.filter((field) => !isChildEdge(field.type)).map((field) => field.name)
+            ])
+        );
         const expectedFieldNames = ["scope", ...(dumpFields[kind] ?? []), "children"];
         if (!sameArray(fieldNames, expectedFieldNames)) {
             failures.push(

@@ -43,7 +43,7 @@ jobs:
                   git fetch --no-tags origin main
                   git merge-base --is-ancestor HEAD origin/main
             - name: Validate curated release notes
-              run: test -s "docs/releases/$(cat VERSION).md"
+              run: test -s "docs/deprecated/releases/$(cat VERSION).md"
 
     quality:
         name: Quality Gate - Release
@@ -358,7 +358,7 @@ jobs:
                   gh release create "$GITHUB_REF_NAME" \
                       --verify-tag \
                       --title "Markdown Core $(cat VERSION)" \
-                      --notes-file "docs/releases/$(cat VERSION).md" \
+                      --notes-file "docs/deprecated/releases/$(cat VERSION).md" \
                       release-files/*
 
     resume-publish:
@@ -386,7 +386,7 @@ jobs:
             - name: Validate the protected release tag
               run: |
                   node scripts/check-release-version.mjs --skip-swift --tag="$RELEASE_TAG"
-                  test -s "docs/releases/$(cat VERSION).md"
+                  test -s "docs/deprecated/releases/$(cat VERSION).md"
                   git fetch --no-tags origin main
                   git merge-base --is-ancestor HEAD origin/main
             - name: Validate the source run against the tag
@@ -469,5 +469,5 @@ jobs:
                   gh release create "$RELEASE_TAG" \
                       --verify-tag \
                       --title "Markdown Core $(cat VERSION)" \
-                      --notes-file "docs/releases/$(cat VERSION).md" \
+                      --notes-file "docs/deprecated/releases/$(cat VERSION).md" \
                       release-files/*

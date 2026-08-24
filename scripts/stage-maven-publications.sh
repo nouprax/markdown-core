@@ -21,14 +21,17 @@ common=(
     --warning-mode=fail
     "-PreleaseRepositoryDir=$repository"
 )
+# The ABI reference is checked BEFORE anything is staged: a publication whose
+# public surface drifted from packages/kotlin-markdown-core/api/ is the one
+# thing that cannot be taken back once it is on Maven Central.
+abi_tasks=(
+    :packages:kotlin-markdown-core:checkKotlinAbi
+)
 base_tasks=(
     :packages:kotlin-markdown-core:publishKotlinMultiplatformPublicationToReleaseStagingRepository
     :packages:kotlin-markdown-core:publishJvmPublicationToReleaseStagingRepository
     :packages:kotlin-markdown-core:publishAndroidPublicationToReleaseStagingRepository
     :packages:kotlin-markdown-core:android-runtime:publishReleasePublicationToReleaseStagingRepository
-)
-abi_tasks=(
-    :packages:kotlin-markdown-core:checkKotlinAbi
 )
 
 case "$mode" in

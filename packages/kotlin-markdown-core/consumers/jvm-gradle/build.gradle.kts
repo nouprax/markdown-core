@@ -4,7 +4,7 @@ plugins {
 }
 
 dependencies {
-    implementation("com.nouprax:kotlin-markdown-core-jvm:2.0.0")
+    implementation("com.nouprax:kotlin-markdown-core-jvm:3.0.0")
 }
 
 application {

@@ -76,8 +76,14 @@ void STR_EQ(test_batch_runner *runner, const char *got, const char *expected, co
         char *expected_fn = write_tmp("expected\n", expected);
         char buf[1024];
         snprintf(buf, sizeof(buf), "git diff --no-index %s %s", expected_fn, got_fn);
-        if (system(buf) == -1) {
-            fprintf(stderr, "failed to launch git diff for string mismatch\n");
+        /* THE RESULT IS CHECKED, and not only to satisfy a warning. glibc marks
+         * `system` `warn_unused_result` and GCC promotes that to an error under
+         * -Werror, which no clang build reports -- but the behaviour matters
+         * too: with no `git` on PATH the diff never prints and the failure
+         * reads as though it had no detail. */
+        if (system(buf) != 0) {
+            fprintf(stderr, "  Got:      \"%s\"\n", got);
+            fprintf(stderr, "  Expected: \"%s\"\n", expected);
         }
         remove(got_fn);
         remove(expected_fn);

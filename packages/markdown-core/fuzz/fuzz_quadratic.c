@@ -29,7 +29,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         memcpy(&fuzz_config, data, sizeof(fuzz_config));
 
         /* Test options that are used by GitHub. */
-        fuzz_config.options = MARKDOWN_CORE_OPT_FOOTNOTES;
+        fuzz_config.options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_VALIDATE_UTF8;
 
         /* Remainder of input is the markdown */
         const char *markdown0 = (const char *)(data + sizeof(fuzz_config));
@@ -47,11 +47,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                     memcpy(&markdown[markdown_size], &markdown0[fuzz_config.splitpoint], fuzz_config.repeatlen);
                     markdown_size += fuzz_config.repeatlen;
                 }
-                memcpy(
-                    &markdown[markdown_size],
-                    &markdown0[fuzz_config.splitpoint + fuzz_config.repeatlen],
-                    size_after_splitpoint
-                );
+                memcpy(&markdown[markdown_size], &markdown0[fuzz_config.splitpoint + fuzz_config.repeatlen],
+                       size_after_splitpoint);
                 markdown_size += size_after_splitpoint;
             } else {
                 markdown_size = markdown_size0;
@@ -60,15 +57,19 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 
             markdown_core_parser *parser = markdown_core_parser_new(fuzz_config.options);
 
+            /* A name selects a BIT; only the fixed table turns a set of bits
+             * into a sequence. Attaching from the name list directly was a
+             * second attach order, which is D15's shape. */
+            unsigned extension_mask = 0;
             for (const char **it = extension_names; *it; ++it) {
-                const char *extension_name = *it;
-                markdown_core_extension *extension = markdown_core_extension_find(extension_name);
-                if (!extension) {
-                    fprintf(stderr, "%s is not a valid syntax extension\n", extension_name);
+                unsigned bit = markdown_core_core_extensions_bit(*it);
+                if (!bit) {
+                    fprintf(stderr, "%s is not a valid syntax extension\n", *it);
                     abort();
                 }
-                markdown_core_parser_attach_extension(parser, extension);
+                extension_mask |= bit;
             }
+            markdown_core_core_extensions_attach(parser, extension_mask);
 
             markdown_core_parser_feed(parser, markdown, markdown_size);
             markdown_core_node *doc = markdown_core_parser_finish(parser);

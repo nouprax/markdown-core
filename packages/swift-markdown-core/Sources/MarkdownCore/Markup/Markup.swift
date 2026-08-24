@@ -1,114 +1,139 @@
 import MarkdownCoreC
 
-/// A one-based line/column source coordinate.
+/// One boundary in the source: a line and a column, both counted from 1.
+///
+/// A position is not an index. `column` counts BOUNDARIES between bytes, so a
+/// line of L bytes has boundaries 1 through L + 1, and column 0 is the
+/// boundary before a line begins — which is where a block closed by a blank
+/// line ends.
 public struct Position: Sendable, Hashable {
-    /// The one-based line number.
+    /// The 1-based line, counted in ``Concrete/source``.
     public let line: Int32
-    /// The one-based column number.
+    /// The 1-based boundary within the line, counted in BYTES, not characters.
     public let column: Int32
 
-    /// Creates a coordinate from one-based line and column numbers.
+    /// Creates a position from a line and a column. Neither is validated
+    /// against any source; the parser is what produces meaningful pairs.
     public init(line: Int32, column: Int32) {
         self.line = line
         self.column = column
     }
 }
 
-/// A node's absolute source extent: start and end coordinates, both
-/// inclusive of the construct's own markers.
+/// The line-and-column range an element occupies.
+///
+/// A SCOPE IS A PAIR OF BOUNDARIES, NOT A BYTE RANGE. It tells an editor which
+/// range of the source an element covers; it does not name a substring, and no
+/// substring can be taken with it. Slicing the source between two positions is
+/// a misuse — the coordinates are counted against ``Concrete/source``, which is
+/// the normalized text and not the string that was passed to ``Document/parse(_:options:)``.
 public struct Scope: Sendable, Hashable {
-    /// The extent's first coordinate.
+    /// The boundary the element begins at.
     public let start: Position
-    /// The extent's last coordinate.
+    /// The boundary the element ends at. It is not one past the last byte; it
+    /// is where the element stops.
     public let end: Position
 
-    /// Creates an extent from its boundary coordinates.
+    /// Creates a scope from two boundaries. Neither is validated.
     public init(start: Position, end: Position) {
         self.start = start
         self.end = end
     }
 }
 
-/// Series-scoped node identity, stable across appends while the node remains
-/// the same kind of thing at the same place.
+/// One node of the parsed document.
 ///
-/// ``rawValue`` is unique within the owning series and never reused;
-/// ``series`` is that series' random salt, so nodes from different series
-/// (including separate one-shot parses) never share an identity.
+/// Every kind is a value type and every kind is `Sendable`: the native parse is
+/// released before ``Document/parse(_:options:)`` returns, so nothing here
+/// borrows memory the C library owns and a tree can cross an isolation
+/// boundary unchanged.
 ///
-/// A SERIES is one document and every document its appends produce — a chain
-/// grows one way, and replacing the text is a new document, a new chain, a
-/// new series. Raw values restart at 1 for each new series, so the salt is
-/// the only thing keeping two unrelated documents' identities apart.
-public struct MarkupID: Sendable, Hashable {
-    /// The owning series' random salt; ids from different series never
-    /// compare equal even when raw values collide.
-    public let series: UInt64
-    /// The id's value within its series: unique there and never reused.
-    public let rawValue: UInt64
-
-    /// Creates an identity from a series salt and a raw id value.
-    public init(series: UInt64, rawValue: UInt64) {
-        self.series = series
-        self.rawValue = rawValue
-    }
-}
-
-/// Identity, revision, and extent: what every kind carries whatever it is.
-///
-/// The contract calls this the node's `MarkupTrack`.
-struct MarkupTrack {
-    let id: MarkupID
-    let revision: UInt64
-    let scope: Scope
-}
-
-/// A node of the canonical Markdown value tree.
-///
-/// Nodes are immutable values. Equality and hashing are O(1) and
-/// allocation-free: two nodes are equal exactly when they have the same
-/// ``id`` and the same ``revision``, which the engine guarantees implies
-/// identical AST content (fields and descendants).
-///
-/// ``scope`` is on every node and is deliberately NOT part of that: absolute
-/// source position is not content, so two nodes differing only in where they
-/// sit are equal. That is what lets an append that only grows a node's
-/// extent leave every reactive comparison untouched.
-public protocol Markup: Sendable, Identifiable, Hashable where ID == MarkupID {
-    /// The node's series-scoped identity; see ``MarkupID``.
-    var id: MarkupID { get }
-
-    /// The document revision at which this node's own fields, child list, or
-    /// any descendant last changed.
-    ///
-    /// A pure positional shift caused by an append elsewhere never changes a
-    /// node's revision.
-    var revision: UInt64 { get }
-
-    /// The node's absolute source extent, O(1) and stored on the value.
+/// The set of conforming kinds is closed. ``MarkupVisitor`` names all of them,
+/// which is what makes a visitor exhaustive at compile time.
+public protocol Markup: Sendable {
+    /// Where this element is, as a pair of boundaries. See ``Scope`` for what
+    /// those boundaries are and are not.
     var scope: Scope { get }
-
-    /// Dispatches this node to `visitor`'s matching `visit` overload.
+    /// Dispatches to the visitor case for this element's kind.
     func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result
+    /// The canonical diagnostic dump of this element and everything under it.
+    ///
+    /// One grammar across C, Swift, Kotlin and ECMAScript, checked against the
+    /// same goldens. It is a debugging and conformance surface, not a
+    /// serialization format.
+    func dump() -> String
+}
+
+/// Whether the source wrote a formula inside a line or on its own.
+///
+/// It survives only on ``Formula``, which is the one kind where it is a fact
+/// about the source rather than about the kind: an inline ``Directive`` is
+/// always embedded and a ``DirectiveBlock`` always standalone, so carrying it
+/// there made four surfaces keep a constant in step.
+public enum PlacementMode: String, Sendable {
+    /// Written inside a line, among other inline content.
+    case embedded
+    /// Written on its own, as a block.
+    case standalone
 }
 
 extension Markup {
-    /// Two nodes are equal exactly when they share ``id`` and ``revision``,
-    /// which the engine guarantees implies identical content.
-    public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.id == rhs.id && lhs.revision == rhs.revision
+    static func scope(from node: OpaquePointer) -> Scope {
+        Scope(from: markdown_core_node_scope(node))
     }
 
-    /// Hashes the identity/revision pair that also defines equality.
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-        hasher.combine(revision)
+    /// Every child, in source order, as the C tree holds them.
+    static func children(from node: OpaquePointer) -> [any Markup] {
+        var result: [any Markup] = []
+        result.reserveCapacity(markdown_core_node_child_count(node))
+        var child = markdown_core_node_get_first_child(node)
+        while let current = child {
+            result.append(markup(from: current))
+            child = markdown_core_node_get_next_sibling(current)
+        }
+        return result
     }
 }
 
-/// Whether a construct is embedded in inline content or stands alone
-/// as its own block.
-public enum PlacementMode: String, Sendable {
-    case embedded
-    case standalone
+extension Markup {
+    /// Every child, required to be one kind.
+    ///
+    /// A `List` owns `ListItem`s and a `TableRow` owns `TableCell`s; the C tree
+    /// cannot say so and the typed model can, so the narrowing happens once,
+    /// here, instead of at every use site.
+    static func typedChildren<T: Markup>(from node: OpaquePointer) -> [T] {
+        children(from: node).map { child in
+            guard let typed = child as? T else {
+                preconditionFailure("\(type(of: child)) is not a \(T.self)")
+            }
+            return typed
+        }
+    }
+
+    /// A directive's label, or `nil` when the source wrote none.
+    ///
+    /// The label is the first child when it is there at all, so this is a
+    /// look, not a search. Until Step 7 the C facade spliced the label node
+    /// out of the child list and named its count on the parent, and this
+    /// walked a run of children with no container; the node is visible now.
+    static func directiveLabel(from node: OpaquePointer) -> DirectiveLabel? {
+        guard let first = markdown_core_node_get_first_child(node),
+            markdown_core_node_get_kind(first) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL
+        else { return nil }
+        return DirectiveLabel(from: first)
+    }
+
+    /// A directive block's content: every child after the label.
+    static func directiveContent(from node: OpaquePointer) -> [any Markup] {
+        var result: [any Markup] = []
+        var child = markdown_core_node_get_first_child(node)
+        if let first = child, markdown_core_node_get_kind(first) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL {
+            child = markdown_core_node_get_next_sibling(first)
+        }
+        while let current = child {
+            result.append(markup(from: current))
+            child = markdown_core_node_get_next_sibling(current)
+        }
+        return result
+    }
 }

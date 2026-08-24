@@ -51,6 +51,8 @@ jobs:
                   pnpm audit:ci
                   pnpm audit:tests
                   pnpm audit:surface
+                  pnpm audit:extension-special-chars
+                  pnpm audit:extension-attach-order
                   pnpm audit:source-lists
                   pnpm audit:ast-projections
 
@@ -1329,6 +1331,27 @@ jobs:
               run: pnpm check:upstream-parity
             - name: Compare against the remark ecosystem
               run: pnpm check:mdast-parity
+            # The position oracles. They live here because one of the three
+            # needs the pinned upstream parser this job already builds, and
+            # because all three are ratchets over registered rows: they fail on
+            # a row appearing AND on a row clearing, so a fix that moves one
+            # without recording it fails in CI rather than in review.
+            - name: Check inline positions against upstream cmark-gfm
+              run: pnpm audit:inline-sourcepos
+            - name: Check scope containment and sibling overlap
+              run: pnpm audit:scope-containment
+            - name: Check that every position is a place
+              run: pnpm audit:position-places
+            # Requirement 13's three laws, which drive the CLI over every
+            # fixture example. It lives here rather than in the repository
+            # health check because it needs the built binary the parity job
+            # already has.
+            - name: Check the diagnostic list
+              run: pnpm audit:diagnostics
+            # Registered RED until Step 9a: it fails when a row stops
+            # reproducing, not only when one appears.
+            - name: Check that reference resolution is order-independent
+              run: pnpm audit:reference-order
             # Bounded and seeded, so a CI failure replays locally with the seed
             # it prints. The mdast oracle is deliberately not fuzzed here yet:
             # it still reports divergences of mixed root cause that have not

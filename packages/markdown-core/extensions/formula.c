@@ -1,4 +1,5 @@
 #include "formula.h"
+#include "syntax_extension.h"
 
 #include <assert.h>
 #include <string.h>
@@ -10,16 +11,16 @@
 #include <parser.h>
 
 #include "ext_scanners.h"
-#include "extension.h"
-#include "inline_util.h"
 
-enum {
-    FORMULA_DELIMITER_DOLLAR_INLINE = 0,
-    FORMULA_DELIMITER_DOLLAR_DISPLAY,
-    FORMULA_DELIMITER_LATEX_BACKSLASH_INLINE,
-    FORMULA_DELIMITER_LATEX_BACKSLASH_DISPLAY,
-    FORMULA_DELIMITER_COUNT,
-};
+/* These were four SENTINEL BYTES -- 1, 2, 3, 4 -- because a delimiter carried a
+ * byte and four kinds of formula opener had to be told apart by it. They were
+ * ordinary file bytes: a literal 0x01 in a document ended the text run in front
+ * of it and was offered to this extension's inline hook. They are now four of
+ * the eleven delimiter RULES, and no byte below 0x20 is special anywhere. */
+#define FORMULA_DELIM_DOLLAR_INLINE MARKDOWN_CORE_DELIM_RULE_FORMULA_DOLLAR_INLINE
+#define FORMULA_DELIM_DOLLAR_DISPLAY MARKDOWN_CORE_DELIM_RULE_FORMULA_DOLLAR_DISPLAY
+#define FORMULA_DELIM_LATEX_BACKSLASH_INLINE MARKDOWN_CORE_DELIM_RULE_FORMULA_LATEX_INLINE
+#define FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY MARKDOWN_CORE_DELIM_RULE_FORMULA_LATEX_DISPLAY
 
 #define FORMULA_BLOCK_DELIM_NONE 0
 #define FORMULA_BLOCK_DELIM_LATEX_BACKSLASH 1
@@ -28,9 +29,6 @@ enum {
 typedef struct {
     markdown_core_chunk literal;
     markdown_core_formula_mode mode;
-    /* A borrowed inline payload drops the escape before this close byte when
-     * it is materialized. Zero means a byte-for-byte copy. */
-    unsigned char escaped_close;
     int block_delim;
     int closed;
 } node_formula;
@@ -51,81 +49,6 @@ static node_formula *get_formula(markdown_core_node *node) {
     return (node_formula *)node->as.opaque;
 }
 
-static int clone_formula_literal(
-    markdown_core_mem *mem,
-    const unsigned char *data,
-    markdown_core_bufsize len,
-    unsigned char escaped_close,
-    markdown_core_chunk *result
-) {
-    markdown_core_bufsize input_offset;
-    markdown_core_bufsize output_offset = 0;
-    markdown_core_bufsize escaped_count = 0;
-    markdown_core_bufsize output_len;
-    unsigned char *copy;
-
-    if (escaped_close) {
-        for (input_offset = 0; input_offset + 1 < len; input_offset++) {
-            if (data[input_offset] == '\\' && data[input_offset + 1] == escaped_close) {
-                escaped_count++;
-                input_offset++;
-            }
-        }
-    }
-
-    output_len = len - escaped_count;
-    copy = (unsigned char *)mem->calloc(mem, (size_t)output_len + 1, 1);
-    if (!copy) {
-        return 0;
-    }
-
-    for (input_offset = 0; input_offset < len; input_offset++) {
-        if (escaped_close && data[input_offset] == '\\' && input_offset + 1 < len &&
-            data[input_offset + 1] == escaped_close) {
-            copy[output_offset++] = escaped_close;
-            input_offset++;
-        } else {
-            copy[output_offset++] = data[input_offset];
-        }
-    }
-    assert(output_offset == output_len);
-
-    result->data = copy;
-    result->len = output_len;
-    result->alloc = 1;
-    return 1;
-}
-
-static int materialize_formula_literal(markdown_core_node *node) {
-    node_formula *formula = get_formula(node);
-    markdown_core_chunk materialized = MARKDOWN_CORE_CHUNK_EMPTY;
-    markdown_core_chunk previous;
-
-    if (!formula) {
-        return 0;
-    }
-    if (formula->literal.alloc && !formula->escaped_close) {
-        return 1;
-    }
-    if (!clone_formula_literal(
-            markdown_core_node_mem(node),
-            formula->literal.data,
-            formula->literal.len,
-            formula->escaped_close,
-            &materialized
-        )) {
-        return 0;
-    }
-
-    previous = formula->literal;
-    formula->literal = materialized;
-    formula->escaped_close = 0;
-    if (previous.alloc) {
-        markdown_core_node_mem(node)->free(markdown_core_node_mem(node), previous.data);
-    }
-    return 1;
-}
-
 static int is_standalone_formula_node(markdown_core_node *node) {
     node_formula *formula = get_formula(node);
 
@@ -137,11 +60,12 @@ static int is_standalone_formula_node(markdown_core_node *node) {
 }
 
 const char *markdown_core_extensions_get_formula_literal(markdown_core_node *node) {
-    if (!materialize_formula_literal(node)) {
+    node_formula *formula = get_formula(node);
+    if (!formula) {
         return NULL;
     }
 
-    return (const char *)get_formula(node)->literal.data;
+    return markdown_core_chunk_to_cstr(markdown_core_node_mem(node), &formula->literal);
 }
 
 int markdown_core_extensions_set_formula_literal(markdown_core_node *node, const char *literal) {
@@ -150,10 +74,7 @@ int markdown_core_extensions_set_formula_literal(markdown_core_node *node, const
         return 0;
     }
 
-    if (!markdown_core_chunk_set_cstr(markdown_core_node_mem(node), &formula->literal, literal)) {
-        return 0;
-    }
-    formula->escaped_close = 0;
+    markdown_core_chunk_set_cstr(markdown_core_node_mem(node), &formula->literal, literal);
     return 1;
 }
 
@@ -184,67 +105,54 @@ int markdown_core_extensions_set_formula_mode(markdown_core_node *node, markdown
     return 1;
 }
 
-static void formula_opaque_alloc(markdown_core_extension *extension, markdown_core_mem *mem, markdown_core_node *node) {
+static void formula_opaque_alloc(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,
+                                 markdown_core_node *node) {
     /* A NULL payload is tolerated: every accessor goes through get_formula
      * and treats the node as formula-less. */
     if (is_formula_node(node)) {
-        node->as.opaque = mem->calloc(mem, 1, sizeof(node_formula));
+        node->as.opaque = mem->calloc(1, sizeof(node_formula));
     }
 }
 
-static void formula_opaque_free(markdown_core_extension *extension, markdown_core_mem *mem, markdown_core_node *node) {
+static void formula_opaque_free(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,
+                                markdown_core_node *node) {
     node_formula *formula = (node_formula *)node->as.opaque;
     if (!formula) {
         return;
     }
 
     markdown_core_chunk_free(mem, &formula->literal);
-    mem->free(mem, formula);
+    mem->free(formula);
 }
 
-/* What a formula block's lines write behind the payload pointer — and what
- * its refine writes there: the literal it mints from the content, which a
- * restore frees before the bytes go back. */
-static size_t formula_opaque_size(markdown_core_extension *extension, markdown_core_node *node) {
-    (void)extension;
-    return node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK ? sizeof(node_formula) : 0;
-}
-
-static void formula_restore_opaque(
-    markdown_core_extension *extension,
-    markdown_core_mem *mem,
-    markdown_core_node *node,
-    const void *snapshot
-) {
-    node_formula *formula = (node_formula *)node->as.opaque;
-    const node_formula *saved = (const node_formula *)snapshot;
-    (void)extension;
-    if (!formula) {
-        return;
-    }
-    if (formula->literal.data != saved->literal.data) {
-        markdown_core_chunk_free(mem, &formula->literal);
-    }
-    memcpy(formula, saved, sizeof(*formula));
-}
-
-static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, markdown_core_bufsize len) {
+static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
     node_formula *formula = get_formula(node);
-    markdown_core_chunk literal = MARKDOWN_CORE_CHUNK_EMPTY;
     if (!formula) {
         return 0;
     }
 
-    if (!clone_formula_literal(markdown_core_node_mem(node), data, len, 0, &literal)) {
+    markdown_core_chunk_free(markdown_core_node_mem(node), &formula->literal);
+    formula->literal.data = (unsigned char *)data;
+    formula->literal.len = len;
+    formula->literal.alloc = 0;
+    if (!markdown_core_chunk_to_cstr(markdown_core_node_mem(node), &formula->literal)) {
+        /* THE BORROW MUST NOT SURVIVE THE COPY FAILING. `data` belongs to the
+         * caller and dies immediately: `make_backslash_delimited_formula` frees
+         * its strbuf on the next statement, `replace_with_formula_block` frees
+         * the whole old code block, and `postprocess_node` clears the node's own
+         * content. Keeping a borrowed pointer past that is a use-after-free that
+         * every later read of the literal walks into -- ASan: heap-use-after-free
+         * in markdown_core_extensions_get_formula_literal -- and `parser->oom`
+         * stayed 0, so nothing downstream knew. Drop the borrow and say so; the
+         * callers turn the 0 into the loss flag. */
+        markdown_core_chunk empty = MARKDOWN_CORE_CHUNK_EMPTY;
+        formula->literal = empty;
         return 0;
     }
-    markdown_core_chunk_free(markdown_core_node_mem(node), &formula->literal);
-    formula->literal = literal;
-    formula->escaped_close = 0;
     return 1;
 }
 
-static int set_formula_literal_trimmed(markdown_core_node *node, const unsigned char *data, markdown_core_bufsize len) {
+static int set_formula_literal_trimmed(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
     while (len > 0 && markdown_core_isspace(data[0])) {
         data++;
         len--;
@@ -257,77 +165,73 @@ static int set_formula_literal_trimmed(markdown_core_node *node, const unsigned 
     return set_formula_literal_bytes(node, data, len);
 }
 
-static markdown_core_node *make_borrowed_formula_node(
-    markdown_core_extension *extension,
-    markdown_core_parser *parser,
-    markdown_core_formula_mode mode,
-    markdown_core_chunk *source,
-    markdown_core_bufsize literal_start,
-    markdown_core_bufsize literal_len,
-    unsigned char escaped_close
-) {
-    markdown_core_node *node =
-        markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_FORMULA, parser->mem, extension);
-    node_formula *formula;
-
+static markdown_core_node *make_formula_node(const markdown_core_syntax_extension *extension,
+                                             markdown_core_parser *parser, markdown_core_node_type node_type,
+                                             markdown_core_formula_mode mode, const unsigned char *literal,
+                                             bufsize_t literal_len) {
+    markdown_core_node *node = markdown_core_node_new_with_mem_and_ext(node_type, parser->mem, extension);
     if (!node) {
         parser->oom = true;
         return NULL;
     }
-    formula = get_formula(node);
-    if (!formula) {
+    if (!get_formula(node)) {
         parser->oom = true;
         markdown_core_node_free(node);
         return NULL;
     }
 
-    formula->mode = mode;
-    formula->literal = markdown_core_chunk_borrow(source, literal_start, literal_len);
-    formula->escaped_close = escaped_close;
+    get_formula(node)->mode = mode;
+    if (!set_formula_literal_bytes(node, literal, literal_len)) {
+        parser->oom = true;
+        markdown_core_node_free(node);
+        return NULL;
+    }
     return node;
 }
 
-static int scan_formula_block_open(const unsigned char *data, markdown_core_bufsize len, markdown_core_bufsize pos) {
+static int is_line_end(const unsigned char *data, bufsize_t len, bufsize_t pos) {
+    return pos >= len || data[pos] == '\n' || data[pos] == '\r';
+}
+
+static int has_only_spaces_until_line_end(const unsigned char *data, bufsize_t len, bufsize_t pos) {
+    while (pos < len && (data[pos] == ' ' || data[pos] == '\t')) {
+        pos++;
+    }
+
+    return is_line_end(data, len, pos);
+}
+
+static int scan_formula_block_open(const unsigned char *data, bufsize_t len, bufsize_t pos) {
     if (pos + 3 <= len && data[pos] == '\\' && data[pos + 1] == '\\' && data[pos + 2] == '[' &&
-        markdown_core_ext_has_only_spaces_until_line_end(data, len, pos + 3)) {
+        has_only_spaces_until_line_end(data, len, pos + 3)) {
         return FORMULA_BLOCK_DELIM_LATEX_BACKSLASH;
     }
 
     if (pos + 2 <= len && data[pos] == '$' && data[pos + 1] == '$' &&
-        markdown_core_ext_has_only_spaces_until_line_end(data, len, pos + 2)) {
+        has_only_spaces_until_line_end(data, len, pos + 2)) {
         return FORMULA_BLOCK_DELIM_DOLLAR;
     }
 
     return FORMULA_BLOCK_DELIM_NONE;
 }
 
-static int scan_formula_block_close(
-    const unsigned char *data,
-    markdown_core_bufsize len,
-    markdown_core_bufsize pos,
-    int block_delim
-) {
+static int scan_formula_block_close(const unsigned char *data, bufsize_t len, bufsize_t pos, int block_delim) {
     if (block_delim == FORMULA_BLOCK_DELIM_LATEX_BACKSLASH) {
         return pos + 3 <= len && data[pos] == '\\' && data[pos + 1] == '\\' && data[pos + 2] == ']' &&
-               markdown_core_ext_has_only_spaces_until_line_end(data, len, pos + 3);
+               has_only_spaces_until_line_end(data, len, pos + 3);
     }
 
     if (block_delim == FORMULA_BLOCK_DELIM_DOLLAR) {
         return pos + 2 <= len && data[pos] == '$' && data[pos + 1] == '$' &&
-               markdown_core_ext_has_only_spaces_until_line_end(data, len, pos + 2);
+               has_only_spaces_until_line_end(data, len, pos + 2);
     }
 
     return 0;
 }
 
-static markdown_core_node *try_opening_formula_block(
-    markdown_core_extension *extension,
-    int indented,
-    markdown_core_parser *parser,
-    markdown_core_node *parent_container,
-    unsigned char *input,
-    int len
-) {
+static markdown_core_node *try_opening_formula_block(const markdown_core_syntax_extension *extension, int indented,
+                                                     markdown_core_parser *parser, markdown_core_node *parent_container,
+                                                     unsigned char *input, int len) {
     int block_delim;
     markdown_core_node *node;
     node_formula *formula;
@@ -337,7 +241,7 @@ static markdown_core_node *try_opening_formula_block(
         return NULL;
     }
 
-    block_delim = scan_formula_block_open(input, (markdown_core_bufsize)len, (markdown_core_bufsize)first_nonspace);
+    block_delim = scan_formula_block_open(input, (bufsize_t)len, (bufsize_t)first_nonspace);
     if (block_delim == FORMULA_BLOCK_DELIM_NONE) {
         return NULL;
     }
@@ -348,8 +252,8 @@ static markdown_core_node *try_opening_formula_block(
         return NULL;
     }
 
-    markdown_core_node_set_extension(node, extension);
-    node->as.opaque = parser->mem->calloc(parser->mem, 1, sizeof(node_formula));
+    markdown_core_node_set_syntax_extension(node, extension);
+    node->as.opaque = parser->mem->calloc(1, sizeof(node_formula));
 
     formula = get_formula(node);
     if (!formula) {
@@ -359,26 +263,12 @@ static markdown_core_node *try_opening_formula_block(
 
     formula->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
     formula->block_delim = block_delim;
-    /* `$$` spells two bytes, `\\[` three; the CodeBlock fence precedent,
-     * minus the info record the scanners accept no text for. */
-    markdown_core_parser_capture_marker(
-        parser,
-        node,
-        MARKDOWN_CORE_CONCRETE_FENCE_OPEN,
-        first_nonspace,
-        block_delim == FORMULA_BLOCK_DELIM_LATEX_BACKSLASH ? 3 : 2
-    );
     markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser), false);
     return node;
 }
 
-static int formula_block_matches(
-    markdown_core_extension *extension,
-    markdown_core_parser *parser,
-    unsigned char *input,
-    int len,
-    markdown_core_node *container
-) {
+static int formula_block_matches(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
+                                 unsigned char *input, int len, markdown_core_node *container) {
     node_formula *formula = get_formula(container);
     int first_nonspace = markdown_core_parser_get_first_nonspace(parser);
 
@@ -386,63 +276,61 @@ static int formula_block_matches(
         return 0;
     }
 
-    if (scan_formula_block_close(
-            input,
-            (markdown_core_bufsize)len,
-            (markdown_core_bufsize)first_nonspace,
-            formula->block_delim
-        )) {
+    if (scan_formula_block_close(input, (bufsize_t)len, (bufsize_t)first_nonspace, formula->block_delim)) {
         formula->closed = 1;
-        markdown_core_parser_capture_marker(
-            parser,
-            container,
-            MARKDOWN_CORE_CONCRETE_FENCE_CLOSE,
-            first_nonspace,
-            formula->block_delim == FORMULA_BLOCK_DELIM_LATEX_BACKSLASH ? 3 : 2
-        );
-        markdown_core_parser_advance_offset(
-            parser,
-            (char *)input,
-            len - markdown_core_parser_get_offset(parser),
-            false
-        );
+        markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser),
+                                            false);
     }
 
     return 1;
 }
 
-static markdown_core_node *match_formula_delimiter(
-    markdown_core_inline_parser *inline_parser,
-    uint16_t kind,
-    markdown_core_bufsize len,
-    int can_open,
-    int can_close
-) {
-    markdown_core_bufsize end_offset =
-        (markdown_core_bufsize)markdown_core_inline_parser_get_offset(inline_parser) + len;
+static markdown_core_node *make_delimiter_text(markdown_core_parser *parser, markdown_core_inline_parser *inline_parser,
+                                               bufsize_t len) {
+    bufsize_t offset = (bufsize_t)markdown_core_inline_parser_get_offset(inline_parser);
+    markdown_core_node *node;
 
-    if (can_open || can_close) {
-        return markdown_core_inline_parser_consume_delimiter(inline_parser, kind, can_open, can_close, end_offset);
+    (void)parser;
+    /* The cursor is at the run's FIRST byte here, and at its last in
+     * `strikethrough` -- which is why each of them used to compute the columns
+     * from a different end. The shared constructor is told the range. */
+    node = markdown_core_inline_parser_make_delimiter_text(inline_parser, (int)offset, (int)(offset + len - 1));
+    if (!node) {
+        return NULL;
     }
-    return markdown_core_inline_parser_consume_text(inline_parser, end_offset);
+    markdown_core_inline_parser_set_offset(inline_parser, (int)(offset + len));
+    return node;
 }
 
-static int dollar_inline_can_open(markdown_core_chunk *chunk, markdown_core_bufsize offset) {
+static markdown_core_node *match_formula_delimiter(const markdown_core_syntax_extension *self,
+                                                   markdown_core_parser *parser,
+                                                   markdown_core_inline_parser *inline_parser,
+                                                   markdown_core_delimiter_rule rule, bufsize_t len, int can_open,
+                                                   int can_close) {
+    markdown_core_node *node = make_delimiter_text(parser, inline_parser, len);
+
+    if (!node) {
+        parser->oom = true;
+        return NULL;
+    }
+
+    if (can_open || can_close) {
+        markdown_core_inline_parser_push_delimiter(inline_parser, self, rule, can_open, can_close, node);
+    }
+    return node;
+}
+
+static int dollar_inline_can_open(markdown_core_chunk *chunk, bufsize_t offset) {
     return offset + 1 < chunk->len && !markdown_core_isspace((char)chunk->data[offset + 1]);
 }
 
-static int dollar_inline_can_close(markdown_core_chunk *chunk, markdown_core_bufsize offset) {
+static int dollar_inline_can_close(markdown_core_chunk *chunk, bufsize_t offset) {
     return offset > 0 && !markdown_core_isspace((char)chunk->data[offset - 1]) &&
            (offset + 1 >= chunk->len || !markdown_core_isdigit((char)chunk->data[offset + 1]));
 }
 
-static markdown_core_bufsize scan_backslash_close(
-    const unsigned char *data,
-    markdown_core_bufsize len,
-    markdown_core_bufsize offset,
-    unsigned char close_char,
-    int slash_count
-) {
+static bufsize_t scan_backslash_close(const unsigned char *data, bufsize_t len, bufsize_t offset,
+                                      unsigned char close_char, int slash_count) {
     int i;
 
     if (offset + slash_count + 1 > len) {
@@ -456,72 +344,80 @@ static markdown_core_bufsize scan_backslash_close(
     }
 
     if (data[offset + slash_count] == close_char) {
-        return (markdown_core_bufsize)(slash_count + 1);
+        return (bufsize_t)(slash_count + 1);
     }
 
     return 0;
 }
 
-static markdown_core_node *match(
-    markdown_core_extension *extension,
-    markdown_core_parser *parser,
-    markdown_core_node *parent,
-    unsigned char character,
-    markdown_core_inline_parser *inline_parser
-) {
+static markdown_core_node *match(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
+                                 markdown_core_node *parent, unsigned char character,
+                                 markdown_core_inline_parser *inline_parser) {
     markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
     int offset = markdown_core_inline_parser_get_offset(inline_parser);
     int len = (int)chunk->len;
-    markdown_core_bufsize opener_len;
-    markdown_core_bufsize closer_len;
+    bufsize_t opener_len;
+    bufsize_t closer_len;
 
     if (character == '$') {
         if (scan_formula_dollar_display_open(chunk->data, len, offset)) {
-            return match_formula_delimiter(inline_parser, FORMULA_DELIMITER_DOLLAR_DISPLAY, 2, 1, 1);
+            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_DOLLAR_DISPLAY, 2, 1, 1);
         }
 
         if (scan_formula_dollar_inline_open(chunk->data, len, offset)) {
-            return match_formula_delimiter(
-                inline_parser,
-                FORMULA_DELIMITER_DOLLAR_INLINE,
-                1,
-                dollar_inline_can_open(chunk, (markdown_core_bufsize)offset),
-                dollar_inline_can_close(chunk, (markdown_core_bufsize)offset)
-            );
+            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_DOLLAR_INLINE, 1,
+                                           dollar_inline_can_open(chunk, (bufsize_t)offset),
+                                           dollar_inline_can_close(chunk, (bufsize_t)offset));
         }
     } else if (character == '\\') {
         opener_len = scan_formula_latex_backslash_display_open(chunk->data, len, offset);
         if (opener_len) {
-            return match_formula_delimiter(inline_parser, FORMULA_DELIMITER_LATEX_BACKSLASH_DISPLAY, opener_len, 1, 0);
+            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
+                                           opener_len, 1, 0);
         }
 
         opener_len = scan_formula_latex_backslash_inline_open(chunk->data, len, offset);
         if (opener_len) {
-            return match_formula_delimiter(inline_parser, FORMULA_DELIMITER_LATEX_BACKSLASH_INLINE, opener_len, 1, 0);
+            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
+                                           opener_len, 1, 0);
         }
 
         closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ']', 2);
         if (closer_len) {
-            return match_formula_delimiter(inline_parser, FORMULA_DELIMITER_LATEX_BACKSLASH_DISPLAY, closer_len, 0, 1);
+            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
+                                           closer_len, 0, 1);
         }
 
         closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ')', 2);
         if (closer_len) {
-            return match_formula_delimiter(inline_parser, FORMULA_DELIMITER_LATEX_BACKSLASH_INLINE, closer_len, 0, 1);
+            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
+                                           closer_len, 0, 1);
         }
     }
 
     return NULL;
 }
 
-static markdown_core_formula_mode mode_for_kind(uint16_t kind) {
-    return kind == FORMULA_DELIMITER_DOLLAR_DISPLAY || kind == FORMULA_DELIMITER_LATEX_BACKSLASH_DISPLAY
+static markdown_core_formula_mode mode_for_delim(markdown_core_delimiter_rule delim_char) {
+    return delim_char == FORMULA_DELIM_DOLLAR_DISPLAY || delim_char == FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY
                ? MARKDOWN_CORE_FORMULA_MODE_STANDALONE
                : MARKDOWN_CORE_FORMULA_MODE_EMBEDDED;
 }
 
-static int is_backslash_kind(uint16_t kind) {
-    return kind == FORMULA_DELIMITER_LATEX_BACKSLASH_INLINE || kind == FORMULA_DELIMITER_LATEX_BACKSLASH_DISPLAY;
+static int is_backslash_delim(markdown_core_delimiter_rule delim_char) {
+    return delim_char == FORMULA_DELIM_LATEX_BACKSLASH_INLINE || delim_char == FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY;
+}
+
+static void remove_delimiters(markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
+    delimiter *delim = closer;
+
+    while (delim != NULL && delim != opener) {
+        delimiter *previous = markdown_core_delimiter_previous(delim);
+        markdown_core_inline_parser_remove_delimiter(inline_parser, delim);
+        delim = previous;
+    }
+
+    markdown_core_inline_parser_remove_delimiter(inline_parser, opener);
 }
 
 static void free_nodes_through(markdown_core_node *first, markdown_core_node *last) {
@@ -537,107 +433,157 @@ static void free_nodes_through(markdown_core_node *first, markdown_core_node *la
     }
 }
 
-/* Inline math carries the same padding rule as a code span: when the content
- * both begins and ends with a space and is not entirely spaces, one is removed
- * from each end, so `$ x $` and `$x$` mean the same thing. Line endings count
- * as spaces for this purpose.
+/* micromark-extension-math's padding rule (Q18): when a body BEGINS AND ENDS
+ * with a space or line ending and is not all whitespace, strip one from each
+ * end. Both or neither -- `$$ mid$$` keeps its leading space.
  *
- * The rule is the ecosystem's, not an invention here — micromark-extension-math
- * states it, and this repository's own code spans already implement it in
- * S_normalize_code. Inline math not following it was the inconsistency.
+ * Q18's own phrasing, "strip one leading and one trailing space-or-line-ending",
+ * reads as two independent strips and is not: `extensions-formula-github.txt`
+ * pins `text $$ mid$$ text` as `literal=" mid"`, and the independent reading
+ * gives `"mid"`. What separates this rule from CommonMark's code span is only
+ * that the code span ALSO converts interior line endings to spaces; this one
+ * leaves the interior exactly as written, which is why `$$  x  $$` keeps one
+ * space on each side and `$$\nx\n$$` keeps none.
  *
- * The span is only narrowed: the literal borrows the source chunk, so there is
- * nothing to rewrite. */
-/* A carriage return never reaches inline content: the parser normalizes line
- * endings while reading input, so by this point a CRLF source has already
- * become LF. Checking for one would be an unreachable branch. */
-static bool is_inline_math_pad(unsigned char c) { return c == ' ' || c == '\n'; }
+ * `$$ $$` and `$$  $$` are all whitespace and keep every byte: there is no body
+ * to pad, only padding. A TAB is not whitespace for that test, exactly as it is
+ * not for the code span CommonMark words this after: `$$ \t $$` strips to
+ * `"\t"`, and so does `` ` \t ` ``. This engine got that wrong until a mutant
+ * that deleted the tab exemption turned out to be the correct code.
+ *
+ * `\r` counts as padding because the rule says a line ending does, not because
+ * one can arrive: the line reader hands inline content LF-only, for a lone CR as
+ * well as for a CRLF. Measured, not assumed -- disabling the arms that used to
+ * collapse a CRLF to one byte left a `$$\r\nx\r\n$$` document byte-identical,
+ * which is why those arms are gone and this one is not. A fixture cannot reach
+ * either; the difference is that this one states the rule and they stated an
+ * algorithm. If the feed ever stops normalising, they have to come back. */
+static bool formula_pad_byte(unsigned char c) { return c == ' ' || c == '\n' || c == '\r'; }
 
-static void strip_inline_math_padding(
-    const markdown_core_chunk *chunk,
-    markdown_core_bufsize *start,
-    markdown_core_bufsize *len
-) {
-    markdown_core_bufsize i;
-    bool contains_nonspace = false;
+static void strip_formula_padding(const unsigned char **literal, bufsize_t *len) {
+    const unsigned char *data = *literal;
+    bufsize_t size = *len;
+    bufsize_t i;
 
-    if (*len < 2) {
+    if (size < 2 || !formula_pad_byte(data[0]) || !formula_pad_byte(data[size - 1])) {
         return;
     }
-    for (i = 0; i < *len; i++) {
-        if (!is_inline_math_pad(chunk->data[*start + i])) {
-            contains_nonspace = true;
+    for (i = 0; i < size; i++) {
+        if (!formula_pad_byte(data[i])) {
             break;
         }
     }
-    if (!contains_nonspace) {
+    if (i == size) {
         return;
     }
-    if (is_inline_math_pad(chunk->data[*start]) && is_inline_math_pad(chunk->data[*start + *len - 1])) {
-        *start += 1;
-        *len -= 2;
-    }
+
+    data++;
+    size--;
+    size--;
+    *literal = data;
+    *len = size;
 }
 
-static markdown_core_delimiter_result insert_formula(
-    markdown_core_extension *extension,
-    markdown_core_parser *parser,
-    markdown_core_inline_parser *inline_parser,
-    const markdown_core_delimiter_match *match
-) {
-    markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
-    markdown_core_bufsize literal_start = match->opener_end;
-    markdown_core_bufsize literal_end = match->closer_start;
-    markdown_core_bufsize literal_len;
-    markdown_core_formula_mode mode;
-    unsigned char escaped_close = 0;
-    markdown_core_node *formula;
+static markdown_core_node *make_backslash_delimited_formula(const markdown_core_syntax_extension *extension,
+                                                            markdown_core_parser *parser,
+                                                            markdown_core_formula_mode mode, const unsigned char *data,
+                                                            bufsize_t body_start, bufsize_t body_end, int slash_count,
+                                                            unsigned char close_char) {
+    markdown_core_strbuf literal;
+    bufsize_t i = body_start;
+    markdown_core_node *node;
+    const unsigned char *body;
+    bufsize_t body_len;
 
-    if (match->kind >= FORMULA_DELIMITER_COUNT || literal_end < literal_start || literal_end > chunk->len) {
-        return MARKDOWN_CORE_DELIMITER_INVALID;
-    }
-    if (is_backslash_kind(match->kind) && match->opener_length != match->closer_length) {
-        return MARKDOWN_CORE_DELIMITER_OK;
-    }
+    markdown_core_strbuf_init(parser->mem, &literal, 0);
 
-    literal_len = literal_end - literal_start;
-    if (match->kind == FORMULA_DELIMITER_DOLLAR_INLINE && literal_len > 0 && chunk->data[literal_start] == '`') {
-        if (literal_len < 2 || chunk->data[literal_end - 1] != '`') {
-            return MARKDOWN_CORE_DELIMITER_OK;
+    while (i < body_end) {
+        if (slash_count > 1 && data[i] == '\\' && i + 1 < body_end && data[i + 1] == close_char) {
+            markdown_core_strbuf_putc(&literal, close_char);
+            i += 2;
+            continue;
         }
-        literal_start++;
+
+        markdown_core_strbuf_putc(&literal, data[i]);
+        i++;
+    }
+
+    /* The same padding rule as the dollar forms: Q18 says it applies to
+     * `\(...\)` and `\[...\]` too, and no oracle row covered that until this
+     * step added two. */
+    body = literal.ptr;
+    body_len = literal.size;
+    strip_formula_padding(&body, &body_len);
+    node = make_formula_node(extension, parser, MARKDOWN_CORE_NODE_FORMULA, mode, body, body_len);
+    markdown_core_strbuf_free(&literal);
+    return node;
+}
+
+static delimiter *insert_formula(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
+                                 markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
+    markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
+    markdown_core_node *opener_node = markdown_core_delimiter_node(opener);
+    markdown_core_node *closer_node = markdown_core_delimiter_node(closer);
+    delimiter *res = markdown_core_delimiter_next(closer);
+    markdown_core_node *formula = NULL;
+    bufsize_t body_start = markdown_core_delimiter_position(opener);
+    bufsize_t body_end = markdown_core_delimiter_position(closer) - markdown_core_delimiter_length(closer);
+    markdown_core_formula_mode mode = mode_for_delim(markdown_core_delimiter_rule_of(opener));
+    const unsigned char *literal = chunk->data + body_start;
+    bufsize_t literal_len = body_end - body_start;
+
+    if (markdown_core_delimiter_rule_of(opener) != markdown_core_delimiter_rule_of(closer)) {
+        goto done;
+    }
+
+    if (markdown_core_delimiter_length(opener) != markdown_core_delimiter_length(closer) &&
+        is_backslash_delim(markdown_core_delimiter_rule_of(opener))) {
+        goto done;
+    }
+
+    if (markdown_core_delimiter_rule_of(opener) == FORMULA_DELIM_DOLLAR_INLINE && literal_len > 0 &&
+        literal[0] == '`') {
+        if (literal_len < 2 || literal[literal_len - 1] != '`') {
+            goto done;
+        }
+
+        literal++;
         literal_len -= 2;
     }
 
-    strip_inline_math_padding(chunk, &literal_start, &literal_len);
-
-    mode = mode_for_kind(match->kind);
-    if (is_backslash_kind(match->kind)) {
-        escaped_close = mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE ? ']' : ')';
+    if (is_backslash_delim(markdown_core_delimiter_rule_of(opener))) {
+        formula = make_backslash_delimited_formula(extension, parser, mode, chunk->data, body_start, body_end, 2,
+                                                   mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE ? ']' : ')');
+    } else {
+        strip_formula_padding(&literal, &literal_len);
+        formula = make_formula_node(extension, parser, MARKDOWN_CORE_NODE_FORMULA, mode, literal, literal_len);
     }
 
-    formula = make_borrowed_formula_node(extension, parser, mode, chunk, literal_start, literal_len, escaped_close);
     if (!formula) {
-        return MARKDOWN_CORE_DELIMITER_OOM;
+        goto done;
     }
 
-    formula->start_line = match->opener_node->start_line;
-    formula->end_line = match->closer_node->end_line;
-    formula->start_column = match->opener_node->start_column;
-    formula->end_column = match->closer_node->end_column;
+    formula->start_line = opener_node->start_line;
+    formula->end_line = closer_node->end_line;
+    formula->start_column = opener_node->start_column;
+    formula->end_column = closer_node->end_column;
 
-    markdown_core_node_insert_before_unchecked(match->opener_node, formula);
-    free_nodes_through(match->opener_node, match->closer_node);
-    /* Concrete bookkeeping the engine cannot infer for a RANGE reduce: the
-     * delimiter runs were consumed here (the OK returns above consume
-     * nothing), and the interior's parsed records now claim consumption the
-     * borrowed raw literal no longer shows — retract them. */
-    markdown_core_inline_parser_concrete_use_endpoints(inline_parser, match);
-    markdown_core_inline_parser_concrete_reinterpret(inline_parser, match->opener_end, match->closer_start);
-    return MARKDOWN_CORE_DELIMITER_OK;
+    if (markdown_core_node_insert_before(opener_node, formula)) {
+        /* REQUIREMENT 11b: the two delimiter runs are the formula's markers and
+         * the bytes between them are its content. `free_nodes_through` below
+         * frees EVERY node the span was built from, so without these claims the
+         * whole construct would fall back to the block. */
+        free_nodes_through(opener_node, closer_node);
+    } else {
+        markdown_core_node_free(formula);
+    }
+
+done:
+    remove_delimiters(inline_parser, opener, closer);
+    return res;
 }
 
-static const char *get_type_string(markdown_core_extension *extension, markdown_core_node *node) {
+static const char *get_type_string(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
     if (node->type == MARKDOWN_CORE_NODE_FORMULA) {
         return "formula";
     }
@@ -649,31 +595,27 @@ static const char *get_type_string(markdown_core_extension *extension, markdown_
     return "<unknown>";
 }
 
-static int accepts_lines(markdown_core_extension *extension, markdown_core_node *node) {
+static int can_contain(const markdown_core_syntax_extension *extension, markdown_core_node *node,
+                       markdown_core_node_type child_type) {
+    if (is_formula_node(node)) {
+        return 0;
+    }
+
+    return 0;
+}
+
+static int accepts_lines(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
     return node && node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK;
 }
 
-static int materialize_inline(
-    markdown_core_extension *extension,
-    markdown_core_parser *parser,
-    markdown_core_node *node
-) {
-    (void)parser;
-    if (!node || node->extension != extension || node->type != MARKDOWN_CORE_NODE_FORMULA) {
-        return 1;
-    }
-    return materialize_formula_literal(node);
+/* An absent info string is not the word `formula`; it is no word at all. */
+static int info_is_formula(const markdown_core_optional_chunk *info) {
+    return info->has_value && info->value.len == 7 && memcmp(info->value.data, "formula", 7) == 0;
 }
 
-static int info_is_formula(markdown_core_chunk *info) {
-    return info->len == 7 && memcmp(info->data, "formula", 7) == 0;
-}
-
-static markdown_core_node *new_formula_block_shell(
-    markdown_core_extension *extension,
-    markdown_core_mem *mem,
-    markdown_core_node *oldnode
-) {
+static markdown_core_node *new_formula_block_from_literal(const markdown_core_syntax_extension *extension,
+                                                          markdown_core_mem *mem, markdown_core_node *oldnode,
+                                                          const unsigned char *literal, bufsize_t literal_len) {
     markdown_core_node *formula =
         markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_FORMULA_BLOCK, mem, extension);
     if (!formula) {
@@ -689,25 +631,6 @@ static markdown_core_node *new_formula_block_shell(
     formula->start_column = oldnode->start_column;
     formula->end_line = oldnode->end_line;
     formula->end_column = oldnode->end_column;
-    /* It stands where the block stood, so what the block phase said about
-     * that place — a blank line followed it — is its now too; a list's
-     * tightness reads it, and reads it the same whether the promotion ran
-     * before or after the blank line arrived. */
-    formula->flags = oldnode->flags;
-    return formula;
-}
-
-static markdown_core_node *new_formula_block_from_literal(
-    markdown_core_extension *extension,
-    markdown_core_mem *mem,
-    markdown_core_node *oldnode,
-    const unsigned char *literal,
-    markdown_core_bufsize literal_len
-) {
-    markdown_core_node *formula = new_formula_block_shell(extension, mem, oldnode);
-    if (!formula) {
-        return NULL;
-    }
     if (!set_formula_literal_trimmed(formula, literal, literal_len)) {
         markdown_core_node_free(formula);
         return NULL;
@@ -715,173 +638,92 @@ static markdown_core_node *new_formula_block_from_literal(
     return formula;
 }
 
-static markdown_core_node *replace_with_formula_block(
-    markdown_core_extension *extension,
-    markdown_core_parser *parser,
-    markdown_core_node *oldnode,
-    const unsigned char *literal,
-    markdown_core_bufsize literal_len
-) {
+static int replace_with_formula_block(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
+                                      markdown_core_node *oldnode, const unsigned char *literal,
+                                      bufsize_t literal_len) {
     markdown_core_node *formula = new_formula_block_from_literal(extension, parser->mem, oldnode, literal, literal_len);
     if (!formula) {
-        parser->oom = true;
-        return NULL;
+        return 0;
     }
 
-    /* The pipeline owns what a replacement leaves behind: it frees the old
-     * unit, or keeps it for a stream to put back. */
-    markdown_core_node_insert_before_unchecked(oldnode, formula);
-    markdown_core_node_unlink(oldnode);
-    return formula;
+    if (markdown_core_node_replace(oldnode, formula)) {
+        /* The bytes did not change hands, the node did. Said before the free,
+         * because after it there is nothing left to name. */
+        markdown_core_node_free(oldnode);
+        return 1;
+    }
+    markdown_core_node_free(formula);
+    return 0;
 }
 
-static markdown_core_node *promote_standalone_formula(
-    markdown_core_extension *extension,
-    markdown_core_parser *parser,
-    markdown_core_node *paragraph,
-    markdown_core_node *inline_formula
-) {
-    node_formula *source = get_formula(inline_formula);
-    node_formula *destination;
-    markdown_core_node *formula_block;
+static void postprocess_node(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
+                             markdown_core_node *node) {
+    markdown_core_node *child;
+    markdown_core_node *next;
 
-    if (!source || !materialize_formula_literal(inline_formula)) {
-        parser->oom = true;
-        return NULL;
-    }
-
-    formula_block = new_formula_block_shell(extension, parser->mem, paragraph);
-    if (!formula_block) {
-        parser->oom = true;
-        return NULL;
-    }
-    destination = get_formula(formula_block);
-
-    destination->literal = source->literal;
-    destination->escaped_close = source->escaped_close;
-    source->literal.data = NULL;
-    source->literal.len = 0;
-    source->literal.alloc = 0;
-    source->escaped_close = 0;
-
-    markdown_core_node_insert_before_unchecked(paragraph, formula_block);
-    markdown_core_node_unlink(paragraph);
-    return formula_block;
-}
-
-// Block-local promotion; the parser drives it once per block in document
-// order, so no case recurses into child blocks.
-static markdown_core_node *postprocess_block(
-    markdown_core_extension *extension,
-    markdown_core_parser *parser,
-    markdown_core_node *block
-) {
-    if (block->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
-        node_formula *formula = get_formula(block);
+    if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
+        node_formula *formula = get_formula(node);
         if (formula && !formula->literal.data) {
-            if (set_formula_literal_trimmed(block, block->content.ptr, block->content.size)) {
-                markdown_core_strbuf_clear(&block->content);
-            } else {
+            /* The literal is copied OUT of `node->content` and the content is
+             * then cleared, so a failed copy would leave the chunk borrowing a
+             * buffer this very statement empties. */
+            if (!set_formula_literal_trimmed(node, node->content.ptr, node->content.size)) {
                 parser->oom = true;
             }
+            markdown_core_strbuf_clear(&node->content);
         }
-        return block;
+        return;
     }
 
-    if (block->type == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&block->as.code.info)) {
-        markdown_core_node *formula = replace_with_formula_block(
-            extension,
-            parser,
-            block,
-            block->as.code.literal.data,
-            block->as.code.literal.len
-        );
-        if (!formula) {
-            return block;
+    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code.info)) {
+        if (!replace_with_formula_block(extension, parser, node, node->as.code.literal.data,
+                                        node->as.code.literal.len)) {
+            parser->oom = true;
         }
-        return formula;
+        return;
     }
 
-    if (block->type == MARKDOWN_CORE_NODE_PARAGRAPH && block->first_child && block->first_child == block->last_child &&
-        block->first_child->type == MARKDOWN_CORE_NODE_FORMULA && is_standalone_formula_node(block->first_child)) {
-        markdown_core_node *promoted = promote_standalone_formula(extension, parser, block, block->first_child);
-        if (!promoted) {
-            return block;
+    if (node->type == MARKDOWN_CORE_NODE_PARAGRAPH && node->first_child && node->first_child == node->last_child &&
+        node->first_child->type == MARKDOWN_CORE_NODE_FORMULA && is_standalone_formula_node(node->first_child)) {
+        node_formula *formula = get_formula(node->first_child);
+        if (formula) {
+            if (!replace_with_formula_block(extension, parser, node, formula->literal.data, formula->literal.len)) {
+                parser->oom = true;
+            }
+            return;
         }
-        return promoted;
     }
 
-    return block;
+    child = node->first_child;
+    while (child) {
+        next = child->next;
+        postprocess_node(extension, parser, child);
+        child = next;
+    }
 }
 
-static const markdown_core_delimiter_rule formula_delimiter_rules[] = {
-    {
-        .pairing = MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
-        .reduction = MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
-        .close_trigger = 0,
-        .close_probe = NULL,
-    },
-    {
-        .pairing = MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
-        .reduction = MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
-        .close_trigger = 0,
-        .close_probe = NULL,
-    },
-    {
-        .pairing = MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
-        .reduction = MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
-        .close_trigger = 0,
-        .close_probe = NULL,
-    },
-    {
-        .pairing = MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
-        .reduction = MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
-        .close_trigger = 0,
-        .close_probe = NULL,
-    },
-};
-
-static const unsigned char formula_special_chars[] = {'$', '\\'};
-
-/* A formula's mode is its VALUE and its literal its TEXT, and both live in
- * the opaque payload rather than the core union. */
-static uint64_t formula_hash_value(markdown_core_extension *extension, const markdown_core_node *node, uint64_t h) {
-    const node_formula *formula = (const node_formula *)node->as.opaque;
-    (void)extension;
-    if (!is_formula_node((markdown_core_node *)node) || !formula) {
-        return markdown_core_hash_mix(h, 0);
-    }
-    h = markdown_core_hash_mix(h, (uint64_t)formula->mode);
-    return markdown_core_hash_bytes(
-        h,
-        formula->literal.data,
-        formula->literal.len < 0 ? 0 : (size_t)formula->literal.len
-    );
+static markdown_core_node *postprocess(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
+                                       markdown_core_node *root) {
+    postprocess_node(extension, parser, root);
+    return root;
 }
 
-static const markdown_core_extension formula_extension = {
+/* `$` and `\\` open a formula, and that is the whole set. `\\` is in the dispatch
+ * set and NOT the terminator set: `is_core_special_character` refuses it there
+ * anyway, and it must stay in dispatch because `handle_backslash` asks whether any
+ * extension claims `\\` before taking a core fast path. */
+const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_FORMULA = {
     .name = "formula",
     .match_inline = match,
     .last_block_matches = formula_block_matches,
     .try_opening_block = try_opening_formula_block,
-    .postprocess_block = postprocess_block,
-    .get_type_string = get_type_string,
-    .accepts_lines = accepts_lines,
-    .alloc_opaque = formula_opaque_alloc,
-    .free_opaque = formula_opaque_free,
-    .opaque_size = formula_opaque_size,
-    .restore_opaque = formula_restore_opaque,
-    .hash_value = formula_hash_value,
+    .postprocess_func = postprocess,
+    .get_type_string_func = get_type_string,
+    .can_contain_func = can_contain,
+    .accepts_lines_func = accepts_lines,
+    .opaque_alloc_func = formula_opaque_alloc,
+    .opaque_free_func = formula_opaque_free,
     .insert_inline_from_delim = insert_formula,
-    .materialize_inline = materialize_inline,
-    .delimiter_rules = formula_delimiter_rules,
-    .delimiter_rule_count = sizeof(formula_delimiter_rules) / sizeof(formula_delimiter_rules[0]),
-    .special_inline_chars = formula_special_chars,
-    .special_inline_char_count = sizeof(formula_special_chars),
+    .terminates_text = "$",
+    .dispatch = "$\\",
 };
-
-markdown_core_extension *markdown_core_formula_extension(void) {
-    // Immutable descriptor; the cast keeps the pre-existing pointer plumbing
-    // without permitting writes (see extension.h).
-    return (markdown_core_extension *)&formula_extension;
-}

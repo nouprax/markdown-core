@@ -28,24 +28,15 @@ extern "C" {
 #define _isdigit(c) ((c) >= '0' && (c) <= '9')
 #endif
 
+#define HOUDINI_ESCAPED_SIZE(x) (((x) * 12) / 10)
 #define HOUDINI_UNESCAPED_SIZE(x) (x)
 
 MARKDOWN_CORE_EXPORT
-/* The furthest byte past `&` that markdown_core_houdini_unescape_ent can read
- * before giving up. A caller that must know whether a failed entity scan was
- * cut short by the end of its buffer — rather than decided by a byte it could
- * see — compares this window against what it had. */
-markdown_core_bufsize markdown_core_houdini_entity_window(void);
-
-markdown_core_bufsize markdown_core_houdini_unescape_ent(
-    markdown_core_strbuf *ob,
-    const uint8_t *src,
-    markdown_core_bufsize size
-);
+bufsize_t houdini_unescape_ent(markdown_core_strbuf *ob, const uint8_t *src, bufsize_t size);
 MARKDOWN_CORE_EXPORT
-int markdown_core_houdini_unescape_html(markdown_core_strbuf *ob, const uint8_t *src, markdown_core_bufsize size);
+int houdini_unescape_html(markdown_core_strbuf *ob, const uint8_t *src, bufsize_t size);
 MARKDOWN_CORE_EXPORT
-void markdown_core_houdini_unescape_html_f(markdown_core_strbuf *ob, const uint8_t *src, markdown_core_bufsize size);
+void houdini_unescape_html_f(markdown_core_strbuf *ob, const uint8_t *src, bufsize_t size);
 #ifdef __cplusplus
 }
 #endif

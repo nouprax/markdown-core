@@ -240,6 +240,12 @@ rewinds out of the definition entirely, and the reference resolves without
 it. remark reads it the same way (cmark-gfm keeps the scanned title in its
 map — the `refdef-title-rewind` entry in specs/upstream-parity/deltas.json).
 
+**The title half of this is FIXED as of 0a.7** and the divergence is registered
+and reproducing; what still diverges here is only the node model, which is Step
+9b's. The expected block below is that target model — `ReferenceDefinition` and
+`LinkReference` do not exist at this engine yet — and the parity gate never
+reads it. Do not re-derive D5 from this row.
+
 ```````````````````````````````` example
 [foo]: /url
 "title" ok
@@ -253,4 +259,42 @@ Document scope=1:1..4:5 children=3
 └── Paragraph scope=4:1..4:5 children=1
     └── LinkReference scope=4:1..4:5 label="foo" form=shortcut children=1
         └── Text scope=4:2..4:4 literal="foo" children=0
+````````````````````````````````
+
+Attaching an extension must not change what CommonMark emphasis means. The
+formula and directive extensions used to fold their own special bytes into the
+parser's flanking-skip table, so `scan_delims` walked over `:`, `$` and `}` as
+though they were not there — and emphasis was lost, and in the sentinel cases
+invented, merely because an extension was attached. remark's extensions have no
+such effect on the base language, which is why these three rows are here rather
+than in an engine fixture alone.
+
+```````````````````````````````` example
+foo:_bar_
+.
+Document scope=1:1..1:9 children=1
+└── Paragraph scope=1:1..1:9 children=2
+    ├── Text scope=1:1..1:4 literal="foo:" children=0
+    └── Emphasis scope=1:5..1:9 children=1
+        └── Text scope=1:6..1:8 literal="bar" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+foo$_bar_
+.
+Document scope=1:1..1:9 children=1
+└── Paragraph scope=1:1..1:9 children=2
+    ├── Text scope=1:1..1:4 literal="foo$" children=0
+    └── Emphasis scope=1:5..1:9 children=1
+        └── Text scope=1:6..1:8 literal="bar" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+a}*.foo.*
+.
+Document scope=1:1..1:9 children=1
+└── Paragraph scope=1:1..1:9 children=2
+    ├── Text scope=1:1..1:2 literal="a}" children=0
+    └── Emphasis scope=1:3..1:9 children=1
+        └── Text scope=1:4..1:8 literal=".foo." children=0
 ````````````````````````````````

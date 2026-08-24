@@ -119,26 +119,24 @@ private struct CanonicalCoverage: Decodable {
 private struct CanonicalParseOptions: Codable {
     let smartPunctuation: Bool
     let footnotes: Bool
+    let stripHTMLComments: Bool
     let tables: Bool
     let strikethrough: Bool
     let autolinks: Bool
     let taskLists: Bool
     let formulas: Bool
     let directives: Bool
-    let crossLinks: Bool
-    let embeds: Bool
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case smartPunctuation
         case footnotes
+        case stripHTMLComments
         case tables
         case strikethrough
         case autolinks
         case taskLists
         case formulas
         case directives
-        case crossLinks
-        case embeds
     }
 
     init(from decoder: Decoder) throws {
@@ -156,14 +154,13 @@ private struct CanonicalParseOptions: Codable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         smartPunctuation = try values.decode(Bool.self, forKey: .smartPunctuation)
         footnotes = try values.decode(Bool.self, forKey: .footnotes)
+        stripHTMLComments = try values.decode(Bool.self, forKey: .stripHTMLComments)
         tables = try values.decode(Bool.self, forKey: .tables)
         strikethrough = try values.decode(Bool.self, forKey: .strikethrough)
         autolinks = try values.decode(Bool.self, forKey: .autolinks)
         taskLists = try values.decode(Bool.self, forKey: .taskLists)
         formulas = try values.decode(Bool.self, forKey: .formulas)
         directives = try values.decode(Bool.self, forKey: .directives)
-        crossLinks = try values.decode(Bool.self, forKey: .crossLinks)
-        embeds = try values.decode(Bool.self, forKey: .embeds)
     }
 }
 

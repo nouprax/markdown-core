@@ -1,45 +1,32 @@
 import MarkdownCoreC
 
-/// An inline formula (the math extension).
+/// A formula. Requires the `formula` extension.
+///
+/// The one kind that still carries ``PlacementMode``, because here it is a fact
+/// about the source rather than about the kind.
 public struct Formula: Markup {
-    /// The node's series-scoped identity; see ``MarkupID``.
-    public let id: MarkupID
-    /// The document revision at which this node's content last changed.
-    public let revision: UInt64
-    /// The node's absolute source extent, both bounds inclusive of the
-    /// construct's own markers.
-    ///
-    /// A property OF the node, not of a lookup: a document is an immutable
-    /// projection of one text, so a node in it does not move. It is
-    /// deliberately absent from `==` — position is not content — so an
-    /// append that only grows this node's extent leaves every reactive
-    /// comparison untouched.
+    /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
-    /// `standalone` for a display formula, `embedded` for one that runs with
-    /// the surrounding text.
-    ///
-    /// Either way the node is inline content, and ``FormulaBlock`` is the
-    /// kind for a formula that occupies a block of its own.
+    /// Whether the author wrote it inside a line or on its own.
     public let mode: PlacementMode
-    /// The formula source between the delimiters.
+    /// The formula's body, its delimiters excluded. One leading and one
+    /// trailing space or line ending is stripped when the body is not all
+    /// whitespace.
     public let literal: String
 
-    /// Dispatches this node to `visitor`'s matching `visit` overload.
+    /// Dispatches to the visitor's `Formula` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension Formula {
-    init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let track = builder.track(of: node)
+    init(from node: OpaquePointer) {
         var mode = MARKDOWN_CORE_PLACEMENT_EMBEDDED
         var literal = markdown_core_string()
         markdown_core_node_formula_properties(node, &mode, &literal)
         self.init(
-            id: track.id,
-            revision: track.revision,
-            scope: track.scope,
+            scope: Self.scope(from: node),
             mode: PlacementMode(from: mode),
-            literal: literal.string
+            literal: literal.requiredString
         )
     }
 }

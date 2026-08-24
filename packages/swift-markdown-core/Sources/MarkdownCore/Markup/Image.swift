@@ -1,47 +1,33 @@
 import MarkdownCoreC
 
-/// An image whose children are its inline description.
+/// An inline image — `![alt](source)`.
+///
+/// Its content is PARSED alt text: `![a *b*](s)` has an ``Emphasis`` in it, and
+/// flattening it to a string is the consumer's decision, not the parser's.
 public struct Image: Markup {
-    /// The node's series-scoped identity; see ``MarkupID``.
-    public let id: MarkupID
-    /// The document revision at which this node's content last changed.
-    public let revision: UInt64
-    /// The node's absolute source extent, both bounds inclusive of the
-    /// construct's own markers.
-    ///
-    /// A property OF the node, not of a lookup: a document is an immutable
-    /// projection of one text, so a node in it does not move. It is
-    /// deliberately absent from `==` — position is not content — so an
-    /// append that only grows this node's extent leaves every reactive
-    /// comparison untouched.
+    /// Where it is, `![` through the closing parenthesis. See ``Scope``.
     public let scope: Scope
-    /// The image source, empty when the parentheses were written empty.
-    ///
-    /// Not optional: an inline image always writes its `(…)`, so there is no
-    /// unwritten case to distinguish. `![a]()` gives `""`.
-    public let source: String
-    /// The optional image title.
-    public let title: String?
-    /// The image's parsed alt-text inline content in source order.
+    /// The alt text, as parsed inline content.
     public let content: [any Markup]
+    /// Required, for the reason ``Link/destination`` is.
+    public let source: String
+    /// Optional.
+    public let title: String?
 
-    /// Dispatches this node to `visitor`'s matching `visit` overload.
+    /// Dispatches to the visitor's `Image` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension Image {
-    init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let track = builder.track(of: node)
+    init(from node: OpaquePointer) {
         var source = markdown_core_string()
-        var title = markdown_core_string()
+        var title = markdown_core_optional_string()
         markdown_core_node_image_properties(node, &source, &title)
         self.init(
-            id: track.id,
-            revision: track.revision,
-            scope: track.scope,
-            source: source.string,
-            title: title.optional,
-            content: builder.children(node)
+            scope: Self.scope(from: node),
+            content: Self.children(from: node),
+            source: source.requiredString,
+            title: title.string
         )
     }
 }

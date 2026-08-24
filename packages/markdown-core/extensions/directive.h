@@ -3,14 +3,23 @@
 
 #include "markdown-core-extensions.h"
 
-// Compile-time extension node types; see table.h/strikethrough.h for the
-// value-range convention.
-#define MARKDOWN_CORE_NODE_DIRECTIVE ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000d))
-#define MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000f))
-#define MARKDOWN_CORE_NODE_DIRECTIVE_LABEL ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000e))
+/* C LINKAGE, AND WINDOWS IS THE ONLY PLACE THIS SHOWS. The Itanium ABI does not
+ * mangle a variable at global scope, so `MARKDOWN_CORE_EXTENSION_*` resolves on
+ * Linux and macOS whether or not the declaration says `extern "C"`; MSVC mangles
+ * every variable, and a C++ translation unit including this header without the
+ * guard fails to link with LNK2019. */
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-markdown_core_extension *markdown_core_directive_extension(void);
+/** The one, immutable descriptor. `core-extensions.c`'s table is the only
+ * place its position in the attach order is written down. */
+extern const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE;
 
-markdown_core_node *markdown_core_directive_label(markdown_core_node *node);
+int markdown_core_directive_has_label(markdown_core_node *node);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

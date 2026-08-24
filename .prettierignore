@@ -17,10 +17,6 @@ Makefile
 packages/markdown-core/tests/fixtures/
 packages/markdown-core/tests/canonical-ast/
 
-# Harness-owned state: local settings and agent worktrees live here, never
-# repository sources.
-.claude/
-
 # Generated, copied, and package-manager content
 packages/markdown-core/core/case_fold_switch.inc
 packages/markdown-core/core/entities.inc
@@ -32,8 +28,3 @@ build/
 .build/
 .gradle/
 pnpm-lock.yaml
-
-# Written by scripts/check-coverage.mjs --update-ledger. Reformatting it
-# here would put every ledger update in permanent conflict with the gate that
-# writes it.
-specs/coverage/policy.json

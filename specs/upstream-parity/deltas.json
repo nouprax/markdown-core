@@ -17,38 +17,6 @@
             "evidence": "packages/markdown-core/core/main.c, --profile gfm"
         },
         {
-            "id": "tasklist-checked-marker",
-            "kind": "deliberate-difference",
-            "summary": "Upstream decides a task item's checked state with a substring search for `[x]` over the whole line, so any unchecked item whose text contains a literal `[x]` is reported checked. Markdown Core reads the marker the scanner actually matched.",
-            "example": "- [ ] call me [x] later",
-            "upstream": "ListItem checked=true",
-            "ours": "ListItem checked=false",
-            "handling": "Registered as an expected divergence; the check requires it to still reproduce, so upstream fixing it becomes a reviewed event rather than a silent one.",
-            "evidence": "docs/reviews/2026-07-28-first-principles-review.md, finding I76, fixed in 7c5025d. Still present in upstream 0.29.0.gfm.13."
-        },
-        {
-            "id": "refdef-title-rewind",
-            "kind": "deliberate-difference",
-            "summary": "When a definition's title candidate is followed by non-whitespace (the title-rewind case), upstream keeps the scanned title in its reference map even though the title bytes stay paragraph text, so a reference to that label resolves with a title the definition does not have. Markdown Core drops the title with the rewind: scalar, map entry, and concrete spelling agree that the definition has none.",
-            "example": "[foo]: /url + a following \"title\" ok line, then [foo]",
-            "upstream": "Link title=\"title\"",
-            "ours": "Link title=null",
-            "rationale": "The CommonMark specification's own prose for this example says \"This is a link reference definition, but it has no title\", and the rewound bytes remain visible paragraph text — reading them a second time as a title states one set of bytes as two things. micromark resolves the reference without a title.",
-            "handling": "Registered as an expected divergence keyed to the regression fixture input; the check requires it to still reproduce.",
-            "evidence": "packages/markdown-core/core/inlines.c, markdown_core_parse_reference_inline rewind branch; CommonMark spec.txt, the example above \"This is a link reference definition, but it has no title\"."
-        },
-        {
-            "id": "table-split-lead-spelling",
-            "kind": "deliberate-difference",
-            "summary": "When a table's header row is recovered from a multi-line paragraph, upstream runs the split-off lead through the cell pipe-unescape before inline parsing, so the lead's escapes are processed twice: a `\\\\|` renders as `|`. Markdown Core keeps the lead's authored spelling and lets the inline pass read it as any other paragraph — `\\\\|` is an escaped backslash and a literal pipe.",
-            "example": "pre \\\\| lead, above a two-column table",
-            "upstream": "Text literal=\"pre | lead\"",
-            "ours": "Text literal=\"pre \\\\| lead\"",
-            "rationale": "The lead is not table content; a single `\\|` converges either way, and the double-processed `\\\\|` diverges from what the same bytes mean in every plain paragraph. micromark parses the lead as a plain paragraph and agrees — the twin agreement inputs are in specs/mdast-parity/corpus.md.",
-            "handling": "Registered as an expected divergence keyed to the fixture input; the check requires it to still reproduce.",
-            "evidence": "packages/markdown-core/extensions/table.c, try_inserting_table_header_paragraph; upstream extensions/table.c:283-301 (unescape_pipes on the lead)."
-        },
-        {
             "id": "footnote-resolution-model",
             "kind": "deliberate-difference",
             "summary": "Upstream unlinks a footnote definition nothing refers to. Markdown Core keeps every definition where it was written, referenced or not; whether [^label] is a footnote at all is answered by the whole-document definition set, and no numbering is projected.",
@@ -66,29 +34,143 @@
             "evidence": "docs/specs/canonical-ast.md, 'A footnote definition is an ordinary block at its source position: it is never moved to the document tail'."
         },
         {
+            "id": "footnote-call-label-bytes",
+            "kind": "deliberate-difference",
+            "summary": "Upstream builds a footnote call's label by slicing the FOLLOWING node's literal to a length computed in columns, and the two coordinate spaces are unrelated: a label crossing a line ending comes out empty and its bytes reach no node, and an entity-spelled caret indexes past the end of an owned decode buffer. Markdown Core slices the source between the two brackets, so the bytes an unresolved call degrades back to are the bytes the author wrote.",
+            "rationale": "No source byte may reach no node. Upstream loses `a`, the newline and `b` from `x[^a\\nb] tail`, and loses the WHOLE paragraph from `x [&Hat;abcdefghij] y` — it emits an empty text node. It is also a use-after-free: the loop that frees the label's neighbouring nodes runs while the label still points into one of them, and every footnote lookup then reads it.",
+            "handling": "Keyed to three inputs rather than projected: the slice is one expression in one function, not a model this side could apply to a tree, and a normalizer that rewrote labels would blind the gate to every real label difference.",
+            "evidence": "packages/markdown-core/core/inlines.c, handle_close_bracket's noMatch footnote branch. ASan on the entity input, default allocator, before the fix: heap-use-after-free, READ of size 1 in markdown_core_map_lookup.",
+            "history": "Registered at 0a.2, which fixed the MEMORY: the label became a slice of the source instead of a slice of a freed node sized in columns. Its spelling was still wrong then -- `[\\^abc] x` came back as `[^^abc] x` and `x [&Hat;...] y` as `x [^Hat;...] y` -- because the branch still opened a call on a caret the source does not spell literally. 0a.9 (D14) made the branch test the raw source byte, and neither opens a call now: both degrade to their own decoded text. Upstream still differs on all three inputs, so the entries stayed registered across that change, which is what their `pending` note said would happen."
+        },
+        {
+            "id": "footnote-duplicate-definition",
+            "kind": "deliberate-difference",
+            "summary": "When one label is defined twice, upstream resolves to whichever definition CLOSED first and destroys the other, taking everything written inside it. A definition nested inside another closes first, so the outer one and its content vanish. Markdown Core resolves to the definition that OPENED first, and the one that does not win stays in the tree where it was written.",
+            "rationale": "Two independent claims. Resolution order: document order is the order a reader resolves in, and it is already what two definitions at the same level do — close order only differs when one is nested, which is precisely where upstream's answer surprises. Retention: the loser is text the author wrote, and destroying it deletes content that has nothing to do with the duplicate label — `OUTER opens first` reached no node at all.",
+            "handling": "Keyed to one input rather than projected: dropping the loser in the normalizer would blind the gate to whether the loser survived, which is half of what this entry claims.",
+            "evidence": "packages/markdown-core/core/blocks.c, process_footnotes: registration on ENTER rather than EXIT, and the sweep that hands a still-parented definition back to the tree before the map frees what it names. cmark-gfm 0.29.0.gfm.13 reproduces both halves.",
+            "scope": "Whether an UNREFERENCED definition is kept is a different question and is not answered here: it is still dropped, and the `footnote-resolution-model` entry above states the model that changes it."
+        },
+        {
+            "id": "refdef-title-rewind",
+            "kind": "deliberate-difference",
+            "summary": "When a definition's title candidate is followed by non-whitespace (the title-rewind case), upstream keeps the scanned title in its reference map even though the title bytes stay paragraph text, so a reference to that label resolves with a title the definition does not have. Markdown Core drops the title with the rewind: scalar, map entry, and concrete spelling agree that the definition has none.",
+            "example": "[foo]: /url + a following \"title\" ok line, then [foo]",
+            "upstream": "Link title=\"title\"",
+            "ours": "Link title=null",
+            "rationale": "The CommonMark specification's own prose for this example says \"This is a link reference definition, but it has no title\", and the rewound bytes remain visible paragraph text — reading them a second time as a title states one set of bytes as two things. micromark resolves the reference without a title.",
+            "handling": "Keyed to one input rather than projected: upstream's kept title is one assignment in its reference parser, not a model. Erasing resolved titles in the normalizer would blind the gate to every real title difference. REGISTERED at 0a.7, which is where the fix landed — the `pendingStep` below said Step 9, and §4.2's defect schedule moved it forward.",
+            "evidence": "packages/markdown-core/core/inlines.c, markdown_core_parse_reference_inline rewind branch; CommonMark spec.txt, the example above \"This is a link reference definition, but it has no title\".",
+            "landed": "0a.7, together with D6 and D16. Landing them separately would have made this entry read `Link title=\"\"` for one commit and `Link title=null` for the next, because the reference path used to turn an absent title into an empty one on the way out of the map."
+        },
+        {
+            "id": "tasklist-checked-marker",
+            "kind": "deliberate-difference",
+            "summary": "Upstream decides a task item's checked state with a substring search for `[x]` over the whole line, so any unchecked item whose text contains a literal `[x]` is reported checked. Markdown Core reads the marker the scanner actually matched.",
+            "example": "- [ ] call me [x] later",
+            "upstream": "ListItem checked=true",
+            "ours": "ListItem checked=false",
+            "handling": "Keyed to one input rather than projected: upstream's substring search is a bug in one function, not a model this side could apply to a tree. Erasing `checked` in the normalizer would blind the gate to every real checked-state difference. REGISTERED at 0a.11, which is where the fix landed. The `pendingStep` this entry used to carry said Step 4c, a step number that stopped existing when the plan was re-ordered; the defect schedule owns it as D24.",
+            "evidence": "docs/reviews/2026-07-28-first-principles-review.md, finding I76, fixed in 7c5025d. Still present in upstream 0.29.0.gfm.13.",
+            "landed": "0a.11, together with D15. Activating it needed a CORPUS ADDITION and not a JSON edit: check-upstream-parity.mjs keys expectedDivergences by input and fails any entry the corpus never reaches, and `- [ ] call me [x] later` was in no fixture at all. The example is now the last one in extensions.txt."
+        },
+        {
+            "id": "empty-text-node",
+            "kind": "deliberate-difference",
+            "summary": "Upstream emits a `Text` node with no literal wherever a split leaves a fragment with nothing in it -- an autolink at column one, an autolink ending the run, and the spaces a hard break strips. Markdown Core emits no such node: a child with no literal and no source is not a node, and a parent that reports it as a child is lying about its own arity.",
+            "example": "http://example.com  (an autolink at column one), and CommonMark example 564",
+            "upstream": "Paragraph children=2, the first a Text literal=\"\"",
+            "ours": "Paragraph children=1",
+            "rationale": "Two independent claims. The node carries no bytes, so it has nothing to render and no source to point at -- the only position it can hold is borrowed or zeroed, and 36 of the 46 in this repository's own corpus held 0:0..0:0. And it makes a container's child count wrong, which is the one field a consumer cannot recover by looking harder. remark has never had the node; mdast is the second authority.",
+            "handling": "PROJECTED, not keyed to inputs: it appears wherever the construct does, so a list of inputs would go stale the moment the corpus grew. `normalize` in scripts/lib/upstream-cmark.mjs drops an empty-literal `Text` from BOTH sides, after the adjacent-run join, so a merged run that came out empty goes with it.",
+            "evidence": "packages/markdown-core/core/iterator.c, markdown_core_consolidate_text_nodes; packages/markdown-core/extensions/autolink.c, postprocess_text. Without the projection the gate reads 806/817 with eleven inputs diverging -- eight autolink, three hard-break and shortcut-reference.",
+            "landed": "0a.14, and this entry IS Q38. The question was owed by that sub-step and the answer is the projection rather than eleven `expectedDivergences` rows. specs/mdast-parity/deltas.json carries the same id and its note is amended in the same commit, because the sentence that classified this as a shape delta rather than a defect became history here."
+        },
+        {
+            "id": "footnote-failed-call-interior",
+            "kind": "deliberate-difference",
+            "summary": "When `[^label]` names a footnote nothing defines, upstream still opens a call on the caret alone and its resolution pass then replaces the whole span with ONE FLAT LITERAL, freeing the inline nodes the core parser had already built. Markdown Core recognizes a call only when the document defines the label, so an undefined one is an ordinary unmatched `[` and its interior is left exactly as CommonMark parsed it.",
+            "example": "[^~~is~~1]",
+            "upstream": "Text literal=\"[^~~is~~1]\"",
+            "ours": "Text \"[^\" + Strikethrough(\"is\") + Text \"1]\"",
+            "rationale": "CommonMark specifies the failing construct -- an unmatched `[` -- normatively, and all three of its failure branches remove the delimiter-stack entry, return a literal `]`, and touch nothing inside. Failure is DEFINED as not re-parenting. Nothing authorizes an extension to reach backwards and free nodes the core parser built for a construct that turned out not to exist: GitHub's GFM specification never uses the word footnote, and micromark-extension-gfm-footnote's own README says it matches github.com except for its bugs. cmark-gfm is also alone against ITSELF here -- remove `-e footnotes` and the same bytes through the same core parser give the parsed interior back. remark agrees with this side. And the flattening is not merely less structured, it is lossy: it is the mechanism of D10.",
+            "handling": "Keyed to two inputs rather than projected: flattening our interior in the normalizer would blind the gate to every real inline-structure difference inside brackets. REGISTERED at Step 9a.2, which is where the rule landed. Section 5.7 carries the argument and Q2 is the ruling.",
+            "evidence": "packages/markdown-core/core/inlines.c, handle_close_bracket's noMatch footnote branch, and the deleted process_footnotes pass in core/blocks.c. Still present in upstream 0.29.0.gfm.13.",
+            "landed": "Step 9a.2, together with definition retention and the deletion of the post-parse footnote pass."
+        },
+        {
+            "id": "table-split-lead-spelling",
+            "kind": "deliberate-difference",
+            "summary": "When a table's header row is recovered from a multi-line paragraph, upstream runs the split-off lead through the cell pipe-unescape before inline parsing, so the lead's escapes are processed twice: a `\\\\|` renders as `|`. Markdown Core keeps the lead's authored spelling and lets the inline pass read it as any other paragraph — `\\\\|` is an escaped backslash and a literal pipe.",
+            "example": "pre \\\\| lead, above a two-column table",
+            "upstream": "Text literal=\"pre | lead\"",
+            "ours": "Text literal=\"pre \\\\| lead\"",
+            "rationale": "The lead is not table content; a single `\\|` converges either way, and the double-processed `\\\\|` diverges from what the same bytes mean in every plain paragraph. micromark parses the lead as a plain paragraph and agrees — the twin agreement inputs are in specs/mdast-parity/corpus.md.",
+            "handling": "Keyed to one input rather than projected: upstream's unescape of the lead is one call in its table opener applied to a node that is not a cell, not a model this side could apply to a tree, and erasing backslashes in the normalizer would blind the gate to every real escape difference. REGISTERED at Step 10, which is where the fix landed. remark agrees with this side, and the same input is the mdast backlog entry specs/mdast-parity/corpus.md:207.",
+            "evidence": "packages/markdown-core/extensions/table.c, try_inserting_table_header_paragraph; upstream extensions/table.c:283-301 (unescape_pipes on the lead).",
+            "landed": "Step 10, with requirement 10's content-to-source map. Activating it needed a CORPUS ADDITION and not a JSON edit: check-upstream-parity.mjs keys expectedDivergences by input and fails any entry the corpus never reaches, and no fixture had an escaped pipe in a split-off lead. The entry was written in advance, in `pendingDeltas`, naming Step 10; §4.14.9a2 records why it was not activated there."
+        },
+        {
             "id": "reference-definition-node",
             "kind": "deliberate-difference",
             "summary": "Upstream consumes a link reference definition into its reference map, leaving no node, and resolves every reference into a Link or Image carrying a copy of the destination. Markdown Core keeps the definition as a ReferenceDefinition block where it was written, and a reference carries only its label and the form it was written in.",
             "rationale": "A destination copied into a reference appears nowhere in the span that reference covers, so the tree stated a resolution result as though it were source. It also made every definition edit reparse every unit mentioning the label, through reference_payloads_equal and collect_dependents. Stating the destination once, at the definition, is what the incremental contract's source-faithful clause requires and what makes its cost bound reachable.",
-            "handling": "The comparison applies upstream's model to this side: definitions are dropped and references are resolved against them. Which destination a reference resolves to is still compared, so resolving to the wrong one, or to none, is still a failure.",
-            "evidence": "scripts/lib/upstream-cmark.mjs, applyUpstreamReferenceModel; docs/migration/2026-08-01-incremental-canonical-ast-plan.md, M6"
+            "handling": "PROJECTED, not keyed to inputs: it appears wherever the construct does. `applyUpstreamReferenceModel` in scripts/lib/upstream-cmark.mjs applies upstream's model to THIS side -- definitions are dropped and references are resolved against them -- so which destination a reference resolves to is still compared and resolving to the wrong one, or to none, is still a failure. ACTIVE since Step 9b.1: this engine emits a `ReferenceDefinition` for every link reference definition, so the projection acts on 78 of the 885 corpus examples and the gate reports it as acting.",
+            "evidence": "scripts/lib/upstream-cmark.mjs, applyUpstreamReferenceModel; docs/migration/2026-08-01-incremental-canonical-ast-plan.md, M6",
+            "projected": true,
+            "landed": "Step 9b.1, which makes the definition a node. Only the definition half has landed: a reference is still a `Link` or an `Image` carrying a copy of the destination, so `applyUpstreamReferenceModel`'s `LinkReference`/`ImageReference` arm is written and does not yet fire. Step 9b.2 is what makes it fire, and the projection's summary is written for that state because it is one model and not two."
         }
     ],
     "expectedDivergences": [
         {
-            "id": "tasklist-checked-marker",
-            "input": "- [ ] call me [x] later\n",
-            "note": "Keyed to an input rather than projected: upstream's substring search is a bug in one function, not a model this side could apply to a tree. Erasing `checked` in the normalizer would blind the gate to every real checked-state difference."
+            "id": "footnote-call-label-bytes",
+            "input": "x[^a\nb] tail\n",
+            "note": "The label crosses a line ending. Upstream's column arithmetic underflows and it emits `x[^] tail`; the `a`, the newline and the `b` are in no node."
+        },
+        {
+            "id": "footnote-call-label-bytes",
+            "input": "x [&Hat;abcdefghij] y\n\n[^z]: note\n",
+            "note": "The caret arrives as a character reference, so the node the label was sliced out of held an OWNED one-byte decode buffer. Upstream reads far past it and then frees it; the ASan witness for the use-after-free is this input, and upstream's own output for it is an empty text node — the whole paragraph is lost. This side opens no call at all as of 0a.9 and the entity decodes, giving `x [^abcdefghij] y`."
+        },
+        {
+            "id": "footnote-call-label-bytes",
+            "input": "[\\^abc] x\n",
+            "note": "An escaped caret. Upstream manufactures a closing bracket it never read — `[^abc]] x`. This side opens no call at all as of 0a.9 and the escape simply decodes, giving `[^abc] x`."
+        },
+        {
+            "id": "footnote-duplicate-definition",
+            "input": "Ref [^dup].\n\n[^dup]: OUTER opens first\n\n    [^dup]: INNER closes first\n",
+            "note": "The nested duplicate. Upstream keeps only `INNER closes first`; `OUTER opens first` is in no node."
         },
         {
             "id": "refdef-title-rewind",
             "input": "[foo]: /url\n\"title\" ok\n\n[foo]\n",
-            "note": "Keyed to an input rather than projected: upstream's kept title is one assignment in its reference parser, not a model. Erasing resolved titles in the normalizer would blind the gate to every real title difference."
+            "note": "Keyed to an input rather than projected: upstream's kept title is one assignment in its reference parser, not a model. Erasing resolved titles in the normalizer would blind the gate to every real title difference. ACTIVE as of 0a.7."
+        },
+        {
+            "id": "footnote-call-label-bytes",
+            "input": "a[^n] b\n\na[\\^n] b\n\na[&#94;n] b\n\na[&#x5E;n] b\n\na[&#x5e;n] b\n\na[&Hat;n] b\n\n[^n]: note\n",
+            "note": "Six spellings of a caret against one label, with the definition present — the 432-case matrix reduced. Only the raw caret opens a call on this side, so five paragraphs decode to the identical text. Upstream recognizes all six, and the result is worse than a spelling difference: it emits `a[^n]] b` for the escaped one and then a single EMPTY text node for the rest, losing four paragraphs outright. Registered at 0a.9, which is the commit that made this side stop recognizing five of the six."
+        },
+        {
+            "id": "tasklist-checked-marker",
+            "input": "- [ ] call me [x] later\n",
+            "note": "Keyed to an input rather than projected: upstream's substring search is a bug in one function, not a model this side could apply to a tree. Erasing `checked` in the normalizer would blind the gate to every real checked-state difference. ACTIVE as of 0a.11."
+        },
+        {
+            "id": "footnote-failed-call-interior",
+            "input": "|Tot.....[^_a_]|\n",
+            "note": "Emphasis inside an undefined call. ACTIVE as of Step 9a.2."
+        },
+        {
+            "id": "footnote-failed-call-interior",
+            "input": "[^~~is~~1]\n",
+            "note": "Strikethrough inside an undefined call, and the input the corpus already carried as a use-after-free regression. ACTIVE as of Step 9a.2."
         },
         {
             "id": "table-split-lead-spelling",
             "input": "pre \\\\| lead\n| a | b |\n| - | - |\n",
-            "note": "Keyed to an input rather than projected: upstream's double unescape is one call in its table extension, not a model. Only a `\\\\|` in a split-off lead diverges — a single `\\|` decodes to `|` on both sides."
+            "note": "Keyed to an input rather than projected: upstream's double unescape is one call in its table extension, not a model. Only a `\\\\|` in a split-off lead diverges -- a single `\\|` decodes to `|` on both sides. ACTIVE as of Step 10."
         }
     ],
     "notDeltas": [],
@@ -96,10 +178,9 @@
         "packages/markdown-core/tests/fixtures/spec.txt",
         "packages/markdown-core/tests/fixtures/regression.txt",
         "packages/markdown-core/tests/fixtures/extensions.txt",
-        "packages/markdown-core/tests/fixtures/extensions-cross-link-embed.txt",
-        "packages/markdown-core/tests/fixtures/extensions-cross-link-embed-option-gates.txt",
         "packages/markdown-core/tests/fixtures/extensions-directive.txt",
         "packages/markdown-core/tests/fixtures/extensions-directive-option-gates.txt",
+        "packages/markdown-core/tests/fixtures/extensions-conflicts.txt",
         "packages/markdown-core/tests/fixtures/extensions-formula-github.txt",
         "packages/markdown-core/tests/fixtures/extensions-formula-latex.txt",
         "packages/markdown-core/tests/fixtures/extensions-formula-conflicts.txt",
@@ -111,5 +192,8 @@
             "note": "Both parsers default smart punctuation off, so this file is the one corpus entry that needs a profile: `--smart` upstream, `--profile gfm-smart` here."
         }
     ],
-    "corpusNote": "Every golden fixture cmark-gfm can judge. The spec and regression files are the base language. The extension files are here for the negative property: this repository's own syntax is off under --profile gfm, so those inputs must parse exactly as upstream parses them — which is what proves the extensions are additive rather than a change to the shared language. A golden that quietly encoded a divergence would be caught here; a golden no oracle ever reads is only a record that the output has not changed."
+    "corpusNote": "Every golden fixture cmark-gfm can judge. The spec and regression files are the base language. The extension files are here for the negative property: this repository's own syntax is off under --profile gfm, so those inputs must parse exactly as upstream parses them — which is what proves the extensions are additive rather than a change to the shared language. A golden that quietly encoded a divergence would be caught here; a golden no oracle ever reads is only a record that the output has not changed.\n\nRe-pinned against the untouched 1.0 baseline (580d10c) on 2026-08-20. Two cross-link/embed fixtures left the corpus with the feature. Registered divergences the reconstruction has not made yet live in `pendingDeltas`, not here: at the baseline this engine AGREES with upstream where such an entry expects it to differ. Do not restore one by hand — each returns as part of the step named in its `pendingStep`, and the gate fails the moment one starts reproducing.",
+    "pendingDeltas": [],
+    "pendingExpectedDivergences": [],
+    "pendingNote": "A pending entry describes a divergence a reconstruction step has not created yet: this engine AGREES with upstream where the entry expects it to differ, and it returns to `deltas` in the step its `pendingStep` names. BOTH HALVES ARE CHECKED. A pending entry keyed to an input fails the gate once that input starts diverging; a pending entry marked `projected` fails once its projection starts acting. And an ACTIVE projection that acts on no corpus input fails too -- a projection that never acts describes a difference this engine does not have. Neither check existed until Step 9a.2, and both were added because each had already let something through: Step 10 landed a fix, left `table-split-lead-spelling` pending and registered a second id for the same difference, and `reference-definition-node` sat in `deltas` describing Step 9b's model as though it had landed."
 }

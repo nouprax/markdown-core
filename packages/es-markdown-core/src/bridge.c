@@ -4,138 +4,84 @@
 #include "markdown_core.h"
 
 enum es_string_field {
-    ES_STRING_LITERAL = 1,
+    ES_STRING_CODE_INFO = 1,
+    ES_STRING_CODE_LANGUAGE,
+    ES_STRING_CODE_LITERAL,
+    ES_STRING_LITERAL,
     ES_STRING_FORMULA_LITERAL,
+    ES_STRING_DIRECTIVE_NAME,
+    ES_STRING_DIRECTIVE_ATTRIBUTE_NAME,
+    ES_STRING_DIRECTIVE_ATTRIBUTE_VALUE,
     ES_STRING_LINK_DESTINATION,
     ES_STRING_LINK_TITLE,
     ES_STRING_IMAGE_SOURCE,
     ES_STRING_IMAGE_TITLE,
-    ES_STRING_FOOTNOTE_ID,
-    ES_STRING_CROSS_LINK_REFERENCE,
-    ES_STRING_EMBED_REFERENCE,
-    ES_STRING_ERROR_MESSAGE,
-    /* Appended: the ids are shared with the decoder's `stringField` table, so
-     * inserting one in the middle would renumber the rest. */
-    ES_STRING_DEFINITION_LABEL,
+    ES_STRING_ERROR_MESSAGE = 14,
     ES_STRING_DEFINITION_DESTINATION,
     ES_STRING_DEFINITION_TITLE,
-    ES_STRING_REFERENCE_LABEL
+    ES_STRING_ASSOCIATION_LABEL,
+    ES_STRING_ASSOCIATION_IDENTIFIER
 };
 
-typedef struct {
-    int32_t mode;
-    uint32_t has_attributes;
-    uint32_t name_data;
-    uint32_t name_length;
-    uint32_t attribute_count;
-    uint32_t reserved;
-} es_directive_properties_layout;
-
-#define ES_LAYOUT_ASSERT(name, condition) typedef char name[(condition) ? 1 : -1]
-ES_LAYOUT_ASSERT(es_scope_size_is_16, sizeof(markdown_core_scope) == 16);
-ES_LAYOUT_ASSERT(es_scope_start_starts_at_0, offsetof(markdown_core_scope, start) == 0);
-ES_LAYOUT_ASSERT(es_scope_end_starts_at_8, offsetof(markdown_core_scope, end) == 8);
-ES_LAYOUT_ASSERT(es_position_size_is_8, sizeof(markdown_core_position) == 8);
-ES_LAYOUT_ASSERT(es_position_line_starts_at_0, offsetof(markdown_core_position, line) == 0);
-ES_LAYOUT_ASSERT(es_position_column_starts_at_4, offsetof(markdown_core_position, column) == 4);
-ES_LAYOUT_ASSERT(es_diagnostic_size_is_20, sizeof(markdown_core_diagnostic) == 20);
-ES_LAYOUT_ASSERT(es_diagnostic_code_starts_at_0, offsetof(markdown_core_diagnostic, code) == 0);
-ES_LAYOUT_ASSERT(es_diagnostic_scope_starts_at_4, offsetof(markdown_core_diagnostic, scope) == 4);
-ES_LAYOUT_ASSERT(es_directive_properties_size_is_24, sizeof(es_directive_properties_layout) == 24);
-ES_LAYOUT_ASSERT(es_directive_properties_mode_starts_at_0, offsetof(es_directive_properties_layout, mode) == 0);
-ES_LAYOUT_ASSERT(es_directive_properties_name_starts_at_8, offsetof(es_directive_properties_layout, name_data) == 8);
-ES_LAYOUT_ASSERT(
-    es_directive_properties_count_starts_at_16,
-    offsetof(es_directive_properties_layout, attribute_count) == 16
-);
-#undef ES_LAYOUT_ASSERT
-
-static void es_write_view(markdown_core_string view, uintptr_t *data, size_t *length) {
-    *data = (uintptr_t)view.data;
-    *length = view.length;
+static bool es_write_string(markdown_core_string value, uintptr_t *data, size_t *length) {
+    *data = (uintptr_t)value.data;
+    *length = value.length;
+    return true;
 }
 
-markdown_core_document *es_document_open(
-    const uint8_t *bytes,
-    size_t length,
-    uint32_t flags,
-    markdown_core_error **error
-) {
+/* PRESENCE IS THE RETURN VALUE, not the pointer. This boundary used to have
+ * one channel for two facts -- a null `data` meant both "absent" and "present
+ * but the bytes live nowhere" -- and requirement 14 says the two are different
+ * answers, so `es_string` now says which it gave. */
+static bool es_write_optional_string(markdown_core_optional_string value, uintptr_t *data, size_t *length) {
+    if (!value.has_value) {
+        *data = 0;
+        *length = 0;
+        return false;
+    }
+    return es_write_string(value.value, data, length);
+}
+
+markdown_core_document *es_document_parse(const uint8_t *source, size_t length, uint32_t flags,
+                                          markdown_core_error **error) {
     markdown_core_parse_options options;
-    markdown_core_string markdown;
     markdown_core_parse_options_init(&options);
     options.smart_punctuation = (flags & (1u << 0)) != 0;
     options.footnotes = (flags & (1u << 1)) != 0;
-    options.tables = (flags & (1u << 2)) != 0;
-    options.strikethrough = (flags & (1u << 3)) != 0;
-    options.autolinks = (flags & (1u << 4)) != 0;
-    options.task_lists = (flags & (1u << 5)) != 0;
-    options.formulas = (flags & (1u << 6)) != 0;
-    options.directives = (flags & (1u << 7)) != 0;
-    options.cross_links = (flags & (1u << 8)) != 0;
-    options.embeds = (flags & (1u << 9)) != 0;
-    markdown.data = bytes;
-    markdown.length = length;
-    return markdown_core_document_new(markdown, &options, error);
-}
-
-/* Appends `bytes` to the end of the chain's head; returns the successor
- * document, caller-owned, or NULL with `*error` set. On success the receiver
- * is SUPERSEDED: `es_document_free` is its one remaining call, which the JS
- * handle still owes it. A failure past the argument guards poisons the
- * chain, after which only `es_document_free` remains. */
-markdown_core_document *es_document_append(
-    markdown_core_document *document,
-    const uint8_t *bytes,
-    size_t length,
-    markdown_core_error **error
-) {
-    markdown_core_string chunk;
-
-    chunk.data = bytes;
-    chunk.length = length;
-    return markdown_core_document_append(document, chunk, error);
+    options.strip_html_comments = (flags & (1u << 2)) != 0;
+    options.tables = (flags & (1u << 3)) != 0;
+    options.strikethrough = (flags & (1u << 4)) != 0;
+    options.autolinks = (flags & (1u << 5)) != 0;
+    options.task_lists = (flags & (1u << 6)) != 0;
+    options.formulas = (flags & (1u << 7)) != 0;
+    options.directives = (flags & (1u << 8)) != 0;
+    return markdown_core_document_parse(source, length, &options, error);
 }
 
 void es_document_free(markdown_core_document *document) { markdown_core_document_free(document); }
 
-uint64_t es_document_series(const markdown_core_document *document) {
-    return markdown_core_document_series(document);
-}
-
-/* Every diagnostic of `document`: the count, and a pointer to the document's
- * own array, which borrows from it. Nothing to free. */
-size_t es_document_diagnostics(const markdown_core_document *document, uintptr_t *data) {
-    const markdown_core_diagnostic *rows = NULL;
-    size_t count = markdown_core_document_diagnostics(document, &rows);
-    *data = (uintptr_t)rows;
-    return count;
-}
-
 const markdown_core_node *es_document_root(const markdown_core_document *document) {
-    return markdown_core_document_root(document);
+    return markdown_core_document_semantic(document);
 }
 
-uint64_t es_node_id(const markdown_core_node *node) { return markdown_core_node_get_id(node); }
-
-uint64_t es_node_revision(const markdown_core_node *node) { return markdown_core_node_get_revision(node); }
-
-/* The node's own absolute extent, written into the shared scratch block as
- * four int32 coordinates. O(1): the parser stored it on the node. */
-void es_node_scope(const markdown_core_node *node, int32_t *coordinates) {
-    markdown_core_scope scope = markdown_core_node_scope(node);
-    coordinates[0] = scope.start.line;
-    coordinates[1] = scope.start.column;
-    coordinates[2] = scope.end.line;
-    coordinates[3] = scope.end.column;
+void es_document_source(const markdown_core_document *document, uintptr_t *data, size_t *length) {
+    es_write_string(markdown_core_document_source(document), data, length);
 }
 
-/* The one-complete-comment bit, from the parser. Deriving it a second time in
- * each binding is a second definition that can disagree with the first. */
-int32_t es_node_html_comment(const markdown_core_node *node) {
-    bool comment = false;
-    markdown_core_node_html_comment(node, &comment);
-    return comment ? 1 : 0;
+size_t es_document_line_count(const markdown_core_document *document) {
+    return markdown_core_document_line_count(document);
+}
+
+/* Written whole rather than one call per line: the binding copies the entire
+ * index anyway, and a call per line is 8410 crossings on a 674 KB document. */
+void es_document_line_starts(const markdown_core_document *document, uint32_t *out) {
+    size_t count = markdown_core_document_line_count(document);
+    size_t line;
+    for (line = 1; line <= count; line++) {
+        size_t offset = 0;
+        markdown_core_document_line_start(document, line, &offset);
+        out[line - 1] = (uint32_t)offset;
+    }
 }
 
 int32_t es_error_code(const markdown_core_error *error) { return (int32_t)markdown_core_error_get_code(error); }
@@ -152,13 +98,18 @@ const markdown_core_node *es_node_next_sibling(const markdown_core_node *node) {
     return markdown_core_node_get_next_sibling(node);
 }
 
-/* A reference's source form. Its label travels through es_string like every
- * other string; only this scalar needs an accessor of its own. */
-int32_t es_node_reference_form(const markdown_core_node *node) {
-    markdown_core_string label = {NULL, 0};
-    markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
-    markdown_core_node_reference_properties(node, &label, &form);
-    return (int32_t)form;
+int32_t es_scope_coordinate(const markdown_core_node *node, int32_t coordinate) {
+    markdown_core_scope scope = markdown_core_node_scope(node);
+    switch (coordinate) {
+    case 0:
+        return scope.start.line;
+    case 1:
+        return scope.start.column;
+    case 2:
+        return scope.end.line;
+    default:
+        return scope.end.column;
+    }
 }
 
 int32_t es_node_heading_level(const markdown_core_node *node) {
@@ -167,19 +118,29 @@ int32_t es_node_heading_level(const markdown_core_node *node) {
     return value;
 }
 
-// Layout (32 bytes): i32 flavor, i32 tight, i32 has_start, i32 padding,
-// i64 start.
-void es_node_list_properties(const markdown_core_node *node, void *out) {
+int32_t es_node_list_flavor(const markdown_core_node *node) {
     markdown_core_list_flavor flavor;
     markdown_core_optional_i64 start;
     bool tight;
-    int32_t *fields = (int32_t *)out;
     markdown_core_node_list_properties(node, &flavor, &start, &tight);
-    fields[0] = (int32_t)flavor;
-    fields[1] = tight;
-    fields[2] = start.has_value;
-    fields[3] = 0;
-    ((int64_t *)out)[2] = start.value;
+    return (int32_t)flavor;
+}
+
+int32_t es_node_list_tight(const markdown_core_node *node) {
+    markdown_core_list_flavor flavor;
+    markdown_core_optional_i64 start;
+    bool tight;
+    markdown_core_node_list_properties(node, &flavor, &start, &tight);
+    return tight;
+}
+
+int32_t es_node_list_start_state(const markdown_core_node *node, int64_t *value) {
+    markdown_core_list_flavor flavor;
+    markdown_core_optional_i64 start;
+    bool tight;
+    markdown_core_node_list_properties(node, &flavor, &start, &tight);
+    *value = start.value;
+    return start.has_value;
 }
 
 int32_t es_node_checked(const markdown_core_node *node) {
@@ -188,21 +149,18 @@ int32_t es_node_checked(const markdown_core_node *node) {
     return checked.has_value ? (checked.value ? 1 : 0) : -1;
 }
 
-// Layout (32 bytes): u32 info data/length, u32 language data/length,
-// u32 literal data/length, i32 fenced, i32 closed.
-void es_node_code_properties(const markdown_core_node *node, void *out) {
-    markdown_core_string info, language, literal;
+int32_t es_node_code_flag(const markdown_core_node *node, int32_t field) {
+    markdown_core_optional_string info, language;
+    markdown_core_string literal;
     bool fenced, closed;
-    uint32_t *fields = (uint32_t *)out;
     markdown_core_node_code_block_properties(node, &info, &language, &literal, &fenced, &closed);
-    fields[0] = (uint32_t)(uintptr_t)info.data;
-    fields[1] = (uint32_t)info.length;
-    fields[2] = (uint32_t)(uintptr_t)language.data;
-    fields[3] = (uint32_t)language.length;
-    fields[4] = (uint32_t)(uintptr_t)literal.data;
-    fields[5] = (uint32_t)literal.length;
-    fields[6] = fenced;
-    fields[7] = closed;
+    return field == 0 ? fenced : closed;
+}
+
+int32_t es_node_reference_form(const markdown_core_node *node) {
+    markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
+    markdown_core_node_reference_form(node, &form);
+    return (int32_t)form;
 }
 
 int32_t es_node_formula_mode(const markdown_core_node *node) {
@@ -230,97 +188,82 @@ int32_t es_node_table_row_header(const markdown_core_node *node) {
     return value;
 }
 
-// Layout (24 bytes): i32 mode, u32 has-attributes, the name string view, and
-// the attribute count. The entries themselves come from
-// es_node_directive_attribute_at, one crossing per pair, because a map is
-// what they are -- there is no serialized form to hand over in one piece.
-// Label presence and content come from the canonical child records, exactly
-// like every other typed child relation.
-void es_node_directive_properties(const markdown_core_node *node, void *out) {
-    markdown_core_placement_mode mode;
+/* -1 when the source wrote no attribute container at all, so an absent one and
+ * an empty one stay apart on a single return value. */
+int32_t es_node_directive_attribute_count(const markdown_core_node *node) {
     markdown_core_string name;
     bool has_attributes = false;
     size_t count = 0;
-    es_directive_properties_layout *properties = (es_directive_properties_layout *)out;
-
-    markdown_core_node_directive_properties(node, &mode, &name, &has_attributes);
-    markdown_core_node_directive_attribute_count(node, &count);
-    properties->mode = (int32_t)mode;
-    properties->has_attributes = has_attributes ? 1u : 0u;
-    properties->name_data = (uint32_t)(uintptr_t)name.data;
-    properties->name_length = (uint32_t)name.length;
-    properties->attribute_count = (uint32_t)count;
-    properties->reserved = 0;
+    markdown_core_node_directive_properties(node, &name, &has_attributes, &count);
+    return has_attributes ? (int32_t)count : -1;
 }
 
-/* One attribute pair into the shared scratch: u32 key data, u32 key length,
- * u32 value data, u32 value length. */
-int32_t es_node_directive_attribute_at(const markdown_core_node *node, size_t index, void *out) {
-    markdown_core_string key = {NULL, 0}, value = {NULL, 0};
-    uint32_t *slots = (uint32_t *)out;
+/* Set immediately before an attribute read. The bridge is single-threaded --
+ * one wasm instance, one call at a time -- so a slot is enough, and it keeps
+ * es_string's signature the one every other field already uses. */
+static size_t es_attribute_index = 0;
 
-    if (!markdown_core_node_directive_attribute_at(node, index, &key, &value)) {
-        return 0;
-    }
-    slots[0] = (uint32_t)(uintptr_t)key.data;
-    slots[1] = (uint32_t)key.length;
-    slots[2] = (uint32_t)(uintptr_t)value.data;
-    slots[3] = (uint32_t)value.length;
-    return 1;
-}
+void es_set_attribute_index(int32_t index) { es_attribute_index = index < 0 ? 0 : (size_t)index; }
 
-void es_string(const void *object, int32_t field, uintptr_t *data, size_t *length) {
-    markdown_core_string first = {NULL, 0}, second = {NULL, 0};
+bool es_string(const void *object, int32_t field, uintptr_t *data, size_t *length) {
+    markdown_core_string first = {NULL, 0}, second = {NULL, 0}, third = {NULL, 0};
+    markdown_core_optional_string opt_first = {false, {NULL, 0}}, opt_second = {false, {NULL, 0}};
     const markdown_core_node *node = (const markdown_core_node *)object;
+    bool first_bool, second_bool;
     markdown_core_placement_mode mode;
+    size_t count;
     switch (field) {
+    case ES_STRING_CODE_INFO:
+    case ES_STRING_CODE_LANGUAGE:
+        markdown_core_node_code_block_properties(node, &opt_first, &opt_second, &third, &first_bool, &second_bool);
+        return es_write_optional_string(field == ES_STRING_CODE_INFO ? opt_first : opt_second, data, length);
+    case ES_STRING_CODE_LITERAL:
+        markdown_core_node_code_block_properties(node, &opt_first, &opt_second, &third, &first_bool, &second_bool);
+        return es_write_string(third, data, length);
     case ES_STRING_LITERAL:
         markdown_core_node_literal(node, &first);
         break;
     case ES_STRING_FORMULA_LITERAL:
         markdown_core_node_formula_properties(node, &mode, &first);
         break;
+    case ES_STRING_DIRECTIVE_NAME:
+        markdown_core_node_directive_properties(node, &first, &first_bool, &count);
+        break;
+    case ES_STRING_DIRECTIVE_ATTRIBUTE_NAME:
+    case ES_STRING_DIRECTIVE_ATTRIBUTE_VALUE:
+        /* The index rides in `es_attribute_index`: `es_string` takes a field
+         * and an object, and an attribute needs one more number than that. */
+        markdown_core_node_directive_attribute_at(node, es_attribute_index, &first, &second);
+        first = field == ES_STRING_DIRECTIVE_ATTRIBUTE_NAME ? first : second;
+        break;
     case ES_STRING_LINK_DESTINATION:
+        markdown_core_node_link_properties(node, &first, &opt_first);
+        break;
     case ES_STRING_LINK_TITLE:
-        markdown_core_node_link_properties(node, &first, &second);
-        first = field == ES_STRING_LINK_DESTINATION ? first : second;
-        break;
+        markdown_core_node_link_properties(node, &first, &opt_first);
+        return es_write_optional_string(opt_first, data, length);
     case ES_STRING_IMAGE_SOURCE:
+        markdown_core_node_image_properties(node, &first, &opt_first);
+        break;
     case ES_STRING_IMAGE_TITLE:
-        markdown_core_node_image_properties(node, &first, &second);
-        first = field == ES_STRING_IMAGE_SOURCE ? first : second;
+        markdown_core_node_image_properties(node, &first, &opt_first);
+        return es_write_optional_string(opt_first, data, length);
+    case ES_STRING_DEFINITION_DESTINATION:
+        markdown_core_node_definition_resource(node, &first, &opt_first);
         break;
-    case ES_STRING_FOOTNOTE_ID:
-        markdown_core_node_footnote_id(node, &first);
-        break;
-    case ES_STRING_CROSS_LINK_REFERENCE:
-        markdown_core_node_cross_link_reference(node, &first);
-        break;
-    case ES_STRING_EMBED_REFERENCE:
-        markdown_core_node_embed_reference(node, &first);
+    case ES_STRING_DEFINITION_TITLE:
+        markdown_core_node_definition_resource(node, &first, &opt_first);
+        return es_write_optional_string(opt_first, data, length);
+    case ES_STRING_ASSOCIATION_LABEL:
+    case ES_STRING_ASSOCIATION_IDENTIFIER:
+        markdown_core_node_association(node, &first, &second);
+        first = field == ES_STRING_ASSOCIATION_LABEL ? first : second;
         break;
     case ES_STRING_ERROR_MESSAGE:
         first = markdown_core_error_get_message((const markdown_core_error *)object);
         break;
-    case ES_STRING_DEFINITION_LABEL:
-    case ES_STRING_DEFINITION_DESTINATION:
-    case ES_STRING_DEFINITION_TITLE: {
-        markdown_core_string third = {NULL, 0};
-        markdown_core_node_reference_definition_properties(node, &first, &second, &third);
-        if (field == ES_STRING_DEFINITION_DESTINATION) {
-            first = second;
-        } else if (field == ES_STRING_DEFINITION_TITLE) {
-            first = third;
-        }
-        break;
-    }
-    case ES_STRING_REFERENCE_LABEL: {
-        markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
-        markdown_core_node_reference_properties(node, &first, &form);
-        break;
-    }
     default:
         break;
     }
-    es_write_view(first, data, length);
+    return es_write_string(first, data, length);
 }

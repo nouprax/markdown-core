@@ -4,90 +4,111 @@
 #include "inlines.h"
 #include "chunk.h"
 
-static void reference_free(markdown_core_map *map, markdown_core_map_entry *_ref) {
-    markdown_core_reference *ref = (markdown_core_reference *)_ref;
-    markdown_core_mem *mem = map->mem;
-    if (ref != NULL) {
-        mem->free(mem, ref->entry.label);
-        markdown_core_chunk_free(mem, &ref->url);
-        markdown_core_chunk_free(mem, &ref->title);
-        mem->free(mem, ref);
+int markdown_core_association_init(markdown_core_mem *mem, markdown_core_association *out,
+                                   const markdown_core_chunk *label, unsigned char prefix) {
+    markdown_core_chunk raw = *label;
+    unsigned char *key;
+    bufsize_t length;
+    int lost = 0;
+
+    out->label.data = NULL;
+    out->label.len = 0;
+    out->label.alloc = 0;
+    out->identifier = out->label;
+
+    /* The label OWNS its bytes: it is read out of a block's content buffer,
+     * which a harvest may drop, and it outlives the parse. */
+    out->label = markdown_core_chunk_dup(label, 0, label->len);
+    if (!markdown_core_chunk_to_cstr(mem, &out->label)) {
+        return 0;
+    }
+
+    key = normalize_map_label(mem, &raw, &lost);
+    if (key == NULL) {
+        markdown_core_chunk_free(mem, &out->label);
+        return 0;
+    }
+    length = (bufsize_t)strlen((char *)key);
+    if (prefix) {
+        unsigned char *prefixed = (unsigned char *)mem->calloc((size_t)length + 2, 1);
+        if (!prefixed) {
+            mem->free(key);
+            markdown_core_chunk_free(mem, &out->label);
+            return 0;
+        }
+        prefixed[0] = prefix;
+        memcpy(prefixed + 1, key, (size_t)length);
+        mem->free(key);
+        key = prefixed;
+        length += 1;
+    }
+    out->identifier.data = key;
+    out->identifier.len = length;
+    out->identifier.alloc = 1;
+    return 1;
+}
+
+void markdown_core_association_free(markdown_core_mem *mem, markdown_core_association *association) {
+    markdown_core_chunk_free(mem, &association->label);
+    markdown_core_chunk_free(mem, &association->identifier);
+}
+
+/* One free function for both sets: an entry is a label and nothing else. */
+static void definition_free(markdown_core_map *map, markdown_core_map_entry *entry) {
+    if (entry != NULL) {
+        map->mem->free(entry->label);
+        map->mem->free(entry);
     }
 }
 
-/* The half both definition kinds share: a normalized, non-empty label in a
- * zeroed entry, ready for the caller's payload and markdown_core_map_add.
- * Returns NULL when the label names nothing or the entry was lost, with the
- * loss reported through the map. */
-static markdown_core_reference *definition_entry_new(markdown_core_map *map, markdown_core_chunk *label) {
-    markdown_core_reference *ref;
+static void definition_create(markdown_core_map *map, markdown_core_chunk *label) {
+    markdown_core_map_entry *entry;
     unsigned char *reflabel;
     int lost = 0;
 
-    /* The parser tolerates a missing definition map (map_new failure under a
+    /* The parser tolerates a missing map (map_new failure under a
      * NULL-returning allocator); definitions are then dropped. */
     if (map == NULL) {
-        return NULL;
+        return;
     }
 
-    reflabel = markdown_core_map_normalize_label(map->mem, label, &lost);
-
-    /* empty reference name, or composed from only whitespace */
+    reflabel = normalize_map_label(map->mem, label, &lost);
+    /* An empty label, or one that is all whitespace, defines nothing. */
     if (reflabel == NULL) {
         if (lost) {
             map->oom = 1;
         }
-        return NULL;
-    }
-
-    ref = (markdown_core_reference *)map->mem->calloc(map->mem, 1, sizeof(*ref));
-    if (!ref) {
-        map->oom = 1;
-        map->mem->free(map->mem, reflabel);
-        return NULL;
-    }
-    ref->entry.label = reflabel;
-    return ref;
-}
-
-void markdown_core_reference_create(
-    markdown_core_map *map,
-    markdown_core_chunk *label,
-    markdown_core_chunk *url,
-    markdown_core_chunk *title
-) {
-    markdown_core_reference *ref = definition_entry_new(map, label);
-    int lost = 0;
-
-    if (!ref) {
         return;
     }
-    ref->url = markdown_core_clean_url(map->mem, url, &lost);
-    ref->title = markdown_core_clean_title(map->mem, title, &lost);
-    if (lost) {
-        map->oom = 1;
-    }
 
-    markdown_core_map_add(map, &ref->entry);
+    assert(!map->prepared);
+
+    entry = (markdown_core_map_entry *)map->mem->calloc(1, sizeof(*entry));
+    if (!entry) {
+        map->oom = 1;
+        map->mem->free(reflabel);
+        return;
+    }
+    entry->label = reflabel;
+    entry->age = map->size;
+    entry->next = map->refs;
+
+    map->refs = entry;
+    map->size++;
 }
 
 markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem) {
-    return markdown_core_map_new(mem, reference_free);
+    return markdown_core_map_new(mem, definition_free);
 }
 
-void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label) {
-    markdown_core_reference *ref = definition_entry_new(map, label);
-
-    if (!ref) {
-        return;
-    }
-    /* url and title stay zero: a footnote reference expands to nothing at
-     * the reference site. The empty chunks also make the shared payload
-     * comparison trivially true, which is the right answer — identical footnote
-     * labels *are* identical definitions as far as any reference can tell. */
-    markdown_core_map_add(map, &ref->entry);
+void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label) {
+    definition_create(map, label);
 }
 
 markdown_core_map *markdown_core_footnote_definition_map_new(markdown_core_mem *mem) {
-    return markdown_core_map_new(mem, reference_free);
+    return markdown_core_map_new(mem, definition_free);
+}
+
+void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label) {
+    definition_create(map, label);
 }

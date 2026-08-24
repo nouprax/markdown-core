@@ -1,33 +1,20 @@
 import MarkdownCoreC
 
-/// The inline label owned by a ``Directive`` or ``DirectiveBlock``.
-///
-/// A missing label is represented by a nil directive property. An explicit
-/// empty `[]` is a ``DirectiveLabel`` whose ``content`` is empty.
+/// A directive's bracketed label. Its scope spans the brackets, so a label
+/// written empty is still a place in the source.
 public struct DirectiveLabel: Markup {
-    /// The node's series-scoped identity; see ``MarkupID``.
-    public let id: MarkupID
-    /// The document revision at which this node's content last changed.
-    public let revision: UInt64
-    /// The node's absolute source extent, both bounds inclusive of the
-    /// construct's own markers.
-    ///
-    /// A property OF the node, not of a lookup: a document is an immutable
-    /// projection of one text, so a node in it does not move. It is
-    /// deliberately absent from `==` — position is not content — so an
-    /// append that only grows this node's extent leaves every reactive
-    /// comparison untouched.
+    /// Where it is, INCLUDING its brackets — which is what makes a label the
+    /// source wrote empty still a place. See ``Scope``.
     public let scope: Scope
     /// The label's inline content.
     public let content: [any Markup]
 
-    /// Dispatches this node to `visitor`'s matching `visit` overload.
+    /// Dispatches to the visitor's `DirectiveLabel` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension DirectiveLabel {
-    init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let track = builder.track(of: node)
-        self.init(id: track.id, revision: track.revision, scope: track.scope, content: builder.children(node))
+    init(from node: OpaquePointer) {
+        self.init(scope: Self.scope(from: node), content: Self.children(from: node))
     }
 }

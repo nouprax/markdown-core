@@ -35,14 +35,8 @@ static const unsigned char *S_lookup_entity(const unsigned char *s, int len) {
     return S_lookup(MARKDOWN_CORE_NUM_ENTITIES / 2, 0, MARKDOWN_CORE_NUM_ENTITIES - 1, s, len);
 }
 
-markdown_core_bufsize markdown_core_houdini_entity_window(void) { return MARKDOWN_CORE_ENTITY_MAX_LENGTH; }
-
-markdown_core_bufsize markdown_core_houdini_unescape_ent(
-    markdown_core_strbuf *ob,
-    const uint8_t *src,
-    markdown_core_bufsize size
-) {
-    markdown_core_bufsize i = 0;
+bufsize_t houdini_unescape_ent(markdown_core_strbuf *ob, const uint8_t *src, bufsize_t size) {
+    bufsize_t i = 0;
 
     if (size >= 3 && src[0] == '#') {
         int codepoint = 0;
@@ -111,8 +105,8 @@ markdown_core_bufsize markdown_core_houdini_unescape_ent(
     return 0;
 }
 
-int markdown_core_houdini_unescape_html(markdown_core_strbuf *ob, const uint8_t *src, markdown_core_bufsize size) {
-    markdown_core_bufsize i = 0, org, ent;
+int houdini_unescape_html(markdown_core_strbuf *ob, const uint8_t *src, bufsize_t size) {
+    bufsize_t i = 0, org, ent;
 
     while (i < size) {
         org = i;
@@ -139,7 +133,7 @@ int markdown_core_houdini_unescape_html(markdown_core_strbuf *ob, const uint8_t 
 
         i++;
 
-        ent = markdown_core_houdini_unescape_ent(ob, src + i, size - i);
+        ent = houdini_unescape_ent(ob, src + i, size - i);
         i += ent;
 
         /* not really an entity */
@@ -151,8 +145,8 @@ int markdown_core_houdini_unescape_html(markdown_core_strbuf *ob, const uint8_t 
     return 1;
 }
 
-void markdown_core_houdini_unescape_html_f(markdown_core_strbuf *ob, const uint8_t *src, markdown_core_bufsize size) {
-    if (!markdown_core_houdini_unescape_html(ob, src, size)) {
+void houdini_unescape_html_f(markdown_core_strbuf *ob, const uint8_t *src, bufsize_t size) {
+    if (!houdini_unescape_html(ob, src, size)) {
         markdown_core_strbuf_put(ob, src, size);
     }
 }

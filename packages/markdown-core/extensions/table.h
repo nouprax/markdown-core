@@ -3,12 +3,21 @@
 
 #include "markdown-core-extensions.h"
 
-// Compile-time extension node types; values continue the core block range
-// in bundled-extension order (table, formula, directive).
-#define MARKDOWN_CORE_NODE_TABLE ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000b))
-#define MARKDOWN_CORE_NODE_TABLE_ROW ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000c))
-#define MARKDOWN_CORE_NODE_TABLE_CELL ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000d))
+/* C LINKAGE, AND WINDOWS IS THE ONLY PLACE THIS SHOWS. The Itanium ABI does not
+ * mangle a variable at global scope, so `MARKDOWN_CORE_EXTENSION_*` resolves on
+ * Linux and macOS whether or not the declaration says `extern "C"`; MSVC mangles
+ * every variable, and a C++ translation unit including this header without the
+ * guard fails to link with LNK2019. */
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-markdown_core_extension *markdown_core_table_extension(void);
+/** The one, immutable descriptor. `core-extensions.c`'s table is the only
+ * place its position in the attach order is written down. */
+extern const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_TABLE;
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

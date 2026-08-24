@@ -1,0 +1,403 @@
+{
+    "script": "scripts/audit-diagnostics.mjs",
+    "expected": [
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:100",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:9..1:16",
+                    "message": "unrecognised attribute list on directive: \"invalid\""
+                },
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "2:6..2:6",
+                    "message": "unclosed attribute list on directive: \"open\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:214",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-label-rejected",
+                    "scope": "1:3..1:3",
+                    "message": "unclosed label on directive: \"a\""
+                },
+                {
+                    "severity": "WARNING",
+                    "code": "directive-label-rejected",
+                    "scope": "1:12..1:12",
+                    "message": "unclosed label on directive: \"c\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:266",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-label-rejected",
+                    "scope": "1:3..1:3",
+                    "message": "unclosed label on directive: \"a\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:346",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:3..1:10",
+                    "message": "unrecognised attribute list on directive: \"n\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:402",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-unclosed",
+                    "scope": "1:1..1:4",
+                    "message": "container directive closed by the end of the input: \"spoiler\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:492",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:3..1:5",
+                    "message": "unrecognised attribute list on directive: \"n\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:501",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:3..1:5",
+                    "message": "unrecognised attribute list on directive: \"n\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:593",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:3..1:12",
+                    "message": "unrecognised attribute list on directive: \"n\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:606",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:3..1:7",
+                    "message": "unrecognised attribute list on directive: \"x\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:617",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:3..1:7",
+                    "message": "unrecognised attribute list on directive: \"x\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:671",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:3..1:8",
+                    "message": "unrecognised attribute list on directive: \"n\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:686",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:3..1:8",
+                    "message": "unrecognised attribute list on directive: \"n\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:723",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:3..1:11",
+                    "message": "unrecognised attribute list on directive: \"n\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:765",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:3..1:6",
+                    "message": "unrecognised attribute list on directive: \"x\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:777",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:3..1:7",
+                    "message": "unrecognised attribute list on directive: \"x\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:786",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:3..2:1",
+                    "message": "unrecognised attribute list on directive: \"x\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:801",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:3..1:9",
+                    "message": "unrecognised attribute list on directive: \"x\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:810",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:3..1:9",
+                    "message": "unrecognised attribute list on directive: \"x\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:819",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:3..1:9",
+                    "message": "unrecognised attribute list on directive: \"x\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:828",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-attributes-rejected",
+                    "scope": "1:3..1:9",
+                    "message": "unrecognised attribute list on directive: \"x\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:930",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-rejected",
+                    "scope": "1:1..1:14",
+                    "message": "malformed directive block, left as text: \"note\""
+                },
+                {
+                    "severity": "WARNING",
+                    "code": "directive-rejected",
+                    "scope": "3:1..3:20",
+                    "message": "content after a directive block's attributes, left as text: \"note\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions-directive.txt:950",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "directive-label-rejected",
+                    "scope": "1:44..1:44",
+                    "message": "unclosed label on directive: \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn...\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions.txt:221",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "table-rejected",
+                    "scope": "2:1..2:13",
+                    "message": "the delimiter row's column count does not match the header row's"
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/extensions.txt:932",
+            "findings": [
+                {
+                    "severity": "ERROR",
+                    "code": "footnote-undefined",
+                    "scope": "7:29..7:35",
+                    "message": "footnote call with no definition: \"nope\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/regression.txt:364",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "table-rejected",
+                    "scope": "2:1..2:2",
+                    "message": "the delimiter row's column count does not match the header row's"
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/regression.txt:399",
+            "findings": [
+                {
+                    "severity": "ERROR",
+                    "code": "reference-undefined",
+                    "scope": "1:85..1:108",
+                    "message": "reference to a label the document does not define: \"^footnote2\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/regression.txt:456",
+            "findings": [
+                {
+                    "severity": "ERROR",
+                    "code": "footnote-undefined",
+                    "scope": "1:10..1:15",
+                    "message": "footnote call with no definition: \"_a_\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/regression.txt:470",
+            "findings": [
+                {
+                    "severity": "ERROR",
+                    "code": "footnote-undefined",
+                    "scope": "1:1..1:10",
+                    "message": "footnote call with no definition: \"~~is~~1\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/regression.txt:515",
+            "findings": [
+                {
+                    "severity": "ERROR",
+                    "code": "footnote-undefined",
+                    "scope": "1:2..2:2",
+                    "message": "footnote call with no definition: \"a b\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/regression.txt:859",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "table-rejected",
+                    "scope": "3:1..3:7",
+                    "message": "the delimiter row's column count does not match the header row's"
+                },
+                {
+                    "severity": "ERROR",
+                    "code": "reference-undefined",
+                    "scope": "1:5..1:13",
+                    "message": "reference to a label the document does not define: \"nope\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/spec.txt:3730",
+            "findings": [
+                {
+                    "severity": "WARNING",
+                    "code": "table-rejected",
+                    "scope": "2:1..2:7",
+                    "message": "the delimiter row's column count does not match the header row's"
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/spec.txt:9783",
+            "findings": [
+                {
+                    "severity": "ERROR",
+                    "code": "reference-undefined",
+                    "scope": "1:1..1:12",
+                    "message": "reference to a label the document does not define: \"foo\\!\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/spec.txt:10161",
+            "findings": [
+                {
+                    "severity": "ERROR",
+                    "code": "reference-undefined",
+                    "scope": "1:1..1:10",
+                    "message": "reference to a label the document does not define: \"bar\""
+                }
+            ]
+        },
+        {
+            "input": "packages/markdown-core/tests/fixtures/spec.txt:10198",
+            "findings": [
+                {
+                    "severity": "ERROR",
+                    "code": "reference-undefined",
+                    "scope": "1:1..1:10",
+                    "message": "reference to a label the document does not define: \"bar\""
+                }
+            ]
+        }
+    ]
+}

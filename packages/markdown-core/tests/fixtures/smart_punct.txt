@@ -11,7 +11,7 @@ as is used in emphasis parsing:
 Document scope=1:1..2:22 children=1
 └── Paragraph scope=1:1..2:22 children=3
     ├── Text scope=1:1..1:25 literal="“Hello,” said the spider." children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:26..1:26 children=0
     └── Text scope=2:1..2:22 literal="“‘Shelob’ is my name.”" children=0
 ````````````````````````````````
 
@@ -30,7 +30,7 @@ So is 'pine.'
 Document scope=1:1..2:13 children=1
 └── Paragraph scope=1:1..2:13 children=3
     ├── Text scope=1:1..1:45 literal="‘Oak,’ ‘elm,’ and ‘beech’ are names of trees." children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:46..1:46 children=0
     └── Text scope=2:1..2:13 literal="So is ‘pine.’" children=0
 ````````````````````````````````
 
@@ -60,7 +60,7 @@ Here is some quoted '`code`' and a "[quoted link](url)".
 Document scope=1:1..1:56 children=1
 └── Paragraph scope=1:1..1:56 children=5
     ├── Text scope=1:1..1:21 literal="Here is some quoted ‘" children=0
-    ├── Code scope=1:23..1:26 mode=embedded literal="code" children=0
+    ├── Code scope=1:22..1:27 literal="code" children=0
     ├── Text scope=1:28..1:36 literal="’ and a “" children=0
     ├── Link scope=1:37..1:54 destination="url" title=null children=1
     │   └── Text scope=1:38..1:48 literal="quoted link" children=0
@@ -126,9 +126,9 @@ This isn\'t either.
 Document scope=1:1..3:6 children=1
 └── Paragraph scope=1:1..3:6 children=5
     ├── Text scope=1:1..1:22 literal="\"This is not smart.\"" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:23..1:23 children=0
     ├── Text scope=2:1..2:19 literal="This isn't either." children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=2:20..2:20 children=0
     └── Text scope=3:1..3:6 literal="5'8\"" children=0
 ````````````````````````````````
 
@@ -144,13 +144,13 @@ en -- en
 Document scope=1:1..5:4 children=1
 └── Paragraph scope=1:1..5:4 children=9
     ├── Text scope=1:1..1:21 literal="Some dashes:  em—em" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:22..1:22 children=0
     ├── Text scope=2:1..2:6 literal="en–en" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=2:7..2:7 children=0
     ├── Text scope=3:1..3:9 literal="em — em" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=3:10..3:10 children=0
     ├── Text scope=4:1..4:8 literal="en – en" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=4:9..4:9 children=0
     └── Text scope=5:1..5:4 literal="2–3" children=0
 ````````````````````````````````
 
@@ -180,23 +180,23 @@ thirteen-------------.
 Document scope=1:1..10:22 children=1
 └── Paragraph scope=1:1..10:22 children=19
     ├── Text scope=1:1..1:4 literal="one-" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=1:5..1:5 children=0
     ├── Text scope=2:1..2:5 literal="two–" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=2:6..2:6 children=0
     ├── Text scope=3:1..3:8 literal="three—" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=3:9..3:9 children=0
     ├── Text scope=4:1..4:8 literal="four––" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=4:9..4:9 children=0
     ├── Text scope=5:1..5:9 literal="five—–" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=5:10..5:10 children=0
     ├── Text scope=6:1..6:9 literal="six——" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=6:10..6:10 children=0
     ├── Text scope=7:1..7:12 literal="seven—––" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=7:13..7:13 children=0
     ├── Text scope=8:1..8:13 literal="eight––––" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=8:14..8:14 children=0
     ├── Text scope=9:1..9:13 literal="nine———" children=0
-    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── SoftBreak scope=9:14..9:14 children=0
     └── Text scope=10:1..10:22 literal="thirteen———––." children=0
 ````````````````````````````````
 

@@ -28,16 +28,9 @@ if (!chrome) throw new Error("browser suite requires Chrome/Chromium; set CHROME
 const html = `<!doctype html><meta charset="utf-8"><title>RUNNING</title><body id="result">RUNNING<script type="module">
   try {
     const api = await import('/index.js');
-    const parsed = api.Document('# Browser 🌍');
-    let streaming = api.Document('# Brow');
-    const opened = streaming;
-    streaming = streaming.append('ser 🌍');
-    opened.close();
-    const streamed = streaming.dump();
-    streaming.close();
+    const parsed = api.Document.parse('# Browser 🌍');
     const valid = parsed.content[0].kind === 'heading' &&
       parsed.content[0].content[0].literal === 'Browser 🌍' &&
-      streamed === parsed.dump() &&
       !('memory' in api) && !('initialize' in api);
     document.title = valid ? 'PASS' : 'FAIL';
     document.body.textContent = document.title;
@@ -49,10 +42,8 @@ const html = `<!doctype html><meta charset="utf-8"><title>RUNNING</title><body i
 </script>`;
 
 let reportBrowserResult;
-const requests = [];
 const server = createServer(async (request, response) => {
     try {
-        requests.push(request.url);
         if (request.url === "/") {
             response.setHeader("content-type", "text/html; charset=utf-8");
             response.end(html);
@@ -74,8 +65,13 @@ const server = createServer(async (request, response) => {
         response.setHeader("content-type", name.endsWith(".wasm") ? "application/wasm" : "text/javascript");
         response.end(await readFile(resolved));
     } catch (error) {
+        // The text goes to this harness's own stderr and NOT into the response.
+        // An exception here names a filesystem path, and the browser renders
+        // whatever the body says -- CodeQL's `js/stack-trace-exposure` and
+        // `js/xss-through-exception`, both on this one line.
+        process.stderr.write(`browser fixture server: ${String(error)}\n`);
         response.statusCode = 500;
-        response.end(String(error));
+        response.end("internal error");
     }
 });
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -93,27 +89,18 @@ try {
         };
         reportBrowserResult = (status) => finish(resolve, status);
         child = spawn(chrome, [
-            "--headless=new",
+            "--headless",
             "--disable-gpu",
             "--no-sandbox",
             "--disable-dev-shm-usage",
-            "--disable-background-networking",
-            "--disable-component-update",
-            "--disable-default-apps",
-            "--no-first-run",
             `http://127.0.0.1:${port}/`
         ]);
         child.stderr.setEncoding("utf8").on("data", (chunk) => {
             stderr += chunk;
         });
         const timeout = setTimeout(() => {
-            finish(
-                reject,
-                new Error(
-                    `Chrome browser test timed out\nexecutable: ${chrome}\nrequests: ${requests.join(", ")}\n${stderr}`
-                )
-            );
-        }, 60_000);
+            finish(reject, new Error(`Chrome browser test timed out\n${stderr}`));
+        }, 30_000);
         child.on("error", (error) => finish(reject, error));
         child.on("close", (status) => {
             finish(reject, new Error(stderr || `Chrome exited with ${status}`));

@@ -6,39 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* MKC5 wire: every payload opens with the magic and a status byte (0 =
- * success data follows, 1 = an error record follows, 2 = the mutation
- * SUCCEEDED but its payload could not be delivered — the receiver is
- * superseded and its successor is gone, so the chain is done and only
- * close remains; a status-2 payload carries nothing further). A success payload
- * carries the document handle, its series, and the root's id, revision and
- * extent, then the tree, then the diagnostics — the same shape for an open
- * and an append, because a mutation's answer is simply the next document.
- *
- * An open carries the WHOLE tree, children before parents, which is the
- * order a decoder assembles immutable values in. There is no delta
- * section: what changed is asked of the tree itself, because a node's
- * revision is the document revision at which its own fields, child list, or
- * any descendant last changed — (id, revision) is the entire update protocol.
- *
- * The append payload prunes by that protocol: a non-root subtree may be one
- * REUSE record — the tag byte and the subtree root's id — with the encoder
- * not descending into it, because the caller decoded that exact subtree from
- * the receiver already. The record is emitted only when BOTH halves of the
- * value are provably unchanged: the revision vouches for the content
- * (fields, literals, descendants), and the extent check in subtree_reused
- * vouches for the positions — a revision alone cannot, because position is
- * not content and nothing stamps a trailing construct that absorbs its
- * terminating newline into its scope end. This is sound because appending
- * never moves settled content: only the append path prunes, and an open
- * has no predecessor to reuse from.
- *
- * Node records carry (kind, id, revision, scope, fields, child-id lists). The
- * scope is in the record because it belongs to the node; it had a table of its
- * own only to serve a decoder that skipped unchanged nodes, and that decoder
- * is gone — it made a document's projection a function of how it was reached
- * rather than of its text. */
-
 typedef struct bridge_buffer {
     uint8_t *data;
     size_t size;
@@ -85,46 +52,30 @@ static void put_bytes(bridge_buffer *buffer, const uint8_t *bytes, size_t length
 
 static void put_u8(bridge_buffer *buffer, uint8_t value) { put_bytes(buffer, &value, 1); }
 
-/* Multi-byte scalars assemble little-endian in a stack buffer and append in
- * one reserve/memcpy; the wire bytes are identical to per-byte appends. */
-static void encode_u32(uint8_t *bytes, uint32_t value) {
+static void put_i32(bridge_buffer *buffer, int32_t value) {
+    uint32_t bits = (uint32_t)value;
     size_t index;
     for (index = 0; index < 4; ++index) {
-        bytes[index] = (uint8_t)(value >> (index * 8));
+        put_u8(buffer, (uint8_t)(bits >> (index * 8)));
     }
 }
 
-static void encode_u64(uint8_t *bytes, uint64_t value) {
+static void put_i64(bridge_buffer *buffer, int64_t value) {
+    uint64_t bits = (uint64_t)value;
     size_t index;
     for (index = 0; index < 8; ++index) {
-        bytes[index] = (uint8_t)(value >> (index * 8));
+        put_u8(buffer, (uint8_t)(bits >> (index * 8)));
     }
 }
 
-static void put_u32(bridge_buffer *buffer, uint32_t value) {
-    uint8_t bytes[4];
-    encode_u32(bytes, value);
-    put_bytes(buffer, bytes, sizeof(bytes));
-}
-
-static void put_i32(bridge_buffer *buffer, int32_t value) { put_u32(buffer, (uint32_t)value); }
-
-static void put_u64(bridge_buffer *buffer, uint64_t value) {
-    uint8_t bytes[8];
-    encode_u64(bytes, value);
-    put_bytes(buffer, bytes, sizeof(bytes));
-}
-
-static void put_i64(bridge_buffer *buffer, int64_t value) { put_u64(buffer, (uint64_t)value); }
-
 static void put_scope(bridge_buffer *buffer, markdown_core_scope scope) {
-    uint8_t bytes[16];
-    encode_u32(bytes, (uint32_t)scope.start.line);
-    encode_u32(bytes + 4, (uint32_t)scope.start.column);
-    encode_u32(bytes + 8, (uint32_t)scope.end.line);
-    encode_u32(bytes + 12, (uint32_t)scope.end.column);
-    put_bytes(buffer, bytes, sizeof(bytes));
+    put_i32(buffer, scope.start.line);
+    put_i32(buffer, scope.start.column);
+    put_i32(buffer, scope.end.line);
+    put_i32(buffer, scope.end.column);
 }
+
+static void put_optional_string(bridge_buffer *buffer, markdown_core_optional_string value);
 
 static void put_string(bridge_buffer *buffer, markdown_core_string value, bool present) {
     if (!present) {
@@ -139,47 +90,17 @@ static void put_string(bridge_buffer *buffer, markdown_core_string value, bool p
     put_bytes(buffer, value.data, value.length);
 }
 
-/* Still MKC5 with the append payload's REUSE record in the grammar: the
- * magic is a same-build handshake between this bridge and WireDecoder, MKC5
- * has never shipped in any release, and both sides change together in this
- * repository — so there is no older MKC5 reader anywhere for the new record
- * to confuse, and bumping the magic would version a boundary that cannot
- * skew. */
-static void put_magic(bridge_buffer *buffer) {
-    static const uint8_t magic[] = {'M', 'K', 'C', '5'};
-    put_bytes(buffer, magic, sizeof(magic));
+/* PRESENCE COMES FROM THE VALUE, not from its pointer. Every call site used to
+ * spell `value.data != NULL`, which is the convention requirement 14 replaced;
+ * length -1 on the wire already carried absence and only the source of the
+ * answer was wrong. */
+static void put_optional_string(bridge_buffer *buffer, markdown_core_optional_string value) {
+    put_string(buffer, value.value, value.has_value);
 }
 
-/* Consumes (frees) the error. */
-static void put_error(bridge_buffer *buffer, markdown_core_error *error) {
-    put_u8(buffer, 1);
-    put_i32(buffer, error == NULL ? MARKDOWN_CORE_ERROR_INTERNAL : markdown_core_error_get_code(error));
-    if (error == NULL) {
-        markdown_core_string fallback = {(const uint8_t *)"markdown parsing failed", 23};
-        put_string(buffer, fallback, true);
-    } else {
-        put_string(buffer, markdown_core_error_get_message(error), true);
-    }
-    markdown_core_error_free(error);
-}
+static void write_node(bridge_buffer *buffer, const markdown_core_node *node);
 
-static bool finish(bridge_buffer *buffer, uint8_t **output, size_t *output_length) {
-    if (output == NULL || output_length == NULL) {
-        free(buffer->data);
-        return false;
-    }
-    if (buffer->failed) {
-        free(buffer->data);
-        *output = NULL;
-        *output_length = 0;
-        return false;
-    }
-    *output = buffer->data;
-    *output_length = buffer->size;
-    return true;
-}
-
-static void put_id_list(bridge_buffer *buffer, const markdown_core_node *node, size_t count) {
+static void write_nodes(bridge_buffer *buffer, const markdown_core_node *node, size_t count) {
     size_t index;
     if (count > INT32_MAX) {
         buffer->failed = true;
@@ -191,36 +112,24 @@ static void put_id_list(bridge_buffer *buffer, const markdown_core_node *node, s
             buffer->failed = true;
             return;
         }
-        put_u64(buffer, markdown_core_node_get_id(node));
+        write_node(buffer, node);
         node = markdown_core_node_get_next_sibling(node);
     }
 }
 
-static void put_child_ids(bridge_buffer *buffer, const markdown_core_node *node) {
-    put_id_list(buffer, markdown_core_node_get_first_child(node), markdown_core_node_child_count(node));
+static void write_children(bridge_buffer *buffer, const markdown_core_node *node) {
+    write_nodes(buffer, markdown_core_node_get_first_child(node), markdown_core_node_child_count(node));
 }
 
-static void put_html_comment(bridge_buffer *buffer, const markdown_core_node *node) {
-    /* Asked of the parser, never re-derived here: the one-complete-comment
-     * rule belongs to the engine, and a second copy in each binding is a
-     * second definition that can disagree with the first. */
-    bool comment = false;
-    markdown_core_node_html_comment(node, &comment);
-    put_u8(buffer, comment ? 1 : 0);
-}
-
-static void write_record(bridge_buffer *buffer, const markdown_core_node *node) {
+static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_string first = {0};
     markdown_core_string second = {0};
     markdown_core_string third = {0};
+    markdown_core_optional_string optional_first = {0};
+    markdown_core_optional_string optional_second = {0};
 
     put_u8(buffer, (uint8_t)kind);
-    put_u64(buffer, markdown_core_node_get_id(node));
-    put_u64(buffer, markdown_core_node_get_revision(node));
-    /* The node's own extent, read in O(1) off the node. It rides in the
-     * record because it belongs to the node; a separate table existed only to
-     * serve a decoder that skipped nodes, and this one no longer does. */
     put_scope(buffer, markdown_core_node_scope(node));
 
     switch (kind) {
@@ -231,14 +140,13 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
     case MARKDOWN_CORE_KIND_STRONG:
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
     case MARKDOWN_CORE_KIND_TABLE_CELL:
-    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
-        put_child_ids(buffer, node);
+        write_children(buffer, node);
         break;
     case MARKDOWN_CORE_KIND_HEADING: {
         int32_t level = 0;
         markdown_core_node_heading_level(node, &level);
         put_i32(buffer, level);
-        put_child_ids(buffer, node);
+        write_children(buffer, node);
         break;
     }
     case MARKDOWN_CORE_KIND_THEMATIC_BREAK:
@@ -254,43 +162,46 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
         put_i64(buffer, start.value);
         put_u8(buffer, start.has_value ? 1 : 0);
         put_u8(buffer, tight ? 1 : 0);
-        put_child_ids(buffer, node);
+        write_children(buffer, node);
         break;
     }
     case MARKDOWN_CORE_KIND_LIST_ITEM: {
         markdown_core_optional_bool checked;
         markdown_core_node_list_item_checked(node, &checked);
         put_u8(buffer, checked.has_value ? (checked.value ? 1 : 0) : UINT8_MAX);
-        put_child_ids(buffer, node);
+        write_children(buffer, node);
         break;
     }
     case MARKDOWN_CORE_KIND_CODE_BLOCK: {
         bool fenced = false;
         bool closed = false;
-        markdown_core_node_code_block_properties(node, &first, &second, &third, &fenced, &closed);
-        put_string(buffer, first, first.data != NULL);
-        put_string(buffer, second, second.data != NULL);
+        markdown_core_node_code_block_properties(node, &optional_first, &optional_second, &third, &fenced, &closed);
+        put_optional_string(buffer, optional_first);
+        put_optional_string(buffer, optional_second);
         put_string(buffer, third, true);
         put_u8(buffer, fenced ? 1 : 0);
         put_u8(buffer, closed ? 1 : 0);
         break;
     }
     case MARKDOWN_CORE_KIND_HTML_BLOCK:
-    case MARKDOWN_CORE_KIND_HTML:
-        markdown_core_node_literal(node, &first);
-        put_html_comment(buffer, node);
-        put_string(buffer, first, true);
-        break;
     case MARKDOWN_CORE_KIND_TEXT:
     case MARKDOWN_CORE_KIND_CODE:
+    case MARKDOWN_CORE_KIND_HTML:
         markdown_core_node_literal(node, &first);
         put_string(buffer, first, true);
         break;
-    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
     case MARKDOWN_CORE_KIND_FORMULA: {
+        /* The one kind whose mode is a fact about the source rather than about
+         * the kind; the other five stopped carrying it at Q29. */
         markdown_core_placement_mode mode;
         markdown_core_node_formula_properties(node, &mode, &first);
         put_i32(buffer, (int32_t)mode);
+        put_string(buffer, first, true);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_FORMULA_BLOCK: {
+        markdown_core_placement_mode mode;
+        markdown_core_node_formula_properties(node, &mode, &first);
         put_string(buffer, first, true);
         break;
     }
@@ -308,97 +219,89 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
             markdown_core_node_table_alignment_at(node, index, &alignment);
             put_u8(buffer, (uint8_t)alignment);
         }
-        put_child_ids(buffer, node);
+        write_children(buffer, node);
         break;
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE: {
-        markdown_core_placement_mode mode;
+        /* The label is a CHILD NODE now, so it needs no wire slot of its own:
+         * the children are written whole, exactly as for every other kind, and
+         * the decoder tells a label from content by its kind. What is still
+         * spelled out is the attribute sequence, because a count of pairs is
+         * not something write_children can carry. */
         bool has_attributes = false;
         size_t count = 0;
         size_t index;
-        markdown_core_node_directive_properties(node, &mode, &first, &has_attributes);
-        put_i32(buffer, (int32_t)mode);
+        markdown_core_node_directive_properties(node, &first, &has_attributes, &count);
         put_string(buffer, first, true);
-        // The attribute map: a presence byte, a count, then the pairs in the
-        // order the engine holds them. No serialized form travels the wire,
-        // because there is none -- the value IS the map.
-        put_u8(buffer, has_attributes ? 1u : 0u);
-        if (has_attributes) {
-            markdown_core_node_directive_attribute_count(node, &count);
-            if (count > INT32_MAX) {
+        put_u8(buffer, has_attributes ? 1 : 0);
+        if (count > INT32_MAX) {
+            buffer->failed = true;
+            return;
+        }
+        put_i32(buffer, has_attributes ? (int32_t)count : 0);
+        for (index = 0; has_attributes && index < count; ++index) {
+            if (!markdown_core_node_directive_attribute_at(node, index, &first, &second)) {
                 buffer->failed = true;
                 return;
             }
-            put_u32(buffer, (uint32_t)count);
-            for (index = 0; index < count; index++) {
-                /* The count is already on the wire. Stopping short would
-                 * leave the decoder reading the next record's bytes as a
-                 * string length, so a disagreement fails the payload. */
-                if (!markdown_core_node_directive_attribute_at(node, index, &first, &second)) {
-                    buffer->failed = true;
-                    return;
-                }
-                put_string(buffer, first, true);
-                put_string(buffer, second, true);
-            }
+            put_string(buffer, first, true);
+            put_string(buffer, second, true);
         }
-        put_child_ids(buffer, node);
+        write_children(buffer, node);
         break;
     }
+    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
+        write_children(buffer, node);
+        break;
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
-        markdown_core_node_footnote_id(node, &first);
-        put_string(buffer, first, true);
-        put_child_ids(buffer, node);
-        break;
-    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
-        markdown_core_node_footnote_id(node, &first);
-        put_string(buffer, first, true);
-        break;
-    case MARKDOWN_CORE_KIND_CROSS_LINK:
-        markdown_core_node_cross_link_reference(node, &first);
-        put_string(buffer, first, true);
-        break;
-    case MARKDOWN_CORE_KIND_EMBED:
-        markdown_core_node_embed_reference(node, &first);
-        put_string(buffer, first, true);
-        break;
-    /* A destination, a source and a definition's destination are always
-     * written — an inline link always spells its `(...)` — so they go on the
-     * wire as present. Only the titles are optional, and only they carry the
-     * absent marker; the decoder reads the pairing exactly that way. */
-    case MARKDOWN_CORE_KIND_LINK:
-        markdown_core_node_link_properties(node, &first, &second);
-        put_string(buffer, first, true);
-        put_string(buffer, second, second.data != NULL);
-        put_child_ids(buffer, node);
-        break;
-    case MARKDOWN_CORE_KIND_IMAGE:
-        markdown_core_node_image_properties(node, &first, &second);
-        put_string(buffer, first, true);
-        put_string(buffer, second, second.data != NULL);
-        put_child_ids(buffer, node);
-        break;
-    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
-        markdown_core_node_reference_definition_properties(node, &first, &second, &third);
+        markdown_core_node_association(node, &first, &second);
         put_string(buffer, first, true);
         put_string(buffer, second, true);
-        put_string(buffer, third, third.data != NULL);
+        write_children(buffer, node);
+        break;
+    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
+        markdown_core_node_association(node, &first, &second);
+        put_string(buffer, first, true);
+        put_string(buffer, second, true);
+        break;
+    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
+        markdown_core_node_association(node, &first, &second);
+        markdown_core_node_definition_resource(node, &third, &optional_first);
+        put_string(buffer, first, true);
+        put_string(buffer, second, true);
+        put_string(buffer, third, true);
+        put_optional_string(buffer, optional_first);
         break;
     case MARKDOWN_CORE_KIND_LINK_REFERENCE:
     case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: {
         markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
-        markdown_core_node_reference_properties(node, &first, &form);
+        markdown_core_node_association(node, &first, &second);
+        markdown_core_node_reference_form(node, &form);
         put_string(buffer, first, true);
-        put_u8(buffer, (uint8_t)form);
-        put_child_ids(buffer, node);
+        put_string(buffer, second, true);
+        put_i32(buffer, (int32_t)form);
+        write_children(buffer, node);
         break;
     }
+    /* A DESTINATION IS REQUIRED (Q26) and always has a length on the wire. */
+    case MARKDOWN_CORE_KIND_LINK:
+        markdown_core_node_link_properties(node, &first, &optional_first);
+        put_string(buffer, first, true);
+        put_optional_string(buffer, optional_first);
+        write_children(buffer, node);
+        break;
+    case MARKDOWN_CORE_KIND_IMAGE:
+        markdown_core_node_image_properties(node, &first, &optional_first);
+        put_string(buffer, first, true);
+        put_optional_string(buffer, optional_first);
+        write_children(buffer, node);
+        break;
     case MARKDOWN_CORE_KIND_TABLE_ROW: {
         bool header = false;
         markdown_core_node_table_row_is_header(node, &header);
         put_u8(buffer, header ? 1 : 0);
-        put_child_ids(buffer, node);
+        write_children(buffer, node);
         break;
     }
     default:
@@ -407,175 +310,56 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
     }
 }
 
-/* The append payload's one non-node record: the tag byte, then the reused
- * subtree root's id, and nothing else — the value the caller holds already
- * carries the revision, the scope, and the whole subtree. The tag can never
- * collide with a node record's kind byte: kind numbering is append-only and
- * grows upward from the mid-thirties, and 0xFF is reserved for this record
- * forever. */
-#define BRIDGE_REUSE_TAG 0xFFu
-
-/* The append payload's reuse gate: the caller's baseline revision, and the
- * receiver's last content coordinate. NULL on the open payload, which never
- * reuses. */
-typedef struct reuse_gate {
-    uint64_t baseline;
-    markdown_core_position receiver_end;
-} reuse_gate;
-
-/* A subtree the receiver already delivered, byte for byte. The root is never
- * reused — its record is the payload's mount point, and the decoder's root
- * sink has no mirror to take it from.
+/* THE SOURCE A SCOPE'S COORDINATES ARE COUNTED AGAINST, after the tree.
  *
- * Both halves of the value must be provably unchanged, and each has its own
- * test. The revision vouches for the CONTENT: a revision at most the
- * baseline means fields, literals, and descendants are exactly what the
- * receiver delivered. It cannot vouch for the EXTENT, because position is
- * not content: a trailing construct absorbs its terminating newline into its
- * scope end when the next line arrives, and nothing stamps that. So the
- * extent is proved by geometry instead — under append, starts never move
- * and an end can only have changed by growing to or past the receiver's end
- * of text, so an end strictly before the receiver's LAST CONTENT COORDINATE
- * is guaranteed still true. That coordinate (the receiver root's extent end)
- * is a lower bound of the old end of text read off the public surface, so
- * the test errs conservative: at worst the trailing spine re-encodes
- * records that did not change, which the decoder resolves by (id, revision)
- * all the same. */
-static bool subtree_reused(const markdown_core_node *node, const markdown_core_node *root,
-                           const reuse_gate *prune) {
-    markdown_core_scope scope;
-    if (prune == NULL || node == root || markdown_core_node_get_revision(node) > prune->baseline) {
-        return false;
-    }
-    scope = markdown_core_node_scope(node);
-    return scope.end.line < prune->receiver_end.line ||
-           (scope.end.line == prune->receiver_end.line &&
-            scope.end.column < prune->receiver_end.column);
-}
-
-/* Postorder: children before parents, which is the order a decoder assembles
- * immutable values in. A reused subtree is a leaf of this walk: the encoder
- * emits its one record and does not descend, which is what makes the append
- * payload O(changed) rather than O(tree). */
-static const markdown_core_node *postorder_first(const markdown_core_node *node,
-                                                 const markdown_core_node *root,
-                                                 const reuse_gate *prune) {
-    const markdown_core_node *child;
-    while (!subtree_reused(node, root, prune) &&
-           (child = markdown_core_node_get_first_child(node)) != NULL) {
-        node = child;
-    }
-    return node;
-}
-
-static const markdown_core_node *postorder_next(const markdown_core_node *node,
-                                                const markdown_core_node *root,
-                                                const reuse_gate *prune) {
-    const markdown_core_node *next;
-    if (node == root) {
-        return NULL;
-    }
-    next = markdown_core_node_get_next_sibling(node);
-    if (next == NULL) {
-        return markdown_core_node_get_parent(node);
-    }
-    return postorder_first(next, root, prune);
-}
-
-static size_t postorder_count(const markdown_core_node *root, const reuse_gate *prune) {
-    const markdown_core_node *node = postorder_first(root, root, prune);
-    size_t count = 0;
-    while (node != NULL) {
-        count++;
-        node = postorder_next(node, root, prune);
-    }
-    return count;
-}
-
-static void encode_tree(bridge_buffer *buffer, const markdown_core_node *root,
-                        const reuse_gate *prune) {
-    const markdown_core_node *node;
-    size_t count = postorder_count(root, prune);
-    if (count > INT32_MAX) {
-        buffer->failed = true;
-        return;
-    }
-    put_i32(buffer, (int32_t)count);
-    for (node = postorder_first(root, root, prune); node != NULL && !buffer->failed;
-         node = postorder_next(node, root, prune)) {
-        if (subtree_reused(node, root, prune)) {
-            put_u8(buffer, BRIDGE_REUSE_TAG);
-            put_u64(buffer, markdown_core_node_get_id(node));
-        } else {
-            write_record(buffer, node);
-        }
-    }
-}
-
-static void encode_diagnostics(bridge_buffer *buffer, const markdown_core_document *document) {
-    const markdown_core_diagnostic *rows = NULL;
-    size_t count = markdown_core_document_diagnostics(document, &rows);
+ * It goes on the wire because the JVM cannot hold a native pointer past the
+ * parse. Layout, little-endian throughout: the source length and its bytes,
+ * then the line count and one offset per line. */
+static void write_concrete(bridge_buffer *buffer, const markdown_core_document *document) {
+    size_t lines = markdown_core_document_line_count(document);
+    markdown_core_string source = markdown_core_document_source(document);
     size_t index;
 
-    if (count > INT32_MAX) {
+    if (source.length > INT32_MAX || lines > INT32_MAX) {
         buffer->failed = true;
         return;
     }
-    put_i32(buffer, (int32_t)count);
-    for (index = 0; index < count && !buffer->failed; ++index) {
-        put_i32(buffer, (int32_t)rows[index].code);
-        put_scope(buffer, rows[index].scope);
+    put_i32(buffer, (int32_t)source.length);
+    put_bytes(buffer, source.data, source.length);
+
+    put_i32(buffer, (int32_t)lines);
+    for (index = 1; index <= lines; index++) {
+        size_t offset = 0;
+        if (!markdown_core_document_line_start(document, index, &offset)) {
+            buffer->failed = true;
+            return;
+        }
+        put_i32(buffer, (int32_t)offset);
     }
 }
 
 static void apply_options(markdown_core_parse_options *options, uint32_t mask) {
     options->smart_punctuation = (mask & (1u << 0)) != 0;
     options->footnotes = (mask & (1u << 1)) != 0;
-    options->tables = (mask & (1u << 2)) != 0;
-    options->strikethrough = (mask & (1u << 3)) != 0;
-    options->autolinks = (mask & (1u << 4)) != 0;
-    options->task_lists = (mask & (1u << 5)) != 0;
-    options->formulas = (mask & (1u << 6)) != 0;
-    options->directives = (mask & (1u << 7)) != 0;
-    options->cross_links = (mask & (1u << 8)) != 0;
-    options->embeds = (mask & (1u << 9)) != 0;
+    options->strip_html_comments = (mask & (1u << 2)) != 0;
+    options->tables = (mask & (1u << 3)) != 0;
+    options->strikethrough = (mask & (1u << 4)) != 0;
+    options->autolinks = (mask & (1u << 5)) != 0;
+    options->task_lists = (mask & (1u << 6)) != 0;
+    options->formulas = (mask & (1u << 7)) != 0;
+    options->directives = (mask & (1u << 8)) != 0;
 }
 
-static markdown_core_document *document_of(uint64_t handle) {
-    return (markdown_core_document *)(uintptr_t)handle;
-}
-
-/* Handle, series, root id, root revision — the header every success payload
- * carries, whichever body follows it.
- *
- * The ROOT NODE's revision, not the document's: the document's revision counts
- * commits, while a node's counts the commits that changed it, and an append
- * that changes nothing advances the first and not the second. The root is a
- * Markup node like any other and answers by the node rule. */
-static const markdown_core_node *put_header(bridge_buffer *buffer,
-                                            const markdown_core_document *document) {
-    const markdown_core_node *root = markdown_core_document_root(document);
-    put_u8(buffer, 0);
-    put_u64(buffer, (uint64_t)(uintptr_t)document);
-    put_u64(buffer, markdown_core_document_series(document));
-    if (root == NULL) {
-        buffer->failed = true;
-        return NULL;
-    }
-    put_u64(buffer, markdown_core_node_get_id(root));
-    put_u64(buffer, markdown_core_node_get_revision(root));
-    put_scope(buffer, markdown_core_node_scope(root));
-    return root;
-}
-
-bool markdown_core_kotlin_open(const uint8_t *source, size_t length, uint32_t options_mask,
-                               uint8_t **output, size_t *output_length) {
+bool markdown_core_kotlin_parse(const uint8_t *source, size_t length, uint32_t options_mask, uint8_t **output,
+                                size_t *output_length) {
+    /* MKC5: an error lost its scope byte when Step 13 deleted
+     * `markdown_core_error_get_scope` -- a parse failure carries no scope. */
+    static const uint8_t magic[] = {'M', 'K', 'C', '5'};
     markdown_core_parse_options options;
     markdown_core_error *error = NULL;
     markdown_core_document *document;
-    markdown_core_string text;
-    const markdown_core_node *root;
     bridge_buffer buffer = {0};
+    const markdown_core_node *root;
 
     if (output == NULL || output_length == NULL) {
         return false;
@@ -584,100 +368,38 @@ bool markdown_core_kotlin_open(const uint8_t *source, size_t length, uint32_t op
     *output_length = 0;
     markdown_core_parse_options_init(&options);
     apply_options(&options, options_mask);
+    document = markdown_core_document_parse(source, length, &options, &error);
 
-    put_magic(&buffer);
-    text.data = source;
-    text.length = length;
-    document = markdown_core_document_new(text, &options, &error);
+    put_bytes(&buffer, magic, sizeof(magic));
     if (document == NULL) {
-        put_error(&buffer, error);
-        return finish(&buffer, output, output_length);
-    }
-    root = put_header(&buffer, document);
-    if (root != NULL) {
-        encode_tree(&buffer, root, NULL);
-        encode_diagnostics(&buffer, document);
-    }
-    if (buffer.failed) {
-        /* The handle never reaches the caller, so this call owns it. */
+        put_u8(&buffer, 1);
+        put_i32(&buffer, error == NULL ? MARKDOWN_CORE_ERROR_INTERNAL : markdown_core_error_get_code(error));
+        if (error == NULL) {
+            markdown_core_string fallback = {(const uint8_t *)"markdown parsing failed", 23};
+            put_string(&buffer, fallback, true);
+        } else {
+            put_string(&buffer, markdown_core_error_get_message(error), true);
+        }
+        markdown_core_error_free(error);
+    } else {
+        put_u8(&buffer, 0);
+        root = markdown_core_document_semantic(document);
+        if (root == NULL) {
+            buffer.failed = true;
+        } else {
+            write_node(&buffer, root);
+            write_concrete(&buffer, document);
+        }
         markdown_core_document_free(document);
     }
-    return finish(&buffer, output, output_length);
-}
 
-/* The mutation succeeded but its payload could not be encoded. The successor
- * cannot reach the caller through this protocol, and the receiver is already
- * superseded at the engine, so the honest answer is status 2: the chain is
- * done, only close remains. The successor's one owner is this call; the tiny
- * replacement payload can itself fail to allocate, in which case finish
- * degrades to the hard `false` the wrapper already treats as fatal. */
-static bool deliver_lost(bridge_buffer *buffer, markdown_core_document *successor,
-                         uint8_t **output, size_t *output_length) {
-    markdown_core_document_free(successor);
-    free(buffer->data);
-    memset(buffer, 0, sizeof(*buffer));
-    put_magic(buffer);
-    put_u8(buffer, 2);
-    return finish(buffer, output, output_length);
-}
-
-bool markdown_core_kotlin_append(uint64_t handle, const uint8_t *chunk, size_t length,
-                                 uint64_t baseline, uint8_t **output, size_t *output_length) {
-    markdown_core_document *document = document_of(handle);
-    markdown_core_document *successor;
-    markdown_core_error *error = NULL;
-    markdown_core_string text;
-    const markdown_core_node *root;
-    const markdown_core_node *receiver_root;
-    reuse_gate reuse;
-    const reuse_gate *prune = NULL;
-    bridge_buffer buffer = {0};
-
-    if (output == NULL || output_length == NULL) {
+    if (buffer.failed) {
+        free(buffer.data);
         return false;
     }
-    *output = NULL;
-    *output_length = 0;
-
-    put_magic(&buffer);
-    text.data = chunk;
-    text.length = length;
-
-    /* The receiver's last content coordinate, for the reuse gate's extent
-     * half — read BEFORE the append, because what the gate needs is where
-     * the RECEIVER ended. Reading it afterwards happens to give the same
-     * answer while every mutation builds a separate tree, and stops doing so
-     * the moment a successor can share its predecessor's root: the bound
-     * would then describe the successor's own end, every appended node would
-     * sit below it, and a gate meant to be conservative would start claiming
-     * that changed subtrees may be reused. Without a root (or on the
-     * sentinel extent of an empty receiver) nothing passes the gate and the
-     * payload simply ships whole. */
-    receiver_root = markdown_core_document_root(document);
-    if (receiver_root != NULL) {
-        reuse.baseline = baseline;
-        reuse.receiver_end = markdown_core_node_scope(receiver_root).end;
-        prune = &reuse;
-    }
-
-    successor = markdown_core_document_append(document, text, &error);
-    if (successor == NULL) {
-        put_error(&buffer, error);
-        return finish(&buffer, output, output_length);
-    }
-    root = put_header(&buffer, successor);
-    if (root != NULL) {
-        encode_tree(&buffer, root, prune);
-        encode_diagnostics(&buffer, successor);
-    }
-    if (buffer.failed) {
-        return deliver_lost(&buffer, successor, output, output_length);
-    }
-    return finish(&buffer, output, output_length);
-}
-
-void markdown_core_kotlin_release(uint64_t handle) {
-    markdown_core_document_free(document_of(handle));
+    *output = buffer.data;
+    *output_length = buffer.size;
+    return true;
 }
 
 void markdown_core_kotlin_free(uint8_t *output) { free(output); }

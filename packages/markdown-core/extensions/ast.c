@@ -6,9 +6,6 @@
 #include "../include/markdown_core.h"
 
 #include "ast_internal.h"
-#include "buffer.h"
-#include "document_internal.h"
-#include "cross_reference.h"
 #include "directive.h"
 #include "formula.h"
 #include "markdown-core-extensions.h"
@@ -19,14 +16,23 @@
 #include <node.h>
 #include <parser.h>
 
-/* No scope. An error here is the parse failing to RUN — a rejected argument,
- * a failed allocation, a broken invariant — and none of those is attributable
- * to an extent of the input. What IS attributable, a directive's `{...}` that
- * did not parse, is a markdown_core_diagnostic and carries a scope that is
- * not optional. */
+/* A parse failure, and NOTHING ELSE. Requirement 13's converse is that a parse
+ * failure is not a diagnostic: `markdown_core_error` means there is no
+ * document, and an input the parser could not turn into a document has no
+ * extent to point at. There is therefore no scope here to offer, and no
+ * accessor to offer one -- the two fields that used to be here were never
+ * written by any path in the library, and they went with
+ * `markdown_core_error_get_scope` at Step 13.
+ *
+ * `message` is a STRING LITERAL and is not copied. Every one of the eight
+ * failures this file can report names a constant, and the copy was the second
+ * allocation in a function whose whole job is to report that an allocation
+ * failed: on a `malloc` that returned NULL it freed the error and returned,
+ * leaving the caller with no document AND no error. One allocation, one
+ * failure mode. */
 struct markdown_core_error {
     markdown_core_error_code code;
-    char *message;
+    const char *message;
 };
 
 typedef struct dump_buffer {
@@ -34,6 +40,8 @@ typedef struct dump_buffer {
     size_t size;
     size_t capacity;
     bool failed;
+    bool *more;
+    size_t more_capacity;
 } dump_buffer;
 
 static void clear_error(markdown_core_error **error) {
@@ -44,7 +52,6 @@ static void clear_error(markdown_core_error **error) {
 
 static void set_error(markdown_core_error **error, markdown_core_error_code code, const char *message) {
     markdown_core_error *value;
-    size_t length;
     if (!error) {
         return;
     }
@@ -52,19 +59,9 @@ static void set_error(markdown_core_error **error, markdown_core_error_code code
     if (!value) {
         return;
     }
-    length = strlen(message);
-    value->message = (char *)malloc(length + 1);
-    if (!value->message) {
-        free(value);
-        return;
-    }
-    memcpy(value->message, message, length + 1);
+    value->message = message;
     value->code = code;
     *error = value;
-}
-
-void markdown_core_ast_set_error(markdown_core_error **error, markdown_core_error_code code, const char *message) {
-    set_error(error, code, message);
 }
 
 void markdown_core_parse_options_init(markdown_core_parse_options *options) {
@@ -73,52 +70,176 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
     }
     options->smart_punctuation = true;
     options->footnotes = true;
+    options->strip_html_comments = true;
     options->tables = true;
     options->strikethrough = true;
     options->autolinks = true;
     options->task_lists = true;
     options->formulas = true;
     options->directives = true;
-    options->cross_links = true;
-    options->embeds = true;
 }
 
-/* Whether this handle is still the chain's head — the one document whose
- * tree the chain keeps — on a chain that is still whole. Reads that would
- * otherwise answer with a tree route through here, so a superseded handle
- * answers as if it had none rather than describing text that has since
- * grown past it, and a poisoned chain answers as if it had none rather than
- * showing the tree a failed append left half-grown: "only free remains" is
- * enforced, not just documented. */
-static bool document_is_head(const markdown_core_document *document) {
-    return document && !document->chain->poisoned && document->revision + 1 == document->chain->next_revision;
-}
+markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
+                                                     const markdown_core_parse_options *requested_options,
+                                                     markdown_core_error **error) {
+    markdown_core_parse_options defaults;
+    const markdown_core_parse_options *options = requested_options;
+    markdown_core_document *document;
+    markdown_core_parser *parser;
+    markdown_core_diagnostics pending_diagnostics;
+    unsigned extensions = 0;
+    int native_options = MARKDOWN_CORE_OPT_VALIDATE_UTF8;
 
-const markdown_core_node *markdown_core_document_root(const markdown_core_document *document) {
-    return document_is_head(document) ? document_generation_root(&document->chain->head) : NULL;
-}
-
-const markdown_core_node *markdown_core_document_concrete(const markdown_core_document *document) {
-    /* Internal boundary: callers hold a parsed document, so there is no NULL
-     * to tolerate — the semantic root and the concrete owner are the same
-     * retained tree (ast_internal.h). */
-    return document_generation_root(&document->chain->head);
-}
-
-size_t markdown_core_document_diagnostics(
-    const markdown_core_document *document,
-    const markdown_core_diagnostic **diagnostics
-) {
-    if (!document_is_head(document)) {
-        if (diagnostics) {
-            *diagnostics = NULL;
-        }
-        return 0;
+    clear_error(error);
+    if (!source && length != 0) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "source must not be null when length is nonzero");
+        return NULL;
     }
-    if (diagnostics) {
-        *diagnostics = document->chain->head.diagnostics;
+    if (!options) {
+        markdown_core_parse_options_init(&defaults);
+        options = &defaults;
     }
-    return document->chain->head.diagnostic_count;
+    if (options->smart_punctuation) {
+        native_options |= MARKDOWN_CORE_OPT_SMART;
+    }
+    if (options->footnotes) {
+        native_options |= MARKDOWN_CORE_OPT_FOOTNOTES;
+    }
+    if (options->strip_html_comments) {
+        native_options |= MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
+    }
+
+    parser = markdown_core_parser_new(native_options);
+    if (!parser) {
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate parser");
+        return NULL;
+    }
+
+    /* The facade says WHICH extensions, never in what order; `core-extensions.c`
+     * owns the order and `core/main.c` asks the same question the same way. The
+     * two used to disagree -- this side attached `directive` last and the CLI
+     * attached it first -- which is D15. */
+    if (options->tables) {
+        extensions |= MARKDOWN_CORE_CORE_EXTENSION_TABLE;
+    }
+    if (options->strikethrough) {
+        extensions |= MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH;
+    }
+    if (options->autolinks) {
+        extensions |= MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK;
+    }
+    if (options->task_lists) {
+        extensions |= MARKDOWN_CORE_CORE_EXTENSION_TASKLIST;
+    }
+    if (options->formulas) {
+        extensions |= MARKDOWN_CORE_CORE_EXTENSION_FORMULA;
+    }
+    if (options->directives) {
+        extensions |= MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE;
+    }
+    if (!markdown_core_core_extensions_attach(parser, extensions)) {
+        markdown_core_parser_free(parser);
+        set_error(error, MARKDOWN_CORE_ERROR_INTERNAL, "required syntax extension is unavailable");
+        return NULL;
+    }
+
+    /* REQUIREMENT 13, and it is asked for BEFORE the first byte is fed because
+     * recording happens as the lines are read. Diagnostics are not optional
+     * here for the same reason the concrete view is not (Q24): they are part of
+     * the model, and the switch exists so the LAW can be checked -- the tree
+     * and the records must be byte-identical either way -- not so that a
+     * consumer can choose a different engine. */
+    markdown_core_parser_retain_diagnostics(parser, &pending_diagnostics);
+
+    if (length) {
+        markdown_core_parser_feed(parser, (const char *)source, length);
+    }
+    document = (markdown_core_document *)calloc(1, sizeof(*document));
+    if (!document) {
+        markdown_core_parser_free(parser);
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
+        return NULL;
+    }
+    markdown_core_parser_retain_concrete(parser, &document->concrete);
+    document->root = markdown_core_parser_finish(parser);
+    markdown_core_parser_free(parser);
+    if (!document->root) {
+        markdown_core_concrete_dispose(&document->concrete);
+        markdown_core_diagnostics_dispose(&pending_diagnostics);
+        free(document);
+        /* A3, carried here from 3a: A FAILURE IS A RETURNED STATUS, and this is
+         * the vocabulary the surface has for it. `finish` returns NULL for
+         * exactly one reason on a parser that has just been fed -- every one of
+         * the sticky flag's write sites is an allocation or a size cap -- so
+         * reporting INTERNAL was reporting the commonest cause as the one code
+         * that means "no cause is known", and ALLOCATION_FAILED was unreachable
+         * from this path. */
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
+        return NULL;
+    }
+    document->diagnostics = pending_diagnostics;
+    return document;
+}
+
+void markdown_core_document_free(markdown_core_document *document) {
+    if (!document) {
+        return;
+    }
+    markdown_core_concrete_dispose(&document->concrete);
+    markdown_core_diagnostics_dispose(&document->diagnostics);
+    markdown_core_node_free(document->root);
+    free(document);
+}
+
+const markdown_core_node *markdown_core_document_semantic(const markdown_core_document *document) {
+    return document ? document->root : NULL;
+}
+
+markdown_core_string markdown_core_document_source(const markdown_core_document *document) {
+    markdown_core_string value = {NULL, 0};
+    if (document && document->concrete.source.ptr) {
+        value.data = document->concrete.source.ptr;
+        value.length = (size_t)document->concrete.source.size;
+    }
+    return value;
+}
+
+size_t markdown_core_document_line_count(const markdown_core_document *document) {
+    return document ? (size_t)document->concrete.line_starts_size : 0;
+}
+
+bool markdown_core_document_line_start(const markdown_core_document *document, size_t line, size_t *offset) {
+    if (!document || !offset || line < 1 || line > (size_t)document->concrete.line_starts_size) {
+        return false;
+    }
+    *offset = (size_t)document->concrete.line_starts[line - 1];
+    return true;
+}
+
+size_t markdown_core_document_diagnostic_count(const markdown_core_document *document) {
+    return document ? (size_t)document->diagnostics.entries_size : 0;
+}
+
+bool markdown_core_document_diagnostic_at(const markdown_core_document *document, size_t index,
+                                          markdown_core_diagnostic *diagnostic) {
+    const markdown_core_diagnostic_record *entry;
+    if (!document || !diagnostic || index >= (size_t)document->diagnostics.entries_size) {
+        return false;
+    }
+    entry = &document->diagnostics.entries[index];
+    diagnostic->severity = (markdown_core_diagnostic_severity)entry->severity;
+    diagnostic->code = (markdown_core_diagnostic_code)entry->code;
+    diagnostic->scope.start.line = entry->start_line;
+    diagnostic->scope.start.column = entry->start_column;
+    diagnostic->scope.end.line = entry->end_line;
+    diagnostic->scope.end.column = entry->end_column;
+    diagnostic->message.data = document->diagnostics.messages.ptr + entry->message_start;
+    diagnostic->message.length = (size_t)entry->message_length;
+    return true;
+}
+
+const char *markdown_core_diagnostic_code_name(markdown_core_diagnostic_code code) {
+    return markdown_core_diagnostic_code_string(code);
 }
 
 markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error) {
@@ -126,138 +247,153 @@ markdown_core_error_code markdown_core_error_get_code(const markdown_core_error 
 }
 
 markdown_core_string markdown_core_error_get_message(const markdown_core_error *error) {
-    markdown_core_string view = {NULL, 0};
+    markdown_core_string value = {NULL, 0};
     if (error && error->message) {
-        view.data = (const uint8_t *)error->message;
-        view.length = strlen(error->message);
+        value.data = (const uint8_t *)error->message;
+        value.length = strlen(error->message);
     }
-    return view;
+    return value;
 }
 
-void markdown_core_error_free(markdown_core_error *error) {
-    if (!error) {
-        return;
-    }
-    free(error->message);
-    free(error);
-}
+void markdown_core_error_free(markdown_core_error *error) { free(error); }
 
 markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *node) {
     if (!node) {
         return MARKDOWN_CORE_KIND_NONE;
     }
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_DOCUMENT:
+    if (node->type == MARKDOWN_CORE_NODE_DOCUMENT) {
         return MARKDOWN_CORE_KIND_DOCUMENT;
-    case MARKDOWN_CORE_NODE_BLOCK_QUOTE:
-        return MARKDOWN_CORE_KIND_BLOCK_QUOTE;
-    case MARKDOWN_CORE_NODE_PARAGRAPH:
-        return MARKDOWN_CORE_KIND_PARAGRAPH;
-    case MARKDOWN_CORE_NODE_HEADING:
-        return MARKDOWN_CORE_KIND_HEADING;
-    case MARKDOWN_CORE_NODE_THEMATIC_BREAK:
-        return MARKDOWN_CORE_KIND_THEMATIC_BREAK;
-    case MARKDOWN_CORE_NODE_LIST:
-        return MARKDOWN_CORE_KIND_LIST;
-    case MARKDOWN_CORE_NODE_LIST_ITEM:
-        return MARKDOWN_CORE_KIND_LIST_ITEM;
-    case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        return MARKDOWN_CORE_KIND_CODE_BLOCK;
-    case MARKDOWN_CORE_NODE_HTML_BLOCK:
-        return MARKDOWN_CORE_KIND_HTML_BLOCK;
-    case MARKDOWN_CORE_NODE_FORMULA_BLOCK:
-        return MARKDOWN_CORE_KIND_FORMULA_BLOCK;
-    case MARKDOWN_CORE_NODE_TABLE:
-        return MARKDOWN_CORE_KIND_TABLE;
-    case MARKDOWN_CORE_NODE_TABLE_ROW:
-        return MARKDOWN_CORE_KIND_TABLE_ROW;
-    case MARKDOWN_CORE_NODE_TABLE_CELL:
-        return MARKDOWN_CORE_KIND_TABLE_CELL;
-    case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
-        return MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK;
-    case MARKDOWN_CORE_NODE_DIRECTIVE_LABEL:
-        return MARKDOWN_CORE_KIND_DIRECTIVE_LABEL;
-    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
-        return MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION;
-    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
-        return MARKDOWN_CORE_KIND_REFERENCE_DEFINITION;
-    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
-        return MARKDOWN_CORE_KIND_LINK_REFERENCE;
-    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
-        return MARKDOWN_CORE_KIND_IMAGE_REFERENCE;
-    case MARKDOWN_CORE_NODE_TEXT:
-        return MARKDOWN_CORE_KIND_TEXT;
-    case MARKDOWN_CORE_NODE_SOFT_BREAK:
-        return MARKDOWN_CORE_KIND_SOFT_BREAK;
-    case MARKDOWN_CORE_NODE_LINE_BREAK:
-        return MARKDOWN_CORE_KIND_LINE_BREAK;
-    case MARKDOWN_CORE_NODE_CODE:
-        return MARKDOWN_CORE_KIND_CODE;
-    case MARKDOWN_CORE_NODE_HTML:
-        return MARKDOWN_CORE_KIND_HTML;
-    case MARKDOWN_CORE_NODE_FORMULA:
-        return MARKDOWN_CORE_KIND_FORMULA;
-    case MARKDOWN_CORE_NODE_EMPHASIS:
-        return MARKDOWN_CORE_KIND_EMPHASIS;
-    case MARKDOWN_CORE_NODE_STRONG:
-        return MARKDOWN_CORE_KIND_STRONG;
-    case MARKDOWN_CORE_NODE_STRIKETHROUGH:
-        return MARKDOWN_CORE_KIND_STRIKETHROUGH;
-    case MARKDOWN_CORE_NODE_LINK:
-        return MARKDOWN_CORE_KIND_LINK;
-    case MARKDOWN_CORE_NODE_IMAGE:
-        return MARKDOWN_CORE_KIND_IMAGE;
-    case MARKDOWN_CORE_NODE_DIRECTIVE:
-        return MARKDOWN_CORE_KIND_DIRECTIVE;
-    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
-        return MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE;
-    case MARKDOWN_CORE_NODE_CROSS_LINK:
-        return MARKDOWN_CORE_KIND_CROSS_LINK;
-    case MARKDOWN_CORE_NODE_EMBED:
-        return MARKDOWN_CORE_KIND_EMBED;
-    default:
-        return MARKDOWN_CORE_KIND_NONE;
     }
+    if (node->type == MARKDOWN_CORE_NODE_BLOCK_QUOTE) {
+        return MARKDOWN_CORE_KIND_BLOCK_QUOTE;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_PARAGRAPH) {
+        return MARKDOWN_CORE_KIND_PARAGRAPH;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_HEADING) {
+        return MARKDOWN_CORE_KIND_HEADING;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_THEMATIC_BREAK) {
+        return MARKDOWN_CORE_KIND_THEMATIC_BREAK;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_LIST) {
+        return MARKDOWN_CORE_KIND_LIST;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) {
+        return MARKDOWN_CORE_KIND_LIST_ITEM;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+        return MARKDOWN_CORE_KIND_CODE_BLOCK;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_HTML_BLOCK) {
+        return MARKDOWN_CORE_KIND_HTML_BLOCK;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION) {
+        return MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_REFERENCE_DEFINITION) {
+        return MARKDOWN_CORE_KIND_REFERENCE_DEFINITION;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_LINK_REFERENCE) {
+        return MARKDOWN_CORE_KIND_LINK_REFERENCE;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_IMAGE_REFERENCE) {
+        return MARKDOWN_CORE_KIND_IMAGE_REFERENCE;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_TEXT) {
+        return MARKDOWN_CORE_KIND_TEXT;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_SOFT_BREAK) {
+        return MARKDOWN_CORE_KIND_SOFT_BREAK;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_LINE_BREAK) {
+        return MARKDOWN_CORE_KIND_LINE_BREAK;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_CODE) {
+        return MARKDOWN_CORE_KIND_CODE;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_HTML) {
+        return MARKDOWN_CORE_KIND_HTML;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_EMPHASIS) {
+        return MARKDOWN_CORE_KIND_EMPHASIS;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_STRONG) {
+        return MARKDOWN_CORE_KIND_STRONG;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_LINK) {
+        return MARKDOWN_CORE_KIND_LINK;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_IMAGE) {
+        return MARKDOWN_CORE_KIND_IMAGE;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE) {
+        return MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_TABLE) {
+        return MARKDOWN_CORE_KIND_TABLE;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
+        return MARKDOWN_CORE_KIND_TABLE_ROW;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_TABLE_CELL) {
+        return MARKDOWN_CORE_KIND_TABLE_CELL;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_STRIKETHROUGH) {
+        return MARKDOWN_CORE_KIND_STRIKETHROUGH;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_FORMULA) {
+        return MARKDOWN_CORE_KIND_FORMULA;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
+        return MARKDOWN_CORE_KIND_FORMULA_BLOCK;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE) {
+        return MARKDOWN_CORE_KIND_DIRECTIVE;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
+        return MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
+        return MARKDOWN_CORE_KIND_DIRECTIVE_LABEL;
+    }
+    return MARKDOWN_CORE_KIND_NONE;
 }
 
 const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
-    static const char *const names[] = {
-        "None",
-        "Document",
-        "BlockQuote",
-        "Paragraph",
-        "Heading",
-        "ThematicBreak",
-        "List",
-        "ListItem",
-        "CodeBlock",
-        "HTMLBlock",
-        "FormulaBlock",
-        "Table",
-        "TableRow",
-        "TableCell",
-        "DirectiveBlock",
-        "DirectiveLabel",
-        "FootnoteDefinition",
-        "Text",
-        "SoftBreak",
-        "LineBreak",
-        "Code",
-        "HTML",
-        "Formula",
-        "Emphasis",
-        "Strong",
-        "Strikethrough",
-        "Link",
-        "Image",
-        "Directive",
-        "FootnoteReference",
-        "CrossLink",
-        "Embed",
-        "ReferenceDefinition",
-        "LinkReference",
-        "ImageReference"
-    };
+    static const char *const names[] = {"None",
+                                        "Document",
+                                        "BlockQuote",
+                                        "Paragraph",
+                                        "Heading",
+                                        "ThematicBreak",
+                                        "List",
+                                        "ListItem",
+                                        "CodeBlock",
+                                        "HTMLBlock",
+                                        "FormulaBlock",
+                                        "Table",
+                                        "DirectiveBlock",
+                                        "FootnoteDefinition",
+                                        "Text",
+                                        "SoftBreak",
+                                        "LineBreak",
+                                        "Code",
+                                        "HTML",
+                                        "Formula",
+                                        "Emphasis",
+                                        "Strong",
+                                        "Strikethrough",
+                                        "Link",
+                                        "Image",
+                                        "Directive",
+                                        "FootnoteReference",
+                                        "TableRow",
+                                        "TableCell",
+                                        "DirectiveLabel",
+                                        "ReferenceDefinition",
+                                        "LinkReference",
+                                        "ImageReference"};
     if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_IMAGE_REFERENCE) {
         return "None";
     }
@@ -266,33 +402,23 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
 
 markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
     markdown_core_scope scope = {{0, 0}, {0, 0}};
-    int start_line, end_line;
-    if (!node) {
-        return scope;
+    if (node) {
+        scope.start.line = node->start_line;
+        scope.start.column = node->start_column;
+        scope.end.line = node->end_line;
+        scope.end.column = node->end_column;
     }
-    // Positions are absolute, as the parser wrote them. They used to be
-    // stored parent-relative and resolved here by summing the parent chain —
-    // an encoding whose whole purpose was that an INCREMENTAL commit could
-    // line-shift an ancestor and have every descendant follow for free. There
-    // is no incremental commit, nothing shifts, and a scope read no longer
-    // pays an ancestor walk.
-    start_line = node->start_line;
-    end_line = node->end_line;
-    scope.start.line = start_line;
-    scope.start.column = node->start_column;
-    scope.end.line = end_line;
-    scope.end.column = node->end_column;
     return scope;
 }
 
-markdown_core_node_id markdown_core_node_get_id(const markdown_core_node *node) { return node ? node->id : 0; }
-
-uint64_t markdown_core_node_get_revision(const markdown_core_node *node) { return node ? node->last_changed_rev : 0; }
-
-const markdown_core_node *markdown_core_node_get_parent(const markdown_core_node *node) {
-    return node ? node->parent : NULL;
-}
-
+/* THE LABEL IS A NODE. It always was one in the tree; this facade used to
+ * splice it out -- first_child skipped past it into its children and
+ * next_sibling climbed back out -- so a directive's label reached every
+ * binding as a COUNT on the parent and a run of children with no container.
+ * Step 7 stops hiding it: `DirectiveLabel` is the 29th kind, its scope spans
+ * its brackets, and `label=` is gone from the dump because the node is there
+ * to be seen. The two accessors that existed only to name where the label's
+ * children began and ended went with it. */
 const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node) {
     return node ? node->first_child : NULL;
 }
@@ -311,153 +437,6 @@ size_t markdown_core_node_child_count(const markdown_core_node *node) {
     return count;
 }
 
-#define CANONICAL_WALK_INLINE_DEPTH 64
-
-typedef struct canonical_walk_frame {
-    int32_t resolved_start_line;
-    const markdown_core_node *next_sibling;
-} canonical_walk_frame;
-
-typedef struct canonical_walk {
-    const markdown_core_node *root;
-    const markdown_core_node *next;
-    canonical_walk_frame *frames;
-    canonical_walk_frame inline_frames[CANONICAL_WALK_INLINE_DEPTH];
-    size_t depth;
-    size_t capacity;
-    bool failed;
-} canonical_walk;
-
-/**
- * One streaming canonical-preorder traversal serves every AST consumer.
- * A frame per active depth carries both the resolved parent line needed by
- * descendants and the pending canonical sibling needed after ascent. That
- * same sibling state also renders dump connectors, so the dump owns no
- * second traversal stack.
- */
-static void canonical_walk_init(canonical_walk *walk, const markdown_core_node *root) {
-    memset(walk, 0, sizeof(*walk));
-    walk->frames = walk->inline_frames;
-    walk->capacity = CANONICAL_WALK_INLINE_DEPTH;
-    walk->root = root;
-    walk->next = root;
-}
-
-static bool canonical_walk_resize(canonical_walk *walk, size_t capacity) {
-    canonical_walk_frame *resized;
-
-    if (capacity <= walk->capacity) {
-        return true;
-    }
-    if (capacity > SIZE_MAX / sizeof(*walk->frames)) {
-        walk->failed = true;
-        return false;
-    }
-    if (walk->frames == walk->inline_frames) {
-        resized = (canonical_walk_frame *)malloc(capacity * sizeof(*resized));
-        if (resized) {
-            memcpy(resized, walk->inline_frames, walk->depth * sizeof(*resized));
-        }
-    } else {
-        resized = (canonical_walk_frame *)realloc(walk->frames, capacity * sizeof(*resized));
-    }
-    if (!resized) {
-        walk->failed = true;
-        return false;
-    }
-    walk->frames = resized;
-    walk->capacity = capacity;
-    return true;
-}
-
-static bool canonical_walk_reserve_current_depth(canonical_walk *walk) {
-    size_t needed;
-    size_t capacity;
-
-    if (walk->depth == SIZE_MAX) {
-        walk->failed = true;
-        return false;
-    }
-    needed = walk->depth + 1;
-    if (needed <= walk->capacity) {
-        return true;
-    }
-    capacity = walk->capacity;
-    while (capacity < needed) {
-        if (capacity > SIZE_MAX / 2) {
-            capacity = needed;
-            break;
-        }
-        capacity *= 2;
-    }
-    return canonical_walk_resize(walk, capacity);
-}
-
-static void canonical_walk_dispose(canonical_walk *walk) {
-    if (walk->frames != walk->inline_frames) {
-        free(walk->frames);
-    }
-}
-
-/**
- * Emits one canonical-preorder node and resolves its scope from the
- * canonical parent's already-resolved start line. This is the sole linear
- * canonical traversal used by both public materialization and canonical
- * dumps.
- */
-static bool canonical_walk_next(
-    canonical_walk *walk,
-    const markdown_core_node **node,
-    markdown_core_scope *scope,
-    size_t *depth,
-    bool *has_next
-) {
-    const markdown_core_node *current = walk->next;
-    const markdown_core_node *child;
-    const markdown_core_node *sibling;
-    canonical_walk_frame *frame;
-    int32_t parent_start_line;
-
-    if (!current) {
-        return false;
-    }
-    if (!canonical_walk_reserve_current_depth(walk)) {
-        return false;
-    }
-    (void)parent_start_line;
-    *scope = markdown_core_node_scope(current);
-    sibling = current == walk->root ? NULL : markdown_core_node_get_next_sibling(current);
-    frame = &walk->frames[walk->depth];
-    frame->resolved_start_line = scope->start.line;
-    frame->next_sibling = sibling;
-    *node = current;
-    if (depth) {
-        *depth = walk->depth;
-    }
-    if (has_next) {
-        *has_next = sibling != NULL;
-    }
-    child = markdown_core_node_get_first_child(current);
-    if (child) {
-        walk->depth++;
-        walk->next = child;
-        return true;
-    }
-    while (!walk->frames[walk->depth].next_sibling) {
-        if (walk->depth == 0) {
-            walk->next = NULL;
-            return true;
-        }
-        walk->depth--;
-    }
-    walk->next = walk->frames[walk->depth].next_sibling;
-    return true;
-}
-
-static bool canonical_walk_branch_continues(const canonical_walk *walk, size_t depth) {
-    return walk->frames[depth].next_sibling != NULL;
-}
-
 bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level) {
     if (!node || node->type != MARKDOWN_CORE_NODE_HEADING || !level) {
         return false;
@@ -466,12 +445,8 @@ bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *l
     return true;
 }
 
-bool markdown_core_node_list_properties(
-    const markdown_core_node *node,
-    markdown_core_list_flavor *flavor,
-    markdown_core_optional_i64 *start,
-    bool *tight
-) {
+bool markdown_core_node_list_properties(const markdown_core_node *node, markdown_core_list_flavor *flavor,
+                                        markdown_core_optional_i64 *start, bool *tight) {
     if (!node || node->type != MARKDOWN_CORE_NODE_LIST || !flavor || !start || !tight) {
         return false;
     }
@@ -493,43 +468,49 @@ bool markdown_core_node_list_item_checked(const markdown_core_node *node, markdo
     return true;
 }
 
-static void view_chunk(markdown_core_string *view, const markdown_core_chunk *chunk) {
-    view->data = chunk->data;
-    view->length = chunk->len < 0 ? 0 : (size_t)chunk->len;
+/* The chunk's bytes are LENT, not copied: `out` points into the document and
+ * dies with it, which is what `markdown_core_string` documents. */
+static void string_from_chunk(markdown_core_string *out, const markdown_core_chunk *chunk) {
+    out->data = chunk->data;
+    out->length = chunk->len < 0 ? 0 : (size_t)chunk->len;
 }
 
-bool markdown_core_node_code_block_properties(
-    const markdown_core_node *node,
-    markdown_core_string *info,
-    markdown_core_string *language,
-    markdown_core_string *literal,
-    bool *fenced,
-    bool *closed
-) {
+/* THE FACADE FOLDS NOTHING (requirement 14). It carries the presence the
+ * engine recorded and does not re-derive it from a length or a pointer. */
+static void optional_string_from_chunk(markdown_core_optional_string *out, const markdown_core_optional_chunk *chunk) {
+    out->has_value = chunk->has_value;
+    string_from_chunk(&out->value, &chunk->value);
+}
+
+bool markdown_core_node_code_block_properties(const markdown_core_node *node, markdown_core_optional_string *info,
+                                              markdown_core_optional_string *language, markdown_core_string *literal,
+                                              bool *fenced, bool *closed) {
     size_t start = 0;
     size_t end;
     if (!node || node->type != MARKDOWN_CORE_NODE_CODE_BLOCK || !info || !language || !literal || !fenced || !closed) {
         return false;
     }
-    view_chunk(info, &node->as.code.info);
-    view_chunk(literal, &node->as.code.literal);
-    if (info->length == 0) {
-        info->data = NULL;
-    }
-    language->data = NULL;
-    language->length = 0;
-    while (start < info->length && (info->data[start] == ' ' || info->data[start] == '\t' ||
-                                    info->data[start] == '\n' || info->data[start] == '\r')) {
+    optional_string_from_chunk(info, &node->as.code.info);
+    string_from_chunk(literal, &node->as.code.literal);
+    /* `if (info->length == 0) info->data = NULL;` STOOD HERE, and it is the
+     * fold requirement 14 names: the parse had already decided whether a fence
+     * wrote an info string, and this line decided it again from a length. */
+    language->has_value = false;
+    language->value.data = NULL;
+    language->value.length = 0;
+    while (start < info->value.length && (info->value.data[start] == ' ' || info->value.data[start] == '\t' ||
+                                          info->value.data[start] == '\n' || info->value.data[start] == '\r')) {
         start++;
     }
     end = start;
-    while (end < info->length && info->data[end] != ' ' && info->data[end] != '\t' && info->data[end] != '\n' &&
-           info->data[end] != '\r') {
+    while (end < info->value.length && info->value.data[end] != ' ' && info->value.data[end] != '\t' &&
+           info->value.data[end] != '\n' && info->value.data[end] != '\r') {
         end++;
     }
-    if (end > start) {
-        language->data = info->data + start;
-        language->length = end - start;
+    if (info->has_value && end > start) {
+        language->has_value = true;
+        language->value.data = info->value.data + start;
+        language->value.length = end - start;
     }
     *fenced = node->as.code.fenced != 0;
     *closed = !*fenced || node->as.code.fence_closed != 0;
@@ -545,18 +526,15 @@ bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_st
     case MARKDOWN_CORE_NODE_TEXT:
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_CODE:
-        view_chunk(literal, &node->as.literal);
+        string_from_chunk(literal, &node->as.literal);
         return true;
     default:
         return false;
     }
 }
 
-bool markdown_core_node_formula_properties(
-    const markdown_core_node *node,
-    markdown_core_placement_mode *mode,
-    markdown_core_string *literal
-) {
+bool markdown_core_node_formula_properties(const markdown_core_node *node, markdown_core_placement_mode *mode,
+                                           markdown_core_string *literal) {
     const char *value;
     markdown_core_formula_mode native_mode;
     if (!node || !mode || !literal ||
@@ -580,11 +558,8 @@ bool markdown_core_node_table_column_count(const markdown_core_node *node, size_
     return true;
 }
 
-bool markdown_core_node_table_alignment_at(
-    const markdown_core_node *node,
-    size_t index,
-    markdown_core_table_alignment *alignment
-) {
+bool markdown_core_node_table_alignment_at(const markdown_core_node *node, size_t index,
+                                           markdown_core_table_alignment *alignment) {
     uint16_t count;
     uint8_t *alignments;
     if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !alignment) {
@@ -620,227 +595,121 @@ bool markdown_core_node_table_row_is_header(const markdown_core_node *node, bool
     return true;
 }
 
-/* One complete comment and nothing else: after surrounding whitespace the
- * literal opens with `<!--` and the first `-->` in it is the terminal
- * bytes. Comment-prefixed HTML with a same-line tail (`<!-- a --> tail`)
- * is not a comment — the bit never lies about trailing bytes — and a
- * literal that is several comments is html to be read, not skipped. The
- * classification is a pure function of the literal, so every binding can
- * derive the same answer from the bytes it already holds. */
-bool markdown_core_node_html_comment(const markdown_core_node *node, bool *comment) {
-    const unsigned char *data;
-    markdown_core_bufsize length;
-    markdown_core_bufsize offset = 0;
-    markdown_core_bufsize close;
-    if (!node || (node->type != MARKDOWN_CORE_NODE_HTML_BLOCK && node->type != MARKDOWN_CORE_NODE_HTML) || !comment) {
-        return false;
-    }
-    data = node->as.literal.data;
-    length = node->as.literal.len;
-    /* Neither trim can run off the literal: an HTML literal always holds
-     * the non-whitespace `<` that opened it, so both walks stop there at
-     * the latest. Leading trim is spaces only — a block whose first line
-     * leads with a tab sits at column four and parses as indented code,
-     * never an HTML block, and an inline literal starts at its `<`. */
-    while (data[length - 1] == '\n' || data[length - 1] == ' ' || data[length - 1] == '\t') {
-        length--;
-    }
-    while (data[offset] == ' ') {
-        offset++;
-    }
-    *comment = false;
-    if (length - offset >= 4 && memcmp(data + offset, "<!--", 4) == 0) {
-        for (close = offset + 1; close + 3 <= length; close++) {
-            if (memcmp(data + close, "-->", 3) == 0) {
-                *comment = close + 3 == length;
-                break;
-            }
-        }
-    }
-    return true;
-}
-
-static bool is_directive_kind(const markdown_core_node *node) {
-    return node && (node->type == MARKDOWN_CORE_NODE_DIRECTIVE || node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK);
-}
-
-bool markdown_core_node_directive_properties(
-    const markdown_core_node *node,
-    markdown_core_placement_mode *mode,
-    markdown_core_string *name,
-    bool *has_attributes
-) {
+/* ATTRIBUTES ARE AN ORDERED SEQUENCE, sorted by name (Q19). The JSON string
+ * this used to hand out was a second representation of the list the parser
+ * already holds, with a parser of its own to read it back; both are gone.
+ * `has_attributes` distinguishes `:n` from `:n{}` -- absent from empty -- which
+ * the old `null` versus `"{}"` said and a count alone cannot. */
+bool markdown_core_node_directive_properties(const markdown_core_node *node, markdown_core_string *name,
+                                             bool *has_attributes, size_t *attribute_count) {
     const char *value;
-    if (!node || !mode || !name || !has_attributes || !is_directive_kind(node)) {
+    if (!node || !name || !has_attributes || !attribute_count ||
+        (node->type != MARKDOWN_CORE_NODE_DIRECTIVE && node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
         return false;
     }
-    *mode = node->type == MARKDOWN_CORE_NODE_DIRECTIVE ? MARKDOWN_CORE_PLACEMENT_EMBEDDED
-                                                       : MARKDOWN_CORE_PLACEMENT_STANDALONE;
     value = markdown_core_extensions_get_directive_name((markdown_core_node *)node);
     name->data = (const uint8_t *)value;
     name->length = value ? strlen(value) : 0;
-    *has_attributes = markdown_core_extensions_directive_attributes_present(node);
+    *has_attributes = markdown_core_extensions_directive_has_attributes((markdown_core_node *)node) != 0;
+    *attribute_count = markdown_core_extensions_directive_attribute_count((markdown_core_node *)node);
     return true;
 }
 
-bool markdown_core_node_directive_attribute_count(const markdown_core_node *node, size_t *count) {
-    if (!node || !count || !is_directive_kind(node)) {
+bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, size_t index, markdown_core_string *name,
+                                               markdown_core_string *value) {
+    const char *name_bytes;
+    const char *value_bytes;
+    size_t name_length;
+    size_t value_length;
+    if (!node || !name || !value) {
         return false;
     }
-    *count = markdown_core_extensions_directive_attribute_count(node);
-    return true;
-}
-
-bool markdown_core_node_directive_attribute_at(
-    const markdown_core_node *node,
-    size_t index,
-    markdown_core_string *key,
-    markdown_core_string *value
-) {
-    const uint8_t *key_data = NULL;
-    const uint8_t *value_data = NULL;
-    size_t key_length = 0;
-    size_t value_length = 0;
-
-    if (!node || !key || !value || !is_directive_kind(node)) {
+    if (!markdown_core_extensions_directive_attribute_at((markdown_core_node *)node, index, &name_bytes, &name_length,
+                                                         &value_bytes, &value_length)) {
         return false;
     }
-    if (!markdown_core_extensions_directive_attribute_at(
-            node,
-            index,
-            &key_data,
-            &key_length,
-            &value_data,
-            &value_length
-        )) {
-        return false;
-    }
-    key->data = key_data;
-    key->length = key_length;
-    value->data = value_data;
+    name->data = (const uint8_t *)name_bytes;
+    name->length = name_length;
+    value->data = (const uint8_t *)value_bytes;
     value->length = value_length;
     return true;
 }
 
-const markdown_core_node *markdown_core_node_directive_label(const markdown_core_node *node) {
-    return markdown_core_directive_label((markdown_core_node *)node);
-}
-
-static bool link_properties(
-    const markdown_core_node *node,
-    uint16_t expected,
-    markdown_core_string *url,
-    markdown_core_string *title
-) {
+static bool link_properties(const markdown_core_node *node, uint16_t expected, markdown_core_string *url,
+                            markdown_core_optional_string *title) {
     if (!node || node->type != expected || !url || !title) {
         return false;
     }
-    view_chunk(url, &node->as.link.url);
-    view_chunk(title, &node->as.link.title);
+    string_from_chunk(url, &node->as.link.url);
+    optional_string_from_chunk(title, &node->as.link.title);
     return true;
 }
 
-static const char *reference_form_name(markdown_core_reference_form form) {
-    switch (form) {
-    case MARKDOWN_CORE_REFERENCE_FULL:
-        return "full";
-    case MARKDOWN_CORE_REFERENCE_COLLAPSED:
-        return "collapsed";
-    case MARKDOWN_CORE_REFERENCE_SHORTCUT:
-        break;
-    }
-    return "shortcut";
-}
-
-bool markdown_core_node_reference_definition_properties(
-    const markdown_core_node *node,
-    markdown_core_string *label,
-    markdown_core_string *destination,
-    markdown_core_string *title
-) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION || !label || !destination || !title) {
-        return false;
-    }
-    view_chunk(label, &node->as.definition.label);
-    view_chunk(destination, &node->as.definition.url);
-    view_chunk(title, &node->as.definition.title);
-    return true;
-}
-
-bool markdown_core_node_reference_properties(
-    const markdown_core_node *node,
-    markdown_core_string *label,
-    markdown_core_reference_form *form
-) {
-    if (!node || !label || !form ||
-        (node->type != MARKDOWN_CORE_NODE_LINK_REFERENCE && node->type != MARKDOWN_CORE_NODE_IMAGE_REFERENCE)) {
-        return false;
-    }
-    view_chunk(label, &node->as.reference.label);
-    switch (node->as.reference.form) {
-    case MARKDOWN_CORE_FULL_REFERENCE:
-        *form = MARKDOWN_CORE_REFERENCE_FULL;
-        break;
-    case MARKDOWN_CORE_COLLAPSED_REFERENCE:
-        *form = MARKDOWN_CORE_REFERENCE_COLLAPSED;
-        break;
-    case MARKDOWN_CORE_SHORTCUT_REFERENCE:
-        *form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
-        break;
-    }
-    return true;
-}
-
-bool markdown_core_node_link_properties(
-    const markdown_core_node *node,
-    markdown_core_string *destination,
-    markdown_core_string *title
-) {
+bool markdown_core_node_link_properties(const markdown_core_node *node, markdown_core_string *destination,
+                                        markdown_core_optional_string *title) {
     return link_properties(node, MARKDOWN_CORE_NODE_LINK, destination, title);
 }
 
-bool markdown_core_node_image_properties(
-    const markdown_core_node *node,
-    markdown_core_string *source,
-    markdown_core_string *title
-) {
+bool markdown_core_node_image_properties(const markdown_core_node *node, markdown_core_string *source,
+                                         markdown_core_optional_string *title) {
     return link_properties(node, MARKDOWN_CORE_NODE_IMAGE, source, title);
 }
 
-bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string *id) {
-    if (!node || !id ||
-        (node->type != MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION && node->type != MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE)) {
+/* ONE accessor for all five reference kinds, dispatched on the type and
+ * relying on no layout at all.
+ *
+ * The union arms genuinely differ -- a definition is BOXED and the other four
+ * are inline -- so the common-initial-sequence read that would have made this
+ * a single load is not merely unlicensed, it is impossible: `as.association`
+ * on a definition node would read a POINTER as `chunk.data`. It costs a branch
+ * and buys a guarantee the union trick never had. */
+bool markdown_core_node_association(const markdown_core_node *node, markdown_core_string *label,
+                                    markdown_core_string *identifier) {
+    const markdown_core_association *association;
+    if (!node || !label || !identifier) {
         return false;
     }
-    // Both kinds carry their own label exactly as written in the source;
-    // resolution and numbering are presentation, not node content.
-    view_chunk(id, &node->as.literal);
+    switch (node->type) {
+    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
+        if (!node->as.definition) {
+            return false;
+        }
+        association = &node->as.definition->association;
+        break;
+    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
+    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
+        association = &node->as.association;
+        break;
+    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
+    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
+        association = &node->as.reference.association;
+        break;
+    default:
+        return false;
+    }
+    string_from_chunk(label, &association->label);
+    string_from_chunk(identifier, &association->identifier);
     return true;
 }
 
-static bool cross_reference(
-    const markdown_core_node *node,
-    markdown_core_node_type type,
-    markdown_core_string *reference
-) {
-    const markdown_core_chunk *value;
-    if (!node || !reference || node->type != type) {
+bool markdown_core_node_definition_resource(const markdown_core_node *node, markdown_core_string *destination,
+                                            markdown_core_optional_string *title) {
+    if (!node || node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION || !node->as.definition || !destination ||
+        !title) {
         return false;
     }
-    value = markdown_core_cross_reference_value((markdown_core_node *)node);
-    if (!value) {
-        return false;
-    }
-    view_chunk(reference, value);
+    string_from_chunk(destination, &node->as.definition->url);
+    optional_string_from_chunk(title, &node->as.definition->title);
     return true;
 }
 
-bool markdown_core_node_cross_link_reference(const markdown_core_node *node, markdown_core_string *reference) {
-    return cross_reference(node, MARKDOWN_CORE_NODE_CROSS_LINK, reference);
-}
-
-bool markdown_core_node_embed_reference(const markdown_core_node *node, markdown_core_string *reference) {
-    return cross_reference(node, MARKDOWN_CORE_NODE_EMBED, reference);
+bool markdown_core_node_reference_form(const markdown_core_node *node, markdown_core_reference_form *form) {
+    if (!node || !form ||
+        (node->type != MARKDOWN_CORE_NODE_LINK_REFERENCE && node->type != MARKDOWN_CORE_NODE_IMAGE_REFERENCE)) {
+        return false;
+    }
+    *form = node->as.reference.form;
+    return true;
 }
 
 static void buffer_reserve(dump_buffer *buffer, size_t additional) {
@@ -935,20 +804,35 @@ static void buffer_json_string(dump_buffer *buffer, markdown_core_string value) 
     buffer_cstr(buffer, "\"");
 }
 
-/* Byte-lexicographic, shorter first on a common prefix. Attribute names are
- * unique, so this is a total order over them. */
-static bool string_before(markdown_core_string left, markdown_core_string right) {
-    size_t shortest = left.length < right.length ? left.length : right.length;
-    int order = shortest ? memcmp(left.data, right.data, shortest) : 0;
-    return order != 0 ? order < 0 : left.length < right.length;
-}
-
-static void buffer_optional_string(dump_buffer *buffer, markdown_core_string value) {
-    if (!value.data) {
+/* `null` and `""` are two answers, not one, and this reads the presence flag
+ * rather than the pointer -- which is the same rule the dump already applied
+ * to an optional Int and an optional Bool (requirement 14). */
+static void buffer_optional_string(dump_buffer *buffer, markdown_core_optional_string value) {
+    if (!value.has_value) {
         buffer_cstr(buffer, "null");
     } else {
-        buffer_json_string(buffer, value);
+        buffer_json_string(buffer, value.value);
     }
+}
+
+static bool ensure_more(dump_buffer *buffer, size_t depth) {
+    bool *more;
+    size_t capacity;
+    if (depth < buffer->more_capacity) {
+        return true;
+    }
+    capacity = buffer->more_capacity ? buffer->more_capacity : 16;
+    while (capacity <= depth) {
+        capacity *= 2;
+    }
+    more = (bool *)realloc(buffer->more, capacity * sizeof(*more));
+    if (!more) {
+        buffer->failed = true;
+        return false;
+    }
+    buffer->more = more;
+    buffer->more_capacity = capacity;
+    return true;
 }
 
 static const char *alignment_name(markdown_core_table_alignment alignment) {
@@ -964,18 +848,31 @@ static const char *alignment_name(markdown_core_table_alignment alignment) {
     }
 }
 
+static const char *form_name(markdown_core_reference_form form) {
+    switch (form) {
+    case MARKDOWN_CORE_REFERENCE_FULL:
+        return "full";
+    case MARKDOWN_CORE_REFERENCE_COLLAPSED:
+        return "collapsed";
+    case MARKDOWN_CORE_REFERENCE_SHORTCUT:
+        break;
+    }
+    return "shortcut";
+}
+
 static const char *mode_name(markdown_core_placement_mode mode) {
     return mode == MARKDOWN_CORE_PLACEMENT_EMBEDDED ? "embedded" : "standalone";
 }
 
 static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, markdown_core_node_kind kind) {
     markdown_core_string a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0};
+    markdown_core_optional_string oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
     markdown_core_optional_i64 start;
     markdown_core_optional_bool checked;
     markdown_core_list_flavor flavor;
     markdown_core_placement_mode mode;
     markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
-    bool x, y;
+    bool x, y, has_attributes;
     size_t count, i;
     int32_t level;
     switch (kind) {
@@ -1007,11 +904,11 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         }
         break;
     case MARKDOWN_CORE_KIND_CODE_BLOCK:
-        markdown_core_node_code_block_properties(node, &a, &b, &c, &x, &y);
-        buffer_cstr(buffer, " mode=standalone info=");
-        buffer_optional_string(buffer, a);
+        markdown_core_node_code_block_properties(node, &oa, &ob, &c, &x, &y);
+        buffer_cstr(buffer, " info=");
+        buffer_optional_string(buffer, oa);
         buffer_cstr(buffer, " language=");
-        buffer_optional_string(buffer, b);
+        buffer_optional_string(buffer, ob);
         buffer_cstr(buffer, " literal=");
         buffer_json_string(buffer, c);
         buffer_cstr(buffer, " fenced=");
@@ -1019,30 +916,31 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " closed=");
         buffer_cstr(buffer, y ? "true" : "false");
         break;
-    case MARKDOWN_CORE_KIND_TEXT:
-        markdown_core_node_literal(node, &a);
-        buffer_cstr(buffer, " literal=");
-        buffer_json_string(buffer, a);
-        break;
     case MARKDOWN_CORE_KIND_HTML_BLOCK:
+    case MARKDOWN_CORE_KIND_TEXT:
     case MARKDOWN_CORE_KIND_HTML:
         markdown_core_node_literal(node, &a);
-        markdown_core_node_html_comment(node, &x);
-        buffer_cstr(buffer, " comment=");
-        buffer_cstr(buffer, x ? "true" : "false");
         buffer_cstr(buffer, " literal=");
         buffer_json_string(buffer, a);
         break;
     case MARKDOWN_CORE_KIND_CODE:
         markdown_core_node_literal(node, &a);
-        buffer_cstr(buffer, " mode=embedded literal=");
+        buffer_cstr(buffer, " literal=");
         buffer_json_string(buffer, a);
         break;
-    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
     case MARKDOWN_CORE_KIND_FORMULA:
+        /* The only kind whose mode is a fact about the SOURCE: `$x$` is
+         * embedded and `$$x$$` is standalone inside the same paragraph.  The
+         * other five carried a mode that their kind already implied, and Q29
+         * deleted all five at 15A.4. */
         markdown_core_node_formula_properties(node, &mode, &a);
         buffer_cstr(buffer, " mode=");
         buffer_cstr(buffer, mode_name(mode));
+        buffer_cstr(buffer, " literal=");
+        buffer_json_string(buffer, a);
+        break;
+    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
+        markdown_core_node_formula_properties(node, &mode, &a);
         buffer_cstr(buffer, " literal=");
         buffer_json_string(buffer, a);
         break;
@@ -1065,591 +963,141 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, x ? "true" : "false");
         break;
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-    case MARKDOWN_CORE_KIND_DIRECTIVE: {
-        bool present = false;
-        size_t attribute_count = 0;
-        size_t index;
-        markdown_core_string previous = {NULL, 0};
-        markdown_core_node_directive_properties(node, &mode, &a, &present);
-        buffer_cstr(buffer, " mode=");
-        buffer_cstr(buffer, mode_name(mode));
+    case MARKDOWN_CORE_KIND_DIRECTIVE:
+        markdown_core_node_directive_properties(node, &a, &has_attributes, &count);
         buffer_cstr(buffer, " name=");
         buffer_json_string(buffer, a);
-        // Pair by pair, the way every other field prints: `null` for no
-        // container at all, nothing after `attributes=` for an empty one, and
-        // no serialization format inside a diagnostic dump.
-        //
-        // SORTED BY NAME, not in source order. Four dumpers have to agree
-        // byte for byte, and Swift's map is unordered -- so the order the
-        // engine holds belongs to the VALUE, and the dump takes the one order
-        // every platform can reproduce.
         buffer_cstr(buffer, " attributes=");
-        if (!present) {
+        if (!has_attributes) {
             buffer_cstr(buffer, "null");
             break;
         }
-        // Bracketed, like the table's `alignments=[...]`: a value may contain
-        // spaces, so the group needs a delimiter for the field to be one
-        // field -- and an attribute named `children` must not read as the
-        // record's own `children=`.
         buffer_cstr(buffer, "[");
-        markdown_core_node_directive_attribute_count(node, &attribute_count);
-        for (index = 0; index < attribute_count; index++) {
-            size_t candidate;
-            size_t chosen = attribute_count;
-            markdown_core_string best = {NULL, 0};
-            // Selection sort over the pairs: a directive has a handful of
-            // attributes, and this needs no allocation on the dump path.
-            for (candidate = 0; candidate < attribute_count; candidate++) {
-                if (!markdown_core_node_directive_attribute_at(node, candidate, &a, &b)) {
-                    continue;
-                }
-                if (index > 0 && !(string_before(previous, a))) {
-                    continue;
-                }
-                if (chosen != attribute_count && !string_before(a, best)) {
-                    continue;
-                }
-                chosen = candidate;
-                best = a;
+        for (i = 0; i < count; i++) {
+            if (!markdown_core_node_directive_attribute_at(node, i, &a, &b)) {
+                continue;
             }
-            if (chosen == attribute_count) {
-                break;
-            }
-            markdown_core_node_directive_attribute_at(node, chosen, &a, &b);
-            if (index > 0) {
+            if (i) {
                 buffer_cstr(buffer, " ");
             }
             buffer_bytes(buffer, a.data, a.length);
             buffer_cstr(buffer, "=");
             buffer_json_string(buffer, b);
-            previous = a;
         }
         buffer_cstr(buffer, "]");
         break;
-    }
+    /* `label=`, not `id=` (Q5). Two names for one field after unifying the
+     * field is the failure mode that produced three accessors. */
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
     case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
-        markdown_core_node_footnote_id(node, &a);
-        buffer_cstr(buffer, " id=");
-        buffer_json_string(buffer, a);
-        break;
-    case MARKDOWN_CORE_KIND_CROSS_LINK:
-        markdown_core_node_cross_link_reference(node, &a);
-        buffer_cstr(buffer, " reference=");
-        buffer_json_string(buffer, a);
-        break;
-    case MARKDOWN_CORE_KIND_EMBED:
-        markdown_core_node_embed_reference(node, &a);
-        buffer_cstr(buffer, " reference=");
-        buffer_json_string(buffer, a);
-        break;
-    case MARKDOWN_CORE_KIND_LINK:
-        markdown_core_node_link_properties(node, &a, &b);
-        buffer_cstr(buffer, " destination=");
-        buffer_optional_string(buffer, a);
-        buffer_cstr(buffer, " title=");
-        buffer_optional_string(buffer, b);
-        break;
-    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
-        markdown_core_node_reference_definition_properties(node, &a, &b, &c);
+        markdown_core_node_association(node, &a, &b);
         buffer_cstr(buffer, " label=");
         buffer_json_string(buffer, a);
-        buffer_cstr(buffer, " destination=");
-        buffer_optional_string(buffer, b);
-        buffer_cstr(buffer, " title=");
-        buffer_optional_string(buffer, c);
+        buffer_cstr(buffer, " identifier=");
+        buffer_json_string(buffer, b);
         break;
     case MARKDOWN_CORE_KIND_LINK_REFERENCE:
     case MARKDOWN_CORE_KIND_IMAGE_REFERENCE:
-        markdown_core_node_reference_properties(node, &a, &form);
+        markdown_core_node_association(node, &a, &b);
+        markdown_core_node_reference_form(node, &form);
         buffer_cstr(buffer, " label=");
         buffer_json_string(buffer, a);
+        buffer_cstr(buffer, " identifier=");
+        buffer_json_string(buffer, b);
         buffer_cstr(buffer, " form=");
-        buffer_cstr(buffer, reference_form_name(form));
-        break;
-    case MARKDOWN_CORE_KIND_IMAGE:
-        markdown_core_node_image_properties(node, &a, &b);
-        buffer_cstr(buffer, " source=");
-        buffer_optional_string(buffer, a);
-        buffer_cstr(buffer, " title=");
-        buffer_optional_string(buffer, b);
-        break;
-    default:
-        break;
-    }
-}
-
-// Content equality; a NULL view and an empty view compare equal, matching
-// the dump output the dump-equivalence oracle holds every revision to.
-static bool view_content_equal(markdown_core_string a, markdown_core_string b) {
-    return a.length == b.length && (a.length == 0 || memcmp(a.data, b.data, a.length) == 0);
-}
-
-// Optional-string equality: the dump distinguishes an absent string (null)
-// from a present empty one, so presence must match before content.
-static bool view_optional_equal(markdown_core_string a, markdown_core_string b) {
-    return (a.data == NULL) == (b.data == NULL) && view_content_equal(a, b);
-}
-
-bool markdown_core_ast_projection_changed(const markdown_core_node *a, const markdown_core_node *b) {
-    markdown_core_node_kind kind = markdown_core_node_get_kind(a);
-    markdown_core_string a1 = {NULL, 0}, a2 = {NULL, 0}, a3 = {NULL, 0};
-    markdown_core_string b1 = {NULL, 0}, b2 = {NULL, 0}, b3 = {NULL, 0};
-    bool value = false;
-    bool text = false;
-    // Callers pair nodes by raw type, so the facade kinds already match.
-    switch (kind) {
-    case MARKDOWN_CORE_KIND_HEADING: {
-        int32_t level_a, level_b;
-        markdown_core_node_heading_level(a, &level_a);
-        markdown_core_node_heading_level(b, &level_b);
-        value = level_a != level_b;
-        break;
-    }
-    case MARKDOWN_CORE_KIND_LIST: {
-        markdown_core_list_flavor flavor_a, flavor_b;
-        markdown_core_optional_i64 start_a, start_b;
-        bool tight_a, tight_b;
-        markdown_core_node_list_properties(a, &flavor_a, &start_a, &tight_a);
-        markdown_core_node_list_properties(b, &flavor_b, &start_b, &tight_b);
-        value =
-            !(flavor_a == flavor_b && tight_a == tight_b && start_a.has_value == start_b.has_value &&
-              (!start_a.has_value || start_a.value == start_b.value));
-        break;
-    }
-    case MARKDOWN_CORE_KIND_LIST_ITEM: {
-        markdown_core_optional_bool checked_a, checked_b;
-        markdown_core_node_list_item_checked(a, &checked_a);
-        markdown_core_node_list_item_checked(b, &checked_b);
-        value =
-            !(checked_a.has_value == checked_b.has_value &&
-              (!checked_a.has_value || checked_a.value == checked_b.value));
-        break;
-    }
-    case MARKDOWN_CORE_KIND_CODE_BLOCK: {
-        bool fenced_a, closed_a, fenced_b, closed_b;
-        markdown_core_node_code_block_properties(a, &a1, &a2, &a3, &fenced_a, &closed_a);
-        markdown_core_node_code_block_properties(b, &b1, &b2, &b3, &fenced_b, &closed_b);
-        value =
-            !(fenced_a == fenced_b && closed_a == closed_b && view_optional_equal(a1, b1) &&
-              view_optional_equal(a2, b2));
-        text = !view_content_equal(a3, b3);
-        break;
-    }
-    case MARKDOWN_CORE_KIND_HTML_BLOCK:
-    case MARKDOWN_CORE_KIND_TEXT:
-    case MARKDOWN_CORE_KIND_HTML:
-    case MARKDOWN_CORE_KIND_CODE:
-        markdown_core_node_literal(a, &a1);
-        markdown_core_node_literal(b, &b1);
-        text = !view_content_equal(a1, b1);
-        break;
-    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION: {
-        markdown_core_node_reference_definition_properties(a, &a1, &a2, &a3);
-        markdown_core_node_reference_definition_properties(b, &b1, &b2, &b3);
-        value = !(view_content_equal(a1, b1) && view_content_equal(a2, b2) && view_content_equal(a3, b3));
-        break;
-    }
-    case MARKDOWN_CORE_KIND_LINK_REFERENCE:
-    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: {
-        markdown_core_reference_form form_a, form_b;
-        markdown_core_node_reference_properties(a, &a1, &form_a);
-        markdown_core_node_reference_properties(b, &b1, &form_b);
-        value = !(form_a == form_b && view_content_equal(a1, b1));
-        break;
-    }
-    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
-    case MARKDOWN_CORE_KIND_FORMULA: {
-        markdown_core_placement_mode mode_a, mode_b;
-        markdown_core_node_formula_properties(a, &mode_a, &a1);
-        markdown_core_node_formula_properties(b, &mode_b, &b1);
-        value = mode_a != mode_b;
-        text = !view_content_equal(a1, b1);
-        break;
-    }
-    case MARKDOWN_CORE_KIND_TABLE: {
-        size_t count_a, count_b, i;
-        markdown_core_node_table_column_count(a, &count_a);
-        markdown_core_node_table_column_count(b, &count_b);
-        if (count_a != count_b) {
-            value = true;
-            break;
-        }
-        for (i = 0; i < count_a && !value; i++) {
-            markdown_core_table_alignment alignment_a, alignment_b;
-            markdown_core_node_table_alignment_at(a, i, &alignment_a);
-            markdown_core_node_table_alignment_at(b, i, &alignment_b);
-            value = alignment_a != alignment_b;
-        }
-        break;
-    }
-    case MARKDOWN_CORE_KIND_TABLE_ROW: {
-        bool header_a, header_b;
-        markdown_core_node_table_row_is_header(a, &header_a);
-        markdown_core_node_table_row_is_header(b, &header_b);
-        value = header_a != header_b;
-        break;
-    }
-    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-    case MARKDOWN_CORE_KIND_DIRECTIVE: {
-        /* The name, and the attribute LIST as each node holds it — presence,
-         * count, each pair in source order — which is what the rendered
-         * JSON is a rendering of, read without the rendering: the render
-         * allocates and answers NULL when it cannot, and two lost renders
-         * would compare equal. A name the accessor could not produce (it
-         * allocates only for a node no parser made) reports "differs", so a
-         * revision bump can never be missed. */
-        const char *name_a = markdown_core_extensions_get_directive_name((markdown_core_node *)a);
-        const char *name_b = markdown_core_extensions_get_directive_name((markdown_core_node *)b);
-        bool present_a = markdown_core_extensions_directive_attributes_present(a);
-        bool present_b = markdown_core_extensions_directive_attributes_present(b);
-        size_t count_a = present_a ? markdown_core_extensions_directive_attribute_count(a) : 0;
-        size_t count_b = present_b ? markdown_core_extensions_directive_attribute_count(b) : 0;
-        size_t i;
-        if (!name_a || !name_b) {
-            value = true;
-            break;
-        }
-        a1.data = (const uint8_t *)name_a;
-        a1.length = strlen(name_a);
-        b1.data = (const uint8_t *)name_b;
-        b1.length = strlen(name_b);
-        value = !view_content_equal(a1, b1) || present_a != present_b || count_a != count_b;
-        for (i = 0; i < count_a && !value; i++) {
-            const uint8_t *key_a = NULL, *value_a = NULL, *key_b = NULL, *value_b = NULL;
-            size_t key_a_length = 0, value_a_length = 0, key_b_length = 0, value_b_length = 0;
-            markdown_core_extensions_directive_attribute_at(a, i, &key_a, &key_a_length, &value_a, &value_a_length);
-            markdown_core_extensions_directive_attribute_at(b, i, &key_b, &key_b_length, &value_b, &value_b_length);
-            a2.data = key_a;
-            a2.length = key_a_length;
-            b2.data = key_b;
-            b2.length = key_b_length;
-            a3.data = value_a;
-            a3.length = value_a_length;
-            b3.data = value_b;
-            b3.length = value_b_length;
-            value = !(view_content_equal(a2, b2) && view_content_equal(a3, b3));
-        }
-        break;
-    }
-    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
-    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
-        markdown_core_node_footnote_id(a, &a1);
-        markdown_core_node_footnote_id(b, &b1);
-        value = !view_content_equal(a1, b1);
-        break;
-    case MARKDOWN_CORE_KIND_CROSS_LINK:
-        markdown_core_node_cross_link_reference(a, &a1);
-        markdown_core_node_cross_link_reference(b, &b1);
-        value = !view_content_equal(a1, b1);
-        break;
-    case MARKDOWN_CORE_KIND_EMBED:
-        markdown_core_node_embed_reference(a, &a1);
-        markdown_core_node_embed_reference(b, &b1);
-        value = !view_content_equal(a1, b1);
-        break;
-    case MARKDOWN_CORE_KIND_LINK:
-        markdown_core_node_link_properties(a, &a1, &a2);
-        markdown_core_node_link_properties(b, &b1, &b2);
-        value = !(view_optional_equal(a1, b1) && view_optional_equal(a2, b2));
-        break;
-    case MARKDOWN_CORE_KIND_IMAGE:
-        markdown_core_node_image_properties(a, &a1, &a2);
-        markdown_core_node_image_properties(b, &b1, &b2);
-        value = !(view_optional_equal(a1, b1) && view_optional_equal(a2, b2));
-        break;
-    default:
-        break;
-    }
-    return value || text;
-}
-
-/* The same fields, written. One byte says whether a string is present
- * (the dump distinguishes null from empty), then its length and bytes;
- * scalars are written as bytes and 64-bit words. Two nodes whose blobs are
- * equal are nodes markdown_core_ast_projection_changed calls unchanged, and
- * the concrete runner's projection_write_agrees case holds the two to that
- * over every node of every fixture. */
-static void projection_view(markdown_core_strbuf *out, markdown_core_string view) {
-    uint64_t length = (uint64_t)view.length;
-    markdown_core_strbuf_putc(out, view.data ? 1 : 0);
-    markdown_core_strbuf_put(out, (const unsigned char *)&length, sizeof(length));
-    if (view.length) {
-        markdown_core_strbuf_put(out, view.data, (markdown_core_bufsize)view.length);
-    }
-}
-
-/* A GROWING text, witnessed by its length alone: presence and length, no
- * bytes (markdown_core_ast_projection_witness). */
-static void projection_view_length(markdown_core_strbuf *out, markdown_core_string view) {
-    uint64_t length = (uint64_t)view.length;
-    markdown_core_strbuf_putc(out, view.data ? 1 : 0);
-    markdown_core_strbuf_put(out, (const unsigned char *)&length, sizeof(length));
-}
-
-static void projection_u64(markdown_core_strbuf *out, uint64_t value) {
-    markdown_core_strbuf_put(out, (const unsigned char *)&value, sizeof(value));
-}
-
-/* The one field list behind both writers: exact, or with a block's own
- * content buffer witnessed by its length. */
-static bool projection_write_fields(const markdown_core_node *node, markdown_core_strbuf *out, bool growing_by_length) {
-    markdown_core_node_kind kind = markdown_core_node_get_kind(node);
-    markdown_core_string v1 = {NULL, 0}, v2 = {NULL, 0}, v3 = {NULL, 0};
-
-    projection_u64(out, (uint64_t)kind);
-    switch (kind) {
-    case MARKDOWN_CORE_KIND_HEADING: {
-        int32_t level = 0;
-        markdown_core_node_heading_level(node, &level);
-        projection_u64(out, (uint64_t)level);
-        break;
-    }
-    case MARKDOWN_CORE_KIND_LIST: {
-        markdown_core_list_flavor flavor;
-        markdown_core_optional_i64 start;
-        bool tight = false;
-        markdown_core_node_list_properties(node, &flavor, &start, &tight);
-        projection_u64(out, (uint64_t)flavor);
-        markdown_core_strbuf_putc(out, tight ? 1 : 0);
-        markdown_core_strbuf_putc(out, start.has_value ? 1 : 0);
-        projection_u64(out, start.has_value ? (uint64_t)start.value : 0);
-        break;
-    }
-    case MARKDOWN_CORE_KIND_LIST_ITEM: {
-        markdown_core_optional_bool checked;
-        markdown_core_node_list_item_checked(node, &checked);
-        markdown_core_strbuf_putc(out, checked.has_value ? 1 : 0);
-        markdown_core_strbuf_putc(out, checked.has_value && checked.value ? 1 : 0);
-        break;
-    }
-    case MARKDOWN_CORE_KIND_CODE_BLOCK: {
-        bool fenced = false, closed = false;
-        markdown_core_node_code_block_properties(node, &v1, &v2, &v3, &fenced, &closed);
-        markdown_core_strbuf_putc(out, fenced ? 1 : 0);
-        markdown_core_strbuf_putc(out, closed ? 1 : 0);
-        projection_view(out, v1);
-        projection_view(out, v2);
-        /* The literal is the block's content buffer, moved whole. */
-        if (growing_by_length) {
-            projection_view_length(out, v3);
-        } else {
-            projection_view(out, v3);
-        }
-        break;
-    }
-    case MARKDOWN_CORE_KIND_HTML_BLOCK:
-        /* Likewise: the literal is the buffer. */
-        markdown_core_node_literal(node, &v1);
-        if (growing_by_length) {
-            projection_view_length(out, v1);
-        } else {
-            projection_view(out, v1);
-        }
-        break;
-    case MARKDOWN_CORE_KIND_TEXT:
-    case MARKDOWN_CORE_KIND_HTML:
-    case MARKDOWN_CORE_KIND_CODE:
-        markdown_core_node_literal(node, &v1);
-        projection_view(out, v1);
+        buffer_cstr(buffer, form_name(form));
         break;
     case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
-        markdown_core_node_reference_definition_properties(node, &v1, &v2, &v3);
-        projection_view(out, v1);
-        projection_view(out, v2);
-        projection_view(out, v3);
+        markdown_core_node_association(node, &a, &b);
+        markdown_core_node_definition_resource(node, &c, &oa);
+        buffer_cstr(buffer, " label=");
+        buffer_json_string(buffer, a);
+        buffer_cstr(buffer, " identifier=");
+        buffer_json_string(buffer, b);
+        /* `destination=` is printed as a string and never as `null`: a
+         * definition that could not build one is not emitted (Q7, Q26), so an
+         * empty destination here means the source wrote `<>` and meant it. */
+        buffer_cstr(buffer, " destination=");
+        buffer_json_string(buffer, c);
+        buffer_cstr(buffer, " title=");
+        buffer_optional_string(buffer, oa);
         break;
-    case MARKDOWN_CORE_KIND_LINK_REFERENCE:
-    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: {
-        markdown_core_reference_form form;
-        markdown_core_node_reference_properties(node, &v1, &form);
-        projection_u64(out, (uint64_t)form);
-        projection_view(out, v1);
-        break;
-    }
-    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
-    case MARKDOWN_CORE_KIND_FORMULA: {
-        markdown_core_placement_mode mode;
-        markdown_core_node_formula_properties(node, &mode, &v1);
-        /* A formula always has a literal (an empty one is written and
-         * empty); the accessor materializes it and answers NULL only for an
-         * allocation it lost — a loss this write reports, not records. */
-        if (!v1.data) {
-            out->oom = 1;
-        }
-        projection_u64(out, (uint64_t)mode);
-        projection_view(out, v1);
-        break;
-    }
-    case MARKDOWN_CORE_KIND_TABLE: {
-        size_t count = 0, i;
-        markdown_core_node_table_column_count(node, &count);
-        projection_u64(out, (uint64_t)count);
-        for (i = 0; i < count; i++) {
-            markdown_core_table_alignment alignment;
-            markdown_core_node_table_alignment_at(node, i, &alignment);
-            projection_u64(out, (uint64_t)alignment);
-        }
-        break;
-    }
-    case MARKDOWN_CORE_KIND_TABLE_ROW: {
-        bool header = false;
-        markdown_core_node_table_row_is_header(node, &header);
-        markdown_core_strbuf_putc(out, header ? 1 : 0);
-        break;
-    }
-    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-    case MARKDOWN_CORE_KIND_DIRECTIVE: {
-        /* The name (every directive has one; NULL is an allocation the
-         * accessor lost, reported here) and the attribute LIST as the node
-         * holds it — presence, count, and each pair in source order — which
-         * is what the JSON the comparison reads is a rendering of, read
-         * without the rendering, so a lost render cannot be written down as
-         * "no attributes". */
-        const char *name = markdown_core_extensions_get_directive_name((markdown_core_node *)node);
-        bool present = markdown_core_extensions_directive_attributes_present(node);
-        size_t count = present ? markdown_core_extensions_directive_attribute_count(node) : 0;
-        size_t i;
-        if (!name) {
-            out->oom = 1;
-        }
-        v1.data = (const uint8_t *)name;
-        v1.length = name ? strlen(name) : 0;
-        projection_view(out, v1);
-        markdown_core_strbuf_putc(out, present ? 1 : 0);
-        projection_u64(out, (uint64_t)count);
-        for (i = 0; i < count; i++) {
-            const uint8_t *key = NULL;
-            const uint8_t *value = NULL;
-            size_t key_length = 0;
-            size_t value_length = 0;
-            markdown_core_string k;
-            markdown_core_string v;
-            markdown_core_extensions_directive_attribute_at(node, i, &key, &key_length, &value, &value_length);
-            k.data = key;
-            k.length = key_length;
-            v.data = value;
-            v.length = value_length;
-            projection_view(out, k);
-            projection_view(out, v);
-        }
-        break;
-    }
-    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
-    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
-        markdown_core_node_footnote_id(node, &v1);
-        projection_view(out, v1);
-        break;
-    case MARKDOWN_CORE_KIND_CROSS_LINK:
-        markdown_core_node_cross_link_reference(node, &v1);
-        projection_view(out, v1);
-        break;
-    case MARKDOWN_CORE_KIND_EMBED:
-        markdown_core_node_embed_reference(node, &v1);
-        projection_view(out, v1);
-        break;
+    /* A DESTINATION IS REQUIRED (Q26) and prints as a string. `[a]()` used to
+     * print `destination=null`, which said the author wrote no destination
+     * when the empty parentheses are the destination they wrote. */
     case MARKDOWN_CORE_KIND_LINK:
-        markdown_core_node_link_properties(node, &v1, &v2);
-        projection_view(out, v1);
-        projection_view(out, v2);
+        markdown_core_node_link_properties(node, &a, &oa);
+        buffer_cstr(buffer, " destination=");
+        buffer_json_string(buffer, a);
+        buffer_cstr(buffer, " title=");
+        buffer_optional_string(buffer, oa);
         break;
     case MARKDOWN_CORE_KIND_IMAGE:
-        markdown_core_node_image_properties(node, &v1, &v2);
-        projection_view(out, v1);
-        projection_view(out, v2);
+        markdown_core_node_image_properties(node, &a, &oa);
+        buffer_cstr(buffer, " source=");
+        buffer_json_string(buffer, a);
+        buffer_cstr(buffer, " title=");
+        buffer_optional_string(buffer, oa);
         break;
     default:
         break;
     }
-    return !out->oom;
 }
 
-bool markdown_core_ast_projection_write(const markdown_core_node *node, markdown_core_strbuf *out) {
-    return projection_write_fields(node, out, false);
-}
-
-bool markdown_core_ast_projection_witness(const markdown_core_node *node, markdown_core_strbuf *out) {
-    return projection_write_fields(node, out, true);
-}
-
-// Depth is input-controlled (nested block quotes nest one node per two input
-// bytes), so the canonical dump shares the one streaming scope walker: no
-// recursion, child reversal, count pre-pass, or per-node ancestor walk.
-static void dump_tree(dump_buffer *buffer, const markdown_core_node *root) {
-    canonical_walk walk;
-    const markdown_core_node *node;
-    markdown_core_scope scope;
-    size_t depth;
-    bool has_next;
-
-    canonical_walk_init(&walk, root);
-    while (canonical_walk_next(&walk, &node, &scope, &depth, &has_next)) {
-        markdown_core_node_kind kind = markdown_core_node_get_kind(node);
-        size_t child_count = markdown_core_node_child_count(node);
-        size_t i;
-        if (kind == MARKDOWN_CORE_KIND_NONE) {
-            buffer->failed = true;
-            break;
-        }
-        if (depth) {
-            for (i = 1; i < depth; i++) {
-                buffer_cstr(buffer, canonical_walk_branch_continues(&walk, i) ? "│   " : "    ");
-            }
-            buffer_cstr(buffer, has_next ? "├── " : "└── ");
-        }
-        buffer_cstr(buffer, markdown_core_node_kind_name(kind));
-        buffer_cstr(buffer, " scope=");
-        buffer_i64(buffer, scope.start.line);
-        buffer_cstr(buffer, ":");
-        buffer_i64(buffer, scope.start.column);
-        buffer_cstr(buffer, "..");
-        buffer_i64(buffer, scope.end.line);
-        buffer_cstr(buffer, ":");
-        buffer_i64(buffer, scope.end.column);
-        dump_fields(buffer, node, kind);
-        buffer_cstr(buffer, " children=");
-        buffer_i64(buffer, (int64_t)child_count);
-        buffer_cstr(buffer, "\n");
-        if (buffer->failed) {
-            break;
-        }
-    }
-    if (walk.failed) {
+static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
+    markdown_core_node_kind kind = markdown_core_node_get_kind(node);
+    markdown_core_scope scope = markdown_core_node_scope(node);
+    const markdown_core_node *child;
+    size_t count = markdown_core_node_child_count(node);
+    size_t i;
+    if (kind == MARKDOWN_CORE_KIND_NONE) {
         buffer->failed = true;
+        return;
     }
-    canonical_walk_dispose(&walk);
+    if (depth) {
+        for (i = 0; i + 1 < depth; i++) {
+            buffer_cstr(buffer, buffer->more[i] ? "│   " : "    ");
+        }
+        buffer_cstr(buffer, buffer->more[depth - 1] ? "├── " : "└── ");
+    }
+    buffer_cstr(buffer, markdown_core_node_kind_name(kind));
+    buffer_cstr(buffer, " scope=");
+    buffer_i64(buffer, scope.start.line);
+    buffer_cstr(buffer, ":");
+    buffer_i64(buffer, scope.start.column);
+    buffer_cstr(buffer, "..");
+    buffer_i64(buffer, scope.end.line);
+    buffer_cstr(buffer, ":");
+    buffer_i64(buffer, scope.end.column);
+    dump_fields(buffer, node, kind);
+    buffer_cstr(buffer, " children=");
+    buffer_i64(buffer, (int64_t)count);
+    buffer_cstr(buffer, "\n");
+
+    child = markdown_core_node_get_first_child(node);
+    while (child) {
+        const markdown_core_node *next = markdown_core_node_get_next_sibling(child);
+        if (!ensure_more(buffer, depth)) {
+            return;
+        }
+        buffer->more[depth] = next != NULL;
+        dump_node(buffer, child, depth + 1);
+        child = next;
+    }
 }
 
-bool markdown_core_document_dump(
-    const markdown_core_document *document,
-    uint8_t **output,
-    size_t *length,
-    markdown_core_error **error
-) {
-    return markdown_core_ast_dump_root(
-        document_is_head(document) ? document_generation_root(&document->chain->head) : NULL,
-        output,
-        length,
-        error
-    );
-}
-
-bool markdown_core_ast_dump_root(
-    const markdown_core_node *document_root,
-    uint8_t **output,
-    size_t *length,
-    markdown_core_error **error
-) {
+bool markdown_core_document_dump(const markdown_core_document *document, uint8_t **output, size_t *length,
+                                 markdown_core_error **error) {
     dump_buffer buffer = {0};
     clear_error(error);
-    if (!document_root || !output || !length) {
+    if (!document || !document->root || !output || !length) {
         set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "document, output, and length must not be null");
         return false;
     }
     *output = NULL;
     *length = 0;
-    dump_tree(&buffer, document_root);
+    dump_node(&buffer, document->root, 0);
+    free(buffer.more);
     if (buffer.failed) {
         free(buffer.data);
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not produce canonical AST dump");
