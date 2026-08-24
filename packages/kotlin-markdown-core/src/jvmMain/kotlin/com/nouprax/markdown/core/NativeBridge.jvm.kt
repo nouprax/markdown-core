@@ -12,6 +12,13 @@ internal actual fun nativeParse(
 }
 
 internal object JvmNative {
+    // `@JvmSynthetic` because `internal` IS NOT PRIVATE ON THE JVM. This object
+    // is reached from another compilation unit, so Kotlin has to emit it
+    // `public final`, and without this a Java caller can invoke the JNI entry
+    // point directly -- handing it a byte array and an options mask the decoder
+    // never sees. JNI resolves by name and descriptor and does not consult the
+    // synthetic flag, so the binding still links; only javac stops resolving it.
+    @JvmSynthetic
     external fun parse(
         source: ByteArray,
         optionsMask: Int,

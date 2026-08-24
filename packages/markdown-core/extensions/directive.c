@@ -29,6 +29,21 @@ typedef struct directive_attribute {
 typedef struct {
     markdown_core_chunk name;
     directive_attribute *attributes;
+    /* WHERE THE LAST `attribute_at` STOPPED. Every consumer of the attribute
+     * list -- the dump, all three bindings -- asks for index 0, then 1, then 2,
+     * and `attribute_at` walked from the head each time, which is O(n^2) over a
+     * directive with n attributes. Measured before this cursor existed: a 6.8 MB
+     * directive of unique attributes took 269 s, and doubling the input
+     * quadrupled the time. The cursor makes a forward walk O(1) per step and
+     * leaves random access exactly as correct as it was.
+     *
+     * `cursor_index` is the ACTIVE index of `cursor`, counting only active
+     * attributes, which is what `attribute_at` indexes by. Both are cleared by
+     * `invalidate_attribute_cursor` at every site that relinks, reorders or
+     * deactivates -- a stale cursor would hand back the wrong attribute, so it
+     * is cleared on mutation rather than validated on read. */
+    directive_attribute *cursor;
+    size_t cursor_index;
     int fence_length;
     int closed;
     int consume_line;
@@ -671,16 +686,41 @@ int markdown_core_extensions_directive_has_attributes(markdown_core_node *node) 
  * size of one `{...}`, so the walk is short and a second array to index into
  * would be a third representation of the same list -- which is what the JSON
  * cache was. */
+static void invalidate_attribute_cursor(node_directive *directive) {
+    if (directive) {
+        directive->cursor = NULL;
+        directive->cursor_index = 0;
+    }
+}
+
 static directive_attribute *attribute_at(node_directive *directive, size_t index) {
     directive_attribute *attr;
-    for (attr = directive ? directive->attributes : NULL; attr; attr = attr->next) {
+    size_t remaining = index;
+    if (!directive) {
+        return NULL;
+    }
+    /* Resume from the cursor for any index at or after it, which is every
+     * forward walk. A backward or random index falls through to the head and
+     * costs exactly what it always did. */
+    if (directive->cursor && index >= directive->cursor_index) {
+        attr = directive->cursor;
+        remaining = index - directive->cursor_index;
+    } else {
+        attr = directive->attributes;
+        while (attr && !attr->active) {
+            attr = attr->next;
+        }
+    }
+    for (; attr; attr = attr->next) {
         if (!attr->active) {
             continue;
         }
-        if (index == 0) {
+        if (remaining == 0) {
+            directive->cursor = attr;
+            directive->cursor_index = index;
             return attr;
         }
-        index--;
+        remaining--;
     }
     return NULL;
 }
@@ -964,6 +1004,7 @@ static int apply_parsed_directive(const markdown_core_syntax_extension *extensio
 
     if (parsed->has_attributes) {
         directive->attributes = parsed->attributes;
+        invalidate_attribute_cursor(directive);
         parsed->attributes = NULL;
     }
 
@@ -1158,6 +1199,7 @@ static markdown_core_node *match_colon_directive(const markdown_core_syntax_exte
     }
     directive = get_directive(node);
     directive->attributes = attributes;
+    invalidate_attribute_cursor(directive);
     directive->has_attributes = has_attributes;
     directive->has_label = has_label;
 

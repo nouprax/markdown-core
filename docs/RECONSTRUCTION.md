@@ -8485,6 +8485,85 @@ on an `assertTrue(failure is RuntimeException)` this branch had just written —
 `ParseException` extends it, so the check could not fail. Deleted rather than
 suppressed.
 
+#### 4.14.15L The gap the ABI question opened, and a 942x quadratic nothing could see
+
+**The owner asked what the ABI gate is for, and the honest answer named a hazard
+this branch had no gate for.** Closing it turned up a second thing that no gate
+in the repository could see either.
+
+##### `checkKotlinAbi` is real, and it does NOT cover what I first said it did
+
+`abiValidation` is on (Kotlin 2.4's built-in, `keepLocallyUnsupportedTargets`),
+so `checkKotlinAbi` exists — the exact task `stage-maven-publications.sh` and
+`audit-ci-policy.sh` named and §4.14.15H had to strip out. The reference dump is
+generated from THIS branch and read, not inherited from `main`: on the owner's
+account `main`'s baseline was authored ahead of the code it describes, which
+makes it a target rather than an observation, and a dump's whole value is that
+somebody looked.
+
+**But the dump answers a narrower question than the hazard.** Measured: **50
+classes in the Kotlin API dump, 66 classes public to Java.** The dump filters by
+KOTLIN visibility, so every `internal` declaration is absent from it *by
+construction* — which is precisely the set that can leak. It is a good gate for
+API drift and it is not a gate for this.
+
+##### So the sixteen were looked at, and one of them was closed
+
+`scripts/audit-kotlin-jvm-surface.sh` subtracts the ABI dump's classes from the
+jar's JVM-public classes and pins the remainder in
+`specs/kotlin/jvm-visible-surface.txt` with a reason per group. It may shrink;
+anything new fails. Two mutants, both killed: dropping one name from the pin, and
+removing the annotation below.
+
+**`JvmNative.parse` was the one worth closing rather than recording.** It is the
+JNI entry point, and `internal object JvmNative` is reached across compilation
+units so Kotlin must emit it `public final` — a Java caller could invoke the
+bridge directly, handing it bytes the decoder never sees. `@JvmSynthetic` sets
+`ACC_SYNTHETIC`, which **javac refuses to resolve and JNI does not consult**:
+verified by `javap -v` showing the flag and by `jvmTest` still passing.
+
+##### And then the accessor, which is the real find
+
+Reading a directive's attributes was **O(n²)**. `attribute_at(directive, index)`
+walked from the head on every call, and every consumer — the dump, all three
+bindings — asks for 0, then 1, then 2. It also skipped INACTIVE entries on every
+walk, so a duplicate-heavy directive walked all 1.4 million parsed attributes to
+find each of the 64 that survived folding.
+
+| input | before | after |
+|---|---|---|
+| 4 MiB of unique attributes | 21.6 s | 0.26 s |
+| 8 MiB | 67.9 s | 0.14 s |
+| **16 MiB** | **269.4 s** | **0.29 s — 942x** |
+
+Doubling the input quadrupled the time before (3.14x, 3.97x); it doubles now.
+The fix is a resume cursor on the directive, cleared at both sites that assign
+the list.
+
+**NOTHING IN THE REPOSITORY COULD SEE THIS.** `complexity_runner`'s `cc_measure`
+parses and frees — it never reads the tree — so `many_unique_attributes` reported
+linear scaling while dumping the same document took 269 seconds. **Parsing is not
+the only thing that has to scale**, and the suite had no case that said so. Two
+are added, `read_unique_attributes` and `read_duplicate_attributes`, which read
+every attribute through the public accessor. Mutant: with the cursor disabled
+both fail, `read_duplicate_attributes` at **7.454x** against the 4.0 bound.
+
+##### What is NOT fixed, and it is not this branch's
+
+`Test - C / Windows · Static · Correctness` fails
+`pathological_complexity_many_duplicate_attributes` at **5.153x**; macOS reads
+2.2–2.5x. **The accessor fix does not touch it** — that case measures the parse,
+which never calls the accessor, and saying otherwise would be reading a noise
+difference as a result. Measured instead: the case, the 4.0 threshold and
+`normalize_duplicate_attributes` are all **byte-for-byte the 1.0.3 baseline's**,
+the parse curve is a stable ~2.2x per doubling (about n^1.13, not accelerating),
+and the runner's own header says the 32,768x span exists to make **n log n
+visible** — which normalizes to ~3.85x against a bound of 4.0. The case is
+marginal by construction and Windows' constants tip it over. What this branch
+added to that path, `accumulate_class_attributes`, returns after one scan when no
+`class` is present, which is this workload. **Left open and named rather than
+fixed by moving the bound.**
+
 #### 4.14.15I The PR's three review comments: one right, one right for the wrong reason, one wrong
 
 Three bot comments landed on #115 — two from Codex, one from CodeQL. **Two of

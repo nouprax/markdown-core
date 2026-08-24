@@ -17,6 +17,7 @@ import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
 import org.gradle.testing.jacoco.tasks.JacocoReport
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
+import org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
@@ -383,6 +384,18 @@ val buildJvmNative =
 
 kotlin {
     explicitApi()
+
+    // WHAT JAVA ACTUALLY SEES, which the Kotlin source cannot show. `internal`
+    // has no JVM equivalent: it lowers to `public` with a mangled name, so an
+    // implementation class or member can be callable from Java without one line
+    // of this package saying so. A dump is the only way to look at it.
+    //
+    // `keepLocallyUnsupportedTargets` preserves the reference for targets this
+    // host cannot build, so a macOS run does not delete the Linux entries.
+    @OptIn(ExperimentalAbiValidation::class)
+    abiValidation {
+        keepLocallyUnsupportedTargets.set(true)
+    }
     compilerOptions {
         languageVersion.set(KotlinVersion.KOTLIN_2_2)
         apiVersion.set(KotlinVersion.KOTLIN_2_2)
@@ -558,6 +571,11 @@ afterEvaluate {
         testClassesDirs = sourceTask.testClassesDirs
         classpath = sourceTask.classpath
     }
+    stageAndroidHostTestArtifact.configure {
+        from(sourceTask.testClassesDirs) { into("classes") }
+        from(sourceTask.classpath.filter(File::isDirectory)) { into("classes") }
+        from(sourceTask.classpath.filter(File::isFile)) { into("lib") }
+    }
 }
 
 val javadocJar =
@@ -730,12 +748,17 @@ tasks.register<Sync>("stageJvmBenchmarkArtifact") {
     from(benchmarkCompilation.runtimeDependencyFiles.filter(File::isFile)) { into("lib") }
 }
 
-tasks.register<Sync>("stageAndroidHostTestArtifact") {
-    dependsOn(buildJvmNative, "compileAndroidHostTest")
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    into(layout.buildDirectory.dir("ci-test-artifact/android-host"))
-    from(nativeOutputDirectory) { into("native") }
-}
+// The CLASSES are added in `afterEvaluate` below, not here: the Android host
+// test task does not exist yet at this point, and staging only the native
+// payload produces an artifact whose runner finds no tests -- which is exactly
+// what CI reported.
+val stageAndroidHostTestArtifact =
+    tasks.register<Sync>("stageAndroidHostTestArtifact") {
+        dependsOn(buildJvmNative, "compileAndroidHostTest")
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        into(layout.buildDirectory.dir("ci-test-artifact/android-host"))
+        from(nativeOutputDirectory) { into("native") }
+    }
 
 jacoco { toolVersion = libs.versions.jacoco.get() }
 

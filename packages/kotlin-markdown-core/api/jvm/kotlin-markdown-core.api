@@ -1,0 +1,442 @@
+public final class com/nouprax/markdown/core/BlockQuote : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/Code : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getLiteral ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/CodeBlock : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getClosed ()Z
+	public final fun getFenced ()Z
+	public final fun getInfo ()Ljava/lang/String;
+	public final fun getLanguage ()Ljava/lang/String;
+	public final fun getLiteral ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/Concrete {
+	public final fun getLineCount ()I
+	public final fun getSource ()[B
+	public final fun lineStart (I)I
+}
+
+public final class com/nouprax/markdown/core/Directive : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getAttributes ()Ljava/util/List;
+	public final fun getLabel ()Lcom/nouprax/markdown/core/DirectiveLabel;
+	public final fun getName ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/DirectiveAttribute {
+	public final fun getName ()Ljava/lang/String;
+	public final fun getValue ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/DirectiveBlock : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getAttributes ()Ljava/util/List;
+	public final fun getContent ()Ljava/util/List;
+	public final fun getLabel ()Lcom/nouprax/markdown/core/DirectiveLabel;
+	public final fun getName ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/DirectiveLabel : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/Document : com/nouprax/markdown/core/Markup {
+	public static final field Companion Lcom/nouprax/markdown/core/Document$Companion;
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getConcrete ()Lcom/nouprax/markdown/core/Concrete;
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/Document$Companion {
+	public final fun parse (Ljava/lang/String;Lcom/nouprax/markdown/core/ParseOptions;)Lcom/nouprax/markdown/core/Document;
+	public static synthetic fun parse$default (Lcom/nouprax/markdown/core/Document$Companion;Ljava/lang/String;Lcom/nouprax/markdown/core/ParseOptions;ILjava/lang/Object;)Lcom/nouprax/markdown/core/Document;
+}
+
+public final class com/nouprax/markdown/core/Emphasis : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/FootnoteDefinition : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getContent ()Ljava/util/List;
+	public final fun getIdentifier ()Ljava/lang/String;
+	public final fun getLabel ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/FootnoteReference : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getIdentifier ()Ljava/lang/String;
+	public final fun getLabel ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/Formula : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getLiteral ()Ljava/lang/String;
+	public final fun getMode ()Lcom/nouprax/markdown/core/PlacementMode;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/FormulaBlock : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getLiteral ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/HTML : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getLiteral ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/HTMLBlock : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getLiteral ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/Heading : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getContent ()Ljava/util/List;
+	public final fun getLevel ()I
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/Image : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public final fun getSource ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/ImageReference : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getContent ()Ljava/util/List;
+	public final fun getForm ()Lcom/nouprax/markdown/core/ReferenceForm;
+	public final fun getIdentifier ()Ljava/lang/String;
+	public final fun getLabel ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/LineBreak : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/Link : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getContent ()Ljava/util/List;
+	public final fun getDestination ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public final fun getTitle ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/LinkReference : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getContent ()Ljava/util/List;
+	public final fun getForm ()Lcom/nouprax/markdown/core/ReferenceForm;
+	public final fun getIdentifier ()Ljava/lang/String;
+	public final fun getLabel ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/List : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getFlavor ()Lcom/nouprax/markdown/core/ListFlavor;
+	public final fun getItems ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public final fun getStart ()Ljava/lang/Long;
+	public final fun getTight ()Z
+}
+
+public final class com/nouprax/markdown/core/ListFlavor : java/lang/Enum {
+	public static final field BULLET Lcom/nouprax/markdown/core/ListFlavor;
+	public static final field ORDERED Lcom/nouprax/markdown/core/ListFlavor;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/ListFlavor;
+	public static fun values ()[Lcom/nouprax/markdown/core/ListFlavor;
+}
+
+public final class com/nouprax/markdown/core/ListItem : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getChecked ()Ljava/lang/Boolean;
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public abstract interface class com/nouprax/markdown/core/Markup {
+	public abstract fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public abstract fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/Markup$DefaultImpls {
+	public static fun dump (Lcom/nouprax/markdown/core/Markup;)Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/Paragraph : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/ParseErrorCode : java/lang/Enum {
+	public static final field ALLOCATION_FAILED Lcom/nouprax/markdown/core/ParseErrorCode;
+	public static final field INTERNAL Lcom/nouprax/markdown/core/ParseErrorCode;
+	public static final field INVALID_ARGUMENT Lcom/nouprax/markdown/core/ParseErrorCode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/ParseErrorCode;
+	public static fun values ()[Lcom/nouprax/markdown/core/ParseErrorCode;
+}
+
+public final class com/nouprax/markdown/core/ParseException : java/lang/RuntimeException {
+	public fun <init> (Lcom/nouprax/markdown/core/ParseErrorCode;Ljava/lang/String;)V
+	public final fun getCode ()Lcom/nouprax/markdown/core/ParseErrorCode;
+	public fun getMessage ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/ParseOptions {
+	public fun <init> ()V
+	public fun <init> (ZZZZZZZZZ)V
+	public synthetic fun <init> (ZZZZZZZZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Z
+	public final fun component3 ()Z
+	public final fun component4 ()Z
+	public final fun component5 ()Z
+	public final fun component6 ()Z
+	public final fun component7 ()Z
+	public final fun component8 ()Z
+	public final fun component9 ()Z
+	public final fun copy (ZZZZZZZZZ)Lcom/nouprax/markdown/core/ParseOptions;
+	public static synthetic fun copy$default (Lcom/nouprax/markdown/core/ParseOptions;ZZZZZZZZZILjava/lang/Object;)Lcom/nouprax/markdown/core/ParseOptions;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAutolinks ()Z
+	public final fun getDirectives ()Z
+	public final fun getFootnotes ()Z
+	public final fun getFormulas ()Z
+	public final fun getSmartPunctuation ()Z
+	public final fun getStrikethrough ()Z
+	public final fun getStripHTMLComments ()Z
+	public final fun getTables ()Z
+	public final fun getTaskLists ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/PlacementMode : java/lang/Enum {
+	public static final field EMBEDDED Lcom/nouprax/markdown/core/PlacementMode;
+	public static final field STANDALONE Lcom/nouprax/markdown/core/PlacementMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/PlacementMode;
+	public static fun values ()[Lcom/nouprax/markdown/core/PlacementMode;
+}
+
+public final class com/nouprax/markdown/core/Position {
+	public fun <init> (II)V
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun copy (II)Lcom/nouprax/markdown/core/Position;
+	public static synthetic fun copy$default (Lcom/nouprax/markdown/core/Position;IIILjava/lang/Object;)Lcom/nouprax/markdown/core/Position;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getColumn ()I
+	public final fun getLine ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/ReferenceDefinition : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getDestination ()Ljava/lang/String;
+	public final fun getIdentifier ()Ljava/lang/String;
+	public final fun getLabel ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public final fun getTitle ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/ReferenceForm : java/lang/Enum {
+	public static final field COLLAPSED Lcom/nouprax/markdown/core/ReferenceForm;
+	public static final field FULL Lcom/nouprax/markdown/core/ReferenceForm;
+	public static final field SHORTCUT Lcom/nouprax/markdown/core/ReferenceForm;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/ReferenceForm;
+	public static fun values ()[Lcom/nouprax/markdown/core/ReferenceForm;
+}
+
+public final class com/nouprax/markdown/core/Scope {
+	public fun <init> (Lcom/nouprax/markdown/core/Position;Lcom/nouprax/markdown/core/Position;)V
+	public final fun component1 ()Lcom/nouprax/markdown/core/Position;
+	public final fun component2 ()Lcom/nouprax/markdown/core/Position;
+	public final fun copy (Lcom/nouprax/markdown/core/Position;Lcom/nouprax/markdown/core/Position;)Lcom/nouprax/markdown/core/Scope;
+	public static synthetic fun copy$default (Lcom/nouprax/markdown/core/Scope;Lcom/nouprax/markdown/core/Position;Lcom/nouprax/markdown/core/Position;ILjava/lang/Object;)Lcom/nouprax/markdown/core/Scope;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEnd ()Lcom/nouprax/markdown/core/Position;
+	public final fun getStart ()Lcom/nouprax/markdown/core/Position;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/SoftBreak : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/Strikethrough : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/Strong : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/Table : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getAlignments ()Ljava/util/List;
+	public final fun getHeader ()Lcom/nouprax/markdown/core/TableRow;
+	public final fun getRows ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/TableAlignment : java/lang/Enum {
+	public static final field CENTER Lcom/nouprax/markdown/core/TableAlignment;
+	public static final field LEFT Lcom/nouprax/markdown/core/TableAlignment;
+	public static final field NONE Lcom/nouprax/markdown/core/TableAlignment;
+	public static final field RIGHT Lcom/nouprax/markdown/core/TableAlignment;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/TableAlignment;
+	public static fun values ()[Lcom/nouprax/markdown/core/TableAlignment;
+}
+
+public final class com/nouprax/markdown/core/TableCell : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/TableRow : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getCells ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public final fun isHeader ()Z
+}
+
+public final class com/nouprax/markdown/core/Text : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getLiteral ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/ThematicBreak : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/TreeDumper {
+	public static final field INSTANCE Lcom/nouprax/markdown/core/TreeDumper;
+	public final fun dump (Lcom/nouprax/markdown/core/Markup;)Ljava/lang/String;
+}
+
+public abstract interface class com/nouprax/markdown/core/Visitor {
+	public abstract fun visitBlockQuote (Lcom/nouprax/markdown/core/BlockQuote;)Ljava/lang/Object;
+	public abstract fun visitCode (Lcom/nouprax/markdown/core/Code;)Ljava/lang/Object;
+	public abstract fun visitCodeBlock (Lcom/nouprax/markdown/core/CodeBlock;)Ljava/lang/Object;
+	public abstract fun visitDirective (Lcom/nouprax/markdown/core/Directive;)Ljava/lang/Object;
+	public abstract fun visitDirectiveBlock (Lcom/nouprax/markdown/core/DirectiveBlock;)Ljava/lang/Object;
+	public abstract fun visitDirectiveLabel (Lcom/nouprax/markdown/core/DirectiveLabel;)Ljava/lang/Object;
+	public abstract fun visitDocument (Lcom/nouprax/markdown/core/Document;)Ljava/lang/Object;
+	public abstract fun visitEmphasis (Lcom/nouprax/markdown/core/Emphasis;)Ljava/lang/Object;
+	public abstract fun visitFootnoteDefinition (Lcom/nouprax/markdown/core/FootnoteDefinition;)Ljava/lang/Object;
+	public abstract fun visitFootnoteReference (Lcom/nouprax/markdown/core/FootnoteReference;)Ljava/lang/Object;
+	public abstract fun visitFormula (Lcom/nouprax/markdown/core/Formula;)Ljava/lang/Object;
+	public abstract fun visitFormulaBlock (Lcom/nouprax/markdown/core/FormulaBlock;)Ljava/lang/Object;
+	public abstract fun visitHTML (Lcom/nouprax/markdown/core/HTML;)Ljava/lang/Object;
+	public abstract fun visitHTMLBlock (Lcom/nouprax/markdown/core/HTMLBlock;)Ljava/lang/Object;
+	public abstract fun visitHeading (Lcom/nouprax/markdown/core/Heading;)Ljava/lang/Object;
+	public abstract fun visitImage (Lcom/nouprax/markdown/core/Image;)Ljava/lang/Object;
+	public abstract fun visitImageReference (Lcom/nouprax/markdown/core/ImageReference;)Ljava/lang/Object;
+	public abstract fun visitLineBreak (Lcom/nouprax/markdown/core/LineBreak;)Ljava/lang/Object;
+	public abstract fun visitLink (Lcom/nouprax/markdown/core/Link;)Ljava/lang/Object;
+	public abstract fun visitLinkReference (Lcom/nouprax/markdown/core/LinkReference;)Ljava/lang/Object;
+	public abstract fun visitList (Lcom/nouprax/markdown/core/List;)Ljava/lang/Object;
+	public abstract fun visitListItem (Lcom/nouprax/markdown/core/ListItem;)Ljava/lang/Object;
+	public abstract fun visitParagraph (Lcom/nouprax/markdown/core/Paragraph;)Ljava/lang/Object;
+	public abstract fun visitReferenceDefinition (Lcom/nouprax/markdown/core/ReferenceDefinition;)Ljava/lang/Object;
+	public abstract fun visitSoftBreak (Lcom/nouprax/markdown/core/SoftBreak;)Ljava/lang/Object;
+	public abstract fun visitStrikethrough (Lcom/nouprax/markdown/core/Strikethrough;)Ljava/lang/Object;
+	public abstract fun visitStrong (Lcom/nouprax/markdown/core/Strong;)Ljava/lang/Object;
+	public abstract fun visitTable (Lcom/nouprax/markdown/core/Table;)Ljava/lang/Object;
+	public abstract fun visitTableCell (Lcom/nouprax/markdown/core/TableCell;)Ljava/lang/Object;
+	public abstract fun visitTableRow (Lcom/nouprax/markdown/core/TableRow;)Ljava/lang/Object;
+	public abstract fun visitText (Lcom/nouprax/markdown/core/Text;)Ljava/lang/Object;
+	public abstract fun visitThematicBreak (Lcom/nouprax/markdown/core/ThematicBreak;)Ljava/lang/Object;
+}
+
+public final class com/nouprax/markdown/core/WalkEvent : java/lang/Enum {
+	public static final field ENTERING Lcom/nouprax/markdown/core/WalkEvent;
+	public static final field EXITING Lcom/nouprax/markdown/core/WalkEvent;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/WalkEvent;
+	public static fun values ()[Lcom/nouprax/markdown/core/WalkEvent;
+}
+
+public final class com/nouprax/markdown/core/Walker {
+	public static final field INSTANCE Lcom/nouprax/markdown/core/Walker;
+	public final fun walk (Lcom/nouprax/markdown/core/Markup;Lcom/nouprax/markdown/core/Visitor;)V
+	public final fun walk (Lcom/nouprax/markdown/core/Markup;Lkotlin/jvm/functions/Function2;)V
+}
+

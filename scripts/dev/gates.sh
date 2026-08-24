@@ -53,6 +53,10 @@ echo "test-topology     : $(bash scripts/audit-test-topology.sh 2>&1 | tail -1)"
 # WITHOUT --clean here: the --clean form additionally demands a clean checkout,
 # which is never true in the middle of a step.
 echo "repository        : $(bash scripts/audit-repository.sh 2>&1 | tail -1)"
+# WHAT JAVA SEES OF THE KOTLIN BINDING, which `checkKotlinAbi` cannot answer:
+# its dump is the Kotlin API and every leaked name is absent from it by
+# construction. Needs a JDK and the compiled JVM classes.
+echo "kotlin-jvm-surface: $(bash scripts/audit-kotlin-jvm-surface.sh 2>&1 | tail -1)"
 sh scripts/format-c.sh --check >/dev/null 2>&1; echo "format-c          : exit $?"
 sh scripts/format-cmake.sh --check >/dev/null 2>&1; echo "format-cmake      : exit $?"
 printf "lint-c            : "; scripts/lint-c.sh >/dev/null 2>&1 && echo "exit 0" || echo "FAILED"

@@ -1,0 +1,44 @@
+# Kotlin declarations that ordinary Java can reach and that are NOT public API.
+#
+# `internal` lowers to `public final` on the JVM whenever the declaration is
+# reached from another compilation unit, so this list is not a set of mistakes
+# to fix one by one -- most of it cannot be made package-private without
+# collapsing the multiplatform source-set split. It is a REVIEWED RECORD, and
+# `scripts/audit-kotlin-jvm-surface.sh` fails on anything added to the actual
+# surface that is not written down here.
+#
+# `checkKotlinAbi` does not overlap with this: its dump is the Kotlin API, and
+# every name below is absent from it by construction.
+#
+# JvmNative is deliberately NOT here -- its one member carries @JvmSynthetic, so
+# javac cannot resolve it, and the audit asserts that separately.
+
+# `when` over an enum compiles to a lookup table in a nested class.
+DumpVisitor$WhenMappings
+TreeDumper$WhenMappings
+WireMarkupDecoderKt$WhenMappings
+
+# File facades for top-level declarations. The class is public because the file
+# has top-level members; the members themselves are internal and name-mangled.
+ImmutableListKt
+NativeBridge_jvmKt
+ParseOptionsKt
+TreeDumperKt
+WalkerKt
+WireDecoderKt
+WireMarkupDecoderKt
+
+# The companion of a package-private class. Reachable in name only: every
+# member is internal, and the owning class is not public.
+ReadOnlyList$Companion
+
+# The wire protocol. commonMain declares them and jvmMain reads them, so Kotlin
+# must emit them public. Calling them from Java yields raw wire bytes rather
+# than anything unsafe, but none of it is API and none of it is stable.
+WireDecoder
+WireKind
+WireKind$Companion
+WireReader
+
+# The JNI object itself. The CLASS is reachable; its only member is not.
+JvmNative

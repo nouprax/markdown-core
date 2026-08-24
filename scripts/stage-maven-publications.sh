@@ -21,6 +21,12 @@ common=(
     --warning-mode=fail
     "-PreleaseRepositoryDir=$repository"
 )
+# The ABI reference is checked BEFORE anything is staged: a publication whose
+# public surface drifted from packages/kotlin-markdown-core/api/ is the one
+# thing that cannot be taken back once it is on Maven Central.
+abi_tasks=(
+    :packages:kotlin-markdown-core:checkKotlinAbi
+)
 base_tasks=(
     :packages:kotlin-markdown-core:publishKotlinMultiplatformPublicationToReleaseStagingRepository
     :packages:kotlin-markdown-core:publishJvmPublicationToReleaseStagingRepository
@@ -52,7 +58,7 @@ case "$mode" in
 esac
 
 cd "$root"
-scripts/gradle.sh "${common[@]}" "${tasks[@]}"
+scripts/gradle.sh "${common[@]}" "${abi_tasks[@]}" "${tasks[@]}"
 
 if [ "$mode" = macos-native ]; then
     jvm_jar=$(find packages/kotlin-markdown-core/build/libs -maxdepth 1 -type f \

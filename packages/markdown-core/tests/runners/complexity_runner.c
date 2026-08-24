@@ -239,19 +239,53 @@ static int cc_run_expansion(const char *name) {
 typedef struct cc_case_entry {
     const char *name;
     cc_builder build;
+    /* WHETHER THE CASE READS THE TREE IT PARSED. Every case here parsed and
+     * freed and nothing else, so a facade accessor could be quadratic and this
+     * suite would report linear scaling -- which is exactly what happened:
+     * `markdown_core_node_directive_attribute_at` walked from the head on every
+     * index, and a 6.8 MB directive took 269 s to dump while `many_unique_
+     * attributes` passed. Parsing is not the only thing that has to scale. */
+    int reads_attributes;
 } cc_case_entry;
 
 static const cc_case_entry CC_CASES[] = {
-    {"valid_long_quoted_value", cc_quoted_value},       {"valid_consecutive_backslashes", cc_backslashes},
-    {"unclosed_long_quoted_value", cc_unclosed_quoted}, {"unclosed_backslash_value", cc_unclosed_backslashes},
-    {"many_unique_attributes", cc_unique_attributes},   {"many_duplicate_attributes", cc_duplicate_attributes},
-    {"many_unique_references", cc_unique_references},   {"many_duplicate_references", cc_duplicate_references},
+    {"valid_long_quoted_value", cc_quoted_value, 0},       {"valid_consecutive_backslashes", cc_backslashes, 0},
+    {"unclosed_long_quoted_value", cc_unclosed_quoted, 0}, {"unclosed_backslash_value", cc_unclosed_backslashes, 0},
+    {"many_unique_attributes", cc_unique_attributes, 0},   {"many_duplicate_attributes", cc_duplicate_attributes, 0},
+    {"many_unique_references", cc_unique_references, 0},   {"many_duplicate_references", cc_duplicate_references, 0},
+    {"read_unique_attributes", cc_unique_attributes, 1},   {"read_duplicate_attributes", cc_duplicate_attributes, 1},
 };
 
 /* Cases measured by output size rather than by time. */
 static const char *const CC_EXPANSION_CASES[] = {"reference_expansion_bound"};
 
-static int cc_measure(const char *input, size_t length, double *seconds) {
+/* Reads every attribute of every directive through the PUBLIC accessor, which
+ * is what a dump and all three bindings do. The values are discarded; the point
+ * is that reading n of them costs O(n) and not O(n^2). */
+static void cc_read_attributes(markdown_core_document *document) {
+    const markdown_core_node *root = markdown_core_document_semantic(document);
+    const markdown_core_node *paragraph = root ? markdown_core_node_get_first_child(root) : NULL;
+    const markdown_core_node *node;
+    for (node = paragraph ? markdown_core_node_get_first_child(paragraph) : NULL; node;
+         node = markdown_core_node_get_next_sibling(node)) {
+        markdown_core_string directive_name;
+        bool has_attributes = false;
+        size_t count = 0;
+        size_t index;
+        if (!markdown_core_node_directive_properties(node, &directive_name, &has_attributes, &count)) {
+            continue;
+        }
+        for (index = 0; index < count; index++) {
+            markdown_core_string name;
+            markdown_core_string value;
+            if (!markdown_core_node_directive_attribute_at(node, index, &name, &value)) {
+                break;
+            }
+        }
+    }
+}
+
+static int cc_measure(const char *input, size_t length, double *seconds, int reads_attributes) {
     double samples[SCALING_REPEATS];
     int repeat;
     markdown_core_parse_options options;
@@ -268,6 +302,9 @@ static int cc_measure(const char *input, size_t length, double *seconds) {
             markdown_core_document *document = ts_ast_parse((const uint8_t *)input, length, &options);
             if (!document) {
                 return -1;
+            }
+            if (reads_attributes) {
+                cc_read_attributes(document);
             }
             markdown_core_document_free(document);
             iterations++;
@@ -304,7 +341,7 @@ static int cc_run(const cc_case_entry *entry) {
             fprintf(stderr, "cannot build input for %s\n", entry->name);
             return -1;
         }
-        if (cc_measure(input, length, &timings[step]) != 0) {
+        if (cc_measure(input, length, &timings[step], entry->reads_attributes) != 0) {
             fprintf(stderr, "conversion failed for %s\n", entry->name);
             free(input);
             return -1;

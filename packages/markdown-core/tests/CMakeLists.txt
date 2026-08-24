@@ -352,6 +352,8 @@ set(MARKDOWN_CORE_COMPLEXITY_CASES
     many_duplicate_attributes
     many_unique_references
     many_duplicate_references
+    read_unique_attributes
+    read_duplicate_attributes
     reference_expansion_bound)
 foreach(case IN LISTS MARKDOWN_CORE_COMPLEXITY_CASES)
     markdown_core_add_test(pathological_complexity_${case} "pathological;complexity" 120 complexity_runner --case
