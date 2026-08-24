@@ -39,9 +39,19 @@ longer exists.
   which is what cmark-gfm reports and what an editor needs.
 - `Document.concrete` is the normalized source and its line index: the text a
   scope's coordinates are counted against, which is not the string that was
-  passed in wherever it held a NUL. The per-byte region set and its
-  `RegionRole`, `Region`, `regionCount`, `region(...)` and `ownerOf(...)`
-  surface are removed from C, Swift, Kotlin and ECMAScript.
+  passed in wherever it held a NUL.
+- `markdown_core_document_root` is renamed `markdown_core_document_semantic`,
+  because the parse now has two total views and the old name did not say which
+  one it returned.
+- `markdown_core_node_footnote_id` is replaced by
+  `markdown_core_node_association`, which answers for all five kinds carrying a
+  label and reports the label as written beside the normalized identifier it
+  matches by. `markdown_core_node_directive_first_label_child` and
+  `markdown_core_node_directive_first_content_child` are removed: a directive's
+  label is an ordinary node in the child list.
+- `ParseOptions.dollarFormulaDelimiters` and
+  `ParseOptions.latexFormulaDelimiters` are removed from Swift, Kotlin and
+  ECMAScript. Attaching `formula` is the only switch the extension has.
 - A parse failure carries no scope. `markdown_core_error_get_scope` and
   `ParseError.scope` are removed from C, Swift, Kotlin and ECMAScript: an input
   the parser could not turn into a document has no extent to point at, and a

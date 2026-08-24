@@ -7776,6 +7776,45 @@ Two examples nearly went uncounted: `extensions-directive.txt` and
 ```` ```…``` example table ````, so a reader anchored on `example$` finds 94 and
 reports a clean sweep of the wrong denominator.
 
+##### 5a. THE RELEASE NOTE LISTED THINGS 1.0.3 NEVER HAD, and the owner caught it
+
+The note's *"Removed"* list was written from what this effort deleted rather
+than from what the previous release shipped. **A release note is a delta against
+1.0.3**, and `v1.0.3` IS `580d10c`, so it can be measured rather than
+remembered. Four of the five clauses were wrong:
+
+| Claimed removed | Measured against `v1.0.3` |
+|---|---|
+| the region set — `RegionRole`, `Region`, `regionCount`, `region(...)`, `ownerOf(...)` | **absent from every public surface.** Added at 11a/12 and deleted at 11d, both inside this effort; no consumer ever saw it |
+| `markdown_core_register_plugin` | `core/registry.h` — **not installed and not exported** |
+| the arena entry points | `core/markdown-core.h` — same |
+| `markdown_core_enable_safety_checks` | `core/node.h` — same |
+| `MARKDOWN_CORE_OPT_DIRECTIVE` | `core/markdown-core.h`, internal; the binding-visible `directives` switch survives |
+| `markdown_core_error_get_scope` and `ParseError.scope` | **correct** — in the installed header, in the export list, and public in the Swift binding |
+
+`packages/markdown-core/core/CMakeLists.txt:145` installs **exactly one
+header**, `include/markdown_core.h`, and the shared library exports only the
+names in `markdown_core.exports`. That pair is the whole test of whether a
+symbol was ever reachable, and four of the five failed it.
+
+**What the measurement found instead**, by diffing 1.0.3's export list against
+today's: **five exported symbols gone** — `markdown_core_document_root` (now
+`_semantic`), `markdown_core_error_get_scope`,
+`markdown_core_node_directive_first_label_child` and `_first_content_child` (a
+directive's label is an ordinary child node now), and
+`markdown_core_node_footnote_id` (now `markdown_core_node_association`) — and
+**eleven added**. Plus one class a name diff cannot see: four accessors kept
+their names and changed their signatures at Step 14, so a caller passing a
+`markdown_core_string_view *` no longer compiles.
+
+And one genuine binding removal the list had missed: **1.0.3's `ParseOptions`
+carried `dollarFormulaDelimiters` and `latexFormulaDelimiters` in Swift, Kotlin
+AND ECMAScript**, and Step 6 deleted all six. That one belongs in the note and
+was not in it.
+
+The same wrong sentence was in `CHANGELOG.md`, where it had been since 11d.
+Both are corrected.
+
 ##### 6. What is still red, and both are the owner's
 
 | Check | Re-measured here | Owner |
