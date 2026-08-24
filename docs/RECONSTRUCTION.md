@@ -8462,6 +8462,29 @@ gates §0 lists all run on one host with one compiler.
   three verified by staging for real — `jvm` 97 files, `jvm-benchmark` 76,
   `android-host` 1.
 
+##### Round four: the instrumentation APK carried four ABIs
+
+`Build Test - Kotlin / Android x86_64 · Instrumentation APK` refused its own
+output: *"Android test artifact must contain only x86_64 native code; found:
+arm64-v8a, armeabi-v7a, x86, x86_64"*.
+`scripts/build-kotlin-android-test-artifact.sh` passes
+`-PmarkdownCore.android.abis=x86_64` and then checks what it got —
+**and `android-runtime/build.gradle.kts` never read the property**, so the build
+kept producing all four and the script kept refusing them. **Fourth instance of
+the `scripts/` rule**, and the same shape as the three before it: a main-era
+script driving a build half that did not come with it.
+
+`requestedAndroidAbis` reads the property and narrows `ndk { abiFilters }` when
+it is set. **Unset it changes nothing**, which is what a release needs — checked
+by running `verifyKotlinNativePackaging` with no property and `audit:packages`
+after. With it set, the exact script CI runs now passes locally and the Gradle
+log shows one native task, `buildCMakeRelWithDebInfo[x86_64]`.
+
+A Kotlin compiler warning went with it: **`Check for instance is always 'true'`**
+on an `assertTrue(failure is RuntimeException)` this branch had just written —
+`ParseException` extends it, so the check could not fail. Deleted rather than
+suppressed.
+
 #### 4.14.15I The PR's three review comments: one right, one right for the wrong reason, one wrong
 
 Three bot comments landed on #115 — two from Codex, one from CodeQL. **Two of

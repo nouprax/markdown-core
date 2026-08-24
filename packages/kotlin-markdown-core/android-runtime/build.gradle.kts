@@ -16,6 +16,20 @@ val isIdeSync =
         .map(String::toBoolean)
         .getOrElse(false)
 
+// WHICH ABIs THE NATIVE PAYLOAD IS BUILT FOR, narrowed by the caller.
+// `scripts/build-kotlin-android-test-artifact.sh` passes
+// `-PmarkdownCore.android.abis=x86_64` and then REFUSES an artifact carrying
+// anything else, because an instrumentation APK for one emulator has no use for
+// the other three and pays their build time and size. Unset, every ABI is built,
+// which is what a release needs.
+val requestedAndroidAbis =
+    providers
+        .gradleProperty("markdownCore.android.abis")
+        .orNull
+        ?.split(',')
+        ?.map(String::trim)
+        ?.filter(String::isNotEmpty)
+
 dependencyLocking {
     lockAllConfigurations()
 }
@@ -41,6 +55,9 @@ android {
 
     defaultConfig {
         minSdk = libs.versions.android.min.sdk.get().toInt()
+        requestedAndroidAbis?.let { abis ->
+            ndk { abiFilters += abis }
+        }
         if (!isIdeSync) {
             externalNativeBuild {
                 cmake { arguments += "-DANDROID_STL=none" }

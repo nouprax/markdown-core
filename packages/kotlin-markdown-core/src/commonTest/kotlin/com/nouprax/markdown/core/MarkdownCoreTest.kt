@@ -147,7 +147,6 @@ class ErrorsTest {
         val failure = ParseException(ParseErrorCode.ALLOCATION_FAILED, "out of memory")
         assertEquals(ParseErrorCode.ALLOCATION_FAILED, failure.code)
         assertEquals("out of memory", failure.message)
-        assertTrue(failure is RuntimeException)
     }
 }
 
