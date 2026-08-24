@@ -1,13 +1,25 @@
 import MarkdownCoreC
 
+/// A fenced or indented code block.
 public struct CodeBlock: Markup {
+    /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
+    /// The complete raw info string, or `nil` when the source wrote none. A
+    /// fence with nothing but whitespace after it wrote none; an indented
+    /// block has no fence to write one on.
     public let info: String?
+    /// The info string's first whitespace-delimited token. Present exactly
+    /// when ``info`` is.
     public let language: String?
+    /// The block's content. Its fence and its indentation are in no literal.
     public let literal: String
+    /// Whether the author fenced it. An indented block is `false`.
     public let fenced: Bool
+    /// Whether a fenced block was closed before the document or its container
+    /// ended. An indented block is always `true`, having nothing to close.
     public let closed: Bool
 
+    /// Dispatches to the visitor's `CodeBlock` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 

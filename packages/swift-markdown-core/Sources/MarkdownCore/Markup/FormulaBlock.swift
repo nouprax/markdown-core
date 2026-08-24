@@ -1,9 +1,13 @@
 import MarkdownCoreC
 
+/// A standalone formula. Requires the `formula` extension.
 public struct FormulaBlock: Markup {
+    /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
+    /// The formula's body. Its delimiters or fence are in no literal.
     public let literal: String
 
+    /// Dispatches to the visitor's `FormulaBlock` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 

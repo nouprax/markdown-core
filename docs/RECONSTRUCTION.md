@@ -141,7 +141,7 @@ mdast backlog and D9's oracle use:
 | Check | Why red | Owner |
 |---|---|---|
 | ~~`scripts/audit-ast-projections.mjs`~~ | **GREEN at 15A.2.** It was never era skew — §4.1.2 measured it as one binding a full era behind the other two, and Q30's typed child edges closed all sixteen Swift-only failures. | — |
-| `scripts/format-swift.sh --check` | **NEWLY REGISTERED at 15A.2, and it was in no list.** `swift format lint --strict` exits 1 at `46e20f2` with **184** findings, all `[AllPublicDeclarationsHaveDocumentation]`; the pinned 6.3.0 matches, and `.github/workflows/ci.yml:182` runs it as a required health check. 15A.2 takes it to 170, Step 6's option deletion to **163**, Step 7.2's two new public types back to **164**, and 9b.2's rewrite of the two footnote types down to **155**. ~~Still 155 after §4.14.11d~~: deleting `Region`, `RegionRole` and `owner(of:)` removed as many documented public declarations as it did undocumented ones. **RE-MEASURED AT 15C: 150 findings, and one of them is NOT that rule** — 149 `AllPublicDeclarationsHaveDocumentation` and **1 `NoBlockComments`**, which this row has never mentioned. Step 14's doc comments on `Link.destination` and `Image.source` took the other six. | **Q41** |
+| ~~`scripts/format-swift.sh --check`~~ | **GREEN at 15D — 150 findings to 0** (§4.14.15D), by the owner's ruling of 2026-08-24 that the rule is KEPT and satisfied rather than scoped away. ~~**NEWLY REGISTERED at 15A.2, and it was in no list.**~~ `swift format lint --strict` exits 1 at `46e20f2` with **184** findings, all `[AllPublicDeclarationsHaveDocumentation]`; the pinned 6.3.0 matches, and `.github/workflows/ci.yml:182` runs it as a required health check. 15A.2 takes it to 170, Step 6's option deletion to **163**, Step 7.2's two new public types back to **164**, and 9b.2's rewrite of the two footnote types down to **155**. ~~Still 155 after §4.14.11d~~: deleting `Region`, `RegionRole` and `owner(of:)` removed as many documented public declarations as it did undocumented ones. **RE-MEASURED AT 15C: 150 findings, and one of them is NOT that rule** — 149 `AllPublicDeclarationsHaveDocumentation` and **1 `NoBlockComments`**, which this row has never mentioned. Step 14's doc comments on `Link.destination` and `Image.source` took the other six — and the 150th was never a documentation finding at all, but a block comment THIS BRANCH wrote three commits earlier. | ~~Q41~~ ANSWERED |
 | ~~`scripts/check-generated-scanners.sh`~~ | **GREEN at 15C** (§4.14.15C). It was never a version pin: the committed `scanners.c` carried a GENERATION DATE the Makefile rule's `--no-generation-date` forbids, and no flag set in the whole swept space reproduced its 20,459 lines. Same 26 functions, same prologue — one re2c's DFA codegen against another's. Regenerated with the rule; behaviour-neutral, measured across every gate. | — |
 | ~~`node scripts/check-release-version.mjs --skip-swift`~~ | **GREEN at 15C with NO `--skip-*`** (§4.14.15C), and *"repo hygiene"* was the wrong diagnosis: `codex-doc-pass-backup` and `pre-format-baseline` are **not in the repository** — `git ls-remote --tags origin` lists only the four `v*` refs — so they are local refs on one machine and CI has been green throughout. Proved by deleting both, running the gate clean, and restoring them from the SHAs recorded first. They are somebody's local backups and 15C does not delete them; `git tag -d codex-doc-pass-backup pre-format-baseline` changes nothing in the repository. | — |
 | ~~`node scripts/fuzz-parity.mjs --oracle mdast`~~ | **GREEN at 9b.2, 300/300.** It was red on every generated input for the same reason the backlog existed, and it turned green in the commit that emptied the backlog — measured on both sides, not assumed (§4.14.9b2). | — |
@@ -1279,7 +1279,7 @@ Restating a port as a requirement exposes the decisions the port had already mad
 | **Q43** | Is a directive's label found LEXICALLY, or by the inline delimiter machinery? | 7 | **ANSWERED AT 7e: LEXICALLY**, and at Step 7 rather than Step 8 -- the redesign it looked like turned out to be a deletion. `match_colon_directive` scans the label at the colon and both branches continue, so a label that closes is a label and one that does not is prose; the bytes are consumed there, so no other extension is offered them. Eleven functions, a delimiter rule, a dispatch byte, an extension hook and the whole of 7d went with it: **8 files, +214 / −409.** The two dead-end proposals and the off-by-one in the 32-deep cap are recorded in §4.14.7e. |
 | ~~**Q45**~~ | Does a code span's position cover its own backticks? | 8 | **ANSWERED BY THE OWNER 2026-08-23 — YES**, and taken at 8.4 (§4.14.8d). Every other inline construct covers its own delimiters — emphasis its asterisks, a link its brackets and parens, strikethrough both tilde pairs — and a code span reported the extent of its CONTENT, which is what cmark-gfm reports and is a defect inherited from it. A scope exists so a consumer can map a node back to the source it came from, and the source a code span came from includes the ticks that make it one. **55 golden rows moved and every one is a `Code` node; `places` 69 → 66 and down to two families; `inline-sourcepos` 9 → 40**, every row of it now a place where this side is right and upstream is not. |
 | ~~**Q44**~~ | What does a node with NO SOURCE BYTES report as its position? | 11a | **ANSWERED BY THE OWNER 2026-08-23**, and the answer came with the criterion the question was missing: *a scope is what a consumer follows to map an element back to source*, so a node completion invented points AT the place it was completed — the end of its row. Both spellings 11a had measured were asking which coordinate pair is least wrong about the EXTENT of something with no extent, and that was the wrong question. Taken at §4.14.11a2: `places` 66 → 57 and down to one family, `containment` 21 → 9, and the six sibling-overlap rows it costs are registered with the reasoning that accepts them. |
-| **Q41** | Does the repository keep swift-format's `AllPublicDeclarationsHaveDocumentation`? | 15A / 15C | **OPEN, and it is the owner's.** It is a required CI health check that has been failing: 184 findings at `46e20f2`, 170 after 15A.2, 163 after Step 6, **164** after Step 7.2. Satisfying it means writing a doc comment on every public declaration in the Swift binding, and for a projection layer most of those can only restate the signature — the pass this repository rejected once already. **Recommend: scope the rule to types and functions, or turn it off**, and say so in `.swift-format` rather than leaving a required check red. Whichever way it goes, it is an owner decision and §4.8 needs an answer before Stage 0 closes. |
+| ~~**Q41**~~ | Does the repository keep swift-format's `AllPublicDeclarationsHaveDocumentation`? | 15D | **ANSWERED BY THE OWNER 2026-08-24 — YES, keep it and satisfy it.** Not scoped in `.swift-format`, not turned off: 150 findings to 0, and `--in-place` is a fixpoint (§4.14.15D). The recommendation below was to scope or disable it, and it was not taken; what the ruling forced instead was a way to satisfy the rule WITHOUT the restatement this repository rejected once — the substance lives once, in ``Scope``, in ``Position`` and in the canonical-AST contract's own per-kind `invariants`, and the repeated members point at it. ~~**OPEN, and it is the owner's.**~~ It is a required CI health check that has been failing: 184 findings at `46e20f2`, 170 after 15A.2, 163 after Step 6, **164** after Step 7.2. Satisfying it means writing a doc comment on every public declaration in the Swift binding, and for a projection layer most of those can only restate the signature — the pass this repository rejected once already. **Recommend: scope the rule to types and functions, or turn it off**, and say so in `.swift-format` rather than leaving a required check red. Whichever way it goes, it is an owner decision and §4.8 needs an answer before Stage 0 closes. |
 | **Q38** | Does the empty `Text` node D13 removes become a registered divergence from cmark-gfm? | 0a.14 | **OPEN.** Upstream emits the node too, so removing it costs one normalizer projection, one `NORMALIZED_DELTAS` name and one `deltas.json` entry. Measured at §4.2.3. Owed by the commit that lands D13. |
 | **Q39** | `[foo]: <>` resolves to `destination=null`, not `destination=""`. Is that right, when the destination WAS written and was empty? | 0a.7 | **TAKEN 2026-08-21, at 0a.7: yes, on consistency grounds, and the limit is stated.** `markdown_core_clean_url` folds a zero-length destination to `CHUNK_EMPTY` before it ever reaches the map — the same fold `clean_title` does — so `<>` is indistinguishable from *no destination* by the time the reference path sees it, and the inline path already answers `[a](<>)` with `destination=null`. Making `chunk_clone` preserve absence made the two paths agree. **This is consistency, not correctness:** a rule that truly separates "written and empty" from "not written" requires the folds to stop, which is Step 14's structural job, and this row is the one input in the corpus that will move again there. It is one row, `spec.txt` example 169. **RE-MEASURED AT STEP 14 AND IT HAD ALREADY MOVED**: `[foo]: <>` answers `destination=""` at `239ab31`, because the definition dump prints its destination as a required string. What Step 14 moved is the INLINE path this row does not name (§4.14.14). |
 
@@ -7815,16 +7815,14 @@ was not in it.
 The same wrong sentence was in `CHANGELOG.md`, where it had been since 11d.
 Both are corrected.
 
-##### 6. What is still red, and both are the owner's
+##### 6. Q41 and Q42 were the two things left, and the owner answered both
 
-| Check | Re-measured here | Owner |
-|---|---|---|
-| `scripts/format-swift.sh --check` | **150 findings** — 149 `AllPublicDeclarationsHaveDocumentation` and **1 `NoBlockComments`**, which §0's row never mentioned. It read 155 before Step 14; the doc comments Step 14 put on `Link.destination`, `Image.source` and their Kotlin and ES twins took six of them | **Q41** |
-| `pnpm format:es:check` | **10 files**, unchanged in number and identical in membership to §0's list | **Q42** |
-
-Neither is touched. §0's instruction not to run `pnpm format:es` stands, and
-`swift-format` would rewrite documentation onto public declarations across the
-whole Swift surface, which is Q41's question and not a step's.
+They were measured at 15C and left: `scripts/format-swift.sh --check` at **150
+findings** — 149 `AllPublicDeclarationsHaveDocumentation` and **1
+`NoBlockComments`**, which §0's row had never mentioned — and
+`pnpm format:es:check` at **10 files**, identical in membership to §0's list.
+The owner then ruled on 2026-08-24: **Q41 yes, keep the rule and write the
+documentation; Q42 run prettier.** §4.14.15D records both.
 
 ##### Gates after
 
@@ -7839,6 +7837,73 @@ topology, `format-c`, `format-cmake`, `lint-c`, `pnpm -w run lint`,
 **`check-swift-source-archive`**, and `check-release-version` with no `--skip-*`
 once the two local refs are absent. Bindings **ES 11 + 9**, **Swift 6 + 1 + 3**,
 **Kotlin 11 across six classes + 4**.
+
+
+#### 4.14.15D Q41 answered: keep the rule, and write documentation that is not restatement
+
+**Owner ruling, 2026-08-24: yes.** The question was *"does the repository keep
+swift-format's `AllPublicDeclarationsHaveDocumentation`?"* and the answer is to
+keep it and satisfy it, not to scope it in `.swift-format` and not to turn it
+off. `scripts/format-swift.sh --check` goes **150 findings → 0** and
+`.github/workflows/ci.yml:182` has a required health check that passes.
+
+##### The tension the ruling creates, and how it was resolved rather than ignored
+
+This repository has a standing doc-comment standard — *a comment earns its line
+by saying what the signature cannot* — and it once **rejected a whole-repo
+documentation pass for restatement**. A rule that demands a comment on every
+public declaration collides with it directly on the ~30 `scope` properties and
+~30 `accept(_:)` methods, where there is no unique fact per kind to state.
+
+The resolution is that the substance lives ONCE, in the place that owns it, and
+the repeated members point at it:
+
+- **``Scope`` and ``Position`` carry the whole contract**: a scope is a pair of
+  BOUNDARIES and not a byte range, no substring can be taken with it, `column`
+  counts boundaries so a line of L bytes has 1 through L + 1, and column 0 is
+  the boundary before a line — which is where a block closed by a blank line
+  ends. That is the owner's 2026-08-24 ruling, in the API reference, where a
+  consumer will actually meet it.
+- **`Markup.scope`** states it again in one sentence for the protocol, and each
+  kind's `scope` is one line pointing at ``Scope`` — plus the kind-specific
+  clause **where one exists and only there**: `DirectiveLabel` spans its
+  brackets, `Link` includes its parentheses, `Image` starts at `![`, a
+  completed `TableCell` has a scope with no source behind it.
+- **`content` is not restatement at all.** `[any Markup]` cannot say whether a
+  kind holds block content, inline content or parsed alt text, and the
+  canonical-AST contract's own `invariants` field says exactly that per kind.
+  Those strings are the source for all 20 of them, so the Swift docs and the
+  normative contract cannot drift.
+- **`accept(_:)`** follows the form `ReferenceDefinition.swift` already used
+  since 9b.2 — *"Dispatches to the visitor's `X` case"* — which names the one
+  thing the signature leaves open.
+
+Where the declaration genuinely had something to say, it says it: `ParseOptions`
+records that **every switch is attachment and nothing finer**, and that 1.0.3's
+two formula delimiter options are gone because *an option that changes a grammar
+rather than enabling one is a second parser hiding in the first*.
+`ParseErrorCode` records that these are failures rather than findings about the
+text. `List.start` records that it is optional **only** because a bulleted list
+has no number. `ListItem.checked` records that all three states are distinct.
+`MarkupVisitor` records that no case has a default, so a conformance that
+forgets a kind does not compile.
+
+##### The one finding that was never about documentation
+
+The 150th was `[NoBlockComments]` on `NativeValues.swift:36` — a `/* … */`
+comment **this branch wrote at Step 14**, three commits earlier. §0's row had
+counted it in the total since 15A.2 and described the whole total as that one
+rule. Converted to line comments.
+
+##### Gates after
+
+`swift format lint --strict` **0 findings**, and `--in-place` is a **fixpoint**:
+running the formatter for real changes not one byte, which is the check that
+says the comments are formatted the way the tool wants rather than merely
+tolerated. Swift **6 + 1 + 3**, `audit-ast-projections` 32 over 12 surfaces,
+`audit-public-surface`, `audit-source-lists` 5 of 5,
+`check-swift-source-archive`, `pnpm -w run lint` — all green, and **242 lines
+added across 28 files with no code change at all**.
 
 
 ---

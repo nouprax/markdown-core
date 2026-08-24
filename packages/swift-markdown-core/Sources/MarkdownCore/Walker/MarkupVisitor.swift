@@ -1,3 +1,9 @@
+/// A visitor over every ``Markup`` kind.
+///
+/// The protocol names ALL of them and none has a default implementation, so a
+/// conformance that forgets a kind does not compile. That is the point: the
+/// kind set is closed, and a kind added tomorrow breaks every visitor loudly
+/// rather than being silently skipped.
 public protocol MarkupVisitor {
     associatedtype Result
     mutating func visit(_ node: Document) -> Result

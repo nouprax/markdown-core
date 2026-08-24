@@ -1,16 +1,37 @@
 import MarkdownCoreC
 
+/// Which constructs a parse recognises.
+///
+/// Every switch is ATTACHMENT and nothing finer: an extension is on or it is
+/// not, and there is no second knob that changes what an attached extension
+/// means. 1.0.3 had `dollarFormulaDelimiters` and `latexFormulaDelimiters`
+/// beside ``formulas``; they are gone, because an option that changes a
+/// grammar rather than enabling one is a second parser hiding in the first.
+///
+/// Every default is `true`.
 public struct ParseOptions: Sendable, Hashable {
+    /// Turn straight quotes, `--` and `...` into their typographic forms.
     public let smartPunctuation: Bool
+    /// Recognise `[^label]` calls and `[^label]:` definitions.
     public let footnotes: Bool
+    /// Drop HTML comments from the tree instead of keeping them as ``HTML``.
     public let stripHTMLComments: Bool
+    /// Recognise GFM tables.
     public let tables: Bool
+    /// Recognise `~~struck~~`.
     public let strikethrough: Bool
+    /// Recognise bare URLs and `www.` prefixes as links.
     public let autolinks: Bool
+    /// Recognise `- [ ]` and `- [x]` list items, which gives
+    /// ``ListItem/checked`` a value other than `nil`.
     public let taskLists: Bool
+    /// Recognise formulas — five inline forms and four block forms.
     public let formulas: Bool
+    /// Recognise directives — `:name`, `::name` and `:::name` fences.
     public let directives: Bool
 
+    /// Creates an option set. Every parameter defaults to `true`, so
+    /// `ParseOptions()` recognises everything this parser knows.
     public init(
         smartPunctuation: Bool = true,
         footnotes: Bool = true,
@@ -34,9 +55,19 @@ public struct ParseOptions: Sendable, Hashable {
     }
 }
 
+/// Why a parse produced no document.
+///
+/// These are FAILURES, not findings about the text. Anything the author could
+/// act on is a diagnostic on a document that exists, not an error instead of
+/// one.
 public enum ParseErrorCode: Int32, Sendable {
+    /// The call itself was wrong — a null source, or a length that does not
+    /// describe it.
     case invalidArgument = 1
+    /// An allocation failed. The parse is abandoned rather than returning a
+    /// document with something missing from it.
     case allocationFailed = 2
+    /// The parser reached a state it does not otherwise account for.
     case `internal` = 3
 }
 
@@ -46,9 +77,13 @@ public enum ParseErrorCode: Int32, Sendable {
 /// no extent to point at, and a failure the author could act on would have been
 /// a diagnostic instead.
 public struct ParseError: Error, Sendable, CustomStringConvertible {
+    /// Which failure it was.
     public let code: ParseErrorCode
+    /// A fixed English sentence naming the failure. It is for a log, not for
+    /// an end user, and it is not localised.
     public let message: String
 
+    /// The same text as ``message``.
     public var description: String { message }
 }
 
@@ -65,12 +100,28 @@ public struct ParseError: Error, Sendable, CustomStringConvertible {
 /// time `parse` returns, the tree is a value, and the concrete view hangs off
 /// the root it names into.
 public struct Document: Markup {
+    /// The whole document's boundaries. See ``Scope``.
     public let scope: Scope
+    /// The document's blocks. Block content, not inline.
     public let content: [any Markup]
+    /// The text every scope in this tree is counted against.
     public let concrete: Concrete
 
+    /// Dispatches to the visitor's `Document` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 
+    /// Parses `source` and returns the whole tree as values.
+    ///
+    /// The native parse is released before this returns, so the result borrows
+    /// nothing and is safe to hold, copy and send across isolation boundaries.
+    ///
+    /// - Parameters:
+    ///   - source: the Markdown to parse. It is read as UTF-8.
+    ///   - options: which constructs to recognise. Everything, by default.
+    /// - Returns: the parsed document.
+    /// - Throws: ``ParseError`` when there is no document to return at all.
+    ///   Text the parser could not read the way its author meant is not an
+    ///   error: it produces a document, and the diagnostics say so.
     public static func parse(_ source: String, options: ParseOptions = .init()) throws -> Document {
         var nativeOptions = markdown_core_parse_options(
             smart_punctuation: options.smartPunctuation,

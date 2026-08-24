@@ -1,11 +1,27 @@
+/// Which side of a node a walk is on.
+///
+/// Every node gets both, in preorder: a leaf's ``entering`` is followed
+/// immediately by its ``exiting``.
 public enum WalkEvent: Sendable {
+    /// The node, before its children.
     case entering
+    /// The same node, after them.
     case exiting
 }
 
+/// A depth-first walk over a parsed tree.
+///
+/// It reads a value tree that owns everything it contains, so there is no
+/// native handle to outlive and nothing a walk can do is unsafe. Mutation is
+/// not offered: the model is immutable.
 public struct Walker: Sendable {
+    /// Creates a walker. It carries no state between walks.
     public init() {}
 
+    /// Walks `root` and everything under it, in source order.
+    ///
+    /// `visit` is called twice per node — see ``WalkEvent`` — and a throw from
+    /// it abandons the walk and propagates.
     public func walk(_ root: some Markup, visit: (WalkEvent, any Markup) throws -> Void) rethrows {
         try walk(node: root, visit: visit)
     }

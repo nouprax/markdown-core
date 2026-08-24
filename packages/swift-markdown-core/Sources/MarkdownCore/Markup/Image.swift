@@ -1,13 +1,20 @@
 import MarkdownCoreC
 
+/// An inline image — `![alt](source)`.
+///
+/// Its content is PARSED alt text: `![a *b*](s)` has an ``Emphasis`` in it, and
+/// flattening it to a string is the consumer's decision, not the parser's.
 public struct Image: Markup {
+    /// Where it is, `![` through the closing parenthesis. See ``Scope``.
     public let scope: Scope
+    /// The alt text, as parsed inline content.
     public let content: [any Markup]
     /// Required, for the reason ``Link/destination`` is.
     public let source: String
     /// Optional.
     public let title: String?
 
+    /// Dispatches to the visitor's `Image` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 

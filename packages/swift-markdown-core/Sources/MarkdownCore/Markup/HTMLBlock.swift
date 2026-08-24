@@ -1,9 +1,13 @@
 import MarkdownCoreC
 
+/// A raw HTML block.
 public struct HTMLBlock: Markup {
+    /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
+    /// The HTML exactly as written. Nothing in it is parsed or escaped.
     public let literal: String
 
+    /// Dispatches to the visitor's `HTMLBlock` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 

@@ -8,6 +8,8 @@ public struct DirectiveAttribute: Sendable, Hashable {
     /// The attribute's value. A bare attribute has an empty one.
     public let value: String
 
+    /// Creates an attribute. A bare attribute takes an empty value; the two
+    /// are not the same as an absent attribute container.
     public init(name: String, value: String) {
         self.name = name
         self.value = value

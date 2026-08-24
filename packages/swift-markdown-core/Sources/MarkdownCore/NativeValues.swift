@@ -33,9 +33,9 @@ extension markdown_core_string_view {
         return String(decoding: UnsafeBufferPointer(start: data, count: length), as: UTF8.self)
     }
 
-    /* `optionalString` USED TO LIVE HERE and read absence off the pointer.
-     * Requirement 14 moved that question to the value itself: see
-     * `markdown_core_optional_string_view.string`. */
+    // `optionalString` USED TO LIVE HERE and read absence off the pointer.
+    // Requirement 14 moved that question to the value itself: see
+    // `markdown_core_optional_string_view.string`.
 }
 
 extension PlacementMode {
