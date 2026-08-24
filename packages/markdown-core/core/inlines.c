@@ -1423,8 +1423,15 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     int matched_reference = 0;
     markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
     markdown_core_chunk url_chunk, title_chunk;
-    markdown_core_chunk url;
-    markdown_core_optional_chunk title;
+    /* SET HERE AND NOT ONLY ON THE INLINE-LINK PATH. A reference reaches `match`
+     * with `matched_reference` set and leaves it by `goto placed`, so the two
+     * uses below the label are unreachable with these unset -- but MSVC cannot
+     * follow that across the label and rejects the function under /WX with
+     * C4701, which is a Windows-only diagnostic no other host reports. Giving
+     * them the absent value costs nothing, says what the unset state means, and
+     * makes the `if (!inl)` arm's frees safe to read at a glance. */
+    markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
+    markdown_core_optional_chunk title = {MARKDOWN_CORE_CHUNK_EMPTY, false};
     bracket *opener;
     markdown_core_node *inl;
     markdown_core_chunk raw_label;

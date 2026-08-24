@@ -68,3 +68,9 @@ playwright-report/
 test-results/
 *.lcov
 *.log
+
+# LLVM raw profiles. `swift test --enable-code-coverage` drops default.profraw
+# in the working directory, and Step 0 swept one into the repository root; a
+# tracked one makes `audit:repository --clean` fail the moment anyone runs the
+# Swift coverage gate locally.
+*.profraw

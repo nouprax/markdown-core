@@ -27,7 +27,7 @@ only as a record.
 | Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), ~~**11a**~~ (RETIRED, §4.14.11d), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), ~~**11b**~~ ~~**11c**~~ (RETIRED with 11a, §4.14.11d), **12.1** (§4.14.12a), **12.2's locator** (§4.14.12b), **`end-at-line-ending` CLOSED** (§4.14.11c2), **13.1** (§4.14.13a), **13.2** (§4.14.13b) — **STEP 13 IS WHOLE** —, **14** (§4.14.14), **15C** (§4.14.15C), **15D** (§4.14.15D), **15E** (§4.14.15E), **15F** (§4.14.15F), **15G** (§4.14.15G), **15H** (§4.14.15H) — **STAGE 0 IS CLOSED** |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **STAGE 0 IS CLOSED AND THE PR IS OPEN: [#115](https://github.com/nouprax/markdown-core/pull/115), 480 files, +41,091 / −66,000 against `main`.** **CI WAS RED ON IT AND IS NOW FIXED** (§4.14.15H): ten jobs failed with every gate in this file green, because **CI's gate list is not this file's**. Six findings — the `-Werror` build has been broken on GCC since Step 3.1 and clang cannot say so without `-Wanon-enum-enum-conversion` (an anonymous enum against `markdown_core_node_type`, ninety sites, now cast macros of the exact type, mutant-proved 14 errors -> 0); six of this branch's scripts carry a shebang with no executable bit and only `audit-repository.sh` reads a mode; `checkKotlinAbi` is a `main`-era Gradle task two `audit:ci` assertions could not miss because they test a STRING in a sibling script; the KMP consumer still called `region`, deleted at 11d; the Maven consumer passed eleven booleans to a nine-field `ParseOptions`; and `audit:packages` fails on macOS on three symbols this branch did not introduce. Every gate in the list below was re-run at `dd6f9fe` for the close and every one is green (§4.14.15G names the readings); the last thing found was the release note again, in the direction 15C did not look — **it recorded every REMOVAL and almost no ADDITION**, and deliverable #1, the directive grammar, had no entry at all. Nine bullets added, two of them wrong when first written and killed by re-measuring. **Next is Stage 1** (§3, §11). **§4.8's CHECKLIST IS MET IN FULL.** The owner answered the last two open questions on 2026-08-24: **Q41 — YES, keep `AllPublicDeclarationsHaveDocumentation` and satisfy it** (§4.14.15D: 150 findings to 0, the substance living once in ``Scope``, ``Position`` and the contract's own per-kind `invariants` so the repeated members point at it rather than restate it), and **Q42 — reformat before the PR** (§4.14.15F: ten files, formatting only, the three JSON contracts proved content-identical). The owner also renamed the string types (§4.14.15E) and **caught the 3.0 release note listing removals 1.0.3 never had** (§4.14.15C's row 5a — four of five clauses wrong, and measuring instead found five exported symbols gone, eleven added, and one real binding removal the list had missed). **NOTHING IS KNOWN-RED.** Next is Stage 1 (§3, §11). **STEP 15C IS LANDED** (§4.14.15C) and with it every step in §4.1's list: **four known-red gates went green and none by lowering a bar** — `check-generated-scanners` (the committed `scanners.c` was one re2c's codegen, the Makefile rule is another's, same 26 functions; regenerated, behaviour-neutral), `pnpm audit:ci` (19 references pinned from SHAs this repository already records elsewhere, so none was invented; two more era-skew failures behind it), `check-swift-source-archive` (its inline consumer called a `Document` initializer this branch does not have), and `check-release-version` **with no `--skip-*`** — whose two "legacy tags" turned out not to be in the repository at all, only in one working copy. `audit-source-lists` reads **5 of 5**. The two deliverables were measured against all **96** whitelisted oracle examples: 39 byte-exact, 49 differing only in Q29's deleted `mode=`, 8 involving the oracle's `SoftBreak scope=0:0..0:0` sentinel, and **0 differing in anything else**. **STEP 14 IS LANDED** (§4.14.14): `null` and `""` are separated by a TYPE — `markdown_core_optional_chunk` in the engine and `markdown_core_optional_string` on the surface, both `{value, has_value}` like the two optionals the header already had — so a write site that does not state presence does not compile, and the three folds that used to compensate are gone. **Q26 is taken**: a destination is required, three `spec.txt` rows moved `destination=null` -> `destination=""`, and Q26's recorded reason is measured too narrow for two of its three fields. **The projection audit could not see nullability at all** — §4.1's rule 4 names it and the audit compared field NAMES; it now compares optionality across all three models, four mutants killed. It costs **8 bytes on every node (168 -> 176)** and no measurable wall clock. **The OOM sweep caught a defect in the change itself.** **11a, 11b and 11c ARE RETIRED** (§4.14.11d) by owner ruling of 2026-08-24: the requirement is *"take an element and find its way back to the source"*, `node.scope` answers it, and the record set answered the inverse question with no consumer anywhere in this file. **−1,803 lines of C and NOT ONE GOLDEN ROW MOVED for it.** The same ruling settled what a scope IS — **a pair of BOUNDARIES, not a byte range** — which deleted `S_end_at_last_byte_taken`, moved **71 golden rows** back to cmark-gfm's shape, took `places`' zero-column rule and Q40's exception with it, and took `containment` 8 → 9 with a row upstream reproduces byte for byte. 13.2's binding work landed inside it, and **the `markdown_core_error_get_scope` deletion landed at 13.2** (§4.14.13b), which closes Step 13 whole: the accessor, its two never-written fields, both export entries and `ParseError.scope` in all three bindings are gone, and the Kotlin wire is `MKC5`. **That run also found `pnpm run test:es-node` RED at `239ab31`** — §0's *"ES 11 + 9"* counts `node.test.mjs` alone, and `packaging.mjs`'s consumer stage was asserting `lineCount === 2` for a one-line document; the assertion was wrong, the engine was not, and it is repaired with both arms proved live. **13.1 IS LANDED** (§4.14.13a): eight diagnostic codes, the rule that decided them (*a diagnostic exists exactly where the two total views cannot say what happened*), and **the owner's 2026-08-24 ruling that there is NO FALLBACK ON OOM**, which struck row 13's truncation-marker clause and deleted the sweep that had been built for it. **What the ruling opens is measured and named** in §4.14.13a: 10 of 501 injected failures still succeed losslessly, and the step that makes them terminal owns the gate that replaces `fallback_runner`. **STEP 12 IS LANDED WHOLE** (§4.14.12a–12c): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 and M33 both read 69/69 there and fail `conformance` — a region names its owner by a path that survives being copied, `markdown_core_document_region_owner_paths` answers for every region in **1.13 ms against the 96.8 ms the singular call costs in a loop**, and all three bindings carry `concrete` and `parse` on `Document` itself. **The owner ruled the surface and I read it wrong twice**: the semver question killed my *reason*, not reading 2, and §4.14.12c records both misreadings. **`specs/positions/places.json` IS EMPTY** (§4.14.11c2). **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), **Step 9b** whole (§4.14.9b1–9b2) — the definition and both references are nodes, **D9 and D30 closed**, the **mdast backlog EMPTY** — **Step 11b** (§4.14.11b), which added L5 and L6 because L1–L4 are all true of the day before it, and **Step 11c** (§4.14.11c). Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **STAGE 0 IS CLOSED AND THE PR IS OPEN: [#115](https://github.com/nouprax/markdown-core/pull/115), 480 files, +41,091 / −66,000 against `main`.** **CI WAS RED ON IT. EIGHT OF THE NINE FINDINGS ARE FIXED AND THE NINTH IS OPEN AND NAMED** (§4.14.15H): every gate in this file was green and ten CI jobs were not, because **CI's gate list is not this file's**. The eight — the `-Werror` build has been broken on GCC since Step 3.1 and clang cannot say so without `-Wanon-enum-enum-conversion` (an anonymous enum against `markdown_core_node_type`, ninety sites, now cast macros of the exact type, mutant-proved 14 errors -> 0); six of this branch's scripts carry a shebang with no executable bit and only `audit-repository.sh` reads a mode; `checkKotlinAbi` is a `main`-era Gradle task two `audit:ci` assertions could not miss because they test a STRING in a sibling script; the KMP consumer still called `region`, deleted at 11d; the Maven consumer passed eleven booleans to a nine-field `ParseOptions`; `audit:packages` fails on macOS on three symbols this branch did not introduce; MSVC rejects `handle_close_bracket` under `/WX` on a C4701 no other host reports; and the javadoc jar carries no Dokka output because this branch's build is the baseline's. **THE NINTH IS THE COVERAGE GATE AND IT IS OPEN**: it has never run against this branch, `coverage:es-node` reads 93.66/88.89/88.35 and `coverage:swift-macos` 96.92/95.77, most of the failure is ledger keys naming pre-rename files (re-pinning those is a TIGHTENING, measured file by file), **three are genuine gaps that want tests** — `wire/node-decoder.ts` branches 26 vs 24, `NativeValues.swift` lines 13 vs 1, `Walker.swift` — and `jvmCoverageReport` is not a task in this build, which is the same owner decision `checkKotlinAbi` raised. **Not closed here, because a branch that refused four times to make a gate green by lowering a bar does not get to close this one by widening a ledger.** Every gate in the list below was re-run at `dd6f9fe` for the close and every one is green (§4.14.15G names the readings); the last thing found was the release note again, in the direction 15C did not look — **it recorded every REMOVAL and almost no ADDITION**, and deliverable #1, the directive grammar, had no entry at all. Nine bullets added, two of them wrong when first written and killed by re-measuring. **Next is Stage 1** (§3, §11). **§4.8's CHECKLIST IS MET IN FULL.** The owner answered the last two open questions on 2026-08-24: **Q41 — YES, keep `AllPublicDeclarationsHaveDocumentation` and satisfy it** (§4.14.15D: 150 findings to 0, the substance living once in ``Scope``, ``Position`` and the contract's own per-kind `invariants` so the repeated members point at it rather than restate it), and **Q42 — reformat before the PR** (§4.14.15F: ten files, formatting only, the three JSON contracts proved content-identical). The owner also renamed the string types (§4.14.15E) and **caught the 3.0 release note listing removals 1.0.3 never had** (§4.14.15C's row 5a — four of five clauses wrong, and measuring instead found five exported symbols gone, eleven added, and one real binding removal the list had missed). **NOTHING IS KNOWN-RED.** Next is Stage 1 (§3, §11). **STEP 15C IS LANDED** (§4.14.15C) and with it every step in §4.1's list: **four known-red gates went green and none by lowering a bar** — `check-generated-scanners` (the committed `scanners.c` was one re2c's codegen, the Makefile rule is another's, same 26 functions; regenerated, behaviour-neutral), `pnpm audit:ci` (19 references pinned from SHAs this repository already records elsewhere, so none was invented; two more era-skew failures behind it), `check-swift-source-archive` (its inline consumer called a `Document` initializer this branch does not have), and `check-release-version` **with no `--skip-*`** — whose two "legacy tags" turned out not to be in the repository at all, only in one working copy. `audit-source-lists` reads **5 of 5**. The two deliverables were measured against all **96** whitelisted oracle examples: 39 byte-exact, 49 differing only in Q29's deleted `mode=`, 8 involving the oracle's `SoftBreak scope=0:0..0:0` sentinel, and **0 differing in anything else**. **STEP 14 IS LANDED** (§4.14.14): `null` and `""` are separated by a TYPE — `markdown_core_optional_chunk` in the engine and `markdown_core_optional_string` on the surface, both `{value, has_value}` like the two optionals the header already had — so a write site that does not state presence does not compile, and the three folds that used to compensate are gone. **Q26 is taken**: a destination is required, three `spec.txt` rows moved `destination=null` -> `destination=""`, and Q26's recorded reason is measured too narrow for two of its three fields. **The projection audit could not see nullability at all** — §4.1's rule 4 names it and the audit compared field NAMES; it now compares optionality across all three models, four mutants killed. It costs **8 bytes on every node (168 -> 176)** and no measurable wall clock. **The OOM sweep caught a defect in the change itself.** **11a, 11b and 11c ARE RETIRED** (§4.14.11d) by owner ruling of 2026-08-24: the requirement is *"take an element and find its way back to the source"*, `node.scope` answers it, and the record set answered the inverse question with no consumer anywhere in this file. **−1,803 lines of C and NOT ONE GOLDEN ROW MOVED for it.** The same ruling settled what a scope IS — **a pair of BOUNDARIES, not a byte range** — which deleted `S_end_at_last_byte_taken`, moved **71 golden rows** back to cmark-gfm's shape, took `places`' zero-column rule and Q40's exception with it, and took `containment` 8 → 9 with a row upstream reproduces byte for byte. 13.2's binding work landed inside it, and **the `markdown_core_error_get_scope` deletion landed at 13.2** (§4.14.13b), which closes Step 13 whole: the accessor, its two never-written fields, both export entries and `ParseError.scope` in all three bindings are gone, and the Kotlin wire is `MKC5`. **That run also found `pnpm run test:es-node` RED at `239ab31`** — §0's *"ES 11 + 9"* counts `node.test.mjs` alone, and `packaging.mjs`'s consumer stage was asserting `lineCount === 2` for a one-line document; the assertion was wrong, the engine was not, and it is repaired with both arms proved live. **13.1 IS LANDED** (§4.14.13a): eight diagnostic codes, the rule that decided them (*a diagnostic exists exactly where the two total views cannot say what happened*), and **the owner's 2026-08-24 ruling that there is NO FALLBACK ON OOM**, which struck row 13's truncation-marker clause and deleted the sweep that had been built for it. **What the ruling opens is measured and named** in §4.14.13a: 10 of 501 injected failures still succeed losslessly, and the step that makes them terminal owns the gate that replaces `fallback_runner`. **STEP 12 IS LANDED WHOLE** (§4.14.12a–12c): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 and M33 both read 69/69 there and fail `conformance` — a region names its owner by a path that survives being copied, `markdown_core_document_region_owner_paths` answers for every region in **1.13 ms against the 96.8 ms the singular call costs in a loop**, and all three bindings carry `concrete` and `parse` on `Document` itself. **The owner ruled the surface and I read it wrong twice**: the semver question killed my *reason*, not reading 2, and §4.14.12c records both misreadings. **`specs/positions/places.json` IS EMPTY** (§4.14.11c2). **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), **Step 9b** whole (§4.14.9b1–9b2) — the definition and both references are nodes, **D9 and D30 closed**, the **mdast backlog EMPTY** — **Step 11b** (§4.14.11b), which added L5 and L6 because L1–L4 are all true of the day before it, and **Step 11c** (§4.14.11c). Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -147,10 +147,11 @@ that is missing.
 list.** PR #115 opened with every gate above green and **ten CI jobs red**
 (§4.14.15H). Every cause was a gate named in `.github/workflows/ci.yml` and not
 here, and the completeness pass that followed — running the rest of `ci.yml` by
-hand before pushing — found **two more red and one host artifact**. The six
-findings are: the `-Werror` build broken on GCC since Step 3.1 with clang unable
+hand before pushing — found more still. **Nine findings in
+two rounds**: the `-Werror` build broken on GCC since Step 3.1 with clang unable
 to say so, six scripts with a shebang and no executable bit, `checkKotlinAbi`,
-the KMP consumer, the Maven consumer, and `audit:packages` on macOS.
+the KMP consumer, the Maven consumer, `audit:packages` on macOS, MSVC's C4701,
+the Dokka-shaped javadoc audit, and **the coverage gate, which is still open**.
 **Before claiming green, diff this list against `ci.yml` rather than trusting
 it.**
 
@@ -8189,6 +8190,124 @@ step rather than a restore**: it means enabling `abiValidation`, committing an
 `.api` dump, and reviewing that dump as a contract — of a public surface this
 branch changed substantially. It is not something the PR-opening commit should
 invent.
+
+##### Then the completeness question, which found three more before they cost three more rounds
+
+**Fixing only what CI reported would have been the wrong move.** `ci.yml` names
+three gates §0 does not — `pnpm audit:packages`, `pnpm check:gradle-model` and
+`pnpm check:kotlin-consumers` — and their jobs read `skipping` on that run only
+because what they depend on had already failed. Running them by hand found two
+more red and one host artifact.
+
+**4. The KMP consumer still called `region`.**
+`consumers/kmp/.../KmpConsumerTest.kt:14` asserted
+`document.concrete.region(0).start`, and §4.14.11d deleted the region set. The
+consumer was written at `66d4a89`; 11d landed at `e4107e5`, three commits later.
+**11d deleted a Kotlin method and left its only caller standing.** It is
+`document.concrete.lineStart(1)` now — `lineStart` counts lines FROM 1 and
+`lineStart(0)` throws, so the index is not a transcription. This is the exact
+twin of the `check-swift-source-archive` failure at 15C.
+
+**5. The Maven consumer passed eleven booleans to a nine-field `ParseOptions`.**
+`consumers/jvm-maven/.../Main.java:11` constructs `new ParseOptions(true × 11)`;
+Step 6 deleted `dollarFormulaDelimiters` and `latexFormulaDelimiters`. **A Java
+caller has no default arguments**, so this positional call is the only thing in
+the repository pinning `ParseOptions`' arity from outside Kotlin — and it had
+been wrong since Step 6.
+
+**And `check-kotlin-consumers.sh` itself is `main`'s**, driving an Android
+release-shrinking audit — `assembleRelease assembleUnused`, an AAR/mapping/dex
+comparison, `scripts/verify-android-jni-shrinking.mjs` — whose **entire
+build-side half is absent**: `consumers/android/build.gradle.kts` declares no
+`buildTypes` and therefore no `unused` variant, and `consumer-rules.pro` is not
+in the repository. Restored to `assembleDebug`; the toolchain discovery `main`
+added is real infrastructure and stays.
+
+**6. `audit:packages` fails on macOS and that is the host, not the branch.**
+It reports three writable symbols in the static archive —
+`MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR [D]`, `markdown_core_strbuf__initbuf [C]`
+and `ltmp2 [d]`. Measured: **the first two are byte-identical to `580d10c`'s**
+(`core/markdown_core.c:31`, `core/buffer.c:17`) and `ltmp2` is a Mach-O
+assembler temporary with no ELF counterpart. The audit's own comment says Mach-O
+`nm` leaves the SysV section column empty so the class letter has to decide, and
+`ci.yml`'s `package-audit` job is **`runs-on: ubuntu-latest`** — the only host it
+has ever run on. Nothing is fixed here, because fixing it would mean changing
+baseline code for a platform CI does not audit. **NOT VERIFIED GREEN ON LINUX
+FROM THIS MACHINE**; what is verified is that this branch introduced none of the
+three symbols.
+
+##### The second round: the pipeline got further and four more jobs ran for the first time
+
+Those six turned every originally-failing job green — including
+**`Build - C / Linux · GCC · Static`**, which is what proves item 1. That let
+jobs run that had read `skipping` twice before, and four failed. **Two are this
+branch's and are fixed; one is the same era skew again; one is open.**
+
+**7. MSVC rejects `handle_close_bracket` under `/WX`.**
+`inlines.c:1743` uses `url` and `title` and **C4701 says they are potentially
+uninitialized**. The code is right — a reference reaches `match:` with
+`matched_reference` set and leaves by `goto placed`, so those two uses are
+unreachable with them unset — but the reasoning crosses a label and MSVC will
+not follow it. **No other host reports it**: not GCC, not clang, not the
+sanitizers. 9b.2 introduced the path. They are initialized to the absent value
+at declaration now, which also makes the `if (!inl)` arm's two frees safe to
+read at a glance.
+
+**8. The javadoc jar carries no generated API reference.**
+`Assemble Release - Maven Central / Dry Run` died on
+`kotlin-markdown-core-3.0.0-javadoc.jar lacks generated API documentation entry
+index.html`. `main` applies the Dokka plugin and builds the jar from
+`dokkaGeneratePublicationHtml`; **this branch's `javadocJar` packs
+`canonical-ast.md` and `README.md`**, the baseline's shape, and `580d10c`'s
+`audit-maven-publications.mjs` asserted only that the jar EXISTS. Fifth instance
+of the `scripts/` rule. **And adopting Dokka would not have been enough**: the
+required-entry list also names `-markup-i-d` and `-markup-walker`, and neither
+`MarkupID` nor `MarkupWalker` exists in this branch's Kotlin source, so two of
+the five would fail anyway. The content check is removed with the reason;
+publishing a real reference is a DECISION for the release step, needing the
+plugin AND a list re-derived from the surface this branch has.
+
+##### 9. THE COVERAGE GATE IS OPEN, MEASURED, AND DELIBERATELY NOT CLOSED HERE
+
+All three coverage jobs fail. `specs/coverage/policy.json` is not in `580d10c`,
+and **the gate has never once run against this branch**. Measured locally rather
+than guessed:
+
+| | reading |
+|---|---|
+| `coverage:es-node` | 11 files — **lines 93.66%, functions 88.89%, branches 88.35%**; 6 ledger entries loose or obsolete, 5 files failing |
+| `coverage:swift-macos` | 33 files — **lines 96.92%, functions 95.77%**; 7 ledger entries loose or obsolete, 3 files failing |
+| `coverage:kotlin-jvm` | does not run — **`jvmCoverageReport` is not a task in this project**, exactly like `checkKotlinAbi` |
+
+**Most of it is RENAMES, and re-pinning those would be a tightening rather than a
+loosening.** The ledger keys name pre-rename files, and every renamed file's
+measured figure is equal to or better than what its old key allowed:
+
+| ledger key (old name) | allowed L/F/B | file now | measured uncovered |
+|---|---|---|---|
+| `markup-visitor.ts` | 4 / 1 / 1 | `visitor.ts` | 4 / 1 / 1 — **equal** |
+| `markup-walker.ts` | 4 / 1 / 2 | `walker.ts` | 4 / 1 / 1 — **better** |
+| `markup-dumper.ts` | 0 / 1 / 3 | `tree-dumper.ts` | 0 / 1 / 2 — **better** |
+| `runtime/c-document.ts` | 12 / 1 / 8 | `runtime/parser.ts` | 2 / 0 / 4 — **much better** |
+| `Walker/MarkupDumper.swift` | — | `Walker/TreeDumper.swift` | 1 line |
+
+**THREE are genuine gaps and no ledger edit closes any of them:**
+
+- `wire/node-decoder.ts` — **branches uncovered 26 against 24 allowed**, a real
+  regression of two, in the decoder this branch rewrote (MKC5, the new kinds,
+  the optional string).
+- `Sources/MarkdownCore/NativeValues.swift` — **lines uncovered 13 against 1
+  allowed, functions 2 against 1**. This is where Step 14 put the optional-string
+  bridging.
+- `Sources/MarkdownCore/Walker/Walker.swift` — 1 line and 1 function, in no
+  ledger entry at all.
+
+**Nothing here is edited.** Re-pinning the renames is mechanical and safe; the
+three gaps want tests; and `jvmCoverageReport` wants a Gradle plugin this
+branch's build has not got, which is the same owner decision `checkKotlinAbi`
+raised. Closing all of it is a STEP, and it is named here rather than left
+half-done: **a branch that refused four times to make a gate green by lowering a
+bar does not get to close this one by widening a ledger.**
 
 ---
 
