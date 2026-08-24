@@ -14,20 +14,63 @@ again has landed, and only by a deliberate commit that says so.
 Everything needed to pick this up cold is here. Nothing about the state of the
 work lives outside this file.
 
-**The work is on branch `reconstruct-from-1.0`.** `main` is untouched and still
-carries the abandoned streaming program; do not build on it. The branch
-`streaming-every-partition` holds that program's last 21 commits and is kept
-only as a record.
+**STAGE 0 IS ON `main`.** It was squash-merged as
+[#115](https://github.com/nouprax/markdown-core/pull/115) on 2026-08-24 —
+`904c66d`, one commit carrying all 120 — and the branch was deleted with it.
+**`main` is now the reconstruction and is what to build on.** The sentence that
+stood here said the opposite, because it was written when it was true.
+
+The abandoned streaming program is history: `streaming-every-partition` holds
+its last 21 commits and is kept only as a record. Q8 still governs — **no code
+is taken from any commit after `580d10c`** (§4.9) — and `main` before `904c66d`
+is on the wrong side of that line, so its pre-merge history is a record to
+transcribe infrastructure facts from and never a source of engine design.
 
 ### The state
 
 | | |
 |---|---|
-| Branch | `reconstruct-from-1.0` |
-| Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), ~~**11a**~~ (RETIRED, §4.14.11d), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), ~~**11b**~~ ~~**11c**~~ (RETIRED with 11a, §4.14.11d), **12.1** (§4.14.12a), **12.2's locator** (§4.14.12b), **`end-at-line-ending` CLOSED** (§4.14.11c2), **13.1** (§4.14.13a), **13.2** (§4.14.13b) — **STEP 13 IS WHOLE** —, **14** (§4.14.14), **15C** (§4.14.15C), **15D** (§4.14.15D), **15E** (§4.14.15E), **15F** (§4.14.15F), **15G** (§4.14.15G), **15H** (§4.14.15H) — **STAGE 0 IS CLOSED** |
+| Branch | `main` — Stage 0 merged as `904c66d`. `reconstruct-from-1.0` is gone; its 120 commits are that one squash |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **STAGE 0 IS CLOSED AND THE PR IS OPEN: [#115](https://github.com/nouprax/markdown-core/pull/115), 480 files, +41,091 / −66,000 against `main`.** **CI WAS RED ON IT. EIGHT OF THE NINE FINDINGS ARE FIXED AND THE NINTH IS OPEN AND NAMED** (§4.14.15H): every gate in this file was green and ten CI jobs were not, because **CI's gate list is not this file's**. The eight — the `-Werror` build has been broken on GCC since Step 3.1 and clang cannot say so without `-Wanon-enum-enum-conversion` (an anonymous enum against `markdown_core_node_type`, ninety sites, now cast macros of the exact type, mutant-proved 14 errors -> 0); six of this branch's scripts carry a shebang with no executable bit and only `audit-repository.sh` reads a mode; `checkKotlinAbi` is a `main`-era Gradle task two `audit:ci` assertions could not miss because they test a STRING in a sibling script; the KMP consumer still called `region`, deleted at 11d; the Maven consumer passed eleven booleans to a nine-field `ParseOptions`; `audit:packages` fails on macOS on three symbols this branch did not introduce; MSVC rejects `handle_close_bracket` under `/WX` on a C4701 no other host reports; and the javadoc jar carries no Dokka output because this branch's build is the baseline's. **THE NINTH IS THE COVERAGE GATE AND IT IS OPEN**: it has never run against this branch, `coverage:es-node` reads 93.66/88.89/88.35 and `coverage:swift-macos` 96.92/95.77, most of the failure is ledger keys naming pre-rename files (re-pinning those is a TIGHTENING, measured file by file), **three are genuine gaps that want tests** — `wire/node-decoder.ts` branches 26 vs 24, `NativeValues.swift` lines 13 vs 1, `Walker.swift` — and `jvmCoverageReport` is not a task in this build, which is the same owner decision `checkKotlinAbi` raised. **Not closed here, because a branch that refused four times to make a gate green by lowering a bar does not get to close this one by widening a ledger.** Every gate in the list below was re-run at `dd6f9fe` for the close and every one is green (§4.14.15G names the readings); the last thing found was the release note again, in the direction 15C did not look — **it recorded every REMOVAL and almost no ADDITION**, and deliverable #1, the directive grammar, had no entry at all. Nine bullets added, two of them wrong when first written and killed by re-measuring. **Next is Stage 1** (§3, §11). **§4.8's CHECKLIST IS MET IN FULL.** The owner answered the last two open questions on 2026-08-24: **Q41 — YES, keep `AllPublicDeclarationsHaveDocumentation` and satisfy it** (§4.14.15D: 150 findings to 0, the substance living once in ``Scope``, ``Position`` and the contract's own per-kind `invariants` so the repeated members point at it rather than restate it), and **Q42 — reformat before the PR** (§4.14.15F: ten files, formatting only, the three JSON contracts proved content-identical). The owner also renamed the string types (§4.14.15E) and **caught the 3.0 release note listing removals 1.0.3 never had** (§4.14.15C's row 5a — four of five clauses wrong, and measuring instead found five exported symbols gone, eleven added, and one real binding removal the list had missed). **NOTHING IS KNOWN-RED.** Next is Stage 1 (§3, §11). **STEP 15C IS LANDED** (§4.14.15C) and with it every step in §4.1's list: **four known-red gates went green and none by lowering a bar** — `check-generated-scanners` (the committed `scanners.c` was one re2c's codegen, the Makefile rule is another's, same 26 functions; regenerated, behaviour-neutral), `pnpm audit:ci` (19 references pinned from SHAs this repository already records elsewhere, so none was invented; two more era-skew failures behind it), `check-swift-source-archive` (its inline consumer called a `Document` initializer this branch does not have), and `check-release-version` **with no `--skip-*`** — whose two "legacy tags" turned out not to be in the repository at all, only in one working copy. `audit-source-lists` reads **5 of 5**. The two deliverables were measured against all **96** whitelisted oracle examples: 39 byte-exact, 49 differing only in Q29's deleted `mode=`, 8 involving the oracle's `SoftBreak scope=0:0..0:0` sentinel, and **0 differing in anything else**. **STEP 14 IS LANDED** (§4.14.14): `null` and `""` are separated by a TYPE — `markdown_core_optional_chunk` in the engine and `markdown_core_optional_string` on the surface, both `{value, has_value}` like the two optionals the header already had — so a write site that does not state presence does not compile, and the three folds that used to compensate are gone. **Q26 is taken**: a destination is required, three `spec.txt` rows moved `destination=null` -> `destination=""`, and Q26's recorded reason is measured too narrow for two of its three fields. **The projection audit could not see nullability at all** — §4.1's rule 4 names it and the audit compared field NAMES; it now compares optionality across all three models, four mutants killed. It costs **8 bytes on every node (168 -> 176)** and no measurable wall clock. **The OOM sweep caught a defect in the change itself.** **11a, 11b and 11c ARE RETIRED** (§4.14.11d) by owner ruling of 2026-08-24: the requirement is *"take an element and find its way back to the source"*, `node.scope` answers it, and the record set answered the inverse question with no consumer anywhere in this file. **−1,803 lines of C and NOT ONE GOLDEN ROW MOVED for it.** The same ruling settled what a scope IS — **a pair of BOUNDARIES, not a byte range** — which deleted `S_end_at_last_byte_taken`, moved **71 golden rows** back to cmark-gfm's shape, took `places`' zero-column rule and Q40's exception with it, and took `containment` 8 → 9 with a row upstream reproduces byte for byte. 13.2's binding work landed inside it, and **the `markdown_core_error_get_scope` deletion landed at 13.2** (§4.14.13b), which closes Step 13 whole: the accessor, its two never-written fields, both export entries and `ParseError.scope` in all three bindings are gone, and the Kotlin wire is `MKC5`. **That run also found `pnpm run test:es-node` RED at `239ab31`** — §0's *"ES 11 + 9"* counts `node.test.mjs` alone, and `packaging.mjs`'s consumer stage was asserting `lineCount === 2` for a one-line document; the assertion was wrong, the engine was not, and it is repaired with both arms proved live. **13.1 IS LANDED** (§4.14.13a): eight diagnostic codes, the rule that decided them (*a diagnostic exists exactly where the two total views cannot say what happened*), and **the owner's 2026-08-24 ruling that there is NO FALLBACK ON OOM**, which struck row 13's truncation-marker clause and deleted the sweep that had been built for it. **What the ruling opens is measured and named** in §4.14.13a: 10 of 501 injected failures still succeed losslessly, and the step that makes them terminal owns the gate that replaces `fallback_runner`. **STEP 12 IS LANDED WHOLE** (§4.14.12a–12c): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 and M33 both read 69/69 there and fail `conformance` — a region names its owner by a path that survives being copied, `markdown_core_document_region_owner_paths` answers for every region in **1.13 ms against the 96.8 ms the singular call costs in a loop**, and all three bindings carry `concrete` and `parse` on `Document` itself. **The owner ruled the surface and I read it wrong twice**: the semver question killed my *reason*, not reading 2, and §4.14.12c records both misreadings. **`specs/positions/places.json` IS EMPTY** (§4.14.11c2). **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), **Step 9b** whole (§4.14.9b1–9b2) — the definition and both references are nodes, **D9 and D30 closed**, the **mdast backlog EMPTY** — **Step 11b** (§4.14.11b), which added L5 and L6 because L1–L4 are all true of the day before it, and **Step 11c** (§4.14.11c). Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Stage 0 | **CLOSED AND MERGED.** Every step in §4.1's list landed; §4.8 is the acceptance checklist and every box is ticked. 11a, 11b and 11c were RETIRED rather than built (§4.14.11d) — `node.scope` already answered the requirement, and −1,803 lines of C went with them. Per-step records are §4.14; the CI reconciliation that followed is §4.14.15H–L |
+| Stage 1 | **NOT STARTED.** The task list below is the order, and **the order is itself a finding**: two of the seven items are placed where they are because doing them later would invalidate the work before them — the headline probes decide whether the stage is scoped right at all, and re-resolution has to exist before H4 or H4 produces a wrong tree |
+
+### Stage 1, in order
+
+Nothing here is checked. Each line says what it is; the section says why.
+
+- [ ] **Re-measure the two headline probes at HEAD** — line-boundary prefix
+      equivalence, the per-line feed decile series, the `finish` cost curve.
+      §11's banner. **First because they are the entire justification for**
+      *"Stage 1's problem is not making the parser resumable"*, and they were
+      taken at `b71c8a9`, before thirteen steps rewrote `blocks.c` and
+      `inlines.c`. If either moved, the stage is scoped wrong from its first line.
+- [ ] **Re-measure every §11.4 hazard at HEAD**; record stands / gone / changed
+      shape. **H2 is already closed by the very step it names as its own fix**
+      (Step 9b — D9 and D30 closed at 9b.2). H3 and H6 name the same subsystem
+      and probably moved with it; H1 and H8 were the target of no Stage 0 step.
+- [ ] **Build the per-line slope gate** — a fitted slope indistinguishable from
+      zero passes, any positive slope in *i* fails and names the state being
+      re-derived. §11.5's three costs that scale with something other than the
+      current line are separate series with stated spike bounds. **Before any
+      refactor**: criterion 1 is the one that looks fine while criterion 2 is
+      being failed, and a slope measured after a refactor cannot say whether the
+      refactor caused the shape or inherited it (§3's gate section).
+- [ ] **Reference re-resolution** — the back-index from a label to the sites
+      waiting on it, which `markdown_core_reference_create` has not got.
+      **A PREREQUISITE OF THE NEXT ITEM, not a follow-up** (§11.5's correction):
+      `core/inlines.c:1524` creates a reference only where the refmap lookup
+      succeeds, so closing a block early parses `[foo]` before `[foo]: /url` is
+      fed and the LinkReference never appears — criterion 1, not cost.
+- [ ] **H4** — one flag bit per block, `markdown_core_parse_inlines` moved into
+      `finalize`, so every block is parsed exactly once in the line that closes
+      it and the sum becomes Θ(bytes) by construction.
+- [ ] **Settle the six API decisions** (§11.8), under two standing rulings:
+      append is atomic (Q34, §4.13) and there is no fallback on OOM (§4.14.13a).
+- [ ] **Acceptance** — criterion 1 against the EXTERNAL oracles on every
+      line-boundary partition, criterion 2 as a flat slope. Neither alone is
+      Stage 1: clone-and-finish satisfies the first and is O(l²).
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -1033,6 +1076,20 @@ factor can fake. The series is the artifact: a fitted slope indistinguishable
 from zero passes, and any positive slope in *i* fails and names the state being
 re-derived. Total wall time against a one-shot of the same bytes is reported
 alongside as a sanity check, but the slope is the gate.
+
+**THE GATE IS BUILT BEFORE THE REFACTOR, NOT AFTER IT.** That ordering is not
+tidiness and it is not the usual test-first preference; it is the specific
+lesson of the program this reconstruction replaced. **Criterion 1 is the one
+that looks fine while criterion 2 is being failed** — a clone-and-finish
+snapshot is structurally equal on every partition and passes every parity gate
+this repository owns, which is exactly why months went into it. The only thing
+that can tell the two apart is a slope, and a slope measured *after* a refactor
+cannot say whether the refactor caused the shape or merely inherited it.
+
+So the series exists, runs on a corpus of bounded blocks and bounded depth, and
+prints its fitted slope, **before** `process_inlines` moves anywhere. Then H4's
+change is measured rather than argued, and the three exempt series (§11.5) have
+their spike bounds recorded against a tree nobody has touched yet.
 
 #### What Stage 1 owes before it starts
 
@@ -10050,6 +10107,45 @@ This is the deliverable §3 names under *"What Stage 1 owes before it starts"*. 
 
 **Citations are `file:line` relative to `packages/markdown-core/`, pinned to `b71c8a9`.** As in §2, the enclosing function name is the durable half; a landed fix moves every line below it. Every classification below is either a citation or a measurement; where a measurement decided the class, the measurement is given.
 
+> ### THIS INVENTORY PREDATES STAGE 0, AND RE-MEASURING IT IS STAGE 1'S FIRST DELIVERABLE
+>
+> It was written at `44b1d54`, which is **early** on this branch: Steps 3, 3a,
+> 3b, 5, 6, 7, 8, 9a, 9b, 10, 12, 13, 14 and 15 all landed after it, and they
+> rewrote `blocks.c`, `inlines.c` and `references.c`. Two consequences, and
+> neither is cosmetic.
+>
+> **The line citations below are stale.** They are pinned to `b71c8a9` and the
+> enclosing function name is the durable half, exactly as §2 says. Read the
+> function, not the number.
+>
+> **At least one hazard has already been closed by the work it names as its own
+> fix.** H2 — the reference-expansion budget making the parse of lines 1…*i* a
+> function of lines *i+1*… — says *"Smallest change: delete `ref_size`,
+> `max_ref_size` and `entry.size` (**Step 9b**)"*. **Step 9b landed**: D9 and D30
+> closed at 9b.2, `audit-reference-order-independence.mjs` is green with an empty
+> ledger, and `reference_expansion_bound` went 0.999x to 0.399x (§4.14.9b1–9b2).
+> H2 as written is history. H3 and H6 name the same subsystem and are likely to
+> have moved with it; H8's postprocess and H1's `finish` were not the target of
+> any Stage 0 step and are likely intact.
+>
+> **AND THE TWO HEADLINE PROBES ARE STALE TOO — re-run those first.** Raised in
+> review on #116, and it is the more dangerous half: the block quote above says
+> *"Criterion 1 is already satisfied by the line loop at HEAD"* and reports
+> 13,566 prefixes and the feed/finish deciles, and **"HEAD" there means
+> `b71c8a9`**. Those two numbers are not one finding among twenty — they are the
+> entire justification for the sentence *"Stage 1's problem is not making the
+> parser resumable"*. If either moved under Stage 0's rewrite of `blocks.c` and
+> `inlines.c`, the stage is scoped wrong from its first line, and every hazard
+> re-measurement below would be answering a question that no longer applies.
+>
+> **So Stage 1 does not start by designing against this table.** It starts by
+> re-running, against HEAD: the line-boundary prefix equivalence, the per-line
+> feed decile series, the `finish` cost curve, and then each hazard's own
+> measurement — recording which still stand, which are gone, and which changed
+> shape. That is a deliverable with an artifact, not a preliminary — the same
+> standing this inventory itself had for Stage 0 (*"The analysis was the first
+> deliverable, not a preliminary"*, §3).
+
 
 > **Both headline measurements re-verified independently before this was
 > accepted**, on the same tree, with a purpose-built probe rather than the
@@ -10256,6 +10352,32 @@ The deletion: **the single mechanism most likely to violate criterion 2 is `proc
 2. **The map's cost is proportional to the document already parsed, and it is measured.** 20 000 `[a]` references with no definition parse in 13.44 ms; the same document with one trailing `[a]: /url` takes 17.72 ms. **4.28 ms — 0.21 µs × 20 000 — is attributable to one line.** The footnote equivalent is 16.4 → 24.2 ms, 7.8 ms on one line. And today the only implementation available for that flip is a tree rescan, because `markdown_core_reference_create` (`core/references.c:18-58`) has **no back-index to the sites waiting on the label it just defined**. Without one, every definition line costs O(document) — a flat criterion-2 failure on *every* definition, not just pathological ones.
 
 3. **The map is the only subsystem whose *answer*, not merely its cost, depends on bytes not yet fed.** H2. No carried state fixes that; only deletion does.
+
+**CORRECTION — H4 IS NOT THE FIRST MOVE, AND THIS PARAGRAPH SAID IT WAS.**
+Raised in review on #116 and verified here. *"Requires no new carried state at
+all"* is true about state and silently assumes something false about ORDER: when
+a block closes, **the refmap is not complete**. `handle_close_bracket` creates a
+reference only where the lookup succeeds — `core/inlines.c:1524`,
+`if (found_label && markdown_core_map_lookup(subj->refmap, &raw_label) != NULL)`
+— and there is no pending path. Measured on `904c66d`:
+
+| input | today |
+|---|---|
+| `[foo]\n\n[foo]: /url` | `LinkReference label="foo" form=shortcut` |
+| `[foo]\n` alone — what `finalize` would see | `Text "[foo]"` |
+
+Deferring every block's inlines to the end is the only reason the first row
+works. Move `markdown_core_parse_inlines` into `finalize` with nothing else, and
+the paragraph is parsed before line 3 is fed, the lookup fails, and the
+LinkReference **never appears in the final tree at all** — a criterion 1 failure
+on one of CommonMark's most ordinary constructs, not merely a cost.
+
+So the re-resolution machinery is a **prerequisite** of the H4 move rather than a
+follow-up to it: §11.6's ruling that a definition arriving at line *i+5* changes
+the tree at *i+5* requires something to change, and the back-index this section
+names two paragraphs above — `markdown_core_reference_create` has **no index to
+the sites waiting on the label it just defines** — is what makes that flip
+possible at all, before it is what makes it affordable.
 
 The inline phase's residual problem is **distribution, not asymptotics**: with the call moved to `finalize`, the max over lines becomes Θ(largest block) — measured 4.6 / 7.4 / 13.1 / 25.3 ms for a single paragraph of 2k / 4k / 8k / 16k lines, ≈1.5 µs per paragraph line, all of it landing on the closing line. That is a burst on a corpus of unbounded blocks and it is flat on a corpus of bounded ones. Flattening it further — a resumable subject inside the open block — is a strict addition, and it should be scoped separately with its reach measured first, because its seven hazards (H5 and the three end-of-buffer memos at `core/inlines.c:387,1034,1046,1056,1067`, which become false negatives on resume) are all ways to be silently wrong rather than slow.
 
