@@ -119,10 +119,38 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
     ) {
         lines += "            $name ="
         lines += "                buildString {"
-        for (chunk in value.chunked(30)) {
+        for (chunk in chunkedOnCodePoints(value, 30)) {
             lines += "                    append(${kotlinLiteral(chunk)})"
         }
         lines += "                },"
+    }
+
+    /**
+     * Split [value] into pieces of at most [size] UTF-16 units, never between a
+     * surrogate pair.
+     *
+     * `String.chunked` indexes by UTF-16 unit, so a supplementary character
+     * starting on the boundary is cut in half; `writeText` then encodes each
+     * lone surrogate as U+FFFD and the generated fixture tests DIFFERENT BYTES
+     * from the shared manifest, silently. The manifest carries no supplementary
+     * character today -- 164 strings, zero surrogates -- so this changes not one
+     * byte of what is generated. It is here so that adding one never does.
+     */
+    private fun chunkedOnCodePoints(
+        value: String,
+        size: Int,
+    ): kotlin.collections.List<String> {
+        val chunks = mutableListOf<String>()
+        var start = 0
+        while (start < value.length) {
+            var end = minOf(start + size, value.length)
+            if (end < value.length && value[end - 1].isHighSurrogate()) {
+                end--
+            }
+            chunks += value.substring(start, end)
+            start = end
+        }
+        return chunks
     }
 
     private fun kotlinLiteral(value: String): String =

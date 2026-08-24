@@ -8309,6 +8309,86 @@ raised. Closing all of it is a STEP, and it is named here rather than left
 half-done: **a branch that refused four times to make a gate green by lowering a
 bar does not get to close this one by widening a ledger.**
 
+#### 4.14.15I The PR's three review comments: one right, one right for the wrong reason, one wrong
+
+Three bot comments landed on #115 — two from Codex, one from CodeQL. **Two of
+the three assert that this branch REMOVED something, and neither did**: both
+name a `main`-era addition the 1.0 baseline never had, which is what a
+reconstruction from `580d10c` is expected to look like. Provenance is not the
+interesting question though — each claim was tested.
+
+##### CodeQL, "inefficient regular expression" — RIGHT, and fixed
+
+`scripts/audit-extension-special-chars.mjs:89`'s
+`(?:\\.|[^'])+` lets **both alternatives match a backslash**, so a run of `\&`
+with no closing quote makes the engine try every way to split it. Measured on
+the pattern itself: **13 ms at 18 repetitions, 24 ms at 22, 94 ms at 24** — the
+doubling CodeQL describes. `[^'\\]` in the second branch removes the ambiguity
+and changes nothing about what is matched, because the first branch already
+covers every escape. **0 ms at 2000 repetitions afterwards, and the audit's full
+output is byte-identical** with the old pattern and the new.
+
+##### Codex P2, `String.chunked(30)` splits surrogate pairs — RIGHT ABOUT THE HAZARD, WRONG ABOUT THE HISTORY
+
+`packages/kotlin-markdown-core/build.gradle.kts` chunks each generated fixture
+string by 30 **UTF-16 units**, so a supplementary character starting on the
+boundary is cut in half and `writeText` puts U+FFFD in each half — the Kotlin
+conformance suite would then test different bytes from the shared manifest,
+silently. That is a real hazard. But *"preserve the previous boundary
+adjustment"* has nothing to preserve: **the line is byte-identical to
+`580d10c`'s** (its line 124, this branch's 122), so nothing was removed.
+
+**Measured before changing anything: the manifest has no supplementary character
+at all — 164 strings scanned, zero surrogates** — so it cannot fire today, which
+Codex's own last sentence concedes. Taken anyway, because the failure mode is
+silent corruption of a fixture: `chunkedOnCodePoints` never cuts between a high
+surrogate and its low half. **The generated `CanonicalAstCases.kt` is byte-identical
+after the change**, and on a string with an emoji at unit index 29 the old
+chunker puts a lone surrogate in **both** chunks and the new one in neither.
+
+##### Codex P1, "restore `-sALLOW_MEMORY_GROWTH=1`" — THE CONCERN IS REAL, THE FIX BREAKS THE PACKAGE
+
+Three separate findings, all measured.
+
+**The premise is wrong.** `-sALLOW_MEMORY_GROWTH=1` is **not in `580d10c`'s
+`build.mjs`** — it is `main`'s (its line 96). Nothing was restored, and v1.0.3
+shipped the same heap.
+
+**The boundary is real, and worse than described.** Against the artifact this PR
+builds, parsing through the ES package:
+
+| input | result |
+|---|---|
+| 1024 KiB | OK, 18,725 blocks, 31 ms |
+| 1400 KiB | OK, 25,600 blocks, 37 ms |
+| 1600 KiB | OK, 29,257 blocks, 41 ms |
+| **2048 KiB** | **never returns** — killed at 40 s, and again at 15 minutes |
+
+It does not report an allocation failure. **It hangs**, which is precisely what
+§4.14.13a's *"no fallback on OOM"* ruling says must not happen: a lost allocation
+abandons the parse, it does not spin.
+
+**The recommended fix makes the package stop working entirely.** Built with the
+flag added, the module does not instantiate:
+
+```
+LinkError: WebAssembly.instantiate(): Import #0 "env"
+  "emscripten_notify_memory_growth": function import requires a callable
+```
+
+Under `-sSTANDALONE_WASM=1` a growing heap requires the host to supply
+`emscripten_notify_memory_growth`, and this package's hand-written loader
+supplies no such import. **Every size fails, including the ones that worked
+before.**
+
+**What does work, measured.** `-sINITIAL_MEMORY=134217728`: 2048 KiB parses in
+**49 ms** and 8192 KiB in **159 ms**, so the cliff is the fixed 16 MiB heap and
+nothing else. **NOT TAKEN HERE.** The two real options — reserve a larger heap,
+or teach the loader the notify import and then enable growth — trade a fixed
+reservation in every browser bundle against loader surface, the defect is
+inherited from `580d10c` rather than introduced here, and picking between them is
+an owner decision, not a review fix. It is named and measured so it can be made.
+
 ---
 
 ### 4.3 The ordering argument

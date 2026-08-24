@@ -86,7 +86,13 @@ function bytesOf(literal) {
 }
 // The one shape every extension's inline match uses: comparing its `character`
 // (or `c`) parameter with a character literal.
-const DISPATCH = /\b(?:character|c)\s*[!=]=\s*'((?:\\.|[^'])+)'/g;
+// `[^'\\]` and not `[^']`: the two alternatives must not both match a
+// backslash, or a run of `\&` with no closing quote makes the engine try every
+// way to split it and the match goes exponential -- 13 ms at 18 repetitions,
+// 94 ms at 24, and CodeQL's "inefficient regular expression" alert. Excluding
+// the backslash from the second branch changes nothing about what is matched,
+// because the first branch already covers every escape.
+const DISPATCH = /\b(?:character|c)\s*[!=]=\s*'((?:\\.|[^'\\])+)'/g;
 
 const ESCAPES = { "\\\\": 0x5c, "\\'": 0x27, "\\n": 0x0a, "\\r": 0x0d, "\\t": 0x09, "\\0": 0x00 };
 const byteOf = (literal) => (literal in ESCAPES ? ESCAPES[literal] : literal.charCodeAt(0));
