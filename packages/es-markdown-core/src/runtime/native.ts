@@ -57,7 +57,13 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
             throw new Error(`Markdown Core WASM exited with status ${code}`);
         }
     };
-    return (await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: wasi, env: {} })).instance;
+    // A standalone module with a growing heap does not instantiate without this
+    // import. It is where a host would refresh cached views of `memory.buffer`,
+    // which growing DETACHES -- this runtime caches none, so it has nothing to
+    // do. Anything that comes to hold a view across a call into WASM breaks
+    // under growth and passes without it.
+    const env = { emscripten_notify_memory_growth: (): void => {} };
+    return (await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: wasi, env })).instance;
 }
 
 // Top-level initialization keeps Document.parse synchronous in Node and browsers.

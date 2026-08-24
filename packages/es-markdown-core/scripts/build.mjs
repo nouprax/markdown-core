@@ -75,6 +75,14 @@ const result = spawnSync(
         "-O3",
         "-std=c99",
         "-sSTANDALONE_WASM=1",
+        // A FIXED HEAP ONLY MOVES THE CLIFF. Without this the heap is
+        // pinned at the 16 MiB default and a document over about 1.6 MiB
+        // does not fail -- it stops returning. Reserving more just picks a
+        // larger input to fail on, and a long stream reaches any bound.
+        // The loader supplies `emscripten_notify_memory_growth`, which a
+        // standalone module with a growing heap will not instantiate
+        // without.
+        "-sALLOW_MEMORY_GROWTH=1",
         "--no-entry",
         `-sEXPORTED_FUNCTIONS=${JSON.stringify(exported)}`,
         "-DMARKDOWN_CORE_STATIC_DEFINE",

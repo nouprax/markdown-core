@@ -8346,7 +8346,7 @@ surrogate and its low half. **The generated `CanonicalAstCases.kt` is byte-ident
 after the change**, and on a string with an emoji at unit index 29 the old
 chunker puts a lone surrogate in **both** chunks and the new one in neither.
 
-##### Codex P1, "restore `-sALLOW_MEMORY_GROWTH=1`" — THE CONCERN IS REAL, THE FIX BREAKS THE PACKAGE
+##### Codex P1, "restore `-sALLOW_MEMORY_GROWTH=1`" — THE CONCERN IS REAL, THE ONE-LINE FIX BREAKS THE PACKAGE, AND THE HEAP GROWS ANYWAY
 
 Three separate findings, all measured.
 
@@ -8381,13 +8381,48 @@ Under `-sSTANDALONE_WASM=1` a growing heap requires the host to supply
 supplies no such import. **Every size fails, including the ones that worked
 before.**
 
-**What does work, measured.** `-sINITIAL_MEMORY=134217728`: 2048 KiB parses in
-**49 ms** and 8192 KiB in **159 ms**, so the cliff is the fixed 16 MiB heap and
-nothing else. **NOT TAKEN HERE.** The two real options — reserve a larger heap,
-or teach the loader the notify import and then enable growth — trade a fixed
-reservation in every browser bundle against loader surface, the defect is
-inherited from `580d10c` rather than introduced here, and picking between them is
-an owner decision, not a review fix. It is named and measured so it can be made.
+**Raising `INITIAL_MEMORY` proves the diagnosis and is the wrong fix.** At
+`-sINITIAL_MEMORY=134217728`, 2048 KiB parses in **49 ms** and 8192 KiB in
+**159 ms** — so the cliff is the fixed heap and nothing else.
+
+> **Owner ruling, 2026-08-24: allocate the growth, not a bigger block.** A fixed
+> reservation only moves the cliff. Whatever size is reserved, a large enough
+> input or a long enough stream reaches it, and what happens there is not an
+> error — the parse stops returning.
+
+**So the heap grows, and the missing import is supplied rather than the flag
+being dropped.** `loadWasm` already built an `env` import object and it was
+empty; it now carries `emscripten_notify_memory_growth`. Emscripten calls that
+after every growth so a host can refresh cached views of `memory.buffer`, which
+growing **detaches** — and **this runtime caches none**, which is the property
+that made the change viable rather than a rewrite. Every site was read before
+trusting it: `parser.ts`'s `dataView()` and `node-decoder.ts`'s both construct a
+**fresh** `DataView` per call, every typed array is constructed from
+`native.memory.buffer` at the point of use, each one after the last call that
+could have grown the heap, and each one that outlives a call is `.slice()`d
+immediately. The import is a no-op with a comment saying what would break it.
+
+**Measured after**, against the same ladder that used to stop at 1.6 MiB:
+
+| input | before | after |
+|---|---|---|
+| 1024 KiB | 31 ms | 31 ms |
+| 2048 KiB | **never returned** | 50 ms |
+| 8192 KiB | never returned | 176 ms |
+| **32768 KiB** | never returned | **670 ms**, 599,186 blocks |
+
+**Cost: none that a benchmark can see.** `large_document` 9.51 → **8.57 ms** and
+`deep_nesting` 49.5 → **55.4 µs** — opposite signs at about a tenth each, which
+is run-to-run noise and not a cost.
+
+**The gate is a test with nothing added to the source for it.** The heap is
+observable, so `robustness: the heap grows…` reads `native.memory.buffer.byteLength`
+across a 4 MiB parse and requires it to have GROWN — which is what separates
+this fix from the reservation the ruling rejected, since a merely larger fixed
+heap passes a test that only checks the parse succeeded. It then reads a link's
+destination and title out of a document parsed after the growth, because a
+stale view would throw there rather than somewhere a user would find it. Mutant:
+with the flag removed the test does not return, and is killed at 180 s.
 
 ---
 

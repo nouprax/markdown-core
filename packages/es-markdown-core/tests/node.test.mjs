@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TextEncoder } from "node:util";
 import { Document, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
+// Past index.js for the instance itself: the heap is what this asserts about,
+// and it is observable without the source carrying anything for the test.
+import { native } from "../dist/runtime/native.js";
 import { kindVisitor } from "./visitor.mjs";
 
 test("api: synchronous parse, typed visitor dispatch, and walker", () => {
@@ -122,4 +125,31 @@ test("concrete: the normalized source and its line index survive the native rele
     for (let index = 0; index < 300; index += 1) Document.parse("# copy\n");
     assert.deepEqual(concrete.source, new TextEncoder().encode(source));
     assert.equal(concrete.lineStart(3), 14);
+});
+
+test("robustness: the heap grows, and a document larger than the initial one parses", () => {
+    // The default heap is 16 MiB and a parse needs several times its input, so
+    // before -sALLOW_MEMORY_GROWTH=1 anything past about 1.6 MiB did not fail --
+    // it stopped returning. A fixed reservation only moves that cliff.
+    const paragraph = "lorem ipsum dolor sit amet consectetur adipiscing elit\n\n";
+    const source = paragraph.repeat(Math.round((4 * 1024 * 1024) / paragraph.length));
+    const before = native.memory.buffer.byteLength;
+
+    const document = Document.parse(source);
+
+    // The heap GREW rather than merely having been large enough to start with,
+    // which is the other way this could have been made to pass and is the one
+    // that leaves the cliff in place.
+    assert.ok(native.memory.buffer.byteLength > before, "parsing 4 MiB must have grown the heap");
+    assert.equal(document.content.length, Math.round((4 * 1024 * 1024) / paragraph.length));
+    assert.equal(document.content[0].kind, "paragraph");
+
+    // Read a string AFTER the growth: every view this runtime takes must be
+    // constructed after the last call that could have detached the buffer, and
+    // a stale one throws here rather than anywhere a user would see it.
+    const withLink = Document.parse(`${source}[a](/u "t")\n`);
+    const link = withLink.content.at(-1).content[0];
+    assert.equal(link.kind, "link");
+    assert.equal(link.destination, "/u");
+    assert.equal(link.title, "t");
 });
