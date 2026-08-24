@@ -65,8 +65,13 @@ const server = createServer(async (request, response) => {
         response.setHeader("content-type", name.endsWith(".wasm") ? "application/wasm" : "text/javascript");
         response.end(await readFile(resolved));
     } catch (error) {
+        // The text goes to this harness's own stderr and NOT into the response.
+        // An exception here names a filesystem path, and the browser renders
+        // whatever the body says -- CodeQL's `js/stack-trace-exposure` and
+        // `js/xss-through-exception`, both on this one line.
+        process.stderr.write(`browser fixture server: ${String(error)}\n`);
         response.statusCode = 500;
-        response.end(String(error));
+        response.end("internal error");
     }
 });
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));

@@ -135,7 +135,15 @@ export function parseCanonicalDump(dump) {
         const fields = {};
         // A bracketed group is ONE field even when it contains spaces: a
         // directive's attributes print as `[k="v" k2="v w"]`.
-        for (const field of body.matchAll(/([a-zA-Z]+)=("(?:[^"\\]|\\.)*"|\[(?:"(?:[^"\\]|\\.)*"|[^\]])*\]|[^\s]+)/g)) {
+        // `[^\]"]` and not `[^\]]`: a quote must go through the quoted branch or
+        // both alternatives can consume one, and a bracket that never closes
+        // makes the engine try every way to split the run into singles and
+        // pairs -- Fibonacci-many, 16 ms at 26 quotes and 528 ms at 38, which is
+        // CodeQL's `js/redos`. Excluding it changes nothing a dump can contain:
+        // every quote inside a bracketed group opens or closes a value.
+        for (const field of body.matchAll(
+            /([a-zA-Z]+)=("(?:[^"\\]|\\.)*"|\[(?:"(?:[^"\\]|\\.)*"|[^\]"])*\]|[^\s]+)/g
+        )) {
             fields[field[1]] = field[2].startsWith('"') ? JSON.parse(field[2]) : field[2];
         }
         const node = { kind: body.split(" ")[0], fields, children: [] };

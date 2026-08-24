@@ -1,6 +1,7 @@
 import groovy.json.JsonSlurper
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.CacheableTask
@@ -8,6 +9,7 @@ import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.TaskAction
 import org.gradle.jvm.tasks.Jar
 import org.gradle.language.jvm.tasks.ProcessResources
@@ -701,6 +703,38 @@ tasks.register("publishKotlinToMavenLocal") {
         },
         ":packages:kotlin-markdown-core:android-runtime:publishToMavenLocal",
     )
+}
+
+// STAGING FOR THE BUILD-ONCE / RUN-ELSEWHERE CI SPLIT. `ci.yml` builds test
+// artifacts in one job and runs them in another, and
+// scripts/build-kotlin-host-test-artifact.sh names these three tasks -- but the
+// 1.0 baseline's build defines none of them, so Step 0's scripts/ restore left
+// the workflow calling into nothing. Third instance of section 0's "scripts/ IS
+// NOT ONE THING" rule, and unlike checkKotlinAbi there is no baseline shape to
+// restore to: the whole artifact split postdates 580d10c.
+val jvmTestCompilation = jvmTarget.compilations.getByName("test")
+
+tasks.register<Sync>("stageJvmTestArtifact") {
+    dependsOn("jvmTestClasses", "jvmProcessResources")
+    into(layout.buildDirectory.dir("ci-test-artifact/jvm"))
+    from(jvmMainCompilation.output.allOutputs) { into("classes") }
+    from(jvmTestCompilation.output.allOutputs) { into("classes") }
+    from(jvmTestCompilation.runtimeDependencyFiles.filter(File::isFile)) { into("lib") }
+}
+
+tasks.register<Sync>("stageJvmBenchmarkArtifact") {
+    dependsOn(benchmarkCompilation.compileTaskProvider, "jvmProcessResources")
+    into(layout.buildDirectory.dir("ci-test-artifact/jvm-benchmark"))
+    from(jvmMainCompilation.output.allOutputs) { into("classes") }
+    from(benchmarkCompilation.output.allOutputs) { into("classes") }
+    from(benchmarkCompilation.runtimeDependencyFiles.filter(File::isFile)) { into("lib") }
+}
+
+tasks.register<Sync>("stageAndroidHostTestArtifact") {
+    dependsOn(buildJvmNative, "compileAndroidHostTest")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    into(layout.buildDirectory.dir("ci-test-artifact/android-host"))
+    from(nativeOutputDirectory) { into("native") }
 }
 
 jacoco { toolVersion = libs.versions.jacoco.get() }

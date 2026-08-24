@@ -5,6 +5,15 @@
 #include <markdown-core.h>
 #include <parser.h>
 
+/* C LINKAGE, AND WINDOWS IS THE ONLY PLACE THIS SHOWS. The Itanium ABI does not
+ * mangle a variable at global scope, so `MARKDOWN_CORE_EXTENSION_*` resolves on
+ * Linux and macOS whether or not the declaration says `extern "C"`; MSVC mangles
+ * every variable, and a C++ translation unit including this header without the
+ * guard fails to link with LNK2019. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct markdown_core_document {
     markdown_core_node *root;
     /* Requirement 12's other view. Moved out of the parser at `finish` and
@@ -15,5 +24,9 @@ struct markdown_core_document {
      * its own pool, which is why it outlives nothing. */
     markdown_core_diagnostics diagnostics;
 };
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

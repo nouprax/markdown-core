@@ -8412,6 +8412,56 @@ was written for `main`'s binding — a different wire, with a test suite that ha
 streaming API to exercise it. The 79.87% branch figure is the number to bring
 down, and it is a step of its own rather than something to hide in a rewrite.
 
+#### 4.14.15K Round three: three CodeQL alerts, and three more platforms disagreeing
+
+**Every one of the six is a thing exactly one platform or one tool can see.**
+That is now the pattern of this whole CI reconciliation, not a coincidence: the
+gates §0 lists all run on one host with one compiler.
+
+##### The three CodeQL alerts
+
+- **`js/redos`, high, `scripts/lib/upstream-cmark.mjs:138`.** The dump parser's
+  field regex has `\[(?:"…"|[^\]])*\]`, and `[^\]]` also matches a quote — so a
+  bracketed group that never closes can be split into singles and pairs
+  Fibonacci-many ways. Measured on the pattern: **16 ms at 26 quotes, 74 ms at
+  34, 528 ms at 38.** `[^\]"]` removes the ambiguity and changes nothing a dump
+  can contain, because every quote inside a bracketed group opens or closes a
+  value. **0 ms at 5000 quotes after**, and upstream 892/892 with 10/10, mdast
+  112/112 and both fuzz oracles 300/300 all read exactly what they read before.
+- **`js/stack-trace-exposure` and `js/xss-through-exception`, both on
+  `tests/browser.mjs:78`** — one line, `response.end(String(error))`, in the
+  localhost server that feeds headless Chrome. The text names a filesystem path
+  and the browser renders the body as-is. It goes to the harness's own stderr
+  now and the response says `internal error`. The browser suite still passes,
+  and its log shows the new line firing on the favicon request, so the arm is
+  live rather than merely present.
+
+##### And three more platform disagreements
+
+- **MSVC could not link `api_test`.** `LNK2019: unresolved external symbol
+  "struct markdown_core_syntax_extension const MARKDOWN_CORE_EXTENSION_DIRECTIVE"`
+  — `extensions/directive.h` declares it with **no `extern "C"` guard**, and
+  `tests/api/cplusplus.cpp` includes it. **The Itanium ABI does not mangle a
+  variable at global scope and MSVC mangles every variable**, so the missing
+  guard is invisible on Linux and macOS and fatal on Windows. Seven extension
+  headers were unguarded; all seven are guarded now.
+- **GCC could not compile `harness.c`.**
+  `error: ignoring return value of 'system' declared with attribute 'warn_unused_result'`
+  — and this one is not even a compiler difference: **glibc marks `system` that
+  way and the macOS headers do not**, so no local build of any kind can report
+  it. The result is checked rather than cast away, which is also better
+  behaviour: with no `git` on `PATH` the diff never printed and the failure read
+  as though it had no detail.
+- **`stageJvmTestArtifact`, `stageJvmBenchmarkArtifact` and
+  `stageAndroidHostTestArtifact` did not exist.** `ci.yml` builds test artifacts
+  in one job and runs them in another; `scripts/build-kotlin-host-test-artifact.sh`
+  names those three tasks and the baseline build defines none of them —
+  **the third instance of the `scripts/` rule**, after `checkKotlinAbi` and
+  `jvmCoverageReport`. Unlike `checkKotlinAbi` there was **no baseline shape to
+  restore to**: the whole artifact split postdates `580d10c`. Ported, and all
+  three verified by staging for real — `jvm` 97 files, `jvm-benchmark` 76,
+  `android-host` 1.
+
 #### 4.14.15I The PR's three review comments: one right, one right for the wrong reason, one wrong
 
 Three bot comments landed on #115 — two from Codex, one from CodeQL. **Two of
