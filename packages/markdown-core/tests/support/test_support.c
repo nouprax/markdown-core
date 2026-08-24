@@ -332,8 +332,7 @@ markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length, const 
     markdown_core_error *error = NULL;
     markdown_core_document *document = markdown_core_document_parse(bytes, length, options, &error);
     if (!document) {
-        markdown_core_string_view message =
-            error ? markdown_core_error_get_message(error) : (markdown_core_string_view){NULL, 0};
+        markdown_core_string message = error ? markdown_core_error_get_message(error) : (markdown_core_string){NULL, 0};
         fprintf(stderr, "facade parse failed: ");
         if (message.data) {
             fwrite(message.data, 1, message.length, stderr);
@@ -408,7 +407,7 @@ int ts_ast_count_kinds(const markdown_core_node *root, size_t *counts) {
 static int ts_concat_visit(const markdown_core_node *node, void *context) {
     ts_buffer *buffer = (ts_buffer *)context;
     if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_TEXT) {
-        markdown_core_string_view literal;
+        markdown_core_string literal;
         if (markdown_core_node_literal(node, &literal) && literal.data) {
             if (ts_buffer_append(buffer, (const char *)literal.data, literal.length) != 0) {
                 return -1;

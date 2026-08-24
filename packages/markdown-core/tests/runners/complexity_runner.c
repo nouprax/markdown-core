@@ -161,9 +161,9 @@ typedef struct cc_expansion {
 
 static int cc_expansion_visit(const markdown_core_node *node, void *context) {
     cc_expansion *total = (cc_expansion *)context;
-    markdown_core_string_view first;
-    markdown_core_string_view second;
-    markdown_core_optional_string_view title;
+    markdown_core_string first;
+    markdown_core_string second;
+    markdown_core_optional_string title;
     if (markdown_core_node_link_properties(node, &first, &title) ||
         markdown_core_node_image_properties(node, &first, &title)) {
         total->bytes += first.length + (title.has_value ? title.value.length : 0);

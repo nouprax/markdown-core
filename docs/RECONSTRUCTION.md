@@ -27,7 +27,7 @@ only as a record.
 | Landed | Steps **0, 1, 0a** (0a.0–0a.15), **2** (§4.14.2), **3a** (3a.1–3a.3, §4.14.3a), **3** (3.1–3.5, §4.14.3), **3b** (§4.14.3b), **5** (§4.14.5), **D35** (§4.14.5a), **15A.1 – 15A.4** (§4.14.15A), **6** (§4.14.6), **7.1 – 7.2 – 7c – 7d – 7e** (§4.14.7a–e), **10** (§4.14.10), **9a.1 – 9a.2** (§4.14.9a1–9a2), ~~**11a**~~ (RETIRED, §4.14.11d), **8.1 – 8.2 – 8.3 – 8.4** (§4.14.8a–8d), **9b** (9b.1 – 9b.2, §4.14.9b1–9b2), ~~**11b**~~ ~~**11c**~~ (RETIRED with 11a, §4.14.11d), **12.1** (§4.14.12a), **12.2's locator** (§4.14.12b), **`end-at-line-ending` CLOSED** (§4.14.11c2), **13.1** (§4.14.13a), **13.2** (§4.14.13b) — **STEP 13 IS WHOLE** —, **14** (§4.14.14), **15C** (§4.14.15C) — **STAGE 0's STEP LIST IS COMPLETE** |
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
-| Next action | **§4.8's checklist is met except for Q41 and Q42, which are the owner's** — see the bottom of this row. **STEP 15C IS LANDED** (§4.14.15C) and with it every step in §4.1's list: **four known-red gates went green and none by lowering a bar** — `check-generated-scanners` (the committed `scanners.c` was one re2c's codegen, the Makefile rule is another's, same 26 functions; regenerated, behaviour-neutral), `pnpm audit:ci` (19 references pinned from SHAs this repository already records elsewhere, so none was invented; two more era-skew failures behind it), `check-swift-source-archive` (its inline consumer called a `Document` initializer this branch does not have), and `check-release-version` **with no `--skip-*`** — whose two "legacy tags" turned out not to be in the repository at all, only in one working copy. `audit-source-lists` reads **5 of 5**. The two deliverables were measured against all **96** whitelisted oracle examples: 39 byte-exact, 49 differing only in Q29's deleted `mode=`, 8 involving the oracle's `SoftBreak scope=0:0..0:0` sentinel, and **0 differing in anything else**. **STEP 14 IS LANDED** (§4.14.14): `null` and `""` are separated by a TYPE — `markdown_core_optional_chunk` in the engine and `markdown_core_optional_string_view` on the surface, both `{value, has_value}` like the two optionals the header already had — so a write site that does not state presence does not compile, and the three folds that used to compensate are gone. **Q26 is taken**: a destination is required, three `spec.txt` rows moved `destination=null` -> `destination=""`, and Q26's recorded reason is measured too narrow for two of its three fields. **The projection audit could not see nullability at all** — §4.1's rule 4 names it and the audit compared field NAMES; it now compares optionality across all three models, four mutants killed. It costs **8 bytes on every node (168 -> 176)** and no measurable wall clock. **The OOM sweep caught a defect in the change itself.** **11a, 11b and 11c ARE RETIRED** (§4.14.11d) by owner ruling of 2026-08-24: the requirement is *"take an element and find its way back to the source"*, `node.scope` answers it, and the record set answered the inverse question with no consumer anywhere in this file. **−1,803 lines of C and NOT ONE GOLDEN ROW MOVED for it.** The same ruling settled what a scope IS — **a pair of BOUNDARIES, not a byte range** — which deleted `S_end_at_last_byte_taken`, moved **71 golden rows** back to cmark-gfm's shape, took `places`' zero-column rule and Q40's exception with it, and took `containment` 8 → 9 with a row upstream reproduces byte for byte. 13.2's binding work landed inside it, and **the `markdown_core_error_get_scope` deletion landed at 13.2** (§4.14.13b), which closes Step 13 whole: the accessor, its two never-written fields, both export entries and `ParseError.scope` in all three bindings are gone, and the Kotlin wire is `MKC5`. **That run also found `pnpm run test:es-node` RED at `239ab31`** — §0's *"ES 11 + 9"* counts `node.test.mjs` alone, and `packaging.mjs`'s consumer stage was asserting `lineCount === 2` for a one-line document; the assertion was wrong, the engine was not, and it is repaired with both arms proved live. **13.1 IS LANDED** (§4.14.13a): eight diagnostic codes, the rule that decided them (*a diagnostic exists exactly where the two total views cannot say what happened*), and **the owner's 2026-08-24 ruling that there is NO FALLBACK ON OOM**, which struck row 13's truncation-marker clause and deleted the sweep that had been built for it. **What the ruling opens is measured and named** in §4.14.13a: 10 of 501 injected failures still succeed losslessly, and the step that makes them terminal owns the gate that replaces `fallback_runner`. **STEP 12 IS LANDED WHOLE** (§4.14.12a–12c): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 and M33 both read 69/69 there and fail `conformance` — a region names its owner by a path that survives being copied, `markdown_core_document_region_owner_paths` answers for every region in **1.13 ms against the 96.8 ms the singular call costs in a loop**, and all three bindings carry `concrete` and `parse` on `Document` itself. **The owner ruled the surface and I read it wrong twice**: the semver question killed my *reason*, not reading 2, and §4.14.12c records both misreadings. **`specs/positions/places.json` IS EMPTY** (§4.14.11c2). **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), **Step 9b** whole (§4.14.9b1–9b2) — the definition and both references are nodes, **D9 and D30 closed**, the **mdast backlog EMPTY** — **Step 11b** (§4.14.11b), which added L5 and L6 because L1–L4 are all true of the day before it, and **Step 11c** (§4.14.11c). Acceptance is **§4.8's checklist**, not the mdast backlog |
+| Next action | **§4.8's checklist is met except for Q41 and Q42, which are the owner's** — see the bottom of this row. **STEP 15C IS LANDED** (§4.14.15C) and with it every step in §4.1's list: **four known-red gates went green and none by lowering a bar** — `check-generated-scanners` (the committed `scanners.c` was one re2c's codegen, the Makefile rule is another's, same 26 functions; regenerated, behaviour-neutral), `pnpm audit:ci` (19 references pinned from SHAs this repository already records elsewhere, so none was invented; two more era-skew failures behind it), `check-swift-source-archive` (its inline consumer called a `Document` initializer this branch does not have), and `check-release-version` **with no `--skip-*`** — whose two "legacy tags" turned out not to be in the repository at all, only in one working copy. `audit-source-lists` reads **5 of 5**. The two deliverables were measured against all **96** whitelisted oracle examples: 39 byte-exact, 49 differing only in Q29's deleted `mode=`, 8 involving the oracle's `SoftBreak scope=0:0..0:0` sentinel, and **0 differing in anything else**. **STEP 14 IS LANDED** (§4.14.14): `null` and `""` are separated by a TYPE — `markdown_core_optional_chunk` in the engine and `markdown_core_optional_string` on the surface, both `{value, has_value}` like the two optionals the header already had — so a write site that does not state presence does not compile, and the three folds that used to compensate are gone. **Q26 is taken**: a destination is required, three `spec.txt` rows moved `destination=null` -> `destination=""`, and Q26's recorded reason is measured too narrow for two of its three fields. **The projection audit could not see nullability at all** — §4.1's rule 4 names it and the audit compared field NAMES; it now compares optionality across all three models, four mutants killed. It costs **8 bytes on every node (168 -> 176)** and no measurable wall clock. **The OOM sweep caught a defect in the change itself.** **11a, 11b and 11c ARE RETIRED** (§4.14.11d) by owner ruling of 2026-08-24: the requirement is *"take an element and find its way back to the source"*, `node.scope` answers it, and the record set answered the inverse question with no consumer anywhere in this file. **−1,803 lines of C and NOT ONE GOLDEN ROW MOVED for it.** The same ruling settled what a scope IS — **a pair of BOUNDARIES, not a byte range** — which deleted `S_end_at_last_byte_taken`, moved **71 golden rows** back to cmark-gfm's shape, took `places`' zero-column rule and Q40's exception with it, and took `containment` 8 → 9 with a row upstream reproduces byte for byte. 13.2's binding work landed inside it, and **the `markdown_core_error_get_scope` deletion landed at 13.2** (§4.14.13b), which closes Step 13 whole: the accessor, its two never-written fields, both export entries and `ParseError.scope` in all three bindings are gone, and the Kotlin wire is `MKC5`. **That run also found `pnpm run test:es-node` RED at `239ab31`** — §0's *"ES 11 + 9"* counts `node.test.mjs` alone, and `packaging.mjs`'s consumer stage was asserting `lineCount === 2` for a one-line document; the assertion was wrong, the engine was not, and it is repaired with both arms proved live. **13.1 IS LANDED** (§4.14.13a): eight diagnostic codes, the rule that decided them (*a diagnostic exists exactly where the two total views cannot say what happened*), and **the owner's 2026-08-24 ruling that there is NO FALLBACK ON OOM**, which struck row 13's truncation-marker clause and deleted the sweep that had been built for it. **What the ruling opens is measured and named** in §4.14.13a: 10 of 501 injected failures still succeed losslessly, and the step that makes them terminal owns the gate that replaces `fallback_runner`. **STEP 12 IS LANDED WHOLE** (§4.14.12a–12c): the C facade has both views and the law is gated by `facade_test` — which `ctest --preset correctness` does NOT run, so M30 and M33 both read 69/69 there and fail `conformance` — a region names its owner by a path that survives being copied, `markdown_core_document_region_owner_paths` answers for every region in **1.13 ms against the 96.8 ms the singular call costs in a loop**, and all three bindings carry `concrete` and `parse` on `Document` itself. **The owner ruled the surface and I read it wrong twice**: the semver question killed my *reason*, not reading 2, and §4.14.12c records both misreadings. **`specs/positions/places.json` IS EMPTY** (§4.14.11c2). **Landed since**: Step 10 (§4.14.10), Step 9a (§4.14.9a1–9a2), Step 11a (§4.14.11a) with **Q44 answered** (§4.14.11a2), Step 8 (§4.14.8a–8d) with **Q45 answered** (§4.14.8d), **Step 9b** whole (§4.14.9b1–9b2) — the definition and both references are nodes, **D9 and D30 closed**, the **mdast backlog EMPTY** — **Step 11b** (§4.14.11b), which added L5 and L6 because L1–L4 are all true of the day before it, and **Step 11c** (§4.14.11c). Acceptance is **§4.8's checklist**, not the mdast backlog |
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -7464,7 +7464,7 @@ folded one into the other to compensate**:
 | `buffer_optional_string` testing `value.data` | the dump | absence read off a pointer, for two fields whose absence is not a pointer fact |
 
 What replaces them is **`markdown_core_optional_chunk`** in the engine and
-**`markdown_core_optional_string_view`** on the public surface, both
+**`markdown_core_optional_string`** on the public surface, both
 `{ value, has_value }` — which is the shape `markdown_core_optional_i64` and
 `markdown_core_optional_bool` have carried since before this branch. **String
 was the one optional that cheated.** Three node fields take it: `code.info`,
@@ -7487,7 +7487,7 @@ have failed on all eighteen; §0's *"a preset that builds clean is not the prese
 CI runs"* is the reason that matters here rather than being a note.
 
 Swift then refused the same way — four `cannot convert value of type
-'UnsafeMutablePointer<markdown_core_string_view>'` errors — and the ES bridge
+'UnsafeMutablePointer<markdown_core_string>'` errors — and the ES bridge
 refused twice. **Three languages, one mechanism, no search required.**
 
 ##### Q26 taken: a destination is REQUIRED, and its recorded reason was too narrow
@@ -7805,7 +7805,7 @@ directive's label is an ordinary child node now), and
 `markdown_core_node_footnote_id` (now `markdown_core_node_association`) — and
 **eleven added**. Plus one class a name diff cannot see: four accessors kept
 their names and changed their signatures at Step 14, so a caller passing a
-`markdown_core_string_view *` no longer compiles.
+`markdown_core_string *` no longer compiles.
 
 And one genuine binding removal the list had missed: **1.0.3's `ParseOptions`
 carried `dollarFormulaDelimiters` and `latexFormulaDelimiters` in Swift, Kotlin
@@ -7838,6 +7838,33 @@ topology, `format-c`, `format-cmake`, `lint-c`, `pnpm -w run lint`,
 once the two local refs are absent. Bindings **ES 11 + 9**, **Swift 6 + 1 + 3**,
 **Kotlin 11 across six classes + 4**.
 
+
+#### 4.14.15E The string types lose `_view`, by owner instruction
+
+**`markdown_core_string_view` → `markdown_core_string`** and
+**`markdown_core_optional_string_view` → `markdown_core_optional_string`**,
+owner instruction of 2026-08-24. 102 occurrences over 30 files: the public
+header, `extensions/ast.c`, `core/main.c`, seven test runners, both native
+bridges and fourteen Swift sources.
+
+**The family is the argument.** The header already had
+`markdown_core_optional_i64` and `markdown_core_optional_bool`, and Step 14
+added `markdown_core_optional_string_view` beside them — the one member of a
+three-member family with a suffix. Q5's rule (*two names for one field after
+unifying the field is the failure mode that produced three accessors*) is the
+same rule one level up.
+
+**What the name carried, the comment now carries.** `_view` was the only place
+that said the bytes are BORROWED, so `markdown_core_string` gains the doc
+comment that says it: `data` points into the parsed document, is valid exactly
+as long as the `markdown_core_document` that produced it, is not
+NUL-terminated, and `length` is in bytes. A rename that drops information has
+to put it somewhere, and this one does.
+
+Behaviour-neutral by construction — a `typedef` name is not in the ABI, no
+exported function name moved, and `audit-public-surface.sh` compares the header
+against both export lists unchanged. Every gate at its number, `format-swift`
+still 0, and all four binding suites green.
 
 #### 4.14.15D Q41 answered: keep the rule, and write documentation that is not restatement
 
@@ -8866,8 +8893,8 @@ standard says, because the cost decision already forbade it.
 ```c
 /* Answers for all five reference kinds and refuses every other node type. */
 bool markdown_core_node_association(const markdown_core_node *,
-                                    markdown_core_string_view *label,
-                                    markdown_core_string_view *identifier);
+                                    markdown_core_string *label,
+                                    markdown_core_string *identifier);
 ```
 
 One function, one switch on `node->type`, and no reliance on layout at all. It

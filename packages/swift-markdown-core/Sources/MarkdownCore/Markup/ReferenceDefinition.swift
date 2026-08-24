@@ -25,10 +25,10 @@ public struct ReferenceDefinition: Markup {
 
 extension ReferenceDefinition {
     init(from node: OpaquePointer) {
-        var label = markdown_core_string_view()
-        var identifier = markdown_core_string_view()
-        var destination = markdown_core_string_view()
-        var title = markdown_core_optional_string_view()
+        var label = markdown_core_string()
+        var identifier = markdown_core_string()
+        var destination = markdown_core_string()
+        var title = markdown_core_optional_string()
         markdown_core_node_association(node, &label, &identifier)
         markdown_core_node_definition_resource(node, &destination, &title)
         self.init(

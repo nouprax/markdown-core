@@ -59,7 +59,7 @@ longer exists.
 - `null` and `""` are different answers everywhere, and nothing folds one into
   the other. `null` means the source did not write the field; `""` means it
   wrote it and it was empty. An optional string is reported as
-  `markdown_core_optional_string_view` in C — a value beside a presence flag,
+  `markdown_core_optional_string` in C — a value beside a presence flag,
   matching the optional Int and optional Bool the header already had — so
   `CodeBlock.info`, `CodeBlock.language`, `Link.title`, `Image.title` and
   `ReferenceDefinition.title` state which of the two they are.

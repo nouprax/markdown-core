@@ -179,7 +179,7 @@ static void check_source_and_lines(void) {
                                       "\n"
                                       "see [a] here\n";
     markdown_core_document *document;
-    markdown_core_string_view text;
+    markdown_core_string text;
     size_t at;
     size_t line;
     int lines_agree = 1;
@@ -252,8 +252,8 @@ static void check_null_and_empty(void) {
         markdown_core_document *document =
             markdown_core_document_parse((const uint8_t *)CASES[index].source, strlen(CASES[index].source), NULL, NULL);
         const markdown_core_node *node = NULL;
-        markdown_core_string_view destination = {NULL, 0};
-        markdown_core_optional_string_view title = {false, {NULL, 0}};
+        markdown_core_string destination = {NULL, 0};
+        markdown_core_optional_string title = {false, {NULL, 0}};
         bool read;
         if (!document) {
             check(false, "requirement 14 case parses");
@@ -290,9 +290,9 @@ static void check_null_and_empty(void) {
         markdown_core_document *document = markdown_core_document_parse((const uint8_t *)INFO_CASES[index].source,
                                                                         strlen(INFO_CASES[index].source), NULL, NULL);
         const markdown_core_node *node;
-        markdown_core_optional_string_view info = {false, {NULL, 0}};
-        markdown_core_optional_string_view language = {false, {NULL, 0}};
-        markdown_core_string_view literal = {NULL, 0};
+        markdown_core_optional_string info = {false, {NULL, 0}};
+        markdown_core_optional_string language = {false, {NULL, 0}};
+        markdown_core_string literal = {NULL, 0};
         bool fenced = false;
         bool closed = false;
         if (!document) {

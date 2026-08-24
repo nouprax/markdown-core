@@ -20,8 +20,8 @@ public struct FootnoteDefinition: Markup {
 
 extension FootnoteDefinition {
     init(from node: OpaquePointer) {
-        var label = markdown_core_string_view()
-        var identifier = markdown_core_string_view()
+        var label = markdown_core_string()
+        var identifier = markdown_core_string()
         markdown_core_node_association(node, &label, &identifier)
         self.init(
             scope: Self.scope(from: node),
@@ -47,8 +47,8 @@ public struct FootnoteReference: Markup {
 
 extension FootnoteReference {
     init(from node: OpaquePointer) {
-        var label = markdown_core_string_view()
-        var identifier = markdown_core_string_view()
+        var label = markdown_core_string()
+        var identifier = markdown_core_string()
         markdown_core_node_association(node, &label, &identifier)
         self.init(
             scope: Self.scope(from: node),

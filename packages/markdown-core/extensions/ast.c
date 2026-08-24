@@ -195,8 +195,8 @@ const markdown_core_node *markdown_core_document_semantic(const markdown_core_do
     return document ? document->root : NULL;
 }
 
-markdown_core_string_view markdown_core_document_source(const markdown_core_document *document) {
-    markdown_core_string_view view = {NULL, 0};
+markdown_core_string markdown_core_document_source(const markdown_core_document *document) {
+    markdown_core_string view = {NULL, 0};
     if (document && document->concrete.source.ptr) {
         view.data = document->concrete.source.ptr;
         view.length = (size_t)document->concrete.source.size;
@@ -246,8 +246,8 @@ markdown_core_error_code markdown_core_error_get_code(const markdown_core_error 
     return error ? error->code : MARKDOWN_CORE_ERROR_NONE;
 }
 
-markdown_core_string_view markdown_core_error_get_message(const markdown_core_error *error) {
-    markdown_core_string_view view = {NULL, 0};
+markdown_core_string markdown_core_error_get_message(const markdown_core_error *error) {
+    markdown_core_string view = {NULL, 0};
     if (error && error->message) {
         view.data = (const uint8_t *)error->message;
         view.length = strlen(error->message);
@@ -468,21 +468,21 @@ bool markdown_core_node_list_item_checked(const markdown_core_node *node, markdo
     return true;
 }
 
-static void view_chunk(markdown_core_string_view *view, const markdown_core_chunk *chunk) {
+static void view_chunk(markdown_core_string *view, const markdown_core_chunk *chunk) {
     view->data = chunk->data;
     view->length = chunk->len < 0 ? 0 : (size_t)chunk->len;
 }
 
 /* THE FACADE FOLDS NOTHING (requirement 14). It carries the presence the
  * engine recorded and does not re-derive it from a length or a pointer. */
-static void view_optional_chunk(markdown_core_optional_string_view *view, const markdown_core_optional_chunk *chunk) {
+static void view_optional_chunk(markdown_core_optional_string *view, const markdown_core_optional_chunk *chunk) {
     view->has_value = chunk->has_value;
     view_chunk(&view->value, &chunk->value);
 }
 
-bool markdown_core_node_code_block_properties(const markdown_core_node *node, markdown_core_optional_string_view *info,
-                                              markdown_core_optional_string_view *language,
-                                              markdown_core_string_view *literal, bool *fenced, bool *closed) {
+bool markdown_core_node_code_block_properties(const markdown_core_node *node, markdown_core_optional_string *info,
+                                              markdown_core_optional_string *language, markdown_core_string *literal,
+                                              bool *fenced, bool *closed) {
     size_t start = 0;
     size_t end;
     if (!node || node->type != MARKDOWN_CORE_NODE_CODE_BLOCK || !info || !language || !literal || !fenced || !closed) {
@@ -515,7 +515,7 @@ bool markdown_core_node_code_block_properties(const markdown_core_node *node, ma
     return true;
 }
 
-bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_string_view *literal) {
+bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_string *literal) {
     if (!node || !literal) {
         return false;
     }
@@ -532,7 +532,7 @@ bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_st
 }
 
 bool markdown_core_node_formula_properties(const markdown_core_node *node, markdown_core_placement_mode *mode,
-                                           markdown_core_string_view *literal) {
+                                           markdown_core_string *literal) {
     const char *value;
     markdown_core_formula_mode native_mode;
     if (!node || !mode || !literal ||
@@ -598,7 +598,7 @@ bool markdown_core_node_table_row_is_header(const markdown_core_node *node, bool
  * already holds, with a parser of its own to read it back; both are gone.
  * `has_attributes` distinguishes `:n` from `:n{}` -- absent from empty -- which
  * the old `null` versus `"{}"` said and a count alone cannot. */
-bool markdown_core_node_directive_properties(const markdown_core_node *node, markdown_core_string_view *name,
+bool markdown_core_node_directive_properties(const markdown_core_node *node, markdown_core_string *name,
                                              bool *has_attributes, size_t *attribute_count) {
     const char *value;
     if (!node || !name || !has_attributes || !attribute_count ||
@@ -613,8 +613,8 @@ bool markdown_core_node_directive_properties(const markdown_core_node *node, mar
     return true;
 }
 
-bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, size_t index,
-                                               markdown_core_string_view *name, markdown_core_string_view *value) {
+bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, size_t index, markdown_core_string *name,
+                                               markdown_core_string *value) {
     const char *name_bytes;
     const char *value_bytes;
     size_t name_length;
@@ -633,8 +633,8 @@ bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, s
     return true;
 }
 
-static bool link_properties(const markdown_core_node *node, uint16_t expected, markdown_core_string_view *url,
-                            markdown_core_optional_string_view *title) {
+static bool link_properties(const markdown_core_node *node, uint16_t expected, markdown_core_string *url,
+                            markdown_core_optional_string *title) {
     if (!node || node->type != expected || !url || !title) {
         return false;
     }
@@ -643,13 +643,13 @@ static bool link_properties(const markdown_core_node *node, uint16_t expected, m
     return true;
 }
 
-bool markdown_core_node_link_properties(const markdown_core_node *node, markdown_core_string_view *destination,
-                                        markdown_core_optional_string_view *title) {
+bool markdown_core_node_link_properties(const markdown_core_node *node, markdown_core_string *destination,
+                                        markdown_core_optional_string *title) {
     return link_properties(node, MARKDOWN_CORE_NODE_LINK, destination, title);
 }
 
-bool markdown_core_node_image_properties(const markdown_core_node *node, markdown_core_string_view *source,
-                                         markdown_core_optional_string_view *title) {
+bool markdown_core_node_image_properties(const markdown_core_node *node, markdown_core_string *source,
+                                         markdown_core_optional_string *title) {
     return link_properties(node, MARKDOWN_CORE_NODE_IMAGE, source, title);
 }
 
@@ -661,8 +661,8 @@ bool markdown_core_node_image_properties(const markdown_core_node *node, markdow
  * a single load is not merely unlicensed, it is impossible: `as.association`
  * on a definition node would read a POINTER as `chunk.data`. It costs a branch
  * and buys a guarantee the union trick never had. */
-bool markdown_core_node_association(const markdown_core_node *node, markdown_core_string_view *label,
-                                    markdown_core_string_view *identifier) {
+bool markdown_core_node_association(const markdown_core_node *node, markdown_core_string *label,
+                                    markdown_core_string *identifier) {
     const markdown_core_association *association;
     if (!node || !label || !identifier) {
         return false;
@@ -690,8 +690,8 @@ bool markdown_core_node_association(const markdown_core_node *node, markdown_cor
     return true;
 }
 
-bool markdown_core_node_definition_resource(const markdown_core_node *node, markdown_core_string_view *destination,
-                                            markdown_core_optional_string_view *title) {
+bool markdown_core_node_definition_resource(const markdown_core_node *node, markdown_core_string *destination,
+                                            markdown_core_optional_string *title) {
     if (!node || node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION || !node->as.definition || !destination ||
         !title) {
         return false;
@@ -761,7 +761,7 @@ static void buffer_i64(dump_buffer *buffer, int64_t value) {
     }
 }
 
-static void buffer_json_string(dump_buffer *buffer, markdown_core_string_view value) {
+static void buffer_json_string(dump_buffer *buffer, markdown_core_string value) {
     static const char hex[] = "0123456789abcdef";
     size_t i;
     buffer_cstr(buffer, "\"");
@@ -805,7 +805,7 @@ static void buffer_json_string(dump_buffer *buffer, markdown_core_string_view va
 /* `null` and `""` are two answers, not one, and this reads the presence flag
  * rather than the pointer -- which is the same rule the dump already applied
  * to an optional Int and an optional Bool (requirement 14). */
-static void buffer_optional_string(dump_buffer *buffer, markdown_core_optional_string_view value) {
+static void buffer_optional_string(dump_buffer *buffer, markdown_core_optional_string value) {
     if (!value.has_value) {
         buffer_cstr(buffer, "null");
     } else {
@@ -863,8 +863,8 @@ static const char *mode_name(markdown_core_placement_mode mode) {
 }
 
 static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, markdown_core_node_kind kind) {
-    markdown_core_string_view a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0};
-    markdown_core_optional_string_view oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
+    markdown_core_string a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0};
+    markdown_core_optional_string oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
     markdown_core_optional_i64 start;
     markdown_core_optional_bool checked;
     markdown_core_list_flavor flavor;

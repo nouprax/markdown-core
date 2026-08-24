@@ -1545,8 +1545,8 @@ static void association_accessor(test_batch_runner *runner) {
     markdown_core_document *document;
     const markdown_core_node *root;
     const markdown_core_node *node;
-    markdown_core_string_view label = {NULL, 0};
-    markdown_core_string_view identifier = {NULL, 0};
+    markdown_core_string label = {NULL, 0};
+    markdown_core_string identifier = {NULL, 0};
     int answered = 0;
     int refused = 0;
     size_t seen = 0;

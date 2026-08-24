@@ -24,7 +24,7 @@ extension Scope {
     }
 }
 
-extension markdown_core_string_view {
+extension markdown_core_string {
     var requiredString: String {
         guard let data else { return "" }
         // The native facade has already validated UTF-8 and this initializer also
@@ -35,7 +35,7 @@ extension markdown_core_string_view {
 
     // `optionalString` USED TO LIVE HERE and read absence off the pointer.
     // Requirement 14 moved that question to the value itself: see
-    // `markdown_core_optional_string_view.string`.
+    // `markdown_core_optional_string.string`.
 }
 
 extension PlacementMode {
@@ -55,7 +55,7 @@ extension TableAlignment {
     }
 }
 
-extension markdown_core_optional_string_view {
+extension markdown_core_optional_string {
     /// `nil` when the source did not write this, and `""` when it wrote it and
     /// it was empty. The presence flag decides; the pointer never does.
     var string: String? {

@@ -23,7 +23,7 @@ enum es_string_field {
     ES_STRING_ASSOCIATION_IDENTIFIER
 };
 
-static bool es_write_view(markdown_core_string_view view, uintptr_t *data, size_t *length) {
+static bool es_write_view(markdown_core_string view, uintptr_t *data, size_t *length) {
     *data = (uintptr_t)view.data;
     *length = view.length;
     return true;
@@ -33,7 +33,7 @@ static bool es_write_view(markdown_core_string_view view, uintptr_t *data, size_
  * one channel for two facts -- a null `data` meant both "absent" and "present
  * but the bytes live nowhere" -- and requirement 14 says the two are different
  * answers, so `es_string` now says which it gave. */
-static bool es_write_optional_view(markdown_core_optional_string_view view, uintptr_t *data, size_t *length) {
+static bool es_write_optional_view(markdown_core_optional_string view, uintptr_t *data, size_t *length) {
     if (!view.has_value) {
         *data = 0;
         *length = 0;
@@ -150,8 +150,8 @@ int32_t es_node_checked(const markdown_core_node *node) {
 }
 
 int32_t es_node_code_flag(const markdown_core_node *node, int32_t field) {
-    markdown_core_optional_string_view info, language;
-    markdown_core_string_view literal;
+    markdown_core_optional_string info, language;
+    markdown_core_string literal;
     bool fenced, closed;
     markdown_core_node_code_block_properties(node, &info, &language, &literal, &fenced, &closed);
     return field == 0 ? fenced : closed;
@@ -165,7 +165,7 @@ int32_t es_node_reference_form(const markdown_core_node *node) {
 
 int32_t es_node_formula_mode(const markdown_core_node *node) {
     markdown_core_placement_mode mode;
-    markdown_core_string_view literal;
+    markdown_core_string literal;
     markdown_core_node_formula_properties(node, &mode, &literal);
     return (int32_t)mode;
 }
@@ -191,7 +191,7 @@ int32_t es_node_table_row_header(const markdown_core_node *node) {
 /* -1 when the source wrote no attribute container at all, so an absent one and
  * an empty one stay apart on a single return value. */
 int32_t es_node_directive_attribute_count(const markdown_core_node *node) {
-    markdown_core_string_view name;
+    markdown_core_string name;
     bool has_attributes = false;
     size_t count = 0;
     markdown_core_node_directive_properties(node, &name, &has_attributes, &count);
@@ -206,8 +206,8 @@ static size_t es_attribute_index = 0;
 void es_set_attribute_index(int32_t index) { es_attribute_index = index < 0 ? 0 : (size_t)index; }
 
 bool es_string(const void *object, int32_t field, uintptr_t *data, size_t *length) {
-    markdown_core_string_view first = {NULL, 0}, second = {NULL, 0}, third = {NULL, 0};
-    markdown_core_optional_string_view opt_first = {false, {NULL, 0}}, opt_second = {false, {NULL, 0}};
+    markdown_core_string first = {NULL, 0}, second = {NULL, 0}, third = {NULL, 0};
+    markdown_core_optional_string opt_first = {false, {NULL, 0}}, opt_second = {false, {NULL, 0}};
     const markdown_core_node *node = (const markdown_core_node *)object;
     bool first_bool, second_bool;
     markdown_core_placement_mode mode;

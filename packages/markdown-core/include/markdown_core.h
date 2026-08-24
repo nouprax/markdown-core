@@ -61,10 +61,19 @@ typedef struct markdown_core_node markdown_core_node;
 #endif
 typedef struct markdown_core_error markdown_core_error;
 
-typedef struct markdown_core_string_view {
+/** A read-only run of UTF-8 bytes that this library owns.
+ *
+ * IT BORROWS. `data` points into the parsed document and is valid exactly as
+ * long as the `markdown_core_document` that produced it; copy the bytes before
+ * freeing the document. It is not NUL-terminated and `length` is in BYTES.
+ *
+ * ~~`markdown_core_string_view`~~ until 3.0: the `_view` suffix carried the
+ * borrowing, and the name is regular now beside `markdown_core_optional_i64`
+ * and `markdown_core_optional_bool`, so this comment carries it instead. */
+typedef struct markdown_core_string {
     const uint8_t *data;
     size_t length;
-} markdown_core_string_view;
+} markdown_core_string;
 
 typedef struct markdown_core_position {
     int32_t line;
@@ -233,7 +242,7 @@ typedef struct markdown_core_diagnostic {
     markdown_core_diagnostic_severity severity;
     markdown_core_diagnostic_code code;
     markdown_core_scope scope;
-    markdown_core_string_view message;
+    markdown_core_string message;
 } markdown_core_diagnostic;
 
 typedef struct markdown_core_optional_i64 {
@@ -252,14 +261,14 @@ typedef struct markdown_core_optional_bool {
  * true` with a zero-length `value` means the source wrote it and it was
  * empty. The two are different facts and nothing here folds one into the
  * other -- an accessor that answers with this type cannot be handed a plain
- * `markdown_core_string_view`, which is what makes the distinction survive.
+ * `markdown_core_string`, which is what makes the distinction survive.
  *
  * `value.data` is NOT the presence flag. A caller that tests it instead of
  * `has_value` has re-invented the convention this type replaced. */
-typedef struct markdown_core_optional_string_view {
+typedef struct markdown_core_optional_string {
     bool has_value;
-    markdown_core_string_view value;
-} markdown_core_optional_string_view;
+    markdown_core_string value;
+} markdown_core_optional_string;
 
 /** Initializes every field to the frozen Markdown Core defaults. */
 MARKDOWN_CORE_API void markdown_core_parse_options_init(markdown_core_parse_options *options);
@@ -300,7 +309,7 @@ MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *docum
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_semantic(const markdown_core_document *document);
 /** The normalized source: the text every scope's coordinates are counted
  * against. Empty, never null, for a document that parsed no bytes. */
-MARKDOWN_CORE_API markdown_core_string_view markdown_core_document_source(const markdown_core_document *document);
+MARKDOWN_CORE_API markdown_core_string markdown_core_document_source(const markdown_core_document *document);
 /** How many lines the normalized source has. */
 MARKDOWN_CORE_API size_t markdown_core_document_line_count(const markdown_core_document *document);
 /** Where line `line` begins in the source, counting lines from 1. */
@@ -321,7 +330,7 @@ MARKDOWN_CORE_API const char *markdown_core_diagnostic_code_name(markdown_core_d
  * parser could not turn into a document has no extent to point at, and a
  * failure the author could act on would have been a diagnostic instead. */
 MARKDOWN_CORE_API markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error);
-MARKDOWN_CORE_API markdown_core_string_view markdown_core_error_get_message(const markdown_core_error *error);
+MARKDOWN_CORE_API markdown_core_string markdown_core_error_get_message(const markdown_core_error *error);
 MARKDOWN_CORE_API void markdown_core_error_free(markdown_core_error *error);
 
 MARKDOWN_CORE_API markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *node);
@@ -344,14 +353,14 @@ MARKDOWN_CORE_API bool markdown_core_node_list_item_checked(const markdown_core_
  * one on. `language` is the info string's first word and is present exactly
  * when `info` is. */
 MARKDOWN_CORE_API bool markdown_core_node_code_block_properties(const markdown_core_node *node,
-                                                                markdown_core_optional_string_view *info,
-                                                                markdown_core_optional_string_view *language,
-                                                                markdown_core_string_view *literal, bool *fenced,
+                                                                markdown_core_optional_string *info,
+                                                                markdown_core_optional_string *language,
+                                                                markdown_core_string *literal, bool *fenced,
                                                                 bool *closed);
-MARKDOWN_CORE_API bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_string_view *literal);
+MARKDOWN_CORE_API bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_string *literal);
 MARKDOWN_CORE_API bool markdown_core_node_formula_properties(const markdown_core_node *node,
                                                              markdown_core_placement_mode *mode,
-                                                             markdown_core_string_view *literal);
+                                                             markdown_core_string *literal);
 MARKDOWN_CORE_API bool markdown_core_node_table_column_count(const markdown_core_node *node, size_t *count);
 MARKDOWN_CORE_API bool markdown_core_node_table_alignment_at(const markdown_core_node *node, size_t index,
                                                              markdown_core_table_alignment *alignment);
@@ -360,22 +369,21 @@ MARKDOWN_CORE_API bool markdown_core_node_table_row_is_header(const markdown_cor
  * always embedded and a `DirectiveBlock` always standalone, so the value was
  * implied by the kind and four surfaces had to keep a constant in step (Q29). */
 MARKDOWN_CORE_API bool markdown_core_node_directive_properties(const markdown_core_node *node,
-                                                               markdown_core_string_view *name, bool *has_attributes,
+                                                               markdown_core_string *name, bool *has_attributes,
                                                                size_t *attribute_count);
 MARKDOWN_CORE_API bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, size_t index,
-                                                                 markdown_core_string_view *name,
-                                                                 markdown_core_string_view *value);
+                                                                 markdown_core_string *name,
+                                                                 markdown_core_string *value);
 /** A destination is REQUIRED and a title is OPTIONAL (Q26, requirement 14).
  * `[a]()` and `[a](<>)` wrote a destination and wrote nothing in it, so they
  * answer with the empty string; there is no inline link whose author wrote no
  * destination, because the shortcut and collapsed forms are `LinkReference`
  * and carry none. `[a](/u)` wrote no title; `[a](/u "")` wrote an empty one. */
 MARKDOWN_CORE_API bool markdown_core_node_link_properties(const markdown_core_node *node,
-                                                          markdown_core_string_view *destination,
-                                                          markdown_core_optional_string_view *title);
-MARKDOWN_CORE_API bool markdown_core_node_image_properties(const markdown_core_node *node,
-                                                           markdown_core_string_view *source,
-                                                           markdown_core_optional_string_view *title);
+                                                          markdown_core_string *destination,
+                                                          markdown_core_optional_string *title);
+MARKDOWN_CORE_API bool markdown_core_node_image_properties(const markdown_core_node *node, markdown_core_string *source,
+                                                           markdown_core_optional_string *title);
 /** The association a reference or a definition carries. Answers for
  * `ReferenceDefinition`, `LinkReference`, `ImageReference`,
  * `FootnoteDefinition` and `FootnoteReference`, and refuses every other kind.
@@ -396,8 +404,8 @@ MARKDOWN_CORE_API bool markdown_core_node_image_properties(const markdown_core_n
  * key in a language map whose equality has an opinion about Unicode -- Swift's
  * `String ==` is canonical equivalence, which would collapse two spellings
  * this parser deliberately keeps apart. */
-MARKDOWN_CORE_API bool markdown_core_node_association(const markdown_core_node *node, markdown_core_string_view *label,
-                                                      markdown_core_string_view *identifier);
+MARKDOWN_CORE_API bool markdown_core_node_association(const markdown_core_node *node, markdown_core_string *label,
+                                                      markdown_core_string *identifier);
 /** A link reference definition's resource.
  *
  * `destination` is REQUIRED and is never absent -- a definition whose
@@ -405,8 +413,8 @@ MARKDOWN_CORE_API bool markdown_core_node_association(const markdown_core_node *
  * `title` is absent when the source wrote none, and empty when the source
  * wrote an empty one. */
 MARKDOWN_CORE_API bool markdown_core_node_definition_resource(const markdown_core_node *node,
-                                                              markdown_core_string_view *destination,
-                                                              markdown_core_optional_string_view *title);
+                                                              markdown_core_string *destination,
+                                                              markdown_core_optional_string *title);
 /** The form a `LinkReference` or `ImageReference` was written in. */
 MARKDOWN_CORE_API bool markdown_core_node_reference_form(const markdown_core_node *node,
                                                          markdown_core_reference_form *form);

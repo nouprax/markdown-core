@@ -22,8 +22,8 @@ public struct Link: Markup {
 
 extension Link {
     init(from node: OpaquePointer) {
-        var destination = markdown_core_string_view()
-        var title = markdown_core_optional_string_view()
+        var destination = markdown_core_string()
+        var title = markdown_core_optional_string()
         markdown_core_node_link_properties(node, &destination, &title)
         self.init(
             scope: Self.scope(from: node),

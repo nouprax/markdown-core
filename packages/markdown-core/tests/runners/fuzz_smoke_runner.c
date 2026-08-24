@@ -22,7 +22,7 @@ static size_t nodes_visited;
 static int traverse(const markdown_core_node *node) {
     const markdown_core_node *child;
     markdown_core_scope scope;
-    markdown_core_string_view view;
+    markdown_core_string view;
     markdown_core_optional_bool checked;
     int32_t level;
     bool flag;

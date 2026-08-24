@@ -18,7 +18,7 @@ extension FormulaBlock {
         // for this kind -- so the mode is the kind and the model does not
         // repeat it. `Formula` is the one kind where it varies (Q29).
         var mode = MARKDOWN_CORE_PLACEMENT_STANDALONE
-        var literal = markdown_core_string_view()
+        var literal = markdown_core_string()
         markdown_core_node_formula_properties(node, &mode, &literal)
         self.init(scope: Self.scope(from: node), literal: literal.requiredString)
     }

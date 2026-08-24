@@ -192,7 +192,7 @@ static size_t traverse(const markdown_core_node *node) {
         return 0;
     }
 
-    markdown_core_string_view view;
+    markdown_core_string view;
     markdown_core_node_literal(node, &view);
     int32_t level;
     markdown_core_node_heading_level(node, &level);

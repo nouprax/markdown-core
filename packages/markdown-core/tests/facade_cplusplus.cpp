@@ -3,7 +3,7 @@
 #include <type_traits>
 
 static_assert(std::is_standard_layout<markdown_core_parse_options>::value, "parse options must cross the C++ boundary");
-static_assert(std::is_standard_layout<markdown_core_string_view>::value, "string views must cross the C++ boundary");
+static_assert(std::is_standard_layout<markdown_core_string>::value, "string views must cross the C++ boundary");
 
 int main() {
     markdown_core_parse_options options{};

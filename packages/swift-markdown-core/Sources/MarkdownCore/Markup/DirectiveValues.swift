@@ -21,7 +21,7 @@ struct DirectiveValues {
     let attributes: [DirectiveAttribute]?
 
     init(from node: OpaquePointer) {
-        var nativeName = markdown_core_string_view()
+        var nativeName = markdown_core_string()
         var hasAttributes = false
         var count = 0
         markdown_core_node_directive_properties(node, &nativeName, &hasAttributes, &count)
@@ -33,8 +33,8 @@ struct DirectiveValues {
         var pairs: [DirectiveAttribute] = []
         pairs.reserveCapacity(count)
         for index in 0..<count {
-            var attributeName = markdown_core_string_view()
-            var attributeValue = markdown_core_string_view()
+            var attributeName = markdown_core_string()
+            var attributeValue = markdown_core_string()
             guard
                 markdown_core_node_directive_attribute_at(node, index, &attributeName, &attributeValue)
             else { continue }

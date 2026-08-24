@@ -75,9 +75,9 @@ static void put_scope(bridge_buffer *buffer, markdown_core_scope scope) {
     put_i32(buffer, scope.end.column);
 }
 
-static void put_optional_string(bridge_buffer *buffer, markdown_core_optional_string_view value);
+static void put_optional_string(bridge_buffer *buffer, markdown_core_optional_string value);
 
-static void put_string(bridge_buffer *buffer, markdown_core_string_view value, bool present) {
+static void put_string(bridge_buffer *buffer, markdown_core_string value, bool present) {
     if (!present) {
         put_i32(buffer, -1);
         return;
@@ -94,7 +94,7 @@ static void put_string(bridge_buffer *buffer, markdown_core_string_view value, b
  * spell `value.data != NULL`, which is the convention requirement 14 replaced;
  * length -1 on the wire already carried absence and only the source of the
  * answer was wrong. */
-static void put_optional_string(bridge_buffer *buffer, markdown_core_optional_string_view value) {
+static void put_optional_string(bridge_buffer *buffer, markdown_core_optional_string value) {
     put_string(buffer, value.value, value.has_value);
 }
 
@@ -123,11 +123,11 @@ static void write_children(bridge_buffer *buffer, const markdown_core_node *node
 
 static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
-    markdown_core_string_view first = {0};
-    markdown_core_string_view second = {0};
-    markdown_core_string_view third = {0};
-    markdown_core_optional_string_view optional_first = {0};
-    markdown_core_optional_string_view optional_second = {0};
+    markdown_core_string first = {0};
+    markdown_core_string second = {0};
+    markdown_core_string third = {0};
+    markdown_core_optional_string optional_first = {0};
+    markdown_core_optional_string optional_second = {0};
 
     put_u8(buffer, (uint8_t)kind);
     put_scope(buffer, markdown_core_node_scope(node));
@@ -317,7 +317,7 @@ static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
  * then the line count and one offset per line. */
 static void write_concrete(bridge_buffer *buffer, const markdown_core_document *document) {
     size_t lines = markdown_core_document_line_count(document);
-    markdown_core_string_view source = markdown_core_document_source(document);
+    markdown_core_string source = markdown_core_document_source(document);
     size_t index;
 
     if (source.length > INT32_MAX || lines > INT32_MAX) {
@@ -375,7 +375,7 @@ bool markdown_core_kotlin_parse(const uint8_t *source, size_t length, uint32_t o
         put_u8(&buffer, 1);
         put_i32(&buffer, error == NULL ? MARKDOWN_CORE_ERROR_INTERNAL : markdown_core_error_get_code(error));
         if (error == NULL) {
-            markdown_core_string_view fallback = {(const uint8_t *)"markdown parsing failed", 23};
+            markdown_core_string fallback = {(const uint8_t *)"markdown parsing failed", 23};
             put_string(&buffer, fallback, true);
         } else {
             put_string(&buffer, markdown_core_error_get_message(error), true);

@@ -13,7 +13,7 @@ public struct HTML: Markup {
 
 extension HTML {
     init(from node: OpaquePointer) {
-        var literal = markdown_core_string_view()
+        var literal = markdown_core_string()
         markdown_core_node_literal(node, &literal)
         self.init(scope: Self.scope(from: node), literal: literal.requiredString)
     }
