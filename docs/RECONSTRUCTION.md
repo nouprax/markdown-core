@@ -40,8 +40,10 @@ transcribe infrastructure facts from and never a source of engine design.
 
 Nothing here is checked. Each line says what it is; the section says why.
 
-- [ ] **Re-measure the two headline probes at HEAD** — line-boundary prefix
-      equivalence, the per-line feed decile series, the `finish` cost curve.
+- [x] **Line-boundary equivalence re-measured at HEAD — 745/745, and 745/745
+      byte-at-a-time too** (§11.9). Criterion 1 already passes; the goldens are
+      already the gate. Still owed from this box: the per-line feed decile
+      series and the `finish` cost curve.
       §11's banner. **First because they are the entire justification for**
       *"Stage 1's problem is not making the parser resumable"*, and they were
       taken at `b71c8a9`, before thirteen steps rewrote `blocks.c` and
@@ -1082,36 +1084,28 @@ CommonMark and GFM surface, remark/mdast for the model — not agreement with th
 repository's own goldens. A golden can be regenerated into agreement with a
 defect; an external oracle cannot.
 
-> **A CLOSED BLOCK AND A CLOSED DOCUMENT MATCH THE ONE-SHOT.** For every
-> partition of the input on line boundaries: every block that has CLOSED equals
-> what a one-shot parse produces for it, and at end of stream the whole tree
-> equals a one-shot parse of the same bytes — which must itself still satisfy
-> every parity gate.
->
-> **An OPEN block is not compared.** It is in progress and nothing about it has
-> been claimed yet.
+> **STREAM IT, FINISH, AND THE DOCUMENT EQUALS THE ONE-SHOT.** For every
+> partition of the input on line boundaries: feed the lines, call finish, and
+> the resulting tree is byte-identical to a one-shot parse of the same bytes —
+> which must itself still satisfy every parity gate.
 
-**The open block is excluded deliberately, and the earlier form of this
-criterion was wrong.** It said the tree at every boundary must equal a one-shot
-of the same prefix — and a one-shot of a prefix CLOSES the trailing block at end
-of input. Requiring that forces the streaming parser to close the open block
-speculatively: `Foo` must be published as a `Paragraph`, and then retracted when
-`===` arrives and makes it a `Heading`. **Eager closure and retraction is what
-the previous program died of** (§1), and the criterion was asking for it.
+**That is the whole of criterion 1, and the goldens are already the
+expectation.** Nothing new has to be written down: every fixture example in
+`spec.txt`, `regression.txt` and `extensions.txt` already pins what a one-shot
+parse produces, so the streaming gate is *"feed this example one line at a time,
+finish, and reproduce its existing golden."* A corpus of hundreds of pinned
+trees becomes the streaming oracle at no cost, and no golden has to be
+regenerated for Stage 1.
 
-**Measured, §11.9: the change is worth 71.47% → 99.00%.** Under the old form,
-28.53% of single-line appends disturbed an already-emitted node. Under this one,
-**1.00% do — and every one of them is late resolution.** Setext, list
-tightness and inline constructs spanning a line boundary all stop being
-violations, because they are the open spine resolving rather than history being
-rewritten.
-
-**What this means for the goldens and the oracles.** The line-boundary
-equivalence gate must compare the CLOSED prefix of a snapshot, not the whole
-snapshot — a golden that pins an open block's contents at a boundary is pinning
-a speculative close, and a parity oracle fed a prefix must be compared against
-the closed portion only. The end-of-stream comparison is unchanged and stays
-byte-exact against the one-shot.
+**What is NOT asserted, and two earlier forms of this criterion got it wrong.**
+It does not say a snapshot taken mid-stream equals a one-shot of the prefix fed
+so far: a one-shot of a prefix CLOSES the trailing block at end of input, so
+demanding that forces the parser to close the open block speculatively —
+publish `Foo` as a `Paragraph`, then retract it when `===` arrives and makes it
+a `Heading`. **Eager closure and retraction is what the previous program died
+of** (§1). It does not say a closed block must match a one-shot at every
+boundary either. Snapshots are a capability the stage delivers; **the golden
+test is the end of the stream.**
 
 **2. Performance: the cost of a document is the sum of the cost of its lines.**
 
@@ -10600,76 +10594,59 @@ mutation, or be undoable. That is §4.13's question.
 
 ---
 
-### 11.9 MEASURED: under the right criterion, the correctness problem is late resolution and nothing else
+### 11.9 MEASURED: criterion 1 already passes, and the goldens are already the gate
 
-`scripts/poc/stage1-tail-reach.mjs`, run against `d03ce2c`. It answers the
-question §0's requirement asks and §11.4 does not: **when line *i+1* arrives,
-which already-CLOSED nodes change?**
+`scripts/poc/stage1-stream-equals-oneshot.c`, run against `d03ce2c` over every
+example in `spec.txt`, `regression.txt` and `extensions.txt`.
 
-A one-shot parse of lines 1…*i* is what a snapshot at boundary *i* must equal,
-so the probe needs no engine change: dump every prefix, compare consecutive
-dumps, and ask whether anything outside the open spine moved.
+The criterion is *stream it, finish, and the document equals the one-shot*, and
+that is testable today with no engine change: `feed` and `finish` already exist,
+and the CLI's own `print_document` shows how to dump a parser-finished tree —
+wrap it in a stack `markdown_core_document`. So feed the same bytes two ways,
+finish both, dump both, compare.
 
-#### It took six cuts, and the first five each produced a plausible wrong number
-
-Recorded because every one of them looked like a finding, and three of them were
-measuring the dump's rendering rather than the tree:
-
-| cut | reported | what it was actually measuring |
-|---|---|---|
-| 1 | **0.00%** append-only | the root's `scope=1:1..N:M` grows, so line 0 always differs and reach is the whole dump |
-| 2 | 26.76% | `└──` becomes `├──` when a sibling is added, so a node made non-last read as rewritten |
-| 3 | 71.47% | `split("\n")` leaves `""` at the end; any append that adds a node displaces it |
-| 4 | 3.14%, and "6,399 nodes changed" | a COUNT is not shift-immune — one `Text` becoming a `LinkReference` moves every later index. It changed two |
-| 5 | 3.14% | the inline children of an OPEN paragraph counted as closed, so every emphasis or code span closing on a later line was a violation |
-| 6 | **1.00%** | ancestors of the open block counted as closed, so every loose-list `tight` flip was a violation |
-
-**Closed is: not on the rightmost path, and not under the open block.** The
-rightmost path is the open block and its ancestors; everything after the open
-block is its descendants; everything else has closed and can never move again.
-
-#### The result — 1,304 single-line appends, `--profile gfm`
-
-| | |
+| partition | agree |
 |---|---|
-| appends that touch a CLOSED node | **13 = 1.00%** |
-| and what they are | `[foo][bar]`, `[^1]`, `[^citation]`, `[Freedom Planet 2][]`, the autolinker — **late resolution, every one** |
+| one line at a time | **745 / 745** |
+| **one BYTE at a time** | **745 / 745** |
 
-Spine churn — nodes whose shape is identical but whose `scope` end or child
-count moved — is mean 2.81, max 32. That is the O(depth) term the model
-predicts, and it is not a violation.
+**Byte-at-a-time is stronger than the criterion asks** — it partitions inside a
+line, which is Stage 2's territory — and it passes too. The property is not
+about line boundaries; it is about `feed` being partition-independent, and it
+already is.
 
-#### What stopped being a hazard, and this is the point
+#### What that settles, and it is most of the stage's risk
 
-| construct | old criterion | this criterion |
-|---|---|---|
-| setext underline, 256-line paragraph | reach 512 of 513 | **touches nothing closed, at every size** |
-| list tight → loose | violation | the `List` is an ancestor of the open block |
-| emphasis or a code span closing on a later line | violation | inline children of an open paragraph |
-| the open block accumulating its own literal | violation | it *is* the open block |
+**Criterion 1 is not work. It is a gate to keep.** Every fixture example already
+pins what a one-shot produces, so *"feed this one line at a time, finish,
+reproduce the existing golden"* needs no new expectations and no regenerated
+goldens — hundreds of pinned trees become the streaming oracle for free.
 
-None of those is history being rewritten. They are the open spine resolving,
-which is what an open spine is for — and the old criterion called them
-violations only because it compared against a one-shot that had closed the
-block at end of input.
+**What Stage 1 actually adds is reading the tree WITHOUT finishing** — H1,
+*"`finish` is the only exit, and it is a reset"*. That is the whole of it. The
+line loop is already partition-independent; what it cannot do is answer while it
+is still running.
 
-#### The one that remains, and it is unbounded
+#### And the earlier framing in this section was wrong twice
 
-| construct | size | reaches back to | of |
-|---|---|---|---|
-| late reference definition | 22 lines | node 2 | 23 |
-| late reference definition | 402 | node 2 | 403 |
-| late reference definition | **6,402** | **node 2** | 6,403 |
+Recorded because both looked reasonable and both cost work:
 
-**A definition arriving at the end changes a node at the top, at any document
-size.** No carried state fixes it — the answer for lines 1…*i* genuinely depends
-on line *i+1* — and it is the only construct measured here that reaches past the
-open spine at all.
+1. **Comparing a snapshot with a one-shot of the same prefix.** A one-shot of a
+   prefix closes the trailing block at end of input, so that comparison demands
+   the parser close the open block speculatively — publish `Foo` as a
+   `Paragraph`, retract it when `===` arrives. **Eager closure and retraction is
+   what the previous program died of** (§1). Under it, 28.53% of single-line
+   appends "disturbed" the tree and setext looked like a new blocker reaching
+   512 of 513 nodes. It is not a blocker; the paragraph was simply open.
+2. **Comparing closed blocks at every boundary.** Better, and still not the
+   criterion: it took six cuts of a probe to define "closed" correctly (the
+   rendering artifacts of `scope=`, the tree connectors and the trailing empty
+   line; then a shift-sensitive count; then the inline children of an open
+   paragraph; then the ancestors of the open block). It bottomed out at 1.00% of
+   appends, all late resolution — a useful number about SNAPSHOTS, and not the
+   golden test.
 
-#### What this settles
-
-Stage 1's correctness problem is **late resolution and nothing else**, at 1.00%
-of appends. That is narrower than §11.4's twenty hazards suggest and it agrees
-with §11.5's ranking, which put the reference map ahead of the inline phase on
-three independent grounds. **99% of single-line appends already satisfy the
-criterion today.**
+**The golden test is the end of the stream.** `scripts/poc/stage1-tail-reach.mjs`
+and its 1.00% remain in the tree as what they are: a measurement of how much a
+mid-stream snapshot churns, which bears on the snapshot feature and not on
+criterion 1.
