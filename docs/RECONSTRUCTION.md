@@ -63,14 +63,44 @@ Nothing here is checked. Each line says what it is; the section says why.
       `core/inlines.c:1524` creates a reference only where the refmap lookup
       succeeds, so closing a block early parses `[foo]` before `[foo]: /url` is
       fed and the LinkReference never appears — criterion 1, not cost.
-- [ ] **H4** — one flag bit per block, `markdown_core_parse_inlines` moved into
-      `finalize`, so every block is parsed exactly once in the line that closes
-      it and the sum becomes Θ(bytes) by construction.
+- [ ] **Resolve a line's inlines WHEN THE LINE COMPLETES, not when its block
+      closes.** §11.5 states this move as *"move `process_inlines` into
+      `finalize`"*, and **that is block-granular and therefore the wrong unit**:
+      it means an open paragraph carries no inline children until it ends, so a
+      consumer streaming a long block sees nothing useful for the whole
+      duration of it. The unit is the LINE, because that is what per-line
+      pausable state is for — see the requirement below. The flag bit is still
+      needed so no line is parsed twice; what changes is where the call sits.
 - [ ] **Settle the six API decisions** (§11.8), under two standing rulings:
       append is atomic (Q34, §4.13) and there is no fallback on OOM (§4.14.13a).
 - [ ] **Acceptance** — criterion 1 against the EXTERNAL oracles on every
       line-boundary partition, criterion 2 as a flat slope. Neither alone is
       Stage 1: clone-and-finish satisfies the first and is O(l²).
+
+### What per-line pausable state is FOR, and it is the requirement
+
+> **The state after N lines IS the snapshot.** That is the whole reason the
+> pause is at a line boundary. A consumer asks at any boundary and gets the
+> parse of lines 1…N with inlines resolved — not a tree that has to be
+> finished, and not a tree whose open block is empty until it closes.
+>
+> **The tail is the only unresolved thing.** The newly appended line, or the
+> partial line in Stage 2, is what is in flight. Everything before it is done.
+>
+> **Appending a line mutates the state in O(line).** Not O(block so far), not
+> O(document). This is criterion 2 restated at the granularity the pause
+> actually has, and it is what rules out re-deriving a paragraph's inlines from
+> its accumulated buffer on every line.
+
+**Anything that genuinely cannot be resolved from lines 1…N alone is, by
+definition, part of the tail.** How much that is — which constructs span a line
+boundary and how far they reach — is a MEASUREMENT against the engine and it
+belongs to box one, not to a paragraph here. `streaming-inline-frontier` and
+`streaming-every-partition` are kept as records of the abandoned program, which
+measured exactly this before it was dropped for unrelated reasons (§1: it failed
+on aliasing between a live tree and a shadow projection, not on the line model).
+Read those measurements; do not copy their code — Q8 (§4.9).
+
 
 `--profile` is a named option set for the CLI, added because the restored parity
 harness invokes it and the baseline had no such flag: `gfm` turns this
@@ -10353,7 +10383,19 @@ The deletion: **the single mechanism most likely to violate criterion 2 is `proc
 
 3. **The map is the only subsystem whose *answer*, not merely its cost, depends on bytes not yet fed.** H2. No carried state fixes that; only deletion does.
 
-**CORRECTION — H4 IS NOT THE FIRST MOVE, AND THIS PARAGRAPH SAID IT WAS.**
+**CORRECTION 2 — AND THE UNIT IS THE LINE, NOT THE BLOCK.** Owner ruling.
+*"Move `process_inlines` into `finalize`"* is block-granular: it resolves a
+block's inlines when the block CLOSES, so an open paragraph carries no inline
+children for as long as it stays open. **That is the opposite of what per-line
+pausable state is for.** The pause is at a line boundary precisely so the state
+after N lines *is* a readable snapshot — a consumer streaming a long block must
+see lines 1…N resolved, with only the in-flight line as tail, and appending a
+line must cost O(line) rather than O(block so far). Whatever genuinely cannot be
+resolved from lines 1…N alone is part of the tail by definition, and how much
+that is belongs to a measurement against the engine rather than to this
+paragraph. §0's task list carries the corrected statement.
+
+**CORRECTION 1 — H4 IS NOT THE FIRST MOVE, AND THIS PARAGRAPH SAID IT WAS.**
 Raised in review on #116 and verified here. *"Requires no new carried state at
 all"* is true about state and silently assumes something false about ORDER: when
 a block closes, **the refmap is not complete**. `handle_close_bracket` creates a
