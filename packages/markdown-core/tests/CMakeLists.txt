@@ -117,6 +117,22 @@ markdown_core_add_runner(spec_runner runners/spec_runner.c)
 markdown_core_add_runner(pathological_runner runners/pathological_runner.c)
 markdown_core_add_runner(complexity_runner runners/complexity_runner.c)
 
+# stream_runner drives `feed`/`finish` directly, and those are NOT on the
+# facade: the shared library exports 32 functions and `local: *`, so a runner
+# linked against it cannot reach the parser at all. That is H1 seen from
+# outside -- the streaming entry point is not public -- so like fallback_runner
+# it links the static engine. When Stage 1 gives the facade a chunked entry,
+# this becomes an ordinary runner and this comment goes away.
+if(MARKDOWN_CORE_STATIC)
+    add_executable(stream_runner runners/stream_runner.c support/test_support.c)
+    target_include_directories(
+        stream_runner
+        PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
+                "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+    target_link_libraries(stream_runner libmarkdown-core-extensions_static libmarkdown-core_static)
+endif()
+
 # fallback_runner drives core-private map symbols directly, so it links the
 # static engine instead of the shared facade and skips test-support.
 if(MARKDOWN_CORE_STATIC)
@@ -209,6 +225,25 @@ markdown_core_add_test(
 # spec: CommonMark spec, smart punctuation, entities.  Expected results are
 # canonical AST dumps; the runner also asserts dump determinism per example.
 markdown_core_add_test(spec_commonmark spec 240 spec_runner --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
+
+# CRITERION 1 FOR STAGE 1, over the same corpus the goldens already pin: feeding
+# a document in pieces and calling `finish` must produce what a one-shot parse
+# produces. `--bytes` partitions inside a line, which is stronger than the
+# criterion asks and is Stage 2's territory.
+if(MARKDOWN_CORE_STATIC)
+    foreach(fixture spec regression extensions)
+        markdown_core_add_test(stream_equals_oneshot_${fixture} "streaming" 240 stream_runner --spec
+                               "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+        markdown_core_add_test(
+            stream_equals_oneshot_${fixture}_bytes
+            "streaming"
+            600
+            stream_runner
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt"
+            --bytes)
+    endforeach()
+endif()
 markdown_core_add_test(
     spec_smart_punctuation
     spec

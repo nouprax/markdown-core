@@ -10594,21 +10594,31 @@ mutation, or be undoable. That is §4.13's question.
 
 ---
 
-### 11.9 MEASURED: criterion 1 already passes, and the goldens are already the gate
+### 11.9 MEASURED: criterion 1 already passes, and it is a ctest test rather than a PoC
 
-`scripts/poc/stage1-stream-equals-oneshot.c`, run against `d03ce2c` over every
-example in `spec.txt`, `regression.txt` and `extensions.txt`.
+**`stream_runner`, six tests under the `streaming` label, in
+`ctest --preset correctness`.** It began as a standalone C file compiled by hand
+against `$(find build/cmake -name "*.a")`, fed from 745 markdown files a node
+script exploded out of the fixtures — which measured the right thing and was
+not something anyone else could run. It reads the fixture format directly now,
+through the same `ts_spec_load` every other runner uses.
 
 The criterion is *stream it, finish, and the document equals the one-shot*, and
-that is testable today with no engine change: `feed` and `finish` already exist,
-and the CLI's own `print_document` shows how to dump a parser-finished tree —
-wrap it in a stack `markdown_core_document`. So feed the same bytes two ways,
-finish both, dump both, compare.
+it needs no engine change to test: `feed` and `finish` already exist, and the
+CLI's own `print_document` shows how to dump a parser-finished tree — wrap it in
+a stack `markdown_core_document`. So feed the same bytes two ways, finish both,
+dump both, compare.
 
-| partition | agree |
-|---|---|
-| one line at a time | **745 / 745** |
-| **one BYTE at a time** | **745 / 745** |
+| fixture | one line at a time | one BYTE at a time |
+|---|---|---|
+| `spec.txt` | **669 / 669** | **669 / 669** |
+| `regression.txt` | **43 / 43** | **43 / 43** |
+| `extensions.txt` | **33 / 33** | **33 / 33** |
+
+**Two mutants, both killed**: feeding each line without its terminator, and
+feeding the same byte twice. A third — deleting the final-partial-line branch —
+killed nothing and is recorded because it looked like a mutant: every fixture
+example ends in `\n`, so that branch never runs.
 
 **Byte-at-a-time is stronger than the criterion asks** — it partitions inside a
 line, which is Stage 2's territory — and it passes too. The property is not
@@ -10626,6 +10636,18 @@ goldens — hundreds of pinned trees become the streaming oracle for free.
 *"`finish` is the only exit, and it is a reset"*. That is the whole of it. The
 line loop is already partition-independent; what it cannot do is answer while it
 is still running.
+
+**And H1 has a second face the runner ran into.** `stream_runner` cannot link
+against the shared facade at all: the export map is 32 functions and `local: *`,
+so `markdown_core_parser_new`, `_feed` and `_finish` are not reachable from a
+normally-linked test. It links the static engine, exactly as `fallback_runner`
+does for the core-private map symbols. **The streaming entry point is not
+public**, which is why the gate compares the two feeds against each other rather
+than against the expected block — `spec_runner` already owns that comparison,
+and reaching it from a chunked feed would mean copying the facade's
+option-to-extension mapping into a test. When Stage 1 gives the facade a chunked
+entry, these six tests become ordinary runners and gain the golden comparison
+for free.
 
 #### And the earlier framing in this section was wrong twice
 
