@@ -84,22 +84,27 @@ Nothing here is checked. Each line says what it is; the section says why.
 > parse of lines 1…N with inlines resolved — not a tree that has to be
 > finished, and not a tree whose open block is empty until it closes.
 >
-> **The tail is the only unresolved thing.** The newly appended line, or the
-> partial line in Stage 2, is what is in flight. Everything before it is done.
+> **A COMPLETE LINE IS SETTLED THE MOMENT IT COMPLETES.** Owner ruling. At a
+> line boundary there is nothing in flight at all — the newly appended line is
+> resolved like every line before it. Only a PARTIAL line is unresolved, and
+> that is Stage 2's problem, not Stage 1's.
+>
+> **The engine does not do this today, and §11.9 measures exactly where.**
 >
 > **Appending a line mutates the state in O(line).** Not O(block so far), not
 > O(document). This is criterion 2 restated at the granularity the pause
 > actually has, and it is what rules out re-deriving a paragraph's inlines from
 > its accumulated buffer on every line.
 
-**Anything that genuinely cannot be resolved from lines 1…N alone is, by
-definition, part of the tail.** How much that is — which constructs span a line
-boundary and how far they reach — is a MEASUREMENT against the engine and it
-belongs to box one, not to a paragraph here. `streaming-inline-frontier` and
-`streaming-every-partition` are kept as records of the abandoned program, which
-measured exactly this before it was dropped for unrelated reasons (§1: it failed
-on aliasing between a live tree and a shadow projection, not on the line model).
-Read those measurements; do not copy their code — Q8 (§4.9).
+**Which constructs break that, and how far back they reach, is now MEASURED —
+§11.9.** Two of them are unbounded, one of them is not in §11.4's twenty
+hazards, and `scripts/poc/stage1-tail-reach.mjs` reproduces all of it.
+
+`streaming-inline-frontier` and `streaming-every-partition` are kept as records
+of the abandoned program, which measured adjacent things before it was dropped
+for unrelated reasons (§1: it failed on aliasing between a live tree and a
+shadow projection, not on the line model). Read those measurements; do not copy
+their code — Q8 (§4.9).
 
 
 `--profile` is a named option set for the CLI, added because the restored parity
@@ -10562,3 +10567,83 @@ mutation, or be undoable. That is §4.13's question.
 **Q35 — bindings.** No. Three reasons: all three bindings copy into value types and free the handle, so a snapshot API costs a full deep copy per snapshot in each language and none of them can express a borrowed view even if Q32 allowed one; the ABI window is Step 12, after Stage 1; and Stage 1's gate is a timing slope on the C library, which no binding participates in. **One constraint applies now regardless:** Stage 1 must not adopt a C shape the bindings cannot express later — no borrowed views, no callback-driven feed, no snapshot whose validity is scoped to a parser generation. The surface added at 3.0 must be the same shape as the C one.
 
 **Q36 — the allocation bound.** State two, because they answer different questions. **(a) Resident parser state is O(open depth + Σ open blocks' content + definitions so far), with no term in the number of lines already fed.** **(b) A snapshot costs O(snapshot) allocations, once, charged to the caller, with nothing retained by the parser.** Bound (a) is the one that matters and the one no timing gate can see: a "keep a copy of every line" cheat is invisible to a flat-slope timing series and obvious in a peak-RSS series over the same corpus. Gate it the same way — a fitted slope in *i* indistinguishable from zero on a bounded-block corpus. Two facts make (a) work to earn rather than to assume: **under the arena it is false today by design** — `arena_free` is a no-op and `arena_realloc` always allocates fresh and copies (`core/arena.c:83-96`), so a parser held open across snapshots grows monotonically including every superseded buffer copy — and **every block node keeps its `content` strbuf forever** (`core/blocks.c:125`; measured, a finished document's root still holds `asize=56`, and every paragraph holds its full source text). Releasing a closed block's content is exactly what Step 8's own-on-emission unlocks (§11.7), which is why Q17 and Q36 are one decision seen twice.
+
+---
+
+### 11.9 MEASURED: how far back an append reaches, and the two that are unbounded
+
+`scripts/poc/stage1-tail-reach.mjs`, run against `d03ce2c`. It answers the
+question §0's requirement asks and §11.4 does not: **when line *i+1* arrives,
+which already-emitted nodes change?**
+
+A one-shot parse of lines 1…*i* is exactly what a snapshot at boundary *i* must
+equal, so the probe needs no engine change: dump every prefix, compare
+consecutive dumps, and report **reach** — the distance from the first changed
+node to the end of the earlier dump. Reach 0 means the append only added.
+
+#### The method took four cuts, and the first three each produced a plausible wrong number
+
+Worth recording, because every one of them looked like a finding:
+
+| cut | reported | what it was actually measuring |
+|---|---|---|
+| 1 | **0.00%** append-only | the root's `scope=1:1..N:M` grows with the document, so line 0 always differs and reach is the whole dump every time |
+| 2 | 26.76% | `└──` becomes `├──` when a sibling is added, so every node made non-last read as rewritten |
+| 3 | 26.76%, 64% at reach 1–2 | `split("\n")` leaves `""` at the end of every dump; any append that adds a node displaces it |
+| 4 | **71.47%** | shape only: depth plus node text, with `scope=`, `children=` and the connectors stripped |
+
+#### What the corpus says — 1,304 single-line appends, `--profile gfm`
+
+| reach | appends |
+|---|---|
+| **0 — append only** | **932 = 71.47%** |
+| 1–2 | 298 |
+| 3–8 | 68 |
+| 9–32 | 6 |
+| >32 | 0 |
+
+Spine churn — nodes whose shape is identical but whose `scope` end or child
+count moved — is **mean 2.81, max 32**. That is the O(depth) term the model
+predicts, and it is not a violation.
+
+#### Three classes change an already-emitted node, and they are not equal
+
+1. **The open block accumulating its own content.** `CodeBlock literal="foo\n"`
+   becomes `literal="foo\nbar\n"`. Reach 1, it *is* the open block, and that is
+   what an open block is for. Not a hazard.
+2. **A kind flip.** `Paragraph → Heading level=2` when the next line is `---`;
+   list tight → loose; paragraph → table when the delimiter row arrives.
+3. **Late resolution.** A footnote or link-reference definition arriving later
+   turns `Text` into a reference — reach up to 24 in the corpus.
+
+#### The two that are UNBOUNDED, and this is the finding
+
+| construct | size | reach | emitted |
+|---|---|---|---|
+| late reference definition | 22 lines | 21 | 23 |
+| late reference definition | 402 | 401 | 403 |
+| late reference definition | **6,402** | **6,401** | 6,403 |
+| setext underline | 1 paragraph line | 2 | 3 |
+| setext underline | 16 | 32 | 33 |
+| setext underline | **256** | **512** | 513 |
+
+**A late definition's change begins at the second node of the document,
+whatever the document's size.** **A setext underline's reach is 2n+1 in the
+paragraph's own length** — appending `===` after a 256-line paragraph moves all
+513 of its emitted nodes, because the `Paragraph` becomes a `Heading` and every
+child goes with it.
+
+**SETEXT IS NOT IN §11.4's TWENTY HAZARDS.** H1–H20 contains nothing of the form
+*"a following line changes the KIND of a block that already closed"*. It is a
+new hazard, found by measuring rather than by re-reading, and it is squarely a
+Stage 1 blocker: it is not late resolution, it needs no map, and **no carried
+state fixes it** — the answer for lines 1…*i* genuinely depends on line *i+1*.
+
+#### What this settles
+
+The requirement — *a complete line is settled the moment it completes* — is
+**not what the engine does**, and the exceptions are now named and bounded:
+71.47% of appends already satisfy it, one class is benign and is the open block
+doing its job, and **two classes are unbounded and have to be dealt with by
+construction rather than by cost.** That is Stage 1's actual problem statement,
+and it is narrower and sharper than "make the parser resumable".
