@@ -27,9 +27,6 @@ base_tasks=(
     :packages:kotlin-markdown-core:publishAndroidPublicationToReleaseStagingRepository
     :packages:kotlin-markdown-core:android-runtime:publishReleasePublicationToReleaseStagingRepository
 )
-abi_tasks=(
-    :packages:kotlin-markdown-core:checkKotlinAbi
-)
 
 case "$mode" in
     linux-release)
@@ -55,7 +52,7 @@ case "$mode" in
 esac
 
 cd "$root"
-scripts/gradle.sh "${common[@]}" "${abi_tasks[@]}" "${tasks[@]}"
+scripts/gradle.sh "${common[@]}" "${tasks[@]}"
 
 if [ "$mode" = macos-native ]; then
     jvm_jar=$(find packages/kotlin-markdown-core/build/libs -maxdepth 1 -type f \

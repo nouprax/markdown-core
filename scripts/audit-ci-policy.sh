@@ -120,8 +120,15 @@ if grep -Eq '\.testTarget|MarkdownCoreBenchmarks|Conformance|Plugins|Tools' \
 fi
 grep -Fq 'auditProductArchive' scripts/audit-maven-publications.mjs
 grep -Fq 'publishes a test framework dependency' scripts/audit-maven-publications.mjs
-grep -Fq ':packages:kotlin-markdown-core:checkKotlinAbi' scripts/stage-maven-publications.sh
-grep -Fq '"${abi_tasks[@]}"' scripts/stage-maven-publications.sh
+# NO ABI ASSERTION HERE, and it is era skew rather than an omission. `main`'s
+# stage-maven-publications.sh names `:packages:kotlin-markdown-core:checkKotlinAbi`
+# because `main`'s packages/kotlin-markdown-core/build.gradle.kts configures
+# `abiValidation { … }`. This branch's build is the 1.0 baseline's and defines no
+# such task, so naming it fails the release staging job outright -- and these two
+# assertions could not see that, because they test the STRING in a sibling script
+# rather than the task's existence. An ABI gate for the Kotlin binding is worth
+# having and is a DECISION for the release step, not a restore: adopting it means
+# a committed .api dump of a public surface this branch changed substantially.
 if grep -Eq 'bundle-conformance|run-tests|run-conformance' scripts/build-es-product-artifact.sh; then
     echo "ES product build contains test-only work" >&2
     exit 1

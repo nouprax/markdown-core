@@ -33,50 +33,18 @@ fi
     -p packages/kotlin-markdown-core/consumers/kmp jvmTest
 "$gradle" --warning-mode=fail "$property" "-PconsumerRepository=$repository" \
     -p packages/kotlin-markdown-core/consumers/jvm-gradle run
+# ASSEMBLE THE DEBUG VARIANT, WHICH IS WHAT THIS CONSUMER PROJECT HAS. `main`'s
+# copy of this script drives a release-shrinking audit -- `assembleRelease
+# assembleUnused`, an AAR/mapping/dex comparison and
+# scripts/verify-android-jni-shrinking.mjs -- and NONE of the build-side half
+# exists here: consumers/android/build.gradle.kts declares no `buildTypes` and
+# therefore no `unused` variant, and packages/kotlin-markdown-core/consumer-rules.pro
+# is not in the repository. Step 0 restored scripts/ from main, so this arrived
+# asserting a build the 1.0 baseline has not got -- section 0's "scripts/ IS NOT
+# ONE THING" rule, fourth instance. Restoring the audit is a DECISION about what
+# the Android artifact promises, not a repair, and it belongs to the release step.
 "$gradle" --warning-mode=fail "$property" "-PconsumerRepository=$repository" \
-    -p packages/kotlin-markdown-core/consumers/android assembleRelease assembleUnused
-
-version=$(tr -d '[:space:]' <"$root/VERSION")
-android_aar="$repository/com/nouprax/kotlin-markdown-core-android/$version/kotlin-markdown-core-android-$version.aar"
-android_consumer_build="$root/packages/kotlin-markdown-core/consumers/android/build"
-android_mapping="$android_consumer_build/outputs/mapping/release/mapping.txt"
-android_configuration="$android_consumer_build/outputs/mapping/release/configuration.txt"
-android_apk="$android_consumer_build/outputs/apk/release/kotlin-markdown-core-android-consumer-release-unsigned.apk"
-android_unused_configuration="$android_consumer_build/outputs/mapping/unused/configuration.txt"
-android_unused_apk="$android_consumer_build/outputs/apk/unused/kotlin-markdown-core-android-consumer-unused-unsigned.apk"
-for artifact in \
-    "$android_aar" \
-    "$android_mapping" \
-    "$android_configuration" \
-    "$android_apk" \
-    "$android_unused_configuration" \
-    "$android_unused_apk"; do
-    if [ ! -f "$artifact" ]; then
-        echo "Android release-shrinking artifact is missing: $artifact" >&2
-        exit 1
-    fi
-done
-
-android_audit_dir=$(mktemp -d)
-trap 'rm -rf "$android_audit_dir"' EXIT
-published_consumer_rules="$android_audit_dir/published-consumer-rules.pro"
-unzip -p "$android_aar" proguard.txt >"$published_consumer_rules"
-if ! cmp -s \
-    "$root/packages/kotlin-markdown-core/consumer-rules.pro" \
-    "$published_consumer_rules"; then
-    echo "Published Android AAR consumer rules differ from their reviewed source" >&2
-    exit 1
-fi
-unzip -q "$android_apk" 'classes*.dex' -d "$android_audit_dir/used-dex"
-unzip -q "$android_unused_apk" 'classes*.dex' -d "$android_audit_dir/unused-dex"
-node "$root/scripts/verify-android-jni-shrinking.mjs" \
-    "$published_consumer_rules" \
-    "$android_mapping" \
-    "$android_configuration" \
-    "$android_unused_configuration" \
-    "$root/packages/kotlin-markdown-core/src/native/markdown_core_kotlin.map" \
-    "$android_audit_dir/used-dex" \
-    "$android_audit_dir/unused-dex"
+    -p packages/kotlin-markdown-core/consumers/android assembleDebug
 
 # The Maven consumer runs on the advertised JVM floor when the caller
 # provides one (CI passes a JDK 17 home); Gradle consumers keep the

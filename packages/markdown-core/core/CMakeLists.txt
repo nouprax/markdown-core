@@ -163,6 +163,16 @@ if(MSVC)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /WX /wd4706 /wd4204 /wd4221 /wd4100 /D_CRT_SECURE_NO_WARNINGS")
 elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wno-unused-parameter -std=c99 -pedantic")
+    # GCC folds "an anonymous enum compared with, or converted to, a named one"
+    # into -Wenum-compare and -Wenum-conversion, both of which -Wall turns on.
+    # Clang has the SAME diagnostic under a name of its own and puts it in no
+    # group that -Wall, -Wextra, -Wenum-compare or -Wenum-conversion implies, so
+    # a macOS -Werror build is silent where the Linux one is a wall of errors.
+    # Asking for it by name is what makes this warning set mean the same thing on
+    # both hosts; it cost sixty commits of a broken GCC build to find that out.
+    if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wanon-enum-enum-conversion")
+    endif()
 endif()
 
 # Compile as C++ under MSVC older than 12.0

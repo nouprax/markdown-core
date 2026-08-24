@@ -8,8 +8,12 @@ public final class Main {
     private Main() {}
 
     public static void main(String[] args) {
+        // Nine, not eleven: Step 6 deleted dollarFormulaDelimiters and
+        // latexFormulaDelimiters, because attaching `formulas` is the only
+        // switch the extension has. A Java caller has no default arguments, so
+        // this positional call is what pins the arity from outside Kotlin.
         ParseOptions options = new ParseOptions(
-                true, true, true, true, true, true, true, true, true, true, true);
+                true, true, true, true, true, true, true, true, true);
         Document document = Document.Companion.parse("héllo 🚀\n", options);
         if (document.getContent().size() != 1) {
             throw new IllegalStateException("Document.parse returned unexpected top-level content");

@@ -28,19 +28,28 @@ extern "C" {
  * directive, directive. Nothing outside the library can see a value -- the
  * export map is 32 facade functions and `local: *` -- but keeping them makes
  * this a structural change and nothing else.
+ *
+ * THEY ARE `markdown_core_node_type`, NOT AN ANONYMOUS ENUM OF THEIR OWN, and
+ * that is not a style choice. An anonymous enum is a DISTINCT type from
+ * `markdown_core_node_type`, so `markdown_core_node_get_type(n) ==
+ * MARKDOWN_CORE_NODE_TABLE` compares two different enumeration types and
+ * `markdown_core_node_set_type(n, MARKDOWN_CORE_NODE_STRIKETHROUGH)` converts
+ * between them. GCC rejects both under `-Wenum-compare` and
+ * `-Wenum-conversion`, which `-Wall` turns on; clang says nothing about either
+ * unless `-Wanon-enum-enum-conversion` is asked for by name, which no warning
+ * group implies. A macro that casts at the one place the value is written
+ * makes every one of the ninety-odd use sites exactly typed, and cannot drift.
  */
-enum {
-    MARKDOWN_CORE_NODE_TABLE = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000b,
-    MARKDOWN_CORE_NODE_TABLE_ROW = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000c,
-    MARKDOWN_CORE_NODE_TABLE_CELL = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000d,
-    MARKDOWN_CORE_NODE_FORMULA_BLOCK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000e,
-    MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000f,
+#define MARKDOWN_CORE_NODE_TABLE ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000b))
+#define MARKDOWN_CORE_NODE_TABLE_ROW ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000c))
+#define MARKDOWN_CORE_NODE_TABLE_CELL ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000d))
+#define MARKDOWN_CORE_NODE_FORMULA_BLOCK ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000e))
+#define MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000f))
 
-    MARKDOWN_CORE_NODE_STRIKETHROUGH = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000b,
-    MARKDOWN_CORE_NODE_FORMULA = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000c,
-    MARKDOWN_CORE_NODE_DIRECTIVE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000d,
-    MARKDOWN_CORE_NODE_DIRECTIVE_LABEL = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000e
-};
+#define MARKDOWN_CORE_NODE_STRIKETHROUGH ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000b))
+#define MARKDOWN_CORE_NODE_FORMULA ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000c))
+#define MARKDOWN_CORE_NODE_DIRECTIVE ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000d))
+#define MARKDOWN_CORE_NODE_DIRECTIVE_LABEL ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000e))
 
 typedef enum {
     MARKDOWN_CORE_FORMULA_MODE_NONE = 0,
