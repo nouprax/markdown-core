@@ -1,5 +1,11 @@
-import MarkdownCore
+import MarkdownCoreC
 import Testing
+
+// `@testable` for one reason, and it is stated at the use below: `ParseError`
+// cannot be reached through the public surface, because no input a Swift caller
+// can hand `Document` is invalid. Everything else here goes through the
+// published API.
+@testable import MarkdownCore
 
 @Suite("api") struct APISuite {
     @Test("parse options and visitor dispatch use the public Swift API")
@@ -30,6 +36,42 @@ import Testing
 }
 
 @Suite("errors") struct ErrorsSuite {
+    @Test("a native error crosses into Swift with its code and message, and nil still answers")
+    func parseErrorFromNative() throws {
+        // THE ONE `@testable` USE. No `String` a caller can hand `Document` is
+        // invalid, so this initializer is unreachable through the published
+        // surface -- but the C entry point rejects a null source with a real
+        // error object, which is the only way to watch a native code and
+        // message actually cross.
+        var native: OpaquePointer?
+        #expect(markdown_core_document_parse(nil, 1, nil, &native) == nil)
+        let error = try #require(native)
+        defer { markdown_core_error_free(error) }
+        let crossed = ParseError(from: error)
+        #expect(crossed.code == .invalidArgument)
+        #expect(crossed.message.contains("must not be null"))
+
+        // And the other arm: a loss the engine could not allocate an error for
+        // still has to answer with something.
+        let fallback = ParseError(from: nil)
+        #expect(fallback.code == .internal)
+        #expect(!fallback.message.isEmpty)
+    }
+
+    @Test("a written-but-empty destination is empty, not absent")
+    func emptyDestinationIsEmpty() throws {
+        // `[a]()` WROTE a destination and wrote nothing in it. The native side
+        // answers that with a null pointer and length 0, which is the one place
+        // a string with no bytes is still a string.
+        let paragraph = try #require(Document.parse("[a]()\n").content.first as? Paragraph)
+        let link = try #require(paragraph.content.first as? Link)
+        // `destination` is not optional at all -- Q26 -- so empty is the only
+        // way it can say "nothing was written between the parens"; `title` is,
+        // and says absent instead.
+        #expect(link.destination.isEmpty)
+        #expect(link.title == nil)
+    }
+
     @Test("empty input maps to an empty document")
     func empty() throws {
         #expect(try Document.parse("").content.isEmpty)
@@ -97,6 +139,56 @@ import Testing
         for _ in 0..<300 { _ = try Document.parse("# copy\n") }
         #expect(concrete.source == Array(source.utf8))
         #expect(concrete.lineStart(3) == 14)
+    }
+}
+
+@Suite("api") struct DirectiveLabelSuite {
+    @Test("a directive block's label is walked ahead of its content")
+    func labelledDirectiveBlock() throws {
+        // A directive block with BOTH halves. The label is a node in its own
+        // right and the walker has to yield it before the content -- with no
+        // label present that branch never runs, and nothing else in this suite
+        // writes one.
+        let source = ":::note[Title]{kind=demo}\nBody\n:::\n"
+        let block = try #require(Document.parse(source).content.first as? DirectiveBlock)
+        let label = try #require(block.label)
+        #expect((label.content.first as? Text)?.literal == "Title")
+        #expect(block.attributes?.first?.name == "kind")
+
+        var kinds: [String] = []
+        let document = try Document.parse(source)
+        Walker().walk(document) { event, node in
+            if event == .entering { kinds.append(String(describing: type(of: node))) }
+        }
+        #expect(kinds.contains("DirectiveLabel"))
+        #expect(kinds.firstIndex(of: "DirectiveLabel")! < kinds.lastIndex(of: "Paragraph")!)
+
+        // AND ONE WITHOUT A LABEL, which is the other arm: the walker's `?? []`
+        // and the dump's `children=` both ask whether a label is there, and a
+        // suite that only ever writes one never takes the answer "no".
+        let bare = try #require(
+            Document.parse(":::note\nBody\n:::\n").content.first as? DirectiveBlock
+        )
+        #expect(bare.label == nil)
+        var bareKinds: [String] = []
+        Walker().walk(try Document.parse(":::note\nBody\n:::\n")) { event, node in
+            if event == .entering { bareKinds.append(String(describing: type(of: node))) }
+        }
+        #expect(!bareKinds.contains("DirectiveLabel"))
+        #expect(bare.dump().contains("children=1"))
+    }
+
+    @Test("the dump escapes every character JSON cannot carry literally")
+    func dumpEscapes() throws {
+        // The dumper's escape table has an arm per character and nothing in the
+        // corpus writes most of them. A fenced code block carries its literal
+        // through untouched, so it is the one place a test can put them all.
+        let literal = "a\"b\\c\td\u{08}e\u{0c}f\u{01}g"
+        let document = try Document.parse("```\n\(literal)\n```\n")
+        let dump = document.dump()
+        for expected in ["\\\"", "\\\\", "\\t", "\\b", "\\f", "\\n", "\\u0001"] {
+            #expect(dump.contains(expected), "dump is missing the escape \(expected)")
+        }
     }
 }
 

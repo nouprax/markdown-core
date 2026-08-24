@@ -119,8 +119,7 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_t
 
 markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
                                                     const markdown_core_syntax_extension *extension) {
-    extern markdown_core_mem MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR;
-    return markdown_core_node_new_with_mem_and_ext(type, &MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR, extension);
+    return markdown_core_node_new_with_mem_and_ext(type, markdown_core_get_default_mem_allocator(), extension);
 }
 
 markdown_core_node *markdown_core_node_new_with_mem(markdown_core_node_type type, markdown_core_mem *mem) {

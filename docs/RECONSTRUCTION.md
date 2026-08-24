@@ -8267,7 +8267,7 @@ the five would fail anyway. The content check is removed with the reason;
 publishing a real reference is a DECISION for the release step, needing the
 plugin AND a list re-derived from the surface this branch has.
 
-##### 9. THE COVERAGE GATE IS OPEN, MEASURED, AND DELIBERATELY NOT CLOSED HERE
+##### 9. THE COVERAGE GATE, MEASURED FIRST AND THEN CLOSED (see §4.14.15J)
 
 All three coverage jobs fail. `specs/coverage/policy.json` is not in `580d10c`,
 and **the gate has never once run against this branch**. Measured locally rather
@@ -8302,12 +8302,115 @@ measured figure is equal to or better than what its old key allowed:
 - `Sources/MarkdownCore/Walker/Walker.swift` — 1 line and 1 function, in no
   ledger entry at all.
 
-**Nothing here is edited.** Re-pinning the renames is mechanical and safe; the
-three gaps want tests; and `jvmCoverageReport` wants a Gradle plugin this
-branch's build has not got, which is the same owner decision `checkKotlinAbi`
-raised. Closing all of it is a STEP, and it is named here rather than left
-half-done: **a branch that refused four times to make a gate green by lowering a
-bar does not get to close this one by widening a ledger.**
+**This was where it was left, and the owner said to fix it.** §4.14.15J is what
+that took: the gaps were closed with tests, not with a wider ledger, and every
+re-pin was verified entry by entry rather than rubber-stamped.
+
+#### 4.14.15J The coverage gate closed, and `audit:packages` was never a macOS artifact
+
+**All three coverage gates pass, and `audit:packages` with them.** Two of the
+four needed no widening at all; the fourth needed five, and they are named below
+rather than buried in a rewrite.
+
+##### `audit:packages` — the earlier diagnosis was WRONG
+
+§4.14.15H item 6 called it a Mach-O artifact and said this branch introduced
+none of the three symbols. **The second half was true and the conclusion was
+not.** `scripts/audit-package-contents.sh` is **byte-identical to `main`'s**, and
+`main` is green because **`main` fixed the LIBRARY**:
+`static const markdown_core_mem MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR` and
+`const unsigned char markdown_core_strbuf__initbuf[1]`. Both are `const` here
+now, with the cast at the single accessor and the single assignment, each
+carrying the reason. The invariant that makes the second safe was checked rather
+than assumed: **`asize == 0` exactly while `ptr` is the sentinel, and every write
+path either grows first or is guarded by `asize > 0`** — `markdown_core_strbuf_clear`
+is the one that writes without growing and it tests `asize`. The two `extern`
+declarations in `blocks.c` and `node.c` go through the accessor. `lint-c` is
+clean, every gate reads exactly what it read before, and **`Package content
+audits passed.`**
+
+##### ES — two tests, then a re-pin that only tightened
+
+`branches 88.39% → 90.88%`. Two tests, both of ordinary things nothing reached:
+the decoder's reference/formula/ordered-list/`""` arms, and **every wire guard**.
+The second is the one worth keeping: those `throw`s exist because the two sides
+of the wire are versioned separately — MKC5 is that hazard made concrete — and
+**nothing proved any of them fired**, so a renumbering could have deleted a check
+and stayed green.
+
+Verified entry by entry, not rubber-stamped: `node-decoder.ts` **24 → 19**
+branches, `runtime/parser.ts` **12/1/8 → 2/0/4**, `document.ts` dropped at 100%.
+**Every entry a tightening or a rename.**
+
+##### Swift — `98.52%` lines, and NOT ONE ENTRY WIDENED
+
+`lines 96.92% → 98.52%`, `functions 95.77% → 96.83%`. The hard one was
+`NativeValues.swift`, whose ledger allowed **1 line / 1 function** and which
+measured **13 / 2**. `main` covered it through the streaming API this branch
+deleted — so the surface that reached it is gone. It is reached differently now:
+**`markdown_core_document_parse(nil, 1, …)` makes the engine produce a real
+`INVALID_ARGUMENT` error object**, so the test watches a native code and message
+actually cross into Swift rather than fabricating one. Back to **1 / 1**, the
+same as `main`, without widening anything. `Directive.swift`,
+`DirectiveValues.swift`, `List.swift`, `Walker.swift` and `TreeDumper.swift` all
+reached **100%** and left the ledger.
+
+##### Kotlin — the gate had never run, and five entries are WIDER
+
+`jvmCoverageReport` did not exist. It does now: JaCoCo, with instrumentation
+**opt-in behind `-PmarkdownCoreCoverage`** so that adding a coverage gate cannot
+change what `pnpm test:kotlin-jvm` executes — the frozen test architecture owns
+that path. **Dependency verification blocked it**: the repository verifies PGP
+signatures with key servers disabled, and JaCoCo's signing key was not in
+`gradle/verification-keyring.keys`. **No key was invented** — it was transcribed
+from this repository's own record, `main`'s keyring, which is 15C's rule for the
+Action SHAs applied to a trust store.
+
+First reading, and after the tests: **lines 95.09% → 98.04%, functions
+97.72% → 99.35%, branches 72.52% → 79.87%**, 11 tests → 19. `ParseException.kt`
+went from **0 of 5 lines and 0 of 4 functions** — nothing in the binding touched
+it — to covered, and `Walker.kt` to 100%. The wire refusals are reached by
+hand-written payloads, which is the only way: every payload the bridge actually
+writes is well formed.
+
+**And five entries are wider than their predecessor. They are listed because
+widening a ledger quietly is the thing this branch has refused four times:**
+
+| entry | was | is | why |
+|---|---|---|---|
+| `walker/TreeDumper.kt` | 0/2/4 | 1/0/5 | rename of `MarkupDumper.kt`; one line and one branch more |
+| `wire/WireDecoder.kt` | 3/0/12 | 3/0/15 | three branches more |
+| `wire/WireMarkupDecoder.kt` | — | 5/0/28 | **did not exist**: `WireDecoder` was split |
+| `wire/WireKind.kt` | — | 0/1/0 | did not exist |
+| `jvmMain/NativeBridge.jvm.kt` | 3/0/2 | 5/0/15 | rename of `CBridge.jvm.kt`; thirteen branches more |
+
+##### And one Swift-only affordance went with it
+
+`ParseError` conformed to `CustomStringConvertible` for a `description` that
+returned `message` and a doc comment that said so. **Neither Kotlin nor
+ECMAScript has it** — Kotlin's `ParseException` is a `RuntimeException` and ES's
+`ParseError` an `Error`, both carrying `message` and nothing beside it — so it
+was one binding's sugar duplicating a field, which is the same drift
+§4.14.15I found in `children`/`content`. Removed with its conformance, by owner
+instruction. It was also an uncovered function, so Swift went **98.52% → 98.63%**
+lines and **96.83% → 97.34%** functions for it.
+
+**The related question was asked and answered NO**: whether `Document.parse`
+should become a constructor, `Document(markdown:)`. It is idiomatic Swift and it
+is **not a shape Kotlin has** — `Document` is a `class … internal constructor(content, scope, concrete)`
+whose primary constructor carries the decoded fields, so a parsing constructor
+either parses twice in a delegation expression or forces the primary to take an
+aggregate — and **ECMAScript cannot express it at all**, because `Document` there
+is an `interface` over a plain readonly object with no class to `new`. The owner
+ruled all three or none, so none: `Document.parse` is the one spelling that
+reads the same in C, Swift, Kotlin and ECMAScript.
+
+**The honest reading is that the Kotlin binding grew and its suite did not.**
+The wire carries four node kinds it did not carry, an optional string type, a
+diagnostic list and a concrete view, and the ledger it is being measured against
+was written for `main`'s binding — a different wire, with a test suite that had a
+streaming API to exercise it. The 79.87% branch figure is the number to bring
+down, and it is a step of its own rather than something to hide in a rewrite.
 
 #### 4.14.15I The PR's three review comments: one right, one right for the wrong reason, one wrong
 

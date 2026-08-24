@@ -76,15 +76,12 @@ public enum ParseErrorCode: Int32, Sendable {
 /// It carries no scope: an input the parser could not turn into a document has
 /// no extent to point at, and a failure the author could act on would have been
 /// a diagnostic instead.
-public struct ParseError: Error, Sendable, CustomStringConvertible {
+public struct ParseError: Error, Sendable {
     /// Which failure it was.
     public let code: ParseErrorCode
     /// A fixed English sentence naming the failure. It is for a log, not for
     /// an end user, and it is not localised.
     public let message: String
-
-    /// The same text as ``message``.
-    public var description: String { message }
 }
 
 /// A parse, under two total views.

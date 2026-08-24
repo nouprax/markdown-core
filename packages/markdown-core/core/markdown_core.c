@@ -28,6 +28,15 @@ static void *xrealloc(void *ptr, size_t size) {
 
 static void xfree(void *ptr) { free(ptr); }
 
-markdown_core_mem MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR = {xcalloc, xrealloc, xfree};
+/* READ-ONLY, AND THE FILE-SCOPE `static` IS PART OF IT. Three function pointers
+ * that never change are writable global state in the shipped archive otherwise,
+ * which `scripts/audit-package-contents.sh` rejects and which nothing wants: a
+ * process that can scribble on this redirects every allocation the library
+ * makes. The cast below is the only place constness is dropped, and no caller
+ * writes through the result -- `markdown_core_mem` is passed around to be
+ * CALLED, not assigned to. */
+static const markdown_core_mem MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR = {xcalloc, xrealloc, xfree};
 
-markdown_core_mem *markdown_core_get_default_mem_allocator(void) { return &MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR; }
+markdown_core_mem *markdown_core_get_default_mem_allocator(void) {
+    return (markdown_core_mem *)&MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR;
+}

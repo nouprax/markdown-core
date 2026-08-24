@@ -278,8 +278,7 @@ markdown_core_parser *markdown_core_parser_new_with_mem(int options, markdown_co
 }
 
 markdown_core_parser *markdown_core_parser_new(int options) {
-    extern markdown_core_mem MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR;
-    return markdown_core_parser_new_with_mem(options, &MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR);
+    return markdown_core_parser_new_with_mem(options, markdown_core_get_default_mem_allocator());
 }
 
 void markdown_core_parser_free(markdown_core_parser *parser) {

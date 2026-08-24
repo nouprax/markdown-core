@@ -11,6 +11,8 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.jvm.tasks.Jar
 import org.gradle.language.jvm.tasks.ProcessResources
+import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
+import org.gradle.testing.jacoco.tasks.JacocoReport
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
@@ -196,6 +198,7 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.ktlint)
+    jacoco
     `maven-publish`
 }
 
@@ -488,6 +491,7 @@ tasks.named<ProcessResources>("jvmProcessResources") {
 }
 
 val jvmTarget = kotlin.targets.getByName("jvm") as KotlinJvmTarget
+val jvmMainCompilation = jvmTarget.compilations.getByName("main")
 val benchmarkCompilation =
     jvmTarget.compilations.create("benchmark") {
         associateWith(jvmTarget.compilations.getByName("main"))
@@ -697,4 +701,51 @@ tasks.register("publishKotlinToMavenLocal") {
         },
         ":packages:kotlin-markdown-core:android-runtime:publishToMavenLocal",
     )
+}
+
+jacoco { toolVersion = libs.versions.jacoco.get() }
+
+// INSTRUMENTATION IS OPT-IN so that adding a coverage gate cannot silently
+// change what `pnpm test:kotlin-jvm` executes. The frozen test architecture
+// owns that path and a coverage tool is not entitled to alter it.
+val coverageRequested = providers.gradleProperty("markdownCoreCoverage").isPresent()
+
+tasks.withType<Test>().configureEach {
+    extensions.configure<JacocoTaskExtension> { isEnabled = coverageRequested }
+}
+
+tasks.register<JacocoReport>("jvmCoverageReport") {
+    group = "verification"
+    description = "Aggregates JVM correctness and conformance coverage into one JaCoCo XML report."
+    val correctness = tasks.named<Test>("jvmTest")
+    val conformance = tasks.named<Test>("jvmConformanceTest")
+    dependsOn(correctness, conformance)
+    // A local, not a reference to this build script, which the configuration
+    // cache rejects.
+    val instrumented = coverageRequested
+    // Declaring the switch as an input is what makes the check below
+    // reachable: without it the task stays up to date across a toggle and
+    // hands back a report an earlier instrumented run produced.
+    inputs.property("markdownCoreCoverage", instrumented)
+    doFirst {
+        check(instrumented) {
+            "jvmCoverageReport needs instrumentation: run it with -PmarkdownCoreCoverage, " +
+                "or through scripts/coverage-kotlin-jvm.sh, which passes it."
+        }
+    }
+    executionData.setFrom(
+        correctness.map { it.extensions.getByType<JacocoTaskExtension>().destinationFile!! },
+        conformance.map { it.extensions.getByType<JacocoTaskExtension>().destinationFile!! },
+    )
+    // Every source set that compiles into the measured classes, jvmSharedMain
+    // included: it holds the JNI entry points and the loader.
+    sourceDirectories.setFrom(
+        files("src/commonMain/kotlin", "src/jvmSharedMain/kotlin", "src/jvmMain/kotlin"),
+    )
+    classDirectories.setFrom(jvmMainCompilation.output.classesDirs)
+    reports {
+        xml.required.set(true)
+        html.required.set(false)
+        csv.required.set(false)
+    }
 }

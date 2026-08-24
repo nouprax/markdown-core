@@ -5,6 +5,7 @@ import { Document, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js
 // Past index.js for the instance itself: the heap is what this asserts about,
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
+import { NodeDecoder } from "../dist/wire/node-decoder.js";
 import { kindVisitor } from "./visitor.mjs";
 
 test("api: synchronous parse, typed visitor dispatch, and walker", () => {
@@ -152,4 +153,69 @@ test("robustness: the heap grows, and a document larger than the initial one par
     assert.equal(link.kind, "link");
     assert.equal(link.destination, "/u");
     assert.equal(link.title, "t");
+});
+
+test("ast: the decoder's reference, formula, list and empty-string arms are exercised", () => {
+    // Four decoder arms that no other suite reaches, and each is an ordinary
+    // language feature rather than a defensive branch: a reference's form, a
+    // formula's placement, an ordered list's flavour, and requirement 14's
+    // "written and empty" answer, which is the one a `null` would be confused
+    // with.
+    const document = Document.parse(
+        ['[foo]: /url "t"', "", "See [foo] and $$x$$ and [a]().", "", "3. one", "4. two", ""].join("\n")
+    );
+
+    const [definition, paragraph, list] = document.content;
+    assert.equal(definition.kind, "referenceDefinition");
+    assert.equal(definition.label, "foo");
+    assert.equal(definition.destination, "/url");
+
+    const reference = paragraph.content.find((node) => node.kind === "linkReference");
+    assert.equal(reference.form, "shortcut");
+    assert.equal(reference.identifier, "foo");
+
+    const formula = paragraph.content.find((node) => node.kind === "formula");
+    assert.equal(formula.mode, "standalone");
+    assert.equal(formula.literal, "x");
+
+    // `[a]()` WROTE a destination and wrote nothing in it. Empty is not absent.
+    const link = paragraph.content.find((node) => node.kind === "link");
+    assert.equal(link.destination, "");
+    assert.notEqual(link.destination, null);
+
+    assert.equal(list.kind, "list");
+    assert.equal(list.flavor, "ordered");
+    assert.equal(list.start, 3);
+    assert.equal(list.items.length, 2);
+});
+
+test("errors: every wire guard fires when the native side answers out of range", () => {
+    // These guards exist because the two sides of the wire are versioned
+    // separately -- the Kotlin bridge's bump to MKC5 is the same hazard -- and
+    // a decoder that silently mapped an unknown value would turn a protocol
+    // mismatch into a wrong document. Nothing proved any of them fires, so a
+    // renumbering could have removed the check and stayed green.
+    const decoder = new NodeDecoder(native);
+    try {
+        assert.throws(() => decoder.referenceForm(9), /invalid reference form 9/u);
+        assert.throws(() => decoder.placement(9), /invalid placement mode 9/u);
+        assert.throws(() => decoder.listFlavor(9), /invalid list flavor 9/u);
+        assert.throws(() => decoder.tableAlignment(9), /invalid table alignment 9/u);
+        assert.throws(() => decoder.boolean(9, "checked"), /invalid checked 9/u);
+        assert.throws(() => decoder.count(-1, "column count"), /invalid column count -1/u);
+
+        // The valid answers still map, so the guards reject rather than
+        // everything throwing for some unrelated reason.
+        assert.equal(decoder.referenceForm(3), "shortcut");
+        assert.equal(decoder.placement(2), "standalone");
+        assert.equal(decoder.listFlavor(2), "ordered");
+        assert.equal(decoder.tableAlignment(0), "none");
+        assert.equal(decoder.nullableBoolean(-1, "checked"), null);
+    } finally {
+        decoder.dispose();
+    }
+
+    // A disposed decoder holds a freed scratch pointer, and reading through it
+    // would be a use-after-free in WASM memory rather than an error.
+    assert.throws(() => decoder.requireLive(), /decoder has been disposed/u);
 });

@@ -14,7 +14,7 @@
 /* Used as default value for markdown_core_strbuf->ptr so that people can always
  * assume ptr is non-NULL and zero terminated even for new markdown_core_strbufs.
  */
-unsigned char markdown_core_strbuf__initbuf[1];
+const unsigned char markdown_core_strbuf__initbuf[1] = {0};
 
 #ifndef MIN
 #define MIN(x, y) ((x < y) ? x : y)
@@ -25,7 +25,10 @@ void markdown_core_strbuf_init(markdown_core_mem *mem, markdown_core_strbuf *buf
     buf->asize = 0;
     buf->size = 0;
     buf->oom = 0;
-    buf->ptr = markdown_core_strbuf__initbuf;
+    /* The cast drops const and nothing writes through it: `asize` is 0 exactly
+     * while `ptr` is this sentinel, and every write path either grows first or
+     * is guarded by `asize > 0`. */
+    buf->ptr = (unsigned char *)markdown_core_strbuf__initbuf;
 
     if (initial_size > 0) {
         markdown_core_strbuf_grow(buf, initial_size);
