@@ -12,7 +12,7 @@ if (canonicalManifest.schemaVersion !== 1 || !canonicalManifest.cases?.length) {
 
 test("conformance: public node schema is reachable", () => {
     const sources = [
-        "# Heading\n\n> Quote\n\n---\n\n3. ordered\n\n- [x] task\n\n``` swift\ncode\n```\n\n<section>raw</section>\n\n[^n]: note\n\n[ref]: /r \"t\"\n\n[a][ref] ![b][ref]\n",
+        '# Heading\n\n> Quote\n\n---\n\n3. ordered\n\n- [x] task\n\n``` swift\ncode\n```\n\n<section>raw</section>\n\n[^n]: note\n\n[ref]: /r "t"\n\n[a][ref] ![b][ref]\n',
         'Text *em* **strong** ~~strike~~ `code` [link](/go "title") ![alt](/image.png) :badge[label]{kind=demo} $x$ [^n]  \nnext <i>raw</i>\nsoft\n\n[^n]: definition\n',
         "| left | center |\n| :--- | :----: |\n| a | b |\n\n::leaf[Label]{id=value}\n\n:::container[Title]{kind=demo}\nBody\n:::\n",
         "$$\ny\n$$\n"

@@ -4,25 +4,10 @@
     "prose": "docs/specs/canonical-ast.md",
     "dumpGrammar": "docs/specs/canonical-ast-dump.md",
     "enums": {
-        "PlacementMode": [
-            "embedded",
-            "standalone"
-        ],
-        "ListFlavor": [
-            "bullet",
-            "ordered"
-        ],
-        "ReferenceForm": [
-            "full",
-            "collapsed",
-            "shortcut"
-        ],
-        "TableAlignment": [
-            "none",
-            "left",
-            "center",
-            "right"
-        ],
+        "PlacementMode": ["embedded", "standalone"],
+        "ListFlavor": ["bullet", "ordered"],
+        "ReferenceForm": ["full", "collapsed", "shortcut"],
+        "TableAlignment": ["none", "left", "center", "right"],
         "DirectiveAttribute": "a name/value pair of Strings"
     },
     "inheritedField": {

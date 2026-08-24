@@ -6,11 +6,20 @@ import process from "node:process";
 
 const doc = await readFile("docs/RECONSTRUCTION.md", "utf8");
 const block = doc.match(/Edge list \(`step: \[what must already be true\]`\):\n\n```\n([\s\S]*?)```/);
-if (!block) { process.stderr.write("plan graph: edge list not found in docs/RECONSTRUCTION.md\n"); process.exit(1); }
+if (!block) {
+    process.stderr.write("plan graph: edge list not found in docs/RECONSTRUCTION.md\n");
+    process.exit(1);
+}
 
 const edges = new Map();
 for (const m of block[1].matchAll(/([0-9]+[A-Za-z]?):\[([^\]]*)\]/g)) {
-    edges.set(m[1], m[2].split(",").map((s) => s.trim()).filter(Boolean));
+    edges.set(
+        m[1],
+        m[2]
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+    );
 }
 
 const failures = [];
@@ -27,9 +36,11 @@ const visit = (n) => {
         failures.push(`cycle: ${stack.slice(stack.indexOf(n)).concat(n).join(" -> ")}`);
         return;
     }
-    colour.set(n, "grey"); stack.push(n);
+    colour.set(n, "grey");
+    stack.push(n);
     for (const d of edges.get(n) ?? []) visit(d);
-    stack.pop(); colour.set(n, "black");
+    stack.pop();
+    colour.set(n, "black");
 };
 for (const n of edges.keys()) visit(n);
 

@@ -188,9 +188,7 @@
         {
             "file": "packages/markdown-core/tests/fixtures/smart_punct.txt",
             "profile": "gfm-smart",
-            "upstreamFlags": [
-                "--smart"
-            ],
+            "upstreamFlags": ["--smart"],
             "note": "Both parsers default smart punctuation off, so this file is the one corpus entry that needs a profile: `--smart` upstream, `--profile gfm-smart` here."
         }
     ],

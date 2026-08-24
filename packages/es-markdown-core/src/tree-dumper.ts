@@ -93,8 +93,7 @@ const dumpVisitor: Visitor<DumpRecord> = {
             `closed=${node.closed}`
         ]),
     visitHTMLBlock: (node: HTMLBlock) => record("HTMLBlock", node, [`literal=${jsonString(node.literal)}`]),
-    visitFormulaBlock: (node: FormulaBlock) =>
-        record("FormulaBlock", node, [`literal=${jsonString(node.literal)}`]),
+    visitFormulaBlock: (node: FormulaBlock) => record("FormulaBlock", node, [`literal=${jsonString(node.literal)}`]),
     visitTable: (node: Table) =>
         record("Table", node, [`alignments=[${node.alignments.join(",")}]`], 1 + node.rows.length),
     visitTableRow: (node: TableRow) => record("TableRow", node, [`isHeader=${node.isHeader}`], node.cells.length),

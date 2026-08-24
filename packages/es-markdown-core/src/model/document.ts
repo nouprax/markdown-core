@@ -19,5 +19,4 @@ import type { Markup } from "./markup.js";
 export interface Document extends MarkupBase<"document"> {
     readonly content: readonly Markup[];
     readonly concrete: Concrete;
-
 }

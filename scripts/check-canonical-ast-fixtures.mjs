@@ -217,9 +217,7 @@ for (const testCase of manifest.cases ?? []) {
         for (const field of fieldsByKind[kind] ?? []) allObservedFields.add(`${kind}.${field}`);
         // Strings first, then bracketed groups: `attributes=[a="1" b="2"]` is
         // ONE field, and without the second pass ` b=` reads as a second one.
-        const lineWithoutStrings = line
-            .replace(/"(?:\\.|[^"\\])*"/g, '""')
-            .replace(/=\[[^\]]*\]/g, "=[]");
+        const lineWithoutStrings = line.replace(/"(?:\\.|[^"\\])*"/g, '""').replace(/=\[[^\]]*\]/g, "=[]");
         const fieldNames = [...lineWithoutStrings.matchAll(/ ([A-Za-z]+)=/g)].map((field) => field[1]);
         // The dump's field names for a kind ARE the contract's, minus the
         // fields that are the child structure itself. Until Step 15A this was a

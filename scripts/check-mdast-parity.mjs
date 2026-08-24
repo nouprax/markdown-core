@@ -197,7 +197,9 @@ process.stdout.write(`  registered divergences: ${String(reproduced.size)}/${Str
 if (backlog.size) {
     const byStep = new Map();
     for (const entry of backlog.values()) byStep.set(entry.closedBy, (byStep.get(entry.closedBy) ?? 0) + 1);
-    process.stdout.write(`  reconstruction backlog: ${String(backlogSeen.size)}/${String(backlog.size)} still diverging\n`);
+    process.stdout.write(
+        `  reconstruction backlog: ${String(backlogSeen.size)}/${String(backlog.size)} still diverging\n`
+    );
     for (const [step, count] of [...byStep].sort()) {
         process.stdout.write(`      ${String(count).padStart(2)}  ${step}\n`);
     }
