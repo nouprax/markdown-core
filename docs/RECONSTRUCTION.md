@@ -55,15 +55,21 @@ argument. Nothing here is checked.
       failure, and every mid-stream projection interleaves the two. **First,
       because nothing else in the stage can be exercised until it is true.**
       First-wins rides on `entry->age` and survives re-preparation (§12.4).
-- [ ] **Decide where the AST lives** — in place on the CST tree, a separate
-      tree, or copy-on-project per block. §12.5. **Owner decision, and it is
-      owed before any code**: it fixes the API, the memory bound, and how much
-      of `finish` has to become re-runnable.
-- [ ] **Settle what the extension postprocessors are** — projection steps, or
-      CST completion. `extensions/directive.c:1095` runs its own
-      `parse_inlines` from inside one, so the answer is not uniform by
-      inspection. **Before the projection is made re-runnable**, because it
-      decides what "re-runnable" has to cover.
+- [x] **Where the AST lives is decided: nowhere.** Owner ruling — *"AST never
+      exists when someone requires it, and when it is asked, it is derived from
+      CST"* (§12.5). The parser holds only the CST. Priced at **16.2% of nodes
+      are blocks** over 838 KB of this repository's markdown, so a derivation
+      copies a sixth of the tree and builds the rest — about 1.19× today's
+      projection in node writes, an upper bound. **It carries one item that is
+      not optional**: `finish` returns `parser->root` today and must return a
+      derived tree instead, which is an ownership change in the function every
+      caller uses.
+- [x] **The extension postprocessors are projection steps** (§12.6). Two exist
+      — `autolink.c:667` and `formula.c:720` — and the only parser state either
+      writes is `parser->oom`. The claim that `directive.c:1095` ran
+      `parse_inlines` from inside one was wrong: it is an inline match handler
+      running *during* the projection. What remains is a gate, not a decision —
+      prove both are deterministic on a fresh AST.
 - [ ] **Make `process_inlines` callable more than once**, from a stated CST,
       producing a stated AST. H4 says it is not idempotent today; that is the
       work, and its gate is that two projections of the same CST at the same
@@ -77,6 +83,10 @@ argument. Nothing here is checked.
       construction O(line) per fed line, projection O(what is projected) per
       snapshot. The existing slope gate measures the first; the second has no
       gate yet and is O(open block) until Stage 2's resumable subject lands.
+- [ ] **Change what `finish` returns** — a derived tree, with the parser keeping
+      the CST. H1 calls today's `finish` a reset because it hands out
+      `parser->root`; that is the shape the ruling changes. Bindings and the
+      facade both cross here.
 - [ ] **Acceptance** — `stream_runner` still green (criterion 1 is now a
       theorem, kept as a gate), two projections of one CST byte-identical, the
       external oracles unmoved, and the CST proved refmap-independent by
@@ -11018,24 +11028,60 @@ CST and the final refmap, which are what a one-shot parse produces; equality
 follows by construction. It stays a gate (`stream_runner`, §11.9) because a
 theorem about code is a claim about code.
 
-### 12.5 The question the evidence cannot settle
+### 12.5 ANSWERED: the AST is never stored
 
-**Where does the AST live?** Three shapes, and this decides the API, the memory
-bound and how much of `finish` has to become re-runnable:
+**Owner ruling, 2026-08-24.** *"AST never exists when someone requires it, and
+when it is asked, it is derived from CST."* The parser holds the CST and only
+the CST. There is no AST until someone asks, and asking builds one.
 
-- **In place.** The projection writes inline children onto the CST tree and a
-  re-projection strips them first. Cheapest, one tree — and it puts the two
-  layers back in one storage, which is how they got mixed in the first place.
-- **A separate tree.** The projection builds an AST from the CST. Clean, and it
-  makes "the CST never changes" true rather than conventional. Costs a block
-  skeleton copy per snapshot — small next to the inline children, but not free.
-- **Copy-on-project per block.** Blocks share until projected. The cache from
-  §12.3 item 3 falls out of it for free.
+That removes the three-way choice this section used to pose. "In place" is out —
+the CST tree is never written with inline children. "Copy-on-project per block"
+is not a competing shape, it is an optimisation *inside* the derivation, and
+invisible to the model.
 
-**And the sub-question that is genuinely open: what are the extension
-postprocessors?** They run after `process_inlines` in `parser_finish` and rewrite
-the tree wholesale, and `extensions/directive.c:1095` calls
-`markdown_core_parse_inlines` *itself*, from inside a postprocessor — a second
-projection site. If postprocessors are projection steps they must be re-runnable
-per snapshot; if they are CST completion they must move before it. Neither is
-established, and it is being measured.
+**The price, measured** (`scripts/poc/ratio_spike.c`, over 838 KB of this
+repository's own markdown, every extension on):
+
+| corpus | blocks | inlines | block share |
+|---|---|---|---|
+| `RECONSTRUCTION.md` | 6,992 | 37,595 | 15.7% |
+| `README.md` | 68 | 295 | 18.7% |
+| `CHANGELOG.md` | 82 | 385 | 17.6% |
+| four spec documents | 579 | 1,566 | 27.0% |
+| **total** | **7,721** | **39,841** | **16.2%** |
+
+**A derivation copies 16.2% of the tree and builds the other 83.8%** — and
+building that 83.8% is work `process_inlines` already does today, on every
+parse. So the ruling's marginal cost in node writes is about **1.19×** today's
+projection, which is an upper bound: copying a node is cheaper than parsing one.
+Peak memory rises by the CST held alongside — the block skeleton, not the
+content, which is stored once on the CST and was stored anyway.
+
+**One consequence worth stating because it is easy to lose.** `finish` today
+returns `parser->root` — the same tree, mutated in place, which is why H1 calls
+it a reset. Under the ruling `finish` derives and returns a *new* tree while the
+parser keeps the CST. That is an ownership change in the one function every
+caller uses, and it is Stage 1 work, not a follow-up.
+
+### 12.6 The extension postprocessors are projection steps
+
+**A correction first.** §12.5 previously said `extensions/directive.c:1095`
+calls `markdown_core_parse_inlines` from inside a postprocessor. It does not —
+that call is in `match_colon_directive`, an inline match handler that runs
+*during* `process_inlines`. It is a nested projection call inside the
+projection, not a second phase, and it re-runs whenever the projection does.
+
+The whole engine has **two** postprocessors — `extensions/autolink.c:667` and
+`extensions/formula.c:720` — and the only parser state either writes is
+`parser->oom`, the sticky allocation-failure flag. Neither writes tree state
+back into the parser.
+
+So they are projection steps: they run after `process_inlines` on a tree that,
+under §12.5's ruling, is a **fresh derivation every time**. They need not be
+idempotent, only deterministic given the same input tree, and their gate is the
+same as the projection's — two derivations of one CST at one refmap generation
+are byte-identical.
+
+What is left open is narrower and is a gate rather than a design question:
+**prove those two are deterministic on a fresh AST**, and prove nothing else in
+`parser_finish` writes CST state after the projection begins.
