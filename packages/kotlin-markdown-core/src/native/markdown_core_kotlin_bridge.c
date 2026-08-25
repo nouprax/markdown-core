@@ -350,8 +350,13 @@ static void apply_options(markdown_core_parse_options *options, uint32_t mask) {
     options->directives = (mask & (1u << 8)) != 0;
 }
 
-bool markdown_core_kotlin_parse(const uint8_t *source, size_t length, uint32_t options_mask, uint8_t **output,
-                                size_t *output_length) {
+bool markdown_core_kotlin_parse(
+    const uint8_t *source,
+    size_t length,
+    uint32_t options_mask,
+    uint8_t **output,
+    size_t *output_length
+) {
     /* MKC5: an error lost its scope byte when Step 13 deleted
      * `markdown_core_error_get_scope` -- a parse failure carries no scope. */
     static const uint8_t magic[] = {'M', 'K', 'C', '5'};

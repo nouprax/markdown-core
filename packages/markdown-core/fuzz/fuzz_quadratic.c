@@ -47,8 +47,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                     memcpy(&markdown[markdown_size], &markdown0[fuzz_config.splitpoint], fuzz_config.repeatlen);
                     markdown_size += fuzz_config.repeatlen;
                 }
-                memcpy(&markdown[markdown_size], &markdown0[fuzz_config.splitpoint + fuzz_config.repeatlen],
-                       size_after_splitpoint);
+                memcpy(
+                    &markdown[markdown_size],
+                    &markdown0[fuzz_config.splitpoint + fuzz_config.repeatlen],
+                    size_after_splitpoint
+                );
                 markdown_size += size_after_splitpoint;
             } else {
                 markdown_size = markdown_size0;

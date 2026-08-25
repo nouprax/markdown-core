@@ -79,9 +79,12 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
     options->directives = true;
 }
 
-markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
-                                                     const markdown_core_parse_options *requested_options,
-                                                     markdown_core_error **error) {
+markdown_core_document *markdown_core_document_parse(
+    const uint8_t *source,
+    size_t length,
+    const markdown_core_parse_options *requested_options,
+    markdown_core_error **error
+) {
     markdown_core_parse_options defaults;
     const markdown_core_parse_options *options = requested_options;
     markdown_core_document *document;
@@ -220,8 +223,11 @@ size_t markdown_core_document_diagnostic_count(const markdown_core_document *doc
     return document ? (size_t)document->diagnostics.entries_size : 0;
 }
 
-bool markdown_core_document_diagnostic_at(const markdown_core_document *document, size_t index,
-                                          markdown_core_diagnostic *diagnostic) {
+bool markdown_core_document_diagnostic_at(
+    const markdown_core_document *document,
+    size_t index,
+    markdown_core_diagnostic *diagnostic
+) {
     const markdown_core_diagnostic_record *entry;
     if (!document || !diagnostic || index >= (size_t)document->diagnostics.entries_size) {
         return false;
@@ -361,39 +367,41 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
 }
 
 const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
-    static const char *const names[] = {"None",
-                                        "Document",
-                                        "BlockQuote",
-                                        "Paragraph",
-                                        "Heading",
-                                        "ThematicBreak",
-                                        "List",
-                                        "ListItem",
-                                        "CodeBlock",
-                                        "HTMLBlock",
-                                        "FormulaBlock",
-                                        "Table",
-                                        "DirectiveBlock",
-                                        "FootnoteDefinition",
-                                        "Text",
-                                        "SoftBreak",
-                                        "LineBreak",
-                                        "Code",
-                                        "HTML",
-                                        "Formula",
-                                        "Emphasis",
-                                        "Strong",
-                                        "Strikethrough",
-                                        "Link",
-                                        "Image",
-                                        "Directive",
-                                        "FootnoteReference",
-                                        "TableRow",
-                                        "TableCell",
-                                        "DirectiveLabel",
-                                        "ReferenceDefinition",
-                                        "LinkReference",
-                                        "ImageReference"};
+    static const char *const names[] = {
+        "None",
+        "Document",
+        "BlockQuote",
+        "Paragraph",
+        "Heading",
+        "ThematicBreak",
+        "List",
+        "ListItem",
+        "CodeBlock",
+        "HTMLBlock",
+        "FormulaBlock",
+        "Table",
+        "DirectiveBlock",
+        "FootnoteDefinition",
+        "Text",
+        "SoftBreak",
+        "LineBreak",
+        "Code",
+        "HTML",
+        "Formula",
+        "Emphasis",
+        "Strong",
+        "Strikethrough",
+        "Link",
+        "Image",
+        "Directive",
+        "FootnoteReference",
+        "TableRow",
+        "TableCell",
+        "DirectiveLabel",
+        "ReferenceDefinition",
+        "LinkReference",
+        "ImageReference"
+    };
     if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_IMAGE_REFERENCE) {
         return "None";
     }
@@ -445,8 +453,12 @@ bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *l
     return true;
 }
 
-bool markdown_core_node_list_properties(const markdown_core_node *node, markdown_core_list_flavor *flavor,
-                                        markdown_core_optional_i64 *start, bool *tight) {
+bool markdown_core_node_list_properties(
+    const markdown_core_node *node,
+    markdown_core_list_flavor *flavor,
+    markdown_core_optional_i64 *start,
+    bool *tight
+) {
     if (!node || node->type != MARKDOWN_CORE_NODE_LIST || !flavor || !start || !tight) {
         return false;
     }
@@ -482,9 +494,14 @@ static void optional_string_from_chunk(markdown_core_optional_string *out, const
     string_from_chunk(&out->value, &chunk->value);
 }
 
-bool markdown_core_node_code_block_properties(const markdown_core_node *node, markdown_core_optional_string *info,
-                                              markdown_core_optional_string *language, markdown_core_string *literal,
-                                              bool *fenced, bool *closed) {
+bool markdown_core_node_code_block_properties(
+    const markdown_core_node *node,
+    markdown_core_optional_string *info,
+    markdown_core_optional_string *language,
+    markdown_core_string *literal,
+    bool *fenced,
+    bool *closed
+) {
     size_t start = 0;
     size_t end;
     if (!node || node->type != MARKDOWN_CORE_NODE_CODE_BLOCK || !info || !language || !literal || !fenced || !closed) {
@@ -499,7 +516,7 @@ bool markdown_core_node_code_block_properties(const markdown_core_node *node, ma
     language->value.data = NULL;
     language->value.length = 0;
     while (start < info->value.length && (info->value.data[start] == ' ' || info->value.data[start] == '\t' ||
-                                          info->value.data[start] == '\n' || info->value.data[start] == '\r')) {
+                                             info->value.data[start] == '\n' || info->value.data[start] == '\r')) {
         start++;
     }
     end = start;
@@ -533,8 +550,11 @@ bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_st
     }
 }
 
-bool markdown_core_node_formula_properties(const markdown_core_node *node, markdown_core_placement_mode *mode,
-                                           markdown_core_string *literal) {
+bool markdown_core_node_formula_properties(
+    const markdown_core_node *node,
+    markdown_core_placement_mode *mode,
+    markdown_core_string *literal
+) {
     const char *value;
     markdown_core_formula_mode native_mode;
     if (!node || !mode || !literal ||
@@ -558,8 +578,11 @@ bool markdown_core_node_table_column_count(const markdown_core_node *node, size_
     return true;
 }
 
-bool markdown_core_node_table_alignment_at(const markdown_core_node *node, size_t index,
-                                           markdown_core_table_alignment *alignment) {
+bool markdown_core_node_table_alignment_at(
+    const markdown_core_node *node,
+    size_t index,
+    markdown_core_table_alignment *alignment
+) {
     uint16_t count;
     uint8_t *alignments;
     if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !alignment) {
@@ -600,8 +623,12 @@ bool markdown_core_node_table_row_is_header(const markdown_core_node *node, bool
  * already holds, with a parser of its own to read it back; both are gone.
  * `has_attributes` distinguishes `:n` from `:n{}` -- absent from empty -- which
  * the old `null` versus `"{}"` said and a count alone cannot. */
-bool markdown_core_node_directive_properties(const markdown_core_node *node, markdown_core_string *name,
-                                             bool *has_attributes, size_t *attribute_count) {
+bool markdown_core_node_directive_properties(
+    const markdown_core_node *node,
+    markdown_core_string *name,
+    bool *has_attributes,
+    size_t *attribute_count
+) {
     const char *value;
     if (!node || !name || !has_attributes || !attribute_count ||
         (node->type != MARKDOWN_CORE_NODE_DIRECTIVE && node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
@@ -615,8 +642,12 @@ bool markdown_core_node_directive_properties(const markdown_core_node *node, mar
     return true;
 }
 
-bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, size_t index, markdown_core_string *name,
-                                               markdown_core_string *value) {
+bool markdown_core_node_directive_attribute_at(
+    const markdown_core_node *node,
+    size_t index,
+    markdown_core_string *name,
+    markdown_core_string *value
+) {
     const char *name_bytes;
     const char *value_bytes;
     size_t name_length;
@@ -624,8 +655,14 @@ bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, s
     if (!node || !name || !value) {
         return false;
     }
-    if (!markdown_core_extensions_directive_attribute_at((markdown_core_node *)node, index, &name_bytes, &name_length,
-                                                         &value_bytes, &value_length)) {
+    if (!markdown_core_extensions_directive_attribute_at(
+            (markdown_core_node *)node,
+            index,
+            &name_bytes,
+            &name_length,
+            &value_bytes,
+            &value_length
+        )) {
         return false;
     }
     name->data = (const uint8_t *)name_bytes;
@@ -635,8 +672,12 @@ bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, s
     return true;
 }
 
-static bool link_properties(const markdown_core_node *node, uint16_t expected, markdown_core_string *url,
-                            markdown_core_optional_string *title) {
+static bool link_properties(
+    const markdown_core_node *node,
+    uint16_t expected,
+    markdown_core_string *url,
+    markdown_core_optional_string *title
+) {
     if (!node || node->type != expected || !url || !title) {
         return false;
     }
@@ -645,13 +686,19 @@ static bool link_properties(const markdown_core_node *node, uint16_t expected, m
     return true;
 }
 
-bool markdown_core_node_link_properties(const markdown_core_node *node, markdown_core_string *destination,
-                                        markdown_core_optional_string *title) {
+bool markdown_core_node_link_properties(
+    const markdown_core_node *node,
+    markdown_core_string *destination,
+    markdown_core_optional_string *title
+) {
     return link_properties(node, MARKDOWN_CORE_NODE_LINK, destination, title);
 }
 
-bool markdown_core_node_image_properties(const markdown_core_node *node, markdown_core_string *source,
-                                         markdown_core_optional_string *title) {
+bool markdown_core_node_image_properties(
+    const markdown_core_node *node,
+    markdown_core_string *source,
+    markdown_core_optional_string *title
+) {
     return link_properties(node, MARKDOWN_CORE_NODE_IMAGE, source, title);
 }
 
@@ -663,8 +710,11 @@ bool markdown_core_node_image_properties(const markdown_core_node *node, markdow
  * a single load is not merely unlicensed, it is impossible: `as.association`
  * on a definition node would read a POINTER as `chunk.data`. It costs a branch
  * and buys a guarantee the union trick never had. */
-bool markdown_core_node_association(const markdown_core_node *node, markdown_core_string *label,
-                                    markdown_core_string *identifier) {
+bool markdown_core_node_association(
+    const markdown_core_node *node,
+    markdown_core_string *label,
+    markdown_core_string *identifier
+) {
     const markdown_core_association *association;
     if (!node || !label || !identifier) {
         return false;
@@ -692,8 +742,11 @@ bool markdown_core_node_association(const markdown_core_node *node, markdown_cor
     return true;
 }
 
-bool markdown_core_node_definition_resource(const markdown_core_node *node, markdown_core_string *destination,
-                                            markdown_core_optional_string *title) {
+bool markdown_core_node_definition_resource(
+    const markdown_core_node *node,
+    markdown_core_string *destination,
+    markdown_core_optional_string *title
+) {
     if (!node || node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION || !node->as.definition || !destination ||
         !title) {
         return false;
@@ -1086,8 +1139,12 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     }
 }
 
-bool markdown_core_document_dump(const markdown_core_document *document, uint8_t **output, size_t *length,
-                                 markdown_core_error **error) {
+bool markdown_core_document_dump(
+    const markdown_core_document *document,
+    uint8_t **output,
+    size_t *length,
+    markdown_core_error **error
+) {
     dump_buffer buffer = {0};
     clear_error(error);
     if (!document || !document->root || !output || !length) {

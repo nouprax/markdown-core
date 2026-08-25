@@ -279,8 +279,11 @@ struct markdown_core_parser {
  * the parser lives on. `finish` shares its body but not its clone -- the last
  * projection is taken in place on the CST (T1), because nothing can observe
  * the CST afterwards. Not part of the public surface. */
-markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parser, markdown_core_map *refmap,
-                                                     int record_diagnostics);
+markdown_core_node *markdown_core_parser_derive_tree(
+    markdown_core_parser *parser,
+    markdown_core_map *refmap,
+    int record_diagnostics
+);
 
 /* Ask `finish` to hand the normalized source and its line index over rather
  * than release them. `out` is zeroed here and filled at finish; a parse that
@@ -302,17 +305,32 @@ void markdown_core_concrete_dispose(markdown_core_concrete *concrete);
  *
  * A no-op when recording is off. An allocation it cannot make abandons the
  * parse: see the list's own comment above. */
-void markdown_core_parser_diagnose(markdown_core_parser *parser, markdown_core_diagnostic_severity severity,
-                                   markdown_core_diagnostic_code code, int start_line, int start_column, int end_line,
-                                   int end_column, const char *message, const unsigned char *subject,
-                                   bufsize_t subject_length);
+void markdown_core_parser_diagnose(
+    markdown_core_parser *parser,
+    markdown_core_diagnostic_severity severity,
+    markdown_core_diagnostic_code code,
+    int start_line,
+    int start_column,
+    int end_line,
+    int end_column,
+    const char *message,
+    const unsigned char *subject,
+    bufsize_t subject_length
+);
 
 /* The same over the LINE IN HAND, from line offset `from` to its last
  * non-space byte -- the block phase's form, where an offset IS a column. */
-void markdown_core_parser_diagnose_line(markdown_core_parser *parser, markdown_core_diagnostic_severity severity,
-                                        markdown_core_diagnostic_code code, const unsigned char *input, bufsize_t len,
-                                        bufsize_t from, const char *message, const unsigned char *subject,
-                                        bufsize_t subject_length);
+void markdown_core_parser_diagnose_line(
+    markdown_core_parser *parser,
+    markdown_core_diagnostic_severity severity,
+    markdown_core_diagnostic_code code,
+    const unsigned char *input,
+    bufsize_t len,
+    bufsize_t from,
+    const char *message,
+    const unsigned char *subject,
+    bufsize_t subject_length
+);
 
 void markdown_core_parser_retain_diagnostics(markdown_core_parser *parser, markdown_core_diagnostics *out);
 void markdown_core_diagnostics_dispose(markdown_core_diagnostics *diagnostics);

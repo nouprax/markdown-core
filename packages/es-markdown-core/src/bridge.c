@@ -42,8 +42,12 @@ static bool es_write_optional_string(markdown_core_optional_string value, uintpt
     return es_write_string(value.value, data, length);
 }
 
-markdown_core_document *es_document_parse(const uint8_t *source, size_t length, uint32_t flags,
-                                          markdown_core_error **error) {
+markdown_core_document *es_document_parse(
+    const uint8_t *source,
+    size_t length,
+    uint32_t flags,
+    markdown_core_error **error
+) {
     markdown_core_parse_options options;
     markdown_core_parse_options_init(&options);
     options.smart_punctuation = (flags & (1u << 0)) != 0;

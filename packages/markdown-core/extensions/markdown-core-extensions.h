@@ -178,8 +178,14 @@ size_t markdown_core_extensions_directive_attribute_count(markdown_core_node *no
  * and are not NUL-terminated, which is why each comes with its length.
  */
 MARKDOWN_CORE_EXPORT
-int markdown_core_extensions_directive_attribute_at(markdown_core_node *node, size_t index, const char **name,
-                                                    size_t *name_length, const char **value, size_t *value_length);
+int markdown_core_extensions_directive_attribute_at(
+    markdown_core_node *node,
+    size_t index,
+    const char **name,
+    size_t *name_length,
+    const char **value,
+    size_t *value_length
+);
 
 #ifdef __cplusplus
 }

@@ -83,8 +83,11 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
     return markdown_core_node_can_contain_type(node, (markdown_core_node_type)child->type);
 }
 
-markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
-                                                            const markdown_core_syntax_extension *extension) {
+markdown_core_node *markdown_core_node_new_with_mem_and_ext(
+    markdown_core_node_type type,
+    markdown_core_mem *mem,
+    const markdown_core_syntax_extension *extension
+) {
     markdown_core_node *node = (markdown_core_node *)mem->calloc(1, sizeof(*node));
     if (!node) {
         return NULL;
@@ -117,8 +120,10 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_t
     return node;
 }
 
-markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
-                                                    const markdown_core_syntax_extension *extension) {
+markdown_core_node *markdown_core_node_new_with_ext(
+    markdown_core_node_type type,
+    const markdown_core_syntax_extension *extension
+) {
     return markdown_core_node_new_with_mem_and_ext(type, markdown_core_get_default_mem_allocator(), extension);
 }
 
@@ -958,8 +963,14 @@ static void S_print_error(FILE *out, markdown_core_node *node, const char *elem)
     if (out == NULL) {
         return;
     }
-    fprintf(out, "Invalid '%s' in node type %s at %d:%d\n", elem, markdown_core_node_get_type_string(node),
-            node->start_line, node->start_column);
+    fprintf(
+        out,
+        "Invalid '%s' in node type %s at %d:%d\n",
+        elem,
+        markdown_core_node_get_type_string(node),
+        node->start_line,
+        node->start_column
+    );
 }
 
 int markdown_core_node_check(markdown_core_node *node, FILE *out) {

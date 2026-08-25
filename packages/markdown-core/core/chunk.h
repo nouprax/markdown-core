@@ -69,8 +69,10 @@ static MARKDOWN_CORE_INLINE void markdown_core_chunk_free(markdown_core_mem *mem
     c->len = 0;
 }
 
-static MARKDOWN_CORE_INLINE void markdown_core_optional_chunk_free(markdown_core_mem *mem,
-                                                                   markdown_core_optional_chunk *o) {
+static MARKDOWN_CORE_INLINE void markdown_core_optional_chunk_free(
+    markdown_core_mem *mem,
+    markdown_core_optional_chunk *o
+) {
     markdown_core_chunk_free(mem, &o->value);
     o->has_value = false;
 }
@@ -129,8 +131,11 @@ static MARKDOWN_CORE_INLINE const char *markdown_core_chunk_to_cstr(markdown_cor
 
 /* Returns 0 when the copy could not be allocated; the chunk then keeps its
  * previous value. */
-static MARKDOWN_CORE_INLINE int markdown_core_chunk_set_cstr(markdown_core_mem *mem, markdown_core_chunk *c,
-                                                             const char *str) {
+static MARKDOWN_CORE_INLINE int markdown_core_chunk_set_cstr(
+    markdown_core_mem *mem,
+    markdown_core_chunk *c,
+    const char *str
+) {
     unsigned char *old = c->alloc ? c->data : NULL;
     if (str == NULL) {
         c->len = 0;
@@ -159,8 +164,8 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_literal(cons
     return c;
 }
 
-static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_dup(const markdown_core_chunk *ch, bufsize_t pos,
-                                                                        bufsize_t len) {
+static MARKDOWN_CORE_INLINE markdown_core_chunk
+markdown_core_chunk_dup(const markdown_core_chunk *ch, bufsize_t pos, bufsize_t len) {
     markdown_core_chunk c = {ch->data ? ch->data + pos : NULL, len, 0};
     return c;
 }
@@ -183,8 +188,8 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_buf_detach(m
 
 /* trim_new variants are to be used when the source chunk may or may not be
  * allocated; forces a newly allocated chunk. */
-static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_ltrim_new(markdown_core_mem *mem,
-                                                                              markdown_core_chunk *c) {
+static MARKDOWN_CORE_INLINE markdown_core_chunk
+markdown_core_chunk_ltrim_new(markdown_core_mem *mem, markdown_core_chunk *c) {
     markdown_core_chunk r = markdown_core_chunk_dup(c, 0, c->len);
     markdown_core_chunk_ltrim(&r);
     if (!markdown_core_chunk_to_cstr(mem, &r)) {
@@ -196,8 +201,8 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_ltrim_new(ma
     return r;
 }
 
-static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_rtrim_new(markdown_core_mem *mem,
-                                                                              markdown_core_chunk *c) {
+static MARKDOWN_CORE_INLINE markdown_core_chunk
+markdown_core_chunk_rtrim_new(markdown_core_mem *mem, markdown_core_chunk *c) {
     markdown_core_chunk r = markdown_core_chunk_dup(c, 0, c->len);
     markdown_core_chunk_rtrim(&r);
     if (!markdown_core_chunk_to_cstr(mem, &r)) {

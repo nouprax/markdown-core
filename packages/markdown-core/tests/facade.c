@@ -41,9 +41,16 @@ static uint8_t *read_file(const char *path, size_t *length) {
 
 static int parse_option_mask(const char *mask, markdown_core_parse_options *options) {
     bool *fields[] = {
-        &options->smart_punctuation, &options->footnotes, &options->strip_html_comments, &options->tables,
-        &options->strikethrough,     &options->autolinks, &options->task_lists,          &options->formulas,
-        &options->directives};
+        &options->smart_punctuation,
+        &options->footnotes,
+        &options->strip_html_comments,
+        &options->tables,
+        &options->strikethrough,
+        &options->autolinks,
+        &options->task_lists,
+        &options->formulas,
+        &options->directives
+    };
     size_t i;
     if (strlen(mask) != sizeof(fields) / sizeof(fields[0])) {
         return 0;
@@ -190,8 +197,10 @@ static void check_source_and_lines(void) {
         return;
     }
     text = markdown_core_document_source(document);
-    check(text.length == strlen(SOURCE) && memcmp(text.data, SOURCE, text.length) == 0,
-          "the source is the normalized source, byte for byte");
+    check(
+        text.length == strlen(SOURCE) && memcmp(text.data, SOURCE, text.length) == 0,
+        "the source is the normalized source, byte for byte"
+    );
     check(markdown_core_document_line_count(document) == 11, "the line index counts the source's lines");
     for (line = 2; line <= markdown_core_document_line_count(document); line++) {
         size_t start = 0;
@@ -272,23 +281,30 @@ static void check_null_and_empty(void) {
         check(read, "the resource accessor answers");
         /* A DESTINATION IS NEVER ABSENT. There is no `has_value` to test,
          * because the type does not offer one -- that IS the assertion. */
-        check(destination.length == strlen(CASES[index].destination) &&
-                  (destination.length == 0 ||
-                   memcmp(destination.data, CASES[index].destination, destination.length) == 0),
-              "a destination is required and empty means empty");
+        check(
+            destination.length == strlen(CASES[index].destination) &&
+                (destination.length == 0 ||
+                    memcmp(destination.data, CASES[index].destination, destination.length) == 0),
+            "a destination is required and empty means empty"
+        );
         check(title.has_value == CASES[index].title_written, "presence is what the source wrote, not what it wrote in");
         if (title.has_value) {
             check(
                 title.value.length == strlen(CASES[index].title) &&
                     (title.value.length == 0 || memcmp(title.value.data, CASES[index].title, title.value.length) == 0),
-                "a written title keeps its bytes, including none of them");
+                "a written title keeps its bytes, including none of them"
+            );
         }
         markdown_core_document_free(document);
     }
 
     for (index = 0; index < sizeof(INFO_CASES) / sizeof(INFO_CASES[0]); ++index) {
-        markdown_core_document *document = markdown_core_document_parse((const uint8_t *)INFO_CASES[index].source,
-                                                                        strlen(INFO_CASES[index].source), NULL, NULL);
+        markdown_core_document *document = markdown_core_document_parse(
+            (const uint8_t *)INFO_CASES[index].source,
+            strlen(INFO_CASES[index].source),
+            NULL,
+            NULL
+        );
         const markdown_core_node *node;
         markdown_core_optional_string info = {false, {NULL, 0}};
         markdown_core_optional_string language = {false, {NULL, 0}};
@@ -300,15 +316,21 @@ static void check_null_and_empty(void) {
             continue;
         }
         node = markdown_core_node_get_first_child(markdown_core_document_semantic(document));
-        check(markdown_core_node_code_block_properties(node, &info, &language, &literal, &fenced, &closed),
-              "the code-block accessor answers");
-        check(info.has_value == INFO_CASES[index].info_written,
-              "a fence with only whitespace after it wrote no info string");
+        check(
+            markdown_core_node_code_block_properties(node, &info, &language, &literal, &fenced, &closed),
+            "the code-block accessor answers"
+        );
+        check(
+            info.has_value == INFO_CASES[index].info_written,
+            "a fence with only whitespace after it wrote no info string"
+        );
         check(language.has_value == info.has_value, "language is present exactly when the info string is");
         if (info.has_value) {
-            check(info.value.length == strlen(INFO_CASES[index].info) &&
-                      memcmp(info.value.data, INFO_CASES[index].info, info.value.length) == 0,
-                  "a written info string keeps its bytes");
+            check(
+                info.value.length == strlen(INFO_CASES[index].info) &&
+                    memcmp(info.value.data, INFO_CASES[index].info, info.value.length) == 0,
+                "a written info string keeps its bytes"
+            );
         }
         markdown_core_document_free(document);
     }
@@ -326,10 +348,11 @@ static void check_api(void) {
 
     memset(&options, 0, sizeof(options));
     markdown_core_parse_options_init(&options);
-    check(options.smart_punctuation && options.footnotes && options.strip_html_comments && options.tables &&
-              options.strikethrough && options.autolinks && options.task_lists && options.formulas &&
-              options.directives,
-          "parse option defaults are explicit and complete");
+    check(
+        options.smart_punctuation && options.footnotes && options.strip_html_comments && options.tables &&
+            options.strikethrough && options.autolinks && options.task_lists && options.formulas && options.directives,
+        "parse option defaults are explicit and complete"
+    );
 
     document = markdown_core_document_parse(source, sizeof(source) - 1, &options, &error);
     check(document != NULL && error == NULL, "typed-options parse succeeds");
@@ -337,10 +360,14 @@ static void check_api(void) {
         root = markdown_core_document_semantic(document);
         heading = markdown_core_node_get_first_child(root);
         check(markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT, "document root kind is typed");
-        check(markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING,
-              "first child traversal is read-only and typed");
-        check(markdown_core_node_heading_level(heading, &level) && level == 1,
-              "heading accessor returns its behavior-bearing field");
+        check(
+            markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING,
+            "first child traversal is read-only and typed"
+        );
+        check(
+            markdown_core_node_heading_level(heading, &level) && level == 1,
+            "heading accessor returns its behavior-bearing field"
+        );
         scope = markdown_core_node_scope(heading);
         check(scope.start.line == 1 && scope.start.column == 1, "scope copies native coordinates");
         markdown_core_document_free(document);
@@ -401,8 +428,10 @@ static void check_diagnostics(void) {
     }
 
     count = markdown_core_document_diagnostic_count(document);
-    check(count == 2,
-          "every degradation in the corpus is reported exactly once, and an unresolved reference is not one");
+    check(
+        count == 2,
+        "every degradation in the corpus is reported exactly once, and an unresolved reference is not one"
+    );
 
     for (i = 0; i < count; i++) {
         check(markdown_core_document_diagnostic_at(document, i, &diagnostic), "every index in range answers");
@@ -411,10 +440,14 @@ static void check_diagnostics(void) {
          * back into an offset in the source the concrete view publishes. */
         {
             size_t offset = 0;
-            check(markdown_core_document_line_start(document, (size_t)diagnostic.scope.start.line, &offset),
-                  "a diagnostic's line is a line of the source");
-            check(offset + (size_t)diagnostic.scope.start.column - 1 < markdown_core_document_source(document).length,
-                  "a diagnostic's start is a byte of the source");
+            check(
+                markdown_core_document_line_start(document, (size_t)diagnostic.scope.start.line, &offset),
+                "a diagnostic's line is a line of the source"
+            );
+            check(
+                offset + (size_t)diagnostic.scope.start.column - 1 < markdown_core_document_source(document).length,
+                "a diagnostic's start is a byte of the source"
+            );
         }
         check(diagnostic.message.length > 0 && diagnostic.message.data != NULL, "a diagnostic carries a message");
         check(markdown_core_diagnostic_code_name(diagnostic.code) != NULL, "every code has a name");
@@ -423,8 +456,10 @@ static void check_diagnostics(void) {
             severities[diagnostic.severity]++;
         }
     }
-    check(severities[MARKDOWN_CORE_DIAGNOSTIC_WARNING] == 2 && severities[MARKDOWN_CORE_DIAGNOSTIC_ERROR] == 0,
-          "the corpus's degradations are warnings; the error severity is the cap's, below");
+    check(
+        severities[MARKDOWN_CORE_DIAGNOSTIC_WARNING] == 2 && severities[MARKDOWN_CORE_DIAGNOSTIC_ERROR] == 0,
+        "the corpus's degradations are warnings; the error severity is the cap's, below"
+    );
     check(!markdown_core_document_diagnostic_at(document, count, &diagnostic), "an index past the end is refused");
     check(!markdown_core_document_diagnostic_at(document, 0, NULL), "a null out-parameter is refused");
     markdown_core_document_free(document);
@@ -443,11 +478,13 @@ static void check_diagnostics(void) {
             capped = markdown_core_document_parse((const uint8_t *)source, 1114, NULL, NULL);
             check(capped != NULL, "an over-long label still parses");
             if (capped) {
-                check(markdown_core_document_diagnostic_count(capped) == 1 &&
-                          markdown_core_document_diagnostic_at(capped, 0, &diagnostic) &&
-                          diagnostic.code == MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG &&
-                          diagnostic.severity == MARKDOWN_CORE_DIAGNOSTIC_ERROR,
-                      "a label the engine refused as too long says so, as the one remaining ERROR");
+                check(
+                    markdown_core_document_diagnostic_count(capped) == 1 &&
+                        markdown_core_document_diagnostic_at(capped, 0, &diagnostic) &&
+                        diagnostic.code == MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG &&
+                        diagnostic.severity == MARKDOWN_CORE_DIAGNOSTIC_ERROR,
+                    "a label the engine refused as too long says so, as the one remaining ERROR"
+                );
                 markdown_core_document_free(capped);
             }
             free(source);
@@ -466,13 +503,17 @@ static void check_diagnostics(void) {
         markdown_core_error *refusal = NULL;
         markdown_core_document *none = markdown_core_document_parse(NULL, 8, NULL, &refusal);
         check(none == NULL && refusal != NULL, "an invalid argument produces an error and no document");
-        check(markdown_core_error_get_code(refusal) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-              "and the error says which failure it was");
+        check(
+            markdown_core_error_get_code(refusal) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+            "and the error says which failure it was"
+        );
         markdown_core_error_free(refusal);
     }
     check(markdown_core_document_diagnostic_count(NULL) == 0, "a null document has no diagnostics");
-    check(markdown_core_diagnostic_code_name((markdown_core_diagnostic_code)99) == NULL,
-          "a code no version defines has no name");
+    check(
+        markdown_core_diagnostic_code_name((markdown_core_diagnostic_code)99) == NULL,
+        "a code no version defines has no name"
+    );
 }
 
 int main(int argc, char **argv) {

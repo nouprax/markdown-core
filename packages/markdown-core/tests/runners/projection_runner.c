@@ -40,9 +40,11 @@ static markdown_core_parser *pr_parser_new(void) {
         return NULL;
     }
     if (!markdown_core_core_extensions_attach(
-            parser, MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
-                        MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK | MARKDOWN_CORE_CORE_EXTENSION_TASKLIST |
-                        MARKDOWN_CORE_CORE_EXTENSION_FORMULA | MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE)) {
+            parser,
+            MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
+                MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK | MARKDOWN_CORE_CORE_EXTENSION_TASKLIST |
+                MARKDOWN_CORE_CORE_EXTENSION_FORMULA | MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE
+        )) {
         markdown_core_parser_free(parser);
         return NULL;
     }
@@ -75,8 +77,14 @@ static int pr_count_open_blocks(markdown_core_node *root, int example, size_t *n
         }
         (*nodes_seen)++;
         if (node->flags & MARKDOWN_CORE_NODE__OPEN) {
-            fprintf(stderr, "example %d: %s at %d:%d is still open after finish\n", example,
-                    markdown_core_node_get_type_string(node), node->start_line, node->start_column);
+            fprintf(
+                stderr,
+                "example %d: %s at %d:%d is still open after finish\n",
+                example,
+                markdown_core_node_get_type_string(node),
+                node->start_line,
+                node->start_column
+            );
             open_nodes++;
         }
     }
@@ -103,8 +111,12 @@ static int case_closed_after_finish(const ts_spec_file *file) {
         }
         markdown_core_node_free(root);
     }
-    printf("closed after finish: %zu/%zu examples clean, %zu nodes\n", file->count - (size_t)failures, file->count,
-           nodes_seen);
+    printf(
+        "closed after finish: %zu/%zu examples clean, %zu nodes\n",
+        file->count - (size_t)failures,
+        file->count,
+        nodes_seen
+    );
     return failures ? -1 : 0;
 }
 
@@ -136,9 +148,21 @@ static int pr_fingerprint(markdown_core_node *root, markdown_core_strbuf *out) {
             continue;
         }
         char header[160];
-        snprintf(header, sizeof(header), "%u|%u|%d:%d..%d:%d|%d|%d+%d|%u:", (unsigned)node->type, (unsigned)node->flags,
-                 node->start_line, node->start_column, node->end_line, node->end_column, node->internal_offset,
-                 node->content_mark, node->content_mark_count, (unsigned)node->content.size);
+        snprintf(
+            header,
+            sizeof(header),
+            "%u|%u|%d:%d..%d:%d|%d|%d+%d|%u:",
+            (unsigned)node->type,
+            (unsigned)node->flags,
+            node->start_line,
+            node->start_column,
+            node->end_line,
+            node->end_column,
+            node->internal_offset,
+            node->content_mark,
+            node->content_mark_count,
+            (unsigned)node->content.size
+        );
         markdown_core_strbuf_puts(out, header);
         if (node->content.size) {
             markdown_core_strbuf_put(out, node->content.ptr, node->content.size);
@@ -185,8 +209,14 @@ static int case_double_projection(const ts_spec_file *file) {
             failures++;
         } else if (first_length != second_length || memcmp(first_dump, second_dump, first_length) != 0) {
             fprintf(stderr, "example %d: two projections of one CST differ\n", test_case->example);
-            fprintf(stderr, "  first:\n%.*s  second:\n%.*s", (int)first_length, (const char *)first_dump,
-                    (int)second_length, (const char *)second_dump);
+            fprintf(
+                stderr,
+                "  first:\n%.*s  second:\n%.*s",
+                (int)first_length,
+                (const char *)first_dump,
+                (int)second_length,
+                (const char *)second_dump
+            );
             failures++;
         }
         markdown_core_dump_free(first_dump);
@@ -259,8 +289,11 @@ static int case_refmap_independence(const ts_spec_file *file) {
             fprintf(stderr, "example %d: a derivation WROTE the CST\n", test_case->example);
             failures++;
         } else if (first_length != again_length || memcmp(first_dump, again_dump, first_length) != 0) {
-            fprintf(stderr, "example %d: projecting against another map poisoned the next projection\n",
-                    test_case->example);
+            fprintf(
+                stderr,
+                "example %d: projecting against another map poisoned the next projection\n",
+                test_case->example
+            );
             failures++;
         }
         markdown_core_dump_free(first_dump);
@@ -393,10 +426,18 @@ static int case_projection_slope(const ts_spec_file *file) {
         double time_growth = timings[1] / timings[0];
         double normalized_slowdown = time_growth / input_growth;
         int failed = normalized_slowdown > PR_MAX_NORMALIZED_SLOWDOWN;
-        printf("projection slope: %zu bytes: %.6fs (%.3f ns/byte), %zu bytes: %.6fs (%.3f ns/byte), normalized "
-               "slowdown %.3fx%s\n",
-               lengths[0], timings[0], timings[0] * 1e9 / (double)lengths[0], lengths[1], timings[1],
-               timings[1] * 1e9 / (double)lengths[1], normalized_slowdown, failed ? " [NON-FLAT]" : "");
+        printf(
+            "projection slope: %zu bytes: %.6fs (%.3f ns/byte), %zu bytes: %.6fs (%.3f ns/byte), normalized "
+            "slowdown %.3fx%s\n",
+            lengths[0],
+            timings[0],
+            timings[0] * 1e9 / (double)lengths[0],
+            lengths[1],
+            timings[1],
+            timings[1] * 1e9 / (double)lengths[1],
+            normalized_slowdown,
+            failed ? " [NON-FLAT]" : ""
+        );
         return failed ? -1 : 0;
     }
 }

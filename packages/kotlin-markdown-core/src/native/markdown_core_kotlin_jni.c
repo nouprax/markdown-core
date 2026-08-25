@@ -2,8 +2,12 @@
 
 #include <jni.h>
 
-JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_parse(JNIEnv *environment, jobject receiver,
-                                                                            jbyteArray source, jint options_mask) {
+JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_parse(
+    JNIEnv *environment,
+    jobject receiver,
+    jbyteArray source,
+    jint options_mask
+) {
     jbyte *source_bytes;
     jsize source_length;
     uint8_t *output = NULL;
@@ -16,8 +20,13 @@ JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_parse(JNIE
     if (source_bytes == NULL) {
         return NULL;
     }
-    if (!markdown_core_kotlin_parse((const uint8_t *)source_bytes, (size_t)source_length, (uint32_t)options_mask,
-                                    &output, &output_length)) {
+    if (!markdown_core_kotlin_parse(
+            (const uint8_t *)source_bytes,
+            (size_t)source_length,
+            (uint32_t)options_mask,
+            &output,
+            &output_length
+        )) {
         (*environment)->ReleaseByteArrayElements(environment, source, source_bytes, JNI_ABORT);
         jclass error_class = (*environment)->FindClass(environment, "java/lang/OutOfMemoryError");
         if (error_class != NULL) {

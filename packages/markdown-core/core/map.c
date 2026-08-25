@@ -20,8 +20,13 @@ static uint64_t hash_key(const unsigned char *key, bufsize_t key_len) {
     return hash ? hash : 1;
 }
 
-static markdown_core_key_index_slot *find_key_slot(markdown_core_key_index_slot *slots, size_t capacity, uint64_t hash,
-                                                   const unsigned char *key, bufsize_t key_len) {
+static markdown_core_key_index_slot *find_key_slot(
+    markdown_core_key_index_slot *slots,
+    size_t capacity,
+    uint64_t hash,
+    const unsigned char *key,
+    bufsize_t key_len
+) {
     size_t position = (size_t)hash & (capacity - 1);
     size_t probe;
     for (probe = 0; probe < KEY_INDEX_MAX_PROBES; probe++) {
@@ -100,8 +105,14 @@ void markdown_core_key_index_free(markdown_core_key_index *index) {
     memset(index, 0, sizeof(*index));
 }
 
-int markdown_core_key_index_insert(markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len,
-                                   void *value, int replace, void **existing) {
+int markdown_core_key_index_insert(
+    markdown_core_key_index *index,
+    const unsigned char *key,
+    bufsize_t key_len,
+    void *value,
+    int replace,
+    void **existing
+) {
     uint64_t hash = hash_key(key, key_len);
     markdown_core_key_index_slot *slot;
     if (existing) {
@@ -147,8 +158,11 @@ int markdown_core_key_index_insert(markdown_core_key_index *index, const unsigne
     return 1;
 }
 
-void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key,
-                                     bufsize_t key_len) {
+void *markdown_core_key_index_lookup(
+    const markdown_core_key_index *index,
+    const unsigned char *key,
+    bufsize_t key_len
+) {
     uint64_t hash = hash_key(key, key_len);
     size_t position = (size_t)hash & (index->capacity - 1);
     size_t probe;
@@ -290,8 +304,14 @@ static int index_map(markdown_core_map *map) {
     /* Entries are linked newest-first. Replacing while traversing therefore
      * leaves the oldest (first source) definition in each slot. */
     for (ref = map->refs; ref; ref = ref->next) {
-        if (!markdown_core_key_index_insert(&map->index, ref->label, (bufsize_t)strlen((char *)ref->label), ref, 1,
-                                            NULL)) {
+        if (!markdown_core_key_index_insert(
+                &map->index,
+                ref->label,
+                (bufsize_t)strlen((char *)ref->label),
+                ref,
+                1,
+                NULL
+            )) {
             markdown_core_key_index_free(&map->index);
             return 0;
         }
@@ -334,11 +354,11 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
     }
 
     if (map->indexed) {
-        r = (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, norm,
-                                                                      (bufsize_t)strlen((char *)norm));
+        r = (markdown_core_map_entry *)
+            markdown_core_key_index_lookup(&map->index, norm, (bufsize_t)strlen((char *)norm));
     } else {
-        ref = (markdown_core_map_entry **)bsearch(norm, map->sorted, map->sorted_size,
-                                                  sizeof(markdown_core_map_entry *), refsearch);
+        ref = (markdown_core_map_entry **)
+            bsearch(norm, map->sorted, map->sorted_size, sizeof(markdown_core_map_entry *), refsearch);
     }
     map->mem->free(norm);
 

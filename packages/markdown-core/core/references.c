@@ -4,8 +4,12 @@
 #include "inlines.h"
 #include "chunk.h"
 
-int markdown_core_association_init(markdown_core_mem *mem, markdown_core_association *out,
-                                   const markdown_core_chunk *label, unsigned char prefix) {
+int markdown_core_association_init(
+    markdown_core_mem *mem,
+    markdown_core_association *out,
+    const markdown_core_chunk *label,
+    unsigned char prefix
+) {
     markdown_core_chunk raw = *label;
     unsigned char *key;
     bufsize_t length;

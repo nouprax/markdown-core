@@ -62,8 +62,14 @@ typedef struct markdown_core_map markdown_core_map;
 unsigned char *normalize_map_label(markdown_core_mem *mem, markdown_core_chunk *ref, int *lost);
 int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_mem *mem, size_t expected_size);
 void markdown_core_key_index_free(markdown_core_key_index *index);
-int markdown_core_key_index_insert(markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len,
-                                   void *value, int replace, void **existing);
+int markdown_core_key_index_insert(
+    markdown_core_key_index *index,
+    const unsigned char *key,
+    bufsize_t key_len,
+    void *value,
+    int replace,
+    void **existing
+);
 void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len);
 markdown_core_map *markdown_core_map_new(markdown_core_mem *mem, markdown_core_map_free_f free);
 void markdown_core_map_free(markdown_core_map *map);
