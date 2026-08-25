@@ -90,14 +90,21 @@ argument. Nothing here is checked.
       producing a stated AST. H4 says it is not idempotent today; that is the
       work, and its gate is that two projections of the same CST at the same
       refmap generation are byte-identical.
-- [ ] **Split the diagnostic list by layer** (§12.8 Q4). The CST owns the list
-      and it is append-only, **under one rule: a CST diagnostic is emitted when
-      its construct COMPLETES, not while it is open** — which is what stops
-      `extensions/directive.c:1034` amending `unclosed` into `unrecognised`
-      between a prefix and a full parse. The exception is
-      `REFERENCE_UNDEFINED`, which is not a function of the block's own bytes:
-      it moves into the projection and is regenerated per snapshot
-      (`inlines.c:1544`). Audit every code for which half it belongs to.
+- [ ] **Delete `reference-undefined` and `footnote-undefined`** (§12.9, owner
+      ruling). They are the only two of eight codes that report a WELL-FORMED
+      construct, and CommonMark defines what a reference that resolves to
+      nothing becomes: text. Nothing failed, so there is no error. Deleting them
+      makes the diagnostic list **wholly CST-owned with no exception**, and
+      leaves the retracted-diagnostic problem with no instance. Surface is
+      `specs/diagnostics/census.json` (9 rows) and two public enum values.
+      `label-too-long` stays but must be **hoisted out of the failed-lookup
+      branch** at `inlines.c:1544`, which is the path being deleted.
+- [ ] **The CST owns the diagnostic list, append-only** (§12.8 Q4), **under one
+      rule: a diagnostic is emitted when its construct COMPLETES, not while it
+      is open** — which is what stops `extensions/directive.c:1034` amending
+      `unclosed` into `unrecognised` between a prefix and a full parse. With
+      §12.9 done there is no projection-level diagnostic at all. Audit every
+      remaining code against the rule.
 - [ ] **No label→sites index** (§12.8 Q2, owner ruling). The bound is
       `O(what you project)`. The generation stamp stays — one integer compare,
       and it is what makes a cache safe — but what it invalidates is
@@ -11417,3 +11424,80 @@ is rebuilt.** The retractability measured in §12.7 Q4 — `strbuf_drop`/`_trunc
 `message_start` monotone, a 0.329 ms compacting sweep over 64,000 records — is
 therefore machinery neither half needs, and the finding stands only as evidence
 that "append-only by construction" was never the constraint.
+
+### 12.9 `reference-undefined` and `footnote-undefined` are not markdown errors
+
+**Owner ruling, 2026-08-24:** *"REFERENCE_UNDEFINED 根本不该出现 — 因为
+REFERENCE_UNDEFINED 根本不是 markdown 错误。"* Taken, and the evidence is that the
+engine already draws the line and then steps over it.
+
+**Eight diagnostic codes, and six of them report the same kind of thing:**
+
+| code | what it reports | decidable from |
+|---|---|---|
+| 1 `directive-label-rejected` | malformed label | the construct's own bytes |
+| 2 `directive-attributes-rejected` | malformed attribute list | the construct's own bytes |
+| 3 `directive-rejected` | malformed directive | the construct's own bytes |
+| 4 `directive-unclosed` | unterminated construct | the construct's own bytes |
+| 5 `table-rejected` | malformed table | the construct's own bytes |
+| 8 `label-too-long` | label past the engine's cap | the construct's own bytes |
+| **6 `reference-undefined`** | **a well-formed reference that resolves to nothing** | **the whole document** |
+| **7 `footnote-undefined`** | **a well-formed footnote call that resolves to nothing** | **the whole document** |
+
+Six of the eight report that a construct is **MALFORMED**. Two report that a
+construct is **PERFECTLY WELL FORMED and refers to nothing** — and CommonMark
+defines what happens then: it is text. Nothing failed. There is no error to
+report, because the language specifies the outcome.
+
+**The engine's own header already concedes the point.** The doc comment on code
+6 reads: *"The shortcut form `[label]` is deliberately never reported: it is
+indistinguishable from ordinary bracketed prose."* That is the engine admitting
+the signal is a **guess about authorial intent**, and then keeping the guess for
+the two-bracket forms on the theory that a second bracket pair is evidence. It
+is evidence. It is not a parse error, and a parser's diagnostic list is the
+wrong place for it. `see [figure 1][2] below` in a document with no reference
+links at all is prose, and the engine calls it an ERROR.
+
+#### What deleting them buys, and it is not small
+
+1. **§12.8's Q4 exception disappears.** The diagnostic list becomes **wholly
+   CST-owned**, with no projection-level diagnostics at all. Q4's answer stops
+   being "the CST owns it, except for these two" and becomes just "the CST owns
+   it".
+2. **The retracted-diagnostic problem has no instance left.** It drove three
+   rounds of this design — a mid-stream snapshot reporting an error about a
+   label the finished document defines twelve lines later. With codes 6 and 7
+   gone there is nothing that can be raised early and be wrong later, because
+   every remaining code is decidable from bytes that are already fed.
+3. **§12.4's "move `REFERENCE_UNDEFINED` into the projection" leaves Stage 1**,
+   and with it the only reason the projection would have needed to write
+   diagnostics at all.
+4. **The ~5:1 spurious-to-real ratio measured in §12.7 stops mattering**,
+   because the numerator and the denominator both go.
+
+#### What it costs
+
+**The whole surface is `specs/diagnostics/census.json`** — 5 rows for
+`reference-undefined`, 4 for `footnote-undefined`. Two values in the public
+`markdown_core_diagnostic_code` enum (`include/markdown_core.h:228,230`). No
+binding names either code.
+
+**And one thing is genuinely lost:** a typo'd link reference is a real authoring
+bug and nothing will report it any more. That is a linter's job rather than a
+parser's, and the engine's own refusal to report the shortcut form already
+concedes it cannot do that job reliably — but it is a loss, not a free deletion.
+
+#### What stays, and one thing to move
+
+**`label-too-long` stays.** `raw_label.len > MAX_LINK_LABEL_LENGTH` is a pure
+byte fact needing no map, and the construct really is beyond what the engine will
+accept. **But it must be hoisted**: it is raised today inside the failed-lookup
+branch at `core/inlines.c:1544`, which is exactly the code path being deleted.
+It becomes a length check that does not depend on a lookup having happened —
+which it can be, because `markdown_core_map_lookup` rejects an over-long label
+before it consults anything (`core/map.c`, the `label->len` guard).
+
+**Open, and small: renumber or leave holes.** Codes 6 and 7 sit in the middle of
+a numbered public enum. `VERSION` is 3.0.0 and is the reconstruction, so
+renumbering 8 → 6 is available; leaving 6 and 7 as reserved holes costs nothing
+and never breaks anyone. Not decided here.
