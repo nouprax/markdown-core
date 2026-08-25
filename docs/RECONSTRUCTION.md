@@ -10672,3 +10672,56 @@ Recorded because both looked reasonable and both cost work:
 and its 1.00% remain in the tree as what they are: a measurement of how much a
 mid-stream snapshot churns, which bears on the snapshot feature and not on
 criterion 1.
+
+---
+
+### 11.10 SPIKE: the path is viable, the tree is already live, and one gap blocks it
+
+Not a measurement this time — an attempt. **Can a snapshot just be
+`parser->root`, read where it lies?** Feed a document, read the live root with
+nothing finalized, dump it, and compare with the finished tree.
+
+```
+--- LIVE parser->root, nothing finalized ---
+Document scope=1:1..1:0 children=2
+├── Paragraph scope=1:1..1:18 children=0
+└── Paragraph scope=3:1..3:0  children=0
+
+--- after finish ---
+Document scope=1:1..3:23 children=2
+├── Paragraph scope=1:1..1:18 children=3
+│   ├── Text literal="Hello " │ Emphasis → Text "world" │ Text " here"
+└── Paragraph scope=3:1..3:23 children=2
+    ├── Text literal="second para with " │ Code literal="code"
+```
+
+#### Viable, and cheaply
+
+- **The block tree is already there and already right.** Both paragraphs exist,
+  in order, with correct start positions. The block phase is genuinely
+  incremental; nothing has to be rebuilt to read it.
+- **Reading it is non-destructive.** The spike fed another line *after* peeking
+  and the parse continued normally. A snapshot needs no copy, no shadow tree and
+  no retraction — which is precisely what the previous program built and died
+  of (§1).
+- **So "the state after N lines IS the snapshot" is not aspirational.** It is
+  one accessor away, for the block structure.
+
+#### One gap blocks it, and it is H4
+
+**Every block reads `children=0`.** Inline content does not exist until
+`finish`, because `finalize_document` is what runs `process_inlines`. A snapshot
+today would hand a consumer a correct skeleton with no text in it — which is
+useless for the streaming case that motivates the stage.
+
+That is the whole of the blocking work, and it is what §0's box says: resolve a
+line's inlines when the line completes.
+
+#### And a second, smaller gap the spike exposed
+
+**An open block has no scope end.** The live dump shows
+`Document scope=1:1..1:0` and `Paragraph scope=3:1..3:0` — the end position is
+written when a block closes, so mid-parse it reads as column 0. A closed block
+is right (`1:1..1:18`). Every binding projects `scope`, so what an OPEN block
+reports for its end is a public semantic decision and not an implementation
+detail.
