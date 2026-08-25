@@ -34,81 +34,58 @@ transcribe infrastructure facts from and never a source of engine design.
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
 | Stage 0 | **CLOSED AND MERGED.** Every step in §4.1's list landed; §4.8 is the acceptance checklist and every box is ticked. 11a, 11b and 11c were RETIRED rather than built (§4.14.11d) — `node.scope` already answered the requirement, and −1,803 lines of C went with them. Per-step records are §4.14; the CI reconciliation that followed is §4.14.15H–L |
-| Stage 1 | **NOT STARTED.** The task list below is the order, and **the order is itself a finding**: two of the seven items are placed where they are because doing them later would invalidate the work before them — the headline probes decide whether the stage is scoped right at all, and re-resolution has to exist before H4 or H4 produces a wrong tree |
+| Stage 1 | **RESHAPED, NOT STARTED.** Stage 1 is now **the CST/AST split** (§12, owner ruling of 2026-08-24) and every stage below it moved down one. The split is not a reordering: it *deletes* four items from what used to be Stage 1, so building them first would have been building machinery for a problem the split removes |
+| Stage 2 | **NOT STARTED** — the pausable parser, which is what Stage 1 used to be. Its inventory is §11 and its measurements stand; §12.3 says which of its conclusions the split deletes |
 
 ### Stage 1, in order
 
-Nothing here is checked. Each line says what it is; the section says why.
+**Separate the CST from the AST.** §12 is the section; the ordering below is the
+argument. Nothing here is checked.
 
-- [x] **Line-boundary equivalence re-measured at HEAD — 745/745, and 745/745
-      byte-at-a-time too** (§11.9). Criterion 1 already passes; the goldens are
-      already the gate. Still owed from this box: the per-line feed decile
-      series and the `finish` cost curve.
-      §11's banner. **First because they are the entire justification for**
-      *"Stage 1's problem is not making the parser resumable"*, and they were
-      taken at `b71c8a9`, before thirteen steps rewrote `blocks.c` and
-      `inlines.c`. If either moved, the stage is scoped wrong from its first line.
-- [ ] **Re-measure every §11.4 hazard at HEAD**; record stands / gone / changed
-      shape. **H2 is already closed by the very step it names as its own fix**
-      (Step 9b — D9 and D30 closed at 9b.2). H3 and H6 name the same subsystem
-      and probably moved with it; H1 and H8 were the target of no Stage 0 step.
-- [ ] **Build the per-line slope gate** — a fitted slope indistinguishable from
-      zero passes, any positive slope in *i* fails and names the state being
-      re-derived. §11.5's three costs that scale with something other than the
-      current line are separate series with stated spike bounds. **Before any
-      refactor**: criterion 1 is the one that looks fine while criterion 2 is
-      being failed, and a slope measured after a refactor cannot say whether the
-      refactor caused the shape or inherited it (§3's gate section).
-- [ ] **Reference re-resolution** — the back-index from a label to the sites
-      waiting on it, which `markdown_core_reference_create` has not got.
-      **A PREREQUISITE OF THE NEXT ITEM, not a follow-up** (§11.5's correction):
-      `core/inlines.c:1524` creates a reference only where the refmap lookup
-      succeeds, so closing a block early parses `[foo]` before `[foo]: /url` is
-      fed and the LinkReference never appears — criterion 1, not cost.
-- [ ] **TWO LAYERS: parser state is owned and private; a SNAPSHOT IS DERIVED
-      from it.** Owner ruling, §11.10a. The parser's buffers may move freely
-      because nothing outside points into them — so `chunk_dup`'s aliasing is
-      sound where it lives, and there is no borrow to fix. What must be bounded
-      instead is the DERIVATION: computing the whole document per snapshot is
-      clone-and-finish at O(document). It is O(line) because **a closed block
-      never changes** (§11.9: 1.00% of appends, all late resolution), so its
-      derived form is computed once at close and reused; only the open spine is
-      recomputed.
-- [ ] **A RESUMABLE INLINE SUBJECT** — parse each line's inlines once and carry
-      the delimiter residue across the line boundary, so a line costs O(line).
-      Owner ruling, §11.8. The `subject` struct already holds what a resume
-      needs — `pos`, `last_delim`, `last_bracket` — so this is a LIFETIME
-      change, not a new state machine, and §11.5 says exactly one subject is
-      ever live across a boundary. Re-parsing the open block's accumulated content on
-      every line is the cheap shape and is O(block²) per block, which fails
-      criterion 2 on the streaming case the stage exists for. **This is the
-      largest item and it carries §11.5's seven hazards** — H5 and the three
-      end-of-buffer memos at `core/inlines.c:387,1034,1046,1056,1067`, which
-      become false negatives on resume and are ways to be silently WRONG rather
-      than slow. Their gates must quantify over longer buffers.
-- [ ] **Resolve a line's inlines WHEN THE LINE COMPLETES, not when its block
-      closes.** §11.5 states this move as *"move `process_inlines` into
-      `finalize`"*, and **that is block-granular and therefore the wrong unit**:
-      it means an open paragraph carries no inline children until it ends, so a
-      consumer streaming a long block sees nothing useful for the whole
-      duration of it. The unit is the LINE, because that is what per-line
-      pausable state is for — see the requirement below. The flag bit is still
-      needed so no line is parsed twice; what changes is where the call sits.
-- [x] **Three of the six API decisions are settled** on §11.10's evidence
-      (§11.8): the inline subject is resumable, a snapshot is BORROWED with a
-      generation the feed bumps, and an open block's scope ends at the last byte
-      fed. The other three — ownership beyond the generation rule, mid-stream
-      OOM, and whether the bindings participate — remain, under two standing
-      rulings: append is atomic (Q34, §4.13) and there is no fallback on OOM
-      (§4.14.13a).
-- [ ] **The snapshot accessor itself** — `parser->root` is already readable and
-      already survives further feeding (§11.10), so this is the generation
-      counter, the handle, and the staleness error, not a tree copy.
-- [ ] **An open block's scope end, written per line** on the open spine —
-      O(depth), which §11.5 accepts.
-- [ ] **Acceptance** — criterion 1 against the EXTERNAL oracles on every
-      line-boundary partition, criterion 2 as a flat slope. Neither alone is
-      Stage 1: clone-and-finish satisfies the first and is O(l²).
+- [x] **The seam is located and the split is decided** (§12.1, §12.2).
+      `finalize_document` is already *close the spine, then project*, and
+      `process_inlines` has one call site reading exactly
+      `(node->content, refmap)`. Measured: resolution changes the emphasis
+      structure of the whole paragraph, not just the bracket — so the CST stops
+      at **block tree plus content bytes**, not at an inline tree with a
+      reference node in it.
+- [ ] **Make the reference map incrementally maintainable.** `definition_create`
+      asserts `!map->prepared` and `map_lookup` sets it (`references.c:84`,
+      `map.c:317`): a definition after the first lookup is a hard assertion
+      failure, and every mid-stream projection interleaves the two. **First,
+      because nothing else in the stage can be exercised until it is true.**
+      First-wins rides on `entry->age` and survives re-preparation (§12.4).
+- [ ] **Decide where the AST lives** — in place on the CST tree, a separate
+      tree, or copy-on-project per block. §12.5. **Owner decision, and it is
+      owed before any code**: it fixes the API, the memory bound, and how much
+      of `finish` has to become re-runnable.
+- [ ] **Settle what the extension postprocessors are** — projection steps, or
+      CST completion. `extensions/directive.c:1095` runs its own
+      `parse_inlines` from inside one, so the answer is not uniform by
+      inspection. **Before the projection is made re-runnable**, because it
+      decides what "re-runnable" has to cover.
+- [ ] **Make `process_inlines` callable more than once**, from a stated CST,
+      producing a stated AST. H4 says it is not idempotent today; that is the
+      work, and its gate is that two projections of the same CST at the same
+      refmap generation are byte-identical.
+- [ ] **Move the resolution diagnostics into the projection.**
+      `REFERENCE_UNDEFINED` is raised inside inline parsing and appended to
+      `parser->diagnostics` (`inlines.c:1544`) — a semantic fact written into
+      parser-owned state. Regenerated per projection it is never retracted.
+      Audit every diagnostic code for the same fault while there.
+- [ ] **Split criterion 2 into two bounds** and gate them separately: CST
+      construction O(line) per fed line, projection O(what is projected) per
+      snapshot. The existing slope gate measures the first; the second has no
+      gate yet and is O(open block) until Stage 2's resumable subject lands.
+- [ ] **Acceptance** — `stream_runner` still green (criterion 1 is now a
+      theorem, kept as a gate), two projections of one CST byte-identical, the
+      external oracles unmoved, and the CST proved refmap-independent by
+      projecting one CST against two different maps.
+
+### Stage 2, in order — the pausable parser
+
+The list that used to be here is §11's inventory, minus what §12.3 deletes. Do
+not start it before Stage 1 closes.
 
 ### What per-line pausable state is FOR, and it is the requirement
 
@@ -1031,9 +1008,16 @@ D9 cannot, and §4.2 says what pins it in the meantime.
 
 ## 3. The roadmap
 
-Three stages, in order. **Do not begin a stage before the one above it is
-finished**, and in particular do not collapse Stage 1 into Stage 2 — that
-collapse is what forced the two-tree shadow design last time.
+Four stages, in order. **Do not begin a stage before the one above it is
+finished**, and in particular do not collapse the pausable stage into the
+partial-line stage — that collapse is what forced the two-tree shadow design
+last time.
+
+**The stages below Stage 0 were renumbered on 2026-08-24** (owner ruling, §12).
+The CST/AST split became Stage 1 and everything else moved down one. It is not
+a reordering of convenience: the split *deletes* items from the stage that used
+to be first, and building them before it would have been building machinery for
+a problem the split removes.
 
 ### Stage 0 — Reconstruct
 
@@ -1052,7 +1036,28 @@ Then re-apply, onto the 1.0 baseline and by hand, exactly three things:
 
 Nothing else. The port list is §4.1.
 
-### Stage 1 — Make the parser pausable at line boundaries
+### Stage 1 — Separate the CST from the AST
+
+**Owner ruling, 2026-08-24, and the whole of §12.** The CST is the equivalence
+class of the parser's resumable state; the AST is the equivalence class of a
+snapshot. Resolution — a reference becoming a link or becoming prose — is the
+*projection between them*, not an event in the parser's life.
+
+The engine already has the seam and has never named it. `finalize_document` is
+two statements (`core/blocks.c:1381`):
+
+```c
+while (parser->current != parser->root)      /* (1) close the open spine   */
+    parser->current = finalize(parser, parser->current);
+finalize(parser, parser->root);              /* (1) the CST is now complete */
+process_inlines(parser, parser->refmap, …);  /* (2) THE PROJECTION          */
+```
+
+Stage 1 is: name those two things, make (2) callable more than once, and stop
+(2) from writing into state that belongs to (1). §12 says what that costs and
+what it deletes from the stage below.
+
+### Stage 2 — Make the parser pausable at line boundaries
 
 #### The flow, stated before anything else
 
@@ -1206,7 +1211,7 @@ every prefix or only at the end; failure and OOM behaviour mid-stream; whether
 the bindings participate in Stage 1 or only after it; and the allocation bound
 that accompanies the time bound.
 
-### Stage 2 — The incomplete trailing line
+### Stage 3 — The incomplete trailing line
 
 Only once Stage 1 is proven. The buffering is already solved at the byte level
 (`parser->linebuf`); the remaining problem is *speculatively parsing* the
@@ -10191,7 +10196,12 @@ returns to `docs/` by a commit that says which step made it true again.
 
 ---
 
-## 11. The Stage 1 state inventory
+## 11. The pausable-parser state inventory
+
+**This was Stage 1's inventory and is now Stage 2's** (§12, owner ruling of
+2026-08-24). It is left as written because its measurements stand; what changed
+is which stage owns them. §12.3 says which of its conclusions the CST/AST split
+deletes outright — the back-index of §11.5 and §11.6 chief among them.
 
 This is the deliverable §3 names under *"What Stage 1 owes before it starts"*. It is placed here rather than inside the roadmap because it is longer than the roadmap it serves. Six subsystems were inventoried independently against the working tree at `b71c8a9` — the parser struct, the block phase, the inline phase, the extensions, buffers and memory, and the late-resolved reference and footnote maps — and merged here with the duplicates collapsed.
 
@@ -10873,3 +10883,159 @@ extra cost. Requirement 12's other view needs no new machinery for Stage 1.
    for or opt-in.
 
 Everything else the derivation needs, the parser already has after N lines.
+
+---
+
+## 12. Stage 1 — the CST/AST split
+
+**Owner ruling, 2026-08-24.** *"CST 不变，是 parser own 的 resumable state 的等价
+集，而 AST 是 snapshot 的等价集。"* The CST is the equivalence class of the
+parser's resumable state; the AST is the equivalence class of a snapshot. Once
+the layers are separated, most of what §11 was struggling with is not solved —
+it stops existing.
+
+### 12.1 The seam is already in the engine, unnamed
+
+`finalize_document` (`core/blocks.c:1381`) is two statements: close the open
+spine, then project. `process_inlines` has **exactly one call site** in the core
+(`core/blocks.c:1388`), and it reads exactly two things —
+
+```c
+markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
+…
+subject_from_buf(parser, parser->mem, parent->start_line, &subj, &content, refmap);
+```
+
+`core/inlines.c:2107`. **The projection is a pure function of
+`(node->content, refmap)`.** And `node->content` is a `strbuf` on the node whose
+only free is `S_free_nodes` (`core/node.c:176`), so a block keeps its own source
+bytes for its entire life. Nothing has to be recorded for a later pass to find:
+the input to the projection is already stored, per block, forever.
+
+§11.11 measured the other half without knowing what it had. The live tree before
+`finish` is blocks with content and **no inline children** — block structure
+byte-identical to the finished tree. That tree is the CST. It has been sitting
+there the whole time.
+
+### 12.2 Why the CST stops at bytes and does not contain inlines
+
+The obvious form of the split — *a reference is always a reference node, and the
+AST swaps it for a link or for text* — **does not work**, and the reason is not
+an implementation detail. Same source, two reference maps, measured:
+
+| | source | tree |
+|---|---|---|
+| A | `*foo [bar* baz]` | `emphasis["foo [bar"]`, `text[" baz]"]` |
+| B | A + `[bar* baz]: /url` | `text["*foo "]`, `link_reference["bar* baz"]` |
+| C | `[a *b] c*` | `text["[a "]`, `emphasis["b] c"]` |
+| D | C + `[a *b]: /url` | `link_reference["a *b"]`, `text[" c*"]` |
+
+**Resolution is not a local substitution — it changes the emphasis structure of
+the whole paragraph.** In A the emphasis spans across the bracket; in B there is
+no emphasis node at all and the asterisks are literal. That is CommonMark, not a
+defect: brackets bind more tightly than emphasis, so whether the bracket *is* a
+link decides how the delimiters around it match.
+
+So a resolution-independent inline **tree** would have to sit below emphasis —
+delimiter runs and bracket tokens, matched later. The engine has something
+cheaper that is already resolution-independent, already source-faithful and
+already final at close: **the block's content bytes.** The concrete layer here
+is bytes, not a tree — which is the same choice `markdown_core_concrete` already
+makes one level up, where it is normalized source plus a line index and
+deliberately not a tree (`core/parser.h:139`).
+
+> **CST** = the block tree + each block's content bytes + the normalized source
+> view. Complete after N lines, final at close, independent of the refmap.
+> **AST** = `project(CST, refmap)`. Inline structure, resolution, and every fact
+> that depends on what the whole document defines.
+
+### 12.3 What the split deletes from the stage below
+
+This is why it goes first. Four items in §0's old task list are not reordered by
+the split, they are **removed**:
+
+1. **Reference re-resolution, and the back-index from a label to the waiting
+   sites** (§11.5, §11.6, and its own line in §0). *Deleted.* There is no
+   re-resolution. A block projected before its definition arrived is projected
+   again later against the refmap as it then stands; nothing is revised, because
+   the earlier AST was a different snapshot, not a wrong one. What replaces it is
+   one small fix, §12.4.
+2. **"Resolve a line's inlines when the line completes, not when its block
+   closes."** *Deleted as a category error.* Inline parsing is not an event the
+   parser schedules — it is what taking a snapshot does. There is no correct
+   answer to "when", only "whenever asked".
+3. **"A closed block's derived form is computed once at close and reused by
+   every later snapshot."** *Demoted from mechanism to optimisation.* Correctness
+   never depends on the cache, because re-projecting is always available and
+   always right. A wrong cache is now a slow parser, not a wrong tree.
+4. **The resumable inline subject** (§11.8). *Demoted and moved after the
+   split.* It is no longer how the parse stays correct across a line boundary;
+   it is how a per-line snapshot costs O(line) instead of O(open block). Still
+   the largest item in the stage that owns it, and §11.5's seven hazards still
+   ride on it — but it is now a performance obligation with a measurable bound,
+   not a correctness prerequisite that everything else waits on.
+
+One box in §0 that is **ticked is also wrong**: the settled-API list still says
+*"a snapshot is BORROWED with a generation the feed bumps"*. §11.10a already
+superseded it and the split settles it — a snapshot is derived.
+
+### 12.4 What the split adds, and the one thing that blocks it
+
+**The reference map is a one-shot structure and has to stop being one.**
+
+```c
+void definition_create(…) { …  assert(!map->prepared);      /* references.c:84 */
+markdown_core_map_entry *markdown_core_map_lookup(…) {
+    if (!map->prepared && !index_map(map) && !sort_map(map))  /* map.c:317, sets prepared */
+```
+
+Harvest every definition, prepare once, then look up: safe today only because
+inlines are parsed once at the end, so writes and reads never interleave. Every
+mid-stream projection interleaves them — block parsing writes the map while the
+projection reads it — and a definition after the first lookup is a **hard
+assertion failure**. The map must accept insert-after-lookup. First-wins already
+rides on `entry->age = map->size` with `age` as the sort tiebreak (`map.c:211`),
+so re-preparing preserves the semantics; this is a structure change, not a
+semantics change — the same shape as the directive attribute fix (§4.14.15L).
+
+**Resolution diagnostics are emitted from the wrong layer.**
+`MARKDOWN_CORE_DIAGNOSTIC_REFERENCE_UNDEFINED` — *"reference to a label the
+document does not define"* — is raised inside inline parsing and appended to
+`parser->diagnostics` (`core/inlines.c:1544`, `core/parser.h:229`). That is a
+semantic fact written into parser-owned state. Moved into the projection it is
+regenerated per snapshot and **never retracted**, which is the whole of the
+problem it otherwise creates: a mid-stream snapshot reporting an *error* about a
+label the finished document defines twelve lines later.
+
+**Criterion 2 splits in two.** It governed one thing and now governs two:
+CST construction is O(line) per fed line; projection is O(what you project) per
+snapshot. §0's slope gate measures the first. The second needs its own bound,
+and until the resumable subject lands it is O(open block) per snapshot — which
+is a stated cost, not a failure.
+
+**Criterion 1 becomes a theorem.** The final projection runs against the final
+CST and the final refmap, which are what a one-shot parse produces; equality
+follows by construction. It stays a gate (`stream_runner`, §11.9) because a
+theorem about code is a claim about code.
+
+### 12.5 The question the evidence cannot settle
+
+**Where does the AST live?** Three shapes, and this decides the API, the memory
+bound and how much of `finish` has to become re-runnable:
+
+- **In place.** The projection writes inline children onto the CST tree and a
+  re-projection strips them first. Cheapest, one tree — and it puts the two
+  layers back in one storage, which is how they got mixed in the first place.
+- **A separate tree.** The projection builds an AST from the CST. Clean, and it
+  makes "the CST never changes" true rather than conventional. Costs a block
+  skeleton copy per snapshot — small next to the inline children, but not free.
+- **Copy-on-project per block.** Blocks share until projected. The cache from
+  §12.3 item 3 falls out of it for free.
+
+**And the sub-question that is genuinely open: what are the extension
+postprocessors?** They run after `process_inlines` in `parser_finish` and rewrite
+the tree wholesale, and `extensions/directive.c:1095` calls
+`markdown_core_parse_inlines` *itself*, from inside a postprocessor — a second
+projection site. If postprocessors are projection steps they must be re-runnable
+per snapshot; if they are CST completion they must move before it. Neither is
+established, and it is being measured.
