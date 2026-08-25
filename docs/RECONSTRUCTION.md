@@ -65,9 +65,20 @@ Nothing here is checked. Each line says what it is; the section says why.
       `core/inlines.c:1524` creates a reference only where the refmap lookup
       succeeds, so closing a block early parses `[foo]` before `[foo]: /url` is
       fed and the LinkReference never appears — criterion 1, not cost.
+- [ ] **FIX THE BORROW FIRST — it is the prerequisite of everything below.**
+      §11.10a: an inline literal ALIASES the open block's content buffer
+      (`chunk_dup` returns `alloc = 0`), and that buffer reallocs as lines
+      arrive — measured, three moves in twelve lines. Deferring inline parsing
+      to block close is what makes that borrow sound, so no inline node can
+      exist before its block closes until this is settled. Three shapes named
+      in §11.10a: own on emission, a backing store that does not move, or
+      offsets resolved late. **Owner decision needed before any of the rest.**
 - [ ] **A RESUMABLE INLINE SUBJECT** — parse each line's inlines once and carry
       the delimiter residue across the line boundary, so a line costs O(line).
-      Owner ruling, §11.8. Re-parsing the open block's accumulated content on
+      Owner ruling, §11.8. The `subject` struct already holds what a resume
+      needs — `pos`, `last_delim`, `last_bracket` — so this is a LIFETIME
+      change, not a new state machine, and §11.5 says exactly one subject is
+      ever live across a boundary. Re-parsing the open block's accumulated content on
       every line is the cheap shape and is O(block²) per block, which fails
       criterion 2 on the streaming case the stage exists for. **This is the
       largest item and it carries §11.5's seven hazards** — H5 and the three
@@ -10704,15 +10715,72 @@ Document scope=1:1..3:23 children=2
 - **So "the state after N lines IS the snapshot" is not aspirational.** It is
   one accessor away, for the block structure.
 
-#### One gap blocks it, and it is H4
+#### The gap is NOT "children=0", and saying it that way got the shape wrong
 
-**Every block reads `children=0`.** Inline content does not exist until
-`finish`, because `finalize_document` is what runs `process_inlines`. A snapshot
-today would hand a consumer a correct skeleton with no text in it — which is
-useless for the streaming case that motivates the stage.
+The spike output shows every block at `children=0`, and the first write-up of
+this section called that the gap — as though the fix were to make inlines
+happen *earlier*. **That is the block-granular thinking the owner rejected
+twice.** `children=0` is a symptom. §11.10a is the cause, and it decides the
+work.
 
-That is the whole of the blocking work, and it is what §0's box says: resolve a
-line's inlines when the line completes.
+#### 11.10a WHY inline parsing is deferred: the literals BORROW a buffer that MOVES
+
+The `subject` struct already holds everything a resume needs — `pos`, the
+delimiter stack in `last_delim`, the bracket stack in `last_bracket`. **The
+state shape is already right; what it has not got is a lifetime.** It is a stack
+local built by `subject_from_buf` and dropped when the block's parse returns.
+§11.5 adds that only ONE subject is ever live across a line boundary, because
+`contains_inlines` is true only for PARAGRAPH, HEADING, DIRECTIVE\_LABEL and
+TABLE\_CELL and only the paragraph survives a boundary. So one persistent
+subject, not one per open block.
+
+**What makes a persistent one unsafe is the borrow.** `markdown_core_chunk_dup`
+aliases rather than copies —
+
+```c
+markdown_core_chunk c = {ch->data ? ch->data + pos : NULL, len, 0};
+```
+
+— `alloc = 0`, a pointer INTO the block's content buffer. And that buffer is a
+`strbuf` that reallocs as lines arrive. Measured on `d953f2b`, feeding one line
+at a time into an open paragraph:
+
+| line | `content.ptr` | size | asize | |
+|---|---|---|---|---|
+| 1–2 | `0x104fba890` | 23, 46 | 56 | |
+| 3 | `0x104fbac20` | 69 | 104 | **MOVED** |
+| 5 | `0x104fbad30` | 115 | 176 | **MOVED** |
+| 8 | `0x104fbaef0` | 184 | 280 | **MOVED** |
+
+**Three moves in twelve lines.** So the moment an inline node exists before its
+block closes, a later line can move the bytes out from under it — and out from
+under the persistent subject's `input` as well.
+
+> **Deferring inline parsing to block close is not laziness. It is what makes
+> the borrow sound.** Parse after the buffer has stopped growing and nothing can
+> dangle. That is why the engine is built this way, and it is why "resolve a
+> line's inlines when the line completes" is not a move of one call.
+
+#### So the resumable subject needs the borrow fixed FIRST, and that is a fork
+
+Three shapes, and this is the decision Stage 1 needs before any of it is built:
+
+1. **Own on emission.** An inline literal copies its bytes instead of aliasing.
+   §11.7 already names *"Step 8's own-on-emission"* as what would let a closed
+   block release its content, so the idea is in the plan; the cost is a copy and
+   an allocation per inline node.
+2. **A backing store that does not move.** The content buffer becomes chunked or
+   roped so appends never invalidate a pointer. Borrows stay valid and free; the
+   cost is a new substrate under every block's content.
+3. **Offsets, resolved late.** A literal stores `(from, to)` into the content
+   buffer and the bytes are fetched through requirement 10's content-to-source
+   map at read time. Nothing dangles because nothing points; the cost is that
+   every literal read becomes a lookup.
+
+**Note that some literals already own.** `make_str_with_entities` goes through
+`markdown_core_chunk_buf_detach`, which yields an owned chunk, so the engine is
+already mixed — which makes (1) a widening of something present rather than a
+new mechanism.
 
 #### And a second, smaller gap the spike exposed
 
