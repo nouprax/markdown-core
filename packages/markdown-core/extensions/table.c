@@ -791,6 +791,51 @@ static void opaque_free(const markdown_core_syntax_extension *self, markdown_cor
     }
 }
 
+/* The AST derivation clones the block skeleton, and these three types keep
+ * their state in `node.as`: the table its column count and OWNED alignments
+ * array, the row its header bit, the cell its index -- which is a plain union
+ * arm, not an opaque payload, and would otherwise be lost to a zeroed node. */
+static int opaque_copy(const markdown_core_syntax_extension *self, markdown_core_mem *mem, markdown_core_node *dst,
+                       const markdown_core_node *src) {
+    if (src->type == MARKDOWN_CORE_NODE_TABLE) {
+        const node_table *from = (const node_table *)src->as.opaque;
+        node_table *to;
+        if (!from) {
+            return 1;
+        }
+        to = (node_table *)mem->calloc(1, sizeof(*to));
+        if (!to) {
+            return 0;
+        }
+        *to = *from;
+        to->alignments = NULL;
+        if (from->alignments && from->n_columns > 0) {
+            to->alignments = (uint8_t *)mem->calloc(from->n_columns, sizeof(uint8_t));
+            if (!to->alignments) {
+                mem->free(to);
+                return 0;
+            }
+            memcpy(to->alignments, from->alignments, from->n_columns);
+        }
+        dst->as.opaque = to;
+    } else if (src->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
+        const node_table_row *from = (const node_table_row *)src->as.opaque;
+        node_table_row *to;
+        if (!from) {
+            return 1;
+        }
+        to = (node_table_row *)mem->calloc(1, sizeof(*to));
+        if (!to) {
+            return 0;
+        }
+        *to = *from;
+        dst->as.opaque = to;
+    } else if (src->type == MARKDOWN_CORE_NODE_TABLE_CELL) {
+        dst->as.cell_index = src->as.cell_index;
+    }
+    return 1;
+}
+
 /* A block-only extension: no byte ends a text run for it, no byte is offered to an
  * inline hook it does not have, and no byte is transparent to flanking. */
 const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_TABLE = {
@@ -802,6 +847,7 @@ const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_TABLE = {
     .contains_inlines_func = contains_inlines,
     .opaque_alloc_func = opaque_alloc,
     .opaque_free_func = opaque_free,
+    .opaque_copy_func = opaque_copy,
 };
 
 uint16_t markdown_core_extensions_get_table_columns(markdown_core_node *node) {

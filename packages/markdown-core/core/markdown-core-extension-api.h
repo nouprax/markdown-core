@@ -321,6 +321,16 @@ typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_syntax_exten
 typedef void (*markdown_core_opaque_free_func)(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,
                                                markdown_core_node *node);
 
+/** Copy everything this extension keeps in `node.as` -- the opaque payload,
+ * or a plain union arm like a table cell's index -- from `src` onto `dst`,
+ * which is a fresh zeroed node of the same type. The AST is derived from the
+ * CST by cloning the block skeleton (§12.5), and the core cannot copy what it
+ * cannot name: an extension that stores block state and does not say how to
+ * copy it fails the derivation rather than losing the state silently.
+ * Returns 0 on allocation loss. */
+typedef int (*markdown_core_opaque_copy_func)(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,
+                                              markdown_core_node *dst, const markdown_core_node *src);
+
 /** A syntax extension is a `static const` descriptor in a fixed compile-time
  * table (`extensions/core-extensions.c`), not an object built at run time.
  *

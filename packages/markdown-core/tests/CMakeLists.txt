@@ -266,6 +266,18 @@ if(MARKDOWN_CORE_STATIC)
         markdown_core_add_test(projection_closed_${fixture} "streaming" 240 projection_runner --case
                                closed_after_finish --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
     endforeach()
+    # The split's own two properties (§12): two projections of one CST at one
+    # refmap generation are byte-identical, and the CST is refmap-independent
+    # -- projecting against another map moves nothing and poisons nothing.
+    # Both derive BEFORE finish, so the properties hold over the open spine
+    # too, not only over the closed tree finish projects.
+    foreach(fixture spec regression extensions)
+        markdown_core_add_test(projection_double_${fixture} "streaming" 240 projection_runner --case double_projection
+                               --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+        markdown_core_add_test(
+            projection_refmap_independence_${fixture} "streaming" 240 projection_runner --case refmap_independence
+            --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+    endforeach()
 endif()
 
 markdown_core_add_test(

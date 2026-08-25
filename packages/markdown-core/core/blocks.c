@@ -1246,9 +1246,11 @@ void markdown_core_manage_extensions_special_characters(markdown_core_parser *pa
 }
 
 // Walk through node and all children, recursively, parsing
-// string content into inline content where appropriate.
-static void process_inlines(markdown_core_parser *parser, markdown_core_map *refmap, int options) {
-    markdown_core_iter *iter = markdown_core_iter_new(parser->root);
+// string content into inline content where appropriate. `root` is a stated
+// CST -- under the split it is a DERIVED block skeleton, never parser->root.
+static void process_inlines(markdown_core_parser *parser, markdown_core_node *root, markdown_core_map *refmap,
+                            int options) {
+    markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_node *cur;
     markdown_core_event_type ev_type;
 
@@ -1378,6 +1380,9 @@ static int lists_match(markdown_core_list *list_data, markdown_core_list *item_d
             list_data->bullet_char == item_data->bullet_char);
 }
 
+/* Close the open spine. What used to follow -- `process_inlines` -- is the
+ * projection, and it no longer runs here: the CST is final after this, and the
+ * AST is derived from it (§12.1, §12.5). */
 static markdown_core_node *finalize_document(markdown_core_parser *parser) {
     while (parser->current != parser->root) {
         parser->current = finalize(parser, parser->current);
@@ -1385,9 +1390,250 @@ static markdown_core_node *finalize_document(markdown_core_parser *parser) {
 
     finalize(parser, parser->root);
 
-    process_inlines(parser, parser->refmap, parser->options);
-
     return parser->root;
+}
+
+/* An OWNED copy of a chunk's bytes into a zeroed destination; a chunk with no
+ * data stays empty rather than owning a zero byte. Returns 0 on loss. */
+static int S_chunk_copy(markdown_core_mem *mem, markdown_core_chunk *dst, const markdown_core_chunk *src) {
+    unsigned char *copy;
+    if (!src->data) {
+        return 1;
+    }
+    copy = (unsigned char *)mem->calloc((size_t)src->len + 1, 1);
+    if (!copy) {
+        return 0;
+    }
+    if (src->len > 0) {
+        memcpy(copy, src->data, (size_t)src->len);
+    }
+    dst->data = copy;
+    dst->len = src->len;
+    dst->alloc = 1;
+    return 1;
+}
+
+static int S_optional_chunk_copy(markdown_core_mem *mem, markdown_core_optional_chunk *dst,
+                                 const markdown_core_optional_chunk *src) {
+    if (!src->has_value) {
+        *dst = markdown_core_optional_chunk_absent();
+        return 1;
+    }
+    if (!S_chunk_copy(mem, &dst->value, &src->value)) {
+        return 0;
+    }
+    dst->has_value = true;
+    return 1;
+}
+
+/* One cloned block. Everything the CST states about a block is copied: its
+ * content bytes, its place, its flags, its `as` arm, its extension payload,
+ * and its run in the content-to-source map (the map itself stays on the
+ * parser, which outlives the derivation). `user_data` is deliberately not
+ * copied -- it is caller-owned decoration on a returned tree, and the parse's
+ * own CST never carries any. */
+static markdown_core_node *S_clone_block_node(markdown_core_parser *parser, const markdown_core_node *src) {
+    markdown_core_mem *mem = parser->mem;
+    markdown_core_node *dst = (markdown_core_node *)mem->calloc(1, sizeof(*dst));
+    if (!dst) {
+        return NULL;
+    }
+    markdown_core_strbuf_init(mem, &dst->content, 0);
+    if (src->content.size) {
+        markdown_core_strbuf_put(&dst->content, src->content.ptr, src->content.size);
+        if (dst->content.oom) {
+            markdown_core_strbuf_free(&dst->content);
+            mem->free(dst);
+            return NULL;
+        }
+    }
+    dst->start_line = src->start_line;
+    dst->start_column = src->start_column;
+    dst->end_line = src->end_line;
+    dst->end_column = src->end_column;
+    dst->internal_offset = src->internal_offset;
+    dst->content_mark = src->content_mark;
+    dst->content_mark_count = src->content_mark_count;
+    dst->type = src->type;
+    dst->flags = src->flags;
+    dst->extension = src->extension;
+
+    switch (S_type(dst)) {
+    case MARKDOWN_CORE_NODE_HEADING:
+        dst->as.heading = src->as.heading;
+        break;
+    case MARKDOWN_CORE_NODE_LIST:
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
+        dst->as.list = src->as.list;
+        break;
+    case MARKDOWN_CORE_NODE_CODE_BLOCK:
+        dst->as.code = src->as.code;
+        dst->as.code.info = markdown_core_optional_chunk_absent();
+        dst->as.code.literal.data = NULL;
+        dst->as.code.literal.len = 0;
+        dst->as.code.literal.alloc = 0;
+        if (!S_chunk_copy(mem, &dst->as.code.literal, &src->as.code.literal) ||
+            !S_optional_chunk_copy(mem, &dst->as.code.info, &src->as.code.info)) {
+            goto lost;
+        }
+        break;
+    case MARKDOWN_CORE_NODE_HTML_BLOCK:
+        /* The union arm depends on the block's life stage: open, it holds the
+         * matched block TYPE; closed, `finalize` detached the content into the
+         * literal. The flag this engine now maintains says which (§12.8 Q3). */
+        if (dst->flags & MARKDOWN_CORE_NODE__OPEN) {
+            dst->as.html_block_type = src->as.html_block_type;
+        } else if (!S_chunk_copy(mem, &dst->as.literal, &src->as.literal)) {
+            goto lost;
+        }
+        break;
+    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
+        if (!S_chunk_copy(mem, &dst->as.association.label, &src->as.association.label) ||
+            !S_chunk_copy(mem, &dst->as.association.identifier, &src->as.association.identifier)) {
+            goto lost;
+        }
+        break;
+    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
+        if (src->as.definition) {
+            markdown_core_definition *def = (markdown_core_definition *)mem->calloc(1, sizeof(*def));
+            if (!def) {
+                goto lost;
+            }
+            dst->as.definition = def;
+            def->title = markdown_core_optional_chunk_absent();
+            if (!S_chunk_copy(mem, &def->association.label, &src->as.definition->association.label) ||
+                !S_chunk_copy(mem, &def->association.identifier, &src->as.definition->association.identifier) ||
+                !S_chunk_copy(mem, &def->url, &src->as.definition->url) ||
+                !S_optional_chunk_copy(mem, &def->title, &src->as.definition->title)) {
+                goto lost;
+            }
+        }
+        break;
+    default:
+        /* An extension-minted type keeps its `as` state behind the extension's
+         * own copy hook below; a core type with no arm copies nothing. */
+        break;
+    }
+
+    if (dst->extension) {
+        if (dst->extension->opaque_copy_func) {
+            if (!dst->extension->opaque_copy_func(dst->extension, mem, dst, src)) {
+                goto lost;
+            }
+        } else if (src->as.opaque && dst->extension->opaque_free_func) {
+            /* The node owns a payload the core cannot name and the extension
+             * did not say how to copy. Losing it silently would ship a tree
+             * that dumps differently from the one `finish` used to build. */
+            goto lost;
+        }
+    }
+    return dst;
+
+lost:
+    markdown_core_node_free(dst);
+    return NULL;
+}
+
+/* Clone the block skeleton. Iterative, because block nesting is input-shaped.
+ * Children are linked raw: the source tree already proved containment. */
+static markdown_core_node *S_clone_block_tree(markdown_core_parser *parser, const markdown_core_node *src_root) {
+    markdown_core_node *dst_root = S_clone_block_node(parser, src_root);
+    markdown_core_node *dst_parent = dst_root;
+    const markdown_core_node *src = src_root->first_child;
+
+    if (!dst_root) {
+        return NULL;
+    }
+    while (src) {
+        markdown_core_node *dst = S_clone_block_node(parser, src);
+        if (!dst) {
+            markdown_core_node_free(dst_root);
+            return NULL;
+        }
+        dst->parent = dst_parent;
+        dst->prev = dst_parent->last_child;
+        if (dst_parent->last_child) {
+            dst_parent->last_child->next = dst;
+        } else {
+            dst_parent->first_child = dst;
+        }
+        dst_parent->last_child = dst;
+
+        if (src->first_child) {
+            src = src->first_child;
+            dst_parent = dst;
+        } else {
+            while (!src->next && src != src_root) {
+                src = src->parent;
+                dst_parent = dst_parent->parent;
+            }
+            if (src == src_root) {
+                break;
+            }
+            src = src->next;
+        }
+    }
+    return dst_root;
+}
+
+/* THE PROJECTION: AST = project(CST, refmap) (§12.1). Clone the block
+ * skeleton, parse each content-bearing block's inlines against the map as it
+ * now stands, then run the tail `finish` always ran -- consolidation, the
+ * extension postprocessors, the comment strip -- on the derived tree. The CST
+ * is not written: a later derivation, against this map or another, starts from
+ * the same bytes.
+ *
+ * `record_diagnostics` gates the rows the projection itself raises (after
+ * §12.9 that is `label-too-long` and the directive attribute/label codes).
+ * They are CST facts read off the construct's own bytes, but the rule is that
+ * a diagnostic speaks when its construct COMPLETES (§12.8 Q4) -- so only the
+ * final derivation, over a fully closed CST, records; a derivation taken
+ * mid-parse stays silent rather than describing an open block's prefix. */
+markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parser, markdown_core_map *refmap,
+                                                     int record_diagnostics) {
+    markdown_core_llist *extensions;
+    bool recording = parser->diagnostics_on;
+    markdown_core_node *derived;
+
+    /* A parse that lost an allocation may hold a tree that is not all there --
+     * the sweep's witness is a footnote definition whose label still borrows a
+     * freed temporary -- and `finish` answers NULL for it regardless, so there
+     * is nothing to derive. */
+    if (parser->oom) {
+        return NULL;
+    }
+
+    derived = S_clone_block_tree(parser, parser->root);
+    if (!derived) {
+        parser->oom = true;
+        return NULL;
+    }
+
+    parser->diagnostics_on = recording && record_diagnostics != 0;
+    process_inlines(parser, derived, refmap, parser->options);
+    parser->diagnostics_on = recording;
+
+    if (!markdown_core_consolidate_text_nodes_with_parser(parser, derived)) {
+        parser->oom = true;
+    }
+
+    for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
+        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
+        if (ext->postprocess_func) {
+            markdown_core_node *processed = ext->postprocess_func(ext, parser, derived);
+            if (processed) {
+                derived = processed;
+            }
+        }
+    }
+
+    if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
+        if (!S_strip_html_comments(derived)) {
+            parser->oom = true;
+        }
+    }
+
+    return derived;
 }
 
 markdown_core_node *markdown_core_parse_file(FILE *f, int options) {
@@ -2385,7 +2631,6 @@ finished:
 
 markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
     markdown_core_node *res;
-    markdown_core_llist *extensions;
 
     /* Parser was already finished once */
     if (parser->root == NULL) {
@@ -2402,36 +2647,22 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
         markdown_core_strbuf_clear(&parser->linebuf);
     }
 
+    /* Close the spine -- the CST is final -- then run the LAST DERIVATION.
+     * `finish` is that derivation plus the seal (§12.10 A): the caller gets a
+     * DERIVED tree, never `parser->root`, through the same projection any
+     * snapshot uses, and the reset below takes the CST with it. */
     finalize_document(parser);
 
-    if (!markdown_core_consolidate_text_nodes_with_parser(parser, parser->root)) {
-        parser->oom = true;
-    }
+    res = markdown_core_parser_derive_tree(parser, parser->refmap, 1);
 
     markdown_core_strbuf_free(&parser->curline);
     markdown_core_strbuf_free(&parser->linebuf);
 
 #if MARKDOWN_CORE_DEBUG_NODES
-    if (markdown_core_node_check(parser->root, stderr)) {
+    if (res && markdown_core_node_check(res, stderr)) {
         abort();
     }
 #endif
-
-    for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
-        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
-        if (ext->postprocess_func) {
-            markdown_core_node *processed = ext->postprocess_func(ext, parser, parser->root);
-            if (processed) {
-                parser->root = processed;
-            }
-        }
-    }
-
-    if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
-        if (!S_strip_html_comments(parser->root)) {
-            parser->oom = true;
-        }
-    }
 
     /* All allocation-loss routes converge here: block/inline structures set
      * parser->oom directly, definition maps carry their own sticky flag. */
@@ -2448,6 +2679,9 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
         parser->oom = true;
     }
     if (parser->oom) {
+        if (res) {
+            markdown_core_node_free(res);
+        }
         markdown_core_node_free(parser->root);
         parser->root = NULL;
         markdown_core_parser_reset(parser);
@@ -2485,9 +2719,9 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
         memset(&parser->diagnostics, 0, sizeof(parser->diagnostics));
     }
 
-    res = parser->root;
-    parser->root = NULL;
-
+    /* The parser's life ends here (ruling A): the reset disposes the CST --
+     * `parser->root` deliberately stays set so `dispose` frees it -- and what
+     * leaves is the derivation alone. */
     markdown_core_parser_reset(parser);
 
     return res;

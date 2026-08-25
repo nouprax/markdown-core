@@ -125,6 +125,38 @@ static void formula_opaque_free(const markdown_core_syntax_extension *extension,
     mem->free(formula);
 }
 
+/* The AST derivation clones the block skeleton (§12.5); the literal is an
+ * OWNED chunk (`set_formula_literal_bytes` never leaves it borrowing), so the
+ * copy owns its own. */
+static int formula_opaque_copy(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,
+                               markdown_core_node *dst, const markdown_core_node *src) {
+    const node_formula *from = (const node_formula *)src->as.opaque;
+    node_formula *to;
+    if (!from) {
+        return 1;
+    }
+    to = (node_formula *)mem->calloc(1, sizeof(*to));
+    if (!to) {
+        return 0;
+    }
+    to->mode = from->mode;
+    to->block_delim = from->block_delim;
+    to->closed = from->closed;
+    if (from->literal.data) {
+        unsigned char *copy = (unsigned char *)mem->calloc((size_t)from->literal.len + 1, 1);
+        if (!copy) {
+            mem->free(to);
+            return 0;
+        }
+        memcpy(copy, from->literal.data, (size_t)from->literal.len);
+        to->literal.data = copy;
+        to->literal.len = from->literal.len;
+        to->literal.alloc = 1;
+    }
+    dst->as.opaque = to;
+    return 1;
+}
+
 static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
     node_formula *formula = get_formula(node);
     if (!formula) {
@@ -723,6 +755,7 @@ const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_FORMULA = {
     .accepts_lines_func = accepts_lines,
     .opaque_alloc_func = formula_opaque_alloc,
     .opaque_free_func = formula_opaque_free,
+    .opaque_copy_func = formula_opaque_copy,
     .insert_inline_from_delim = insert_formula,
     .terminates_text = "$",
     .dispatch = "$\\",

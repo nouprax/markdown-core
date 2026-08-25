@@ -95,10 +95,34 @@ argument. Nothing here is checked.
       exactly `table_cell`/`table_header` (29+7, 4+1, 98+20 nodes over the
       three fixtures) and on nothing else, green after, goldens unmoved.
       `DIRECTIVE_LABEL` was already correct, as §12.8 predicted.
-- [ ] **Make `process_inlines` callable more than once**, from a stated CST,
-      producing a stated AST. H4 says it is not idempotent today; that is the
-      work, and its gate is that two projections of the same CST at the same
-      refmap generation are byte-identical.
+- [x] **Make `process_inlines` callable more than once**, from a stated CST,
+      producing a stated AST. LANDED as
+      `markdown_core_parser_derive_tree(parser, refmap, record_diagnostics)`
+      (internal, `parser.h`): clone the block skeleton, `process_inlines` over
+      the clone, then the tail `finish` always ran — consolidation, the
+      postprocess loop, the strip — on the derived tree. The CST is never
+      written; H4's non-idempotence stops mattering because no projection ever
+      sees a tree that was projected before. `process_inlines` itself now takes
+      the root it walks. The clone copies everything a block states — content
+      bytes, place, flags, `as` arm by type, the content-to-source run — and
+      extension block state moves through a new `opaque_copy_func` hook
+      (table, directive, formula); an extension holding an opaque payload with
+      no copy hook fails the derivation rather than losing state silently.
+      Gates: `projection_double_{spec,regression,extensions}` (two projections
+      byte-identical, derived over the OPEN spine, which is stronger than the
+      closed case) and `projection_refmap_independence_*` (§0 acceptance).
+      Mutants: clone-shares-the-CST dies in the gate (SIGSEGV), and
+      drop-`as.list` kills 65 spec goldens — the goldens see the clone's
+      fields. **Fourth defect found while landing**: a failed
+      `markdown_core_association_init` left `out->label` BORROWING the
+      caller's freed temporary on a FOOTNOTE_DEFINITION node that stays in the
+      tree — invisible until the derivation read it (ASan, OOM sweep); init
+      now clears the borrow, and the derivation refuses a parse that already
+      lost an allocation, since `finish` answers NULL for it regardless.
+      Known cost, stated: each derivation appends one content-to-source mark
+      per set-content block (table cells, directive labels) to
+      `parser->line_marks` — per-derivation, correct, and freed with the
+      parser; not worth an index before a snapshot API exists.
 - [ ] **Delete `reference-undefined` and `footnote-undefined`** (§12.9, owner
       ruling). They are the only two of eight codes that report a WELL-FORMED
       construct, and CommonMark defines what a reference that resolves to
@@ -122,11 +146,16 @@ argument. Nothing here is checked.
       construction O(line) per fed line, projection O(what is projected) per
       snapshot. The existing slope gate measures the first; the second has no
       gate yet and is O(open block) until Stage 2's resumable subject lands.
-- [ ] **Change what `finish` returns** — a derived tree rather than
-      `parser->root`. **Internal only** (§12.10 F): same signature, same
-      ownership, and `finish` stays terminal (§12.10 A), so a caller cannot tell
-      and **no binding changes**. The snapshot accessor is new API; whether the
-      bindings get it is a separate decision.
+- [x] **Change what `finish` returns** — a derived tree rather than
+      `parser->root`. LANDED: `finalize_document` is now only *close the
+      spine*, and `finish` is `finalize_document` + the last
+      `markdown_core_parser_derive_tree` (the only one that records
+      diagnostics) + the seal — the reset disposes the CST, and what leaves is
+      the derivation. **Internal only** (§12.10 F), as ruled: same signature,
+      same ownership, `finish` stays terminal (§12.10 A), no binding changes,
+      and every golden agreed byte-for-byte on the first green run. The
+      snapshot accessor remains future API; `derive_tree` is what it would
+      call.
 - [ ] **Renumber the diagnostic enum** after §12.9 — codes 6 and 7 go,
       `label-too-long` moves 8 → 6, no holes (§12.10 G).
 - [ ] **Acceptance** — `stream_runner` still green (criterion 1 is now a

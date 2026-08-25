@@ -20,12 +20,17 @@
 
 #include "test_support.h"
 
+#include <markdown_core.h>
+
 #include "markdown-core.h"
 #include "markdown-core-extensions.h"
 
+#include "ast_internal.h"
 #include "iterator.h"
+#include "map.h"
 #include "node.h"
 #include "parser.h"
+#include "references.h"
 
 /* Every extension and the footnote option, because the point is coverage of
  * every node KIND a parse can put in a tree, not agreement with any golden. */
@@ -103,6 +108,181 @@ static int case_closed_after_finish(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+static uint8_t *pr_dump(markdown_core_node *root, size_t *length) {
+    markdown_core_document facade;
+    markdown_core_error *error = NULL;
+    uint8_t *dump = NULL;
+    memset(&facade, 0, sizeof(facade));
+    facade.root = root;
+    if (!markdown_core_document_dump(&facade, &dump, length, &error)) {
+        markdown_core_error_free(error);
+        return NULL;
+    }
+    return dump;
+}
+
+/* A stable serialization of everything the CST states: node identity, place,
+ * flags, content bytes and the content-to-source run. If a derivation writes
+ * any of it, two fingerprints taken around the derivation differ. */
+static int pr_fingerprint(markdown_core_node *root, markdown_core_strbuf *out) {
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type ev_type;
+    if (!iter) {
+        return -1;
+    }
+    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (ev_type != MARKDOWN_CORE_EVENT_ENTER) {
+            continue;
+        }
+        char header[160];
+        snprintf(header, sizeof(header), "%u|%u|%d:%d..%d:%d|%d|%d+%d|%u:", (unsigned)node->type, (unsigned)node->flags,
+                 node->start_line, node->start_column, node->end_line, node->end_column, node->internal_offset,
+                 node->content_mark, node->content_mark_count, (unsigned)node->content.size);
+        markdown_core_strbuf_puts(out, header);
+        if (node->content.size) {
+            markdown_core_strbuf_put(out, node->content.ptr, node->content.size);
+        }
+        markdown_core_strbuf_putc(out, '\n');
+    }
+    markdown_core_iter_free(iter);
+    return out->oom ? -1 : 0;
+}
+
+/* Two projections of one CST at one refmap generation are byte-identical --
+ * the gate §0's item states for "make process_inlines callable more than
+ * once". Derived BEFORE finish, so the CST here still carries its open spine:
+ * repeatability is proved over open blocks too, not only over the closed tree
+ * `finish` projects. */
+static int case_double_projection(const ts_spec_file *file) {
+    size_t index;
+    int failures = 0;
+    for (index = 0; index < file->count; index++) {
+        const ts_spec_case *test_case = &file->cases[index];
+        markdown_core_parser *parser = pr_parser_new();
+        markdown_core_node *first;
+        markdown_core_node *second;
+        uint8_t *first_dump = NULL;
+        uint8_t *second_dump = NULL;
+        size_t first_length = 0;
+        size_t second_length = 0;
+        if (!parser) {
+            fprintf(stderr, "example %d: parser allocation failed\n", test_case->example);
+            failures++;
+            continue;
+        }
+        markdown_core_parser_feed(parser, test_case->markdown, test_case->markdown_length);
+        first = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        second = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        if (first) {
+            first_dump = pr_dump(first, &first_length);
+        }
+        if (second) {
+            second_dump = pr_dump(second, &second_length);
+        }
+        if (!first_dump || !second_dump) {
+            fprintf(stderr, "example %d: derivation or dump failed\n", test_case->example);
+            failures++;
+        } else if (first_length != second_length || memcmp(first_dump, second_dump, first_length) != 0) {
+            fprintf(stderr, "example %d: two projections of one CST differ\n", test_case->example);
+            fprintf(stderr, "  first:\n%.*s  second:\n%.*s", (int)first_length, (const char *)first_dump,
+                    (int)second_length, (const char *)second_dump);
+            failures++;
+        }
+        markdown_core_dump_free(first_dump);
+        markdown_core_dump_free(second_dump);
+        if (first) {
+            markdown_core_node_free(first);
+        }
+        if (second) {
+            markdown_core_node_free(second);
+        }
+        markdown_core_parser_free(parser);
+    }
+    printf("double projection: %zu/%zu examples agree\n", file->count - (size_t)failures, file->count);
+    return failures ? -1 : 0;
+}
+
+/* The CST is independent of the refmap: project it against the document's own
+ * map, against an EMPTY map, and against the document's map again -- the CST's
+ * fingerprint never moves, and the first and third projections are
+ * byte-identical. The middle projection is what §0's acceptance calls
+ * "projecting one CST against two different maps": its result legitimately
+ * differs where references resolve, and what is asserted is that deriving it
+ * poisoned nothing. */
+static int case_refmap_independence(const ts_spec_file *file) {
+    size_t index;
+    int failures = 0;
+    for (index = 0; index < file->count; index++) {
+        const ts_spec_case *test_case = &file->cases[index];
+        markdown_core_parser *parser = pr_parser_new();
+        markdown_core_map *empty_map;
+        markdown_core_node *first;
+        markdown_core_node *other;
+        markdown_core_node *again;
+        uint8_t *first_dump = NULL;
+        uint8_t *again_dump = NULL;
+        size_t first_length = 0;
+        size_t again_length = 0;
+        markdown_core_strbuf before;
+        markdown_core_strbuf after;
+        int example_failed = 0;
+        if (!parser) {
+            fprintf(stderr, "example %d: parser allocation failed\n", test_case->example);
+            failures++;
+            continue;
+        }
+        empty_map = markdown_core_reference_map_new(parser->mem);
+        markdown_core_strbuf_init(parser->mem, &before, 0);
+        markdown_core_strbuf_init(parser->mem, &after, 0);
+        markdown_core_parser_feed(parser, test_case->markdown, test_case->markdown_length);
+
+        if (pr_fingerprint(parser->root, &before) != 0) {
+            example_failed = 1;
+        }
+        first = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        other = markdown_core_parser_derive_tree(parser, empty_map, 0);
+        again = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        if (!example_failed && pr_fingerprint(parser->root, &after) != 0) {
+            example_failed = 1;
+        }
+        if (first) {
+            first_dump = pr_dump(first, &first_length);
+        }
+        if (again) {
+            again_dump = pr_dump(again, &again_length);
+        }
+        if (example_failed || !first_dump || !other || !again_dump) {
+            fprintf(stderr, "example %d: derivation, dump or fingerprint failed\n", test_case->example);
+            failures++;
+        } else if (before.size != after.size || memcmp(before.ptr, after.ptr, before.size) != 0) {
+            fprintf(stderr, "example %d: a derivation WROTE the CST\n", test_case->example);
+            failures++;
+        } else if (first_length != again_length || memcmp(first_dump, again_dump, first_length) != 0) {
+            fprintf(stderr, "example %d: projecting against another map poisoned the next projection\n",
+                    test_case->example);
+            failures++;
+        }
+        markdown_core_dump_free(first_dump);
+        markdown_core_dump_free(again_dump);
+        if (first) {
+            markdown_core_node_free(first);
+        }
+        if (other) {
+            markdown_core_node_free(other);
+        }
+        if (again) {
+            markdown_core_node_free(again);
+        }
+        markdown_core_strbuf_free(&before);
+        markdown_core_strbuf_free(&after);
+        markdown_core_map_free(empty_map);
+        markdown_core_parser_free(parser);
+    }
+    printf("refmap independence: %zu/%zu examples agree\n", file->count - (size_t)failures, file->count);
+    return failures ? -1 : 0;
+}
+
 typedef struct pr_case_entry {
     const char *name;
     int (*run)(const ts_spec_file *file);
@@ -110,6 +290,8 @@ typedef struct pr_case_entry {
 
 static const pr_case_entry PR_CASES[] = {
     {"closed_after_finish", case_closed_after_finish},
+    {"double_projection", case_double_projection},
+    {"refmap_independence", case_refmap_independence},
 };
 
 int main(int argc, char **argv) {

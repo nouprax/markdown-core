@@ -265,6 +265,20 @@ struct markdown_core_parser {
     bufsize_t line_marks_alloc;
 };
 
+/* THE PROJECTION (§12.1): a new tree derived from the parser's CST -- the
+ * block tree, each block's content bytes -- against `refmap` as it now
+ * stands, inlines resolved, consolidation, the extension postprocessors and
+ * the comment strip applied. The CST is not written; the caller owns and
+ * frees the result. NULL on allocation loss, with `parser->oom` set.
+ *
+ * `record_diagnostics` gates the rows the projection itself raises: a
+ * diagnostic speaks when its construct COMPLETES (§12.8 Q4), so only the
+ * final derivation -- `finish`'s, over a fully closed CST -- passes 1.
+ * Internal: `finish` is built on this, and it is what a snapshot accessor
+ * would call; it is not part of the public surface. */
+markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parser, markdown_core_map *refmap,
+                                                     int record_diagnostics);
+
 /* Ask `finish` to hand the normalized source and its line index over rather
  * than release them. `out` is zeroed here and filled at finish; a parse that
  * fails leaves it empty. */
