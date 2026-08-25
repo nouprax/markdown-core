@@ -49,12 +49,18 @@ argument. Nothing here is checked.
       structure of the whole paragraph, not just the bracket — so the CST stops
       at **block tree plus content bytes**, not at an inline tree with a
       reference node in it.
-- [ ] **Make the reference map incrementally maintainable.** `definition_create`
-      asserts `!map->prepared` and `map_lookup` sets it (`references.c:84`,
-      `map.c:317`): a definition after the first lookup is a hard assertion
-      failure, and every mid-stream projection interleaves the two. **First,
-      because nothing else in the stage can be exercised until it is true.**
-      First-wins rides on `entry->age` and survives re-preparation (§12.4).
+- [ ] **Let BOTH definition maps accept insert-after-lookup.**
+      `definition_create` asserts `!map->prepared` and `map_lookup` sets it
+      (`references.c:84`, `map.c:317`); every mid-stream projection interleaves
+      the two. **First, because nothing else in the stage can be exercised until
+      it is true** — and it is a criterion-1 failure *today*: without
+      re-preparation, 4 of 670 real documents lose 20 reference nodes from the
+      FINISHED tree (§12.4). `parser->footnote_defs` is the same map and is owed
+      the same fix. Re-preparation is the whole change and is free (12.25 vs
+      12.21 ms) — **do not build incremental index maintenance** — but it makes
+      two latent defects live: `index_map` leaks the prior index through
+      `key_index_init`'s `memset`, and it overwrites `map->size` with the deduped
+      count that `entry->age` reads for the first-wins tiebreak.
 - [x] **Where the AST lives is decided: nowhere.** Owner ruling — *"AST never
       exists when someone requires it, and when it is asked, it is derived from
       CST"* (§12.5). The parser holds only the CST. Priced at **16.2% of nodes
@@ -70,6 +76,14 @@ argument. Nothing here is checked.
       `parse_inlines` from inside one was wrong: it is an inline match handler
       running *during* the projection. What remains is a gate, not a decision —
       prove both are deterministic on a fresh AST.
+- [ ] **Decide what "closed" means for `TABLE_CELL` and `DIRECTIVE_LABEL`.**
+      `contains_inlines` is true for both, so the projection must cover them, and
+      **there is no closed-ness signal to schedule on** — measured, all six
+      `TABLE_CELL` nodes of `ignore@7.0.6/README.md` still carry
+      `MARKDOWN_CORE_NODE__OPEN` after every byte is fed, and they hold all six of
+      that document's reference sites. This is the whole of the criterion-1 gap
+      (668 of 670, §12.7). **Blocks the projection scheduler**, and three shapes
+      are open with no evidence between them (§12.7 Q3).
 - [ ] **Make `process_inlines` callable more than once**, from a stated CST,
       producing a stated AST. H4 says it is not idempotent today; that is the
       work, and its gate is that two projections of the same CST at the same
@@ -118,7 +132,8 @@ not start it before Stage 1 closes.
 
 **Which constructs break that is now MEASURED — §11.9, and the answer is one
 of them.** Under the criterion that a CLOSED block and a CLOSED document match
-the one-shot, **1.00% of single-line appends touch a closed node and every one
+the one-shot, **1.00% of single-line appends touch a closed node — SUPERSEDED,
+the real figure is ~4.98% (§12.7); every one
 is late resolution**. Setext, list tightness and inline constructs spanning a
 line boundary are the open spine resolving, not history being rewritten.
 `scripts/poc/stage1-tail-reach.mjs` reproduces it.
@@ -10604,7 +10619,8 @@ undefined behaviour.
 What the derivation may NOT do is recompute the document. That is
 clone-and-finish at O(document), which called per line is the O(l²) shape
 criterion 2 forbids. It is affordable because **a closed block never changes** —
-§11.9 measured the exceptions at 1.00% of appends, all late resolution — so a
+§11.9 measured the exceptions at 1.00% of appends, all late resolution
+(**superseded: ~4.98%, §12.7**) — so a
 closed block's derived form is computed once at close and reused, and only the
 open spine is recomputed.
 
@@ -10703,10 +10719,13 @@ Recorded because both looked reasonable and both cost work:
    line; then a shift-sensitive count; then the inline children of an open
    paragraph; then the ancestors of the open block). It bottomed out at 1.00% of
    appends, all late resolution — a useful number about SNAPSHOTS, and not the
-   golden test.
+   golden test. **One of those six cuts was one too far: §12.7 re-measures the
+   same 1,304 appends at 4.98%, because the probe's `openFrom()` calls a
+   blank-line-closed trailing block open and hides 49 of 65 events.**
 
 **The golden test is the end of the stream.** `scripts/poc/stage1-tail-reach.mjs`
-and its 1.00% remain in the tree as what they are: a measurement of how much a
+and its 1.00% (**superseded: ~4.98%, §12.7**) remain in the tree as what they
+are: a measurement of how much a
 mid-stream snapshot churns, which bears on the snapshot feature and not on
 criterion 1.
 
@@ -10821,7 +10840,8 @@ Two layers, and the cost question moves to the second one:
 under a new name.** Deriving the whole document per snapshot is clone-and-finish
 at O(document), which called per line is the O(l²) shape criterion 2 forbids.
 What makes it O(1)-per-line instead is that **a closed block never changes** —
-§11.9 measured the exceptions at 1.00% of appends and all of them late
+§11.9 measured the exceptions at 1.00% of appends (**superseded: ~4.98%,
+§12.7**) and all of them late
 resolution — so a closed block's derived form is computed once, when it closes,
 and reused by every later snapshot. Only the open spine is recomputed, and the
 resumable subject is what keeps that O(line) rather than O(block).
@@ -10881,7 +10901,8 @@ extra cost. Requirement 12's other view needs no new machinery for Stage 1.
    block-level work there is — nothing else about a closed block is missing.
 2. **Late resolution rewrites the inline content of blocks that already
    closed**, which is the one thing that breaks "a closed block is final".
-   §11.9 measured it at **1.00% of appends** and §11.5 named the missing piece:
+   §11.9 measured it at **1.00% of appends** (**superseded: ~4.98%, §12.7**) and
+   §11.5 named the missing piece:
    `markdown_core_reference_create` has **no index from a label to the sites
    waiting on it**, so the only implementation available today is a tree
    rescan — O(document) per definition line. **This is the one real design
@@ -11003,10 +11024,43 @@ Harvest every definition, prepare once, then look up: safe today only because
 inlines are parsed once at the end, so writes and reads never interleave. Every
 mid-stream projection interleaves them — block parsing writes the map while the
 projection reads it — and a definition after the first lookup is a **hard
-assertion failure**. The map must accept insert-after-lookup. First-wins already
+assertion failure**.
+
+**IT IS BOTH MAPS, NOT ONLY THE REFMAP.** `parser->footnote_defs`
+(`core/parser.h:170`) is the same `markdown_core_map`, created by
+`markdown_core_footnote_definition_map_new` and written by
+`markdown_core_footnote_definition_create`, which calls the same
+`definition_create` (`core/references.c:108-115`) and is read by the same
+`markdown_core_map_lookup` (`core/inlines.c:1414`). Anything said here about the
+reference map is owed by the footnote map too.
+
+**And it is a criterion-1 failure today, not only a mid-stream one.** With the
+assert compiled out under `-DNDEBUG` and no re-preparation, **4 of 670 real
+`.md` documents lose 20 reference nodes from the FINISHED tree** —
+`mimalloc/readme.md` 1 of 12, `json5/README.md` 4 of 8, `js-tokens/README.md`
+1 of 5, `js-tokens/CHANGELOG.md` 1 of 2. A mid-stream projection that reads the
+map before the last definition is inserted permanently poisons it.
+
+**Re-preparation is the fix and it is free: 12.25 ms against 12.21 ms** over a
+4.92 MB corpus with it on and off. **Do not build incremental index
+maintenance** — clearing `prepared` on insert is the whole change. First-wins
 rides on `entry->age = map->size` with `age` as the sort tiebreak (`map.c:211`),
-so re-preparing preserves the semantics; this is a structure change, not a
-semantics change — the same shape as the directive attribute fix (§4.14.15L).
+so re-preparing preserves the semantics: a structure change, not a semantics
+change, the same shape as the directive attribute fix (§4.14.15L).
+
+**But re-preparation as the code stands has two defects, and both are new the
+moment `prepared` can go back to zero:**
+
+1. **`index_map` leaks the whole previous index.** It calls
+   `markdown_core_key_index_init(&map->index, …)` (`map.c:274`), whose first
+   statement is `memset(index, 0, sizeof(*index))` (`map.c:74`) — the old
+   `index->slots` is dropped, not freed. Once per re-prepare.
+2. **`index_map` overwrites `map->size` with the DEDUPED count** —
+   `map->size = map->index.size` (`map.c:286`) — while `definition_create` reads
+   that same field to stamp `entry->age = map->size` (`references.c:86`). A
+   definition inserted after a prepare therefore gets an `age` that collides with
+   an existing entry's, and `age` is the first-wins tiebreak in `refcmp`
+   (`map.c:211`). Silent, and it decides which of two definitions wins.
 
 **Resolution diagnostics are emitted from the wrong layer.**
 `MARKDOWN_CORE_DIAGNOSTIC_REFERENCE_UNDEFINED` — *"reference to a label the
@@ -11078,10 +11132,183 @@ back into the parser.
 
 So they are projection steps: they run after `process_inlines` on a tree that,
 under §12.5's ruling, is a **fresh derivation every time**. They need not be
-idempotent, only deterministic given the same input tree, and their gate is the
-same as the projection's — two derivations of one CST at one refmap generation
-are byte-identical.
+idempotent, only deterministic given the same input tree.
 
-What is left open is narrower and is a gate rather than a design question:
-**prove those two are deterministic on a fresh AST**, and prove nothing else in
-`parser_finish` writes CST state after the projection begins.
+**That is necessary and it is not sufficient, and the measurement says so.**
+`consolidate`, autolink's `postprocess` and formula's `postprocess` are each
+idempotent over 963 documents, and autolink's is byte-identically block-local
+over 1,037. But the *composed* tail is not at a fixed point in the product's
+default configuration:
+
+- `markdown_core_parse_options_init` turns `strip_html_comments` **on by
+  default** (`extensions/ast.c:73`).
+- `S_strip_html_comments` runs **after** the postprocess loop, not inside it
+  (`core/blocks.c:2420-2434`).
+- So `foo@<!-- c -->bar.com` finishes as `Paragraph → Text "foo@bar.com"` — and
+  applying the non-inline tail once more turns that into
+  `Link destination="mailto:foo@bar.com"`. The strip creates an autolink
+  candidate that the autolink pass has already gone past.
+
+**Re-runnable therefore has to cover ORDERING, not just per-step idempotence**,
+and no fixture exercises it: the tag census over all eleven fixture files
+contains no strip tag and `spec_runner` starts from all-options-false. Whatever
+`finish`'s tail becomes, its gate must run in the default configuration.
+
+### 12.7 MEASURED: the generation rule beats the finalize rule
+
+Thirty-one agents, six independent probes, every claim attacked by skeptics —
+**18 of the probes' own claims were refuted**, including two of the headline
+numbers. What survived is below. Corpora: 892 fixture examples from all eleven
+files under `packages/markdown-core/tests/fixtures/`, and **670 real `.md`,
+4.92 MB**, all six core extensions plus footnotes, against `acf6f3e`.
+
+#### A tree scan cannot resolve a reference — the key is raw source bytes
+
+`raw_label = markdown_core_chunk_dup(&subj->input, opener->position, …)`
+(`core/inlines.c:1520`) is fed straight to `markdown_core_map_lookup` (`:1524`).
+The key is **undecoded source**; the tree holds decoded literals. Three
+witnesses, each a miss for any tree-walking implementation:
+
+| source | the map's key | what the tree's literals hold |
+|---|---|---|
+| `see [a&amp;b] here` | `a&amp;b` | `a&b` — decoded |
+| `x [f\[o] y` | `f\[o` | one Text `x [f[o] y`, 9 bytes over 10 columns |
+| `see [*foo*] here` | `*foo*` | `Text "see ["`, `Emphasis`, `Text "] here"` — the key is in **no** literal |
+
+So a "finalize scan" over the finished tree has no correct implementation. The
+only one that exists re-reads `node->content` — which is `project(CST, refmap)`,
+§12.1's function. **A finalize API would have no code of its own**, which is the
+strongest form of §12.3 item 1: there is nothing to defer *to*.
+
+#### What a projection costs
+
+Feed every line, then re-project every `PARAGRAPH`/`HEADING` of the live tree,
+against a one-shot parse of the same bytes:
+
+| | bytes | parse | one full projection | ratio |
+|---|---|---|---|---|
+| `docs/RECONSTRUCTION.md` | 826,478 | 6.915 ms | 1.494 ms | 21.6% |
+| `spec.txt` | 401,068 | 1.434 ms | 0.223 ms | 15.6% |
+| 670 real `.md` | 4.92 MB | 31.89 ms | 9.15 ms | 28.7% |
+
+Linear at **1.35–2.40 ns per content byte**. And projecting *only what is stale*
+is where the money is:
+
+| last projection, 4.92 MB corpus | time | vs one-shot parse |
+|---|---|---|
+| re-project every closed block | 11.77 ms | 36.9% |
+| re-project blocks whose content contains `[` | 7.35 ms | 23.0% |
+| re-project the exact stale set (1,688 blocks) | **2.28 ms** | **7.2%** |
+
+**The crude bracket filter is nearly worthless** — 37% of the saving where the
+exact set gets 81%. There is no cheap middle.
+
+#### How often a cached projection actually goes stale
+
+Project each block at the boundary where it closes, then re-project everything
+at the end and compare a full subtree signature:
+
+| corpus | closed inline blocks | stale at the end | documents affected |
+|---|---|---|---|
+| 670 real `.md` | 41,384 | **1,688 (4.08%)** | 128 of 670 |
+| 892 fixtures | 1,057 | **63 (5.96%)** | 59 of 892 |
+
+Worst single document: `unified@11.0.5/readme.md`, 116 of 389 (29.8%).
+
+#### Why finalize-only is not free: the disagreement window
+
+**99.08% of link/image reference uses are forward** (3,027 of 3,055 on
+fixtures; 99.88%, 3,435 of 3,439, on the real corpus). The tempting inference —
+*definitions live at the bottom, so a re-projecting snapshot and a
+defer-to-finalize snapshot agree almost everywhere* — **was refuted, and the
+refutation is the finding**: the window opens at the **first binding**
+definition, not the last. Median `firstBindDef/N` is 0.801 on real documents;
+the window is empty in only **8 of 90** real documents, and **line-weighted,
+27.40% of all stream boundaries (9,543 of 34,832) hold at least one site where
+the two answers differ.** "Definitions at the bottom" is a fixture artefact —
+empty in 67 of 68 fixtures, 8 of 90 real documents.
+
+So deferring to a single last pass costs a quarter of the stream to save 9.5 ms
+per 4.92 MB.
+
+#### The rule
+
+> **A cached block projection is invalid when the map has advanced past the
+> generation it was made at. `finish` is simply the last projection.**
+
+No special path, no special API, no work queue. Definition arrival is O(1) — bump
+the generation, flip nothing, walk nothing. Correctness needs no index at all
+(36.9% of a parse); an index makes the last projection cheap (7.2%). That is
+§12.3's demotion of the cache one level further down: **the index is an
+optimisation of the projection, and correctness never depends on it**, which is
+what makes it safe to defer past Stage 1.
+
+#### Four questions the measurements cannot settle
+
+- **Q1 — what does a snapshot promise about a reference whose definition has not
+  arrived?** §11.6 settles that prose is not *wrong*. It does not settle whether
+  a consumer asking after line 900 of a 1,000-line README should see the links
+  that lines 950–990 define. Deferral says no across 27.40% of real stream
+  boundaries; the generation rule re-derives them for 2.28 ms per 4.92 MB. This
+  is the snapshot's contract, not a measurement.
+- **Q2 — is the projection bound `O(what you project)` or `O(what changed)`?**
+  §12.4 states the first. A per-line consumer needs the second, and it is the
+  difference between 11.77 ms and 2.28 ms — i.e. whether the label→blocks index
+  is Stage 1 work or deferrable. **The cache's key is the answer, so answer it
+  before writing the cache.**
+- **Q3 — what is "closed" for `TABLE_CELL` and `DIRECTIVE_LABEL`?**
+  `contains_inlines` is true for both (`extensions/table.c:747`,
+  `extensions/directive.c:1283`), so a projection must cover them — and there is
+  **no closed-ness signal to schedule on**. Measured on `ignore@7.0.6/README.md`:
+  after every byte is fed, all six `TABLE_CELL` nodes still carry
+  `MARKDOWN_CORE_NODE__OPEN`, and those six cells hold all six of that document's
+  reference sites, every definition of which is below the table. **This is why
+  the criterion-1 check was 668 of 670 and not 670.** Three shapes and no
+  evidence between them: clear `__OPEN` in `table.c`, project a table's rows when
+  the table closes, or stop using `__OPEN` as the scheduling predicate.
+- **Q4 — which layer owns the diagnostic list?** §12.4 moves
+  `REFERENCE_UNDEFINED` into the projection and that is right, but at least one
+  non-reference code **amends rather than withdraws**: on
+  `extensions-directive.txt:786` (`:x{a=\n}t`) a prefix parse gives
+  `1:3..1:3 "unclosed attribute list…"` and the full parse gives
+  `1:3..2:1 "unrecognised attribute list…"` — different scope, different message,
+  different pool length. It is emitted from a block-phase inline match hook
+  (`extensions/directive.c:1034-1041`) over accumulated content, so **the
+  projection cannot fix it.** Either requirement 13's list becomes a per-snapshot
+  derivation too, or it stays parser-owned and carries provisional rows.
+  One constraint that turns out **not** to exist: the list is mechanically
+  retractable — `markdown_core_strbuf_drop`/`_truncate` exist (`buffer.h:100,103`),
+  `message_start` is monotone by construction, and a compacting sweep over 64,000
+  records measured 0.329 ms. Decide on design grounds, not on "append-only".
+
+#### Two corrections to what this document already says
+
+- **§11.9's "1.00% of appends touch a closed node" is too small by ~5×**, and it
+  is quoted in §0, §11.8, §11.10a and §12.3. Re-measuring the same three fixture
+  files and the same 1,304 appends without the probe's `openFrom()` heuristic
+  gives **4.98%** — the heuristic calls the last block in a dump "open" when a
+  blank line has already closed it, hiding 49 of 65 events. The independent
+  closed-block figures above (4.08% real, 5.96% fixtures) are the same order.
+  **It does not change the architecture** — §12.3 already demoted the cache to an
+  optimisation, so a 5× correction makes the cache *less valuable*, not the
+  design wrong — but the number is wrong where it stands.
+- **§11.7's Step 8 and §12.1 are in direct conflict.** Step 8 wants a closed
+  block to *release* its content buffer; §12.1 depends on every block *keeping*
+  it for life (`core/node.c:176` is the only free). The split chooses keeping,
+  and **the resident-memory bound that comes with that is unmeasured.**
+
+#### What is still unmeasured, stated because it bounds the above
+
+- **No implementation exists.** The spikes call `markdown_core_parse_inlines`
+  directly, free children by hand, and re-prepare the map by hand; none runs the
+  engine's own `finish` path afterwards, and none can — `contains_inlines` is
+  type-only (H4), so `finish` re-parses every block and appends a duplicate
+  inline subtree. The 4.08% assumes "make `process_inlines` callable more than
+  once" lands correctly.
+- **The projection costs are a lower bound**: `PARAGRAPH` and `HEADING` only,
+  excluding consolidation, the postprocess loop and the strip — which decompose
+  to 30.2% and 14.4% of `finish` on a 32,000-paragraph document.
+- **The mid-stream diagnostic burst has no trustworthy count.** Enabling
+  `diagnostics_on` on a live parser segfaulted the spike. Treat the *ratio* of
+  spurious to real `REFERENCE_UNDEFINED` as roughly 5:1 (three independent
+  measurements gave 48:9, 40:8, 38:4) and the *count* as unestablished.
