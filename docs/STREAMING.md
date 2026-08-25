@@ -76,7 +76,10 @@ verified in this session unless marked otherwise:
   This is exactly the substrate block-unit streaming needs: a stable thing to
   re-project from.
 - **`finish` is the last projection.** `finalize_document` closes the spine;
-  `finish` is that plus a derivation plus the seal.
+  `finish` is that plus a projection plus the seal. Since T1 the projection is
+  taken **in place** on the CST — `finish` returns `parser->root` itself and
+  the reset no longer frees it — while `derive_tree` keeps the clone for
+  re-projection. Both run the same body (`S_project`).
 - **Both definition maps accept insert-after-lookup.** Required for any
   mid-stream projection, and it fixed a shipped correctness defect independent
   of streaming (4 of 670 real `.md` lost 20 reference nodes from the *finished*
@@ -107,7 +110,7 @@ Each is either **VERIFIED** here or **INHERITED** from the Stage 1 design work a
 not re-measured. Inherited numbers are recoverable from
 `git show 8d0910b:docs/RECONSTRUCTION.md`.
 
-### F1 — `finish` pays for a clone it immediately discards: **+7.9%**  · VERIFIED
+### F1 — `finish` pays for a clone it immediately discards: **+7.9%**  · VERIFIED · **CLOSED by T1**
 
 `derive_tree` clones the block skeleton, projects onto the clone, and `finish`
 then disposes the CST. Nothing can observe the CST after `finish`, so on the
@@ -140,6 +143,40 @@ mechanism as the skeleton copy and nothing else:
 
 The reference-heavy cases are not outliers, so map re-preparation is **not** the
 cost.
+
+**Closed by T1** (2026-08-25). Same `bench_runner`, same 41 cases, same method,
+three trees built and run in one session so the numbers are comparable:
+`f5edcdd` (pre-Stage-1), `890e908` (Stage 1, before T1) and the T1 working tree;
+3 runs each, trees alternated within every run, min of `median_ms` per case.
+
+```
+total   pre=256.64 ms   base=274.75 ms   head=257.04 ms
+base/pre    1.0706 (+7.1%)   median 1.0618   slower >5%: 23 of 41   faster >5%: 0
+head/base   0.9356 (-6.4%)   median 0.9319   slower >5%: 0  of 41   faster >5%: 24
+head/pre    1.0016 (+0.2%)   median 1.0015   slower >5%: 0  of 41   faster >5%: 1
+```
+
+`base/pre` reproduces the +7.9% above; `head/pre` says the debt is paid in
+full — the one-shot path is back at its pre-Stage-1 cost. The recovery sorts
+exactly as the cost did, which is the mechanism confirmed a second time from
+the other side:
+
+| case | head/base | head/pre |
+|---|---|---|
+| `deep_nesting@8192 / @16384 / @32768` | **0.665 / 0.667 / 0.680** | 0.958 / 1.026 / 0.990 |
+| `block-list-flat` / `block-list-nested` | 0.807 / 0.790 | 1.034 / 1.015 |
+| `block-heading` / `block-html` | 0.817 / 0.816 | 1.016 / 1.006 |
+| `large_document@512` (5.6 MB) | 0.939 | 1.008 |
+| `block-ref-flat` / `block-ref-nested` | 0.967 / 0.990 | 1.003 / 0.976 |
+| `inline-em-flat` / `inline-newlines` | 0.989 / 0.927 | 1.045 / 0.965 |
+| `adversarial_emphasis@16384` | 0.965 | 0.981 |
+
+A head-vs-base run taken earlier in the same session gave 0.9455 (−5.4%),
+median 0.9472, 22 faster >5%, 1 slower >5%: `adversarial_links@16384` at 1.077,
+a 4 ms case whose @32768/@65536 siblings sat at 0.986/1.012 and which came back
+at 0.975 in the three-way run. Pooled over both runs (6 samples a side)
+head/base is 0.9417 (−5.8%) with that case at 1.060, on the strength of one
+fast base sample — noise, not a regression.
 
 ### F2 — WITHDRAWN: `audit-scope-containment` is not red  · CORRECTED
 
@@ -258,12 +295,19 @@ made.
 
 ### Phase A — pay the measured debts (needs no decision)
 
-- [ ] **T1 — `finish` stops cloning.** Give `finish` a non-cloning path that
+- [x] **T1 — `finish` stops cloning.** Give `finish` a non-cloning path that
       projects the CST in place and then seals the parser. H4's non-idempotence
       does not apply: this is the first and last projection of that CST.
       `derive_tree` keeps its cloning semantics for re-projection.
       *Closes F1. Gate: the 41-case bench before/after, plus correctness 88/88
-      and every `projection_*` row unmoved.*
+      and every `projection_*` row unmoved.* **Done 2026-08-25**: the
+      projection body is `S_project(parser, skeleton, refmap, record)`;
+      `derive_tree` = clone + `S_project`, `finish` = `finalize_document` +
+      `S_project(parser->root)` + ownership flip (`parser->root = NULL` before
+      the reset, and the oom path frees whichever of `res` / `parser->root`
+      still holds the tree). Correctness 88/88, conformance 2/2, asan and
+      ubsan 76/76 each (rebuilt, per F2), all ten `projection_*` rows green,
+      goldens unmoved. Numbers in F1.
 
 ### Phase B — make a block addressable  · needs D4
 
@@ -349,6 +393,8 @@ Stated so they are not later mistaken for defects.
 
 **Measured in this session** (2026-08-25, `8d0910b`): F1's 41-case bench table,
 F2, F3's export count, F4, F5, F10, correctness 88/88, the `gates.sh` sweep.
+**T1's closing measurement** (2026-08-25): the three-way bench in F1, over
+`f5edcdd` / `890e908` / the T1 working tree, built and run in one session.
 
 **Inherited from the Stage 1 design work and not re-measured**: F6's 36.9% /
 23.0% / 7.2%, F7's 27.40% / 80.1% / 8-of-90 / 4.08%, F8, F9, and the

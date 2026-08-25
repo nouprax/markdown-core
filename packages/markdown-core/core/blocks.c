@@ -1243,7 +1243,8 @@ void markdown_core_manage_extensions_special_characters(markdown_core_parser *pa
 
 // Walk through node and all children, recursively, parsing
 // string content into inline content where appropriate. `root` is a stated
-// CST -- under the split it is a DERIVED block skeleton, never parser->root.
+// CST: a DERIVED block skeleton for a re-projection, or `parser->root` itself
+// for the one projection that ends the parser's life (`finish`, T1).
 static void process_inlines(markdown_core_parser *parser, markdown_core_node *root, markdown_core_map *refmap,
                             int options) {
     markdown_core_iter *iter = markdown_core_iter_new(root);
@@ -1572,23 +1573,59 @@ static markdown_core_node *S_clone_block_tree(markdown_core_parser *parser, cons
     return dst_root;
 }
 
-/* THE PROJECTION: AST = project(CST, refmap) (§12.1). Clone the block
- * skeleton, parse each content-bearing block's inlines against the map as it
- * now stands, then run the tail `finish` always ran -- consolidation, the
- * extension postprocessors, the comment strip -- on the derived tree. The CST
- * is not written: a later derivation, against this map or another, starts from
- * the same bytes.
+/* THE PROJECTION's work, on whichever block skeleton it is handed: parse
+ * each content-bearing block's inlines against the map as it now stands, then
+ * run the tail `finish` always ran -- consolidation, the extension
+ * postprocessors, the comment strip. Returns the projected root, which a
+ * postprocessor may have replaced. The skeleton is CONSUMED: after this it is
+ * an AST, and projecting it again would not give the same answer. That is
+ * why a re-projection hands in a clone and `finish` hands in the CST itself.
  *
  * `record_diagnostics` gates the rows the projection itself raises (after
  * §12.9 that is `label-too-long` and the directive attribute/label codes).
  * They are CST facts read off the construct's own bytes, but the rule is that
  * a diagnostic speaks when its construct COMPLETES (§12.8 Q4) -- so only the
- * final derivation, over a fully closed CST, records; a derivation taken
- * mid-parse stays silent rather than describing an open block's prefix. */
-markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parser, markdown_core_map *refmap,
-                                                     int record_diagnostics) {
+ * final projection, over a fully closed CST, records; one taken mid-parse
+ * stays silent rather than describing an open block's prefix. */
+static markdown_core_node *S_project(markdown_core_parser *parser, markdown_core_node *skeleton,
+                                     markdown_core_map *refmap, int record_diagnostics) {
     markdown_core_llist *extensions;
     bool recording = parser->diagnostics_on;
+
+    parser->diagnostics_on = recording && record_diagnostics != 0;
+    process_inlines(parser, skeleton, refmap, parser->options);
+    parser->diagnostics_on = recording;
+
+    if (!markdown_core_consolidate_text_nodes_with_parser(parser, skeleton)) {
+        parser->oom = true;
+    }
+
+    for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
+        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
+        if (ext->postprocess_func) {
+            markdown_core_node *processed = ext->postprocess_func(ext, parser, skeleton);
+            if (processed) {
+                skeleton = processed;
+            }
+        }
+    }
+
+    if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
+        if (!S_strip_html_comments(skeleton)) {
+            parser->oom = true;
+        }
+    }
+
+    return skeleton;
+}
+
+/* THE PROJECTION: AST = project(CST, refmap) (§12.1), as a NEW tree. Clone
+ * the block skeleton and project onto the clone. The CST is not written: a
+ * later derivation, against this map or another, starts from the same bytes.
+ * This is the RE-projection path -- `finish`, whose CST has no later, skips
+ * the clone and projects in place (T1). */
+markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parser, markdown_core_map *refmap,
+                                                     int record_diagnostics) {
     markdown_core_node *derived;
 
     /* A parse that lost an allocation may hold a tree that is not all there --
@@ -1605,31 +1642,7 @@ markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parse
         return NULL;
     }
 
-    parser->diagnostics_on = recording && record_diagnostics != 0;
-    process_inlines(parser, derived, refmap, parser->options);
-    parser->diagnostics_on = recording;
-
-    if (!markdown_core_consolidate_text_nodes_with_parser(parser, derived)) {
-        parser->oom = true;
-    }
-
-    for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
-        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
-        if (ext->postprocess_func) {
-            markdown_core_node *processed = ext->postprocess_func(ext, parser, derived);
-            if (processed) {
-                derived = processed;
-            }
-        }
-    }
-
-    if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
-        if (!S_strip_html_comments(derived)) {
-            parser->oom = true;
-        }
-    }
-
-    return derived;
+    return S_project(parser, derived, refmap, record_diagnostics);
 }
 
 markdown_core_node *markdown_core_parse_file(FILE *f, int options) {
@@ -2643,13 +2656,26 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
         markdown_core_strbuf_clear(&parser->linebuf);
     }
 
-    /* Close the spine -- the CST is final -- then run the LAST DERIVATION.
-     * `finish` is that derivation plus the seal (§12.10 A): the caller gets a
-     * DERIVED tree, never `parser->root`, through the same projection any
-     * snapshot uses, and the reset below takes the CST with it. */
+    /* Close the spine -- the CST is final -- then run the LAST PROJECTION,
+     * IN PLACE (T1). `finish` is that projection plus the seal (§12.10 A).
+     * Nothing observes the CST after `finish`, so cloning it first was work
+     * with no reader, and the one-shot path paid for it in proportion to its
+     * block count (docs/STREAMING.md F1). And this is the first and only
+     * projection of this CST, so the projection's non-idempotence over the
+     * tree it writes cannot bite. The tree the caller gets IS `parser->root`:
+     * ownership flips here, and everything below, the reset included, must
+     * treat the CST as already gone. `oom` is tested first for the reason
+     * `derive_tree` tests it: a lost allocation leaves a tree that is not all
+     * there, and there is nothing to project. */
     finalize_document(parser);
 
-    res = markdown_core_parser_derive_tree(parser, parser->refmap, 1);
+    if (parser->oom) {
+        res = NULL;
+    } else {
+        res = S_project(parser, parser->root, parser->refmap, 1);
+        parser->root = NULL;
+        parser->current = NULL;
+    }
 
     markdown_core_strbuf_free(&parser->curline);
     markdown_core_strbuf_free(&parser->linebuf);
@@ -2675,11 +2701,16 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
         parser->oom = true;
     }
     if (parser->oom) {
+        /* Exactly one of these holds the tree: `res` once the projection ran
+         * and took it from `parser->root`, `parser->root` when the parse was
+         * lost before the projection could run. */
         if (res) {
             markdown_core_node_free(res);
         }
-        markdown_core_node_free(parser->root);
-        parser->root = NULL;
+        if (parser->root) {
+            markdown_core_node_free(parser->root);
+            parser->root = NULL;
+        }
         markdown_core_parser_reset(parser);
         return NULL;
     }
@@ -2715,9 +2746,10 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
         memset(&parser->diagnostics, 0, sizeof(parser->diagnostics));
     }
 
-    /* The parser's life ends here (ruling A): the reset disposes the CST --
-     * `parser->root` deliberately stays set so `dispose` frees it -- and what
-     * leaves is the derivation alone. */
+    /* The parser's life ends here (ruling A): the reset disposes what is
+     * still the parser's. The CST is not among it -- `parser->root` was
+     * cleared at the projection because the CST left as the result, and
+     * `dispose` frees only what it finds set. */
     markdown_core_parser_reset(parser);
 
     return res;

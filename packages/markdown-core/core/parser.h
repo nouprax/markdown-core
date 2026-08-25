@@ -274,9 +274,11 @@ struct markdown_core_parser {
  *
  * `record_diagnostics` gates the rows the projection itself raises: a
  * diagnostic speaks when its construct COMPLETES (§12.8 Q4), so only the
- * final derivation -- `finish`'s, over a fully closed CST -- passes 1.
- * Internal: `finish` is built on this, and it is what a snapshot accessor
- * would call; it is not part of the public surface. */
+ * final projection -- `finish`'s, over a fully closed CST -- passes 1.
+ * Internal: this is the RE-projection, what a snapshot accessor calls while
+ * the parser lives on. `finish` shares its body but not its clone -- the last
+ * projection is taken in place on the CST (T1), because nothing can observe
+ * the CST afterwards. Not part of the public surface. */
 markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parser, markdown_core_map *refmap,
                                                      int record_diagnostics);
 
