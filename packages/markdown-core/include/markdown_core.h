@@ -200,7 +200,8 @@ typedef enum markdown_core_diagnostic_severity {
     /** The author wrote something the engine did not read the way they meant,
      * and the bytes stand as prose. */
     MARKDOWN_CORE_DIAGNOSTIC_WARNING = 1,
-    /** The author NAMED something that does not exist. */
+    /** The ENGINE refused a well-formed construct -- its own cap, not the
+     * grammar. */
     MARKDOWN_CORE_DIAGNOSTIC_ERROR = 2
 } markdown_core_diagnostic_severity;
 

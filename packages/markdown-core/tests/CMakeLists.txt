@@ -263,8 +263,15 @@ endif()
 # style check (§12.8 Q3).
 if(MARKDOWN_CORE_STATIC)
     foreach(fixture spec regression extensions)
-        markdown_core_add_test(projection_closed_${fixture} "streaming" 240 projection_runner --case
-                               closed_after_finish --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+        markdown_core_add_test(
+            projection_closed_${fixture}
+            "streaming"
+            240
+            projection_runner
+            --case
+            closed_after_finish
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
     endforeach()
     # The split's own two properties (§12): two projections of one CST at one
     # refmap generation are byte-identical, and the CST is refmap-independent
@@ -272,11 +279,24 @@ if(MARKDOWN_CORE_STATIC)
     # Both derive BEFORE finish, so the properties hold over the open spine
     # too, not only over the closed tree finish projects.
     foreach(fixture spec regression extensions)
-        markdown_core_add_test(projection_double_${fixture} "streaming" 240 projection_runner --case double_projection
-                               --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
         markdown_core_add_test(
-            projection_refmap_independence_${fixture} "streaming" 240 projection_runner --case refmap_independence
-            --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+            projection_double_${fixture}
+            "streaming"
+            240
+            projection_runner
+            --case
+            double_projection
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+        markdown_core_add_test(
+            projection_refmap_independence_${fixture}
+            "streaming"
+            240
+            projection_runner
+            --case
+            refmap_independence
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
     endforeach()
     # Criterion 2's SECOND bound (§12.4, §12.10 D): projection is O(what is
     # projected) -- flat ns per content byte across document sizes, the same

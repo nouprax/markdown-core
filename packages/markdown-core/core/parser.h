@@ -52,12 +52,15 @@ extern "C" {
 #define MARKDOWN_CORE_DIAGNOSTIC_TYPEDEFS
 /* WARNING: the author wrote something the engine did not read the way they
  *          meant, and the bytes stand as prose.
- * ERROR:   the author NAMED something that does not exist.
+ * ERROR:   the ENGINE refused a well-formed construct -- its own cap, not the
+ *          grammar. (It used to also mean "named something that does not
+ *          exist"; those codes are deleted, §12.9 -- a well-formed reference
+ *          that resolves to nothing is prose, which the language defines.)
  *
  * Two levels because those are the two things a consumer does differently: a
- * documentation build fails on a cross-reference that names nothing and
- * reports a malformed attribute block. There is no fatal level -- a parse
- * failure is not a diagnostic (requirement 13's converse). */
+ * documentation build fails on what the engine refused and reports a
+ * malformed attribute block. There is no fatal level -- a parse failure is
+ * not a diagnostic (requirement 13's converse). */
 typedef enum markdown_core_diagnostic_severity {
     MARKDOWN_CORE_DIAGNOSTIC_WARNING = 1,
     MARKDOWN_CORE_DIAGNOSTIC_ERROR = 2

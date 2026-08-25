@@ -36,14 +36,17 @@ longer exists.
   `text $$ mid$$ text` reports `" mid"`, because the space the rule wants at the
   end is not there.
 - Report an ordered list of diagnostics beside the parsed document —
-  `(severity, code, scope, message)` — covering the eight places where a
+  `(severity, code, scope, message)` — covering the six places where a
   construct the author wrote did not become one and neither the tree nor the
   concrete records can say so: a directive's rejected label or attribute list, a
   directive block that did not open or never closed, a table whose delimiter row
-  does not match its header, a full or collapsed reference and a footnote call
-  naming nothing the document defines, and a label the parser refused as too
-  long. Recording them changes nothing the parse builds, and an allocation the
-  list cannot make abandons the parse rather than reporting a short one.
+  does not match its header, and a label the parser refused as too long. A
+  well-formed reference or footnote call that resolves to nothing is not among
+  them: CommonMark defines that outcome — the bytes are prose — so nothing
+  failed and nothing is reported. Every diagnostic is decidable from the
+  construct's own bytes and speaks when the construct completes. Recording them
+  changes nothing the parse builds, and an allocation the list cannot make
+  abandons the parse rather than reporting a short one.
 - Report an allocation loss as `MARKDOWN_CORE_ERROR_ALLOCATION_FAILED` rather
   than as `MARKDOWN_CORE_ERROR_INTERNAL`, and stop the failure reporter needing
   an allocation of its own to say so.

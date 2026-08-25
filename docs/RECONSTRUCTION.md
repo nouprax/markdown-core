@@ -34,7 +34,7 @@ transcribe infrastructure facts from and never a source of engine design.
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
 | Stage 0 | **CLOSED AND MERGED.** Every step in §4.1's list landed; §4.8 is the acceptance checklist and every box is ticked. 11a, 11b and 11c were RETIRED rather than built (§4.14.11d) — `node.scope` already answered the requirement, and −1,803 lines of C went with them. Per-step records are §4.14; the CI reconciliation that followed is §4.14.15H–L |
-| Stage 1 | **RESHAPED, NOT STARTED.** Stage 1 is now **the CST/AST split** (§12, owner ruling of 2026-08-24) and every stage below it moved down one. The split is not a reordering: it *deletes* four items from what used to be Stage 1, so building them first would have been building machinery for a problem the split removes |
+| Stage 1 | **LANDED on `poc/stage1-tail-reach`, 2026-08-24 — every box in the list below is ticked and the acceptance is measured.** The CST/AST split (§12): both maps re-prepare on insert-after-lookup, a finished tree carries no open block, the projection is `markdown_core_parser_derive_tree` and `finish` returns a derivation, codes 6/7 are deleted with `label-too-long` renumbered to 6, the diagnostic list is wholly CST-owned under the completion rule, and both criterion-2 bounds are gated. **Six defects fixed, three of them newly found while landing**: the two §12.4 named (index leak, `size` overwrite) plus `sort_map` leaving `indexed` set after a path switch (SIGSEGV); the open-cell inconsistency §12.8 named plus `add_child`'s OOM path re-anchoring `parser->current` on the header row being closed (assert, sanitizer-only); and a failed `association_init` leaving a footnote definition's label borrowing a freed temporary, invisible until the derivation read it. PR not opened — owner ruling: the PR goes up after the landing |
 | Stage 2 | **NOT STARTED** — the pausable parser, which is what Stage 1 used to be. Its inventory is §11 and its measurements stand; §12.3 says which of its conclusions the split deletes |
 
 ### Stage 1, in order
@@ -188,10 +188,20 @@ argument. Nothing here is checked.
       `audit-diagnostics.mjs` now reports over 6 codes — `29 over 892
       examples, 5 of 6 codes exercised` (label-too-long is the facade test's,
       not a fixture's, as before).
-- [ ] **Acceptance** — `stream_runner` still green (criterion 1 is now a
-      theorem, kept as a gate), two projections of one CST byte-identical, the
-      external oracles unmoved, and the CST proved refmap-independent by
-      projecting one CST against two different maps.
+- [x] **Acceptance** — ALL MET, measured at the landing (2026-08-24):
+      `stream_runner` green over all six arms (criterion 1 kept as a gate);
+      two projections of one CST byte-identical over every fixture example
+      (`projection_double_*`, including over the open spine); the external
+      oracles unmoved — upstream 892/892 with 10/10 divergences reproduced,
+      mdast 112/112 with an empty backlog, fuzz 300/300 on both oracles;
+      the CST proved refmap-independent by projecting one CST against its own
+      map, an empty map, and its own map again with a byte-stable CST
+      fingerprint and byte-identical outer projections
+      (`projection_refmap_independence_*`); and both criterion-2 bounds gated.
+      Full sweep: correctness 88/88, asan 76/76, ubsan 76/76, tsan 76/76,
+      conformance 2/2, benchmark 7/7, every `gates.sh` row green, ES suites
+      exit 0/fail 0, Swift test+conformance green, Kotlin jvmTest 18/18 and
+      jvmConformanceTest 4/4 with `--rerun-tasks`.
 
 ### Stage 2, in order — the pausable parser
 
@@ -272,10 +282,11 @@ node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # 300/300 SINCE 
                                           # `gates.sh` until 13.1, which is the
                                           # third time that script has run fewer
                                           # gates than this list names
-node scripts/check-upstream-parity.mjs     # 888/888 vs cmark-gfm 0.29.0.gfm.13, 10/10
-                                          # divergences, 4/4 projections acted
-node scripts/check-mdast-parity.mjs        # 110/110, backlog EMPTY since 9b.2
-node scripts/audit-scope-sanity.mjs        # 1 unresolved row, 5453 scanned, only-shrink holds
+node scripts/check-upstream-parity.mjs     # 892/892 vs cmark-gfm 0.29.0.gfm.13, 10/10
+                                          # divergences (888 was stale at Stage 1's landing)
+node scripts/check-mdast-parity.mjs        # 112/112, backlog EMPTY since 9b.2 (110 was stale)
+node scripts/audit-scope-sanity.mjs        # 1 unresolved row, 5506 scanned, only-shrink holds
+                                          # (5453 was stale; the ledgers were untouched)
 
 # The three position oracles, landed at 0a.1 (§4.2.7). Each fails on a row
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
@@ -283,20 +294,22 @@ node scripts/audit-scope-sanity.mjs        # 1 unresolved row, 5453 scanned, onl
 node scripts/audit-inline-sourcepos.mjs    # 40 rows registered, 68 scanned — and
                                           # for the first time they are rows where THIS
                                           # side is right and upstream is not (§4.14.8a)
-node scripts/audit-scope-containment.mjs   # 8 rows registered, 4225 scanned
-node scripts/audit-position-places.mjs     # 0 rows registered, 4451 scanned -- EMPTY since §4.14.11c2
+node scripts/audit-scope-containment.mjs   # 9 rows registered, 4278 scanned (8/4225 was stale)
+node scripts/audit-position-places.mjs     # 0 rows registered, 4494 scanned -- EMPTY since §4.14.11c2
+                                          # (4451 was stale)
 
-# Requirement 11a's four laws over the concrete record set, landed at 11a
-# (§4.14.11a). L1 and L3 have no rows and hold by construction; L4 is checked
-# by re-parsing every line-boundary prefix.
-node scripts/audit-concrete-records.mjs   # 277 rows registered, 5874 regions
+# ~~Requirement 11a's four laws over the concrete record set~~ THE SCRIPT IS
+# GONE: `audit-concrete-records.mjs` and its 3,740-line record set were deleted
+# at §4.14.11d, and this row outlived them -- found at Stage 1's landing when
+# the row was run and the module did not exist.
 
 # Requirement 13's three laws over the diagnostic list, landed at 13.1
 # (§4.14.13a). D1 -- the semantic tree AND the concrete records are
 # byte-identical with recording on and off -- is the only one a corpus can see,
 # and the census beside it is fail-closed both ways: a code that stops firing
 # fails as loudly as one that starts.
-node scripts/audit-diagnostics.mjs        # 38 diagnostics, 891 examples, 7 of 8 codes
+node scripts/audit-diagnostics.mjs        # 29 diagnostics, 892 examples, 5 of 6 codes
+                                          # (38/891/7-of-8 predates §12.9's deletion)
 
 # D9's pin. It was REGISTERED RED from 0a.8 to 9b.2 and is now GREEN with an
 # EMPTY ledger -- still fail-closed, so a row appearing fails the run. Deleting
@@ -467,8 +480,9 @@ so `pnpm run test:es-node` from inside a package directory reports
 **A gradle test task can be green having run a fraction of the suite.**
 `jvmTest` EXCLUDES `*AstTest*` and `jvmConformanceTest` includes only it, so
 "BUILD SUCCESSFUL" from one of them says nothing about the other. Read
-`build/test-results/*/TEST-*.xml` and count: this branch expects **11** across
-six classes in `jvmTest` and **4** in `jvmConformanceTest`.
+`build/test-results/*/TEST-*.xml` and count: **18** in `jvmTest` and **4** in
+`jvmConformanceTest` as of Stage 1's landing (the row said 11, which was
+stale when re-counted).
 
 **A new binding test whose name does not start with a registered suite prefix
 silently does not run.** `packages/es-markdown-core/scripts/run-tests.mjs`
