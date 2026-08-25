@@ -76,23 +76,32 @@ argument. Nothing here is checked.
       `parse_inlines` from inside one was wrong: it is an inline match handler
       running *during* the projection. What remains is a gate, not a decision —
       prove both are deterministic on a fresh AST.
-- [ ] **Decide what "closed" means for `TABLE_CELL` and `DIRECTIVE_LABEL`.**
-      `contains_inlines` is true for both, so the projection must cover them, and
-      **there is no closed-ness signal to schedule on** — measured, all six
-      `TABLE_CELL` nodes of `ignore@7.0.6/README.md` still carry
-      `MARKDOWN_CORE_NODE__OPEN` after every byte is fed, and they hold all six of
-      that document's reference sites. This is the whole of the criterion-1 gap
-      (668 of 670, §12.7). **Blocks the projection scheduler**, and three shapes
-      are open with no evidence between them (§12.7 Q3).
+- [ ] **Close a `TABLE_CELL`, and fix the defect that hid it.** Owner ruling:
+      a cell must carry a closed signal (§12.8 Q3). It is not a design gap —
+      `make_block` sets `__OPEN` (`blocks.c:136`), `finalize` is the only clearer
+      (`blocks.c:1036`), and a cell is never on the open spine, so **`finish`
+      returns a tree containing open blocks**: measured on a fully parsed
+      one-shot table, all four cells and the header row still carry `__OPEN`.
+      A cell's content is complete when it is built — a GFM row is one line — so
+      nothing has to be scheduled. `DIRECTIVE_LABEL` is already correct
+      (`node_new_with_mem_and_ext` never touches `flags`). This is the whole of
+      the criterion-1 gap (668 of 670, §12.7).
 - [ ] **Make `process_inlines` callable more than once**, from a stated CST,
       producing a stated AST. H4 says it is not idempotent today; that is the
       work, and its gate is that two projections of the same CST at the same
       refmap generation are byte-identical.
-- [ ] **Move the resolution diagnostics into the projection.**
-      `REFERENCE_UNDEFINED` is raised inside inline parsing and appended to
-      `parser->diagnostics` (`inlines.c:1544`) — a semantic fact written into
-      parser-owned state. Regenerated per projection it is never retracted.
-      Audit every diagnostic code for the same fault while there.
+- [ ] **Split the diagnostic list by layer** (§12.8 Q4). The CST owns the list
+      and it is append-only, **under one rule: a CST diagnostic is emitted when
+      its construct COMPLETES, not while it is open** — which is what stops
+      `extensions/directive.c:1034` amending `unclosed` into `unrecognised`
+      between a prefix and a full parse. The exception is
+      `REFERENCE_UNDEFINED`, which is not a function of the block's own bytes:
+      it moves into the projection and is regenerated per snapshot
+      (`inlines.c:1544`). Audit every code for which half it belongs to.
+- [ ] **No label→sites index** (§12.8 Q2, owner ruling). The bound is
+      `O(what you project)`. The generation stamp stays — one integer compare,
+      and it is what makes a cache safe — but what it invalidates is
+      re-derived, not looked up.
 - [ ] **Split criterion 2 into two bounds** and gate them separately: CST
       construction O(line) per fed line, projection O(what is projected) per
       snapshot. The existing slope gate measures the first; the second has no
@@ -11243,7 +11252,7 @@ the generation, flip nothing, walk nothing. Correctness needs no index at all
 optimisation of the projection, and correctness never depends on it**, which is
 what makes it safe to defer past Stage 1.
 
-#### Four questions the measurements cannot settle
+#### Four questions the measurements cannot settle — ALL FOUR ANSWERED, §12.8
 
 - **Q1 — what does a snapshot promise about a reference whose definition has not
   arrived?** §11.6 settles that prose is not *wrong*. It does not settle whether
@@ -11312,3 +11321,99 @@ what makes it safe to defer past Stage 1.
   `diagnostics_on` on a live parser segfaulted the spike. Treat the *ratio* of
   spurious to real `REFERENCE_UNDEFINED` as roughly 5:1 (three independent
   measurements gave 48:9, 40:8, 38:4) and the *count* as unestablished.
+
+### 12.8 ANSWERED: all four, and Q3 was a live defect
+
+**Owner rulings, 2026-08-24.**
+
+#### Q1 — a snapshot promises nothing about what has not arrived
+
+> *"We do not promise anything about unarrived things. If cannot resolve, AST
+> should fall back to text; if can resolve, link the definition."*
+
+Which is **exactly today's semantics, applied per projection**. A projection
+resolves against the map as it then stands; an unresolved reference falls through
+to prose, as `handle_close_bracket`'s `noMatch` already does. Nothing new is
+built and no "pending" state is representable — §12.2 showed it could not be
+anyway. The measured 27.40% of stream boundaries where deferral and
+re-projection disagree is therefore not a contract question at all: both answers
+are correct *for their own state*, and the later one is simply later.
+
+#### Q2 — the bound is `O(what you project)`
+
+> *"I accept O(what you project) if it is the leanest design."*
+
+It is. **No label→sites index in Stage 1.** Correctness never depends on one
+(§12.7: re-projecting every closed block is 36.9% of a parse), and building one
+would be optimising a projection that does not exist yet. The generation stamp
+stays — it is one integer comparison and it is what makes a cache *safe* — but
+what it invalidates is re-derived, not looked up.
+
+#### Q3 — the closed signal must exist, and its absence is a SHIPPED DEFECT
+
+> *"Table cell and directive label definitely should have a closed signal,
+> otherwise how do you determine the string has ended in CST or AST?"*
+
+Taken, and investigating it turned the design question into a defect report.
+
+**`DIRECTIVE_LABEL` is already fine.** It is built by
+`markdown_core_node_new_with_mem_and_ext` (`extensions/directive.c:797`), which
+never touches `flags` and `calloc`s the node — so it reads as closed.
+
+**`TABLE_CELL` is wrong, and not only mid-stream.** Cells are built through
+`markdown_core_parser_add_child` → `add_child` → `make_block`, whose
+`e->flags = MARKDOWN_CORE_NODE__OPEN` (`core/blocks.c:136`) is cleared **only**
+by `finalize` (`core/blocks.c:1036`) — and a cell is never on the open spine, so
+`finalize` never runs on it. Measured on the FINISHED tree of
+`| a | b |\n|---|---|\n| 1 | 2 |\n\npara\n`, one-shot, table extension on:
+
+```
+table            flags=0x02
+  table_header     flags=0x03 <-- __OPEN
+    table_cell       flags=0x01 <-- __OPEN
+    table_cell       flags=0x01 <-- __OPEN
+  table_row        flags=0x02          (not open -- and that is the inconsistency)
+    table_cell       flags=0x01 <-- __OPEN
+    table_cell       flags=0x03 <-- __OPEN
+```
+
+**`markdown_core_parser_finish` returns a tree containing open blocks.** Every
+cell, and the header row, in a document that has been fully parsed and closed.
+It is invisible today because nothing reads `__OPEN` after `finish` — and Stage 1
+is precisely the thing that would start reading it. It is a defect on its own
+terms and it is the whole of §12.7's 668-of-670 criterion-1 gap.
+
+The fix is where the flag should have been cleared: a cell's content is complete
+at the moment it is built, because a GFM row is one line. Nothing has to be
+scheduled.
+
+#### Q4 — the CST owns the diagnostic list, with one rule and one exception
+
+> *"Diagnostic is CST's responsibility, right?"*
+
+**Yes, and that is what makes the list monotone** — the parser owns it, it is
+append-only, and no retraction machinery is ever needed. Two things ride along:
+
+**THE RULE: a CST diagnostic is emitted when its construct COMPLETES, not while
+it is open.** That is what dissolves the only measured counterexample. On
+`extensions-directive.txt:786` (`:x{a=\n}t`), a prefix parse says
+`1:3..1:3 "unclosed attribute list…"` and the full parse says
+`1:3..2:1 "unrecognised attribute list…"` — an amendment, not a withdrawal —
+because it is raised from a block-phase inline match hook
+(`extensions/directive.c:1034-1041`) over accumulated content, while the
+paragraph is still open. Speak at close and it says one thing once. This is the
+diagnostic form of the standing ruling that a complete line is settled the moment
+it completes (§0).
+
+**THE EXCEPTION: `REFERENCE_UNDEFINED` is not a CST fact.** It is not a function
+of the block's own bytes — it is a function of what the whole document defines,
+which is the definition of an AST fact. It stays where §12.4 puts it: raised by
+the projection, regenerated per snapshot, never retracted because nothing
+survives to retract.
+
+So the list splits by layer and each half gets the property it needs: **the CST's
+is append-only because it never speaks early; the AST's is disposable because it
+is rebuilt.** The retractability measured in §12.7 Q4 — `strbuf_drop`/`_truncate`,
+`message_start` monotone, a 0.329 ms compacting sweep over 64,000 records — is
+therefore machinery neither half needs, and the finding stands only as evidence
+that "append-only by construction" was never the constraint.
