@@ -65,14 +65,15 @@ Nothing here is checked. Each line says what it is; the section says why.
       `core/inlines.c:1524` creates a reference only where the refmap lookup
       succeeds, so closing a block early parses `[foo]` before `[foo]: /url` is
       fed and the LinkReference never appears — criterion 1, not cost.
-- [ ] **FIX THE BORROW FIRST — it is the prerequisite of everything below.**
-      §11.10a: an inline literal ALIASES the open block's content buffer
-      (`chunk_dup` returns `alloc = 0`), and that buffer reallocs as lines
-      arrive — measured, three moves in twelve lines. Deferring inline parsing
-      to block close is what makes that borrow sound, so no inline node can
-      exist before its block closes until this is settled. Three shapes named
-      in §11.10a: own on emission, a backing store that does not move, or
-      offsets resolved late. **Owner decision needed before any of the rest.**
+- [ ] **TWO LAYERS: parser state is owned and private; a SNAPSHOT IS DERIVED
+      from it.** Owner ruling, §11.10a. The parser's buffers may move freely
+      because nothing outside points into them — so `chunk_dup`'s aliasing is
+      sound where it lives, and there is no borrow to fix. What must be bounded
+      instead is the DERIVATION: computing the whole document per snapshot is
+      clone-and-finish at O(document). It is O(line) because **a closed block
+      never changes** (§11.9: 1.00% of appends, all late resolution), so its
+      derived form is computed once at close and reused; only the open spine is
+      recomputed.
 - [ ] **A RESUMABLE INLINE SUBJECT** — parse each line's inlines once and carry
       the delimiter residue across the line boundary, so a line costs O(line).
       Owner ruling, §11.8. The `subject` struct already holds what a resume
@@ -10566,18 +10567,26 @@ quantify over longer buffers rather than over a fixed corpus. The abandoned
 program built this and `streaming-inline-frontier` is kept as its record — read
 the measurements, not the code (Q8, §4.9).
 
-#### SETTLED — a snapshot is borrowed, with a generation the feed bumps
+#### SETTLED — a snapshot is DERIVED from parser state, with a generation the feed bumps
 
-§11.10 showed the live root is directly readable and survives further feeding,
-so a snapshot needs **no copy, no shadow tree and no retraction**. Copying per
-snapshot is the clone-and-finish cost at O(document), which called once per line
-is the O(l²) shape criterion 2 forbids.
+**This was first recorded as "hand out `parser->root`", which is the conflation
+§11.10a corrects.** Resumable state is owned by the parser and never
+transferred; a snapshot is a **tree calculation** over it, not a pointer into
+it. The distinction is what makes the parser's buffers free to move — see
+§11.10a for the three shapes of work that assumption made look necessary and
+that this one deletes.
 
-**The ruling is borrowed plus an explicit generation check**: the handle carries
-a number that `feed` increments, so reading a stale snapshot is a clean error
-rather than undefined behaviour. The bindings all copy into value types
-immediately, so the borrow costs them nothing; the generation is what stops the
-one misuse a bare pointer leaves open.
+**The generation rule stands and is about the DERIVED tree's lifetime**, not
+about aliasing parser internals: the handle carries a number `feed` increments,
+so using a snapshot after the stream has moved on is a clean error rather than
+undefined behaviour.
+
+What the derivation may NOT do is recompute the document. That is
+clone-and-finish at O(document), which called per line is the O(l²) shape
+criterion 2 forbids. It is affordable because **a closed block never changes** —
+§11.9 measured the exceptions at 1.00% of appends, all late resolution — so a
+closed block's derived form is computed once at close and reused, and only the
+open spine is recomputed.
 
 #### SETTLED — an open block's scope ends at the last byte fed
 
@@ -10761,32 +10770,42 @@ under the persistent subject's `input` as well.
 > dangle. That is why the engine is built this way, and it is why "resolve a
 > line's inlines when the line completes" is not a move of one call.
 
-#### So the resumable subject needs the borrow fixed FIRST, and that is a fork
+#### AND THAT WHOLE FORK IS A MISTAKE — owner correction, 2026-08-24
 
-Three shapes, and this is the decision Stage 1 needs before any of it is built:
+The paragraphs above are kept because the measurement in them is real and the
+conclusion drawn from it is not. **They assume the snapshot IS the parser's live
+tree, handed out.** That assumption is what makes a moving buffer a problem, and
+it is wrong.
 
-1. **Own on emission.** An inline literal copies its bytes instead of aliasing.
-   §11.7 already names *"Step 8's own-on-emission"* as what would let a closed
-   block release its content, so the idea is in the plan; the cost is a copy and
-   an allocation per inline node.
-2. **A backing store that does not move.** The content buffer becomes chunked or
-   roped so appends never invalidate a pointer. Borrows stay valid and free; the
-   cost is a new substrate under every block's content.
-3. **Offsets, resolved late.** A literal stores `(from, to)` into the content
-   buffer and the bytes are fetched through requirement 10's content-to-source
-   map at read time. Nothing dangles because nothing points; the cost is that
-   every literal read becomes a lookup.
+> **Resumable state is OWNED BY THE PARSER and never transferred. A snapshot is
+> DERIVED from it — a tree calculation, not a borrow.**
 
-**Note that some literals already own.** `make_str_with_entities` goes through
-`markdown_core_chunk_buf_detach`, which yields an owned chunk, so the engine is
-already mixed — which makes (1) a widening of something present rather than a
-new mechanism.
+With that separation the buffer question disappears. The parser's content
+buffers may realloc as often as they like, because **nothing outside the parser
+ever points into them**. `chunk_dup`'s aliasing is sound *within* parser state,
+which is the only place it lives. There is no borrow to fix, no own-on-emission
+to widen, no rope to introduce and no late-resolved offset scheme. Three shapes
+of work, all of it unnecessary, proposed because one layer was mistaken for two.
 
-#### And a second, smaller gap the spike exposed
+#### What the separation actually asks for
 
-**An open block has no scope end.** The live dump shows
-`Document scope=1:1..1:0` and `Paragraph scope=3:1..3:0` — the end position is
-written when a block closes, so mid-parse it reads as column 0. A closed block
-is right (`1:1..1:18`). Every binding projects `scope`, so what an OPEN block
-reports for its end is a public semantic decision and not an implementation
-detail.
+Two layers, and the cost question moves to the second one:
+
+1. **Parser state** — the block tree, the per-line inline results, and the
+   resumable subject with its `pos` and delimiter stack. Private, mutable, free
+   to move. Its representation owes nothing to any consumer.
+2. **The derivation** — what a snapshot call computes from (1) and hands back.
+   It owns what it hands over, or states a lifetime for it.
+
+**The cost of the derivation is now the thing to bound, and it is the same trap
+under a new name.** Deriving the whole document per snapshot is clone-and-finish
+at O(document), which called per line is the O(l²) shape criterion 2 forbids.
+What makes it O(1)-per-line instead is that **a closed block never changes** —
+§11.9 measured the exceptions at 1.00% of appends and all of them late
+resolution — so a closed block's derived form is computed once, when it closes,
+and reused by every later snapshot. Only the open spine is recomputed, and the
+resumable subject is what keeps that O(line) rather than O(block).
+
+**So the layering answers the stage's two criteria in one shape**: the
+derivation is complete because closed blocks are final, and it is cheap because
+they are cached.
