@@ -134,6 +134,25 @@ static int set_cell_index(markdown_core_node *node, int i) {
     return 1;
 }
 
+/* A cell -- and the header row -- is COMPLETE the moment it is built, because
+ * a GFM row is one line. Neither is ever on the open spine, so `finalize`, the
+ * only other clearer of `__OPEN`, never reaches them: without this, `finish`
+ * returned a tree still carrying open blocks, and the flag is the closed
+ * signal projections schedule on (§12.8 Q3). A body ROW stays open here -- it
+ * is the block the parser returns to the spine, and `finalize` closes it.
+ *
+ * The one exception is the parser's own anchor: when a cell's allocation is
+ * lost, `add_child` re-anchors `parser->current` at the nearest open ancestor,
+ * which can be the header row being built, and the spine's finalize walk then
+ * expects to close it itself. Such a parse fails at `finish`, so the flag in
+ * that tree is never read. */
+static void close_built_block(markdown_core_parser *parser, markdown_core_node *node) {
+    if (parser->current == node) {
+        return;
+    }
+    node->flags &= ~MARKDOWN_CORE_NODE__OPEN;
+}
+
 static markdown_core_strbuf *unescape_pipes(markdown_core_mem *mem, unsigned char *string, bufsize_t len) {
     markdown_core_strbuf *res = (markdown_core_strbuf *)mem->calloc(1, sizeof(markdown_core_strbuf));
     bufsize_t r, w;
@@ -574,7 +593,9 @@ static markdown_core_node *try_opening_table_header(const markdown_core_syntax_e
         markdown_core_node_set_string_content(header_cell, (char *)cell->buf->ptr);
         markdown_core_node_set_syntax_extension(header_cell, self);
         set_cell_index(header_cell, i);
+        close_built_block(parser, header_cell);
     }
+    close_built_block(parser, table_header);
 
     incr_table_row_count(parent_container, i);
 
@@ -645,6 +666,7 @@ static markdown_core_node *try_opening_table_row(const markdown_core_syntax_exte
                                                   cell->internal_offset);
             markdown_core_node_set_syntax_extension(node, self);
             set_cell_index(node, i);
+            close_built_block(parser, node);
         }
 
         incr_table_row_count(parent_container, i);
@@ -675,6 +697,7 @@ static markdown_core_node *try_opening_table_row(const markdown_core_syntax_exte
             node->end_column = (int)completed_at;
             markdown_core_node_set_syntax_extension(node, self);
             set_cell_index(node, i);
+            close_built_block(parser, node);
         }
     }
 

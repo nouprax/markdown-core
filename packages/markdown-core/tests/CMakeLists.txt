@@ -133,6 +133,19 @@ if(MARKDOWN_CORE_STATIC)
     target_link_libraries(stream_runner libmarkdown-core-extensions_static libmarkdown-core_static)
 endif()
 
+# projection_runner asserts Stage 1's own gates -- closed-ness of a finished
+# tree, and the projection properties of the CST/AST split -- over the parser's
+# internal state, so like stream_runner it links the static engine.
+if(MARKDOWN_CORE_STATIC)
+    add_executable(projection_runner runners/projection_runner.c support/test_support.c)
+    target_include_directories(
+        projection_runner
+        PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
+                "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+    target_link_libraries(projection_runner libmarkdown-core-extensions_static libmarkdown-core_static)
+endif()
+
 # fallback_runner drives core-private map symbols directly, so it links the
 # static engine instead of the shared facade and skips test-support.
 if(MARKDOWN_CORE_STATIC)
@@ -244,6 +257,17 @@ if(MARKDOWN_CORE_STATIC)
             --bytes)
     endforeach()
 endif()
+# Stage 1's closed-ness gate: `finish` returns a tree with no open block in
+# it, over every fixture example with every extension attached. The flag is
+# the signal projections schedule on, so this is a correctness gate and not a
+# style check (§12.8 Q3).
+if(MARKDOWN_CORE_STATIC)
+    foreach(fixture spec regression extensions)
+        markdown_core_add_test(projection_closed_${fixture} "streaming" 240 projection_runner --case
+                               closed_after_finish --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+    endforeach()
+endif()
+
 markdown_core_add_test(
     spec_smart_punctuation
     spec

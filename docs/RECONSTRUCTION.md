@@ -80,16 +80,21 @@ argument. Nothing here is checked.
       `parse_inlines` from inside one was wrong: it is an inline match handler
       running *during* the projection. What remains is a gate, not a decision —
       prove both are deterministic on a fresh AST.
-- [ ] **Close a `TABLE_CELL`, and fix the defect that hid it.** Owner ruling:
-      a cell must carry a closed signal (§12.8 Q3). It is not a design gap —
-      `make_block` sets `__OPEN` (`blocks.c:136`), `finalize` is the only clearer
-      (`blocks.c:1036`), and a cell is never on the open spine, so **`finish`
-      returns a tree containing open blocks**: measured on a fully parsed
-      one-shot table, all four cells and the header row still carry `__OPEN`.
-      A cell's content is complete when it is built — a GFM row is one line — so
-      nothing has to be scheduled. `DIRECTIVE_LABEL` is already correct
-      (`node_new_with_mem_and_ext` never touches `flags`). This is the whole of
-      the criterion-1 gap (668 of 670, §12.7).
+- [x] **Close a `TABLE_CELL`, and fix the defect that hid it.** LANDED: every
+      cell and the header row clear `__OPEN` at the moment they are built
+      (`close_built_block`, four sites in `table.c`), because a GFM row is one
+      line and neither is ever on the open spine. A body ROW stays open — it is
+      what the parser returns to the spine and `finalize` closes it. **One
+      exception the sweep found**: when a cell's allocation is lost,
+      `add_child` re-anchors `parser->current` at the nearest open ancestor —
+      which can be the header row being built — and the spine's finalize walk
+      then asserts on meeting a closed block; `close_built_block` therefore
+      refuses to close the parser's own anchor, and such a parse fails at
+      `finish` anyway. Gate: `projection_closed_{spec,regression,extensions}`
+      (`projection_runner --case closed_after_finish`) — red before the fix on
+      exactly `table_cell`/`table_header` (29+7, 4+1, 98+20 nodes over the
+      three fixtures) and on nothing else, green after, goldens unmoved.
+      `DIRECTIVE_LABEL` was already correct, as §12.8 predicted.
 - [ ] **Make `process_inlines` callable more than once**, from a stated CST,
       producing a stated AST. H4 says it is not idempotent today; that is the
       work, and its gate is that two projections of the same CST at the same
@@ -11414,6 +11419,16 @@ terms and it is the whole of §12.7's 668-of-670 criterion-1 gap.
 The fix is where the flag should have been cleared: a cell's content is complete
 at the moment it is built, because a GFM row is one line. Nothing has to be
 scheduled.
+
+**LANDED, with one exception the allocation-failure sweep forced.** Cells and
+the header row now close at build (`close_built_block`, `table.c`) — except the
+block `parser->current` is anchored on, because `add_child`'s allocation-loss
+path re-anchors the parser at the nearest open ancestor (the header row being
+built) and the spine's finalize walk must find it open. A parse in that state
+fails at `finish`, so the flag is never read from it. The gate is
+`projection_runner --case closed_after_finish` over the three spec fixtures,
+which also proved the inconsistency was exactly this wide: nothing but
+`table_cell` and `table_header` was ever open in a finished tree.
 
 #### Q4 — the CST owns the diagnostic list, with one rule and one exception
 
