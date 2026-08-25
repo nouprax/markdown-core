@@ -1521,32 +1521,24 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
         found_label = true;
     }
 
+    /* HOISTED out of the failed-lookup branch (§12.9): the lookup rejects an
+     * over-long label before consulting anything, so this depends on nothing
+     * but the construct's own bytes -- the label is well formed and the
+     * engine's own cap refused it, which is why the repair is not "define it".
+     * The failed-lookup diagnostic that used to share this branch is deleted
+     * with its code: a well-formed reference that resolves to nothing is
+     * PROSE, not an error -- CommonMark defines the outcome -- and only these
+     * bytes can say whether the cap was hit, while no bytes can say what the
+     * author meant. Still only the full and collapsed forms: `[a]` is also how
+     * anyone writes a bracketed aside. */
+    if (found_label && form != MARKDOWN_CORE_REFERENCE_SHORTCUT && raw_label.len > MAX_LINK_LABEL_LENGTH) {
+        S_diagnose_span(parser, subj, MARKDOWN_CORE_DIAGNOSTIC_ERROR, MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG,
+                        opener->position - 1, subj->pos - 1, "reference label too long to resolve", raw_label.data,
+                        raw_label.len);
+    }
     if (found_label && markdown_core_map_lookup(subj->refmap, &raw_label) != NULL) {
         matched_reference = 1;
         goto match;
-    }
-    /* THE AUTHOR NAMED SOMETHING THAT DOES NOT EXIST, which is what separates
-     * this from every other diagnostic in the engine and is why it is an ERROR.
-     * The bytes fall through to the unmatched-`[` path and become prose, so the
-     * tree is byte-identical to one whose author wrote those brackets meaning
-     * nothing.
-     *
-     * ONLY THE FULL AND COLLAPSED FORMS. `[a]` is a shortcut reference and is
-     * also how anyone writes a bracketed aside, a citation marker or a
-     * checklist; reporting on it would report on prose. The second bracket
-     * pair exists only to name a definition, and that is the evidence.
-     *
-     * The over-long case is a DIFFERENT fact and gets its own code: the label
-     * is well formed and the engine's own cap refused to look it up, so the
-     * repair is not "define it". */
-    if (found_label && form != MARKDOWN_CORE_REFERENCE_SHORTCUT && raw_label.len >= 1) {
-        int too_long = raw_label.len > MAX_LINK_LABEL_LENGTH;
-        S_diagnose_span(
-            parser, subj, MARKDOWN_CORE_DIAGNOSTIC_ERROR,
-            too_long ? MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG : MARKDOWN_CORE_DIAGNOSTIC_REFERENCE_UNDEFINED,
-            opener->position - 1, subj->pos - 1,
-            too_long ? "reference label too long to resolve" : "reference to a label the document does not define",
-            raw_label.data, raw_label.len);
     }
     markdown_core_chunk_free(subj->mem, &raw_label);
     goto noMatch;
@@ -1693,15 +1685,16 @@ noMatch:
             pop_bracket(subj);
             return NULL;
         }
-        if (caret_written) {
+        /* The cap check depends on nothing but the construct's own bytes
+         * (§12.9): an over-long label can never be defined, so the resolved
+         * branch above cannot have consumed it. The unresolved-call diagnostic
+         * that used to share this arm is deleted with its code -- `[^label]`
+         * naming nothing is an unmatched `[`, which CommonMark specifies. */
+        if (caret_written && initial_pos - opener->position - 2 > MAX_LINK_LABEL_LENGTH) {
             bufsize_t label_length = initial_pos - opener->position - 2;
-            int too_long = label_length > MAX_LINK_LABEL_LENGTH;
-            S_diagnose_span(parser, subj, MARKDOWN_CORE_DIAGNOSTIC_ERROR,
-                            too_long ? MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG
-                                     : MARKDOWN_CORE_DIAGNOSTIC_FOOTNOTE_UNDEFINED,
-                            opener->position - 1, initial_pos - 1,
-                            too_long ? "footnote label too long to resolve" : "footnote call with no definition",
-                            subj->input.data + opener->position + 1, label_length > 0 ? label_length : 0);
+            S_diagnose_span(parser, subj, MARKDOWN_CORE_DIAGNOSTIC_ERROR, MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG,
+                            opener->position - 1, initial_pos - 1, "footnote label too long to resolve",
+                            subj->input.data + opener->position + 1, label_length);
         }
     }
 

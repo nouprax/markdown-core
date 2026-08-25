@@ -273,17 +273,6 @@
             ]
         },
         {
-            "input": "packages/markdown-core/tests/fixtures/extensions.txt:932",
-            "findings": [
-                {
-                    "severity": "ERROR",
-                    "code": "footnote-undefined",
-                    "scope": "7:29..7:35",
-                    "message": "footnote call with no definition: \"nope\""
-                }
-            ]
-        },
-        {
             "input": "packages/markdown-core/tests/fixtures/regression.txt:364",
             "findings": [
                 {
@@ -295,50 +284,6 @@
             ]
         },
         {
-            "input": "packages/markdown-core/tests/fixtures/regression.txt:399",
-            "findings": [
-                {
-                    "severity": "ERROR",
-                    "code": "reference-undefined",
-                    "scope": "1:85..1:108",
-                    "message": "reference to a label the document does not define: \"^footnote2\""
-                }
-            ]
-        },
-        {
-            "input": "packages/markdown-core/tests/fixtures/regression.txt:456",
-            "findings": [
-                {
-                    "severity": "ERROR",
-                    "code": "footnote-undefined",
-                    "scope": "1:10..1:15",
-                    "message": "footnote call with no definition: \"_a_\""
-                }
-            ]
-        },
-        {
-            "input": "packages/markdown-core/tests/fixtures/regression.txt:470",
-            "findings": [
-                {
-                    "severity": "ERROR",
-                    "code": "footnote-undefined",
-                    "scope": "1:1..1:10",
-                    "message": "footnote call with no definition: \"~~is~~1\""
-                }
-            ]
-        },
-        {
-            "input": "packages/markdown-core/tests/fixtures/regression.txt:515",
-            "findings": [
-                {
-                    "severity": "ERROR",
-                    "code": "footnote-undefined",
-                    "scope": "1:2..2:2",
-                    "message": "footnote call with no definition: \"a b\""
-                }
-            ]
-        },
-        {
             "input": "packages/markdown-core/tests/fixtures/regression.txt:859",
             "findings": [
                 {
@@ -346,12 +291,6 @@
                     "code": "table-rejected",
                     "scope": "3:1..3:7",
                     "message": "the delimiter row's column count does not match the header row's"
-                },
-                {
-                    "severity": "ERROR",
-                    "code": "reference-undefined",
-                    "scope": "1:5..1:13",
-                    "message": "reference to a label the document does not define: \"nope\""
                 }
             ]
         },
@@ -363,39 +302,6 @@
                     "code": "table-rejected",
                     "scope": "2:1..2:7",
                     "message": "the delimiter row's column count does not match the header row's"
-                }
-            ]
-        },
-        {
-            "input": "packages/markdown-core/tests/fixtures/spec.txt:9783",
-            "findings": [
-                {
-                    "severity": "ERROR",
-                    "code": "reference-undefined",
-                    "scope": "1:1..1:12",
-                    "message": "reference to a label the document does not define: \"foo\\!\""
-                }
-            ]
-        },
-        {
-            "input": "packages/markdown-core/tests/fixtures/spec.txt:10161",
-            "findings": [
-                {
-                    "severity": "ERROR",
-                    "code": "reference-undefined",
-                    "scope": "1:1..1:10",
-                    "message": "reference to a label the document does not define: \"bar\""
-                }
-            ]
-        },
-        {
-            "input": "packages/markdown-core/tests/fixtures/spec.txt:10198",
-            "findings": [
-                {
-                    "severity": "ERROR",
-                    "code": "reference-undefined",
-                    "scope": "1:1..1:10",
-                    "message": "reference to a label the document does not define: \"bar\""
                 }
             ]
         }

@@ -123,25 +123,42 @@ argument. Nothing here is checked.
       per set-content block (table cells, directive labels) to
       `parser->line_marks` — per-derivation, correct, and freed with the
       parser; not worth an index before a snapshot API exists.
-- [ ] **Delete `reference-undefined` and `footnote-undefined`** (§12.9, owner
-      ruling). They are the only two of eight codes that report a WELL-FORMED
-      construct, and CommonMark defines what a reference that resolves to
-      nothing becomes: text. Nothing failed, so there is no error. Deleting them
-      makes the diagnostic list **wholly CST-owned with no exception**, and
-      leaves the retracted-diagnostic problem with no instance. Surface is
-      `specs/diagnostics/census.json` (9 rows) and two public enum values.
-      `label-too-long` stays but must be **hoisted out of the failed-lookup
-      branch** at `inlines.c:1544`, which is the path being deleted.
-- [ ] **The CST owns the diagnostic list, append-only** (§12.8 Q4), **under one
+- [x] **Delete `reference-undefined` and `footnote-undefined`** (§12.9, owner
+      ruling). LANDED: the two enum values are gone from both headers, the two
+      `code_string` rows with them, and the census lost exactly its 9 rows for
+      the two codes — 38 → 29, reviewed row by row, all in `spec.txt` and
+      `extensions.txt`, nothing else moved. `label-too-long` is **hoisted**: on
+      the reference path it now fires BEFORE the lookup, conditioned on nothing
+      but `raw_label.len` (the lookup rejects an over-long label before
+      consulting anything, so the rows are identical); the footnote path's cap
+      check likewise depends only on the span's own length. §12.9's prediction
+      held: **no binding names any of the three codes** — the only surfaces
+      were the two headers, `code_string`, the two `inlines.c` sites and the
+      census.
+- [x] **The CST owns the diagnostic list, append-only** (§12.8 Q4), **under one
       rule: a diagnostic is emitted when its construct COMPLETES, not while it
-      is open** — which is what stops `extensions/directive.c:1034` amending
-      `unclosed` into `unrecognised` between a prefix and a full parse. With
-      §12.9 done there is no projection-level diagnostic at all. Audit every
-      remaining code against the rule.
-- [ ] **No label→sites index** (§12.8 Q2, owner ruling). The bound is
-      `O(what you project)`. The generation stamp stays — one integer compare,
-      and it is what makes a cache safe — but what it invalidates is
-      re-derived, not looked up.
+      is open.** LANDED, and the mechanism is in the derivation:
+      `derive_tree` records only on `finish`'s call, over a fully closed CST —
+      which is what stops the directive attribute site amending `unclosed`
+      into `unrecognised` between a prefix and a full parse, because a
+      derivation taken mid-parse stays silent about an open block's bytes.
+      **The audit of all six remaining codes**: `directive-rejected` (two
+      sites, `directive.c:1209/1218`) and `table-rejected` (`table.c:484`)
+      speak over the LINE IN HAND at block-open, and the construct is that one
+      line — complete when judged, the verdict never re-litigated
+      (`__TABLE_VISITED` pins one report). `directive-unclosed`
+      (`directive.c:1369`) speaks from the close hook — completion by
+      definition. `directive-label-rejected` and
+      `directive-attributes-rejected` (`directive.c:1056/1082`) and
+      `label-too-long` speak from inline parsing — the projection — and
+      therefore only at `finish`, when every construct has completed. No code
+      speaks about an open construct; the list is parser-owned and append-only
+      with no exception left.
+- [x] **No label→sites index** (§12.8 Q2, owner ruling). The bound is
+      `O(what you project)`. Held: Stage 1 built no index, no cache, and no
+      generation consumer — `derive_tree` re-derives, unconditionally. The
+      generation stamp becomes real the moment a cache exists, which is after
+      this stage.
 - [ ] **Split criterion 2 into two bounds** and gate them separately: CST
       construction O(line) per fed line, projection O(what is projected) per
       snapshot. The existing slope gate measures the first; the second has no
@@ -156,8 +173,13 @@ argument. Nothing here is checked.
       and every golden agreed byte-for-byte on the first green run. The
       snapshot accessor remains future API; `derive_tree` is what it would
       call.
-- [ ] **Renumber the diagnostic enum** after §12.9 — codes 6 and 7 go,
-      `label-too-long` moves 8 → 6, no holes (§12.10 G).
+- [x] **Renumber the diagnostic enum** after §12.9 — codes 6 and 7 go,
+      `label-too-long` moves 8 → 6, no holes (§12.10 G). LANDED in both
+      headers; the facade test that exercises the code uses the constant, so
+      nothing outside the two enums knew the number.
+      `audit-diagnostics.mjs` now reports over 6 codes — `29 over 892
+      examples, 5 of 6 codes exercised` (label-too-long is the facade test's,
+      not a fixture's, as before).
 - [ ] **Acceptance** — `stream_runner` still green (criterion 1 is now a
       theorem, kept as a gate), two projections of one CST byte-identical, the
       external oracles unmoved, and the CST proved refmap-independent by
@@ -11562,10 +11584,10 @@ It becomes a length check that does not depend on a lookup having happened —
 which it can be, because `markdown_core_map_lookup` rejects an over-long label
 before it consults anything (`core/map.c`, the `label->len` guard).
 
-**Open, and small: renumber or leave holes.** Codes 6 and 7 sit in the middle of
-a numbered public enum. `VERSION` is 3.0.0 and is the reconstruction, so
-renumbering 8 → 6 is available; leaving 6 and 7 as reserved holes costs nothing
-and never breaks anyone. Not decided here.
+**~~Open, and small: renumber or leave holes.~~ Decided (§12.10 G) and LANDED:
+renumbered, no holes.** `label-too-long` is 6 in both headers; the facade test
+that exercises it names the constant, and no binding ever named the number, so
+the renumber touched exactly the two enum declarations.
 
 ### 12.10 The nine remaining questions, answered
 

@@ -400,10 +400,6 @@ const char *markdown_core_diagnostic_code_string(markdown_core_diagnostic_code c
         return "directive-unclosed";
     case MARKDOWN_CORE_DIAGNOSTIC_TABLE_REJECTED:
         return "table-rejected";
-    case MARKDOWN_CORE_DIAGNOSTIC_REFERENCE_UNDEFINED:
-        return "reference-undefined";
-    case MARKDOWN_CORE_DIAGNOSTIC_FOOTNOTE_UNDEFINED:
-        return "footnote-undefined";
     case MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG:
         return "label-too-long";
     }

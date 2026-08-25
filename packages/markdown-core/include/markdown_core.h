@@ -222,15 +222,13 @@ typedef enum markdown_core_diagnostic_code {
     /** A delimiter row was found and the header row above it has a different
      * number of columns, so the paragraph is not a table. */
     MARKDOWN_CORE_DIAGNOSTIC_TABLE_REJECTED = 5,
-    /** `[text][label]` or `[label][]` naming a label the document does not
-     * define. The shortcut form `[label]` is deliberately never reported: it is
-     * indistinguishable from ordinary bracketed prose. */
-    MARKDOWN_CORE_DIAGNOSTIC_REFERENCE_UNDEFINED = 6,
-    /** `[^label]` naming a footnote the document does not define. */
-    MARKDOWN_CORE_DIAGNOSTIC_FOOTNOTE_UNDEFINED = 7,
     /** A label the ENGINE refused as too long. The author's label is well
-     * formed, which is why this is not "no such definition". */
-    MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG = 8
+     * formed; the cap is the engine's, which is why the repair is not
+     * "define it". (This was 8: values 6 and 7 reported a well-formed
+     * reference or footnote call that resolved to nothing -- an outcome
+     * CommonMark defines as text, so nothing failed and there was nothing to
+     * report; 3.0.0 renumbers rather than keeping holes.) */
+    MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG = 6
 } markdown_core_diagnostic_code;
 #endif
 
