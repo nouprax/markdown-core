@@ -166,9 +166,16 @@ argument. Nothing here is checked.
       normalized-slowdown shape as the construction gates, over the full
       derivation (clone + inlines + consolidate + postprocess + strip).
       Measured: **11.6 ns/byte at 64 KiB, 15.5 ns/byte at 16 MiB, normalized
-      slowdown 1.336×** against the 4.0× linearity bound. (§12.7's
-      1.35–2.40 ns/content-byte was `PARAGRAPH`/`HEADING` inline parsing
-      alone; this number is the whole pipeline and the right one to watch.)
+      slowdown 1.336×** locally — and **4.114× (18.6 → 76.7 ns/byte) on CI's
+      shared macOS runner for the same build**, which tripped the first cut's
+      4.0× bound on the PR's first run. The bound is now **8.0×**, and the
+      calibration difference is recorded in the gate: the construction gates'
+      4.0 sits just under a MEASURED regression (qsort's 4.442×), while this
+      gate has no bad reading to sit under — super-linearity at a 256× span
+      reads ≥100× — and now has a measured HEALTHY noise ceiling to sit
+      above. (§12.7's 1.35–2.40 ns/content-byte was `PARAGRAPH`/`HEADING`
+      inline parsing alone; the whole-pipeline ns/byte is the number to
+      watch.)
       Per-snapshot cost is O(document) until a cache exists — the stated
       O(open block) refinement is Stage 2's resumable subject, unchanged.
 - [x] **Change what `finish` returns** — a derived tree rather than

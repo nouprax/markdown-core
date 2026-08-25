@@ -286,13 +286,22 @@ static int case_refmap_independence(const ts_spec_file *file) {
 /* CRITERION 2's SECOND BOUND (§12.4, §12.10 D): a projection costs
  * O(what is projected) -- flat ns per content byte across document sizes,
  * gated the same way the construction slope gate is: two endpoints, and the
- * time growth normalized by the size growth must not exceed the bound the
- * existing complexity gates use for "linear with memory-hierarchy noise". */
+ * time growth normalized by the size growth must not exceed the bound.
+ *
+ * The bound is NOT the construction gates' 4.0, and the difference is what
+ * each number was calibrated against. Theirs sits just under a MEASURED
+ * regression (the qsort path's 4.442x); this gate has no bad reading to sit
+ * under -- what it rejects is super-linearity, which at a 256x size span
+ * reads >= 100x -- and it does have a measured HEALTHY reading to sit above:
+ * CI's shared macOS runner reported 4.114x (18.6 -> 76.7 ns/byte) on the same
+ * build a local machine measured at 1.336x, which is a memory-hierarchy and
+ * VM-noise regime, not an algorithm. 8.0 clears the observed noise and still
+ * fails any real growth term by an order of magnitude. */
 #define PR_SLOPE_SMALL 65536
 #define PR_SLOPE_LARGE 16777216
 #define PR_SLOPE_REPEATS 3
 #define PR_MIN_SAMPLE_NS 25000000ULL
-static const double PR_MAX_NORMALIZED_SLOWDOWN = 4.0;
+static const double PR_MAX_NORMALIZED_SLOWDOWN = 8.0;
 
 /* Representative prose: emphasis, an inline link, code, and a reference that
  * resolves against the map, so the projection does the work a real document
