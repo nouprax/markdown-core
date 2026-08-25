@@ -49,18 +49,22 @@ argument. Nothing here is checked.
       structure of the whole paragraph, not just the bracket — so the CST stops
       at **block tree plus content bytes**, not at an inline tree with a
       reference node in it.
-- [ ] **Let BOTH definition maps accept insert-after-lookup.**
-      `definition_create` asserts `!map->prepared` and `map_lookup` sets it
-      (`references.c:84`, `map.c:317`); every mid-stream projection interleaves
-      the two. **First, because nothing else in the stage can be exercised until
-      it is true** — and it is a criterion-1 failure *today*: without
-      re-preparation, 4 of 670 real documents lose 20 reference nodes from the
-      FINISHED tree (§12.4). `parser->footnote_defs` is the same map and is owed
-      the same fix. Re-preparation is the whole change and is free (12.25 vs
-      12.21 ms) — **do not build incremental index maintenance** — but it makes
-      two latent defects live: `index_map` leaks the prior index through
-      `key_index_init`'s `memset`, and it overwrites `map->size` with the deduped
-      count that `entry->age` reads for the first-wins tiebreak.
+- [x] **Let BOTH definition maps accept insert-after-lookup.** LANDED:
+      `definition_create` clears `prepared` after linking the entry — the assert
+      is gone and the next lookup rebuilds — and both latent defects went with
+      it: `index_map` frees the previous table before `key_index_init`'s
+      `memset` can drop it, and neither preparation path touches `map->size` any
+      more, because `entry->age` is stamped from it. The deduped count the
+      bsearch fallback needs lives in a new `map->sorted_size`, and `sort_map`
+      now clears `indexed` — a re-preparation that fell from the hash path to
+      the sort path used to leave the lookup dispatching into a freed table,
+      which is a third defect the re-preparation made live and the measured
+      crash (SIGSEGV) in its mutant. `parser->footnote_defs` got the fix for
+      free — same `definition_create`. Witnessed by
+      `regression_fallback_definition_after_lookup` (fallback_runner), which
+      kills all three mutants: no-reopen (miss), size-overwrite (age
+      collision, `late` resolved to entry 2), no-indexed-reset (crash).
+      Original finding stands below in §12.4.
 - [x] **Where the AST lives is decided: nowhere.** Owner ruling — *"AST never
       exists when someone requires it, and when it is asked, it is derived from
       CST"* (§12.5). The parser holds only the CST. Priced at **16.2% of nodes
@@ -187,9 +191,10 @@ cmake --preset default && cmake --build --preset default --parallel
 cmake --preset asan    && cmake --build --preset asan    --parallel
 cmake --preset ubsan   && cmake --build --preset ubsan   --parallel
 
-ctest --preset correctness -j 8            # 69/69
-ctest --preset correctness-asan -j 8       # 60/60 — SEE THE WARNING BELOW
-ctest --preset correctness-ubsan -j 8      # 60/60 — SEE THE WARNING BELOW
+ctest --preset correctness -j 8            # 78/78 — 69 was stale; 77 at ad2742c, +1 for
+                                           # definition_after_lookup. Print, don't trust.
+ctest --preset correctness-asan -j 8       # 67/67 — SEE THE WARNING BELOW; 60 was stale
+ctest --preset correctness-ubsan -j 8      # 67/67 — SEE THE WARNING BELOW; 60 was stale
 node scripts/check-canonical-ast-fixtures.mjs   # 32 kinds, 62 fields, 6 cases
 node scripts/audit-ast-projections.mjs           # 32 kinds over 12 surfaces
 node scripts/audit-source-lists.mjs              # 22 sources, 4 of 5 lists, 1 registered absent
@@ -11080,6 +11085,19 @@ moment `prepared` can go back to zero:**
    definition inserted after a prepare therefore gets an `age` that collides with
    an existing entry's, and `age` is the first-wins tiebreak in `refcmp`
    (`map.c:211`). Silent, and it decides which of two definitions wins.
+   (`sort_map` overwrote `map->size` too — `last + 1`, its own deduped count.)
+
+**LANDED, and there was a THIRD defect the list above missed.** The fix is as
+stated — `definition_create` clears `prepared`, `index_map` frees the previous
+table first, and the deduped count moved off `map->size` into a new
+`sorted_size` so no preparation rewrites what `age` is stamped from. The third:
+`sort_map` never cleared `indexed`, so a re-preparation that fell from the hash
+path to the pointer-sort fallback left `map_lookup` dispatching into the table
+`index_map` had just freed — a NULL-slots walk from a masked position, measured
+as a crash in the mutant. It is unreachable without re-preparation, which is why
+no earlier sweep saw it. All three are witnessed by
+`regression_fallback_definition_after_lookup`, which also pins first-wins across
+three re-preparations, across the path switch and back, and on the footnote map.
 
 **Resolution diagnostics are emitted from the wrong layer.**
 `MARKDOWN_CORE_DIAGNOSTIC_REFERENCE_UNDEFINED` — *"reference to a label the

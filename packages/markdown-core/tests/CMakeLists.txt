@@ -268,6 +268,7 @@ if(MARKDOWN_CORE_STATIC)
         directive_sorted_fallback
         key_index_probe_growth
         map_prepare_oom
+        definition_after_lookup
         constructor_oom
         oom_sweep
         oom_sweep_chunked

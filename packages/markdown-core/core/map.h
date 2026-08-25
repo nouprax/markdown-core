@@ -41,6 +41,12 @@ struct markdown_core_map {
     markdown_core_mem *mem;
     markdown_core_map_entry *refs;
     markdown_core_map_entry **sorted;
+    /* Entries in `sorted` after the duplicate fold. It is NOT `size`: `size`
+     * counts every insert because `entry->age` is stamped from it, and a
+     * preparation that overwrote it with the deduped count handed a later
+     * definition an age an existing entry already holds -- the first-wins
+     * tiebreak then decides between the two by nothing (§12.4). */
+    size_t sorted_size;
     markdown_core_key_index index;
     size_t size;
     int prepared;

@@ -237,9 +237,18 @@ static int sort_map(markdown_core_map *map) {
         }
     }
 
+    /* A re-preparation replaces the previous array; map_free only knows the
+     * current pointer. */
+    if (map->sorted) {
+        map->mem->free(map->sorted);
+    }
     map->sorted = sorted;
-    map->size = last + 1;
+    map->sorted_size = last + 1;
     map->prepared = 1;
+    /* This path can be reached on a RE-preparation after an earlier one took
+     * the hash path; the lookup dispatches on `indexed`, and leaving it set
+     * would send it into a table this preparation did not build. */
+    map->indexed = 0;
     return 1;
 }
 
@@ -272,6 +281,9 @@ static size_t map_index_expected_size(markdown_core_map *map) {
 
 static int index_map(markdown_core_map *map) {
     markdown_core_map_entry *ref;
+    /* A re-preparation drops the previous table first: `key_index_init`'s
+     * memset would zero the handle over live slots and leak them. */
+    markdown_core_key_index_free(&map->index);
     if (!markdown_core_key_index_init(&map->index, map->mem, map_index_expected_size(map))) {
         return 0;
     }
@@ -284,7 +296,6 @@ static int index_map(markdown_core_map *map) {
             return 0;
         }
     }
-    map->size = map->index.size;
     map->prepared = 1;
     map->indexed = 1;
     return 1;
@@ -326,8 +337,8 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
         r = (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, norm,
                                                                       (bufsize_t)strlen((char *)norm));
     } else {
-        ref = (markdown_core_map_entry **)bsearch(norm, map->sorted, map->size, sizeof(markdown_core_map_entry *),
-                                                  refsearch);
+        ref = (markdown_core_map_entry **)bsearch(norm, map->sorted, map->sorted_size,
+                                                  sizeof(markdown_core_map_entry *), refsearch);
     }
     map->mem->free(norm);
 

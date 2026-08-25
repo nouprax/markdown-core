@@ -81,8 +81,6 @@ static void definition_create(markdown_core_map *map, markdown_core_chunk *label
         return;
     }
 
-    assert(!map->prepared);
-
     entry = (markdown_core_map_entry *)map->mem->calloc(1, sizeof(*entry));
     if (!entry) {
         map->oom = 1;
@@ -95,6 +93,12 @@ static void definition_create(markdown_core_map *map, markdown_core_chunk *label
 
     map->refs = entry;
     map->size++;
+    /* A definition may arrive after a lookup has prepared the map: every
+     * mid-stream projection interleaves the two (§12.4). Reopening the
+     * preparation is the whole mechanism -- the next lookup rebuilds, and
+     * first-wins survives because `age` above is stamped from a count no
+     * preparation rewrites. */
+    map->prepared = 0;
 }
 
 markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem) {

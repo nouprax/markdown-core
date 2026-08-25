@@ -976,6 +976,125 @@ done:
     return result;
 }
 
+/* Every insert bumped `size` and every entry took its age from it, so the
+ * newest-first list must read S-1 .. 0 with no repeats. A preparation that
+ * overwrites `size` with its deduped count breaks exactly this, and `age` is
+ * the first-wins tiebreak, so a repeat is a defect even when today's inputs
+ * happen not to tie on it. */
+static int fb_expect_descending_ages(markdown_core_map *map, size_t expected_size, const char *context) {
+    markdown_core_map_entry *entry = map->refs;
+    size_t expected_age = expected_size;
+    if (map->size != expected_size) {
+        fprintf(stderr, "%s: map holds %zu entries, expected %zu\n", context, map->size, expected_size);
+        return -1;
+    }
+    while (entry) {
+        expected_age--;
+        if (entry->age != expected_age) {
+            fprintf(stderr, "%s: entry '%s' has age %zu, expected %zu\n", context, entry->label, entry->age,
+                    expected_age);
+            return -1;
+        }
+        entry = entry->next;
+    }
+    if (expected_age != 0) {
+        fprintf(stderr, "%s: list ended %zu entries early\n", context, expected_age);
+        return -1;
+    }
+    return 0;
+}
+
+/* A definition arriving AFTER a lookup has prepared the map is found by the
+ * next lookup, and first-definition-wins survives the re-preparation. This is
+ * §12.4's contract: every mid-stream projection interleaves the two, and
+ * before it the interleaving tripped an assert in debug builds and silently
+ * poisoned the map under -DNDEBUG. Exercised on the hash path, across the
+ * switch onto the pointer-sort fallback and back, and on the footnote set,
+ * which is the same map. The re-preparation leaks are covered here too: the
+ * sanitizer run owns the check, this case makes it reachable. */
+static int case_definition_after_lookup(void) {
+    markdown_core_map *map = markdown_core_reference_map_new(&fb_failing_mem);
+    markdown_core_map *footnotes = markdown_core_footnote_definition_map_new(markdown_core_get_default_mem_allocator());
+    markdown_core_chunk label;
+    int result = -1;
+
+    /* Ages 0..2: "a", then two definitions of "dup". */
+    fb_create_reference(map, "a");
+    fb_create_reference(map, "dup");
+    fb_create_reference(map, "dup");
+
+    if (fb_expect_entry(map, "a", 0, "first lookup") != 0) {
+        goto done;
+    }
+    if (!map->prepared || !map->indexed) {
+        fputs("first lookup did not prepare on the hash path\n", stderr);
+        goto done;
+    }
+
+    /* Ages 3..4, inserted after the map was prepared. */
+    fb_create_reference(map, "late");
+    fb_create_reference(map, "dup");
+    if (map->prepared) {
+        fputs("an insert after a lookup must reopen preparation\n", stderr);
+        goto done;
+    }
+
+    if (fb_expect_entry(map, "late", 3, "definition after lookup") != 0) {
+        goto done;
+    }
+    if (fb_expect_entry(map, "dup", 1, "first-wins across re-preparation") != 0) {
+        goto done;
+    }
+
+    /* Age 5, and the rebuild it forces is sent down the pointer-sort path. */
+    fb_create_reference(map, "later");
+    fb_block_slot_tables = 1;
+    if (fb_expect_entry(map, "later", 5, "sorted re-preparation") != 0) {
+        goto done;
+    }
+    if (map->indexed) {
+        fputs("lookup dispatched into a hash table the sort path did not build\n", stderr);
+        goto done;
+    }
+    if (fb_expect_entry(map, "dup", 1, "first-wins on the sorted path") != 0) {
+        goto done;
+    }
+    fb_block_slot_tables = 0;
+
+    /* Age 6, and the rebuild goes back to the hash path. */
+    fb_create_reference(map, "last");
+    if (fb_expect_entry(map, "last", 6, "hash re-preparation") != 0) {
+        goto done;
+    }
+    if (!map->indexed) {
+        fputs("rebuild with allocation restored did not take the hash path\n", stderr);
+        goto done;
+    }
+    if (fb_expect_descending_ages(map, 7, "ages after three re-preparations") != 0) {
+        goto done;
+    }
+
+    /* The footnote set is the same map and is owed the same behaviour. */
+    label = fb_chunk("fn");
+    markdown_core_footnote_definition_create(footnotes, &label);
+    label = fb_chunk("fn");
+    if (markdown_core_map_lookup(footnotes, &label) == NULL) {
+        fputs("footnote label did not resolve\n", stderr);
+        goto done;
+    }
+    label = fb_chunk("fn2");
+    markdown_core_footnote_definition_create(footnotes, &label);
+    if (fb_expect_entry(footnotes, "fn2", 1, "footnote definition after lookup") != 0) {
+        goto done;
+    }
+    result = 0;
+done:
+    fb_block_slot_tables = 0;
+    markdown_core_map_free(map);
+    markdown_core_map_free(footnotes);
+    return result;
+}
+
 typedef struct fb_case_entry {
     const char *name;
     int (*run)(void);
@@ -986,6 +1105,7 @@ static const fb_case_entry FB_CASES[] = {
     {"directive_sorted_fallback", case_directive_sorted_fallback},
     {"key_index_probe_growth", case_key_index_probe_growth},
     {"map_prepare_oom", case_map_prepare_oom},
+    {"definition_after_lookup", case_definition_after_lookup},
     {"constructor_oom", case_constructor_oom},
     {"oom_sweep", case_oom_sweep},
     {"oom_sweep_chunked", case_oom_sweep_chunked},
