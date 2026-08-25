@@ -65,6 +65,15 @@ Nothing here is checked. Each line says what it is; the section says why.
       `core/inlines.c:1524` creates a reference only where the refmap lookup
       succeeds, so closing a block early parses `[foo]` before `[foo]: /url` is
       fed and the LinkReference never appears — criterion 1, not cost.
+- [ ] **A RESUMABLE INLINE SUBJECT** — parse each line's inlines once and carry
+      the delimiter residue across the line boundary, so a line costs O(line).
+      Owner ruling, §11.8. Re-parsing the open block's accumulated content on
+      every line is the cheap shape and is O(block²) per block, which fails
+      criterion 2 on the streaming case the stage exists for. **This is the
+      largest item and it carries §11.5's seven hazards** — H5 and the three
+      end-of-buffer memos at `core/inlines.c:387,1034,1046,1056,1067`, which
+      become false negatives on resume and are ways to be silently WRONG rather
+      than slow. Their gates must quantify over longer buffers.
 - [ ] **Resolve a line's inlines WHEN THE LINE COMPLETES, not when its block
       closes.** §11.5 states this move as *"move `process_inlines` into
       `finalize`"*, and **that is block-granular and therefore the wrong unit**:
@@ -73,8 +82,18 @@ Nothing here is checked. Each line says what it is; the section says why.
       duration of it. The unit is the LINE, because that is what per-line
       pausable state is for — see the requirement below. The flag bit is still
       needed so no line is parsed twice; what changes is where the call sits.
-- [ ] **Settle the six API decisions** (§11.8), under two standing rulings:
-      append is atomic (Q34, §4.13) and there is no fallback on OOM (§4.14.13a).
+- [x] **Three of the six API decisions are settled** on §11.10's evidence
+      (§11.8): the inline subject is resumable, a snapshot is BORROWED with a
+      generation the feed bumps, and an open block's scope ends at the last byte
+      fed. The other three — ownership beyond the generation rule, mid-stream
+      OOM, and whether the bindings participate — remain, under two standing
+      rulings: append is atomic (Q34, §4.13) and there is no fallback on OOM
+      (§4.14.13a).
+- [ ] **The snapshot accessor itself** — `parser->root` is already readable and
+      already survives further feeding (§11.10), so this is the generation
+      counter, the handle, and the staleness error, not a tree copy.
+- [ ] **An open block's scope end, written per line** on the open spine —
+      O(depth), which §11.5 accepts.
 - [ ] **Acceptance** — criterion 1 against the EXTERNAL oracles on every
       line-boundary partition, criterion 2 as a flat slope. Neither alone is
       Stage 1: clone-and-finish satisfies the first and is O(l²).
@@ -10512,87 +10531,65 @@ The inventory's most immediately useful output. Each item is a constraint on wor
 
 ### 11.8 The six API decisions Stage 1 must settle
 
-Recorded as ledger entries **Q31–Q36**, continuing §9's numbering. Recommendations are this inventory's, not the owner's.
+**Three are settled by owner ruling of 2026-08-24, on the evidence of §11.10's
+spike.** They are recorded before the work rather than after it, which is the
+point of a spike.
 
-| id | Question | Recommendation |
-|---|---|---|
-| **Q31** | What is the public append surface? | **SETTLED by the owner, 2026-08-20:** `Document(markdown:)` and `document.append(chunk:) -> Document`. There is no separate snapshot call — **append returns the readable document.** The C surface serves that shape; it does not define it. |
-| **Q32** | Who owns a snapshot, and how long does it stay valid once more lines are fed? | **The caller owns it; it is a fully independent tree that aliases no parser memory and stays valid forever.** |
-| **Q33** | Is equality required after every prefix, or only at the end? | **After every prefix.** Keep partition-invariance as a regression gate. |
-| **Q34** | What is failure and OOM behaviour mid-stream? | **Split `oom` into a terminal "parse lost" bit and a per-call "snapshot failed" result, and expose a query for the former.** |
-| **Q35** | Do the bindings participate in Stage 1? | **No — C only** — with one shape constraint that applies now. |
-| **Q36** | What allocation bound accompanies the time bound? | **Two bounds, and the resident one gets its own slope gate.** |
+#### SETTLED — the open block's inlines are resumable, not re-parsed
 
-**Q31 — the surface, settled.** The owner's shape is
-`let document = Document(markdown: String)` and
-`let updated = document.append(chunk: String)`. Append *is* the read; there is
-no second call. What follows is the inventory's reasoning about the C surface
-beneath it, which stands except where it proposed a separate `snapshot()` —
-that proposal is superseded.
+A line completes inside an open paragraph; emphasis opened on line *N* may close
+on line *N+1*. The cheap shape is to throw away the open block's inline children
+and re-parse its whole accumulated content each line — obviously correct, no new
+state, and **O(block) per line, so O(block²) per block.** That is a criterion 2
+failure on precisely the streaming case the stage exists for.
 
-**A consequence that must be stated, because it is where this stage goes wrong
-if it is not.** If every append returns a document, and materialising a document
-costs O(document), then a caller appending *l* lines pays Θ(l²) — and it is no
-longer "the caller's choice", because the API gives them no other option. **The
-per-append cost must be O(line).** That is not a constraint the API imposes on
-the engine; it is the flow's own property, restated at the surface: continuing
-the flow costs the line, and nothing else. Whatever the C surface does, it may
-not make reading the document a function of the document's size.
+**The ruling is the resumable subject: parse each line's inlines once and carry
+the delimiter residue across the boundary, so a line costs O(line).**
 
-**Q31 (inventory's original reasoning on the C surface).** `markdown_core_parser_feed` already splits on line ends internally (`core/blocks.c:862-930`) and already satisfies partition-invariance; making the public call line-oriented would buy nothing and would hand callers a framing problem the engine already solves. The line is Stage 1's *internal* unit. Add one call, returning an owned tree; a caller that has fed half a line gets a snapshot of the lines completed so far, and Stage 2 is what lifts that restriction. Do **not** overload `finish`: it must stay the one-way terminator, because everything downstream of `finalize_document` is one-way (H6, H8, H10) and because a caller needs to be able to say "this stream is over" distinctly from "show me what you have". Finish should also stop being a reset (H1) — a finished parser reports finished, and reuse is `parser_free` + `parser_new`.
+This makes Stage 1 the larger shape, and it takes §11.5's *"strict addition"*
+into scope along with the hazards that come with it — **H5 and the three
+end-of-buffer memos at `core/inlines.c:387,1034,1046,1056,1067`, which become
+false negatives on resume.** §11.5's warning stands and is now load-bearing:
+those are ways to be silently **wrong**, not slow, so they need gates that
+quantify over longer buffers rather than over a fixed corpus. The abandoned
+program built this and `streaming-inline-frontier` is kept as its record — read
+the measurements, not the code (Q8, §4.9).
 
-**Q32 — ownership and validity. Superseded in part.** The inventory's answer
-below — an independent fully-owned tree per snapshot — is **correct about the
-hazards and wrong as a per-append default**, because under Q31's settled shape
-every append would pay it. Its own note concedes the arithmetic: *"a caller that
-snapshots every line pays Θ(l²)"*. Under the settled API that is not a caller's
-choice, so it is a violation of the flow.
+#### SETTLED — a snapshot is borrowed, with a generation the feed bumps
 
-What survives, and it is the important half: **no node pointer and no node
-identity is stable across a line boundary today**, for five named reasons. That
-is a statement about the *engine*, not about the API, and it is a defect list
-for Stage 1 rather than a reason to copy. Making a closed block's nodes stable
-once closed is the same work as doing each block's work in the line that closes
-it — a block that is finished does not move again.
+§11.10 showed the live root is directly readable and survives further feeding,
+so a snapshot needs **no copy, no shadow tree and no retraction**. Copying per
+snapshot is the clone-and-finish cost at O(document), which called once per line
+is the O(l²) shape criterion 2 forbids.
 
-The original reasoning follows.
+**The ruling is borrowed plus an explicit generation check**: the handle carries
+a number that `feed` increments, so reading a stale snapshot is a clean error
+rather than undefined behaviour. The bindings all copy into value types
+immediately, so the borrow costs them nothing; the generation is what stops the
+one misuse a bare pointer leaves open.
 
-**Q32 (inventory's original reasoning).** A snapshot must be an **independent, fully-owned tree**, freed by the caller with `markdown_core_node_free`. The alternative — a borrowed view over live parser memory — is not merely risky, it is unimplementable: every inline literal borrows a block's `content` buffer that five mechanisms move (H5), table retypes and re-parents an open paragraph mid-line (`extensions/table.c:369-378,447`), formula's promotion frees the paragraph node it replaces (`extensions/formula.c:534-536`), and autolink edits a previously emitted sibling backwards (`extensions/autolink.c:313`). **No node pointer and no node identity is stable across a line boundary.** State the cost honestly in Q36: a snapshot is O(size of the snapshot), and a caller that snapshots every line pays Θ(l²) in *its own* allocation — which is fine, because it is the caller's choice and it is not the parser re-deriving anything.
+#### SETTLED — an open block's scope ends at the last byte fed
 
-**Q33 — prefix or end.** Prefix, for the reason §11.6 gives: **partition-invariance is already true at HEAD**, measured over 808 prefixes across two corpora, so adopting the written form alone makes Stage 1 vacuous. Adopt the prose reading as criterion 1b — *the tree after k lines equals a one-shot parse of those k lines* — and keep 1a as a cheap regression gate. This is also the ruling that makes the late-resolution question well-posed at all: without 1b there is nothing for a definition to change, because nobody looks until the end.
+Mid-parse an open block currently reports `scope=3:1..3:0`, because the end is
+written when a block closes. **The ruling is that an open block's scope ends
+wherever the stream currently ends**, growing as lines arrive, so a consumer can
+always highlight the block's real extent.
 
-**Q34 — failure mid-stream. SETTLED by the owner, 2026-08-20: `throws`.**
+The cost is a write per line on the open spine — **O(depth), which §11.5 already
+accepts as the model's predicted term**. The rejected alternatives were making
+`scope` optional on the surface, which reaches the canonical AST contract and all
+three bindings, and keeping column 0 as a documented sentinel, which publishes a
+position that is not a position — the exact class of defect Stage 0a spent
+§4.2 removing.
 
-`func append(chunk: String) throws -> Document`. And the shape carries a
-requirement that must not be assumed away: under value semantics, when the call
-throws, `updated` is never bound and **`document` is still in scope and must
-still be readable.** So a failed append may not leave the parser part-way
-through a line.
+#### Still open
 
-> **Append is atomic.** Either the line's work is applied in full, or none of it
-> is and the parser stands exactly where it stood before the call.
-
-This is the opposite of what the engine does today, in three named ways:
-`finish` reports a terminal loss by **destroying the tree**
-(`core/blocks.c:1697-1704`); `parser->oom` is one sticky bit meaning four
-different things, written from 66 sites, 41 of them in extensions (C10); and
-under the arena there is no allocation-failure path at all — `alloc_arena_chunk`
-calls `abort()` (`core/arena.c:16,21`), which is a fifth independent reason for
-Q12's deletion.
-
-Atomicity is also the natural shape for the flow rather than an imposition on
-it: the line is already the unit of work, so "apply the line or don't" is the
-transaction the parser is already structured around. What it costs is that every
-allocation-failure point inside a line must either be moved before the first
-mutation, or be undoable. That is §4.13's question.
-
-**Q34 (inventory's original reasoning).** Today `parser->oom` is one bit meaning four things: the block phase lost an allocation, the inline phase did, an extension did, and "this parse is over". Under Stage 1 a fifth appears — a snapshot failed to allocate — and it must not be the same bit (H13): a snapshot's failure must leave the live parse alive and untouched, and the live parse's failure must not be reported by destroying the tree, which is what `finish` does today (`core/blocks.c:1697-1704`). Recommend: `snapshot()` returns NULL on its own allocation failure and sets nothing; a terminal parse loss sets a sticky bit that makes further `feed` a no-op (as now) and makes `snapshot()` and `finish()` both return NULL; and add a query so a caller can distinguish truncation from success without calling `finish`. Note that under the arena there is no OOM path at all — `alloc_arena_chunk` calls `abort()` (`core/arena.c:16,21`) — which is a fourth independent reason for Q12's deletion.
-
-**Q35 — bindings.** No. Three reasons: all three bindings copy into value types and free the handle, so a snapshot API costs a full deep copy per snapshot in each language and none of them can express a borrowed view even if Q32 allowed one; the ABI window is Step 12, after Stage 1; and Stage 1's gate is a timing slope on the C library, which no binding participates in. **One constraint applies now regardless:** Stage 1 must not adopt a C shape the bindings cannot express later — no borrowed views, no callback-driven feed, no snapshot whose validity is scoped to a parser generation. The surface added at 3.0 must be the same shape as the C one.
-
-**Q36 — the allocation bound.** State two, because they answer different questions. **(a) Resident parser state is O(open depth + Σ open blocks' content + definitions so far), with no term in the number of lines already fed.** **(b) A snapshot costs O(snapshot) allocations, once, charged to the caller, with nothing retained by the parser.** Bound (a) is the one that matters and the one no timing gate can see: a "keep a copy of every line" cheat is invisible to a flat-slope timing series and obvious in a peak-RSS series over the same corpus. Gate it the same way — a fitted slope in *i* indistinguishable from zero on a bounded-block corpus. Two facts make (a) work to earn rather than to assume: **under the arena it is false today by design** — `arena_free` is a no-op and `arena_realloc` always allocates fresh and copies (`core/arena.c:83-96`), so a parser held open across snapshots grows monotonically including every superseded buffer copy — and **every block node keeps its `content` strbuf forever** (`core/blocks.c:125`; measured, a finished document's root still holds `asize=56`, and every paragraph holds its full source text). Releasing a closed block's content is exactly what Step 8's own-on-emission unlocks (§11.7), which is why Q17 and Q36 are one decision seen twice.
-
----
+Who owns a snapshot beyond the generation rule; whether equality is required
+after every prefix or only at the end; failure and OOM behaviour mid-stream;
+whether the bindings participate in Stage 1 or only after it; and the allocation
+bound accompanying the time bound. Two standing rulings already constrain them:
+**append is atomic** (Q34, §4.13) and **there is no fallback on OOM**
+(§4.14.13a).
 
 ### 11.9 MEASURED: criterion 1 already passes, and it is a ctest test rather than a PoC
 
