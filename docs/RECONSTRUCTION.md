@@ -113,10 +113,13 @@ argument. Nothing here is checked.
       construction O(line) per fed line, projection O(what is projected) per
       snapshot. The existing slope gate measures the first; the second has no
       gate yet and is O(open block) until Stage 2's resumable subject lands.
-- [ ] **Change what `finish` returns** — a derived tree, with the parser keeping
-      the CST. H1 calls today's `finish` a reset because it hands out
-      `parser->root`; that is the shape the ruling changes. Bindings and the
-      facade both cross here.
+- [ ] **Change what `finish` returns** — a derived tree rather than
+      `parser->root`. **Internal only** (§12.10 F): same signature, same
+      ownership, and `finish` stays terminal (§12.10 A), so a caller cannot tell
+      and **no binding changes**. The snapshot accessor is new API; whether the
+      bindings get it is a separate decision.
+- [ ] **Renumber the diagnostic enum** after §12.9 — codes 6 and 7 go,
+      `label-too-long` moves 8 → 6, no holes (§12.10 G).
 - [ ] **Acceptance** — `stream_runner` still green (criterion 1 is now a
       theorem, kept as a gate), two projections of one CST byte-identical, the
       external oracles unmoved, and the CST proved refmap-independent by
@@ -11501,3 +11504,112 @@ before it consults anything (`core/map.c`, the `label->len` guard).
 a numbered public enum. `VERSION` is 3.0.0 and is the reconstruction, so
 renumbering 8 → 6 is available; leaving 6 and 7 as reserved holes costs nothing
 and never breaks anyone. Not decided here.
+
+### 12.10 The nine remaining questions, answered
+
+**Owner rulings, 2026-08-24.** Two of them corrected me, and one sent me to
+measure something this document had been asserting without evidence since
+Stage 0.
+
+#### A — `finish` stays terminal
+
+> *"`finish` means the document sealed, not editable again, which means
+> terminated."*
+
+So the shape is **feed … derive … derive … finish**, where `finish` is the last
+derivation *and* the seal. Snapshots are a separate accessor; `finish` is not
+renamed and does not become re-callable. §12.5's ruling is unaffected — the AST
+is still never stored — but the parser's life still ends at `finish`.
+
+#### B — the concrete view is BORROWED
+
+> *"From what we have now, concrete is borrowed."*
+
+A snapshot points at the parser's normalized source and line index rather than
+copying them. Copying would cost ~1.1× the input per snapshot (measured below).
+The parser is the owner and a snapshot is valid only while it lives.
+
+#### C — no memory budget, and the premise of the question was wrong
+
+> *"No memory budget limitation. But why does the concrete view need extra
+> options and why does a concrete need so much extra memory?"*
+
+**Both halves of that are right, and this document was carrying a false number.**
+
+**There is no option.** `markdown_core_parser_retain_concrete` is called
+unconditionally (`extensions/ast.c:163`). Q24's *"a parse option defaulting to
+`true`"* was a Stage 0 recommendation that never shipped as an option, and
+nothing has gated the concrete view since. §11 repeated it as though it had.
+
+**And it is not expensive.** Measured as multiples of input, over five real
+documents, every figure taken from the live structures after `finish`:
+
+| document | input | normalized source (as allocated) | line index | **concrete total** | block content | nodes |
+|---|---|---|---|---|---|---|
+| `RECONSTRUCTION.md` | 852,799 | 1.07× | 0.054× | **1.12×** | 1.53× | **9.53×** |
+| `README.md` | 9,613 | 1.04× | 0.114× | **1.15×** | 1.11× | **6.65×** |
+| `CHANGELOG.md` | 9,112 | 1.05× | 0.063× | **1.11×** | 1.55× | **9.02×** |
+| `canonical-ast.md` | 13,828 | 1.13× | 0.072× | **1.20×** | 1.86× | **11.38×** |
+| `spec.txt` | 401,068 | 1.22× | 0.119× | **1.34×** | 0.40× | **3.02×** |
+
+**The concrete view costs 1.11–1.34× the input.** Q24's "~2.5–3× input resident"
+was never a measurement of it.
+
+**The memory is the NODES — 3.0× to 11.4× the input.** `sizeof(markdown_core_node)`
+is **176 bytes**, and markdown is node-dense: `RECONSTRUCTION.md` is one node per
+19 bytes of source. Nothing about the concrete view moves that number, and
+nothing about deleting the concrete view would either.
+
+**And 32 of those 176 bytes are a `markdown_core_strbuf content` that 83.8% of
+nodes never fill.** Every inline node carries a block's content header. On
+`RECONSTRUCTION.md` that is 37,595 × 32 = 1.2 MB of dead field on an 853 KB
+document — **1.4× the input, in headers nothing writes.** The CST/AST split is
+what makes this addressable: a CST block needs `content`, an AST inline does not.
+Not Stage 1 work, but it is now a named, measured target rather than a suspicion.
+
+#### D — the projection's gate
+
+> *"Flat ns-per-content-byte across document sizes, same shape as the slope
+> gate."*
+
+Taken. §12.7 measured 1.35–2.40 ns per content byte; the gate is that the fitted
+slope against document size is indistinguishable from zero.
+
+#### E — OOM is an error, everywhere
+
+> *"OOM is an error that is worth throwing, no matter which mode or stage it
+> happens."*
+
+Taken, and it was not a question worth asking: §4.14.13a already rules there is
+no fallback on OOM, and nothing about a mid-stream derivation changes what an
+allocation failure means. **§11.8's "failure and OOM behaviour mid-stream" is
+struck from the open list** — it was already answered by a standing ruling.
+
+#### F — the API does not change, and I was wrong to say it did
+
+> *"Update the binding if the API truly changed. I doubt it is just a
+> hallucination of yourself."*
+
+**Checked, and the doubt was correct.** `markdown_core_parser_finish` returns a
+`markdown_core_node *` the caller owns and frees. Under the split it returns a
+*derived* tree instead of `parser->root` — but the signature is the same, the
+ownership is the same, and with ruling A the terminality is the same. **A caller
+cannot tell the difference.** §12.5's "an ownership change in the function every
+caller uses" was wrong: the change is internal.
+
+The snapshot accessor is **new** API, not changed API. The bindings therefore
+change only if Stage 1 chooses to expose snapshots to them, which is a separate
+decision and not forced by anything here.
+
+#### G — renumber the diagnostic enum
+
+> *"You should fix it."*
+
+Codes 6 and 7 are deleted (§12.9) and `label-too-long` moves 8 → 6. No holes.
+Safe because 3.0.0 is the reconstruction and no binding names any of the three.
+
+#### H, I — process
+
+Stage 1 lands on `poc/stage1-tail-reach`; the PR goes up after it. The stray
+`reconstruct-from-1.0` branch at `d1eeca7` and the direct-to-`main` commit
+`d03ce2c` both stay as they are.
