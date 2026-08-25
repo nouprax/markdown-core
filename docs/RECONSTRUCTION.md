@@ -34,48 +34,186 @@ transcribe infrastructure facts from and never a source of engine design.
 | Engine | **no longer the baseline's, and this row was stale** — it described the tree before Stage 0a. Measured `580d10c`..Step 2 over `core/` + `extensions/` + `include/`: **27 files, +1,868 / −712**, of which Stage 0a's twenty-eight defect fixes and `--profile` are +771 / −165 and Step 2's braces are the rest. Step 3 then deleted seven files. |
 | `VERSION` | **`3.0.0`**, as of the owner ruling of 2026-08-21. There is no 1.0.4; see §4.10 and Q27 |
 | Stage 0 | **CLOSED AND MERGED.** Every step in §4.1's list landed; §4.8 is the acceptance checklist and every box is ticked. 11a, 11b and 11c were RETIRED rather than built (§4.14.11d) — `node.scope` already answered the requirement, and −1,803 lines of C went with them. Per-step records are §4.14; the CI reconciliation that followed is §4.14.15H–L |
-| Stage 1 | **NOT STARTED.** The task list below is the order, and **the order is itself a finding**: two of the seven items are placed where they are because doing them later would invalidate the work before them — the headline probes decide whether the stage is scoped right at all, and re-resolution has to exist before H4 or H4 produces a wrong tree |
+| Stage 1 | **LANDED on `poc/stage1-tail-reach`, 2026-08-24 — every box in the list below is ticked and the acceptance is measured.** The CST/AST split (§12): both maps re-prepare on insert-after-lookup, a finished tree carries no open block, the projection is `markdown_core_parser_derive_tree` and `finish` returns a derivation, codes 6/7 are deleted with `label-too-long` renumbered to 6, the diagnostic list is wholly CST-owned under the completion rule, and both criterion-2 bounds are gated. **Six defects fixed, three of them newly found while landing**: the two §12.4 named (index leak, `size` overwrite) plus `sort_map` leaving `indexed` set after a path switch (SIGSEGV); the open-cell inconsistency §12.8 named plus `add_child`'s OOM path re-anchoring `parser->current` on the header row being closed (assert, sanitizer-only); and a failed `association_init` leaving a footnote definition's label borrowing a freed temporary, invisible until the derivation read it. PR not opened — owner ruling: the PR goes up after the landing |
+| Stage 2 | **NOT STARTED** — the pausable parser, which is what Stage 1 used to be. Its inventory is §11 and its measurements stand; §12.3 says which of its conclusions the split deletes |
 
 ### Stage 1, in order
 
-Nothing here is checked. Each line says what it is; the section says why.
+**Separate the CST from the AST.** §12 is the section; the ordering below is the
+argument. Nothing here is checked.
 
-- [ ] **Re-measure the two headline probes at HEAD** — line-boundary prefix
-      equivalence, the per-line feed decile series, the `finish` cost curve.
-      §11's banner. **First because they are the entire justification for**
-      *"Stage 1's problem is not making the parser resumable"*, and they were
-      taken at `b71c8a9`, before thirteen steps rewrote `blocks.c` and
-      `inlines.c`. If either moved, the stage is scoped wrong from its first line.
-- [ ] **Re-measure every §11.4 hazard at HEAD**; record stands / gone / changed
-      shape. **H2 is already closed by the very step it names as its own fix**
-      (Step 9b — D9 and D30 closed at 9b.2). H3 and H6 name the same subsystem
-      and probably moved with it; H1 and H8 were the target of no Stage 0 step.
-- [ ] **Build the per-line slope gate** — a fitted slope indistinguishable from
-      zero passes, any positive slope in *i* fails and names the state being
-      re-derived. §11.5's three costs that scale with something other than the
-      current line are separate series with stated spike bounds. **Before any
-      refactor**: criterion 1 is the one that looks fine while criterion 2 is
-      being failed, and a slope measured after a refactor cannot say whether the
-      refactor caused the shape or inherited it (§3's gate section).
-- [ ] **Reference re-resolution** — the back-index from a label to the sites
-      waiting on it, which `markdown_core_reference_create` has not got.
-      **A PREREQUISITE OF THE NEXT ITEM, not a follow-up** (§11.5's correction):
-      `core/inlines.c:1524` creates a reference only where the refmap lookup
-      succeeds, so closing a block early parses `[foo]` before `[foo]: /url` is
-      fed and the LinkReference never appears — criterion 1, not cost.
-- [ ] **Resolve a line's inlines WHEN THE LINE COMPLETES, not when its block
-      closes.** §11.5 states this move as *"move `process_inlines` into
-      `finalize`"*, and **that is block-granular and therefore the wrong unit**:
-      it means an open paragraph carries no inline children until it ends, so a
-      consumer streaming a long block sees nothing useful for the whole
-      duration of it. The unit is the LINE, because that is what per-line
-      pausable state is for — see the requirement below. The flag bit is still
-      needed so no line is parsed twice; what changes is where the call sits.
-- [ ] **Settle the six API decisions** (§11.8), under two standing rulings:
-      append is atomic (Q34, §4.13) and there is no fallback on OOM (§4.14.13a).
-- [ ] **Acceptance** — criterion 1 against the EXTERNAL oracles on every
-      line-boundary partition, criterion 2 as a flat slope. Neither alone is
-      Stage 1: clone-and-finish satisfies the first and is O(l²).
+- [x] **The seam is located and the split is decided** (§12.1, §12.2).
+      `finalize_document` is already *close the spine, then project*, and
+      `process_inlines` has one call site reading exactly
+      `(node->content, refmap)`. Measured: resolution changes the emphasis
+      structure of the whole paragraph, not just the bracket — so the CST stops
+      at **block tree plus content bytes**, not at an inline tree with a
+      reference node in it.
+- [x] **Let BOTH definition maps accept insert-after-lookup.** LANDED:
+      `definition_create` clears `prepared` after linking the entry — the assert
+      is gone and the next lookup rebuilds — and both latent defects went with
+      it: `index_map` frees the previous table before `key_index_init`'s
+      `memset` can drop it, and neither preparation path touches `map->size` any
+      more, because `entry->age` is stamped from it. The deduped count the
+      bsearch fallback needs lives in a new `map->sorted_size`, and `sort_map`
+      now clears `indexed` — a re-preparation that fell from the hash path to
+      the sort path used to leave the lookup dispatching into a freed table,
+      which is a third defect the re-preparation made live and the measured
+      crash (SIGSEGV) in its mutant. `parser->footnote_defs` got the fix for
+      free — same `definition_create`. Witnessed by
+      `regression_fallback_definition_after_lookup` (fallback_runner), which
+      kills all three mutants: no-reopen (miss), size-overwrite (age
+      collision, `late` resolved to entry 2), no-indexed-reset (crash).
+      Original finding stands below in §12.4.
+- [x] **Where the AST lives is decided: nowhere.** Owner ruling — *"AST never
+      exists when someone requires it, and when it is asked, it is derived from
+      CST"* (§12.5). The parser holds only the CST. Priced at **16.2% of nodes
+      are blocks** over 838 KB of this repository's markdown, so a derivation
+      copies a sixth of the tree and builds the rest — about 1.19× today's
+      projection in node writes, an upper bound. **It carries one item that is
+      not optional**: `finish` returns `parser->root` today and must return a
+      derived tree instead, which is an ownership change in the function every
+      caller uses.
+- [x] **The extension postprocessors are projection steps** (§12.6). Two exist
+      — `autolink.c:667` and `formula.c:720` — and the only parser state either
+      writes is `parser->oom`. The claim that `directive.c:1095` ran
+      `parse_inlines` from inside one was wrong: it is an inline match handler
+      running *during* the projection. What remains is a gate, not a decision —
+      prove both are deterministic on a fresh AST.
+- [x] **Close a `TABLE_CELL`, and fix the defect that hid it.** LANDED: every
+      cell and the header row clear `__OPEN` at the moment they are built
+      (`close_built_block`, four sites in `table.c`), because a GFM row is one
+      line and neither is ever on the open spine. A body ROW stays open — it is
+      what the parser returns to the spine and `finalize` closes it. **One
+      exception the sweep found**: when a cell's allocation is lost,
+      `add_child` re-anchors `parser->current` at the nearest open ancestor —
+      which can be the header row being built — and the spine's finalize walk
+      then asserts on meeting a closed block; `close_built_block` therefore
+      refuses to close the parser's own anchor, and such a parse fails at
+      `finish` anyway. Gate: `projection_closed_{spec,regression,extensions}`
+      (`projection_runner --case closed_after_finish`) — red before the fix on
+      exactly `table_cell`/`table_header` (29+7, 4+1, 98+20 nodes over the
+      three fixtures) and on nothing else, green after, goldens unmoved.
+      `DIRECTIVE_LABEL` was already correct, as §12.8 predicted.
+- [x] **Make `process_inlines` callable more than once**, from a stated CST,
+      producing a stated AST. LANDED as
+      `markdown_core_parser_derive_tree(parser, refmap, record_diagnostics)`
+      (internal, `parser.h`): clone the block skeleton, `process_inlines` over
+      the clone, then the tail `finish` always ran — consolidation, the
+      postprocess loop, the strip — on the derived tree. The CST is never
+      written; H4's non-idempotence stops mattering because no projection ever
+      sees a tree that was projected before. `process_inlines` itself now takes
+      the root it walks. The clone copies everything a block states — content
+      bytes, place, flags, `as` arm by type, the content-to-source run — and
+      extension block state moves through a new `opaque_copy_func` hook
+      (table, directive, formula); an extension holding an opaque payload with
+      no copy hook fails the derivation rather than losing state silently.
+      Gates: `projection_double_{spec,regression,extensions}` (two projections
+      byte-identical, derived over the OPEN spine, which is stronger than the
+      closed case) and `projection_refmap_independence_*` (§0 acceptance).
+      Mutants: clone-shares-the-CST dies in the gate (SIGSEGV), and
+      drop-`as.list` kills 65 spec goldens — the goldens see the clone's
+      fields. **Fourth defect found while landing**: a failed
+      `markdown_core_association_init` left `out->label` BORROWING the
+      caller's freed temporary on a FOOTNOTE_DEFINITION node that stays in the
+      tree — invisible until the derivation read it (ASan, OOM sweep); init
+      now clears the borrow, and the derivation refuses a parse that already
+      lost an allocation, since `finish` answers NULL for it regardless.
+      Known cost, stated: each derivation appends one content-to-source mark
+      per set-content block (table cells, directive labels) to
+      `parser->line_marks` — per-derivation, correct, and freed with the
+      parser; not worth an index before a snapshot API exists.
+- [x] **Delete `reference-undefined` and `footnote-undefined`** (§12.9, owner
+      ruling). LANDED: the two enum values are gone from both headers, the two
+      `code_string` rows with them, and the census lost exactly its 9 rows for
+      the two codes — 38 → 29, reviewed row by row, all in `spec.txt` and
+      `extensions.txt`, nothing else moved. `label-too-long` is **hoisted**: on
+      the reference path it now fires BEFORE the lookup, conditioned on nothing
+      but `raw_label.len` (the lookup rejects an over-long label before
+      consulting anything, so the rows are identical); the footnote path's cap
+      check likewise depends only on the span's own length. §12.9's prediction
+      held: **no binding names any of the three codes** — the only surfaces
+      were the two headers, `code_string`, the two `inlines.c` sites and the
+      census.
+- [x] **The CST owns the diagnostic list, append-only** (§12.8 Q4), **under one
+      rule: a diagnostic is emitted when its construct COMPLETES, not while it
+      is open.** LANDED, and the mechanism is in the derivation:
+      `derive_tree` records only on `finish`'s call, over a fully closed CST —
+      which is what stops the directive attribute site amending `unclosed`
+      into `unrecognised` between a prefix and a full parse, because a
+      derivation taken mid-parse stays silent about an open block's bytes.
+      **The audit of all six remaining codes**: `directive-rejected` (two
+      sites, `directive.c:1209/1218`) and `table-rejected` (`table.c:484`)
+      speak over the LINE IN HAND at block-open, and the construct is that one
+      line — complete when judged, the verdict never re-litigated
+      (`__TABLE_VISITED` pins one report). `directive-unclosed`
+      (`directive.c:1369`) speaks from the close hook — completion by
+      definition. `directive-label-rejected` and
+      `directive-attributes-rejected` (`directive.c:1056/1082`) and
+      `label-too-long` speak from inline parsing — the projection — and
+      therefore only at `finish`, when every construct has completed. No code
+      speaks about an open construct; the list is parser-owned and append-only
+      with no exception left.
+- [x] **No label→sites index** (§12.8 Q2, owner ruling). The bound is
+      `O(what you project)`. Held: Stage 1 built no index, no cache, and no
+      generation consumer — `derive_tree` re-derives, unconditionally. The
+      generation stamp becomes real the moment a cache exists, which is after
+      this stage.
+- [x] **Split criterion 2 into two bounds** and gate them separately: CST
+      construction O(line) per fed line, projection O(what is projected) per
+      snapshot. The existing slope gate measures the first; the second is now
+      `pathological_complexity_projection_slope` — the same two-endpoint
+      normalized-slowdown shape as the construction gates, over the full
+      derivation (clone + inlines + consolidate + postprocess + strip).
+      Measured: **11.6 ns/byte at 64 KiB, 15.5 ns/byte at 16 MiB, normalized
+      slowdown 1.336×** locally — and **4.114× (18.6 → 76.7 ns/byte) on CI's
+      shared macOS runner for the same build**, which tripped the first cut's
+      4.0× bound on the PR's first run. The bound is now **8.0×**, and the
+      calibration difference is recorded in the gate: the construction gates'
+      4.0 sits just under a MEASURED regression (qsort's 4.442×), while this
+      gate has no bad reading to sit under — super-linearity at a 256× span
+      reads ≥100× — and now has a measured HEALTHY noise ceiling to sit
+      above. (§12.7's 1.35–2.40 ns/content-byte was `PARAGRAPH`/`HEADING`
+      inline parsing alone; the whole-pipeline ns/byte is the number to
+      watch.)
+      Per-snapshot cost is O(document) until a cache exists — the stated
+      O(open block) refinement is Stage 2's resumable subject, unchanged.
+- [x] **Change what `finish` returns** — a derived tree rather than
+      `parser->root`. LANDED: `finalize_document` is now only *close the
+      spine*, and `finish` is `finalize_document` + the last
+      `markdown_core_parser_derive_tree` (the only one that records
+      diagnostics) + the seal — the reset disposes the CST, and what leaves is
+      the derivation. **Internal only** (§12.10 F), as ruled: same signature,
+      same ownership, `finish` stays terminal (§12.10 A), no binding changes,
+      and every golden agreed byte-for-byte on the first green run. The
+      snapshot accessor remains future API; `derive_tree` is what it would
+      call.
+- [x] **Renumber the diagnostic enum** after §12.9 — codes 6 and 7 go,
+      `label-too-long` moves 8 → 6, no holes (§12.10 G). LANDED in both
+      headers; the facade test that exercises the code uses the constant, so
+      nothing outside the two enums knew the number.
+      `audit-diagnostics.mjs` now reports over 6 codes — `29 over 892
+      examples, 5 of 6 codes exercised` (label-too-long is the facade test's,
+      not a fixture's, as before).
+- [x] **Acceptance** — ALL MET, measured at the landing (2026-08-24):
+      `stream_runner` green over all six arms (criterion 1 kept as a gate);
+      two projections of one CST byte-identical over every fixture example
+      (`projection_double_*`, including over the open spine); the external
+      oracles unmoved — upstream 892/892 with 10/10 divergences reproduced,
+      mdast 112/112 with an empty backlog, fuzz 300/300 on both oracles;
+      the CST proved refmap-independent by projecting one CST against its own
+      map, an empty map, and its own map again with a byte-stable CST
+      fingerprint and byte-identical outer projections
+      (`projection_refmap_independence_*`); and both criterion-2 bounds gated.
+      Full sweep: correctness 88/88, asan 76/76, ubsan 76/76, tsan 76/76,
+      conformance 2/2, benchmark 7/7, every `gates.sh` row green, ES suites
+      exit 0/fail 0, Swift test+conformance green, Kotlin jvmTest 18/18 and
+      jvmConformanceTest 4/4 with `--rerun-tasks`.
+
+### Stage 2, in order — the pausable parser
+
+The list that used to be here is §11's inventory, minus what §12.3 deletes. Do
+not start it before Stage 1 closes.
 
 ### What per-line pausable state is FOR, and it is the requirement
 
@@ -84,22 +222,31 @@ Nothing here is checked. Each line says what it is; the section says why.
 > parse of lines 1…N with inlines resolved — not a tree that has to be
 > finished, and not a tree whose open block is empty until it closes.
 >
-> **The tail is the only unresolved thing.** The newly appended line, or the
-> partial line in Stage 2, is what is in flight. Everything before it is done.
+> **A COMPLETE LINE IS SETTLED THE MOMENT IT COMPLETES.** Owner ruling. At a
+> line boundary there is nothing in flight at all — the newly appended line is
+> resolved like every line before it. Only a PARTIAL line is unresolved, and
+> that is Stage 2's problem, not Stage 1's.
+>
+> **The engine does not do this today, and §11.9 measures exactly where.**
 >
 > **Appending a line mutates the state in O(line).** Not O(block so far), not
 > O(document). This is criterion 2 restated at the granularity the pause
 > actually has, and it is what rules out re-deriving a paragraph's inlines from
 > its accumulated buffer on every line.
 
-**Anything that genuinely cannot be resolved from lines 1…N alone is, by
-definition, part of the tail.** How much that is — which constructs span a line
-boundary and how far they reach — is a MEASUREMENT against the engine and it
-belongs to box one, not to a paragraph here. `streaming-inline-frontier` and
-`streaming-every-partition` are kept as records of the abandoned program, which
-measured exactly this before it was dropped for unrelated reasons (§1: it failed
-on aliasing between a live tree and a shadow projection, not on the line model).
-Read those measurements; do not copy their code — Q8 (§4.9).
+**Which constructs break that is now MEASURED — §11.9, and the answer is one
+of them.** Under the criterion that a CLOSED block and a CLOSED document match
+the one-shot, **1.00% of single-line appends touch a closed node — SUPERSEDED,
+the real figure is ~4.98% (§12.7); every one
+is late resolution**. Setext, list tightness and inline constructs spanning a
+line boundary are the open spine resolving, not history being rewritten.
+`scripts/poc/stage1-tail-reach.mjs` reproduces it.
+
+`streaming-inline-frontier` and `streaming-every-partition` are kept as records
+of the abandoned program, which measured adjacent things before it was dropped
+for unrelated reasons (§1: it failed on aliasing between a live tree and a
+shadow projection, not on the line model). Read those measurements; do not copy
+their code — Q8 (§4.9).
 
 
 `--profile` is a named option set for the CLI, added because the restored parity
@@ -125,9 +272,10 @@ cmake --preset default && cmake --build --preset default --parallel
 cmake --preset asan    && cmake --build --preset asan    --parallel
 cmake --preset ubsan   && cmake --build --preset ubsan   --parallel
 
-ctest --preset correctness -j 8            # 69/69
-ctest --preset correctness-asan -j 8       # 60/60 — SEE THE WARNING BELOW
-ctest --preset correctness-ubsan -j 8      # 60/60 — SEE THE WARNING BELOW
+ctest --preset correctness -j 8            # 78/78 — 69 was stale; 77 at ad2742c, +1 for
+                                           # definition_after_lookup. Print, don't trust.
+ctest --preset correctness-asan -j 8       # 67/67 — SEE THE WARNING BELOW; 60 was stale
+ctest --preset correctness-ubsan -j 8      # 67/67 — SEE THE WARNING BELOW; 60 was stale
 node scripts/check-canonical-ast-fixtures.mjs   # 32 kinds, 62 fields, 6 cases
 node scripts/audit-ast-projections.mjs           # 32 kinds over 12 surfaces
 node scripts/audit-source-lists.mjs              # 22 sources, 4 of 5 lists, 1 registered absent
@@ -141,10 +289,11 @@ node scripts/fuzz-parity.mjs --oracle mdast --iterations 300    # 300/300 SINCE 
                                           # `gates.sh` until 13.1, which is the
                                           # third time that script has run fewer
                                           # gates than this list names
-node scripts/check-upstream-parity.mjs     # 888/888 vs cmark-gfm 0.29.0.gfm.13, 10/10
-                                          # divergences, 4/4 projections acted
-node scripts/check-mdast-parity.mjs        # 110/110, backlog EMPTY since 9b.2
-node scripts/audit-scope-sanity.mjs        # 1 unresolved row, 5453 scanned, only-shrink holds
+node scripts/check-upstream-parity.mjs     # 892/892 vs cmark-gfm 0.29.0.gfm.13, 10/10
+                                          # divergences (888 was stale at Stage 1's landing)
+node scripts/check-mdast-parity.mjs        # 112/112, backlog EMPTY since 9b.2 (110 was stale)
+node scripts/audit-scope-sanity.mjs        # 1 unresolved row, 5506 scanned, only-shrink holds
+                                          # (5453 was stale; the ledgers were untouched)
 
 # The three position oracles, landed at 0a.1 (§4.2.7). Each fails on a row
 # APPEARING and on a row CLEARING, so a fix that moves one without recording it
@@ -152,20 +301,22 @@ node scripts/audit-scope-sanity.mjs        # 1 unresolved row, 5453 scanned, onl
 node scripts/audit-inline-sourcepos.mjs    # 40 rows registered, 68 scanned — and
                                           # for the first time they are rows where THIS
                                           # side is right and upstream is not (§4.14.8a)
-node scripts/audit-scope-containment.mjs   # 8 rows registered, 4225 scanned
-node scripts/audit-position-places.mjs     # 0 rows registered, 4451 scanned -- EMPTY since §4.14.11c2
+node scripts/audit-scope-containment.mjs   # 9 rows registered, 4278 scanned (8/4225 was stale)
+node scripts/audit-position-places.mjs     # 0 rows registered, 4494 scanned -- EMPTY since §4.14.11c2
+                                          # (4451 was stale)
 
-# Requirement 11a's four laws over the concrete record set, landed at 11a
-# (§4.14.11a). L1 and L3 have no rows and hold by construction; L4 is checked
-# by re-parsing every line-boundary prefix.
-node scripts/audit-concrete-records.mjs   # 277 rows registered, 5874 regions
+# ~~Requirement 11a's four laws over the concrete record set~~ THE SCRIPT IS
+# GONE: `audit-concrete-records.mjs` and its 3,740-line record set were deleted
+# at §4.14.11d, and this row outlived them -- found at Stage 1's landing when
+# the row was run and the module did not exist.
 
 # Requirement 13's three laws over the diagnostic list, landed at 13.1
 # (§4.14.13a). D1 -- the semantic tree AND the concrete records are
 # byte-identical with recording on and off -- is the only one a corpus can see,
 # and the census beside it is fail-closed both ways: a code that stops firing
 # fails as loudly as one that starts.
-node scripts/audit-diagnostics.mjs        # 38 diagnostics, 891 examples, 7 of 8 codes
+node scripts/audit-diagnostics.mjs        # 29 diagnostics, 892 examples, 5 of 6 codes
+                                          # (38/891/7-of-8 predates §12.9's deletion)
 
 # D9's pin. It was REGISTERED RED from 0a.8 to 9b.2 and is now GREEN with an
 # EMPTY ledger -- still fail-closed, so a row appearing fails the run. Deleting
@@ -336,8 +487,9 @@ so `pnpm run test:es-node` from inside a package directory reports
 **A gradle test task can be green having run a fraction of the suite.**
 `jvmTest` EXCLUDES `*AstTest*` and `jvmConformanceTest` includes only it, so
 "BUILD SUCCESSFUL" from one of them says nothing about the other. Read
-`build/test-results/*/TEST-*.xml` and count: this branch expects **11** across
-six classes in `jvmTest` and **4** in `jvmConformanceTest`.
+`build/test-results/*/TEST-*.xml` and count: **18** in `jvmTest` and **4** in
+`jvmConformanceTest` as of Stage 1's landing (the row said 11, which was
+stale when re-counted).
 
 **A new binding test whose name does not start with a registered suite prefix
 silently does not run.** `packages/es-markdown-core/scripts/run-tests.mjs`
@@ -990,9 +1142,16 @@ D9 cannot, and §4.2 says what pins it in the meantime.
 
 ## 3. The roadmap
 
-Three stages, in order. **Do not begin a stage before the one above it is
-finished**, and in particular do not collapse Stage 1 into Stage 2 — that
-collapse is what forced the two-tree shadow design last time.
+Four stages, in order. **Do not begin a stage before the one above it is
+finished**, and in particular do not collapse the pausable stage into the
+partial-line stage — that collapse is what forced the two-tree shadow design
+last time.
+
+**The stages below Stage 0 were renumbered on 2026-08-24** (owner ruling, §12).
+The CST/AST split became Stage 1 and everything else moved down one. It is not
+a reordering of convenience: the split *deletes* items from the stage that used
+to be first, and building them before it would have been building machinery for
+a problem the split removes.
 
 ### Stage 0 — Reconstruct
 
@@ -1011,7 +1170,28 @@ Then re-apply, onto the 1.0 baseline and by hand, exactly three things:
 
 Nothing else. The port list is §4.1.
 
-### Stage 1 — Make the parser pausable at line boundaries
+### Stage 1 — Separate the CST from the AST
+
+**Owner ruling, 2026-08-24, and the whole of §12.** The CST is the equivalence
+class of the parser's resumable state; the AST is the equivalence class of a
+snapshot. Resolution — a reference becoming a link or becoming prose — is the
+*projection between them*, not an event in the parser's life.
+
+The engine already has the seam and has never named it. `finalize_document` is
+two statements (`core/blocks.c:1381`):
+
+```c
+while (parser->current != parser->root)      /* (1) close the open spine   */
+    parser->current = finalize(parser, parser->current);
+finalize(parser, parser->root);              /* (1) the CST is now complete */
+process_inlines(parser, parser->refmap, …);  /* (2) THE PROJECTION          */
+```
+
+Stage 1 is: name those two things, make (2) callable more than once, and stop
+(2) from writing into state that belongs to (1). §12 says what that costs and
+what it deletes from the stage below.
+
+### Stage 2 — Make the parser pausable at line boundaries
 
 #### The flow, stated before anything else
 
@@ -1074,9 +1254,28 @@ CommonMark and GFM surface, remark/mdast for the model — not agreement with th
 repository's own goldens. A golden can be regenerated into agreement with a
 defect; an external oracle cannot.
 
-> For every partition of the input **on line boundaries**, the resulting tree
-> must equal a one-shot parse of the same bytes — and that one-shot parse must
-> itself still satisfy every parity gate.
+> **STREAM IT, FINISH, AND THE DOCUMENT EQUALS THE ONE-SHOT.** For every
+> partition of the input on line boundaries: feed the lines, call finish, and
+> the resulting tree is byte-identical to a one-shot parse of the same bytes —
+> which must itself still satisfy every parity gate.
+
+**That is the whole of criterion 1, and the goldens are already the
+expectation.** Nothing new has to be written down: every fixture example in
+`spec.txt`, `regression.txt` and `extensions.txt` already pins what a one-shot
+parse produces, so the streaming gate is *"feed this example one line at a time,
+finish, and reproduce its existing golden."* A corpus of hundreds of pinned
+trees becomes the streaming oracle at no cost, and no golden has to be
+regenerated for Stage 1.
+
+**What is NOT asserted, and two earlier forms of this criterion got it wrong.**
+It does not say a snapshot taken mid-stream equals a one-shot of the prefix fed
+so far: a one-shot of a prefix CLOSES the trailing block at end of input, so
+demanding that forces the parser to close the open block speculatively —
+publish `Foo` as a `Paragraph`, then retract it when `===` arrives and makes it
+a `Heading`. **Eager closure and retraction is what the previous program died
+of** (§1). It does not say a closed block must match a one-shot at every
+boundary either. Snapshots are a capability the stage delivers; **the golden
+test is the end of the stream.**
 
 **2. Performance: the cost of a document is the sum of the cost of its lines.**
 
@@ -1146,7 +1345,7 @@ every prefix or only at the end; failure and OOM behaviour mid-stream; whether
 the bindings participate in Stage 1 or only after it; and the allocation bound
 that accompanies the time bound.
 
-### Stage 2 — The incomplete trailing line
+### Stage 3 — The incomplete trailing line
 
 Only once Stage 1 is proven. The buffering is already solved at the byte level
 (`parser->linebuf`); the remaining problem is *speculatively parsing* the
@@ -10131,7 +10330,12 @@ returns to `docs/` by a commit that says which step made it true again.
 
 ---
 
-## 11. The Stage 1 state inventory
+## 11. The pausable-parser state inventory
+
+**This was Stage 1's inventory and is now Stage 2's** (§12, owner ruling of
+2026-08-24). It is left as written because its measurements stand; what changed
+is which stage owns them. §12.3 says which of its conclusions the CST/AST split
+deletes outright — the back-index of §11.5 and §11.6 chief among them.
 
 This is the deliverable §3 names under *"What Stage 1 owes before it starts"*. It is placed here rather than inside the roadmap because it is longer than the roadmap it serves. Six subsystems were inventoried independently against the working tree at `b71c8a9` — the parser struct, the block phase, the inline phase, the extensions, buffers and memory, and the late-resolved reference and footnote maps — and merged here with the duplicates collapsed.
 
@@ -10483,82 +10687,1042 @@ The inventory's most immediately useful output. Each item is a constraint on wor
 
 ### 11.8 The six API decisions Stage 1 must settle
 
-Recorded as ledger entries **Q31–Q36**, continuing §9's numbering. Recommendations are this inventory's, not the owner's.
+**Three are settled by owner ruling of 2026-08-24, on the evidence of §11.10's
+spike.** They are recorded before the work rather than after it, which is the
+point of a spike.
 
-| id | Question | Recommendation |
+#### SETTLED — the open block's inlines are resumable, not re-parsed
+
+A line completes inside an open paragraph; emphasis opened on line *N* may close
+on line *N+1*. The cheap shape is to throw away the open block's inline children
+and re-parse its whole accumulated content each line — obviously correct, no new
+state, and **O(block) per line, so O(block²) per block.** That is a criterion 2
+failure on precisely the streaming case the stage exists for.
+
+**The ruling is the resumable subject: parse each line's inlines once and carry
+the delimiter residue across the boundary, so a line costs O(line).**
+
+This makes Stage 1 the larger shape, and it takes §11.5's *"strict addition"*
+into scope along with the hazards that come with it — **H5 and the three
+end-of-buffer memos at `core/inlines.c:387,1034,1046,1056,1067`, which become
+false negatives on resume.** §11.5's warning stands and is now load-bearing:
+those are ways to be silently **wrong**, not slow, so they need gates that
+quantify over longer buffers rather than over a fixed corpus. The abandoned
+program built this and `streaming-inline-frontier` is kept as its record — read
+the measurements, not the code (Q8, §4.9).
+
+#### SETTLED — a snapshot is DERIVED from parser state, with a generation the feed bumps
+
+**This was first recorded as "hand out `parser->root`", which is the conflation
+§11.10a corrects.** Resumable state is owned by the parser and never
+transferred; a snapshot is a **tree calculation** over it, not a pointer into
+it. The distinction is what makes the parser's buffers free to move — see
+§11.10a for the three shapes of work that assumption made look necessary and
+that this one deletes.
+
+**The generation rule stands and is about the DERIVED tree's lifetime**, not
+about aliasing parser internals: the handle carries a number `feed` increments,
+so using a snapshot after the stream has moved on is a clean error rather than
+undefined behaviour.
+
+What the derivation may NOT do is recompute the document. That is
+clone-and-finish at O(document), which called per line is the O(l²) shape
+criterion 2 forbids. It is affordable because **a closed block never changes** —
+§11.9 measured the exceptions at 1.00% of appends, all late resolution
+(**superseded: ~4.98%, §12.7**) — so a
+closed block's derived form is computed once at close and reused, and only the
+open spine is recomputed.
+
+#### SETTLED — an open block's scope ends at the last byte fed
+
+Mid-parse an open block currently reports `scope=3:1..3:0`, because the end is
+written when a block closes. **The ruling is that an open block's scope ends
+wherever the stream currently ends**, growing as lines arrive, so a consumer can
+always highlight the block's real extent.
+
+The cost is a write per line on the open spine — **O(depth), which §11.5 already
+accepts as the model's predicted term**. The rejected alternatives were making
+`scope` optional on the surface, which reaches the canonical AST contract and all
+three bindings, and keeping column 0 as a documented sentinel, which publishes a
+position that is not a position — the exact class of defect Stage 0a spent
+§4.2 removing.
+
+#### Still open
+
+Who owns a snapshot beyond the generation rule; whether equality is required
+after every prefix or only at the end; failure and OOM behaviour mid-stream;
+whether the bindings participate in Stage 1 or only after it; and the allocation
+bound accompanying the time bound. Two standing rulings already constrain them:
+**append is atomic** (Q34, §4.13) and **there is no fallback on OOM**
+(§4.14.13a).
+
+### 11.9 MEASURED: criterion 1 already passes, and it is a ctest test rather than a PoC
+
+**`stream_runner`, six tests under the `streaming` label, in
+`ctest --preset correctness`.** It began as a standalone C file compiled by hand
+against `$(find build/cmake -name "*.a")`, fed from 745 markdown files a node
+script exploded out of the fixtures — which measured the right thing and was
+not something anyone else could run. It reads the fixture format directly now,
+through the same `ts_spec_load` every other runner uses.
+
+The criterion is *stream it, finish, and the document equals the one-shot*, and
+it needs no engine change to test: `feed` and `finish` already exist, and the
+CLI's own `print_document` shows how to dump a parser-finished tree — wrap it in
+a stack `markdown_core_document`. So feed the same bytes two ways, finish both,
+dump both, compare.
+
+| fixture | one line at a time | one BYTE at a time |
 |---|---|---|
-| **Q31** | What is the public append surface? | **SETTLED by the owner, 2026-08-20:** `Document(markdown:)` and `document.append(chunk:) -> Document`. There is no separate snapshot call — **append returns the readable document.** The C surface serves that shape; it does not define it. |
-| **Q32** | Who owns a snapshot, and how long does it stay valid once more lines are fed? | **The caller owns it; it is a fully independent tree that aliases no parser memory and stays valid forever.** |
-| **Q33** | Is equality required after every prefix, or only at the end? | **After every prefix.** Keep partition-invariance as a regression gate. |
-| **Q34** | What is failure and OOM behaviour mid-stream? | **Split `oom` into a terminal "parse lost" bit and a per-call "snapshot failed" result, and expose a query for the former.** |
-| **Q35** | Do the bindings participate in Stage 1? | **No — C only** — with one shape constraint that applies now. |
-| **Q36** | What allocation bound accompanies the time bound? | **Two bounds, and the resident one gets its own slope gate.** |
+| `spec.txt` | **669 / 669** | **669 / 669** |
+| `regression.txt` | **43 / 43** | **43 / 43** |
+| `extensions.txt` | **33 / 33** | **33 / 33** |
 
-**Q31 — the surface, settled.** The owner's shape is
-`let document = Document(markdown: String)` and
-`let updated = document.append(chunk: String)`. Append *is* the read; there is
-no second call. What follows is the inventory's reasoning about the C surface
-beneath it, which stands except where it proposed a separate `snapshot()` —
-that proposal is superseded.
+**Two mutants, both killed**: feeding each line without its terminator, and
+feeding the same byte twice. A third — deleting the final-partial-line branch —
+killed nothing and is recorded because it looked like a mutant: every fixture
+example ends in `\n`, so that branch never runs.
 
-**A consequence that must be stated, because it is where this stage goes wrong
-if it is not.** If every append returns a document, and materialising a document
-costs O(document), then a caller appending *l* lines pays Θ(l²) — and it is no
-longer "the caller's choice", because the API gives them no other option. **The
-per-append cost must be O(line).** That is not a constraint the API imposes on
-the engine; it is the flow's own property, restated at the surface: continuing
-the flow costs the line, and nothing else. Whatever the C surface does, it may
-not make reading the document a function of the document's size.
+**Byte-at-a-time is stronger than the criterion asks** — it partitions inside a
+line, which is Stage 2's territory — and it passes too. The property is not
+about line boundaries; it is about `feed` being partition-independent, and it
+already is.
 
-**Q31 (inventory's original reasoning on the C surface).** `markdown_core_parser_feed` already splits on line ends internally (`core/blocks.c:862-930`) and already satisfies partition-invariance; making the public call line-oriented would buy nothing and would hand callers a framing problem the engine already solves. The line is Stage 1's *internal* unit. Add one call, returning an owned tree; a caller that has fed half a line gets a snapshot of the lines completed so far, and Stage 2 is what lifts that restriction. Do **not** overload `finish`: it must stay the one-way terminator, because everything downstream of `finalize_document` is one-way (H6, H8, H10) and because a caller needs to be able to say "this stream is over" distinctly from "show me what you have". Finish should also stop being a reset (H1) — a finished parser reports finished, and reuse is `parser_free` + `parser_new`.
+#### What that settles, and it is most of the stage's risk
 
-**Q32 — ownership and validity. Superseded in part.** The inventory's answer
-below — an independent fully-owned tree per snapshot — is **correct about the
-hazards and wrong as a per-append default**, because under Q31's settled shape
-every append would pay it. Its own note concedes the arithmetic: *"a caller that
-snapshots every line pays Θ(l²)"*. Under the settled API that is not a caller's
-choice, so it is a violation of the flow.
+**Criterion 1 is not work. It is a gate to keep.** Every fixture example already
+pins what a one-shot produces, so *"feed this one line at a time, finish,
+reproduce the existing golden"* needs no new expectations and no regenerated
+goldens — hundreds of pinned trees become the streaming oracle for free.
 
-What survives, and it is the important half: **no node pointer and no node
-identity is stable across a line boundary today**, for five named reasons. That
-is a statement about the *engine*, not about the API, and it is a defect list
-for Stage 1 rather than a reason to copy. Making a closed block's nodes stable
-once closed is the same work as doing each block's work in the line that closes
-it — a block that is finished does not move again.
+**What Stage 1 actually adds is reading the tree WITHOUT finishing** — H1,
+*"`finish` is the only exit, and it is a reset"*. That is the whole of it. The
+line loop is already partition-independent; what it cannot do is answer while it
+is still running.
 
-The original reasoning follows.
+**And H1 has a second face the runner ran into.** `stream_runner` cannot link
+against the shared facade at all: the export map is 32 functions and `local: *`,
+so `markdown_core_parser_new`, `_feed` and `_finish` are not reachable from a
+normally-linked test. It links the static engine, exactly as `fallback_runner`
+does for the core-private map symbols. **The streaming entry point is not
+public**, which is why the gate compares the two feeds against each other rather
+than against the expected block — `spec_runner` already owns that comparison,
+and reaching it from a chunked feed would mean copying the facade's
+option-to-extension mapping into a test. When Stage 1 gives the facade a chunked
+entry, these six tests become ordinary runners and gain the golden comparison
+for free.
 
-**Q32 (inventory's original reasoning).** A snapshot must be an **independent, fully-owned tree**, freed by the caller with `markdown_core_node_free`. The alternative — a borrowed view over live parser memory — is not merely risky, it is unimplementable: every inline literal borrows a block's `content` buffer that five mechanisms move (H5), table retypes and re-parents an open paragraph mid-line (`extensions/table.c:369-378,447`), formula's promotion frees the paragraph node it replaces (`extensions/formula.c:534-536`), and autolink edits a previously emitted sibling backwards (`extensions/autolink.c:313`). **No node pointer and no node identity is stable across a line boundary.** State the cost honestly in Q36: a snapshot is O(size of the snapshot), and a caller that snapshots every line pays Θ(l²) in *its own* allocation — which is fine, because it is the caller's choice and it is not the parser re-deriving anything.
+#### And the earlier framing in this section was wrong twice
 
-**Q33 — prefix or end.** Prefix, for the reason §11.6 gives: **partition-invariance is already true at HEAD**, measured over 808 prefixes across two corpora, so adopting the written form alone makes Stage 1 vacuous. Adopt the prose reading as criterion 1b — *the tree after k lines equals a one-shot parse of those k lines* — and keep 1a as a cheap regression gate. This is also the ruling that makes the late-resolution question well-posed at all: without 1b there is nothing for a definition to change, because nobody looks until the end.
+Recorded because both looked reasonable and both cost work:
 
-**Q34 — failure mid-stream. SETTLED by the owner, 2026-08-20: `throws`.**
+1. **Comparing a snapshot with a one-shot of the same prefix.** A one-shot of a
+   prefix closes the trailing block at end of input, so that comparison demands
+   the parser close the open block speculatively — publish `Foo` as a
+   `Paragraph`, retract it when `===` arrives. **Eager closure and retraction is
+   what the previous program died of** (§1). Under it, 28.53% of single-line
+   appends "disturbed" the tree and setext looked like a new blocker reaching
+   512 of 513 nodes. It is not a blocker; the paragraph was simply open.
+2. **Comparing closed blocks at every boundary.** Better, and still not the
+   criterion: it took six cuts of a probe to define "closed" correctly (the
+   rendering artifacts of `scope=`, the tree connectors and the trailing empty
+   line; then a shift-sensitive count; then the inline children of an open
+   paragraph; then the ancestors of the open block). It bottomed out at 1.00% of
+   appends, all late resolution — a useful number about SNAPSHOTS, and not the
+   golden test. **One of those six cuts was one too far: §12.7 re-measures the
+   same 1,304 appends at 4.98%, because the probe's `openFrom()` calls a
+   blank-line-closed trailing block open and hides 49 of 65 events.**
 
-`func append(chunk: String) throws -> Document`. And the shape carries a
-requirement that must not be assumed away: under value semantics, when the call
-throws, `updated` is never bound and **`document` is still in scope and must
-still be readable.** So a failed append may not leave the parser part-way
-through a line.
+**The golden test is the end of the stream.** `scripts/poc/stage1-tail-reach.mjs`
+and its 1.00% (**superseded: ~4.98%, §12.7**) remain in the tree as what they
+are: a measurement of how much a
+mid-stream snapshot churns, which bears on the snapshot feature and not on
+criterion 1.
 
-> **Append is atomic.** Either the line's work is applied in full, or none of it
-> is and the parser stands exactly where it stood before the call.
+---
 
-This is the opposite of what the engine does today, in three named ways:
-`finish` reports a terminal loss by **destroying the tree**
-(`core/blocks.c:1697-1704`); `parser->oom` is one sticky bit meaning four
-different things, written from 66 sites, 41 of them in extensions (C10); and
-under the arena there is no allocation-failure path at all — `alloc_arena_chunk`
-calls `abort()` (`core/arena.c:16,21`), which is a fifth independent reason for
-Q12's deletion.
+### 11.10 SPIKE: the path is viable, the tree is already live, and one gap blocks it
 
-Atomicity is also the natural shape for the flow rather than an imposition on
-it: the line is already the unit of work, so "apply the line or don't" is the
-transaction the parser is already structured around. What it costs is that every
-allocation-failure point inside a line must either be moved before the first
-mutation, or be undoable. That is §4.13's question.
+Not a measurement this time — an attempt. **Can a snapshot just be
+`parser->root`, read where it lies?** Feed a document, read the live root with
+nothing finalized, dump it, and compare with the finished tree.
 
-**Q34 (inventory's original reasoning).** Today `parser->oom` is one bit meaning four things: the block phase lost an allocation, the inline phase did, an extension did, and "this parse is over". Under Stage 1 a fifth appears — a snapshot failed to allocate — and it must not be the same bit (H13): a snapshot's failure must leave the live parse alive and untouched, and the live parse's failure must not be reported by destroying the tree, which is what `finish` does today (`core/blocks.c:1697-1704`). Recommend: `snapshot()` returns NULL on its own allocation failure and sets nothing; a terminal parse loss sets a sticky bit that makes further `feed` a no-op (as now) and makes `snapshot()` and `finish()` both return NULL; and add a query so a caller can distinguish truncation from success without calling `finish`. Note that under the arena there is no OOM path at all — `alloc_arena_chunk` calls `abort()` (`core/arena.c:16,21`) — which is a fourth independent reason for Q12's deletion.
+```
+--- LIVE parser->root, nothing finalized ---
+Document scope=1:1..1:0 children=2
+├── Paragraph scope=1:1..1:18 children=0
+└── Paragraph scope=3:1..3:0  children=0
 
-**Q35 — bindings.** No. Three reasons: all three bindings copy into value types and free the handle, so a snapshot API costs a full deep copy per snapshot in each language and none of them can express a borrowed view even if Q32 allowed one; the ABI window is Step 12, after Stage 1; and Stage 1's gate is a timing slope on the C library, which no binding participates in. **One constraint applies now regardless:** Stage 1 must not adopt a C shape the bindings cannot express later — no borrowed views, no callback-driven feed, no snapshot whose validity is scoped to a parser generation. The surface added at 3.0 must be the same shape as the C one.
+--- after finish ---
+Document scope=1:1..3:23 children=2
+├── Paragraph scope=1:1..1:18 children=3
+│   ├── Text literal="Hello " │ Emphasis → Text "world" │ Text " here"
+└── Paragraph scope=3:1..3:23 children=2
+    ├── Text literal="second para with " │ Code literal="code"
+```
 
-**Q36 — the allocation bound.** State two, because they answer different questions. **(a) Resident parser state is O(open depth + Σ open blocks' content + definitions so far), with no term in the number of lines already fed.** **(b) A snapshot costs O(snapshot) allocations, once, charged to the caller, with nothing retained by the parser.** Bound (a) is the one that matters and the one no timing gate can see: a "keep a copy of every line" cheat is invisible to a flat-slope timing series and obvious in a peak-RSS series over the same corpus. Gate it the same way — a fitted slope in *i* indistinguishable from zero on a bounded-block corpus. Two facts make (a) work to earn rather than to assume: **under the arena it is false today by design** — `arena_free` is a no-op and `arena_realloc` always allocates fresh and copies (`core/arena.c:83-96`), so a parser held open across snapshots grows monotonically including every superseded buffer copy — and **every block node keeps its `content` strbuf forever** (`core/blocks.c:125`; measured, a finished document's root still holds `asize=56`, and every paragraph holds its full source text). Releasing a closed block's content is exactly what Step 8's own-on-emission unlocks (§11.7), which is why Q17 and Q36 are one decision seen twice.
+#### Viable, and cheaply
+
+- **The block tree is already there and already right.** Both paragraphs exist,
+  in order, with correct start positions. The block phase is genuinely
+  incremental; nothing has to be rebuilt to read it.
+- **Reading it is non-destructive.** The spike fed another line *after* peeking
+  and the parse continued normally. A snapshot needs no copy, no shadow tree and
+  no retraction — which is precisely what the previous program built and died
+  of (§1).
+- **So "the state after N lines IS the snapshot" is not aspirational.** It is
+  one accessor away, for the block structure.
+
+#### The gap is NOT "children=0", and saying it that way got the shape wrong
+
+The spike output shows every block at `children=0`, and the first write-up of
+this section called that the gap — as though the fix were to make inlines
+happen *earlier*. **That is the block-granular thinking the owner rejected
+twice.** `children=0` is a symptom. §11.10a is the cause, and it decides the
+work.
+
+#### 11.10a WHY inline parsing is deferred: the literals BORROW a buffer that MOVES
+
+The `subject` struct already holds everything a resume needs — `pos`, the
+delimiter stack in `last_delim`, the bracket stack in `last_bracket`. **The
+state shape is already right; what it has not got is a lifetime.** It is a stack
+local built by `subject_from_buf` and dropped when the block's parse returns.
+§11.5 adds that only ONE subject is ever live across a line boundary, because
+`contains_inlines` is true only for PARAGRAPH, HEADING, DIRECTIVE\_LABEL and
+TABLE\_CELL and only the paragraph survives a boundary. So one persistent
+subject, not one per open block.
+
+**What makes a persistent one unsafe is the borrow.** `markdown_core_chunk_dup`
+aliases rather than copies —
+
+```c
+markdown_core_chunk c = {ch->data ? ch->data + pos : NULL, len, 0};
+```
+
+— `alloc = 0`, a pointer INTO the block's content buffer. And that buffer is a
+`strbuf` that reallocs as lines arrive. Measured on `d953f2b`, feeding one line
+at a time into an open paragraph:
+
+| line | `content.ptr` | size | asize | |
+|---|---|---|---|---|
+| 1–2 | `0x104fba890` | 23, 46 | 56 | |
+| 3 | `0x104fbac20` | 69 | 104 | **MOVED** |
+| 5 | `0x104fbad30` | 115 | 176 | **MOVED** |
+| 8 | `0x104fbaef0` | 184 | 280 | **MOVED** |
+
+**Three moves in twelve lines.** So the moment an inline node exists before its
+block closes, a later line can move the bytes out from under it — and out from
+under the persistent subject's `input` as well.
+
+> **Deferring inline parsing to block close is not laziness. It is what makes
+> the borrow sound.** Parse after the buffer has stopped growing and nothing can
+> dangle. That is why the engine is built this way, and it is why "resolve a
+> line's inlines when the line completes" is not a move of one call.
+
+#### AND THAT WHOLE FORK IS A MISTAKE — owner correction, 2026-08-24
+
+The paragraphs above are kept because the measurement in them is real and the
+conclusion drawn from it is not. **They assume the snapshot IS the parser's live
+tree, handed out.** That assumption is what makes a moving buffer a problem, and
+it is wrong.
+
+> **Resumable state is OWNED BY THE PARSER and never transferred. A snapshot is
+> DERIVED from it — a tree calculation, not a borrow.**
+
+With that separation the buffer question disappears. The parser's content
+buffers may realloc as often as they like, because **nothing outside the parser
+ever points into them**. `chunk_dup`'s aliasing is sound *within* parser state,
+which is the only place it lives. There is no borrow to fix, no own-on-emission
+to widen, no rope to introduce and no late-resolved offset scheme. Three shapes
+of work, all of it unnecessary, proposed because one layer was mistaken for two.
+
+#### What the separation actually asks for
+
+Two layers, and the cost question moves to the second one:
+
+1. **Parser state** — the block tree, the per-line inline results, and the
+   resumable subject with its `pos` and delimiter stack. Private, mutable, free
+   to move. Its representation owes nothing to any consumer.
+2. **The derivation** — what a snapshot call computes from (1) and hands back.
+   It owns what it hands over, or states a lifetime for it.
+
+**The cost of the derivation is now the thing to bound, and it is the same trap
+under a new name.** Deriving the whole document per snapshot is clone-and-finish
+at O(document), which called per line is the O(l²) shape criterion 2 forbids.
+What makes it O(1)-per-line instead is that **a closed block never changes** —
+§11.9 measured the exceptions at 1.00% of appends (**superseded: ~4.98%,
+§12.7**) and all of them late
+resolution — so a closed block's derived form is computed once, when it closes,
+and reused by every later snapshot. Only the open spine is recomputed, and the
+resumable subject is what keeps that O(line) rather than O(block).
+
+**So the layering answers the stage's two criteria in one shape**: the
+derivation is complete because closed blocks are final, and it is cheap because
+they are cached.
+
+---
+
+### 11.11 SPIKE: which gaps are actually unsettled
+
+The architecture settled on parser-owned resumable state with a **derived**
+snapshot, closed blocks cached at close, the open spine recomputed. That makes
+new assumptions, and three spikes against `27d39f3` say which of them hold.
+
+#### The block tree is COMPLETE and FINAL mid-stream — not a gap
+
+Feeding a document with two definitions, a reference, a block quote and a
+trailing paragraph, then dumping the live root before `finish`:
+
+```
+live   document              final  document
+live     paragraph           final    paragraph → text
+live     reference_definition final    reference_definition
+live     paragraph           final    paragraph → text, link_reference, …
+live     reference_definition final    reference_definition
+live     block_quote         final    block_quote → paragraph → text
+live       paragraph         final    paragraph → text
+live     paragraph
+```
+
+**Identical block structure, and every difference is inline content.** A
+reference definition is already a `reference_definition` mid-stream, not a
+paragraph waiting to be reclassified. Nothing changes kind at `finish`, nothing
+moves, nothing is inserted. So a closed block's derived form is *the node it
+already is* plus its inlines — which is what makes caching at close viable
+rather than hopeful.
+
+#### The concrete view is complete mid-stream — not a gap
+
+`parser->source` and `line_starts` are built as lines are processed. Measured
+line by line, they track exactly:
+
+| lines fed | 1 | 3 | 7 | 10 | 13 |
+|---|---|---|---|---|---|
+| `source` bytes | 8 | 28 | 58 | 78 | 111 |
+| `line_starts` | 1 | 3 | 7 | 10 | 13 |
+
+A derived `Document`'s `concrete` is therefore available at any boundary at no
+extra cost. Requirement 12's other view needs no new machinery for Stage 1.
+
+#### So exactly three things are unsettled
+
+1. **Inline content has to be produced per line into parser-owned state.** The
+   known work: the resumable subject (§11.8). The spike says this is *all* the
+   block-level work there is — nothing else about a closed block is missing.
+2. **Late resolution rewrites the inline content of blocks that already
+   closed**, which is the one thing that breaks "a closed block is final".
+   §11.9 measured it at **1.00% of appends** (**superseded: ~4.98%, §12.7**) and
+   §11.5 named the missing piece:
+   `markdown_core_reference_create` has **no index from a label to the sites
+   waiting on it**, so the only implementation available today is a tree
+   rescan — O(document) per definition line. **This is the one real design
+   question left.**
+3. **Diagnostics are OFF in the raw parser.** `diagnostics_on` is false unless
+   asked; the facade always asks. A derived `Document` carries requirement 13's
+   list, so the snapshot API has to turn recording on — an API constraint
+   rather than a mechanism, but it decides whether diagnostics are always paid
+   for or opt-in.
+
+Everything else the derivation needs, the parser already has after N lines.
+
+---
+
+## 12. Stage 1 — the CST/AST split
+
+**Owner ruling, 2026-08-24.** *"CST 不变，是 parser own 的 resumable state 的等价
+集，而 AST 是 snapshot 的等价集。"* The CST is the equivalence class of the
+parser's resumable state; the AST is the equivalence class of a snapshot. Once
+the layers are separated, most of what §11 was struggling with is not solved —
+it stops existing.
+
+### 12.1 The seam is already in the engine, unnamed
+
+`finalize_document` (`core/blocks.c:1381`) is two statements: close the open
+spine, then project. `process_inlines` has **exactly one call site** in the core
+(`core/blocks.c:1388`), and it reads exactly two things —
+
+```c
+markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
+…
+subject_from_buf(parser, parser->mem, parent->start_line, &subj, &content, refmap);
+```
+
+`core/inlines.c:2107`. **The projection is a pure function of
+`(node->content, refmap)`.** And `node->content` is a `strbuf` on the node whose
+only free is `S_free_nodes` (`core/node.c:176`), so a block keeps its own source
+bytes for its entire life. Nothing has to be recorded for a later pass to find:
+the input to the projection is already stored, per block, forever.
+
+§11.11 measured the other half without knowing what it had. The live tree before
+`finish` is blocks with content and **no inline children** — block structure
+byte-identical to the finished tree. That tree is the CST. It has been sitting
+there the whole time.
+
+### 12.2 Why the CST stops at bytes and does not contain inlines
+
+The obvious form of the split — *a reference is always a reference node, and the
+AST swaps it for a link or for text* — **does not work**, and the reason is not
+an implementation detail. Same source, two reference maps, measured:
+
+| | source | tree |
+|---|---|---|
+| A | `*foo [bar* baz]` | `emphasis["foo [bar"]`, `text[" baz]"]` |
+| B | A + `[bar* baz]: /url` | `text["*foo "]`, `link_reference["bar* baz"]` |
+| C | `[a *b] c*` | `text["[a "]`, `emphasis["b] c"]` |
+| D | C + `[a *b]: /url` | `link_reference["a *b"]`, `text[" c*"]` |
+
+**Resolution is not a local substitution — it changes the emphasis structure of
+the whole paragraph.** In A the emphasis spans across the bracket; in B there is
+no emphasis node at all and the asterisks are literal. That is CommonMark, not a
+defect: brackets bind more tightly than emphasis, so whether the bracket *is* a
+link decides how the delimiters around it match.
+
+So a resolution-independent inline **tree** would have to sit below emphasis —
+delimiter runs and bracket tokens, matched later. The engine has something
+cheaper that is already resolution-independent, already source-faithful and
+already final at close: **the block's content bytes.** The concrete layer here
+is bytes, not a tree — which is the same choice `markdown_core_concrete` already
+makes one level up, where it is normalized source plus a line index and
+deliberately not a tree (`core/parser.h:139`).
+
+> **CST** = the block tree + each block's content bytes + the normalized source
+> view. Complete after N lines, final at close, independent of the refmap.
+> **AST** = `project(CST, refmap)`. Inline structure, resolution, and every fact
+> that depends on what the whole document defines.
+
+### 12.3 What the split deletes from the stage below
+
+This is why it goes first. Four items in §0's old task list are not reordered by
+the split, they are **removed**:
+
+1. **Reference re-resolution, and the back-index from a label to the waiting
+   sites** (§11.5, §11.6, and its own line in §0). *Deleted.* There is no
+   re-resolution. A block projected before its definition arrived is projected
+   again later against the refmap as it then stands; nothing is revised, because
+   the earlier AST was a different snapshot, not a wrong one. What replaces it is
+   one small fix, §12.4.
+2. **"Resolve a line's inlines when the line completes, not when its block
+   closes."** *Deleted as a category error.* Inline parsing is not an event the
+   parser schedules — it is what taking a snapshot does. There is no correct
+   answer to "when", only "whenever asked".
+3. **"A closed block's derived form is computed once at close and reused by
+   every later snapshot."** *Demoted from mechanism to optimisation.* Correctness
+   never depends on the cache, because re-projecting is always available and
+   always right. A wrong cache is now a slow parser, not a wrong tree.
+4. **The resumable inline subject** (§11.8). *Demoted and moved after the
+   split.* It is no longer how the parse stays correct across a line boundary;
+   it is how a per-line snapshot costs O(line) instead of O(open block). Still
+   the largest item in the stage that owns it, and §11.5's seven hazards still
+   ride on it — but it is now a performance obligation with a measurable bound,
+   not a correctness prerequisite that everything else waits on.
+
+One box in §0 that is **ticked is also wrong**: the settled-API list still says
+*"a snapshot is BORROWED with a generation the feed bumps"*. §11.10a already
+superseded it and the split settles it — a snapshot is derived.
+
+### 12.4 What the split adds, and the one thing that blocks it
+
+**The reference map is a one-shot structure and has to stop being one.**
+
+```c
+void definition_create(…) { …  assert(!map->prepared);      /* references.c:84 */
+markdown_core_map_entry *markdown_core_map_lookup(…) {
+    if (!map->prepared && !index_map(map) && !sort_map(map))  /* map.c:317, sets prepared */
+```
+
+Harvest every definition, prepare once, then look up: safe today only because
+inlines are parsed once at the end, so writes and reads never interleave. Every
+mid-stream projection interleaves them — block parsing writes the map while the
+projection reads it — and a definition after the first lookup is a **hard
+assertion failure**.
+
+**IT IS BOTH MAPS, NOT ONLY THE REFMAP.** `parser->footnote_defs`
+(`core/parser.h:170`) is the same `markdown_core_map`, created by
+`markdown_core_footnote_definition_map_new` and written by
+`markdown_core_footnote_definition_create`, which calls the same
+`definition_create` (`core/references.c:108-115`) and is read by the same
+`markdown_core_map_lookup` (`core/inlines.c:1414`). Anything said here about the
+reference map is owed by the footnote map too.
+
+**And it is a criterion-1 failure today, not only a mid-stream one.** With the
+assert compiled out under `-DNDEBUG` and no re-preparation, **4 of 670 real
+`.md` documents lose 20 reference nodes from the FINISHED tree** —
+`mimalloc/readme.md` 1 of 12, `json5/README.md` 4 of 8, `js-tokens/README.md`
+1 of 5, `js-tokens/CHANGELOG.md` 1 of 2. A mid-stream projection that reads the
+map before the last definition is inserted permanently poisons it.
+
+**Re-preparation is the fix and it is free: 12.25 ms against 12.21 ms** over a
+4.92 MB corpus with it on and off. **Do not build incremental index
+maintenance** — clearing `prepared` on insert is the whole change. First-wins
+rides on `entry->age = map->size` with `age` as the sort tiebreak (`map.c:211`),
+so re-preparing preserves the semantics: a structure change, not a semantics
+change, the same shape as the directive attribute fix (§4.14.15L).
+
+**But re-preparation as the code stands has two defects, and both are new the
+moment `prepared` can go back to zero:**
+
+1. **`index_map` leaks the whole previous index.** It calls
+   `markdown_core_key_index_init(&map->index, …)` (`map.c:274`), whose first
+   statement is `memset(index, 0, sizeof(*index))` (`map.c:74`) — the old
+   `index->slots` is dropped, not freed. Once per re-prepare.
+2. **`index_map` overwrites `map->size` with the DEDUPED count** —
+   `map->size = map->index.size` (`map.c:286`) — while `definition_create` reads
+   that same field to stamp `entry->age = map->size` (`references.c:86`). A
+   definition inserted after a prepare therefore gets an `age` that collides with
+   an existing entry's, and `age` is the first-wins tiebreak in `refcmp`
+   (`map.c:211`). Silent, and it decides which of two definitions wins.
+   (`sort_map` overwrote `map->size` too — `last + 1`, its own deduped count.)
+
+**LANDED, and there was a THIRD defect the list above missed.** The fix is as
+stated — `definition_create` clears `prepared`, `index_map` frees the previous
+table first, and the deduped count moved off `map->size` into a new
+`sorted_size` so no preparation rewrites what `age` is stamped from. The third:
+`sort_map` never cleared `indexed`, so a re-preparation that fell from the hash
+path to the pointer-sort fallback left `map_lookup` dispatching into the table
+`index_map` had just freed — a NULL-slots walk from a masked position, measured
+as a crash in the mutant. It is unreachable without re-preparation, which is why
+no earlier sweep saw it. All three are witnessed by
+`regression_fallback_definition_after_lookup`, which also pins first-wins across
+three re-preparations, across the path switch and back, and on the footnote map.
+
+**Resolution diagnostics are emitted from the wrong layer.**
+`MARKDOWN_CORE_DIAGNOSTIC_REFERENCE_UNDEFINED` — *"reference to a label the
+document does not define"* — is raised inside inline parsing and appended to
+`parser->diagnostics` (`core/inlines.c:1544`, `core/parser.h:229`). That is a
+semantic fact written into parser-owned state. Moved into the projection it is
+regenerated per snapshot and **never retracted**, which is the whole of the
+problem it otherwise creates: a mid-stream snapshot reporting an *error* about a
+label the finished document defines twelve lines later.
+
+**Criterion 2 splits in two.** It governed one thing and now governs two:
+CST construction is O(line) per fed line; projection is O(what you project) per
+snapshot. §0's slope gate measures the first. The second needs its own bound,
+and until the resumable subject lands it is O(open block) per snapshot — which
+is a stated cost, not a failure.
+
+**Criterion 1 becomes a theorem.** The final projection runs against the final
+CST and the final refmap, which are what a one-shot parse produces; equality
+follows by construction. It stays a gate (`stream_runner`, §11.9) because a
+theorem about code is a claim about code.
+
+### 12.5 ANSWERED: the AST is never stored
+
+**Owner ruling, 2026-08-24.** *"AST never exists when someone requires it, and
+when it is asked, it is derived from CST."* The parser holds the CST and only
+the CST. There is no AST until someone asks, and asking builds one.
+
+That removes the three-way choice this section used to pose. "In place" is out —
+the CST tree is never written with inline children. "Copy-on-project per block"
+is not a competing shape, it is an optimisation *inside* the derivation, and
+invisible to the model.
+
+**The price, measured** (`scripts/poc/ratio_spike.c`, over 838 KB of this
+repository's own markdown, every extension on):
+
+| corpus | blocks | inlines | block share |
+|---|---|---|---|
+| `RECONSTRUCTION.md` | 6,992 | 37,595 | 15.7% |
+| `README.md` | 68 | 295 | 18.7% |
+| `CHANGELOG.md` | 82 | 385 | 17.6% |
+| four spec documents | 579 | 1,566 | 27.0% |
+| **total** | **7,721** | **39,841** | **16.2%** |
+
+**A derivation copies 16.2% of the tree and builds the other 83.8%** — and
+building that 83.8% is work `process_inlines` already does today, on every
+parse. So the ruling's marginal cost in node writes is about **1.19×** today's
+projection, which is an upper bound: copying a node is cheaper than parsing one.
+Peak memory rises by the CST held alongside — the block skeleton, not the
+content, which is stored once on the CST and was stored anyway.
+
+**One consequence worth stating because it is easy to lose.** `finish` today
+returns `parser->root` — the same tree, mutated in place, which is why H1 calls
+it a reset. Under the ruling `finish` derives and returns a *new* tree while the
+parser keeps the CST. That is an ownership change in the one function every
+caller uses, and it is Stage 1 work, not a follow-up.
+
+### 12.6 The extension postprocessors are projection steps
+
+**A correction first.** §12.5 previously said `extensions/directive.c:1095`
+calls `markdown_core_parse_inlines` from inside a postprocessor. It does not —
+that call is in `match_colon_directive`, an inline match handler that runs
+*during* `process_inlines`. It is a nested projection call inside the
+projection, not a second phase, and it re-runs whenever the projection does.
+
+The whole engine has **two** postprocessors — `extensions/autolink.c:667` and
+`extensions/formula.c:720` — and the only parser state either writes is
+`parser->oom`, the sticky allocation-failure flag. Neither writes tree state
+back into the parser.
+
+So they are projection steps: they run after `process_inlines` on a tree that,
+under §12.5's ruling, is a **fresh derivation every time**. They need not be
+idempotent, only deterministic given the same input tree.
+
+**That is necessary and it is not sufficient, and the measurement says so.**
+`consolidate`, autolink's `postprocess` and formula's `postprocess` are each
+idempotent over 963 documents, and autolink's is byte-identically block-local
+over 1,037. But the *composed* tail is not at a fixed point in the product's
+default configuration:
+
+- `markdown_core_parse_options_init` turns `strip_html_comments` **on by
+  default** (`extensions/ast.c:73`).
+- `S_strip_html_comments` runs **after** the postprocess loop, not inside it
+  (`core/blocks.c:2420-2434`).
+- So `foo@<!-- c -->bar.com` finishes as `Paragraph → Text "foo@bar.com"` — and
+  applying the non-inline tail once more turns that into
+  `Link destination="mailto:foo@bar.com"`. The strip creates an autolink
+  candidate that the autolink pass has already gone past.
+
+**Re-runnable therefore has to cover ORDERING, not just per-step idempotence**,
+and no fixture exercises it: the tag census over all eleven fixture files
+contains no strip tag and `spec_runner` starts from all-options-false. Whatever
+`finish`'s tail becomes, its gate must run in the default configuration.
+
+### 12.7 MEASURED: the generation rule beats the finalize rule
+
+Thirty-one agents, six independent probes, every claim attacked by skeptics —
+**18 of the probes' own claims were refuted**, including two of the headline
+numbers. What survived is below. Corpora: 892 fixture examples from all eleven
+files under `packages/markdown-core/tests/fixtures/`, and **670 real `.md`,
+4.92 MB**, all six core extensions plus footnotes, against `acf6f3e`.
+
+#### A tree scan cannot resolve a reference — the key is raw source bytes
+
+`raw_label = markdown_core_chunk_dup(&subj->input, opener->position, …)`
+(`core/inlines.c:1520`) is fed straight to `markdown_core_map_lookup` (`:1524`).
+The key is **undecoded source**; the tree holds decoded literals. Three
+witnesses, each a miss for any tree-walking implementation:
+
+| source | the map's key | what the tree's literals hold |
+|---|---|---|
+| `see [a&amp;b] here` | `a&amp;b` | `a&b` — decoded |
+| `x [f\[o] y` | `f\[o` | one Text `x [f[o] y`, 9 bytes over 10 columns |
+| `see [*foo*] here` | `*foo*` | `Text "see ["`, `Emphasis`, `Text "] here"` — the key is in **no** literal |
+
+So a "finalize scan" over the finished tree has no correct implementation. The
+only one that exists re-reads `node->content` — which is `project(CST, refmap)`,
+§12.1's function. **A finalize API would have no code of its own**, which is the
+strongest form of §12.3 item 1: there is nothing to defer *to*.
+
+#### What a projection costs
+
+Feed every line, then re-project every `PARAGRAPH`/`HEADING` of the live tree,
+against a one-shot parse of the same bytes:
+
+| | bytes | parse | one full projection | ratio |
+|---|---|---|---|---|
+| `docs/RECONSTRUCTION.md` | 826,478 | 6.915 ms | 1.494 ms | 21.6% |
+| `spec.txt` | 401,068 | 1.434 ms | 0.223 ms | 15.6% |
+| 670 real `.md` | 4.92 MB | 31.89 ms | 9.15 ms | 28.7% |
+
+Linear at **1.35–2.40 ns per content byte**. And projecting *only what is stale*
+is where the money is:
+
+| last projection, 4.92 MB corpus | time | vs one-shot parse |
+|---|---|---|
+| re-project every closed block | 11.77 ms | 36.9% |
+| re-project blocks whose content contains `[` | 7.35 ms | 23.0% |
+| re-project the exact stale set (1,688 blocks) | **2.28 ms** | **7.2%** |
+
+**The crude bracket filter is nearly worthless** — 37% of the saving where the
+exact set gets 81%. There is no cheap middle.
+
+#### How often a cached projection actually goes stale
+
+Project each block at the boundary where it closes, then re-project everything
+at the end and compare a full subtree signature:
+
+| corpus | closed inline blocks | stale at the end | documents affected |
+|---|---|---|---|
+| 670 real `.md` | 41,384 | **1,688 (4.08%)** | 128 of 670 |
+| 892 fixtures | 1,057 | **63 (5.96%)** | 59 of 892 |
+
+Worst single document: `unified@11.0.5/readme.md`, 116 of 389 (29.8%).
+
+#### Why finalize-only is not free: the disagreement window
+
+**99.08% of link/image reference uses are forward** (3,027 of 3,055 on
+fixtures; 99.88%, 3,435 of 3,439, on the real corpus). The tempting inference —
+*definitions live at the bottom, so a re-projecting snapshot and a
+defer-to-finalize snapshot agree almost everywhere* — **was refuted, and the
+refutation is the finding**: the window opens at the **first binding**
+definition, not the last. Median `firstBindDef/N` is 0.801 on real documents;
+the window is empty in only **8 of 90** real documents, and **line-weighted,
+27.40% of all stream boundaries (9,543 of 34,832) hold at least one site where
+the two answers differ.** "Definitions at the bottom" is a fixture artefact —
+empty in 67 of 68 fixtures, 8 of 90 real documents.
+
+So deferring to a single last pass costs a quarter of the stream to save 9.5 ms
+per 4.92 MB.
+
+#### The rule
+
+> **A cached block projection is invalid when the map has advanced past the
+> generation it was made at. `finish` is simply the last projection.**
+
+No special path, no special API, no work queue. Definition arrival is O(1) — bump
+the generation, flip nothing, walk nothing. Correctness needs no index at all
+(36.9% of a parse); an index makes the last projection cheap (7.2%). That is
+§12.3's demotion of the cache one level further down: **the index is an
+optimisation of the projection, and correctness never depends on it**, which is
+what makes it safe to defer past Stage 1.
+
+#### Four questions the measurements cannot settle — ALL FOUR ANSWERED, §12.8
+
+- **Q1 — what does a snapshot promise about a reference whose definition has not
+  arrived?** §11.6 settles that prose is not *wrong*. It does not settle whether
+  a consumer asking after line 900 of a 1,000-line README should see the links
+  that lines 950–990 define. Deferral says no across 27.40% of real stream
+  boundaries; the generation rule re-derives them for 2.28 ms per 4.92 MB. This
+  is the snapshot's contract, not a measurement.
+- **Q2 — is the projection bound `O(what you project)` or `O(what changed)`?**
+  §12.4 states the first. A per-line consumer needs the second, and it is the
+  difference between 11.77 ms and 2.28 ms — i.e. whether the label→blocks index
+  is Stage 1 work or deferrable. **The cache's key is the answer, so answer it
+  before writing the cache.**
+- **Q3 — what is "closed" for `TABLE_CELL` and `DIRECTIVE_LABEL`?**
+  `contains_inlines` is true for both (`extensions/table.c:747`,
+  `extensions/directive.c:1283`), so a projection must cover them — and there is
+  **no closed-ness signal to schedule on**. Measured on `ignore@7.0.6/README.md`:
+  after every byte is fed, all six `TABLE_CELL` nodes still carry
+  `MARKDOWN_CORE_NODE__OPEN`, and those six cells hold all six of that document's
+  reference sites, every definition of which is below the table. **This is why
+  the criterion-1 check was 668 of 670 and not 670.** Three shapes and no
+  evidence between them: clear `__OPEN` in `table.c`, project a table's rows when
+  the table closes, or stop using `__OPEN` as the scheduling predicate.
+- **Q4 — which layer owns the diagnostic list?** §12.4 moves
+  `REFERENCE_UNDEFINED` into the projection and that is right, but at least one
+  non-reference code **amends rather than withdraws**: on
+  `extensions-directive.txt:786` (`:x{a=\n}t`) a prefix parse gives
+  `1:3..1:3 "unclosed attribute list…"` and the full parse gives
+  `1:3..2:1 "unrecognised attribute list…"` — different scope, different message,
+  different pool length. It is emitted from a block-phase inline match hook
+  (`extensions/directive.c:1034-1041`) over accumulated content, so **the
+  projection cannot fix it.** Either requirement 13's list becomes a per-snapshot
+  derivation too, or it stays parser-owned and carries provisional rows.
+  One constraint that turns out **not** to exist: the list is mechanically
+  retractable — `markdown_core_strbuf_drop`/`_truncate` exist (`buffer.h:100,103`),
+  `message_start` is monotone by construction, and a compacting sweep over 64,000
+  records measured 0.329 ms. Decide on design grounds, not on "append-only".
+
+#### Two corrections to what this document already says
+
+- **§11.9's "1.00% of appends touch a closed node" is too small by ~5×**, and it
+  is quoted in §0, §11.8, §11.10a and §12.3. Re-measuring the same three fixture
+  files and the same 1,304 appends without the probe's `openFrom()` heuristic
+  gives **4.98%** — the heuristic calls the last block in a dump "open" when a
+  blank line has already closed it, hiding 49 of 65 events. The independent
+  closed-block figures above (4.08% real, 5.96% fixtures) are the same order.
+  **It does not change the architecture** — §12.3 already demoted the cache to an
+  optimisation, so a 5× correction makes the cache *less valuable*, not the
+  design wrong — but the number is wrong where it stands.
+- **§11.7's Step 8 and §12.1 are in direct conflict.** Step 8 wants a closed
+  block to *release* its content buffer; §12.1 depends on every block *keeping*
+  it for life (`core/node.c:176` is the only free). The split chooses keeping,
+  and **the resident-memory bound that comes with that is unmeasured.**
+
+#### What is still unmeasured, stated because it bounds the above
+
+- **No implementation exists.** The spikes call `markdown_core_parse_inlines`
+  directly, free children by hand, and re-prepare the map by hand; none runs the
+  engine's own `finish` path afterwards, and none can — `contains_inlines` is
+  type-only (H4), so `finish` re-parses every block and appends a duplicate
+  inline subtree. The 4.08% assumes "make `process_inlines` callable more than
+  once" lands correctly.
+- **The projection costs are a lower bound**: `PARAGRAPH` and `HEADING` only,
+  excluding consolidation, the postprocess loop and the strip — which decompose
+  to 30.2% and 14.4% of `finish` on a 32,000-paragraph document.
+- **The mid-stream diagnostic burst has no trustworthy count.** Enabling
+  `diagnostics_on` on a live parser segfaulted the spike. Treat the *ratio* of
+  spurious to real `REFERENCE_UNDEFINED` as roughly 5:1 (three independent
+  measurements gave 48:9, 40:8, 38:4) and the *count* as unestablished.
+
+### 12.8 ANSWERED: all four, and Q3 was a live defect
+
+**Owner rulings, 2026-08-24.**
+
+#### Q1 — a snapshot promises nothing about what has not arrived
+
+> *"We do not promise anything about unarrived things. If cannot resolve, AST
+> should fall back to text; if can resolve, link the definition."*
+
+Which is **exactly today's semantics, applied per projection**. A projection
+resolves against the map as it then stands; an unresolved reference falls through
+to prose, as `handle_close_bracket`'s `noMatch` already does. Nothing new is
+built and no "pending" state is representable — §12.2 showed it could not be
+anyway. The measured 27.40% of stream boundaries where deferral and
+re-projection disagree is therefore not a contract question at all: both answers
+are correct *for their own state*, and the later one is simply later.
+
+#### Q2 — the bound is `O(what you project)`
+
+> *"I accept O(what you project) if it is the leanest design."*
+
+It is. **No label→sites index in Stage 1.** Correctness never depends on one
+(§12.7: re-projecting every closed block is 36.9% of a parse), and building one
+would be optimising a projection that does not exist yet. The generation stamp
+stays — it is one integer comparison and it is what makes a cache *safe* — but
+what it invalidates is re-derived, not looked up.
+
+#### Q3 — the closed signal must exist, and its absence is a SHIPPED DEFECT
+
+> *"Table cell and directive label definitely should have a closed signal,
+> otherwise how do you determine the string has ended in CST or AST?"*
+
+Taken, and investigating it turned the design question into a defect report.
+
+**`DIRECTIVE_LABEL` is already fine.** It is built by
+`markdown_core_node_new_with_mem_and_ext` (`extensions/directive.c:797`), which
+never touches `flags` and `calloc`s the node — so it reads as closed.
+
+**`TABLE_CELL` is wrong, and not only mid-stream.** Cells are built through
+`markdown_core_parser_add_child` → `add_child` → `make_block`, whose
+`e->flags = MARKDOWN_CORE_NODE__OPEN` (`core/blocks.c:136`) is cleared **only**
+by `finalize` (`core/blocks.c:1036`) — and a cell is never on the open spine, so
+`finalize` never runs on it. Measured on the FINISHED tree of
+`| a | b |\n|---|---|\n| 1 | 2 |\n\npara\n`, one-shot, table extension on:
+
+```
+table            flags=0x02
+  table_header     flags=0x03 <-- __OPEN
+    table_cell       flags=0x01 <-- __OPEN
+    table_cell       flags=0x01 <-- __OPEN
+  table_row        flags=0x02          (not open -- and that is the inconsistency)
+    table_cell       flags=0x01 <-- __OPEN
+    table_cell       flags=0x03 <-- __OPEN
+```
+
+**`markdown_core_parser_finish` returns a tree containing open blocks.** Every
+cell, and the header row, in a document that has been fully parsed and closed.
+It is invisible today because nothing reads `__OPEN` after `finish` — and Stage 1
+is precisely the thing that would start reading it. It is a defect on its own
+terms and it is the whole of §12.7's 668-of-670 criterion-1 gap.
+
+The fix is where the flag should have been cleared: a cell's content is complete
+at the moment it is built, because a GFM row is one line. Nothing has to be
+scheduled.
+
+**LANDED, with one exception the allocation-failure sweep forced.** Cells and
+the header row now close at build (`close_built_block`, `table.c`) — except the
+block `parser->current` is anchored on, because `add_child`'s allocation-loss
+path re-anchors the parser at the nearest open ancestor (the header row being
+built) and the spine's finalize walk must find it open. A parse in that state
+fails at `finish`, so the flag is never read from it. The gate is
+`projection_runner --case closed_after_finish` over the three spec fixtures,
+which also proved the inconsistency was exactly this wide: nothing but
+`table_cell` and `table_header` was ever open in a finished tree.
+
+#### Q4 — the CST owns the diagnostic list, with one rule and one exception
+
+> *"Diagnostic is CST's responsibility, right?"*
+
+**Yes, and that is what makes the list monotone** — the parser owns it, it is
+append-only, and no retraction machinery is ever needed. Two things ride along:
+
+**THE RULE: a CST diagnostic is emitted when its construct COMPLETES, not while
+it is open.** That is what dissolves the only measured counterexample. On
+`extensions-directive.txt:786` (`:x{a=\n}t`), a prefix parse says
+`1:3..1:3 "unclosed attribute list…"` and the full parse says
+`1:3..2:1 "unrecognised attribute list…"` — an amendment, not a withdrawal —
+because it is raised from a block-phase inline match hook
+(`extensions/directive.c:1034-1041`) over accumulated content, while the
+paragraph is still open. Speak at close and it says one thing once. This is the
+diagnostic form of the standing ruling that a complete line is settled the moment
+it completes (§0).
+
+**THE EXCEPTION: `REFERENCE_UNDEFINED` is not a CST fact.** It is not a function
+of the block's own bytes — it is a function of what the whole document defines,
+which is the definition of an AST fact. It stays where §12.4 puts it: raised by
+the projection, regenerated per snapshot, never retracted because nothing
+survives to retract.
+
+So the list splits by layer and each half gets the property it needs: **the CST's
+is append-only because it never speaks early; the AST's is disposable because it
+is rebuilt.** The retractability measured in §12.7 Q4 — `strbuf_drop`/`_truncate`,
+`message_start` monotone, a 0.329 ms compacting sweep over 64,000 records — is
+therefore machinery neither half needs, and the finding stands only as evidence
+that "append-only by construction" was never the constraint.
+
+### 12.9 `reference-undefined` and `footnote-undefined` are not markdown errors
+
+**Owner ruling, 2026-08-24:** *"REFERENCE_UNDEFINED 根本不该出现 — 因为
+REFERENCE_UNDEFINED 根本不是 markdown 错误。"* Taken, and the evidence is that the
+engine already draws the line and then steps over it.
+
+**Eight diagnostic codes, and six of them report the same kind of thing:**
+
+| code | what it reports | decidable from |
+|---|---|---|
+| 1 `directive-label-rejected` | malformed label | the construct's own bytes |
+| 2 `directive-attributes-rejected` | malformed attribute list | the construct's own bytes |
+| 3 `directive-rejected` | malformed directive | the construct's own bytes |
+| 4 `directive-unclosed` | unterminated construct | the construct's own bytes |
+| 5 `table-rejected` | malformed table | the construct's own bytes |
+| 8 `label-too-long` | label past the engine's cap | the construct's own bytes |
+| **6 `reference-undefined`** | **a well-formed reference that resolves to nothing** | **the whole document** |
+| **7 `footnote-undefined`** | **a well-formed footnote call that resolves to nothing** | **the whole document** |
+
+Six of the eight report that a construct is **MALFORMED**. Two report that a
+construct is **PERFECTLY WELL FORMED and refers to nothing** — and CommonMark
+defines what happens then: it is text. Nothing failed. There is no error to
+report, because the language specifies the outcome.
+
+**The engine's own header already concedes the point.** The doc comment on code
+6 reads: *"The shortcut form `[label]` is deliberately never reported: it is
+indistinguishable from ordinary bracketed prose."* That is the engine admitting
+the signal is a **guess about authorial intent**, and then keeping the guess for
+the two-bracket forms on the theory that a second bracket pair is evidence. It
+is evidence. It is not a parse error, and a parser's diagnostic list is the
+wrong place for it. `see [figure 1][2] below` in a document with no reference
+links at all is prose, and the engine calls it an ERROR.
+
+#### What deleting them buys, and it is not small
+
+1. **§12.8's Q4 exception disappears.** The diagnostic list becomes **wholly
+   CST-owned**, with no projection-level diagnostics at all. Q4's answer stops
+   being "the CST owns it, except for these two" and becomes just "the CST owns
+   it".
+2. **The retracted-diagnostic problem has no instance left.** It drove three
+   rounds of this design — a mid-stream snapshot reporting an error about a
+   label the finished document defines twelve lines later. With codes 6 and 7
+   gone there is nothing that can be raised early and be wrong later, because
+   every remaining code is decidable from bytes that are already fed.
+3. **§12.4's "move `REFERENCE_UNDEFINED` into the projection" leaves Stage 1**,
+   and with it the only reason the projection would have needed to write
+   diagnostics at all.
+4. **The ~5:1 spurious-to-real ratio measured in §12.7 stops mattering**,
+   because the numerator and the denominator both go.
+
+#### What it costs
+
+**The whole surface is `specs/diagnostics/census.json`** — 5 rows for
+`reference-undefined`, 4 for `footnote-undefined`. Two values in the public
+`markdown_core_diagnostic_code` enum (`include/markdown_core.h:228,230`). No
+binding names either code.
+
+**And one thing is genuinely lost:** a typo'd link reference is a real authoring
+bug and nothing will report it any more. That is a linter's job rather than a
+parser's, and the engine's own refusal to report the shortcut form already
+concedes it cannot do that job reliably — but it is a loss, not a free deletion.
+
+#### What stays, and one thing to move
+
+**`label-too-long` stays.** `raw_label.len > MAX_LINK_LABEL_LENGTH` is a pure
+byte fact needing no map, and the construct really is beyond what the engine will
+accept. **But it must be hoisted**: it is raised today inside the failed-lookup
+branch at `core/inlines.c:1544`, which is exactly the code path being deleted.
+It becomes a length check that does not depend on a lookup having happened —
+which it can be, because `markdown_core_map_lookup` rejects an over-long label
+before it consults anything (`core/map.c`, the `label->len` guard).
+
+**~~Open, and small: renumber or leave holes.~~ Decided (§12.10 G) and LANDED:
+renumbered, no holes.** `label-too-long` is 6 in both headers; the facade test
+that exercises it names the constant, and no binding ever named the number, so
+the renumber touched exactly the two enum declarations.
+
+### 12.10 The nine remaining questions, answered
+
+**Owner rulings, 2026-08-24.** Two of them corrected me, and one sent me to
+measure something this document had been asserting without evidence since
+Stage 0.
+
+#### A — `finish` stays terminal
+
+> *"`finish` means the document sealed, not editable again, which means
+> terminated."*
+
+So the shape is **feed … derive … derive … finish**, where `finish` is the last
+derivation *and* the seal. Snapshots are a separate accessor; `finish` is not
+renamed and does not become re-callable. §12.5's ruling is unaffected — the AST
+is still never stored — but the parser's life still ends at `finish`.
+
+#### B — the concrete view is BORROWED
+
+> *"From what we have now, concrete is borrowed."*
+
+A snapshot points at the parser's normalized source and line index rather than
+copying them. Copying would cost ~1.1× the input per snapshot (measured below).
+The parser is the owner and a snapshot is valid only while it lives.
+
+#### C — no memory budget, and the premise of the question was wrong
+
+> *"No memory budget limitation. But why does the concrete view need extra
+> options and why does a concrete need so much extra memory?"*
+
+**Both halves of that are right, and this document was carrying a false number.**
+
+**There is no option.** `markdown_core_parser_retain_concrete` is called
+unconditionally (`extensions/ast.c:163`). Q24's *"a parse option defaulting to
+`true`"* was a Stage 0 recommendation that never shipped as an option, and
+nothing has gated the concrete view since. §11 repeated it as though it had.
+
+**And it is not expensive.** Measured as multiples of input, over five real
+documents, every figure taken from the live structures after `finish`:
+
+| document | input | normalized source (as allocated) | line index | **concrete total** | block content | nodes |
+|---|---|---|---|---|---|---|
+| `RECONSTRUCTION.md` | 852,799 | 1.07× | 0.054× | **1.12×** | 1.53× | **9.53×** |
+| `README.md` | 9,613 | 1.04× | 0.114× | **1.15×** | 1.11× | **6.65×** |
+| `CHANGELOG.md` | 9,112 | 1.05× | 0.063× | **1.11×** | 1.55× | **9.02×** |
+| `canonical-ast.md` | 13,828 | 1.13× | 0.072× | **1.20×** | 1.86× | **11.38×** |
+| `spec.txt` | 401,068 | 1.22× | 0.119× | **1.34×** | 0.40× | **3.02×** |
+
+**The concrete view costs 1.11–1.34× the input.** Q24's "~2.5–3× input resident"
+was never a measurement of it.
+
+**The memory is the NODES — 3.0× to 11.4× the input.** `sizeof(markdown_core_node)`
+is **176 bytes**, and markdown is node-dense: `RECONSTRUCTION.md` is one node per
+19 bytes of source. Nothing about the concrete view moves that number, and
+nothing about deleting the concrete view would either.
+
+**And 32 of those 176 bytes are a `markdown_core_strbuf content` that 83.8% of
+nodes never fill.** Every inline node carries a block's content header. On
+`RECONSTRUCTION.md` that is 37,595 × 32 = 1.2 MB of dead field on an 853 KB
+document — **1.4× the input, in headers nothing writes.** The CST/AST split is
+what makes this addressable: a CST block needs `content`, an AST inline does not.
+Not Stage 1 work, but it is now a named, measured target rather than a suspicion.
+
+#### D — the projection's gate
+
+> *"Flat ns-per-content-byte across document sizes, same shape as the slope
+> gate."*
+
+Taken. §12.7 measured 1.35–2.40 ns per content byte; the gate is that the fitted
+slope against document size is indistinguishable from zero.
+
+#### E — OOM is an error, everywhere
+
+> *"OOM is an error that is worth throwing, no matter which mode or stage it
+> happens."*
+
+Taken, and it was not a question worth asking: §4.14.13a already rules there is
+no fallback on OOM, and nothing about a mid-stream derivation changes what an
+allocation failure means. **§11.8's "failure and OOM behaviour mid-stream" is
+struck from the open list** — it was already answered by a standing ruling.
+
+#### F — the API does not change, and I was wrong to say it did
+
+> *"Update the binding if the API truly changed. I doubt it is just a
+> hallucination of yourself."*
+
+**Checked, and the doubt was correct.** `markdown_core_parser_finish` returns a
+`markdown_core_node *` the caller owns and frees. Under the split it returns a
+*derived* tree instead of `parser->root` — but the signature is the same, the
+ownership is the same, and with ruling A the terminality is the same. **A caller
+cannot tell the difference.** §12.5's "an ownership change in the function every
+caller uses" was wrong: the change is internal.
+
+The snapshot accessor is **new** API, not changed API. The bindings therefore
+change only if Stage 1 chooses to expose snapshots to them, which is a separate
+decision and not forced by anything here.
+
+#### G — renumber the diagnostic enum
+
+> *"You should fix it."*
+
+Codes 6 and 7 are deleted (§12.9) and `label-too-long` moves 8 → 6. No holes.
+Safe because 3.0.0 is the reconstruction and no binding names any of the three.
+
+#### H, I — process
+
+Stage 1 lands on `poc/stage1-tail-reach`; the PR goes up after it. The stray
+`reconstruct-from-1.0` branch at `d1eeca7` and the direct-to-`main` commit
+`d03ce2c` both stay as they are.

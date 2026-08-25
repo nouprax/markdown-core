@@ -134,6 +134,25 @@ static int set_cell_index(markdown_core_node *node, int i) {
     return 1;
 }
 
+/* A cell -- and the header row -- is COMPLETE the moment it is built, because
+ * a GFM row is one line. Neither is ever on the open spine, so `finalize`, the
+ * only other clearer of `__OPEN`, never reaches them: without this, `finish`
+ * returned a tree still carrying open blocks, and the flag is the closed
+ * signal projections schedule on (§12.8 Q3). A body ROW stays open here -- it
+ * is the block the parser returns to the spine, and `finalize` closes it.
+ *
+ * The one exception is the parser's own anchor: when a cell's allocation is
+ * lost, `add_child` re-anchors `parser->current` at the nearest open ancestor,
+ * which can be the header row being built, and the spine's finalize walk then
+ * expects to close it itself. Such a parse fails at `finish`, so the flag in
+ * that tree is never read. */
+static void close_built_block(markdown_core_parser *parser, markdown_core_node *node) {
+    if (parser->current == node) {
+        return;
+    }
+    node->flags &= ~MARKDOWN_CORE_NODE__OPEN;
+}
+
 static markdown_core_strbuf *unescape_pipes(markdown_core_mem *mem, unsigned char *string, bufsize_t len) {
     markdown_core_strbuf *res = (markdown_core_strbuf *)mem->calloc(1, sizeof(markdown_core_strbuf));
     bufsize_t r, w;
@@ -574,7 +593,9 @@ static markdown_core_node *try_opening_table_header(const markdown_core_syntax_e
         markdown_core_node_set_string_content(header_cell, (char *)cell->buf->ptr);
         markdown_core_node_set_syntax_extension(header_cell, self);
         set_cell_index(header_cell, i);
+        close_built_block(parser, header_cell);
     }
+    close_built_block(parser, table_header);
 
     incr_table_row_count(parent_container, i);
 
@@ -645,6 +666,7 @@ static markdown_core_node *try_opening_table_row(const markdown_core_syntax_exte
                                                   cell->internal_offset);
             markdown_core_node_set_syntax_extension(node, self);
             set_cell_index(node, i);
+            close_built_block(parser, node);
         }
 
         incr_table_row_count(parent_container, i);
@@ -675,6 +697,7 @@ static markdown_core_node *try_opening_table_row(const markdown_core_syntax_exte
             node->end_column = (int)completed_at;
             markdown_core_node_set_syntax_extension(node, self);
             set_cell_index(node, i);
+            close_built_block(parser, node);
         }
     }
 
@@ -768,6 +791,51 @@ static void opaque_free(const markdown_core_syntax_extension *self, markdown_cor
     }
 }
 
+/* The AST derivation clones the block skeleton, and these three types keep
+ * their state in `node.as`: the table its column count and OWNED alignments
+ * array, the row its header bit, the cell its index -- which is a plain union
+ * arm, not an opaque payload, and would otherwise be lost to a zeroed node. */
+static int opaque_copy(const markdown_core_syntax_extension *self, markdown_core_mem *mem, markdown_core_node *dst,
+                       const markdown_core_node *src) {
+    if (src->type == MARKDOWN_CORE_NODE_TABLE) {
+        const node_table *from = (const node_table *)src->as.opaque;
+        node_table *to;
+        if (!from) {
+            return 1;
+        }
+        to = (node_table *)mem->calloc(1, sizeof(*to));
+        if (!to) {
+            return 0;
+        }
+        *to = *from;
+        to->alignments = NULL;
+        if (from->alignments && from->n_columns > 0) {
+            to->alignments = (uint8_t *)mem->calloc(from->n_columns, sizeof(uint8_t));
+            if (!to->alignments) {
+                mem->free(to);
+                return 0;
+            }
+            memcpy(to->alignments, from->alignments, from->n_columns);
+        }
+        dst->as.opaque = to;
+    } else if (src->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
+        const node_table_row *from = (const node_table_row *)src->as.opaque;
+        node_table_row *to;
+        if (!from) {
+            return 1;
+        }
+        to = (node_table_row *)mem->calloc(1, sizeof(*to));
+        if (!to) {
+            return 0;
+        }
+        *to = *from;
+        dst->as.opaque = to;
+    } else if (src->type == MARKDOWN_CORE_NODE_TABLE_CELL) {
+        dst->as.cell_index = src->as.cell_index;
+    }
+    return 1;
+}
+
 /* A block-only extension: no byte ends a text run for it, no byte is offered to an
  * inline hook it does not have, and no byte is transparent to flanking. */
 const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_TABLE = {
@@ -779,6 +847,7 @@ const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_TABLE = {
     .contains_inlines_func = contains_inlines,
     .opaque_alloc_func = opaque_alloc,
     .opaque_free_func = opaque_free,
+    .opaque_copy_func = opaque_copy,
 };
 
 uint16_t markdown_core_extensions_get_table_columns(markdown_core_node *node) {

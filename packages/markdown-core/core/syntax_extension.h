@@ -37,6 +37,7 @@ struct markdown_core_syntax_extension {
     markdown_core_close_block_func close_block_func;
     markdown_core_opaque_alloc_func opaque_alloc_func;
     markdown_core_opaque_free_func opaque_free_func;
+    markdown_core_opaque_copy_func opaque_copy_func;
 };
 
 #endif

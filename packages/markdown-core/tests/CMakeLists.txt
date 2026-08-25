@@ -117,6 +117,35 @@ markdown_core_add_runner(spec_runner runners/spec_runner.c)
 markdown_core_add_runner(pathological_runner runners/pathological_runner.c)
 markdown_core_add_runner(complexity_runner runners/complexity_runner.c)
 
+# stream_runner drives `feed`/`finish` directly, and those are NOT on the
+# facade: the shared library exports 32 functions and `local: *`, so a runner
+# linked against it cannot reach the parser at all. That is H1 seen from
+# outside -- the streaming entry point is not public -- so like fallback_runner
+# it links the static engine. When Stage 1 gives the facade a chunked entry,
+# this becomes an ordinary runner and this comment goes away.
+if(MARKDOWN_CORE_STATIC)
+    add_executable(stream_runner runners/stream_runner.c support/test_support.c)
+    target_include_directories(
+        stream_runner
+        PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
+                "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+    target_link_libraries(stream_runner libmarkdown-core-extensions_static libmarkdown-core_static)
+endif()
+
+# projection_runner asserts Stage 1's own gates -- closed-ness of a finished
+# tree, and the projection properties of the CST/AST split -- over the parser's
+# internal state, so like stream_runner it links the static engine.
+if(MARKDOWN_CORE_STATIC)
+    add_executable(projection_runner runners/projection_runner.c support/test_support.c)
+    target_include_directories(
+        projection_runner
+        PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
+                "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+    target_link_libraries(projection_runner libmarkdown-core-extensions_static libmarkdown-core_static)
+endif()
+
 # fallback_runner drives core-private map symbols directly, so it links the
 # static engine instead of the shared facade and skips test-support.
 if(MARKDOWN_CORE_STATIC)
@@ -209,6 +238,76 @@ markdown_core_add_test(
 # spec: CommonMark spec, smart punctuation, entities.  Expected results are
 # canonical AST dumps; the runner also asserts dump determinism per example.
 markdown_core_add_test(spec_commonmark spec 240 spec_runner --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
+
+# CRITERION 1 FOR STAGE 1, over the same corpus the goldens already pin: feeding
+# a document in pieces and calling `finish` must produce what a one-shot parse
+# produces. `--bytes` partitions inside a line, which is stronger than the
+# criterion asks and is Stage 2's territory.
+if(MARKDOWN_CORE_STATIC)
+    foreach(fixture spec regression extensions)
+        markdown_core_add_test(stream_equals_oneshot_${fixture} "streaming" 240 stream_runner --spec
+                               "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+        markdown_core_add_test(
+            stream_equals_oneshot_${fixture}_bytes
+            "streaming"
+            600
+            stream_runner
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt"
+            --bytes)
+    endforeach()
+endif()
+# Stage 1's closed-ness gate: `finish` returns a tree with no open block in
+# it, over every fixture example with every extension attached. The flag is
+# the signal projections schedule on, so this is a correctness gate and not a
+# style check (§12.8 Q3).
+if(MARKDOWN_CORE_STATIC)
+    foreach(fixture spec regression extensions)
+        markdown_core_add_test(
+            projection_closed_${fixture}
+            "streaming"
+            240
+            projection_runner
+            --case
+            closed_after_finish
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+    endforeach()
+    # The split's own two properties (§12): two projections of one CST at one
+    # refmap generation are byte-identical, and the CST is refmap-independent
+    # -- projecting against another map moves nothing and poisons nothing.
+    # Both derive BEFORE finish, so the properties hold over the open spine
+    # too, not only over the closed tree finish projects.
+    foreach(fixture spec regression extensions)
+        markdown_core_add_test(
+            projection_double_${fixture}
+            "streaming"
+            240
+            projection_runner
+            --case
+            double_projection
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+        markdown_core_add_test(
+            projection_refmap_independence_${fixture}
+            "streaming"
+            240
+            projection_runner
+            --case
+            refmap_independence
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+    endforeach()
+    # Criterion 2's SECOND bound (§12.4, §12.10 D): projection is O(what is
+    # projected) -- flat ns per content byte across document sizes, the same
+    # two-endpoint normalized-slowdown shape as the construction slope gates.
+    # Wall-clock, so it carries the complexity label the sanitizer presets
+    # exclude, and runs serial like they do.
+    markdown_core_add_test(pathological_complexity_projection_slope "pathological;complexity" 120 projection_runner
+                           --case projection_slope)
+    set_tests_properties(pathological_complexity_projection_slope PROPERTIES RUN_SERIAL TRUE)
+endif()
+
 markdown_core_add_test(
     spec_smart_punctuation
     spec
@@ -233,6 +332,7 @@ if(MARKDOWN_CORE_STATIC)
         directive_sorted_fallback
         key_index_probe_growth
         map_prepare_oom
+        definition_after_lookup
         constructor_oom
         oom_sweep
         oom_sweep_chunked

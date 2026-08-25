@@ -20,6 +20,11 @@ int markdown_core_association_init(markdown_core_mem *mem, markdown_core_associa
      * which a harvest may drop, and it outlives the parse. */
     out->label = markdown_core_chunk_dup(label, 0, label->len);
     if (!markdown_core_chunk_to_cstr(mem, &out->label)) {
+        /* Do not keep borrowing the caller's bytes: a failed init can leave
+         * the association on a node that outlives them, and a later reader --
+         * the AST derivation was the witness -- walks into the freed buffer.
+         * `chunk_free` on a borrow only clears the fields. */
+        markdown_core_chunk_free(mem, &out->label);
         return 0;
     }
 
@@ -81,8 +86,6 @@ static void definition_create(markdown_core_map *map, markdown_core_chunk *label
         return;
     }
 
-    assert(!map->prepared);
-
     entry = (markdown_core_map_entry *)map->mem->calloc(1, sizeof(*entry));
     if (!entry) {
         map->oom = 1;
@@ -95,6 +98,12 @@ static void definition_create(markdown_core_map *map, markdown_core_chunk *label
 
     map->refs = entry;
     map->size++;
+    /* A definition may arrive after a lookup has prepared the map: every
+     * mid-stream projection interleaves the two (§12.4). Reopening the
+     * preparation is the whole mechanism -- the next lookup rebuilds, and
+     * first-wins survives because `age` above is stamped from a count no
+     * preparation rewrites. */
+    map->prepared = 0;
 }
 
 markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem) {

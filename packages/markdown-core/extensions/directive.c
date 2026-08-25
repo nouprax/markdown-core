@@ -622,6 +622,54 @@ static void directive_opaque_free(const markdown_core_syntax_extension *extensio
     mem->free(directive);
 }
 
+/* The AST derivation clones the block skeleton (§12.5): the name and every
+ * attribute pair are OWNED chunks, so the copy owns its own. */
+static int directive_opaque_copy(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,
+                                 markdown_core_node *dst, const markdown_core_node *src) {
+    const node_directive *from = (const node_directive *)src->as.opaque;
+    node_directive *to;
+    size_t i;
+    if (!from) {
+        return 1;
+    }
+    to = (node_directive *)mem->calloc(1, sizeof(*to));
+    if (!to) {
+        return 0;
+    }
+    to->fence_length = from->fence_length;
+    to->closed = from->closed;
+    to->consume_line = from->consume_line;
+    to->has_label = from->has_label;
+    to->has_attributes = from->has_attributes;
+    if (!replace_chunk_bytes(mem, &to->name, from->name.data, from->name.len)) {
+        mem->free(to);
+        return 0;
+    }
+    if (from->attributes.count > 0) {
+        to->attributes.items = (directive_attribute *)mem->calloc(from->attributes.count, sizeof(directive_attribute));
+        if (!to->attributes.items) {
+            markdown_core_chunk_free(mem, &to->name);
+            mem->free(to);
+            return 0;
+        }
+        to->attributes.capacity = from->attributes.count;
+        for (i = 0; i < from->attributes.count; i++) {
+            const directive_attribute *item = &from->attributes.items[i];
+            if (!replace_chunk_bytes(mem, &to->attributes.items[i].name, item->name.data, item->name.len) ||
+                !replace_chunk_bytes(mem, &to->attributes.items[i].value, item->value.data, item->value.len)) {
+                to->attributes.count = i + 1;
+                markdown_core_chunk_free(mem, &to->name);
+                free_attribute_list(mem, &to->attributes);
+                mem->free(to);
+                return 0;
+            }
+            to->attributes.count = i + 1;
+        }
+    }
+    dst->as.opaque = to;
+    return 1;
+}
+
 /* AN `=` PROMISES A VALUE. With none before the block ends the block is
  * malformed, because an empty value would otherwise be indistinguishable from
  * the valueless `{a}`, which means something else. `{a=}`, `{a= }` and an `=`
@@ -1339,6 +1387,7 @@ const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE = {
     .close_block_func = close_directive_block,
     .opaque_alloc_func = directive_opaque_alloc,
     .opaque_free_func = directive_opaque_free,
+    .opaque_copy_func = directive_opaque_copy,
     .terminates_text = ":",
     .dispatch = ":",
 };

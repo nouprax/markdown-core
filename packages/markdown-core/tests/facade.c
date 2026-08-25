@@ -374,6 +374,11 @@ static void check_api(void) {
  * carry an eleven-hundred-character line that no reviewer can read and every
  * position oracle would then measure. Built in C it is three lines. */
 static void check_diagnostics(void) {
+    /* The last two constructs are DELIBERATELY diagnostic-free: a well-formed
+     * reference or footnote call that resolves to nothing is prose, not an
+     * error -- CommonMark defines the outcome -- and the codes that reported
+     * them are deleted (§12.9). Keeping the lines in the corpus is what pins
+     * the silence. */
     static const char *const SOURCE = ":note[unclosed label\n"
                                       "\n"
                                       ":other{=value}\n"
@@ -396,7 +401,8 @@ static void check_diagnostics(void) {
     }
 
     count = markdown_core_document_diagnostic_count(document);
-    check(count == 4, "every degradation in the corpus is reported exactly once");
+    check(count == 2,
+          "every degradation in the corpus is reported exactly once, and an unresolved reference is not one");
 
     for (i = 0; i < count; i++) {
         check(markdown_core_document_diagnostic_at(document, i, &diagnostic), "every index in range answers");
@@ -417,8 +423,8 @@ static void check_diagnostics(void) {
             severities[diagnostic.severity]++;
         }
     }
-    check(severities[MARKDOWN_CORE_DIAGNOSTIC_WARNING] == 2 && severities[MARKDOWN_CORE_DIAGNOSTIC_ERROR] == 2,
-          "both severities are reachable, and each says what its rule says");
+    check(severities[MARKDOWN_CORE_DIAGNOSTIC_WARNING] == 2 && severities[MARKDOWN_CORE_DIAGNOSTIC_ERROR] == 0,
+          "the corpus's degradations are warnings; the error severity is the cap's, below");
     check(!markdown_core_document_diagnostic_at(document, count, &diagnostic), "an index past the end is refused");
     check(!markdown_core_document_diagnostic_at(document, 0, NULL), "a null out-parameter is refused");
     markdown_core_document_free(document);
@@ -439,8 +445,9 @@ static void check_diagnostics(void) {
             if (capped) {
                 check(markdown_core_document_diagnostic_count(capped) == 1 &&
                           markdown_core_document_diagnostic_at(capped, 0, &diagnostic) &&
-                          diagnostic.code == MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG,
-                      "a label the engine refused as too long says so, and does not say 'undefined'");
+                          diagnostic.code == MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG &&
+                          diagnostic.severity == MARKDOWN_CORE_DIAGNOSTIC_ERROR,
+                      "a label the engine refused as too long says so, as the one remaining ERROR");
                 markdown_core_document_free(capped);
             }
             free(source);

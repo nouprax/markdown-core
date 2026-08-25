@@ -52,12 +52,15 @@ extern "C" {
 #define MARKDOWN_CORE_DIAGNOSTIC_TYPEDEFS
 /* WARNING: the author wrote something the engine did not read the way they
  *          meant, and the bytes stand as prose.
- * ERROR:   the author NAMED something that does not exist.
+ * ERROR:   the ENGINE refused a well-formed construct -- its own cap, not the
+ *          grammar. (It used to also mean "named something that does not
+ *          exist"; those codes are deleted, §12.9 -- a well-formed reference
+ *          that resolves to nothing is prose, which the language defines.)
  *
  * Two levels because those are the two things a consumer does differently: a
- * documentation build fails on a cross-reference that names nothing and
- * reports a malformed attribute block. There is no fatal level -- a parse
- * failure is not a diagnostic (requirement 13's converse). */
+ * documentation build fails on what the engine refused and reports a
+ * malformed attribute block. There is no fatal level -- a parse failure is
+ * not a diagnostic (requirement 13's converse). */
 typedef enum markdown_core_diagnostic_severity {
     MARKDOWN_CORE_DIAGNOSTIC_WARNING = 1,
     MARKDOWN_CORE_DIAGNOSTIC_ERROR = 2
@@ -78,16 +81,14 @@ typedef enum markdown_core_diagnostic_code {
     /* A delimiter row was found and the header row above it has a different
      * number of columns, so the paragraph is not a table. */
     MARKDOWN_CORE_DIAGNOSTIC_TABLE_REJECTED = 5,
-    /* `[text][label]` or `[label][]` naming a label the document does not
-     * define. The shortcut form is deliberately absent: `[a]` is
-     * indistinguishable from ordinary bracketed prose. */
-    MARKDOWN_CORE_DIAGNOSTIC_REFERENCE_UNDEFINED = 6,
-    /* `[^label]` naming a footnote the document does not define. */
-    MARKDOWN_CORE_DIAGNOSTIC_FOOTNOTE_UNDEFINED = 7,
     /* A label longer than MAX_LINK_LABEL_LENGTH. The author's label is
-     * well-formed and the ENGINE refused it, which is a different fact from
-     * "no such definition" and needs a different code to say so. */
-    MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG = 8
+     * well-formed and the ENGINE refused it -- a fact about the cap, decidable
+     * from the construct's own bytes like every other code here. It was 8:
+     * codes 6 and 7 reported a WELL-FORMED reference or footnote call that
+     * resolved to nothing, which CommonMark defines as text -- nothing failed,
+     * so there was no error to report -- and 3.0.0 renumbers rather than
+     * keeping holes (§12.9, §12.10 G). */
+    MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG = 6
 } markdown_core_diagnostic_code;
 #endif
 
@@ -264,6 +265,20 @@ struct markdown_core_parser {
     bufsize_t line_marks_size;
     bufsize_t line_marks_alloc;
 };
+
+/* THE PROJECTION (§12.1): a new tree derived from the parser's CST -- the
+ * block tree, each block's content bytes -- against `refmap` as it now
+ * stands, inlines resolved, consolidation, the extension postprocessors and
+ * the comment strip applied. The CST is not written; the caller owns and
+ * frees the result. NULL on allocation loss, with `parser->oom` set.
+ *
+ * `record_diagnostics` gates the rows the projection itself raises: a
+ * diagnostic speaks when its construct COMPLETES (§12.8 Q4), so only the
+ * final derivation -- `finish`'s, over a fully closed CST -- passes 1.
+ * Internal: `finish` is built on this, and it is what a snapshot accessor
+ * would call; it is not part of the public surface. */
+markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parser, markdown_core_map *refmap,
+                                                     int record_diagnostics);
 
 /* Ask `finish` to hand the normalized source and its line index over rather
  * than release them. `out` is zeroed here and filled at finish; a parse that

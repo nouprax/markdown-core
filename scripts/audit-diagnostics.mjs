@@ -217,6 +217,6 @@ if (verbose) {
     for (const [code, count] of [...perCode.entries()].sort()) process.stdout.write(`  ${code}: ${String(count)}\n`);
 }
 process.stdout.write(
-    `diagnostics: ${String(total)} over ${String(examples)} examples, ${String(perCode.size)} of 8 codes exercised, ` +
+    `diagnostics: ${String(total)} over ${String(examples)} examples, ${String(perCode.size)} of 6 codes exercised, ` +
         `${String(inversions)} out of source order — the tree and the source index are byte-identical either way.\n`
 );
