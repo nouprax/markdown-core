@@ -278,6 +278,14 @@ if(MARKDOWN_CORE_STATIC)
             projection_refmap_independence_${fixture} "streaming" 240 projection_runner --case refmap_independence
             --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
     endforeach()
+    # Criterion 2's SECOND bound (§12.4, §12.10 D): projection is O(what is
+    # projected) -- flat ns per content byte across document sizes, the same
+    # two-endpoint normalized-slowdown shape as the construction slope gates.
+    # Wall-clock, so it carries the complexity label the sanitizer presets
+    # exclude, and runs serial like they do.
+    markdown_core_add_test(pathological_complexity_projection_slope "pathological;complexity" 120 projection_runner
+                           --case projection_slope)
+    set_tests_properties(pathological_complexity_projection_slope PROPERTIES RUN_SERIAL TRUE)
 endif()
 
 markdown_core_add_test(

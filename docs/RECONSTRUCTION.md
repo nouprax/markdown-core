@@ -159,10 +159,18 @@ argument. Nothing here is checked.
       generation consumer — `derive_tree` re-derives, unconditionally. The
       generation stamp becomes real the moment a cache exists, which is after
       this stage.
-- [ ] **Split criterion 2 into two bounds** and gate them separately: CST
+- [x] **Split criterion 2 into two bounds** and gate them separately: CST
       construction O(line) per fed line, projection O(what is projected) per
-      snapshot. The existing slope gate measures the first; the second has no
-      gate yet and is O(open block) until Stage 2's resumable subject lands.
+      snapshot. The existing slope gate measures the first; the second is now
+      `pathological_complexity_projection_slope` — the same two-endpoint
+      normalized-slowdown shape as the construction gates, over the full
+      derivation (clone + inlines + consolidate + postprocess + strip).
+      Measured: **11.6 ns/byte at 64 KiB, 15.5 ns/byte at 16 MiB, normalized
+      slowdown 1.336×** against the 4.0× linearity bound. (§12.7's
+      1.35–2.40 ns/content-byte was `PARAGRAPH`/`HEADING` inline parsing
+      alone; this number is the whole pipeline and the right one to watch.)
+      Per-snapshot cost is O(document) until a cache exists — the stated
+      O(open block) refinement is Stage 2's resumable subject, unchanged.
 - [x] **Change what `finish` returns** — a derived tree rather than
       `parser->root`. LANDED: `finalize_document` is now only *close the
       spine*, and `finish` is `finalize_document` + the last

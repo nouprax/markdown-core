@@ -283,15 +283,126 @@ static int case_refmap_independence(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+/* CRITERION 2's SECOND BOUND (§12.4, §12.10 D): a projection costs
+ * O(what is projected) -- flat ns per content byte across document sizes,
+ * gated the same way the construction slope gate is: two endpoints, and the
+ * time growth normalized by the size growth must not exceed the bound the
+ * existing complexity gates use for "linear with memory-hierarchy noise". */
+#define PR_SLOPE_SMALL 65536
+#define PR_SLOPE_LARGE 16777216
+#define PR_SLOPE_REPEATS 3
+#define PR_MIN_SAMPLE_NS 25000000ULL
+static const double PR_MAX_NORMALIZED_SLOWDOWN = 4.0;
+
+/* Representative prose: emphasis, an inline link, code, and a reference that
+ * resolves against the map, so the projection does the work a real document
+ * asks of it. */
+static char *pr_slope_document(size_t target, size_t *length) {
+    static const char paragraph[] =
+        "Some *emphasis* with a [link](https://example.com/a) and `code` and a [ref] in prose.\n\n";
+    static const char definition[] = "[ref]: https://example.com/definition\n";
+    size_t unit = sizeof(paragraph) - 1;
+    size_t count = target / unit;
+    size_t total = count * unit + sizeof(definition) - 1;
+    char *input = (char *)malloc(total + 1);
+    size_t i;
+    if (!input) {
+        return NULL;
+    }
+    for (i = 0; i < count; i++) {
+        memcpy(input + i * unit, paragraph, unit);
+    }
+    memcpy(input + count * unit, definition, sizeof(definition) - 1);
+    input[total] = '\0';
+    *length = total;
+    return input;
+}
+
+static int pr_slope_measure(const char *input, size_t length, double *seconds) {
+    double samples[PR_SLOPE_REPEATS];
+    int repeat;
+    markdown_core_parser *parser = pr_parser_new();
+    if (!parser) {
+        return -1;
+    }
+    markdown_core_parser_feed(parser, input, length);
+    for (repeat = 0; repeat < PR_SLOPE_REPEATS; repeat++) {
+        uint64_t started;
+        uint64_t elapsed = 0;
+        unsigned iterations = 0;
+        started = ts_monotonic_ns();
+        do {
+            markdown_core_node *derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+            if (!derived) {
+                markdown_core_parser_free(parser);
+                return -1;
+            }
+            markdown_core_node_free(derived);
+            iterations++;
+            elapsed = ts_monotonic_ns() - started;
+        } while (elapsed < PR_MIN_SAMPLE_NS);
+        samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
+        if (iterations == 1) {
+            markdown_core_parser_free(parser);
+            *seconds = samples[repeat];
+            return 0;
+        }
+    }
+    markdown_core_parser_free(parser);
+    {
+        double a = samples[0], b = samples[1], c = samples[2];
+        double high = a > b ? (a > c ? a : c) : (b > c ? b : c);
+        double low = a < b ? (a < c ? a : c) : (b < c ? b : c);
+        *seconds = a + b + c - high - low;
+    }
+    return 0;
+}
+
+static int case_projection_slope(const ts_spec_file *file) {
+    static const size_t sizes[] = {PR_SLOPE_SMALL, PR_SLOPE_LARGE};
+    size_t lengths[2];
+    double timings[2];
+    size_t step;
+    (void)file;
+    for (step = 0; step < 2; step++) {
+        size_t length = 0;
+        char *input = pr_slope_document(sizes[step], &length);
+        if (!input) {
+            fputs("cannot build slope input\n", stderr);
+            return -1;
+        }
+        if (pr_slope_measure(input, length, &timings[step]) != 0) {
+            fputs("projection failed while measuring\n", stderr);
+            free(input);
+            return -1;
+        }
+        lengths[step] = length;
+        free(input);
+    }
+    {
+        double input_growth = (double)lengths[1] / (double)lengths[0];
+        double time_growth = timings[1] / timings[0];
+        double normalized_slowdown = time_growth / input_growth;
+        int failed = normalized_slowdown > PR_MAX_NORMALIZED_SLOWDOWN;
+        printf("projection slope: %zu bytes: %.6fs (%.3f ns/byte), %zu bytes: %.6fs (%.3f ns/byte), normalized "
+               "slowdown %.3fx%s\n",
+               lengths[0], timings[0], timings[0] * 1e9 / (double)lengths[0], lengths[1], timings[1],
+               timings[1] * 1e9 / (double)lengths[1], normalized_slowdown, failed ? " [NON-FLAT]" : "");
+        return failed ? -1 : 0;
+    }
+}
+
 typedef struct pr_case_entry {
     const char *name;
     int (*run)(const ts_spec_file *file);
+    int needs_spec;
 } pr_case_entry;
 
 static const pr_case_entry PR_CASES[] = {
-    {"closed_after_finish", case_closed_after_finish},
-    {"double_projection", case_double_projection},
-    {"refmap_independence", case_refmap_independence},
+    {"closed_after_finish", case_closed_after_finish, 1},
+    {"double_projection", case_double_projection, 1},
+    {"refmap_independence", case_refmap_independence, 1},
+    {"projection_slope", case_projection_slope, 0},
 };
 
 int main(int argc, char **argv) {
@@ -316,23 +427,31 @@ int main(int argc, char **argv) {
             return 2;
         }
     }
-    if (!case_name || !spec) {
-        fputs("usage: projection_runner [--list] --case NAME --spec FILE\n", stderr);
-        return 2;
-    }
-    if (ts_spec_load(spec, &file) != 0) {
-        fprintf(stderr, "projection_runner: cannot load %s\n", spec);
+    if (!case_name) {
+        fputs("usage: projection_runner [--list] --case NAME [--spec FILE]\n", stderr);
         return 2;
     }
     for (i = 0; i < sizeof(PR_CASES) / sizeof(PR_CASES[0]); i++) {
         if (strcmp(PR_CASES[i].name, case_name) == 0) {
-            int failed = PR_CASES[i].run(&file) != 0;
-            ts_spec_free(&file);
+            int failed;
+            if (PR_CASES[i].needs_spec) {
+                if (!spec) {
+                    fprintf(stderr, "case %s requires --spec FILE\n", case_name);
+                    return 2;
+                }
+                if (ts_spec_load(spec, &file) != 0) {
+                    fprintf(stderr, "projection_runner: cannot load %s\n", spec);
+                    return 2;
+                }
+                failed = PR_CASES[i].run(&file) != 0;
+                ts_spec_free(&file);
+            } else {
+                failed = PR_CASES[i].run(NULL) != 0;
+            }
             printf("%s %s\n", case_name, failed ? "[FAILED]" : "[PASSED]");
             return failed;
         }
     }
-    ts_spec_free(&file);
     fprintf(stderr, "unknown case: %s\n", case_name);
     return 2;
 }
