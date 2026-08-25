@@ -10809,3 +10809,67 @@ resumable subject is what keeps that O(line) rather than O(block).
 **So the layering answers the stage's two criteria in one shape**: the
 derivation is complete because closed blocks are final, and it is cheap because
 they are cached.
+
+---
+
+### 11.11 SPIKE: which gaps are actually unsettled
+
+The architecture settled on parser-owned resumable state with a **derived**
+snapshot, closed blocks cached at close, the open spine recomputed. That makes
+new assumptions, and three spikes against `27d39f3` say which of them hold.
+
+#### The block tree is COMPLETE and FINAL mid-stream — not a gap
+
+Feeding a document with two definitions, a reference, a block quote and a
+trailing paragraph, then dumping the live root before `finish`:
+
+```
+live   document              final  document
+live     paragraph           final    paragraph → text
+live     reference_definition final    reference_definition
+live     paragraph           final    paragraph → text, link_reference, …
+live     reference_definition final    reference_definition
+live     block_quote         final    block_quote → paragraph → text
+live       paragraph         final    paragraph → text
+live     paragraph
+```
+
+**Identical block structure, and every difference is inline content.** A
+reference definition is already a `reference_definition` mid-stream, not a
+paragraph waiting to be reclassified. Nothing changes kind at `finish`, nothing
+moves, nothing is inserted. So a closed block's derived form is *the node it
+already is* plus its inlines — which is what makes caching at close viable
+rather than hopeful.
+
+#### The concrete view is complete mid-stream — not a gap
+
+`parser->source` and `line_starts` are built as lines are processed. Measured
+line by line, they track exactly:
+
+| lines fed | 1 | 3 | 7 | 10 | 13 |
+|---|---|---|---|---|---|
+| `source` bytes | 8 | 28 | 58 | 78 | 111 |
+| `line_starts` | 1 | 3 | 7 | 10 | 13 |
+
+A derived `Document`'s `concrete` is therefore available at any boundary at no
+extra cost. Requirement 12's other view needs no new machinery for Stage 1.
+
+#### So exactly three things are unsettled
+
+1. **Inline content has to be produced per line into parser-owned state.** The
+   known work: the resumable subject (§11.8). The spike says this is *all* the
+   block-level work there is — nothing else about a closed block is missing.
+2. **Late resolution rewrites the inline content of blocks that already
+   closed**, which is the one thing that breaks "a closed block is final".
+   §11.9 measured it at **1.00% of appends** and §11.5 named the missing piece:
+   `markdown_core_reference_create` has **no index from a label to the sites
+   waiting on it**, so the only implementation available today is a tree
+   rescan — O(document) per definition line. **This is the one real design
+   question left.**
+3. **Diagnostics are OFF in the raw parser.** `diagnostics_on` is false unless
+   asked; the facade always asks. A derived `Document` carries requirement 13's
+   list, so the snapshot API has to turn recording on — an API constraint
+   rather than a mechanism, but it decides whether diagnostics are always paid
+   for or opt-in.
+
+Everything else the derivation needs, the parser already has after N lines.
