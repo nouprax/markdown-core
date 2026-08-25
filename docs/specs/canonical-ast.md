@@ -9,8 +9,8 @@ so the two cannot drift. Edit the JSON; the audit will tell you if this table
 disagrees.
 
 Until Step 15A this table WAS the contract and it lived under
-`docs/deprecated/`, which `docs/RECONSTRUCTION.md` says is archive and not
-normative, while four executable policy files read it from there.
+`docs/deprecated/`, which is archive and not normative, while four executable
+policy files read it from there.
 
 Status: frozen for Phase 5 on 2026-07-11.
 

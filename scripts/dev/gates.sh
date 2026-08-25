@@ -4,7 +4,7 @@
 # NOT a CI entry point and not in package.json: it is the loop a step is worked
 # in. The presets have their own configure and build and this script runs
 # NEITHER -- build first, or a sanitizer preset with no build reports GREEN
-# having run nothing (see docs/RECONSTRUCTION.md section 0).
+# having run nothing.
 #
 #   cmake --preset default && cmake --build --preset default --parallel
 #   cmake --preset asan    && cmake --build --preset asan    --parallel
@@ -30,7 +30,6 @@ echo "source-lists      : $(node scripts/audit-source-lists.mjs 2>&1 | tail -1)"
 echo "public-surface    : $(bash scripts/audit-public-surface.sh 2>&1 | tail -1)"
 echo "special-chars     : $(node scripts/audit-extension-special-chars.mjs 2>&1 | head -1)"
 echo "attach-order      : $(node scripts/audit-extension-attach-order.mjs 2>&1 | tail -1)"
-echo "plan-graph        : $(node scripts/check-plan-graph.mjs 2>&1 | tail -1)"
 echo "fuzz-upstream     : $(node scripts/fuzz-parity.mjs --iterations 300 2>&1 | grep -E 'fuzz-parity \[upstream\]:')"
 # THE MDAST FUZZ ORACLE WAS IN SECTION 0'S LIST AND NOT IN THIS SCRIPT, which is
 # the same hole the comment above records for two other gates: a script that
