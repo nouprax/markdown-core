@@ -1647,7 +1647,7 @@ Speed is not an argument in this section. What each step costs is in F12–F16.
 accepted, re-parsing is not (F12). T18 takes the tail off the whole tree; T3
 and T4 are the cache key; T9 lands the cache and shares.
 
-- [ ] **T18 — make the whole-tree tail per-block.** It comes first because
+- [x] **T18 — make the whole-tree tail per-block.** It comes first because
       nothing may be shared while the tail still walks the whole tree, and it is
       correct on its own: the trees it produces are byte-identical to today's
       with no cache present at all. Four things have to be right, each of them
