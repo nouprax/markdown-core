@@ -40,13 +40,21 @@
                     "lines": 2,
                     "functions": 1
                 },
+                "packages/swift-markdown-core/Sources/MarkdownCore/Read.swift": {
+                    "lines": 1,
+                    "functions": 0
+                },
+                "packages/swift-markdown-core/Sources/MarkdownCore/Semantic.swift": {
+                    "lines": 5,
+                    "functions": 2
+                },
                 "packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift": {
                     "lines": 1,
                     "functions": 1
                 },
                 "packages/swift-markdown-core/Sources/MarkdownCore/NativeValues.swift": {
-                    "lines": 1,
-                    "functions": 1
+                    "lines": 5,
+                    "functions": 2
                 }
             }
         },

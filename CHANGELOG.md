@@ -42,10 +42,13 @@ longer exists. 3.0.0 ships a different streaming surface, described below.
   `using document = new Document()` releases an abandoned stream at scope
   exit; `dispose()` remains, is idempotent, and is only owed for a stream
   abandoned before `seal`. Because sealing releases the shell, no public call
-  can reach a native session error any more, and the ECMAScript coverage
-  ledger's unpinned defensive branches moved with the surface: `session.ts`'s
-  allowance is retired, and `document.ts` and `parser.ts` carry the
-  unreachable allocation-failure and error-release arms.
+  can reach a native session error any more, and the coverage ledgers'
+  unpinned defensive surface moved with it: in ECMAScript, `session.ts`'s
+  allowance is retired and `document.ts` and `parser.ts` carry the
+  unreachable allocation-failure and error-release arms; in Swift,
+  `NativeValues.swift`'s native-error constructors join for the same reason,
+  and the root's precondition arms move from `Document.swift` to
+  `Semantic.swift` beside `Read.swift`'s copy-in guard.
 - Keep the bytes of a footnote call whose label crosses a line ending, and read
   a label spelled with a character reference out of the source rather than out
   of a released buffer.
