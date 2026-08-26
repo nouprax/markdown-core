@@ -255,7 +255,7 @@ const kindSurfaces = [
     {
         label: "C dump kind names",
         expect: [...kinds.keys()],
-        actual: namedKinds("packages/markdown-core/extensions/ast.c", /^\s+"([A-Za-z]+)"[,}]/gm).filter(
+        actual: namedKinds("packages/markdown-core/extensions/ast.c", /^\s+"([A-Za-z]+)",?\s*$/gm).filter(
             (name) => name !== "None"
         )
     },
