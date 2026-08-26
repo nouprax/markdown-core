@@ -70,7 +70,7 @@ static void definition_free(markdown_core_map *map, markdown_core_map_entry *ent
     }
 }
 
-static void definition_create(markdown_core_map *map, markdown_core_chunk *label) {
+static void definition_create(markdown_core_map *map, markdown_core_chunk *label, uint32_t definition) {
     markdown_core_map_entry *entry;
     unsigned char *reflabel;
     int lost = 0;
@@ -98,6 +98,10 @@ static void definition_create(markdown_core_map *map, markdown_core_chunk *label
     }
     entry->label = reflabel;
     entry->age = map->size;
+    /* The registering definition block's identity (D4). Duplicates fold to the
+     * OLDEST entry at preparation, so a lookup's answer carries the
+     * first-in-document-order winner's identity without picking one here. */
+    entry->definition = definition;
     entry->next = map->refs;
 
     map->refs = entry;
@@ -115,14 +119,14 @@ markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem) {
     return markdown_core_map_new(mem, definition_free);
 }
 
-void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label) {
-    definition_create(map, label);
+void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label, uint32_t definition) {
+    definition_create(map, label, definition);
 }
 
 markdown_core_map *markdown_core_footnote_definition_map_new(markdown_core_mem *mem) {
     return markdown_core_map_new(mem, definition_free);
 }
 
-void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label) {
-    definition_create(map, label);
+void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label, uint32_t definition) {
+    definition_create(map, label, definition);
 }

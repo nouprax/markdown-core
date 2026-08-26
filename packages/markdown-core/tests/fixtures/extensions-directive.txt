@@ -19,15 +19,15 @@ The empty object is valid.
 ```````````````````````````````` example
 Use :cite[Smith *et al.*]{id=smith class=paper data-kind=ref} here.
 .
-Document scope=1:1..1:67 children=1
-└── Paragraph scope=1:1..1:67 children=3
-    ├── Text scope=1:1..1:4 literal="Use " children=0
-    ├── Directive scope=1:5..1:61 name="cite" attributes=[class="paper" data-kind="ref" id="smith"] children=1
-    │   └── DirectiveLabel scope=1:10..1:25 children=2
-    │       ├── Text scope=1:11..1:16 literal="Smith " children=0
-    │       └── Emphasis scope=1:17..1:24 children=1
-    │           └── Text scope=1:18..1:23 literal="et al." children=0
-    └── Text scope=1:62..1:67 literal=" here." children=0
+Document id=1:0 scope=1:1..1:67 children=1
+└── Paragraph id=2:0 scope=1:1..1:67 children=3
+    ├── Text id=2:1 scope=1:1..1:4 literal="Use " children=0
+    ├── Directive id=2:2 scope=1:5..1:61 name="cite" attributes=[class="paper" data-kind="ref" id="smith"] children=1
+    │   └── DirectiveLabel id=2:3 scope=1:10..1:25 children=2
+    │       ├── Text id=2:4 scope=1:11..1:16 literal="Smith " children=0
+    │       └── Emphasis id=2:5 scope=1:17..1:24 children=1
+    │           └── Text id=2:6 scope=1:18..1:23 literal="et al." children=0
+    └── Text id=2:7 scope=1:62..1:67 literal=" here." children=0
 ````````````````````````````````
 
 Inline attribute lists may span source lines. Their full source range belongs
@@ -38,12 +38,12 @@ column after the closing brace.
 :note[label]{title="one
 two"} tail
 .
-Document scope=1:1..2:10 children=1
-└── Paragraph scope=1:1..2:10 children=2
-    ├── Directive scope=1:1..2:5 name="note" attributes=[title="one\ntwo"] children=1
-    │   └── DirectiveLabel scope=1:6..1:12 children=1
-    │       └── Text scope=1:7..1:11 literal="label" children=0
-    └── Text scope=2:6..2:10 literal=" tail" children=0
+Document id=1:0 scope=1:1..2:10 children=1
+└── Paragraph id=2:0 scope=1:1..2:10 children=2
+    ├── Directive id=2:1 scope=1:1..2:5 name="note" attributes=[title="one\ntwo"] children=1
+    │   └── DirectiveLabel id=2:2 scope=1:6..1:12 children=1
+    │       └── Text id=2:3 scope=1:7..1:11 literal="label" children=0
+    └── Text id=2:4 scope=2:6..2:10 literal=" tail" children=0
 ````````````````````````````````
 
 Numeric- and boolean-looking values remain strings in the normalized AST/API
@@ -52,9 +52,9 @@ JSON representation.
 ```````````````````````````````` example
 :video{id=123 muted=true title="My Video"}
 .
-Document scope=1:1..1:42 children=1
-└── Paragraph scope=1:1..1:42 children=1
-    └── Directive scope=1:1..1:42 name="video" attributes=[id="123" muted="true" title="My Video"] children=0
+Document id=1:0 scope=1:1..1:42 children=1
+└── Paragraph id=2:0 scope=1:1..1:42 children=1
+    └── Directive id=2:1 scope=1:1..1:42 name="video" attributes=[id="123" muted="true" title="My Video"] children=0
 ````````````````````````````````
 
 An explicit empty attributes object is valid and is distinct from no
@@ -63,9 +63,9 @@ attributes object in the AST/API.
 ```````````````````````````````` example
 :empty{}
 .
-Document scope=1:1..1:8 children=1
-└── Paragraph scope=1:1..1:8 children=1
-    └── Directive scope=1:1..1:8 name="empty" attributes=[] children=0
+Document id=1:0 scope=1:1..1:8 children=1
+└── Paragraph id=2:0 scope=1:1..1:8 children=1
+    └── Directive id=2:1 scope=1:1..1:8 name="empty" attributes=[] children=0
 ````````````````````````````````
 
 Attribute values are normalized to strings. Bare attributes become empty
@@ -74,11 +74,11 @@ strings, the last duplicate key wins, and quoted values may contain spaces.
 ```````````````````````````````` example
 :data[label]{muted dup=first dup=last unicode=中文😀 title="My Video"}
 .
-Document scope=1:1..1:74 children=1
-└── Paragraph scope=1:1..1:74 children=1
-    └── Directive scope=1:1..1:74 name="data" attributes=[dup="last" muted="" title="My Video" unicode="中文😀"] children=1
-        └── DirectiveLabel scope=1:6..1:12 children=1
-            └── Text scope=1:7..1:11 literal="label" children=0
+Document id=1:0 scope=1:1..1:74 children=1
+└── Paragraph id=2:0 scope=1:1..1:74 children=1
+    └── Directive id=2:1 scope=1:1..1:74 name="data" attributes=[dup="last" muted="" title="My Video" unicode="中文😀"] children=1
+        └── DirectiveLabel id=2:2 scope=1:6..1:12 children=1
+            └── Text id=2:3 scope=1:7..1:11 literal="label" children=0
 ````````````````````````````````
 
 `id` and `class` are ordinary keys. Like every repeated key, their last value
@@ -87,11 +87,11 @@ wins while their first source position is retained.
 ```````````````````````````````` example
 :ordinary[label]{id=first class=red class=green class=blue id=last key=value}
 .
-Document scope=1:1..1:77 children=1
-└── Paragraph scope=1:1..1:77 children=1
-    └── Directive scope=1:1..1:77 name="ordinary" attributes=[class="red green blue" id="last" key="value"] children=1
-        └── DirectiveLabel scope=1:10..1:16 children=1
-            └── Text scope=1:11..1:15 literal="label" children=0
+Document id=1:0 scope=1:1..1:77 children=1
+└── Paragraph id=2:0 scope=1:1..1:77 children=1
+    └── Directive id=2:1 scope=1:1..1:77 name="ordinary" attributes=[class="red green blue" id="last" key="value"] children=1
+        └── DirectiveLabel id=2:2 scope=1:10..1:16 children=1
+            └── Text id=2:3 scope=1:11..1:15 literal="label" children=0
 ````````````````````````````````
 
 Malformed and unclosed attribute lists are not consumed as directive
@@ -101,13 +101,13 @@ attributes and remain ordinary Markdown text.
 :invalid{=value}
 :open{title="value}
 .
-Document scope=1:1..2:19 children=1
-└── Paragraph scope=1:1..2:19 children=5
-    ├── Directive scope=1:1..1:8 name="invalid" attributes=null children=0
-    ├── Text scope=1:9..1:16 literal="{=value}" children=0
-    ├── SoftBreak scope=1:17..1:17 children=0
-    ├── Directive scope=2:1..2:5 name="open" attributes=null children=0
-    └── Text scope=2:6..2:19 literal="{title=\"value}" children=0
+Document id=1:0 scope=1:1..2:19 children=1
+└── Paragraph id=2:0 scope=1:1..2:19 children=5
+    ├── Directive id=2:1 scope=1:1..1:8 name="invalid" attributes=null children=0
+    ├── Text id=2:2 scope=1:9..1:16 literal="{=value}" children=0
+    ├── SoftBreak id=2:3 scope=1:17..1:17 children=0
+    ├── Directive id=2:4 scope=2:1..2:5 name="open" attributes=null children=0
+    └── Text id=2:5 scope=2:6..2:19 literal="{title=\"value}" children=0
 ````````````````````````````````
 
 HTML-style `#id` and `.class` shortcuts are outside this extension's generic
@@ -117,11 +117,11 @@ key-value grammar and remain ordinary Markdown text.
 :shortcut{#identifier}
 :shortcut{.class}
 .
-Document scope=1:1..2:17 children=1
-└── Paragraph scope=1:1..2:17 children=3
-    ├── Directive scope=1:1..1:22 name="shortcut" attributes=[id="identifier"] children=0
-    ├── SoftBreak scope=1:23..1:23 children=0
-    └── Directive scope=2:1..2:17 name="shortcut" attributes=[class="class"] children=0
+Document id=1:0 scope=1:1..2:17 children=1
+└── Paragraph id=2:0 scope=1:1..2:17 children=3
+    ├── Directive id=2:1 scope=1:1..1:22 name="shortcut" attributes=[id="identifier"] children=0
+    ├── SoftBreak id=2:2 scope=1:23..1:23 children=0
+    └── Directive id=2:3 scope=2:1..2:17 name="shortcut" attributes=[class="class"] children=0
 ````````````````````````````````
 
 Text directive labels can contain links.
@@ -129,14 +129,14 @@ Text directive labels can contain links.
 ```````````````````````````````` example
 :note[See [docs](https://example.com).]
 .
-Document scope=1:1..1:39 children=1
-└── Paragraph scope=1:1..1:39 children=1
-    └── Directive scope=1:1..1:39 name="note" attributes=null children=1
-        └── DirectiveLabel scope=1:6..1:39 children=3
-            ├── Text scope=1:7..1:10 literal="See " children=0
-            ├── Link scope=1:11..1:37 destination="https://example.com" title=null children=1
-            │   └── Text scope=1:12..1:15 literal="docs" children=0
-            └── Text scope=1:38..1:38 literal="." children=0
+Document id=1:0 scope=1:1..1:39 children=1
+└── Paragraph id=2:0 scope=1:1..1:39 children=1
+    └── Directive id=2:1 scope=1:1..1:39 name="note" attributes=null children=1
+        └── DirectiveLabel id=2:2 scope=1:6..1:39 children=3
+            ├── Text id=2:3 scope=1:7..1:10 literal="See " children=0
+            ├── Link id=2:4 scope=1:11..1:37 destination="https://example.com" title=null children=1
+            │   └── Text id=2:5 scope=1:12..1:15 literal="docs" children=0
+            └── Text id=2:6 scope=1:38..1:38 literal="." children=0
 ````````````````````````````````
 
 Text directive labels can contain bracketed text that is not a link.
@@ -144,11 +144,11 @@ Text directive labels can contain bracketed text that is not a link.
 ```````````````````````````````` example
 :note[See [plain] text.]
 .
-Document scope=1:1..1:24 children=1
-└── Paragraph scope=1:1..1:24 children=1
-    └── Directive scope=1:1..1:24 name="note" attributes=null children=1
-        └── DirectiveLabel scope=1:6..1:24 children=1
-            └── Text scope=1:7..1:23 literal="See [plain] text." children=0
+Document id=1:0 scope=1:1..1:24 children=1
+└── Paragraph id=2:0 scope=1:1..1:24 children=1
+    └── Directive id=2:1 scope=1:1..1:24 name="note" attributes=null children=1
+        └── DirectiveLabel id=2:2 scope=1:6..1:24 children=1
+            └── Text id=2:3 scope=1:7..1:23 literal="See [plain] text." children=0
 ````````````````````````````````
 
 Text directives can appear inside link text.
@@ -156,13 +156,13 @@ Text directives can appear inside link text.
 ```````````````````````````````` example
 [Go :badge[beta]](/roadmap)
 .
-Document scope=1:1..1:27 children=1
-└── Paragraph scope=1:1..1:27 children=1
-    └── Link scope=1:1..1:27 destination="/roadmap" title=null children=2
-        ├── Text scope=1:2..1:4 literal="Go " children=0
-        └── Directive scope=1:5..1:16 name="badge" attributes=null children=1
-            └── DirectiveLabel scope=1:11..1:16 children=1
-                └── Text scope=1:12..1:15 literal="beta" children=0
+Document id=1:0 scope=1:1..1:27 children=1
+└── Paragraph id=2:0 scope=1:1..1:27 children=1
+    └── Link id=2:1 scope=1:1..1:27 destination="/roadmap" title=null children=2
+        ├── Text id=2:2 scope=1:2..1:4 literal="Go " children=0
+        └── Directive id=2:3 scope=1:5..1:16 name="badge" attributes=null children=1
+            └── DirectiveLabel id=2:4 scope=1:11..1:16 children=1
+                └── Text id=2:5 scope=1:12..1:15 literal="beta" children=0
 ````````````````````````````````
 
 Text directives can appear inside table cells.
@@ -172,16 +172,16 @@ Text directives can appear inside table cells.
 | --- |
 | :badge[beta] |
 .
-Document scope=1:1..3:16 children=1
-└── Table scope=1:1..3:16 alignments=[none] children=2
-    ├── TableRow scope=1:1..1:10 isHeader=true children=1
-    │   └── TableCell scope=1:2..1:9 children=1
-    │       └── Text scope=1:3..1:8 literal="status" children=0
-    └── TableRow scope=3:1..3:16 isHeader=false children=1
-        └── TableCell scope=3:2..3:15 children=1
-            └── Directive scope=3:3..3:14 name="badge" attributes=null children=1
-                └── DirectiveLabel scope=3:9..3:14 children=1
-                    └── Text scope=3:10..3:13 literal="beta" children=0
+Document id=1:0 scope=1:1..3:16 children=1
+└── Table id=2:0 scope=1:1..3:16 alignments=[none] children=2
+    ├── TableRow id=3:0 scope=1:1..1:10 isHeader=true children=1
+    │   └── TableCell id=4:0 scope=1:2..1:9 children=1
+    │       └── Text id=4:1 scope=1:3..1:8 literal="status" children=0
+    └── TableRow id=5:0 scope=3:1..3:16 isHeader=false children=1
+        └── TableCell id=6:0 scope=3:2..3:15 children=1
+            └── Directive id=6:1 scope=3:3..3:14 name="badge" attributes=null children=1
+                └── DirectiveLabel id=6:2 scope=3:9..3:14 children=1
+                    └── Text id=6:3 scope=3:10..3:13 literal="beta" children=0
 ````````````````````````````````
 
 A text directive with only a name is not recognized when it is followed by a
@@ -190,9 +190,9 @@ colon, so gemoji-compatible text remains text.
 ```````````````````````````````` example
 :red:
 .
-Document scope=1:1..1:5 children=1
-└── Paragraph scope=1:1..1:5 children=1
-    └── Text scope=1:1..1:5 literal=":red:" children=0
+Document id=1:0 scope=1:1..1:5 children=1
+└── Paragraph id=2:0 scope=1:1..1:5 children=1
+    └── Text id=2:1 scope=1:1..1:5 literal=":red:" children=0
 ````````````````````````````````
 
 An empty label disambiguates a text directive before a following colon.
@@ -200,11 +200,11 @@ An empty label disambiguates a text directive before a following colon.
 ```````````````````````````````` example
 :red[]:
 .
-Document scope=1:1..1:7 children=1
-└── Paragraph scope=1:1..1:7 children=2
-    ├── Directive scope=1:1..1:6 name="red" attributes=null children=1
-    │   └── DirectiveLabel scope=1:5..1:6 children=0
-    └── Text scope=1:7..1:7 literal=":" children=0
+Document id=1:0 scope=1:1..1:7 children=1
+└── Paragraph id=2:0 scope=1:1..1:7 children=2
+    ├── Directive id=2:1 scope=1:1..1:6 name="red" attributes=null children=1
+    │   └── DirectiveLabel id=2:2 scope=1:5..1:6 children=0
+    └── Text id=2:3 scope=1:7..1:7 literal=":" children=0
 ````````````````````````````````
 
 A LABEL IS SCANNED AT THE COLON, not paired with a closer found later. Both
@@ -214,12 +214,12 @@ label, a label that does not is prose, and the directive stands either way.
 ```````````````````````````````` example
 :a[b and :c[
 .
-Document scope=1:1..1:12 children=1
-└── Paragraph scope=1:1..1:12 children=4
-    ├── Directive scope=1:1..1:2 name="a" attributes=null children=0
-    ├── Text scope=1:3..1:9 literal="[b and " children=0
-    ├── Directive scope=1:10..1:11 name="c" attributes=null children=0
-    └── Text scope=1:12..1:12 literal="[" children=0
+Document id=1:0 scope=1:1..1:12 children=1
+└── Paragraph id=2:0 scope=1:1..1:12 children=4
+    ├── Directive id=2:1 scope=1:1..1:2 name="a" attributes=null children=0
+    ├── Text id=2:2 scope=1:3..1:9 literal="[b and " children=0
+    ├── Directive id=2:3 scope=1:10..1:11 name="c" attributes=null children=0
+    └── Text id=2:4 scope=1:12..1:12 literal="[" children=0
 ````````````````````````````````
 
 Because the whole construct is consumed there, nothing else is ever offered its
@@ -230,23 +230,23 @@ it -- the label ended before either was looked for.
 ```````````````````````````````` example
 *a :b[c*]
 .
-Document scope=1:1..1:9 children=1
-└── Paragraph scope=1:1..1:9 children=2
-    ├── Text scope=1:1..1:3 literal="*a " children=0
-    └── Directive scope=1:4..1:9 name="b" attributes=null children=1
-        └── DirectiveLabel scope=1:6..1:9 children=1
-            └── Text scope=1:7..1:8 literal="c*" children=0
+Document id=1:0 scope=1:1..1:9 children=1
+└── Paragraph id=2:0 scope=1:1..1:9 children=2
+    ├── Text id=2:1 scope=1:1..1:3 literal="*a " children=0
+    └── Directive id=2:2 scope=1:4..1:9 name="b" attributes=null children=1
+        └── DirectiveLabel id=2:3 scope=1:6..1:9 children=1
+            └── Text id=2:4 scope=1:7..1:8 literal="c*" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 :b[a`b]`c]
 .
-Document scope=1:1..1:10 children=1
-└── Paragraph scope=1:1..1:10 children=2
-    ├── Directive scope=1:1..1:7 name="b" attributes=null children=1
-    │   └── DirectiveLabel scope=1:3..1:7 children=1
-    │       └── Text scope=1:4..1:6 literal="a`b" children=0
-    └── Text scope=1:8..1:10 literal="`c]" children=0
+Document id=1:0 scope=1:1..1:10 children=1
+└── Paragraph id=2:0 scope=1:1..1:10 children=2
+    ├── Directive id=2:1 scope=1:1..1:7 name="b" attributes=null children=1
+    │   └── DirectiveLabel id=2:2 scope=1:3..1:7 children=1
+    │       └── Text id=2:3 scope=1:4..1:6 literal="a`b" children=0
+    └── Text id=2:4 scope=1:8..1:10 literal="`c]" children=0
 ````````````````````````````````
 
 The scan is lexical: only a backslash escape and bracket balance decide where
@@ -256,20 +256,20 @@ nested brackets are a label and thirty-three are prose.
 ```````````````````````````````` example
 :a[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
 .
-Document scope=1:1..1:69 children=1
-└── Paragraph scope=1:1..1:69 children=1
-    └── Directive scope=1:1..1:69 name="a" attributes=null children=1
-        └── DirectiveLabel scope=1:3..1:69 children=1
-            └── Text scope=1:4..1:68 literal="[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]" children=0
+Document id=1:0 scope=1:1..1:69 children=1
+└── Paragraph id=2:0 scope=1:1..1:69 children=1
+    └── Directive id=2:1 scope=1:1..1:69 name="a" attributes=null children=1
+        └── DirectiveLabel id=2:2 scope=1:3..1:69 children=1
+            └── Text id=2:3 scope=1:4..1:68 literal="[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 :a[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
 .
-Document scope=1:1..1:71 children=1
-└── Paragraph scope=1:1..1:71 children=2
-    ├── Directive scope=1:1..1:2 name="a" attributes=null children=0
-    └── Text scope=1:3..1:71 literal="[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]" children=0
+Document id=1:0 scope=1:1..1:71 children=1
+└── Paragraph id=2:0 scope=1:1..1:71 children=2
+    ├── Directive id=2:1 scope=1:1..1:2 name="a" attributes=null children=0
+    └── Text id=2:2 scope=1:3..1:71 literal="[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]" children=0
 ````````````````````````````````
 
 A directive name may contain a hyphen or underscore but may not begin or end
@@ -284,13 +284,13 @@ directly: `:-a[]` and `:_a[]` produce no directive there, while `:1a[]` does.
 :-a[]
 :_a[]
 .
-Document scope=1:1..3:5 children=1
-└── Paragraph scope=1:1..3:5 children=5
-    ├── Text scope=1:1..1:5 literal=":a-[]" children=0
-    ├── SoftBreak scope=1:6..1:6 children=0
-    ├── Text scope=2:1..2:5 literal=":-a[]" children=0
-    ├── SoftBreak scope=2:6..2:6 children=0
-    └── Text scope=3:1..3:5 literal=":_a[]" children=0
+Document id=1:0 scope=1:1..3:5 children=1
+└── Paragraph id=2:0 scope=1:1..3:5 children=5
+    ├── Text id=2:1 scope=1:1..1:5 literal=":a-[]" children=0
+    ├── SoftBreak id=2:2 scope=1:6..1:6 children=0
+    ├── Text id=2:3 scope=2:1..2:5 literal=":-a[]" children=0
+    ├── SoftBreak id=2:4 scope=2:6..2:6 children=0
+    └── Text id=2:5 scope=3:1..3:5 literal=":_a[]" children=0
 ````````````````````````````````
 
 A digit may begin a name, as it may in the reference implementation.
@@ -298,10 +298,10 @@ A digit may begin a name, as it may in the reference implementation.
 ```````````````````````````````` example
 :1a[]
 .
-Document scope=1:1..1:5 children=1
-└── Paragraph scope=1:1..1:5 children=1
-    └── Directive scope=1:1..1:5 name="1a" attributes=null children=1
-        └── DirectiveLabel scope=1:4..1:5 children=0
+Document id=1:0 scope=1:1..1:5 children=1
+└── Paragraph id=2:0 scope=1:1..1:5 children=1
+    └── Directive id=2:1 scope=1:1..1:5 name="1a" attributes=null children=1
+        └── DirectiveLabel id=2:2 scope=1:4..1:5 children=0
 ````````````````````````````````
 
 A name is CODE POINTS, like every other name in this grammar. `:café` is one
@@ -311,18 +311,18 @@ block forms read the same names the inline form does.
 ```````````````````````````````` example
 :café[x]
 .
-Document scope=1:1..1:9 children=1
-└── Paragraph scope=1:1..1:9 children=1
-    └── Directive scope=1:1..1:9 name="café" attributes=null children=1
-        └── DirectiveLabel scope=1:7..1:9 children=1
-            └── Text scope=1:8..1:8 literal="x" children=0
+Document id=1:0 scope=1:1..1:9 children=1
+└── Paragraph id=2:0 scope=1:1..1:9 children=1
+    └── Directive id=2:1 scope=1:1..1:9 name="café" attributes=null children=1
+        └── DirectiveLabel id=2:2 scope=1:7..1:9 children=1
+            └── Text id=2:3 scope=1:8..1:8 literal="x" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 ::naïve{a=1}
 .
-Document scope=1:1..1:13 children=1
-└── DirectiveBlock scope=1:1..1:13 name="naïve" attributes=[a="1"] children=0
+Document id=1:0 scope=1:1..1:13 children=1
+└── DirectiveBlock id=2:0 scope=1:1..1:13 name="naïve" attributes=[a="1"] children=0
 ````````````````````````````````
 
 And punctuation ends a name whatever its width, which is the half a byte-wise
@@ -332,11 +332,11 @@ punctuation and three bytes of none.
 ```````````````````````````````` example
 a :b–c d
 .
-Document scope=1:1..1:10 children=1
-└── Paragraph scope=1:1..1:10 children=3
-    ├── Text scope=1:1..1:2 literal="a " children=0
-    ├── Directive scope=1:3..1:4 name="b" attributes=null children=0
-    └── Text scope=1:5..1:10 literal="–c d" children=0
+Document id=1:0 scope=1:1..1:10 children=1
+└── Paragraph id=2:0 scope=1:1..1:10 children=3
+    ├── Text id=2:1 scope=1:1..1:2 literal="a " children=0
+    ├── Directive id=2:2 scope=1:3..1:4 name="b" attributes=null children=0
+    └── Text id=2:3 scope=1:5..1:10 literal="–c d" children=0
 ````````````````````````````````
 
 An unquoted value may hold no quote of either kind, alongside the four it may
@@ -346,10 +346,10 @@ makes the block malformed.
 ```````````````````````````````` example
 :n{a=b"c"}
 .
-Document scope=1:1..1:10 children=1
-└── Paragraph scope=1:1..1:10 children=2
-    ├── Directive scope=1:1..1:2 name="n" attributes=null children=0
-    └── Text scope=1:3..1:10 literal="{a=b\"c\"}" children=0
+Document id=1:0 scope=1:1..1:10 children=1
+└── Paragraph id=2:0 scope=1:1..1:10 children=2
+    ├── Directive id=2:1 scope=1:1..1:2 name="n" attributes=null children=0
+    └── Text id=2:2 scope=1:3..1:10 literal="{a=b\"c\"}" children=0
 ````````````````````````````````
 
 An underscore may not end a name either, the same as a hyphen.
@@ -357,9 +357,9 @@ An underscore may not end a name either, the same as a hyphen.
 ```````````````````````````````` example
 :a_[]
 .
-Document scope=1:1..1:5 children=1
-└── Paragraph scope=1:1..1:5 children=1
-    └── Text scope=1:1..1:5 literal=":a_[]" children=0
+Document id=1:0 scope=1:1..1:5 children=1
+└── Paragraph id=2:0 scope=1:1..1:5 children=1
+    └── Text id=2:1 scope=1:1..1:5 literal=":a_[]" children=0
 ````````````````````````````````
 
 Leaf directives use two colons on their own line. Repeated metadata keys use
@@ -368,12 +368,12 @@ their last value and are not projected onto HTML.
 ```````````````````````````````` example
 ::youtube[Video of a *cat*]{vid=01ab2cd3efg class=embed class=featured}
 .
-Document scope=1:1..1:71 children=1
-└── DirectiveBlock scope=1:1..1:71 name="youtube" attributes=[class="embed featured" vid="01ab2cd3efg"] children=1
-    └── DirectiveLabel scope=1:10..1:27 children=2
-        ├── Text scope=1:11..1:21 literal="Video of a " children=0
-        └── Emphasis scope=1:22..1:26 children=1
-            └── Text scope=1:23..1:25 literal="cat" children=0
+Document id=1:0 scope=1:1..1:71 children=1
+└── DirectiveBlock id=2:0 scope=1:1..1:71 name="youtube" attributes=[class="embed featured" vid="01ab2cd3efg"] children=1
+    └── DirectiveLabel id=2:1 scope=1:10..1:27 children=2
+        ├── Text id=2:2 scope=1:11..1:21 literal="Video of a " children=0
+        └── Emphasis id=2:3 scope=1:22..1:26 children=1
+            └── Text id=2:4 scope=1:23..1:25 literal="cat" children=0
 ````````````````````````````````
 
 Container directives use three or more colons on their own line. A closing
@@ -388,13 +388,13 @@ She is born.
 :::
 ::::
 .
-Document scope=1:1..7:4 children=1
-└── DirectiveBlock scope=1:1..7:4 name="spoiler" attributes=[class="red green blue" id="outer"] children=2
-    ├── Paragraph scope=2:1..2:8 children=1
-    │   └── Text scope=2:1..2:8 literal="He dies." children=0
-    └── DirectiveBlock scope=4:1..6:3 name="spoiler" attributes=null children=1
-        └── Paragraph scope=5:1..5:12 children=1
-            └── Text scope=5:1..5:12 literal="She is born." children=0
+Document id=1:0 scope=1:1..7:4 children=1
+└── DirectiveBlock id=2:0 scope=1:1..7:4 name="spoiler" attributes=[class="red green blue" id="outer"] children=2
+    ├── Paragraph id=3:0 scope=2:1..2:8 children=1
+    │   └── Text id=3:1 scope=2:1..2:8 literal="He dies." children=0
+    └── DirectiveBlock id=4:0 scope=4:1..6:3 name="spoiler" attributes=null children=1
+        └── Paragraph id=5:0 scope=5:1..5:12 children=1
+            └── Text id=5:1 scope=5:1..5:12 literal="She is born." children=0
 ````````````````````````````````
 
 If no closing fence is found, the container runs to the end of its parent.
@@ -405,14 +405,14 @@ These three are not enough to close
 :::
 So this line is also part of the container.
 .
-Document scope=1:1..4:43 children=1
-└── DirectiveBlock scope=1:1..4:43 name="spoiler" attributes=null children=1
-    └── Paragraph scope=2:1..4:43 children=5
-        ├── Text scope=2:1..2:35 literal="These three are not enough to close" children=0
-        ├── SoftBreak scope=2:36..2:36 children=0
-        ├── Text scope=3:1..3:3 literal=":::" children=0
-        ├── SoftBreak scope=3:4..3:4 children=0
-        └── Text scope=4:1..4:43 literal="So this line is also part of the container." children=0
+Document id=1:0 scope=1:1..4:43 children=1
+└── DirectiveBlock id=2:0 scope=1:1..4:43 name="spoiler" attributes=null children=1
+    └── Paragraph id=3:0 scope=2:1..4:43 children=5
+        ├── Text id=3:1 scope=2:1..2:35 literal="These three are not enough to close" children=0
+        ├── SoftBreak id=3:2 scope=2:36..2:36 children=0
+        ├── Text id=3:3 scope=3:1..3:3 literal=":::" children=0
+        ├── SoftBreak id=3:4 scope=3:4..3:4 children=0
+        └── Text id=3:5 scope=4:1..4:43 literal="So this line is also part of the container." children=0
 ````````````````````````````````
 
 An indented colon run inside a container is content, not a closing fence.
@@ -422,9 +422,9 @@ An indented colon run inside a container is content, not a closing fence.
     :::
 :::
 .
-Document scope=1:1..3:3 children=1
-└── DirectiveBlock scope=1:1..3:3 name="spoiler" attributes=null children=1
-    └── CodeBlock scope=2:5..2:7 info=null language=null literal=":::\n" fenced=false closed=true children=0
+Document id=1:0 scope=1:1..3:3 children=1
+└── DirectiveBlock id=2:0 scope=1:1..3:3 name="spoiler" attributes=null children=1
+    └── CodeBlock id=3:0 scope=2:5..2:7 info=null language=null literal=":::\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 The directive trigger characters are ordinary punctuation for emphasis
@@ -434,21 +434,21 @@ reference CommonMark requires.
 ```````````````````````````````` example
 foo:_bar_
 .
-Document scope=1:1..1:9 children=1
-└── Paragraph scope=1:1..1:9 children=2
-    ├── Text scope=1:1..1:4 literal="foo:" children=0
-    └── Emphasis scope=1:5..1:9 children=1
-        └── Text scope=1:6..1:8 literal="bar" children=0
+Document id=1:0 scope=1:1..1:9 children=1
+└── Paragraph id=2:0 scope=1:1..1:9 children=2
+    ├── Text id=2:1 scope=1:1..1:4 literal="foo:" children=0
+    └── Emphasis id=2:2 scope=1:5..1:9 children=1
+        └── Text id=2:3 scope=1:6..1:8 literal="bar" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 a}_b_
 .
-Document scope=1:1..1:5 children=1
-└── Paragraph scope=1:1..1:5 children=2
-    ├── Text scope=1:1..1:2 literal="a}" children=0
-    └── Emphasis scope=1:3..1:5 children=1
-        └── Text scope=1:4..1:4 literal="b" children=0
+Document id=1:0 scope=1:1..1:5 children=1
+└── Paragraph id=2:0 scope=1:1..1:5 children=2
+    ├── Text id=2:1 scope=1:1..1:2 literal="a}" children=0
+    └── Emphasis id=2:2 scope=1:3..1:5 children=1
+        └── Text id=2:3 scope=1:4..1:4 literal="b" children=0
 ````````````````````````````````
 
 `#name` and `.name` are shorthand for the `id` and `class` attributes. A
@@ -458,9 +458,9 @@ than one class named `a.b`.
 ```````````````````````````````` example
 :n{.a.b}
 .
-Document scope=1:1..1:8 children=1
-└── Paragraph scope=1:1..1:8 children=1
-    └── Directive scope=1:1..1:8 name="n" attributes=[class="a b"] children=0
+Document id=1:0 scope=1:1..1:8 children=1
+└── Paragraph id=2:0 scope=1:1..1:8 children=1
+    └── Directive id=2:1 scope=1:1..1:8 name="n" attributes=[class="a b"] children=0
 ````````````````````````````````
 
 `class` is the one attribute whose repeats accumulate, in source order, whether
@@ -470,9 +470,9 @@ value.
 ```````````````````````````````` example
 :n{class=x .y}
 .
-Document scope=1:1..1:14 children=1
-└── Paragraph scope=1:1..1:14 children=1
-    └── Directive scope=1:1..1:14 name="n" attributes=[class="x y"] children=0
+Document id=1:0 scope=1:1..1:14 children=1
+└── Paragraph id=2:0 scope=1:1..1:14 children=1
+    └── Directive id=2:1 scope=1:1..1:14 name="n" attributes=[class="x y"] children=0
 ````````````````````````````````
 
 `id` keeps the last value, like an ordinary name.
@@ -480,9 +480,9 @@ Document scope=1:1..1:14 children=1
 ```````````````````````````````` example
 :n{#a#b}
 .
-Document scope=1:1..1:8 children=1
-└── Paragraph scope=1:1..1:8 children=1
-    └── Directive scope=1:1..1:8 name="n" attributes=[id="b"] children=0
+Document id=1:0 scope=1:1..1:8 children=1
+└── Paragraph id=2:0 scope=1:1..1:8 children=1
+    └── Directive id=2:1 scope=1:1..1:8 name="n" attributes=[id="b"] children=0
 ````````````````````````````````
 
 A shorthand marker with no name after it is not a valid attribute and
@@ -492,19 +492,19 @@ stands and the braces stay as text.
 ```````````````````````````````` example
 :n{#}
 .
-Document scope=1:1..1:5 children=1
-└── Paragraph scope=1:1..1:5 children=2
-    ├── Directive scope=1:1..1:2 name="n" attributes=null children=0
-    └── Text scope=1:3..1:5 literal="{#}" children=0
+Document id=1:0 scope=1:1..1:5 children=1
+└── Paragraph id=2:0 scope=1:1..1:5 children=2
+    ├── Directive id=2:1 scope=1:1..1:2 name="n" attributes=null children=0
+    └── Text id=2:2 scope=1:3..1:5 literal="{#}" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 :n{.}
 .
-Document scope=1:1..1:5 children=1
-└── Paragraph scope=1:1..1:5 children=2
-    ├── Directive scope=1:1..1:2 name="n" attributes=null children=0
-    └── Text scope=1:3..1:5 literal="{.}" children=0
+Document id=1:0 scope=1:1..1:5 children=1
+└── Paragraph id=2:0 scope=1:1..1:5 children=2
+    ├── Directive id=2:1 scope=1:1..1:2 name="n" attributes=null children=0
+    └── Text id=2:2 scope=1:3..1:5 literal="{.}" children=0
 ````````````````````````````````
 
 An ordinary attribute whose name is as long as `class` is not treated as one.
@@ -512,9 +512,9 @@ An ordinary attribute whose name is as long as `class` is not treated as one.
 ```````````````````````````````` example
 :n{other=1 .a .b}
 .
-Document scope=1:1..1:17 children=1
-└── Paragraph scope=1:1..1:17 children=1
-    └── Directive scope=1:1..1:17 name="n" attributes=[class="a b" other="1"] children=0
+Document id=1:0 scope=1:1..1:17 children=1
+└── Paragraph id=2:0 scope=1:1..1:17 children=1
+    └── Directive id=2:1 scope=1:1..1:17 name="n" attributes=[class="a b" other="1"] children=0
 ````````````````````````````````
 
 The separator goes before every class value once something has accumulated, an
@@ -523,9 +523,9 @@ empty value included.
 ```````````````````````````````` example
 :n{.a class="" .b}
 .
-Document scope=1:1..1:18 children=1
-└── Paragraph scope=1:1..1:18 children=1
-    └── Directive scope=1:1..1:18 name="n" attributes=[class="a  b"] children=0
+Document id=1:0 scope=1:1..1:18 children=1
+└── Paragraph id=2:0 scope=1:1..1:18 children=1
+    └── Directive id=2:1 scope=1:1..1:18 name="n" attributes=[class="a  b"] children=0
 ````````````````````````````````
 
 An empty value at the front accumulates nothing, so it contributes no leading
@@ -534,9 +534,9 @@ separator.
 ```````````````````````````````` example
 :n{class="" .b}
 .
-Document scope=1:1..1:15 children=1
-└── Paragraph scope=1:1..1:15 children=1
-    └── Directive scope=1:1..1:15 name="n" attributes=[class="b"] children=0
+Document id=1:0 scope=1:1..1:15 children=1
+└── Paragraph id=2:0 scope=1:1..1:15 children=1
+    └── Directive id=2:1 scope=1:1..1:15 name="n" attributes=[class="b"] children=0
 ````````````````````````````````
 
 Shorthand also reaches the label-close probe, which validates the attribute
@@ -545,11 +545,11 @@ block after `]` before the label is accepted.
 ```````````````````````````````` example
 :n[label]{#i .c}
 .
-Document scope=1:1..1:16 children=1
-└── Paragraph scope=1:1..1:16 children=1
-    └── Directive scope=1:1..1:16 name="n" attributes=[class="c" id="i"] children=1
-        └── DirectiveLabel scope=1:3..1:9 children=1
-            └── Text scope=1:4..1:8 literal="label" children=0
+Document id=1:0 scope=1:1..1:16 children=1
+└── Paragraph id=2:0 scope=1:1..1:16 children=1
+    └── Directive id=2:1 scope=1:1..1:16 name="n" attributes=[class="c" id="i"] children=1
+        └── DirectiveLabel id=2:2 scope=1:3..1:9 children=1
+            └── Text id=2:3 scope=1:4..1:8 literal="label" children=0
 ````````````````````````````````
 
 A text directive's colon may not sit next to another colon on either side. The
@@ -561,9 +561,9 @@ container directives and open through the block path instead.
 ```````````````````````````````` example
 x ::a y
 .
-Document scope=1:1..1:7 children=1
-└── Paragraph scope=1:1..1:7 children=1
-    └── Text scope=1:1..1:7 literal="x ::a y" children=0
+Document id=1:0 scope=1:1..1:7 children=1
+└── Paragraph id=2:0 scope=1:1..1:7 children=1
+    └── Text id=2:1 scope=1:1..1:7 literal="x ::a y" children=0
 ````````````````````````````````
 
 A longer run behaves the same way; the directive never starts inside it.
@@ -571,9 +571,9 @@ A longer run behaves the same way; the directive never starts inside it.
 ```````````````````````````````` example
 x ::::a y
 .
-Document scope=1:1..1:9 children=1
-└── Paragraph scope=1:1..1:9 children=1
-    └── Text scope=1:1..1:9 literal="x ::::a y" children=0
+Document id=1:0 scope=1:1..1:9 children=1
+└── Paragraph id=2:0 scope=1:1..1:9 children=1
+    └── Text id=2:1 scope=1:1..1:9 literal="x ::::a y" children=0
 ````````````````````````````````
 
 A colon run with no space before it is text as well.
@@ -581,9 +581,9 @@ A colon run with no space before it is text as well.
 ```````````````````````````````` example
 x:::a
 .
-Document scope=1:1..1:5 children=1
-└── Paragraph scope=1:1..1:5 children=1
-    └── Text scope=1:1..1:5 literal="x:::a" children=0
+Document id=1:0 scope=1:1..1:5 children=1
+└── Paragraph id=2:0 scope=1:1..1:5 children=1
+    └── Text id=2:1 scope=1:1..1:5 literal="x:::a" children=0
 ````````````````````````````````
 
 A quoted value must be separated from whatever follows it by whitespace or the
@@ -593,10 +593,10 @@ and swallow the rest of the paragraph.
 ```````````````````````````````` example
 :n{a="x"b=1}
 .
-Document scope=1:1..1:12 children=1
-└── Paragraph scope=1:1..1:12 children=2
-    ├── Directive scope=1:1..1:2 name="n" attributes=null children=0
-    └── Text scope=1:3..1:12 literal="{a=\"x\"b=1}" children=0
+Document id=1:0 scope=1:1..1:12 children=1
+└── Paragraph id=2:0 scope=1:1..1:12 children=2
+    ├── Directive id=2:1 scope=1:1..1:2 name="n" attributes=null children=0
+    └── Text id=2:2 scope=1:3..1:12 literal="{a=\"x\"b=1}" children=0
 ````````````````````````````````
 
 An attribute name may not begin with punctuation, so a leading colon makes
@@ -606,10 +606,10 @@ from the second character on, which is why `{a:b}` is a name.
 ```````````````````````````````` example
 :x{:_a}
 .
-Document scope=1:1..1:7 children=1
-└── Paragraph scope=1:1..1:7 children=2
-    ├── Directive scope=1:1..1:2 name="x" attributes=null children=0
-    └── Text scope=1:3..1:7 literal="{:_a}" children=0
+Document id=1:0 scope=1:1..1:7 children=1
+└── Paragraph id=2:0 scope=1:1..1:7 children=2
+    ├── Directive id=2:1 scope=1:1..1:2 name="x" attributes=null children=0
+    └── Text id=2:2 scope=1:3..1:7 literal="{:_a}" children=0
 ````````````````````````````````
 
 A symbol is punctuation for this rule too.
@@ -617,10 +617,10 @@ A symbol is punctuation for this rule too.
 ```````````````````````````````` example
 :x{a$b}
 .
-Document scope=1:1..1:7 children=1
-└── Paragraph scope=1:1..1:7 children=2
-    ├── Directive scope=1:1..1:2 name="x" attributes=null children=0
-    └── Text scope=1:3..1:7 literal="{a$b}" children=0
+Document id=1:0 scope=1:1..1:7 children=1
+└── Paragraph id=2:0 scope=1:1..1:7 children=2
+    ├── Directive id=2:1 scope=1:1..1:2 name="x" attributes=null children=0
+    └── Text id=2:2 scope=1:3..1:7 literal="{a$b}" children=0
 ````````````````````````````````
 
 Letters outside ASCII are names, not punctuation; the grammar is applied to
@@ -629,9 +629,9 @@ code points rather than bytes.
 ```````````````````````````````` example
 :x{中文=1}
 .
-Document scope=1:1..1:12 children=1
-└── Paragraph scope=1:1..1:12 children=1
-    └── Directive scope=1:1..1:12 name="x" attributes=[中文="1"] children=0
+Document id=1:0 scope=1:1..1:12 children=1
+└── Paragraph id=2:0 scope=1:1..1:12 children=1
+    └── Directive id=2:1 scope=1:1..1:12 name="x" attributes=[中文="1"] children=0
 ````````````````````````````````
 
 `:` and `.` inside a name are ordinary name characters.
@@ -639,9 +639,9 @@ Document scope=1:1..1:12 children=1
 ```````````````````````````````` example
 :x{a:b .c}
 .
-Document scope=1:1..1:10 children=1
-└── Paragraph scope=1:1..1:10 children=1
-    └── Directive scope=1:1..1:10 name="x" attributes=[a:b="" class="c"] children=0
+Document id=1:0 scope=1:1..1:10 children=1
+└── Paragraph id=2:0 scope=1:1..1:10 children=1
+    └── Directive id=2:1 scope=1:1..1:10 name="x" attributes=[a:b="" class="c"] children=0
 ````````````````````````````````
 
 A name may begin with a hyphen or an underscore, unlike a DIRECTIVE name, which
@@ -650,9 +650,9 @@ may not. Every other punctuation mark still ends the block.
 ```````````````````````````````` example
 :n{-a=1 _b=2}
 .
-Document scope=1:1..1:13 children=1
-└── Paragraph scope=1:1..1:13 children=1
-    └── Directive scope=1:1..1:13 name="n" attributes=[-a="1" _b="2"] children=0
+Document id=1:0 scope=1:1..1:13 children=1
+└── Paragraph id=2:0 scope=1:1..1:13 children=1
+    └── Directive id=2:1 scope=1:1..1:13 name="n" attributes=[-a="1" _b="2"] children=0
 ````````````````````````````````
 
 A shorthand value is not a name. It ends at the next marker, at the block's end
@@ -663,18 +663,18 @@ else is a value character, so a class may contain an ampersand.
 ```````````````````````````````` example
 :n{.a&b .c$d}
 .
-Document scope=1:1..1:13 children=1
-└── Paragraph scope=1:1..1:13 children=1
-    └── Directive scope=1:1..1:13 name="n" attributes=[class="a&b c$d"] children=0
+Document id=1:0 scope=1:1..1:13 children=1
+└── Paragraph id=2:0 scope=1:1..1:13 children=1
+    └── Directive id=2:1 scope=1:1..1:13 name="n" attributes=[class="a&b c$d"] children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 :n{.a=b}
 .
-Document scope=1:1..1:8 children=1
-└── Paragraph scope=1:1..1:8 children=2
-    ├── Directive scope=1:1..1:2 name="n" attributes=null children=0
-    └── Text scope=1:3..1:8 literal="{.a=b}" children=0
+Document id=1:0 scope=1:1..1:8 children=1
+└── Paragraph id=2:0 scope=1:1..1:8 children=2
+    ├── Directive id=2:1 scope=1:1..1:2 name="n" attributes=null children=0
+    └── Text id=2:2 scope=1:3..1:8 literal="{.a=b}" children=0
 ````````````````````````````````
 
 The two quotes are the same rule, but they never reach it: the raw scan of the
@@ -686,10 +686,10 @@ that deleted the whole reject set and survived is what said so.
 ```````````````````````````````` example
 :n{.a`b}
 .
-Document scope=1:1..1:8 children=1
-└── Paragraph scope=1:1..1:8 children=2
-    ├── Directive scope=1:1..1:2 name="n" attributes=null children=0
-    └── Text scope=1:3..1:8 literal="{.a`b}" children=0
+Document id=1:0 scope=1:1..1:8 children=1
+└── Paragraph id=2:0 scope=1:1..1:8 children=2
+    ├── Directive id=2:1 scope=1:1..1:2 name="n" attributes=null children=0
+    └── Text id=2:2 scope=1:3..1:8 literal="{.a`b}" children=0
 ````````````````````````````````
 
 Character references are decoded in an attribute's value, and in a shorthand's
@@ -699,9 +699,9 @@ value, and nowhere else in the attribute block: a name is taken as written
 ```````````````````````````````` example
 :n{a=&amp; b="&amp; &#65; &#x41;" .&amp; c=&notreal;}
 .
-Document scope=1:1..1:53 children=1
-└── Paragraph scope=1:1..1:53 children=1
-    └── Directive scope=1:1..1:53 name="n" attributes=[a="&" b="& A A" c="&notreal;" class="&"] children=0
+Document id=1:0 scope=1:1..1:53 children=1
+└── Paragraph id=2:0 scope=1:1..1:53 children=1
+    └── Directive id=2:1 scope=1:1..1:53 name="n" attributes=[a="&" b="& A A" c="&notreal;" class="&"] children=0
 ````````````````````````````````
 
 The decoding happens after the block has been scanned, never during it, so a
@@ -711,9 +711,9 @@ one attribute stops and the next begins.
 ```````````````````````````````` example
 :n{a=x&#125;y b=p&#32;q}
 .
-Document scope=1:1..1:24 children=1
-└── Paragraph scope=1:1..1:24 children=1
-    └── Directive scope=1:1..1:24 name="n" attributes=[a="x}y" b="p q"] children=0
+Document id=1:0 scope=1:1..1:24 children=1
+└── Paragraph id=2:0 scope=1:1..1:24 children=1
+    └── Directive id=2:1 scope=1:1..1:24 name="n" attributes=[a="x}y" b="p q"] children=0
 ````````````````````````````````
 
 A reference in a NAME is not decoded, so `&` is what the name starts with, and
@@ -723,10 +723,10 @@ the ordinary inline rules do decode it.
 ```````````````````````````````` example
 :n{&#97;=v}
 .
-Document scope=1:1..1:11 children=1
-└── Paragraph scope=1:1..1:11 children=2
-    ├── Directive scope=1:1..1:2 name="n" attributes=null children=0
-    └── Text scope=1:3..1:11 literal="{a=v}" children=0
+Document id=1:0 scope=1:1..1:11 children=1
+└── Paragraph id=2:0 scope=1:1..1:11 children=2
+    ├── Directive id=2:1 scope=1:1..1:2 name="n" attributes=null children=0
+    └── Text id=2:2 scope=1:3..1:11 literal="{a=v}" children=0
 ````````````````````````````````
 
 **This engine requires the semicolon**, as CommonMark does and as it does at
@@ -738,9 +738,9 @@ specs/mdast-parity/deltas.json and measured there.
 ```````````````````````````````` example
 :n{a=&amp b=&#65}
 .
-Document scope=1:1..1:17 children=1
-└── Paragraph scope=1:1..1:17 children=1
-    └── Directive scope=1:1..1:17 name="n" attributes=[a="&amp" b="&#65"] children=0
+Document id=1:0 scope=1:1..1:17 children=1
+└── Paragraph id=2:0 scope=1:1..1:17 children=1
+    └── Directive id=2:1 scope=1:1..1:17 name="n" attributes=[a="&amp" b="&#65"] children=0
 ````````````````````````````````
 
 A leaf directive is a single line: the next line starts new content rather than
@@ -750,12 +750,12 @@ continuing it, unlike a container, which runs until its fence.
 ::leaf[L]{a=b}
 after
 .
-Document scope=1:1..2:5 children=2
-├── DirectiveBlock scope=1:1..1:14 name="leaf" attributes=[a="b"] children=1
-│   └── DirectiveLabel scope=1:7..1:9 children=1
-│       └── Text scope=1:8..1:8 literal="L" children=0
-└── Paragraph scope=2:1..2:5 children=1
-    └── Text scope=2:1..2:5 literal="after" children=0
+Document id=1:0 scope=1:1..2:5 children=2
+├── DirectiveBlock id=2:0 scope=1:1..1:14 name="leaf" attributes=[a="b"] children=1
+│   └── DirectiveLabel id=2:1 scope=1:7..1:9 children=1
+│       └── Text id=2:2 scope=1:8..1:8 literal="L" children=0
+└── Paragraph id=3:0 scope=2:1..2:5 children=1
+    └── Text id=3:1 scope=2:1..2:5 literal="after" children=0
 ````````````````````````````````
 
 An `=` promises a value. With none before the block ends, the whole attribute
@@ -765,10 +765,10 @@ indistinguishable from the valueless `{a}`, which means something else.
 ```````````````````````````````` example
 :x{a=}t
 .
-Document scope=1:1..1:7 children=1
-└── Paragraph scope=1:1..1:7 children=2
-    ├── Directive scope=1:1..1:2 name="x" attributes=null children=0
-    └── Text scope=1:3..1:7 literal="{a=}t" children=0
+Document id=1:0 scope=1:1..1:7 children=1
+└── Paragraph id=2:0 scope=1:1..1:7 children=2
+    ├── Directive id=2:1 scope=1:1..1:2 name="x" attributes=null children=0
+    └── Text id=2:2 scope=1:3..1:7 literal="{a=}t" children=0
 ````````````````````````````````
 
 The same when only whitespace separates the `=` from the closer, and when the
@@ -777,22 +777,22 @@ block spans a line ending.
 ```````````````````````````````` example
 :x{a= }t
 .
-Document scope=1:1..1:8 children=1
-└── Paragraph scope=1:1..1:8 children=2
-    ├── Directive scope=1:1..1:2 name="x" attributes=null children=0
-    └── Text scope=1:3..1:8 literal="{a= }t" children=0
+Document id=1:0 scope=1:1..1:8 children=1
+└── Paragraph id=2:0 scope=1:1..1:8 children=2
+    ├── Directive id=2:1 scope=1:1..1:2 name="x" attributes=null children=0
+    └── Text id=2:2 scope=1:3..1:8 literal="{a= }t" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 :x{a=
 }t
 .
-Document scope=1:1..2:2 children=1
-└── Paragraph scope=1:1..2:2 children=4
-    ├── Directive scope=1:1..1:2 name="x" attributes=null children=0
-    ├── Text scope=1:3..1:5 literal="{a=" children=0
-    ├── SoftBreak scope=1:6..1:6 children=0
-    └── Text scope=2:1..2:2 literal="}t" children=0
+Document id=1:0 scope=1:1..2:2 children=1
+└── Paragraph id=2:0 scope=1:1..2:2 children=4
+    ├── Directive id=2:1 scope=1:1..1:2 name="x" attributes=null children=0
+    ├── Text id=2:2 scope=1:3..1:5 literal="{a=" children=0
+    ├── SoftBreak id=2:3 scope=1:6..1:6 children=0
+    └── Text id=2:4 scope=2:1..2:2 literal="}t" children=0
 ````````````````````````````````
 
 An unquoted value may not contain `<`, `>`, `=`, or a backtick. Reaching one
@@ -801,37 +801,37 @@ does not end the value, it makes the block malformed.
 ```````````````````````````````` example
 :x{a=b<c}t
 .
-Document scope=1:1..1:10 children=1
-└── Paragraph scope=1:1..1:10 children=2
-    ├── Directive scope=1:1..1:2 name="x" attributes=null children=0
-    └── Text scope=1:3..1:10 literal="{a=b<c}t" children=0
+Document id=1:0 scope=1:1..1:10 children=1
+└── Paragraph id=2:0 scope=1:1..1:10 children=2
+    ├── Directive id=2:1 scope=1:1..1:2 name="x" attributes=null children=0
+    └── Text id=2:2 scope=1:3..1:10 literal="{a=b<c}t" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 :x{a=b>c}t
 .
-Document scope=1:1..1:10 children=1
-└── Paragraph scope=1:1..1:10 children=2
-    ├── Directive scope=1:1..1:2 name="x" attributes=null children=0
-    └── Text scope=1:3..1:10 literal="{a=b>c}t" children=0
+Document id=1:0 scope=1:1..1:10 children=1
+└── Paragraph id=2:0 scope=1:1..1:10 children=2
+    ├── Directive id=2:1 scope=1:1..1:2 name="x" attributes=null children=0
+    └── Text id=2:2 scope=1:3..1:10 literal="{a=b>c}t" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 :x{a=b=c}t
 .
-Document scope=1:1..1:10 children=1
-└── Paragraph scope=1:1..1:10 children=2
-    ├── Directive scope=1:1..1:2 name="x" attributes=null children=0
-    └── Text scope=1:3..1:10 literal="{a=b=c}t" children=0
+Document id=1:0 scope=1:1..1:10 children=1
+└── Paragraph id=2:0 scope=1:1..1:10 children=2
+    ├── Directive id=2:1 scope=1:1..1:2 name="x" attributes=null children=0
+    └── Text id=2:2 scope=1:3..1:10 literal="{a=b=c}t" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 :x{a=b`c}t
 .
-Document scope=1:1..1:10 children=1
-└── Paragraph scope=1:1..1:10 children=2
-    ├── Directive scope=1:1..1:2 name="x" attributes=null children=0
-    └── Text scope=1:3..1:10 literal="{a=b`c}t" children=0
+Document id=1:0 scope=1:1..1:10 children=1
+└── Paragraph id=2:0 scope=1:1..1:10 children=2
+    ├── Directive id=2:1 scope=1:1..1:2 name="x" attributes=null children=0
+    └── Text id=2:2 scope=1:3..1:10 literal="{a=b`c}t" children=0
 ````````````````````````````````
 
 A brace is not in that set: it is an ordinary character inside an unquoted
@@ -840,19 +840,19 @@ value, and a space ends the value and starts the next attribute's name.
 ```````````````````````````````` example
 :x{a=b{c}t
 .
-Document scope=1:1..1:10 children=1
-└── Paragraph scope=1:1..1:10 children=2
-    ├── Directive scope=1:1..1:9 name="x" attributes=[a="b{c"] children=0
-    └── Text scope=1:10..1:10 literal="t" children=0
+Document id=1:0 scope=1:1..1:10 children=1
+└── Paragraph id=2:0 scope=1:1..1:10 children=2
+    ├── Directive id=2:1 scope=1:1..1:9 name="x" attributes=[a="b{c"] children=0
+    └── Text id=2:2 scope=1:10..1:10 literal="t" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 :x{a=b c}t
 .
-Document scope=1:1..1:10 children=1
-└── Paragraph scope=1:1..1:10 children=2
-    ├── Directive scope=1:1..1:9 name="x" attributes=[a="b" c=""] children=0
-    └── Text scope=1:10..1:10 literal="t" children=0
+Document id=1:0 scope=1:1..1:10 children=1
+└── Paragraph id=2:0 scope=1:1..1:10 children=2
+    ├── Directive id=2:1 scope=1:1..1:9 name="x" attributes=[a="b" c=""] children=0
+    └── Text id=2:2 scope=1:10..1:10 literal="t" children=0
 ````````````````````````````````
 
 An unquoted value may span a line ending before it starts; the value itself is
@@ -862,10 +862,10 @@ what may not.
 :x{a=
 b}t
 .
-Document scope=1:1..2:3 children=1
-└── Paragraph scope=1:1..2:3 children=2
-    ├── Directive scope=1:1..2:2 name="x" attributes=[a="b"] children=0
-    └── Text scope=2:3..2:3 literal="t" children=0
+Document id=1:0 scope=1:1..2:3 children=1
+└── Paragraph id=2:0 scope=1:1..2:3 children=2
+    ├── Directive id=2:1 scope=1:1..2:2 name="x" attributes=[a="b"] children=0
+    └── Text id=2:2 scope=2:3..2:3 literal="t" children=0
 ````````````````````````````````
 
 D21's own pins, which the oracle has not got: a closing fence closes the
@@ -875,11 +875,11 @@ because the oracle's ordering is otherwise adopted whole.
 ```````````````````````````````` example
 a}*.foo.*
 .
-Document scope=1:1..1:9 children=1
-└── Paragraph scope=1:1..1:9 children=2
-    ├── Text scope=1:1..1:2 literal="a}" children=0
-    └── Emphasis scope=1:3..1:9 children=1
-        └── Text scope=1:4..1:8 literal=".foo." children=0
+Document id=1:0 scope=1:1..1:9 children=1
+└── Paragraph id=2:0 scope=1:1..1:9 children=2
+    ├── Text id=2:1 scope=1:1..1:2 literal="a}" children=0
+    └── Emphasis id=2:2 scope=1:3..1:9 children=1
+        └── Text id=2:3 scope=1:4..1:8 literal=".foo." children=0
 ````````````````````````````````
 
 A closing fence closes the container and every block still open inside it, and
@@ -894,12 +894,12 @@ body
 :::
 after
 .
-Document scope=1:1..4:5 children=2
-├── DirectiveBlock scope=1:1..3:3 name="note" attributes=null children=1
-│   └── Paragraph scope=2:1..2:4 children=1
-│       └── Text scope=2:1..2:4 literal="body" children=0
-└── Paragraph scope=4:1..4:5 children=1
-    └── Text scope=4:1..4:5 literal="after" children=0
+Document id=1:0 scope=1:1..4:5 children=2
+├── DirectiveBlock id=2:0 scope=1:1..3:3 name="note" attributes=null children=1
+│   └── Paragraph id=3:0 scope=2:1..2:4 children=1
+│       └── Text id=3:1 scope=2:1..2:4 literal="body" children=0
+└── Paragraph id=4:0 scope=4:1..4:5 children=1
+    └── Text id=4:1 scope=4:1..4:5 literal="after" children=0
 ````````````````````````````````
 
 The same, inside a block quote, where the misattribution moved content into the
@@ -911,13 +911,13 @@ quote as well.
 > :::
 > after
 .
-Document scope=1:1..4:7 children=1
-└── BlockQuote scope=1:1..4:7 children=2
-    ├── DirectiveBlock scope=1:3..3:5 name="note" attributes=null children=1
-    │   └── Paragraph scope=2:3..2:6 children=1
-    │       └── Text scope=2:3..2:6 literal="body" children=0
-    └── Paragraph scope=4:3..4:7 children=1
-        └── Text scope=4:3..4:7 literal="after" children=0
+Document id=1:0 scope=1:1..4:7 children=1
+└── BlockQuote id=2:0 scope=1:1..4:7 children=2
+    ├── DirectiveBlock id=3:0 scope=1:3..3:5 name="note" attributes=null children=1
+    │   └── Paragraph id=4:0 scope=2:3..2:6 children=1
+    │       └── Text id=4:1 scope=2:3..2:6 literal="body" children=0
+    └── Paragraph id=5:0 scope=4:3..4:7 children=1
+        └── Text id=5:1 scope=4:3..4:7 literal="after" children=0
 ````````````````````````````````
 
 THE BLOCK FORM OF A DIRECTIVE HAS NO PARTIAL FALLBACK. The inline form keeps
@@ -932,11 +932,11 @@ are what exercise it — `scripts/audit-diagnostics.mjs` pins both.
 
 ::note{a=b} trailing
 .
-Document scope=1:1..3:20 children=2
-├── Paragraph scope=1:1..1:14 children=1
-│   └── Text scope=1:1..1:14 literal="::note{=value}" children=0
-└── Paragraph scope=3:1..3:20 children=1
-    └── Text scope=3:1..3:20 literal="::note{a=b} trailing" children=0
+Document id=1:0 scope=1:1..3:20 children=2
+├── Paragraph id=2:0 scope=1:1..1:14 children=1
+│   └── Text id=2:1 scope=1:1..1:14 literal="::note{=value}" children=0
+└── Paragraph id=3:0 scope=3:1..3:20 children=1
+    └── Text id=3:1 scope=3:1..3:20 literal="::note{a=b} trailing" children=0
 ````````````````````````````````
 
 A DIAGNOSTIC'S EXCERPT IS CUT AT A CODE-POINT BOUNDARY. A message quotes at
@@ -950,8 +950,8 @@ binding republishes the same view.
 ```````````````````````````````` example
 :nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnéz[unclosed
 .
-Document scope=1:1..1:52 children=1
-└── Paragraph scope=1:1..1:52 children=2
-    ├── Directive scope=1:1..1:43 name="nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnéz" attributes=null children=0
-    └── Text scope=1:44..1:52 literal="[unclosed" children=0
+Document id=1:0 scope=1:1..1:52 children=1
+└── Paragraph id=2:0 scope=1:1..1:52 children=2
+    ├── Directive id=2:1 scope=1:1..1:43 name="nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnéz" attributes=null children=0
+    └── Text id=2:2 scope=1:44..1:52 literal="[unclosed" children=0
 ````````````````````````````````

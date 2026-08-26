@@ -7,14 +7,23 @@
 extern "C" {
 #endif
 
-/* An entry is a normalized LABEL and nothing else. It used to carry a `size`,
- * which was the number of bytes resolving against it copied into a node -- the
- * quantity D9's expansion budget charged. A reference that names its definition
- * copies nothing, so there is nothing to charge and no field to carry it. */
+/* An entry is a normalized LABEL and the IDENTITY of the definition block that
+ * registered it. It used to carry a `size`, which was the number of bytes
+ * resolving against it copied into a node -- the quantity D9's expansion budget
+ * charged. A reference that names its definition copies nothing, so there is
+ * nothing to charge and no field to carry it.
+ *
+ * `definition` is the registering definition's block identity (docs/STREAMING.md
+ * D4) -- a value, never a node: a map that owned a node is how a definition
+ * nested inside another came to be freed while the tree still pointed at it
+ * (D11). Both preparation paths below fold duplicates to the OLDEST entry, so
+ * the entry a lookup answers with carries the FIRST-IN-DOCUMENT-ORDER winner's
+ * identity, which is the tiebreak the model specifies. */
 struct markdown_core_map_entry {
     struct markdown_core_map_entry *next;
     unsigned char *label;
     size_t age;
+    uint32_t definition;
 };
 
 typedef struct markdown_core_map_entry markdown_core_map_entry;

@@ -505,6 +505,52 @@ MARKDOWN_CORE_API bool markdown_core_node_reference_form(
     markdown_core_reference_form *form
 );
 
+/** A NODE'S IDENTITY (docs/STREAMING.md §4 D4): the name a consumer tracks an
+ * element by across a stream's feeds. `block` is the owning block's
+ * document-unique mint; `ordinal` is the node's pre-order ordinal among that
+ * block's inline descendants, and 0 for the block itself. The pair is unique
+ * within one document and never reused within a parse; it is NOT stable across
+ * documents or across two parses of different byte streams. The block is the
+ * minimal update unit, so `block` alone names the region an incremental
+ * consumer re-renders. */
+typedef struct markdown_core_identity {
+    uint32_t block;
+    uint32_t ordinal;
+} markdown_core_identity;
+
+/** The identity field a node carries, in the scope it is minted in.
+ *
+ * A node's full identity is a PAIR the tree's shape composes and a lone node
+ * cannot: an inline handed out of a shared child list has no parent link to
+ * climb. So this accessor reports the node's OWN field -- `*identifier` -- and
+ * says which scope it lives in: `*block` true means the node is block-class
+ * and the value is its document-unique mint (its identity is `(identifier,
+ * 0)`, and it opens the namespace its inline descendants are numbered in);
+ * false means the node is inline-class and the value is its ordinal, so its
+ * identity is `(owning block's identifier, identifier)` for the nearest
+ * block-class ancestor the caller's own walk passed through. Answers for every
+ * kind; refuses only NULL arguments. */
+MARKDOWN_CORE_API bool markdown_core_node_identifier(
+    const markdown_core_node *node,
+    uint32_t *identifier,
+    bool *block
+);
+
+/** THE DEFINITION EDGE (docs/STREAMING.md §4 D4): the identity of the
+ * definition a reference resolved to. Answers for `LinkReference`,
+ * `ImageReference` and `FootnoteReference`, and refuses every other kind.
+ *
+ * `*definition` is the winning definition BLOCK's mint -- its full identity is
+ * the pair `(definition, 0)` -- and the winner for a repeated label is the
+ * definition that opens first in document order, while every later definition
+ * of the same label stays in the tree where it was written. The field never
+ * means "unresolved": a well-formed reference that resolves to nothing is
+ * prose, so a reference node exists only because resolution succeeded. */
+MARKDOWN_CORE_API bool markdown_core_node_reference_definition(
+    const markdown_core_node *node,
+    uint32_t *definition
+);
+
 /** Allocates the canonical file-tree dump. Free it with markdown_core_dump_free. */
 MARKDOWN_CORE_API bool markdown_core_document_dump(
     const markdown_core_document *document,
@@ -513,6 +559,55 @@ MARKDOWN_CORE_API bool markdown_core_document_dump(
     markdown_core_error **error
 );
 MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
+
+/** THE WIRE: the document's two total views serialized into ONE buffer, so a
+ * binding whose boundary is expensive to cross -- JNI, WebAssembly -- crosses
+ * it once per read instead of once per field. The dump above is the canonical
+ * TEXT of a document; this is its canonical BYTES, and the two change together
+ * or not at all.
+ *
+ * Layout, little-endian throughout, no padding. A `string` is an i32 byte
+ * length followed by that many UTF-8 bytes, or length -1 for an absent
+ * optional string -- `null` and `""` stay two answers on the wire (requirement
+ * 14). A `node` is:
+ *
+ *   u8 kind (the markdown_core_node_kind ordinal)
+ *   u32 identity.block, u32 identity.ordinal
+ *   i32 x4 scope (start line, start column, end line, end column)
+ *   kind-specific fields, then children where the kind has them:
+ *     Heading: i32 level
+ *     List: i32 flavor, i64 start, u8 start-present, u8 tight
+ *     ListItem: u8 checked (0, 1, or 255 for null)
+ *     CodeBlock: string? info, string? language, string literal, u8 fenced,
+ *       u8 closed
+ *     HTMLBlock, Text, Code, HTML: string literal
+ *     Formula: i32 mode, string literal;  FormulaBlock: string literal
+ *     Table: i32 column count, u8 alignment each, children
+ *     Directive, DirectiveBlock: string name, u8 has-attributes, i32 count,
+ *       (string name, string value) each, children
+ *     FootnoteDefinition: string label, string identifier, children
+ *     ReferenceDefinition: string label, string identifier,
+ *       string destination, string? title
+ *     FootnoteReference: string label, u32 x2 definition identity
+ *     LinkReference, ImageReference: string label, i32 form,
+ *       u32 x2 definition identity, children
+ *     Link, Image: string destination/source, string? title, children
+ *     TableRow: u8 is-header, children
+ *   children: i32 count, then each child node
+ *
+ * The root node is followed by the concrete view: i32 source length, its
+ * bytes, i32 line count, u32 offset per line. Free the buffer with
+ * `markdown_core_wire_free`. The layout changes only with the version this
+ * library ships, which is why the buffer carries no version of its own --
+ * a transport that can skew (a prebuilt native library beside newer binding
+ * code) wraps this payload in its own versioned envelope. */
+MARKDOWN_CORE_API bool markdown_core_document_wire(
+    const markdown_core_document *document,
+    uint8_t **output,
+    size_t *length,
+    markdown_core_error **error
+);
+MARKDOWN_CORE_API void markdown_core_wire_free(uint8_t *output);
 
 #ifdef __cplusplus
 }

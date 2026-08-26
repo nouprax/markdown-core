@@ -102,7 +102,9 @@ static char *fb_strdup(const char *text) {
  * bytes it resolved to; Step 9b.2 took the destination off the entry, and the
  * property being checked was never about the destination anyway. `age` states
  * first-definition-wins directly: the duplicate label must answer with the
- * FIRST of the three, not merely with one whose url happens to match.
+ * FIRST of the three, not merely with one whose url happens to match -- and
+ * the entry's `definition` identity must be the one that FIRST registration
+ * carried, because that value is what every resolving reference records (D4).
  * `expected < 0` means the label must not resolve at all. */
 static int fb_expect_entry(markdown_core_map *map, const char *label, long expected, const char *context) {
     markdown_core_chunk chunk = fb_chunk(label);
@@ -129,12 +131,24 @@ static int fb_expect_entry(markdown_core_map *map, const char *label, long expec
         );
         return -1;
     }
+    /* The registering identity rides beside the age: populate stamps age+1. */
+    if (entry->definition != (uint32_t)(expected + 1)) {
+        fprintf(
+            stderr,
+            "%s: label '%s' carries definition %lu, expected %ld\n",
+            context,
+            label,
+            (unsigned long)entry->definition,
+            expected + 1
+        );
+        return -1;
+    }
     return 0;
 }
 
-static void fb_create_reference(markdown_core_map *map, const char *label) {
+static void fb_create_reference(markdown_core_map *map, const char *label, uint32_t definition) {
     markdown_core_chunk label_chunk = fb_chunk(label);
-    markdown_core_reference_create(map, &label_chunk);
+    markdown_core_reference_create(map, &label_chunk, definition);
 }
 
 enum { FB_UNIQUE_REFERENCES = 40 };
@@ -144,11 +158,13 @@ static void fb_populate_reference_map(markdown_core_map *map) {
     int i;
     for (i = 0; i < FB_UNIQUE_REFERENCES; i++) {
         snprintf(label, sizeof(label), "ref%d", i);
-        fb_create_reference(map, label);
+        fb_create_reference(map, label, (uint32_t)(i + 1));
     }
-    fb_create_reference(map, "dup");
-    fb_create_reference(map, "dup");
-    fb_create_reference(map, "dup");
+    /* Three registrations, three distinct identities: the lookup must answer
+     * with the FIRST one's, whichever preparation path folded the duplicates. */
+    fb_create_reference(map, "dup", (uint32_t)(FB_UNIQUE_REFERENCES + 1));
+    fb_create_reference(map, "dup", (uint32_t)(FB_UNIQUE_REFERENCES + 2));
+    fb_create_reference(map, "dup", (uint32_t)(FB_UNIQUE_REFERENCES + 3));
 }
 
 static int fb_check_reference_map(markdown_core_map *map, const char *context) {
@@ -266,7 +282,7 @@ static int case_constructor_oom(void) {
         return -1;
     }
 
-    fb_create_reference(NULL, "ref");
+    fb_create_reference(NULL, "ref", 1);
     if (markdown_core_map_lookup(NULL, &label) != NULL) {
         fputs("NULL map lookup unexpectedly resolved\n", stderr);
         return -1;
@@ -753,11 +769,16 @@ static int fb_node_payload_equal(markdown_core_node *a, markdown_core_node *b) {
                fb_chunk_equal(&a->as.definition->url, &b->as.definition->url) &&
                fb_optional_chunk_equal(&a->as.definition->title, &b->as.definition->title);
     }
-    if (type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION || type == MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE) {
+    if (type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION) {
         return fb_association_equal(&a->as.association, &b->as.association);
+    }
+    if (type == MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE) {
+        return a->as.footnote_reference.definition == b->as.footnote_reference.definition &&
+               fb_association_equal(&a->as.footnote_reference.association, &b->as.footnote_reference.association);
     }
     if (type == MARKDOWN_CORE_NODE_LINK_REFERENCE || type == MARKDOWN_CORE_NODE_IMAGE_REFERENCE) {
         return a->as.reference.form == b->as.reference.form &&
+               a->as.reference.definition == b->as.reference.definition &&
                fb_association_equal(&a->as.reference.association, &b->as.reference.association);
     }
     return 1;
@@ -1056,10 +1077,12 @@ static int case_definition_after_lookup(void) {
     markdown_core_chunk label;
     int result = -1;
 
-    /* Ages 0..2: "a", then two definitions of "dup". */
-    fb_create_reference(map, "a");
-    fb_create_reference(map, "dup");
-    fb_create_reference(map, "dup");
+    /* Ages 0..2: "a", then two definitions of "dup". Each registration stamps
+     * age+1 as its identity so fb_expect_entry can watch first-wins hold for
+     * the definition value too. */
+    fb_create_reference(map, "a", 1);
+    fb_create_reference(map, "dup", 2);
+    fb_create_reference(map, "dup", 3);
 
     if (fb_expect_entry(map, "a", 0, "first lookup") != 0) {
         goto done;
@@ -1070,8 +1093,8 @@ static int case_definition_after_lookup(void) {
     }
 
     /* Ages 3..4, inserted after the map was prepared. */
-    fb_create_reference(map, "late");
-    fb_create_reference(map, "dup");
+    fb_create_reference(map, "late", 4);
+    fb_create_reference(map, "dup", 5);
     if (map->prepared) {
         fputs("an insert after a lookup must reopen preparation\n", stderr);
         goto done;
@@ -1085,7 +1108,7 @@ static int case_definition_after_lookup(void) {
     }
 
     /* Age 5, and the rebuild it forces is sent down the pointer-sort path. */
-    fb_create_reference(map, "later");
+    fb_create_reference(map, "later", 6);
     fb_block_slot_tables = 1;
     if (fb_expect_entry(map, "later", 5, "sorted re-preparation") != 0) {
         goto done;
@@ -1100,7 +1123,7 @@ static int case_definition_after_lookup(void) {
     fb_block_slot_tables = 0;
 
     /* Age 6, and the rebuild goes back to the hash path. */
-    fb_create_reference(map, "last");
+    fb_create_reference(map, "last", 7);
     if (fb_expect_entry(map, "last", 6, "hash re-preparation") != 0) {
         goto done;
     }
@@ -1114,14 +1137,14 @@ static int case_definition_after_lookup(void) {
 
     /* The footnote set is the same map and is owed the same behaviour. */
     label = fb_chunk("fn");
-    markdown_core_footnote_definition_create(footnotes, &label);
+    markdown_core_footnote_definition_create(footnotes, &label, 1);
     label = fb_chunk("fn");
     if (markdown_core_map_lookup(footnotes, &label) == NULL) {
         fputs("footnote label did not resolve\n", stderr);
         goto done;
     }
     label = fb_chunk("fn2");
-    markdown_core_footnote_definition_create(footnotes, &label);
+    markdown_core_footnote_definition_create(footnotes, &label, 2);
     if (fb_expect_entry(footnotes, "fn2", 1, "footnote definition after lookup") != 0) {
         goto done;
     }

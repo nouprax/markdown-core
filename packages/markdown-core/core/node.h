@@ -79,14 +79,30 @@ typedef struct {
     markdown_core_chunk identifier;
 } markdown_core_association;
 
-/* A link or image reference: Association + the form it was written in. IT HOLDS
- * NO DESTINATION -- the destination is stated once, at the definition, which is
- * what D9's budget existed to bound and what deleting the copy removes the
- * reason for. */
+/* A link or image reference: Association + the form it was written in + THE
+ * DEFINITION IT RESOLVED TO. IT HOLDS NO DESTINATION -- the destination is
+ * stated once, at the definition, which is what D9's budget existed to bound
+ * and what deleting the copy removes the reason for.
+ *
+ * `definition` is the winning definition BLOCK's identity (its full identity
+ * is the pair (definition, 0)); a reference node exists only because a lookup
+ * succeeded, so the field is never "unresolved". It is a VALUE and never a
+ * pointer: a map that owned a node is how a definition came to be freed while
+ * the tree still pointed at it (D11), and an identity survives the definition
+ * node it names. */
 typedef struct {
     markdown_core_association association;
     markdown_core_reference_form form;
+    uint32_t definition;
 } markdown_core_reference_link;
+
+/* A footnote call: Association + the definition it resolved to, exactly as a
+ * link reference names its own. No form -- there is one footnote call syntax
+ * (Q3), so a form field would hold one value. */
+typedef struct {
+    markdown_core_association association;
+    uint32_t definition;
+} markdown_core_footnote_reference;
 
 /* A link reference definition is a block node at the byte where its opening
  * bracket was written, in the container it was written in, and it stays there.
@@ -227,6 +243,7 @@ struct markdown_core_node {
         markdown_core_definition *definition;
         markdown_core_association association;
         markdown_core_reference_link reference;
+        markdown_core_footnote_reference footnote_reference;
         int html_block_type;
         int cell_index; // For keeping track of TABLE_CELL table alignments
         void *opaque;

@@ -1699,30 +1699,31 @@ static bufsize_t manual_scan_link_url(markdown_core_chunk *input, bufsize_t offs
     return i - offset;
 }
 
-// Is the label between `[^` and `]` one the document defines?
+// The definition set's entry for the label between `[^` and `]`, or NULL when
+// the document defines no such label.
 //
 // The span is the same one the reference node's literal is cut from, so the
 // question is asked of exactly the bytes that would become the label. The map
 // normalizes -- fold, trim, collapse -- on both sides, which is what makes
-// `[^Foo Bar]` find `[^foo   bar]`.
-static bool S_footnote_label_is_defined(
+// `[^Foo Bar]` find `[^foo   bar]`. The ENTRY is the answer rather than a
+// bool: it carries the winning definition's identity, which the call that
+// resolves against it records (D4).
+static markdown_core_map_entry *S_footnote_definition_for(
     markdown_core_parser *parser,
     subject *subj,
     bufsize_t label_start,
     bufsize_t after_close
 ) {
     markdown_core_chunk label;
-    bool defined;
 
     if (after_close - label_start < 2) {
-        return false;
+        return NULL;
     }
     /* A borrowed slice of the block's own content: `markdown_core_chunk_dup`
      * aliases, so the only allocation in here is the map's own normalization,
      * and that one reports itself through the map's sticky flag. */
     label = markdown_core_chunk_dup(&subj->input, label_start + 1, after_close - label_start - 2);
-    defined = markdown_core_map_lookup(parser->footnote_defs, &label) != NULL;
-    return defined;
+    return markdown_core_map_lookup(parser->footnote_defs, &label);
 }
 
 // Return a link, an image, or a literal close bracket.
@@ -1748,6 +1749,7 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     int found_label;
     markdown_core_node *tmp, *tmpnext;
     bool is_image;
+    markdown_core_map_entry *matched_definition = NULL;
 
     advance(subj); // advance past ]
     initial_pos = subj->pos;
@@ -1854,7 +1856,7 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
             raw_label.len
         );
     }
-    if (found_label && markdown_core_map_lookup(subj->refmap, &raw_label) != NULL) {
+    if (found_label && (matched_definition = markdown_core_map_lookup(subj->refmap, &raw_label)) != NULL) {
         matched_reference = 1;
         goto match;
     }
@@ -1910,7 +1912,9 @@ noMatch:
          * who writes it and gets prose has no other way to find out. */
         bool caret_written = opener->position < subj->input.len && subj->input.data[opener->position] == '^' &&
                              (literal->len > 1 || opener->inl_text->next->next);
-        if (caret_written && S_footnote_label_is_defined(parser, subj, opener->position, initial_pos)) {
+        markdown_core_map_entry *footnote_definition =
+            caret_written ? S_footnote_definition_for(parser, subj, opener->position, initial_pos) : NULL;
+        if (footnote_definition != NULL) {
 
             // Before we got this far, the `handle_close_bracket` function may have
             // advanced the current state beyond our footnote's actual closing
@@ -1956,13 +1960,19 @@ noMatch:
                 /* The identifier KEEPS the caret the label does not carry, so a
                  * footnote and a link definition of one name cannot collide in
                  * a consumer's single map (markdown_core_association). */
-                if (!markdown_core_association_init(subj->mem, &fnref->as.association, &label, '^')) {
+                markdown_core_association *association = &fnref->as.footnote_reference.association;
+                if (!markdown_core_association_init(subj->mem, association, &label, '^')) {
                     subj->oom = 1;
                     markdown_core_node_free(fnref);
                     pop_bracket(subj);
                     subj->pos = initial_pos;
                     return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
                 }
+                /* THE EDGE (D4): the call names the definition it resolved to.
+                 * The entry's identity is the first-in-document-order winner's,
+                 * folded at map preparation, so a repeated label resolves every
+                 * call to the definition that opens first. */
+                fnref->as.footnote_reference.definition = footnote_definition->definition;
             }
 
             // The call runs from its own '[' to its ']', and the two need not be
@@ -2055,6 +2065,11 @@ match:
         }
         inl->as.reference.association = association;
         inl->as.reference.form = form;
+        /* THE EDGE (D4): the reference names the definition it resolved to --
+         * the first-in-document-order winner for its label, folded into the
+         * entry at map preparation. A reference node exists only because this
+         * lookup succeeded, so the field never means "unresolved". */
+        inl->as.reference.definition = matched_definition->definition;
         goto placed;
     }
     inl = make_simple(subj->mem, is_image ? MARKDOWN_CORE_NODE_IMAGE : MARKDOWN_CORE_NODE_LINK);
@@ -2805,9 +2820,11 @@ bufsize_t markdown_core_parse_reference_inline(
         parts->url = url;
         parts->title = title;
     }
-    // The map holds LABELS ONLY: what a reference needs from it is whether the
-    // label is defined, and the destination is stated once, at the definition.
-    markdown_core_reference_create(refmap, &lab);
+    // The map is NOT written here: an entry carries the registering definition
+    // block's identity, and the node this scan's parts become does not exist
+    // yet -- and when the harvest empties its paragraph the firstborn takes the
+    // paragraph's identity (§4 D4 fork 3). The caller registers each label
+    // after that handoff, from the node the tree keeps.
     if (subj.oom && refmap) {
         refmap->oom = 1;
     }
