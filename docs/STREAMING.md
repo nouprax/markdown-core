@@ -1907,6 +1907,20 @@ expectation the owner never had, and it dies whole:
       clang-format, a host-cc -Werror compile of the bridge); Swift by
       line-level inspection against the header — CI's macOS, iOS, browser
       and emulator jobs carry the rest.
+      **The es-node coverage ledger moved with it, and the growth is this
+      change's, recorded here** (the migration document `policy.json` names
+      is gone): the session tests are the first to march a `ParseError`
+      across the wire, so `node-decoder.ts`'s `errorCode` executes for the
+      first time and its two remaining defensive arms (`allocationFailed`,
+      the unknown-code fallthrough) newly enter V8's branch count — 19 → 21
+      with no protection eroded, the one increase the policy's rules allow.
+      `session.ts` carries one unpinned branch, the constructor's
+      allocation-failure throw: `instance.exports` is frozen, so no test can
+      make `es_session_new` answer 0 — the same character as `native.ts`'s
+      standing entry. Against those +3: `parse-error.ts`'s entry is deleted
+      (the sealed-session refusal covered it to 100%) and `parser.ts`
+      tightens to one branch, so the total unpinned surface SHRINKS — lines
+      −6, functions −2, branches −1.
 
 ### Phase F — bounds and gates  · DONE 2026-08-26
 
