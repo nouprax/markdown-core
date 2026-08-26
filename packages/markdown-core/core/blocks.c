@@ -257,12 +257,14 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
     markdown_core_llist *saved_exts = parser->syntax_extensions;
     markdown_core_llist *saved_inline_exts = parser->inline_syntax_extensions;
     int saved_options = parser->options;
+    bool saved_no_cache = parser->no_projection_cache;
     markdown_core_mem *saved_mem = parser->mem;
 
     markdown_core_parser_dispose(parser);
 
     memset(parser, 0, sizeof(markdown_core_parser));
     parser->mem = saved_mem;
+    parser->no_projection_cache = saved_no_cache;
 
     markdown_core_strbuf_init(parser->mem, &parser->curline, 256);
     markdown_core_strbuf_init(parser->mem, &parser->linebuf, 0);
@@ -1353,6 +1355,10 @@ void markdown_core_manage_extensions_special_characters(markdown_core_parser *pa
 
 static const char S_INLINES_MEMBER[] = "*inlines";
 
+/* The projection cache (T9), defined beside the clone that takes its hits. */
+static bool S_cache_fresh(markdown_core_parser *parser, const markdown_core_node *block, markdown_core_map *refmap);
+static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node);
+
 static bool S_set_names(const char *set, const char *name) {
     const char *p;
     for (p = set; *p; p += strlen(p) + 1) {
@@ -1447,7 +1453,7 @@ static bool S_tail_queue_push(markdown_core_parser *parser, markdown_core_node *
 static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **block) {
     markdown_core_llist *extensions;
     markdown_core_node *node = *block;
-    bool children_own = node->holder == NULL;
+    bool children_own = !MARKDOWN_CORE_NODE_BORROWED_P(node);
 
     if (children_own && contains_inlines(node)) {
         if (!markdown_core_consolidate_text_nodes_with_parser(parser, node)) {
@@ -1465,7 +1471,7 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
             *block = NULL;
             return;
         }
-        children_own = node->holder == NULL;
+        children_own = !MARKDOWN_CORE_NODE_BORROWED_P(node);
     }
 
     if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
@@ -1480,6 +1486,18 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
             if (!S_strip_inline_comments(node)) {
                 parser->oom = true;
             }
+        }
+    }
+
+    /* THE STORE, last, so the list the cache keeps is the one the tail
+     * finished with. A derived block that was replaced took its origin with
+     * it, and a block with no inline content never had one. */
+    if (node && (node->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
+        if (children_own && contains_inlines(node)) {
+            S_cache_store(parser, node);
+        } else {
+            node->link.origin = NULL;
+            node->flags &= ~MARKDOWN_CORE_NODE__ORIGIN;
         }
     }
     *block = node;
@@ -1524,15 +1542,41 @@ static void process_inlines(
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
         if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
-            if (contains_inlines(cur)) {
-                markdown_core_parse_inlines(parser, cur, refmap, options);
+            if (!contains_inlines(cur)) {
+                continue;
             }
+            if (!MARKDOWN_CORE_NODE_BORROWED_P(cur) && S_cache_fresh(parser, cur, refmap)) {
+                /* `finish` projects the CST in place (T1): the block IS its
+                 * own origin, and the cache's hold becomes the borrow's. */
+                cur->first_child = cur->link.holder->first_child;
+                cur->last_child = cur->link.holder->last_child;
+                cur->flags &= ~MARKDOWN_CORE_NODE__CACHE_OWNER;
+                parser->cache_hits++;
+            }
+            if (MARKDOWN_CORE_NODE_BORROWED_P(cur)) {
+                /* A BORROWER'S LIST IS NEITHER PARSED NOR ENTERED (F22). The
+                 * list is the cache's, and it is already there at this ENTER
+                 * -- unlike a block's own inlines, which are parsed below
+                 * after the lookahead was taken -- so the walk would descend
+                 * into it and meet a directive's label, an inline-class node
+                 * that `contains_inlines` claims, and parse it AGAIN into the
+                 * shared list. The block is queued here because the EXIT the
+                 * reset consumes is where it would otherwise be queued, and
+                 * its name hooks must still run (F15 rule 2). */
+                if (S_block_has_tail_work(parser, cur) && !S_tail_queue_push(parser, cur)) {
+                    parser->oom = true;
+                }
+                markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
+                continue;
+            }
+            markdown_core_parse_inlines(parser, cur, refmap, options);
         } else if (MARKDOWN_CORE_NODE_BLOCK_P(cur) && S_block_has_tail_work(parser, cur)) {
             /* COLLECTED, NOT ACTED ON: a hook may replace or remove the block
              * and the walk is standing on it (F13 requirement 2). The walk
-             * never descends into a block's inlines -- its lookahead was taken
-             * before they were parsed -- so this EXIT follows the ENTER above
-             * directly and the queue is the blocks in post-order. */
+             * never descends into a block's own inlines -- its lookahead was
+             * taken before they were parsed -- and is reset past a borrowed
+             * list above, so this EXIT follows the ENTER directly and the
+             * queue is the blocks in post-order. */
             if (!S_tail_queue_push(parser, cur)) {
                 parser->oom = true;
             }
@@ -1709,7 +1753,57 @@ static int S_optional_chunk_copy(
  * parser, which outlives the derivation). `user_data` is deliberately not
  * copied -- it is caller-owned decoration on a returned tree, and the parse's
  * own CST never carries any. */
-static markdown_core_node *S_clone_block_node(markdown_core_parser *parser, const markdown_core_node *src) {
+/* THE PROJECTION CACHE (docs/STREAMING.md T9). A CST block with inline
+ * content keeps the list its last projection produced, on a holder hung
+ * from the block (`link.holder`, CACHE_OWNER) and keyed by the block's write
+ * stamp (T3) and both map generations (T4). A projection that finds the key
+ * unchanged aliases the list into the derived block -- shares it, never
+ * copies it (F12: copying costs more than the parse it replaces) -- and the
+ * per-block tail (T18) leaves an aliased list alone. A projection that finds
+ * it stale or absent parses, runs the block's tail, and then MOVES the
+ * children into a fresh holder and borrows them straight back: with the tail
+ * per block nothing touches them after the store, which is what the PoC's
+ * copy-per-miss existed to survive (F12). Only a projection against the
+ * parser's own map takes part: a generation names a map, not a set of
+ * definitions, and `refmap_independence` projects against another. */
+static bool S_cache_fresh(markdown_core_parser *parser, const markdown_core_node *block, markdown_core_map *refmap) {
+    const markdown_core_holder *holder = block->link.holder;
+    return refmap == parser->refmap && !parser->no_projection_cache &&
+           (block->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) && holder->stamp == block->stamp &&
+           holder->refgen == parser->refmap->generation && holder->footgen == parser->footnote_defs->generation;
+}
+
+static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_node *origin = node->link.origin;
+    markdown_core_holder *holder;
+
+    node->link.origin = NULL;
+    node->flags &= ~MARKDOWN_CORE_NODE__ORIGIN;
+    holder = markdown_core_holder_new(parser->mem);
+    if (!holder) {
+        /* Nothing is lost: the tree keeps its own children. */
+        return;
+    }
+    if (!markdown_core_holder_take_children(holder, node)) {
+        parser->oom = true;
+    }
+    holder->stamp = origin->stamp;
+    holder->refgen = parser->refmap->generation;
+    holder->footgen = parser->footnote_defs->generation;
+    markdown_core_holder_hold(holder);
+    if (origin->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) {
+        markdown_core_holder_release(origin->link.holder);
+    }
+    origin->link.holder = holder;
+    origin->flags |= MARKDOWN_CORE_NODE__CACHE_OWNER;
+    markdown_core_node_borrow_children(node, holder);
+}
+
+static markdown_core_node *S_clone_block_node(
+    markdown_core_parser *parser,
+    const markdown_core_node *src,
+    markdown_core_map *refmap
+) {
     markdown_core_mem *mem = parser->mem;
     markdown_core_node *dst = (markdown_core_node *)mem->calloc(1, sizeof(*dst));
     if (!dst) {
@@ -1732,7 +1826,7 @@ static markdown_core_node *S_clone_block_node(markdown_core_parser *parser, cons
     dst->content_mark = src->content_mark;
     dst->content_mark_count = src->content_mark_count;
     dst->type = src->type;
-    dst->flags = src->flags;
+    dst->flags = src->flags & ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN);
     dst->extension = src->extension;
 
     switch (S_type(dst)) {
@@ -1804,6 +1898,24 @@ static markdown_core_node *S_clone_block_node(markdown_core_parser *parser, cons
             goto lost;
         }
     }
+
+    /* THE HIT IS TAKEN HERE, where the origin is in hand, so the derived
+     * block never needs to find it again. A miss remembers the origin for
+     * the store at the end of its tail. Only blocks with inline content take
+     * part: they are the ones the re-parse costs. */
+    if (contains_inlines(dst) && refmap == parser->refmap && !parser->no_projection_cache) {
+        if (S_cache_fresh(parser, src, refmap)) {
+            markdown_core_node_borrow_children(dst, src->link.holder);
+            parser->cache_hits++;
+        } else {
+            /* A miss remembers where it came from so its tail can store. A
+             * projection against another map never stores: what it resolves
+             * is that map's answer, and the key names this parser's. */
+            dst->link.origin = (markdown_core_node *)src;
+            dst->flags |= MARKDOWN_CORE_NODE__ORIGIN;
+            parser->cache_misses++;
+        }
+    }
     return dst;
 
 lost:
@@ -1813,8 +1925,12 @@ lost:
 
 /* Clone the block skeleton. Iterative, because block nesting is input-shaped.
  * Children are linked raw: the source tree already proved containment. */
-static markdown_core_node *S_clone_block_tree(markdown_core_parser *parser, const markdown_core_node *src_root) {
-    markdown_core_node *dst_root = S_clone_block_node(parser, src_root);
+static markdown_core_node *S_clone_block_tree(
+    markdown_core_parser *parser,
+    const markdown_core_node *src_root,
+    markdown_core_map *refmap
+) {
+    markdown_core_node *dst_root = S_clone_block_node(parser, src_root, refmap);
     markdown_core_node *dst_parent = dst_root;
     const markdown_core_node *src = src_root->first_child;
 
@@ -1822,7 +1938,7 @@ static markdown_core_node *S_clone_block_tree(markdown_core_parser *parser, cons
         return NULL;
     }
     while (src) {
-        markdown_core_node *dst = S_clone_block_node(parser, src);
+        markdown_core_node *dst = S_clone_block_node(parser, src, refmap);
         if (!dst) {
             markdown_core_node_free(dst_root);
             return NULL;
@@ -1917,7 +2033,7 @@ markdown_core_node *markdown_core_parser_derive_tree(
         return NULL;
     }
 
-    derived = S_clone_block_tree(parser, parser->root);
+    derived = S_clone_block_tree(parser, parser->root, refmap);
     if (!derived) {
         parser->oom = true;
         return NULL;

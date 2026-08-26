@@ -273,6 +273,13 @@ struct markdown_core_parser {
      * core cannot see it. Wraps at 2^32 writes in one parse, which is more
      * lines than a parse can be handed. */
     uint32_t write_clock;
+    /* THE PROJECTION CACHE's switches and ledger (T9). `no_projection_cache`
+     * is for a runner that plays the cache's part itself or measures without
+     * it; it survives the reset, as the options do. The counters are per
+     * parse and read before `finish` resets them. */
+    bool no_projection_cache;
+    size_t cache_hits;
+    size_t cache_misses;
     /* THE PER-BLOCK TAIL'S QUEUE (T18): the blocks a projection's walk found
      * tail work for, in EXIT order, acted on after the walk -- a hook may
      * replace or remove the block, and the walk must not be standing on it

@@ -44,11 +44,16 @@
 
 /* Every extension and the footnote option, because the point is coverage of
  * every node KIND a parse can put in a tree, not agreement with any golden. */
+/* `--no-cache` turns the projection cache (T9) off for every parser a case
+ * builds -- the control side of T11's measurement. */
+static int pr_no_cache = 0;
+
 static markdown_core_parser *pr_parser_new(void) {
     markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_FOOTNOTES);
     if (!parser) {
         return NULL;
     }
+    parser->no_projection_cache = pr_no_cache != 0;
     if (!markdown_core_core_extensions_attach(
             parser,
             MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
@@ -170,7 +175,10 @@ static int pr_fingerprint(markdown_core_parser *parser, markdown_core_strbuf *ou
             sizeof(header),
             "%u|%u|%d:%d..%d:%d|%d|%d+%d|%u:",
             (unsigned)node->type,
-            (unsigned)node->flags,
+            /* The cache (T9) hangs a holder on a CST block and says so in a
+             * flag. That is bookkeeping about the block, not a statement the
+             * CST makes, so it is outside what a derivation must not write. */
+            (unsigned)(node->flags & ~MARKDOWN_CORE_NODE__CACHE_OWNER),
             node->start_line,
             node->start_column,
             node->end_line,
@@ -213,11 +221,15 @@ static int case_double_projection(const ts_spec_file *file) {
             continue;
         }
         markdown_core_parser_feed(parser, test_case->markdown, test_case->markdown_length);
+        /* Each tree is dumped BEFORE the next derivation runs. Dumping both at
+         * the end let a second derivation that wrote into the list the two
+         * trees share (T9, F22) change both dumps alike, and the gate agreed
+         * with itself while the tree was wrong. */
         first = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
-        second = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
         if (first) {
             first_dump = pr_dump(first, &first_length);
         }
+        second = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
         if (second) {
             second_dump = pr_dump(second, &second_length);
         }
@@ -384,6 +396,13 @@ static int pr_slope_measure(const char *input, size_t length, double *seconds) {
     if (!parser) {
         return -1;
     }
+    /* Deriving one CST over and over is exactly what the projection cache
+     * (T9) serves, and served, the projection is the whole-CST clone -- an
+     * O(bytes) copy whose ns/byte is a memory-hierarchy fact (1.1 in cache,
+     * 12.5 out of it, measured) rather than an algorithm. This gate is about
+     * the RE-PROJECTION being linear in what it projects, so it measures with
+     * the cache off; the cached regime's bound is T15's. */
+    parser->no_projection_cache = true;
     markdown_core_parser_feed(parser, input, length);
     for (repeat = 0; repeat < PR_SLOPE_REPEATS; repeat++) {
         uint64_t started;
@@ -733,6 +752,9 @@ static int case_borrow_across_feed(const ts_spec_file *file) {
             failures++;
             continue;
         }
+        /* This case plays the cache's part itself, so the engine's (T9)
+         * stays out of its way. */
+        parser->no_projection_cache = true;
         memset(&prev, 0, sizeof(prev));
         for (i = 0; i < length && !failed; i++) {
             if (text[i] == '\n') {
@@ -794,6 +816,9 @@ static int case_borrow_across_feed(const ts_spec_file *file) {
 static int pr_dump_boundaries_with(const ts_spec_case *test_case, int options, const char *label) {
     markdown_core_parser *parser = markdown_core_parser_new(options);
     const char *text = test_case->markdown;
+    if (parser) {
+        parser->no_projection_cache = pr_no_cache != 0;
+    }
     size_t length = test_case->markdown_length;
     size_t start = 0, i;
     int boundary = 0;
@@ -881,6 +906,7 @@ static int case_feed_loop(const ts_spec_file *file) {
     int repeat;
     uint64_t best_ns = 0;
     size_t boundaries = 0;
+    size_t hits = 0, misses = 0;
     for (repeat = 0; repeat < pr_repeats; repeat++) {
         uint64_t started = ts_monotonic_ns();
         uint64_t elapsed;
@@ -911,6 +937,12 @@ static int case_feed_loop(const ts_spec_file *file) {
                     markdown_core_node_free(tree);
                 }
             }
+            /* Read before `finish`, which resets the parser and its ledger;
+             * the finish projection itself is therefore not counted. */
+            if (repeat == 0) {
+                hits += parser->cache_hits;
+                misses += parser->cache_misses;
+            }
             tree = markdown_core_parser_finish(parser);
             if (tree) {
                 markdown_core_node_free(tree);
@@ -924,11 +956,14 @@ static int case_feed_loop(const ts_spec_file *file) {
         boundaries = seen;
     }
     printf(
-        "feed loop: %zu documents, %zu boundaries, min of %d: %.2f ms\n",
+        "feed loop: %zu documents, %zu boundaries, min of %d: %.2f ms; cache hits %zu, misses %zu (%.1f%%)\n",
         file->count,
         boundaries,
         pr_repeats,
-        (double)best_ns / 1e6
+        (double)best_ns / 1e6,
+        hits,
+        misses,
+        hits + misses ? 100.0 * (double)hits / (double)(hits + misses) : 0.0
     );
     return 0;
 }
@@ -1236,6 +1271,12 @@ static int case_projection_key(const ts_spec_file *file) {
         const char *text = test_case->markdown;
         size_t length = test_case->markdown_length;
         pr_key_set prev;
+        /* The key is sound only if a block RE-PROJECTED under an unchanged
+         * key projects the same; served from the cache (T9) it trivially
+         * would, so the cache is off here. */
+        if (parser) {
+            parser->no_projection_cache = true;
+        }
         size_t start = 0, i;
         int boundary = 0;
         int failed = 0;
@@ -1323,6 +1364,8 @@ int main(int argc, char **argv) {
             md_dir = argv[++arg];
         } else if (strcmp(argv[arg], "--repeats") == 0 && arg + 1 < argc) {
             pr_repeats = atoi(argv[++arg]);
+        } else if (strcmp(argv[arg], "--no-cache") == 0) {
+            pr_no_cache = 1;
         } else {
             fputs("usage: projection_runner [--list] --case NAME (--spec FILE | --md FILE | --md-dir DIR)\n", stderr);
             return 2;

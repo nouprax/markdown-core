@@ -45,7 +45,7 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
 
     /* roll forward to next item, setting both fields */
     if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
-        if (node->holder) {
+        if (MARKDOWN_CORE_NODE_BORROWED_P(node)) {
             iter->borrower = node;
         }
         if (node->first_child == NULL) {
@@ -211,7 +211,7 @@ int markdown_core_node_own(markdown_core_node *root) {
     markdown_core_node *borrower = NULL;
 
     while (cur) {
-        if (cur->holder) {
+        if (MARKDOWN_CORE_NODE_BORROWED_P(cur)) {
             borrower = cur;
         }
         switch (cur->type) {

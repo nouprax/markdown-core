@@ -278,7 +278,7 @@ if(MARKDOWN_CORE_STATIC)
     # -- projecting against another map moves nothing and poisons nothing.
     # Both derive BEFORE finish, so the properties hold over the open spine
     # too, not only over the closed tree finish projects.
-    foreach(fixture spec regression extensions)
+    foreach(fixture spec regression extensions extensions-directive)
         markdown_core_add_test(
             projection_double_${fixture}
             "streaming"

@@ -126,11 +126,18 @@ enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__OPEN = (1 << 0),
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
     MARKDOWN_CORE_NODE__LAST_LINE_CHECKED = (1 << 2),
+    /* What `link` means on this node (docs/STREAMING.md T9). Neither set and
+     * `link.holder` non-NULL: BORROWED, the node aliases the holder's list.
+     * CACHE_OWNER: a CST block whose `link.holder` keeps its last projection.
+     * ORIGIN: a derived block mid-projection whose `link.origin` is the CST
+     * block it was cloned from; never set on a node a caller can hold. */
+    MARKDOWN_CORE_NODE__CACHE_OWNER = (1 << 3),
+    MARKDOWN_CORE_NODE__ORIGIN = (1 << 4),
 
     // The first bit an extension may claim. Extension flags are compile-time
     // constants owned by the extension that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 3),
+    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 5),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -172,16 +179,30 @@ struct markdown_core_node {
 
     const markdown_core_syntax_extension *extension;
 
-    /* NON-NULL ON A BORROWER: `first_child`..`last_child` are the holder's
-     * list, aliased here, not this node's own (docs/STREAMING.md T19). The
-     * free walk detaches them and releases one hold instead of freeing them.
-     * Every node in an aliased list has `parent == NULL`: a list can be
-     * aliased by several borrowers at once -- the tree a consumer still holds
-     * and the one the next feed returned -- so it can carry no single parent,
-     * and the iterator climbs out of it to the borrower it entered through.
-     * A borrower READS the list and never writes it; an insert beside a
-     * shared node fails closed, having no parent to insert under. */
-    markdown_core_holder *holder;
+    /* ONE SLOT, and `flags` says what it holds (T19, T9).
+     *
+     * BORROWED -- neither flag, `holder` non-NULL: `first_child`..`last_child`
+     * are the holder's list, aliased here, not this node's own. The free walk
+     * detaches them and releases one hold instead of freeing them. Every node
+     * in an aliased list has `parent == NULL`: a list can be aliased by
+     * several borrowers at once -- the tree a consumer still holds and the
+     * one the next feed returned -- so it can carry no single parent, and the
+     * iterator climbs out of it to the borrower it entered through. A
+     * borrower READS the list and never writes it; an insert beside a shared
+     * node fails closed, having no parent to insert under.
+     *
+     * CACHE_OWNER -- a CST block: `holder` keeps the block's last projection,
+     * keyed by the stamp and generations the holder records. The children are
+     * the block's own. The hold is released with the block.
+     *
+     * ORIGIN -- a derived block between its clone and the end of its tail:
+     * `origin` is the CST block it was cloned from, so the tail can store
+     * what it projected. The free walk ignores the slot; the tail turns it
+     * into BORROWED (a store) or clears it. */
+    union {
+        markdown_core_holder *holder;
+        struct markdown_core_node *origin;
+    } link;
 
     union {
         markdown_core_chunk literal;
@@ -210,7 +231,19 @@ struct markdown_core_holder {
     markdown_core_node *first_child;
     markdown_core_node *last_child;
     uint32_t refs;
+    /* THE KEY the list was projected under (T9): the origin's write stamp
+     * (T3) and both map generations (T4). A reading that agrees on all three
+     * says the list is what projecting the block now would produce. */
+    uint32_t stamp;
+    size_t refgen;
+    size_t footgen;
 };
+
+/* Does this node alias a holder's list? The one question every walk asks. */
+static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_BORROWED_P(const markdown_core_node *node) {
+    return node->link.holder != NULL &&
+           (node->flags & (MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN)) == 0;
+}
 
 markdown_core_holder *markdown_core_holder_new(markdown_core_mem *mem);
 void markdown_core_holder_hold(markdown_core_holder *holder);

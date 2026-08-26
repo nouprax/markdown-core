@@ -250,7 +250,14 @@ direct reversal of an earlier intent to release it at close, and the memory cost
 of the choice was never measured. Under repeated projection it is the bound that
 matters most.
 
-### F10 — a suspected CST write does **not** reproduce  · VERIFIED NEGATIVE
+### F10 — a suspected CST write does **not** reproduce  · ~~VERIFIED NEGATIVE~~ **WITHDRAWN by F21**
+
+**Withdrawn 2026-08-25.** The write reproduces: the branch is reachable for an
+empty ATX heading and for a directive label, and the corpus this finding
+measured on had neither followed by an open multi-line block. F21 has the
+mechanism, the witness and the fix. Kept as written below so the wrong
+reasoning is on the record.
+
 
 `markdown_core_parse_inlines` mints a content mark for any content-bearing block
 that has none, and `markdown_core_parser_mark_content` appends to
@@ -1227,6 +1234,189 @@ are a few blocks deep and the rest of the table is inside the spread.
 
 ---
 
+### F20 — the cache shares from the start, a feed stops re-parsing, and the clone is the floor  · VERIFIED (T9, T10, T11)
+
+**The shape.** A CST block with inline content keeps its last projection on
+a holder hung from the block (`link.holder`, flag `CACHE_OWNER`), keyed by
+the block's write stamp (T3) and both map generations (T4). The hit is taken
+**at the clone**, where the origin is in hand: `S_clone_block_node` aliases
+the holder's list into the derived block (T19's borrow) and the derived
+block never needs to find its origin again. A miss remembers the origin in
+the same slot (flag `ORIGIN`) and, at the END of its per-block tail (T18),
+**moves** its children into a fresh holder and borrows them straight back —
+`take_children` owns the chunks that borrowed the block's buffer (F17). The
+PoC copied on every miss because the whole-tree tail ran after the store
+and rewrote what the cache held; with the tail per block nothing touches a
+list after its store, so the move is safe and a miss costs one walk to own
+its chunks. `finish` projects the CST in place (T1) and takes hits too: the
+block is its own origin, and the cache's hold becomes the borrow's. One slot
+carries all three meanings, so the node stays at 192 bytes.
+
+**The first build failed three gates, and each was the gate doing its job.**
+(1) `api_engine` and both `oom_sweep` rows segfaulted at `S_project`: the
+store check at the end of the tail followed the strip, which had just freed
+a comment `HTML_BLOCK` and left `node == NULL` — `0x7a` is `&NULL->flags`.
+(2) `projection_refmap_independence` failed on 2 of 43 regression examples
+and on spec: the projection against an EMPTY map did not hit, and then
+STORED, because the store did not ask which map it had resolved against —
+the next projection against the parser's own map served the empty map's
+answer. A generation names a map, not a set of definitions; only a
+projection against `parser->refmap` takes part now, on both sides.
+(3) `pathological_complexity_projection_slope` read **11.15×**: served from
+the cache, deriving the same CST again is the whole-CST clone and nothing
+else, and the clone's ns/byte is a memory-hierarchy fact — **1.1 ns/byte at
+64 KiB, 12.5 at 16 MiB**. With the cache off the gate reads 11.2 → 15.0,
+1.339×, exactly what it read before T9. The gate is about the re-projection
+being linear in what it projects, so it measures with the cache off; the
+cached regime's bound is T15's, and the number says what it will find —
+**at 16 MiB the clone is the floor**, and §6 already accepts it.
+
+**Byte-identical at every boundary, cache on.** `dump_boundaries` under the
+T3/T4 tree (`ffee53b`) and this one, `cmp`-identical over every input, plain
+and with the strip:
+
+```
+spec 4,586   extensions 598   regression 404   smart_punct 102
+extensions-conflicts 68   -directive 350   -directive-option-gates 8
+extensions-formula-github 96   -latex 80   -conflicts 32   -option-gates 28
+real corpus, 195 documents      81,556 dumps   identical
+second real corpus, 1,191 documents   14,828 dumps   identical
+```
+
+**What a feed costs now (T11).** The feed loop — every document fed one
+line at a time, a derivation after every line, a finish — three alternated
+rounds each the min of three, best of nine; `cached` is this tree,
+`nocache` this tree with the cache switched off, `control` the T3/T4 tree:
+
+```
+cached      nocache     control    control/cached   hit rate
+real corpus   195 docs, 40,583 boundaries   454.95 ms  1416.82 ms  1402.51 ms     3.08x        90.9%  (2,507,041 / 250,481)
+corp2       1,191 docs,  6,223 boundaries     6.91 ms     9.90 ms     9.80 ms     1.42x        69.9%
+extensions.txt  33 docs,   266 boundaries     0.42 ms     0.87 ms     0.85 ms     2.02x        81.7%
+spec.txt       669 docs, 1,624 boundaries     1.55 ms     1.56 ms     1.50 ms     0.97x        24.4%
+```
+
+**A feed over the real corpus is 3.08× cheaper, and the cache's bookkeeping
+costs nothing when it is off** — `nocache` and `control` are the same number
+to within the round-to-round spread. The hit rate is the 90.9% F12 projected
+(its O(1) rule read 90.1%, F19's key 89.6%), and the 9% of misses carry
+what is left: the open block re-parsed on every line, which §6 accepts, and
+the whole document re-keyed each time a definition arrives (F19). `spec`
+gains nothing because a spec example is two or three lines and its one
+block is open at every boundary; `corp2`'s documents are short for the same
+reason. The shape F13 measured on 40 documents — 2.74× with a per-block
+tail and a shared cache — holds at full scale and is exceeded, because T20
+and the pre-filter took the tail below what the PoC paid. What is NOT
+removed is the whole-CST clone (§6): at 16 MiB it is the floor F20's slope
+reading found, and T15 carves it out rather than folding it in.
+
+**The one-shot path** pays the cache's bookkeeping and gets nothing back —
+a one-shot parse projects once. Same `bench_runner`, 41 cases, 5 alternated
+rounds against `ffee53b`, min of `median_ms`:
+
+```
+total   control=238.31 ms   head=236.10 ms   ratio=0.9907   (-0.9%)
+median per-case ratio 0.9977     slower >5%: 0 of 41     faster >5%: 0
+```
+
+### F21 — F10 was wrong: a projection minted marks into the parser's vector, and positions after it were wrong  · VERIFIED, FIXED (`e34cf20`)
+
+F10 recorded that `markdown_core_parse_inlines` mints a content mark for a
+content-bearing block that has none, appending to `parser->line_marks`, and
+called the branch unreachable because table cells and directive labels
+receive their marks at build. **Both halves were wrong.** Directive labels
+receive no mark at build — `directive.c` never calls `mark_content` or
+`adopt_content_marks` — and an ATX heading with no content after its marker
+(`#`, `## `, `### ###`) records none either. Each such block minted one mark
+on EVERY projection, so a mid-stream derivation grew the vector, and the
+open block that took its next line afterwards found its run no longer
+contiguous with the vector's end: `S_record_content_mark`'s contiguity
+assert is compiled out, the new mark landed outside the run, and
+`content_place` answered from whatever mark sat inside it — the first
+block's. Witness: `cat00048.md` in the second real corpus, three empty
+headings followed by `Foo *bar\nbaz*`, derived after every line: the
+paragraph at line 11 dumped its inlines at **line 1, column 4** — the `## `
+heading's content column.
+
+**Found by T9's boundary A/B, and the cache had masked it.** Every fixture
+corpus and the 195-document corpus were identical; `corp2` differed at
+14,828 dumps, and the difference was the T9 tree being RIGHT: an empty
+heading served from the cache is never parsed again and never mints, so
+the paragraph's run stayed contiguous. A cache that changes an answer is a
+defect by §6's last bound whichever answer is right, and the answer it
+changed was a pre-existing defect of the projection. F10 measured
+`line_marks_size` flat over one 826 KB document and the fixture files — a
+corpus without an empty heading followed by a multi-line open block, which
+is the shape the defect needs.
+
+**The fix is that a projection is a read.** Every position a projection
+needs is written into the nodes it builds while it runs, so the minted
+marks are scratch: `S_project` cuts `line_marks_size` back to where the
+parse left it. Two gates now see the mint — `refmap_independence`'s
+fingerprint carries the vector's size, and `projection_key` asserts it
+across every derive-then-feed boundary. Run against the unfixed engine
+(`ffee53b`) with the new runner:
+
+```
+spec           refmap_independence: 3 examples WROTE the CST     projection_key: 3 boundaries grew
+regression     refmap_independence: 0                            projection_key: 0
+extensions     refmap_independence: 3 examples WROTE the CST     projection_key: 3 boundaries grew   (directive labels)
+cat00048.md    projection_key: 1 boundary grew
+corp2 (1,191)  projection_key: 52 boundaries grew
+
+fixed engine (e34cf20): every row above green; corp2 dumps identical to the T9 tree's (F20)
+```
+
+Two things follow for the plan. F10's line in §2 — *a suspected CST write
+does not reproduce* — is withdrawn; the write reproduces and is fixed.
+And T9's A/B could only be run against a control that carries the fix,
+which is why `e34cf20` sits between T3/T4 and T9 in the history and why
+F20's numbers are taken against it.
+
+### F22 — a borrower's list must not be entered, and `projection_double` could not see a shared list being written  · VERIFIED, FIXED (T9)
+
+With F21 fixed on both sides, T9's A/B still differed on `corp2` — 204
+hunks — and every one was a `DirectiveLabel` growing a child per boundary:
+
+```
+DirectiveLabel scope=5:10..5:18 children=1        <- control, every boundary
+DirectiveLabel scope=5:10..5:18 children=2, 3, 4  <- T9, boundaries 7, 8, 9
+    ├── Text scope=5:11..5:17 literal="smith04"
+    └── Text scope=7:35..7:41 literal="smith04"   <- the duplicate, positioned by a stale mark
+```
+
+**The walk entered the cache.** `process_inlines` never descended into a
+block's inlines because its lookahead was taken at the block's ENTER, before
+the inlines existed; T18 wrote that down as a property of the walk. A hit
+is different: the borrow is taken at the CLONE, so at ENTER the block's
+children are already there — the cache's list — and the walk descended into
+it. Inside it sat a directive's label: an INLINE-class node
+(`MARKDOWN_CORE_NODE_DIRECTIVE_LABEL`) that `contains_inlines` nevertheless
+claims, because its content is its own buffer and `directive.c` parses it
+itself during the paragraph's inline pass. The walk saw a content-bearing
+node that was not itself a borrower and parsed it — **appending into the
+shared list**, once per projection, with positions read off a mark index
+that F21's fix had already cut away. Fix: at the ENTER of a borrower the
+walk queues the block (its name hooks must still run, F15 rule 2) and
+resets to the block's EXIT, entering nothing.
+
+**And the gate that owns this could not see it.** `projection_double`
+derived twice and dumped both trees afterwards. Both trees alias the same
+list, the second derivation wrote into it, both dumps carried the write,
+and the gate agreed with itself. It now dumps each tree before the next
+derivation runs, and `extensions-directive` — where the seven inline labels
+in the fixtures live — joins every projection row. Run against the engine
+before the walk was fixed: `projection_double` fails on `cat00684.md` and on
+`extensions-directive`; after, both pass and boundary 8 of the witness holds
+one `smith04`.
+
+The general statement, for T12 and every later consumer of a borrowed
+tree: **nothing walks into a borrowed list to write.** The iterator climbs
+out of one to the borrower it entered through (F17); the projection's own
+walk now never enters one at all.
+
+---
+
 ## 4. Decisions — RULED, 2026-08-25
 
 **The API shape is the ruling, and it answers most of §4 by dissolving it.**
@@ -1487,19 +1677,34 @@ and T4 are the cache key; T9 lands the cache and shares.
       derived block and an unchanged `(stamp, refmap generation, footnote
       generation)` must mean a byte-identical derived subtree, and a closed
       block's stamp must never move again.*
-- [ ] **T9 — cache a closed block's derived subtree** on its CST block and
+- [x] **T9 — cache a closed block's derived subtree** on its CST block and
       **share it into the tree a feed returns**. T18 has already taken the tail
       off the shared nodes and T19 keeps a borrow alive across the feed that
       replaces it, so the hand-out shares from the start. The store copies once
       per miss; only the hand-out shares. This is also where T18's filter starts
-      skipping a block whose projection came from cache.
-- [ ] **T10 — invalidate by generation**, per F6's rule: a cached projection is
+      skipping a block whose projection came from cache. **Done 2026-08-25**,
+      and one word of the plan changed on the way: the store **moves** rather
+      than copies, because the per-block tail is what made the copy necessary
+      in the PoC and T18 removed it. The hit is taken at the clone, the store
+      at the end of the block's tail, `finish` hits in place, and the key,
+      the slot and the flags are F20's. A runner turns the cache off with
+      `parser->no_projection_cache`; the key gate and the borrow gate do,
+      because each plays the cache's own part. Gate: F20's A/B, cache on.
+- [x] **T10 — invalidate by generation**, per F6's rule: a cached projection is
       invalid when the map has advanced past the generation it was made at.
       Correctness must never depend on the cache — a wrong cache is a slow
-      engine, not a wrong tree.
-- [ ] **T11 — measure the reactive loop** on the full corpus and price the
+      engine, not a wrong tree. **Done with T9**: the generation is half of
+      the key every hit compares, F19 proved the key sound over 4.3 million
+      block observations with the cache off, and F20's A/B says the trees are
+      identical with it on. Nothing separate was left to build.
+- [x] **T11 — measure the reactive loop** on the full corpus and price the
       copy-out a feed pays to return a value (§6). Every shape has been measured
       on a 40-document subset in F12–F16; T11 confirms them at full scale.
+      **Done 2026-08-25**: the engine side is F20's table over the 195- and
+      1,191-document corpora and the two largest fixtures. **The binding-side
+      copy-out is NOT priced here** — no binding has a `Session` yet (T12,
+      T14), so there is no copy-out to time; it is owed with Phase E and
+      bounded at T15.
 
 ### Phase C — make a block addressable  · needs D4
 
@@ -1643,6 +1848,19 @@ projected-tree copy cost and the owned/borrowed chunk census, all over the same
 195-document corpus, using PoC-only seams (`clone_only`,
 `derive_tree_no_inlines`, `clone_tree`) that are in the D4 patch and are not
 proposed for landing as they stand.
+
+**T9, T10, T11, F20, F21 and F22** (2026-08-25): the boundary A/B against
+`e34cf20` over eleven fixture corpora and both real corpora, the three-way
+feed loop, the slope readings with the cache on and off, and the 41-case
+5-round bench. The binding-side copy-out is not measured; there is no
+binding to measure. **A fourth costume for F2's trap, worn twice in one
+session:** a control worktree moved between commits with `git checkout` and
+rebuilt by target linked a core library from the previous commit (the
+extension objects wanted `markdown_core_parser_touch`, the library had none),
+and a runner source copied into it was not rebuilt at all — the "unfixed
+engine" read every new gate green. Both were caught by `rm -rf` of the
+build's objects before rebuilding and by `strings` on the binary for the
+new gate's message; F21's evidence table is from the second run.
 
 **T3, T4 and F19** (2026-08-25): `projection_key` over the three fixtures
 and both real corpora, `sizeof`, and the 41-case 5-round bench against

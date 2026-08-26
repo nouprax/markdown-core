@@ -182,11 +182,14 @@ static void S_free_nodes(markdown_core_node *e) {
          * this block are the holder's, and the splice below would pull them
          * into this walk and free them under every other borrower. Cut them
          * loose, then release the one hold this block had. */
-        if (e->holder) {
-            markdown_core_holder *holder = e->holder;
-            e->first_child = NULL;
-            e->last_child = NULL;
-            e->holder = NULL;
+        if (e->link.holder && !(e->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
+            markdown_core_holder *holder = e->link.holder;
+            if (!(e->flags & MARKDOWN_CORE_NODE__CACHE_OWNER)) {
+                e->first_child = NULL;
+                e->last_child = NULL;
+            }
+            e->link.holder = NULL;
+            e->flags &= ~MARKDOWN_CORE_NODE__CACHE_OWNER;
             markdown_core_holder_release(holder);
         }
 
@@ -256,7 +259,8 @@ int markdown_core_holder_take_children(markdown_core_holder *holder, markdown_co
 void markdown_core_node_borrow_children(markdown_core_node *block, markdown_core_holder *holder) {
     block->first_child = holder->first_child;
     block->last_child = holder->last_child;
-    block->holder = holder;
+    block->link.holder = holder;
+    block->flags &= ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN);
     holder->refs++;
 }
 
@@ -1047,7 +1051,7 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
                 cur->first_child->prev = NULL;
                 ++errors;
             }
-            if (cur->holder) {
+            if (MARKDOWN_CORE_NODE_BORROWED_P(cur)) {
                 borrower = cur;
             } else if (cur->first_child->parent != cur) {
                 S_print_error(out, cur->first_child, "parent");
