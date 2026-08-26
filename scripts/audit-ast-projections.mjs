@@ -20,9 +20,8 @@
  * grammar -- and its own kind/field table is a SECOND copy of the contract.
  * This audit compares it against the JSON kind for kind and field for field,
  * so the two cannot drift apart. Until Step 15A the Markdown table WAS the
- * contract, it lived under `docs/deprecated/`, which
- * `docs/RECONSTRUCTION.md` says is archive and not normative, and four
- * executable policy files read it from there.
+ * contract, it lived under `docs/deprecated/`, which is archive and not
+ * normative, and four executable policy files read it from there.
  *
  * It does not check types across platforms: a `level` is `Int` in the
  * contract, `Int32` in Swift, `Int` in Kotlin and `number` in TypeScript, and
@@ -256,7 +255,7 @@ const kindSurfaces = [
     {
         label: "C dump kind names",
         expect: [...kinds.keys()],
-        actual: namedKinds("packages/markdown-core/extensions/ast.c", /^\s+"([A-Za-z]+)"[,}]/gm).filter(
+        actual: namedKinds("packages/markdown-core/extensions/ast.c", /^\s+"([A-Za-z]+)",?\s*$/gm).filter(
             (name) => name !== "None"
         )
     },

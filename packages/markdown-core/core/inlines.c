@@ -79,13 +79,263 @@ typedef struct subject {
 
 // "\r\n\\`&_*[]<!"
 static const int8_t BASE_SPECIAL_CHARS[256] = {
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
-    0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+};
 
 // No emphasis-boundary skip characters by default; attached inline extensions
 // add theirs to the parser-local copy.
@@ -97,8 +347,14 @@ static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *clo
 
 static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_core_node *parent, int options);
 
-static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number, subject *e,
-                             markdown_core_chunk *buffer, markdown_core_map *refmap);
+static void subject_from_buf(
+    markdown_core_parser *parser,
+    markdown_core_mem *mem,
+    int line_number,
+    subject *e,
+    markdown_core_chunk *buffer,
+    markdown_core_map *refmap
+);
 static bufsize_t subject_find_special_char(subject *subj, int options);
 
 /* Give `node` the source extent of the content bytes [from, to].
@@ -146,9 +402,17 @@ static MARKDOWN_CORE_INLINE void S_place_inline(subject *subj, markdown_core_nod
  * addition then names a place in the wrong line's frame. A span the map cannot
  * place is not reported -- an invented position is worse than a missing
  * diagnostic. */
-static void S_diagnose_span(markdown_core_parser *parser, subject *subj, markdown_core_diagnostic_severity severity,
-                            markdown_core_diagnostic_code code, bufsize_t from, bufsize_t to, const char *message,
-                            const unsigned char *label, bufsize_t label_length) {
+static void S_diagnose_span(
+    markdown_core_parser *parser,
+    subject *subj,
+    markdown_core_diagnostic_severity severity,
+    markdown_core_diagnostic_code code,
+    bufsize_t from,
+    bufsize_t to,
+    const char *message,
+    const unsigned char *label,
+    bufsize_t label_length
+) {
     int start_line;
     int start_column;
     int end_line;
@@ -158,13 +422,28 @@ static void S_diagnose_span(markdown_core_parser *parser, subject *subj, markdow
         !markdown_core_parser_content_place(subj->owner_parser, subj->owner, to, &end_line, &end_column)) {
         return;
     }
-    markdown_core_parser_diagnose(parser, severity, code, start_line, start_column, end_line, end_column, message,
-                                  label, label_length);
+    markdown_core_parser_diagnose(
+        parser,
+        severity,
+        code,
+        start_line,
+        start_column,
+        end_line,
+        end_column,
+        message,
+        label,
+        label_length
+    );
 }
 
 // Create an inline with a literal string value.
-static MARKDOWN_CORE_INLINE markdown_core_node *make_literal(subject *subj, markdown_core_node_type t, int start_column,
-                                                             int end_column, markdown_core_chunk s) {
+static MARKDOWN_CORE_INLINE markdown_core_node *make_literal(
+    subject *subj,
+    markdown_core_node_type t,
+    int start_column,
+    int end_column,
+    markdown_core_chunk s
+) {
     markdown_core_node *e = (markdown_core_node *)subj->mem->calloc(1, sizeof(*e));
     if (!e) {
         /* Frees an owned literal; borrowed chunks only reset fields. */
@@ -201,8 +480,12 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_simple_subj(subject *subj, 
 }
 
 // Like make_str, but parses entities.
-static markdown_core_node *make_str_with_entities(subject *subj, int start_column, int end_column,
-                                                  markdown_core_chunk *content) {
+static markdown_core_node *make_str_with_entities(
+    subject *subj,
+    int start_column,
+    int end_column,
+    markdown_core_chunk *content
+) {
     markdown_core_strbuf unescaped = MARKDOWN_CORE_BUF_INIT(subj->mem);
 
     if (houdini_unescape_html(&unescaped, content->data, content->len)) {
@@ -254,8 +537,13 @@ static markdown_core_chunk markdown_core_clean_autolink(subject *subj, markdown_
     return markdown_core_chunk_buf_detach(&buf);
 }
 
-static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(subject *subj, int start_column, int end_column,
-                                                              markdown_core_chunk url, int is_email) {
+static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(
+    subject *subj,
+    int start_column,
+    int end_column,
+    markdown_core_chunk url,
+    int is_email
+) {
     markdown_core_node *link = make_simple(subj->mem, MARKDOWN_CORE_NODE_LINK);
     markdown_core_node *text;
     if (!link) {
@@ -281,8 +569,14 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(subject *subj, int
     return link;
 }
 
-static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number, subject *e,
-                             markdown_core_chunk *chunk, markdown_core_map *refmap) {
+static void subject_from_buf(
+    markdown_core_parser *parser,
+    markdown_core_mem *mem,
+    int line_number,
+    subject *e,
+    markdown_core_chunk *chunk,
+    markdown_core_map *refmap
+) {
     int i;
     e->special_chars = parser ? parser->special_chars : BASE_SPECIAL_CHARS;
     e->skip_chars = parser ? parser->skip_chars : BASE_SKIP_CHARS;
@@ -517,8 +811,11 @@ static int scan_delims(subject *subj, unsigned char c, bool *can_open, bool *can
                before_char_pos > 0) {
             before_char_pos -= 1;
         }
-        len = markdown_core_utf8proc_iterate(subj->input.data + before_char_pos, subj->pos - before_char_pos,
-                                             &before_char);
+        len = markdown_core_utf8proc_iterate(
+            subj->input.data + before_char_pos,
+            subj->pos - before_char_pos,
+            &before_char
+        );
         if (len == -1 || (before_char < 256 && subj->skip_chars[(unsigned char)before_char])) {
             before_char = 10;
         }
@@ -541,8 +838,11 @@ static int scan_delims(subject *subj, unsigned char c, bool *can_open, bool *can
         while (after_char_pos < subj->input.len && flanking_skip_at(subj, after_char_pos)) {
             after_char_pos += 1;
         }
-        len = markdown_core_utf8proc_iterate(subj->input.data + after_char_pos, subj->input.len - after_char_pos,
-                                             &after_char);
+        len = markdown_core_utf8proc_iterate(
+            subj->input.data + after_char_pos,
+            subj->input.len - after_char_pos,
+            &after_char
+        );
         if (len == -1 || (after_char < 256 && subj->skip_chars[(unsigned char)after_char])) {
             after_char = 10;
         }
@@ -551,10 +851,11 @@ static int scan_delims(subject *subj, unsigned char c, bool *can_open, bool *can
     left_flanking =
         numdelims > 0 && !markdown_core_utf8proc_is_space(after_char) &&
         (!markdown_core_utf8proc_is_punctuation(after_char) || markdown_core_utf8proc_is_space(before_char) ||
-         markdown_core_utf8proc_is_punctuation(before_char));
-    right_flanking = numdelims > 0 && !markdown_core_utf8proc_is_space(before_char) &&
-                     (!markdown_core_utf8proc_is_punctuation(before_char) ||
-                      markdown_core_utf8proc_is_space(after_char) || markdown_core_utf8proc_is_punctuation(after_char));
+            markdown_core_utf8proc_is_punctuation(before_char));
+    right_flanking =
+        numdelims > 0 && !markdown_core_utf8proc_is_space(before_char) &&
+        (!markdown_core_utf8proc_is_punctuation(before_char) || markdown_core_utf8proc_is_space(after_char) ||
+            markdown_core_utf8proc_is_punctuation(after_char));
     if (c == '_') {
         *can_open = left_flanking && (!right_flanking || markdown_core_utf8proc_is_punctuation(before_char));
         *can_close = right_flanking && (!left_flanking || markdown_core_utf8proc_is_punctuation(after_char));
@@ -626,9 +927,14 @@ static markdown_core_delimiter_rule core_delimiter_rule(unsigned char c) {
     }
 }
 
-static void push_delimiter(subject *subj, const markdown_core_syntax_extension *owner,
-                           markdown_core_delimiter_rule rule, bool can_open, bool can_close,
-                           markdown_core_node *inl_text) {
+static void push_delimiter(
+    subject *subj,
+    const markdown_core_syntax_extension *owner,
+    markdown_core_delimiter_rule rule,
+    bool can_open,
+    bool can_close,
+    markdown_core_node *inl_text
+) {
     delimiter *delim;
     /* Extensions may pass NULL after their own allocation failures. */
     if (!inl_text) {
@@ -1399,8 +1705,12 @@ static bufsize_t manual_scan_link_url(markdown_core_chunk *input, bufsize_t offs
 // question is asked of exactly the bytes that would become the label. The map
 // normalizes -- fold, trim, collapse -- on both sides, which is what makes
 // `[^Foo Bar]` find `[^foo   bar]`.
-static bool S_footnote_label_is_defined(markdown_core_parser *parser, subject *subj, bufsize_t label_start,
-                                        bufsize_t after_close) {
+static bool S_footnote_label_is_defined(
+    markdown_core_parser *parser,
+    subject *subj,
+    bufsize_t label_start,
+    bufsize_t after_close
+) {
     markdown_core_chunk label;
     bool defined;
 
@@ -1532,9 +1842,17 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
      * author meant. Still only the full and collapsed forms: `[a]` is also how
      * anyone writes a bracketed aside. */
     if (found_label && form != MARKDOWN_CORE_REFERENCE_SHORTCUT && raw_label.len > MAX_LINK_LABEL_LENGTH) {
-        S_diagnose_span(parser, subj, MARKDOWN_CORE_DIAGNOSTIC_ERROR, MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG,
-                        opener->position - 1, subj->pos - 1, "reference label too long to resolve", raw_label.data,
-                        raw_label.len);
+        S_diagnose_span(
+            parser,
+            subj,
+            MARKDOWN_CORE_DIAGNOSTIC_ERROR,
+            MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG,
+            opener->position - 1,
+            subj->pos - 1,
+            "reference label too long to resolve",
+            raw_label.data,
+            raw_label.len
+        );
     }
     if (found_label && markdown_core_map_lookup(subj->refmap, &raw_label) != NULL) {
         matched_reference = 1;
@@ -1692,9 +2010,17 @@ noMatch:
          * naming nothing is an unmatched `[`, which CommonMark specifies. */
         if (caret_written && initial_pos - opener->position - 2 > MAX_LINK_LABEL_LENGTH) {
             bufsize_t label_length = initial_pos - opener->position - 2;
-            S_diagnose_span(parser, subj, MARKDOWN_CORE_DIAGNOSTIC_ERROR, MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG,
-                            opener->position - 1, initial_pos - 1, "footnote label too long to resolve",
-                            subj->input.data + opener->position + 1, label_length);
+            S_diagnose_span(
+                parser,
+                subj,
+                MARKDOWN_CORE_DIAGNOSTIC_ERROR,
+                MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG,
+                opener->position - 1,
+                initial_pos - 1,
+                "footnote label too long to resolve",
+                subj->input.data + opener->position + 1,
+                label_length
+            );
         }
     }
 
@@ -1834,13 +2160,262 @@ static markdown_core_node *handle_newline(subject *subj) {
 
 // " ' . -
 static const char SMART_PUNCT_CHARS[] = {
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
-    0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
 };
 
 static bufsize_t subject_find_special_char(subject *subj, int options) {
@@ -1911,8 +2486,12 @@ void markdown_core_inlines_remove_flanking_transparent(markdown_core_parser *par
     parser->skip_chars[c] = 0;
 }
 
-static markdown_core_node *try_extensions(markdown_core_parser *parser, markdown_core_node *parent, unsigned char c,
-                                          subject *subj) {
+static markdown_core_node *try_extensions(
+    markdown_core_parser *parser,
+    markdown_core_node *parent,
+    unsigned char c,
+    subject *subj
+) {
     markdown_core_node *res = NULL;
     markdown_core_llist *tmp;
 
@@ -2094,8 +2673,12 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
 }
 
 // Parse inlines from parent's string_content, adding as children of parent.
-void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap,
-                                 int options) {
+void markdown_core_parse_inlines(
+    markdown_core_parser *parser,
+    markdown_core_node *parent,
+    markdown_core_map *refmap,
+    int options
+) {
     subject subj;
     markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
     /* EVERY content-bearing block has a map by the time its inlines are parsed.
@@ -2106,8 +2689,12 @@ void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_nod
      * inline position used to be measured from, and stating it once as a mark
      * is what lets the term itself go. */
     if (parent->content_mark_count == 0) {
-        markdown_core_parser_mark_content(parser, parent, parent->start_line,
-                                          parent->start_column + parent->internal_offset);
+        markdown_core_parser_mark_content(
+            parser,
+            parent,
+            parent->start_line,
+            parent->start_column + parent->internal_offset
+        );
     }
     subject_from_buf(parser, parser->mem, parent->start_line, &subj, &content, refmap);
     subj.owner = parent;
@@ -2142,8 +2729,12 @@ static void spnl(subject *subj) {
 // Modify refmap if a reference is encountered.
 // Return 0 if no reference found, otherwise position of subject
 // after reference is parsed.
-bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
-                                               markdown_core_map *refmap, markdown_core_reference_parts *parts) {
+bufsize_t markdown_core_parse_reference_inline(
+    markdown_core_mem *mem,
+    markdown_core_chunk *input,
+    markdown_core_map *refmap,
+    markdown_core_reference_parts *parts
+) {
     subject subj;
 
     markdown_core_chunk lab;
@@ -2261,10 +2852,14 @@ char *markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser
     return my_strndup((const char *)parser->input.data + startpos, len);
 }
 
-void markdown_core_inline_parser_push_delimiter(markdown_core_inline_parser *parser,
-                                                const markdown_core_syntax_extension *owner,
-                                                markdown_core_delimiter_rule rule, int can_open, int can_close,
-                                                markdown_core_node *inl_text) {
+void markdown_core_inline_parser_push_delimiter(
+    markdown_core_inline_parser *parser,
+    const markdown_core_syntax_extension *owner,
+    markdown_core_delimiter_rule rule,
+    int can_open,
+    int can_close,
+    markdown_core_node *inl_text
+) {
     push_delimiter(parser, owner, rule, can_open != 0, can_close != 0, inl_text);
 }
 
@@ -2272,9 +2867,15 @@ void markdown_core_inline_parser_remove_delimiter(markdown_core_inline_parser *p
     remove_delimiter(parser, delim);
 }
 
-int markdown_core_inline_parser_scan_delimiters(markdown_core_inline_parser *parser, int max_delims, unsigned char c,
-                                                int *left_flanking, int *right_flanking, int *punct_before,
-                                                int *punct_after) {
+int markdown_core_inline_parser_scan_delimiters(
+    markdown_core_inline_parser *parser,
+    int max_delims,
+    unsigned char c,
+    int *left_flanking,
+    int *right_flanking,
+    int *punct_before,
+    int *punct_after
+) {
     int numdelims = 0;
     bufsize_t before_char_pos;
     int32_t after_char = 0;
@@ -2290,8 +2891,11 @@ int markdown_core_inline_parser_scan_delimiters(markdown_core_inline_parser *par
         while (peek_at(parser, before_char_pos) >> 6 == 2 && before_char_pos > 0) {
             before_char_pos -= 1;
         }
-        len = markdown_core_utf8proc_iterate(parser->input.data + before_char_pos, parser->pos - before_char_pos,
-                                             &before_char);
+        len = markdown_core_utf8proc_iterate(
+            parser->input.data + before_char_pos,
+            parser->pos - before_char_pos,
+            &before_char
+        );
         if (len == -1) {
             before_char = 10;
         }
@@ -2340,15 +2944,23 @@ int markdown_core_inline_parser_get_offset(markdown_core_inline_parser *parser) 
  * node is made, so there is no line or column frame left to keep in step. */
 void markdown_core_inline_parser_set_offset(markdown_core_inline_parser *parser, int offset) { parser->pos = offset; }
 
-markdown_core_node *markdown_core_inline_parser_make_delimiter_text(markdown_core_inline_parser *parser, int from,
-                                                                    int to) {
+markdown_core_node *markdown_core_inline_parser_make_delimiter_text(
+    markdown_core_inline_parser *parser,
+    int from,
+    int to
+) {
     markdown_core_node *node;
 
     if (from < 0 || to < from || to >= parser->input.len) {
         return NULL;
     }
-    node = make_literal(parser, MARKDOWN_CORE_NODE_TEXT, from, to,
-                        markdown_core_chunk_dup(&parser->input, from, to - from + 1));
+    node = make_literal(
+        parser,
+        MARKDOWN_CORE_NODE_TEXT,
+        from,
+        to,
+        markdown_core_chunk_dup(&parser->input, from, to - from + 1)
+    );
     return node;
 }
 

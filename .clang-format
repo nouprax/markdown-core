@@ -2,10 +2,33 @@ BasedOnStyle: LLVM
 InsertBraces: true
 Language: Cpp
 ColumnLimit: 120
+IndentWidth: 4
 ContinuationIndentWidth: 4
 DerivePointerAlignment: false
-IndentWidth: 4
 PointerAlignment: Right
 SortIncludes: Never
 TabWidth: 4
 UseTab: Never
+
+BreakAfterOpenBracketFunction: true
+BreakBeforeCloseBracketFunction: true
+
+# Do not align arguments with the opening parenthesis.
+AlignAfterOpenBracket: DontAlign
+
+# If parameters need wrapping, one parameter per line.
+BinPackParameters: OnePerLine
+
+# Same rule for function-call arguments.
+BinPackArguments: false
+
+# Prevent clang-format from deciding that all parameters/arguments
+# can be packed together on the second line.
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowAllArgumentsOnNextLine: false
+
+BreakAfterOpenBracketBracedList: true
+BreakBeforeCloseBracketBracedList: true
+BinPackLongBracedList: false
+
+PenaltyReturnTypeOnItsOwnLine: 1000000

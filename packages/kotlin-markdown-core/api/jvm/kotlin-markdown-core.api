@@ -319,6 +319,16 @@ public final class com/nouprax/markdown/core/Scope {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class com/nouprax/markdown/core/Session : java/lang/AutoCloseable {
+	public fun <init> ()V
+	public fun <init> (Lcom/nouprax/markdown/core/ParseOptions;)V
+	public synthetic fun <init> (Lcom/nouprax/markdown/core/ParseOptions;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun close ()V
+	public final fun feed (Ljava/lang/String;)Lcom/nouprax/markdown/core/Document;
+	public final fun feed ([B)Lcom/nouprax/markdown/core/Document;
+	public final fun finish ()Lcom/nouprax/markdown/core/Document;
+}
+
 public final class com/nouprax/markdown/core/SoftBreak : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;

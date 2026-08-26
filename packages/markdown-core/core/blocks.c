@@ -62,14 +62,20 @@ static bool S_html_literal_starts_with_comment(markdown_core_node *node) {
     return literal->len - offset >= 4 && memcmp(literal->data + offset, "<!--", 4) == 0;
 }
 
-static bool S_strip_html_comments(markdown_core_node *root) {
+/* THE INLINE HALF OF THE COMMENT STRIP, per block (T18; F13 requirement 3).
+ * Frees every `HTML` node under `block` whose literal opens a comment, then
+ * re-consolidates the block. `block` itself is never freed here: a block that
+ * IS a comment is an `HTML_BLOCK`, and the tail removes that one after asking
+ * the same predicate. The whole-tree strip this replaces freed its own root
+ * inside its walk and then consolidated the freed pointer, which is why the
+ * judgement and the removal are two places now. */
+static bool S_strip_inline_comments(markdown_core_node *block) {
     bool stripped = false;
-    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_iter walk;
+    markdown_core_iter *iter = &walk;
     markdown_core_event_type ev_type;
 
-    if (!iter) {
-        return false;
-    }
+    markdown_core_iter_init(iter, block);
 
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node = markdown_core_iter_get_node(iter);
@@ -79,16 +85,14 @@ static bool S_strip_html_comments(markdown_core_node *root) {
          * the old `S_is_leaf` list, so their EXIT was suppressed and freeing
          * at ENTER happened to be safe; with the contract total it is a
          * use-after-free on the very next `markdown_core_iter_next`. */
-        if (ev_type == MARKDOWN_CORE_EVENT_EXIT && S_html_literal_starts_with_comment(node)) {
+        if (ev_type == MARKDOWN_CORE_EVENT_EXIT && node != block && S_html_literal_starts_with_comment(node)) {
             markdown_core_node_free(node);
             stripped = true;
         }
     }
 
-    markdown_core_iter_free(iter);
-
     if (stripped) {
-        return markdown_core_consolidate_text_nodes(root) != 0;
+        return markdown_core_consolidate_text_nodes(block) != 0;
     }
     return true;
 }
@@ -123,8 +127,12 @@ static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buf
 
 static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, bufsize_t bytes);
 
-static markdown_core_node *make_block(markdown_core_mem *mem, markdown_core_node_type tag, int start_line,
-                                      int start_column) {
+static markdown_core_node *make_block(
+    markdown_core_mem *mem,
+    markdown_core_node_type tag,
+    int start_line,
+    int start_column
+) {
     markdown_core_node *e;
 
     e = (markdown_core_node *)mem->calloc(1, sizeof(*e));
@@ -147,6 +155,14 @@ static markdown_core_node *make_document(markdown_core_mem *mem) {
     return e;
 }
 
+void markdown_core_parser_touch(markdown_core_parser *parser, markdown_core_node *node) {
+    node->stamp = ++parser->write_clock;
+}
+
+void markdown_core_parser_mint_block_id(markdown_core_parser *parser, markdown_core_node *node) {
+    node->identifier = ++parser->block_ids_minted;
+}
+
 /* Appends and reports failure directly instead of relying on llist_append's
  * silent-drop behavior.
  *
@@ -155,8 +171,11 @@ static markdown_core_node *make_document(markdown_core_mem *mem) {
  * `const markdown_core_syntax_extension *`. The const is discarded here and
  * nowhere else because markdown_core_llist is a generic list that cannot
  * carry it; typing the parameter keeps the cast to this one line. */
-static int S_extension_list_append(markdown_core_mem *mem, markdown_core_llist **head,
-                                   const markdown_core_syntax_extension *extension) {
+static int S_extension_list_append(
+    markdown_core_mem *mem,
+    markdown_core_llist **head,
+    const markdown_core_syntax_extension *extension
+) {
     markdown_core_llist *node = (markdown_core_llist *)mem->calloc(1, sizeof(*node));
     markdown_core_llist *tail;
     if (!node) {
@@ -174,8 +193,13 @@ static int S_extension_list_append(markdown_core_mem *mem, markdown_core_llist *
     return 1;
 }
 
-int markdown_core_parser_attach_syntax_extension(markdown_core_parser *parser,
-                                                 const markdown_core_syntax_extension *extension) {
+int markdown_core_parser_attach_syntax_extension(
+    markdown_core_parser *parser,
+    const markdown_core_syntax_extension *extension
+) {
+    /* Counted before the append so a half-attached extension (the second
+     * append lost) still invalidates: the first list DID change. */
+    parser->extension_generation++;
     if (!S_extension_list_append(parser->mem, &parser->syntax_extensions, extension)) {
         return 0;
     }
@@ -225,6 +249,11 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     parser->line_marks_size = 0;
     parser->line_marks_alloc = 0;
 
+    parser->mem->free(parser->tail_queue);
+    parser->tail_queue = NULL;
+    parser->tail_queue_size = 0;
+    parser->tail_queue_alloc = 0;
+
     /* Requirement 13's list. Released here whether or not it was retained: a
      * parse that FAILED never reaches the move, and the requirement's converse
      * says a failure carries no diagnostics. */
@@ -235,12 +264,14 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
     markdown_core_llist *saved_exts = parser->syntax_extensions;
     markdown_core_llist *saved_inline_exts = parser->inline_syntax_extensions;
     int saved_options = parser->options;
+    bool saved_no_cache = parser->no_projection_cache;
     markdown_core_mem *saved_mem = parser->mem;
 
     markdown_core_parser_dispose(parser);
 
     memset(parser, 0, sizeof(markdown_core_parser));
     parser->mem = saved_mem;
+    parser->no_projection_cache = saved_no_cache;
 
     markdown_core_strbuf_init(parser->mem, &parser->curline, 256);
     markdown_core_strbuf_init(parser->mem, &parser->linebuf, 0);
@@ -252,6 +283,10 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
     parser->footnote_defs = markdown_core_footnote_definition_map_new(parser->mem);
     parser->root = document;
     parser->current = document;
+    if (document) {
+        markdown_core_parser_touch(parser, document);
+        markdown_core_parser_mint_block_id(parser, document);
+    }
 
     parser->syntax_extensions = saved_exts;
     parser->inline_syntax_extensions = saved_inline_exts;
@@ -301,6 +336,7 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
  * the line before. An extension container closing on its own fence is a fourth,
  * and `finalize` cannot know that from the type alone. */
 static void S_set_end_to_current_line(markdown_core_parser *parser, markdown_core_node *b) {
+    markdown_core_parser_touch(parser, b);
     b->end_line = parser->line_number;
     b->end_column = parser->curline.size;
     if (b->end_column && parser->curline.ptr[b->end_column - 1] == '\n') {
@@ -344,8 +380,10 @@ static MARKDOWN_CORE_INLINE bool accepts_lines(markdown_core_node *node) {
         return true;
     }
 
-    return (block_type == MARKDOWN_CORE_NODE_PARAGRAPH || block_type == MARKDOWN_CORE_NODE_HEADING ||
-            block_type == MARKDOWN_CORE_NODE_CODE_BLOCK);
+    return (
+        block_type == MARKDOWN_CORE_NODE_PARAGRAPH || block_type == MARKDOWN_CORE_NODE_HEADING ||
+        block_type == MARKDOWN_CORE_NODE_CODE_BLOCK
+    );
 }
 
 static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
@@ -416,10 +454,18 @@ const char *markdown_core_diagnostic_code_string(markdown_core_diagnostic_code c
  *
  * The message pool is written BEFORE the entry is committed, so a pool that
  * failed leaves no entry naming a slice of it. */
-void markdown_core_parser_diagnose(markdown_core_parser *parser, markdown_core_diagnostic_severity severity,
-                                   markdown_core_diagnostic_code code, int start_line, int start_column, int end_line,
-                                   int end_column, const char *message, const unsigned char *subject,
-                                   bufsize_t subject_length) {
+void markdown_core_parser_diagnose(
+    markdown_core_parser *parser,
+    markdown_core_diagnostic_severity severity,
+    markdown_core_diagnostic_code code,
+    int start_line,
+    int start_column,
+    int end_line,
+    int end_column,
+    const char *message,
+    const unsigned char *subject,
+    bufsize_t subject_length
+) {
     markdown_core_diagnostics *list;
     markdown_core_diagnostic_record *entry;
     bufsize_t pool_start;
@@ -489,10 +535,17 @@ void markdown_core_parser_diagnose(markdown_core_parser *parser, markdown_core_d
  * The block phase needs no projection: a line offset IS a column, and the line
  * is the one being processed. This exists because two extensions want it and a
  * second copy of the rtrim is how the two would drift. */
-void markdown_core_parser_diagnose_line(markdown_core_parser *parser, markdown_core_diagnostic_severity severity,
-                                        markdown_core_diagnostic_code code, const unsigned char *input, bufsize_t len,
-                                        bufsize_t from, const char *message, const unsigned char *subject,
-                                        bufsize_t subject_length) {
+void markdown_core_parser_diagnose_line(
+    markdown_core_parser *parser,
+    markdown_core_diagnostic_severity severity,
+    markdown_core_diagnostic_code code,
+    const unsigned char *input,
+    bufsize_t len,
+    bufsize_t from,
+    const char *message,
+    const unsigned char *subject,
+    bufsize_t subject_length
+) {
     bufsize_t to = len;
 
     if (!parser || !parser->diagnostics_on || !input) {
@@ -505,8 +558,18 @@ void markdown_core_parser_diagnose_line(markdown_core_parser *parser, markdown_c
     if (to <= from) {
         return;
     }
-    markdown_core_parser_diagnose(parser, severity, code, parser->line_number, (int)from + 1, parser->line_number,
-                                  (int)to, message, subject, subject_length);
+    markdown_core_parser_diagnose(
+        parser,
+        severity,
+        code,
+        parser->line_number,
+        (int)from + 1,
+        parser->line_number,
+        (int)to,
+        message,
+        subject,
+        subject_length
+    );
 }
 
 void markdown_core_parser_retain_diagnostics(markdown_core_parser *parser, markdown_core_diagnostics *out) {
@@ -539,10 +602,18 @@ void markdown_core_diagnostics_write(const markdown_core_diagnostics *diagnostic
     for (i = 0; i < count; i++) {
         const markdown_core_diagnostic_record *entry = &diagnostics->entries[i];
         const char *name = markdown_core_diagnostic_code_string((markdown_core_diagnostic_code)entry->code);
-        fprintf(out, "diagnostic %s %s %d:%d..%d:%d %.*s\n",
-                entry->severity == (uint8_t)MARKDOWN_CORE_DIAGNOSTIC_ERROR ? "ERROR" : "WARNING",
-                name ? name : "unknown", entry->start_line, entry->start_column, entry->end_line, entry->end_column,
-                (int)entry->message_length, diagnostics->messages.ptr + entry->message_start);
+        fprintf(
+            out,
+            "diagnostic %s %s %d:%d..%d:%d %.*s\n",
+            entry->severity == (uint8_t)MARKDOWN_CORE_DIAGNOSTIC_ERROR ? "ERROR" : "WARNING",
+            name ? name : "unknown",
+            entry->start_line,
+            entry->start_column,
+            entry->end_line,
+            entry->end_column,
+            (int)entry->message_length,
+            diagnostics->messages.ptr + entry->message_start
+        );
     }
 }
 
@@ -596,6 +667,7 @@ static bool S_record_line_start(markdown_core_parser *parser, bufsize_t start) {
 static void S_record_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t column) {
     markdown_core_line_mark *mark;
 
+    markdown_core_parser_touch(parser, node);
     if (parser->line_marks_size == parser->line_marks_alloc) {
         /* One mark per line, so the doubling never has a realistic ceiling to
          * reach; the guard is here because it is cheaper than reasoning about
@@ -606,8 +678,8 @@ static void S_record_content_mark(markdown_core_parser *parser, markdown_core_no
             parser->oom = true;
             return;
         }
-        grown = (markdown_core_line_mark *)parser->mem->realloc(parser->line_marks,
-                                                                (size_t)alloc * sizeof(markdown_core_line_mark));
+        grown = (markdown_core_line_mark *)
+                    parser->mem->realloc(parser->line_marks, (size_t)alloc * sizeof(markdown_core_line_mark));
         if (!grown) {
             parser->oom = true;
             return;
@@ -636,6 +708,7 @@ static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown
     int chars_to_tab;
     int i;
     assert(node->flags & MARKDOWN_CORE_NODE__OPEN);
+    markdown_core_parser_touch(parser, node);
     /* Indentation stripped ahead of the content belongs to the CONTAINER that
      * stripped it, not to the block being written into -- the same rule the
      * block openers follow, and for the same reason: a block begins at its own
@@ -689,8 +762,8 @@ int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_cor
             parser->oom = true;
             return 0;
         }
-        grown = (markdown_core_line_mark *)parser->mem->realloc(parser->line_marks,
-                                                                (size_t)alloc * sizeof(markdown_core_line_mark));
+        grown = (markdown_core_line_mark *)
+                    parser->mem->realloc(parser->line_marks, (size_t)alloc * sizeof(markdown_core_line_mark));
         if (!grown) {
             parser->oom = true;
             return 0;
@@ -716,8 +789,13 @@ int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_cor
  * shared: two nodes naming one run is an alias, and an alias between two trees
  * is the shape §1 records six times.
  */
-int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, markdown_core_node *owner,
-                                             markdown_core_node *node, bufsize_t from, bufsize_t length) {
+int markdown_core_parser_adopt_content_marks(
+    markdown_core_parser *parser,
+    markdown_core_node *owner,
+    markdown_core_node *node,
+    bufsize_t from,
+    bufsize_t length
+) {
     int first;
     int last;
     int i;
@@ -743,8 +821,8 @@ int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, markd
             parser->oom = true;
             return 0;
         }
-        grown = (markdown_core_line_mark *)parser->mem->realloc(parser->line_marks,
-                                                                (size_t)alloc * sizeof(markdown_core_line_mark));
+        grown = (markdown_core_line_mark *)
+                    parser->mem->realloc(parser->line_marks, (size_t)alloc * sizeof(markdown_core_line_mark));
         if (!grown) {
             parser->oom = true;
             return 0;
@@ -775,8 +853,13 @@ int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, markd
  * maintains: find the slice the offset falls in and add the distance from its
  * start. Binary search, so a caller that asks once per inline node pays
  * log(lines in the block) rather than re-walking it. */
-int markdown_core_parser_content_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t content_offset,
-                                       int *line, int *column) {
+int markdown_core_parser_content_place(
+    markdown_core_parser *parser,
+    markdown_core_node *node,
+    bufsize_t content_offset,
+    int *line,
+    int *column
+) {
     const markdown_core_line_mark *mark;
     int lo, hi;
 
@@ -805,8 +888,12 @@ int markdown_core_parser_content_place(markdown_core_parser *parser, markdown_co
  * bytes, and keep the map describing what is left. The marks stay where they are in the vector: the
  * run's head moves past the slices that went away, and the slice the cut
  * landed inside keeps its line with its column advanced to the cut. */
-static void S_rebase_content_marks(markdown_core_parser *parser, markdown_core_node *node, bufsize_t dropped,
-                                   bufsize_t remaining) {
+static void S_rebase_content_marks(
+    markdown_core_parser *parser,
+    markdown_core_node *node,
+    bufsize_t dropped,
+    bufsize_t remaining
+) {
     int i;
     int first = node->content_mark;
     int last = node->content_mark + node->content_mark_count - 1;
@@ -900,9 +987,13 @@ static bool S_ends_with_blank_line(markdown_core_node *node) {
  * Q7 and Q26: the destination is REQUIRED. An allocation that loses it fails
  * the parse rather than producing a definition that lies about where it points.
  */
-static markdown_core_node *S_new_reference_definition(markdown_core_parser *parser, markdown_core_node *b,
-                                                      bufsize_t from, bufsize_t upto,
-                                                      const markdown_core_reference_parts *parts) {
+static markdown_core_node *S_new_reference_definition(
+    markdown_core_parser *parser,
+    markdown_core_node *b,
+    bufsize_t from,
+    bufsize_t upto,
+    const markdown_core_reference_parts *parts
+) {
     markdown_core_node *node;
     markdown_core_definition *definition;
     markdown_core_chunk url = parts->url;
@@ -939,6 +1030,11 @@ static markdown_core_node *S_new_reference_definition(markdown_core_parser *pars
         parser->oom = true;
         return NULL;
     }
+    markdown_core_parser_touch(parser, node);
+    /* Born outside `add_child`, so minted here (T2). When the harvest empties
+     * the paragraph, the caller hands the firstborn the paragraph's identity
+     * instead (§4 D4); this mint is then the id that dies unobserved. */
+    markdown_core_parser_mint_block_id(parser, node);
     definition = (markdown_core_definition *)parser->mem->calloc(1, sizeof(*definition));
     if (!definition) {
         parser->oom = true;
@@ -979,10 +1075,14 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
     markdown_core_strbuf *node_content = &b->content;
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
     markdown_core_reference_parts parts;
+    markdown_core_node *first_definition = NULL;
     bufsize_t consumed = 0;
     while (chunk.len && chunk.data[0] == '[' &&
            (pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap, &parts))) {
-        S_new_reference_definition(parser, b, consumed, consumed + pos, &parts);
+        markdown_core_node *definition = S_new_reference_definition(parser, b, consumed, consumed + pos, &parts);
+        if (definition && !first_definition) {
+            first_definition = definition;
+        }
         consumed += pos;
         chunk.data += pos;
         chunk.len -= pos;
@@ -1017,7 +1117,23 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
         b->start_line = line;
         b->start_column = column;
     }
-    return !is_blank(&b->content, 0);
+    bool has_content = !is_blank(&b->content, 0);
+    /* D4's fork 3 (§4): a harvest that empties the paragraph is the reader's
+     * text BECOMING the definition, so the firstborn definition takes the
+     * paragraph's identity -- the paragraph the consumer watched grow does not
+     * die and come back as a stranger. The ids are SWAPPED, not copied: the
+     * paragraph leaves with the definition's fresh mint, which nothing has
+     * observed -- it is either freed by the caller or, when the line that
+     * emptied it here becomes its next content (a `===` after nothing but
+     * definitions), it carries on as what it then is: new content. A paragraph
+     * that keeps content keeps its id -- the visible text is the element the
+     * consumer is tracking -- and its definitions stay fresh births. */
+    if (!has_content && first_definition) {
+        uint32_t fresh = first_definition->identifier;
+        first_definition->identifier = b->identifier;
+        b->identifier = fresh;
+    }
+    return has_content;
 }
 
 static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_node *b) {
@@ -1029,6 +1145,7 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
 
     parent = b->parent;
     assert(b->flags & MARKDOWN_CORE_NODE__OPEN); // shouldn't call finalize on closed blocks
+    markdown_core_parser_touch(parser, b);
     b->flags &= ~MARKDOWN_CORE_NODE__OPEN;
 
     if (parser->curline.size == 0) {
@@ -1177,8 +1294,12 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
 }
 
 // Add a node as child of another.  Return pointer to child.
-static markdown_core_node *add_child(markdown_core_parser *parser, markdown_core_node *parent,
-                                     markdown_core_node_type block_type, int start_column) {
+static markdown_core_node *add_child(
+    markdown_core_parser *parser,
+    markdown_core_node *parent,
+    markdown_core_node_type block_type,
+    int start_column
+) {
     assert(parent);
 
     // if 'parent' isn't the kind of node that can accept this child,
@@ -1199,6 +1320,9 @@ static markdown_core_node *add_child(markdown_core_parser *parser, markdown_core
         return NULL;
     }
     child->parent = parent;
+    markdown_core_parser_touch(parser, parent);
+    markdown_core_parser_touch(parser, child);
+    markdown_core_parser_mint_block_id(parser, child);
 
     if (parent->last_child) {
         parent->last_child->next = child;
@@ -1242,40 +1366,365 @@ void markdown_core_manage_extensions_special_characters(markdown_core_parser *pa
 }
 
 // Walk through node and all children, recursively, parsing
+/* THE PER-BLOCK TAIL (T18). What `finish` always ran over the whole tree
+ * after the inline parse -- consolidation, the extension postprocessors, the
+ * comment strip -- runs here over ONE block, in the order the whole-tree
+ * passes had: parse -> consolidate -> each declared hook in attach order ->
+ * strip. The order across blocks is free, because no pass moves a node to
+ * another parent (F15); the order within a block is not -- stripping before
+ * autolink turns `a<!-- x -->@b.com` into a link, and stripping before
+ * formula promotes `$$x$$<!-- c -->`.
+ *
+ * WHICH HALF A CACHE HIT SKIPS -- F15 rule 2, the resolution T18 owes. A pass
+ * over the block's CHILDREN (consolidation, a hook declared `"*inlines"`, the
+ * strip of inline comments) is skipped for a block whose children are
+ * borrowed from the projection cache: the cache stored them after those
+ * passes ran. A pass over the block NODE (a hook declared by name, the strip
+ * of a comment `HTML_BLOCK`) runs on every projection, because the node is
+ * the one part of a hit the cache never serves -- a `PARAGRAPH` around a
+ * standalone formula is a fresh paragraph on every projection, and only the
+ * hook makes it the `FormulaBlock` five gates pin. `holder` (T19) says which
+ * kind of block this is; today nothing sets it and every block is its own. */
+
+static const char S_INLINES_MEMBER[] = "*inlines";
+
+/* The projection cache (T9), defined beside the clone that takes its hits. */
+static bool S_cache_fresh(markdown_core_parser *parser, const markdown_core_node *block, markdown_core_map *refmap);
+static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node);
+
+/* The inline ordinals (T2), defined beside the tail that assigns them. */
+static bool S_has_inline_child(markdown_core_node *block);
+
+static bool S_set_names(const char *set, const char *name) {
+    const char *p;
+    for (p = set; *p; p += strlen(p) + 1) {
+        if (strcmp(p, name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* The memo is keyed on the name's POINTER, and the name is a function of the
+ * NODE rather than of its type: a `LIST_ITEM` carrying tasklist answers
+ * "tasklist" and a plain one "list_item"; a `TABLE_ROW` answers
+ * "table_header" or "table_row". Keyed on the type both would be wrong; keyed
+ * on the name there is nothing to special-case. A literal with the same bytes
+ * at another address misses once and takes its own entry. */
+static bool S_extension_names(
+    markdown_core_parser *parser,
+    const markdown_core_syntax_extension *ext,
+    const char *name
+) {
+    size_t i;
+    bool wants;
+    for (i = 0; i < parser->tail_memo_size; i++) {
+        if (parser->tail_memo[i].ext == ext && parser->tail_memo[i].name == name) {
+            return parser->tail_memo[i].wants;
+        }
+    }
+    wants = S_set_names(ext->postprocess_blocks, name);
+    if (parser->tail_memo_size < MARKDOWN_CORE_TAIL_MEMO) {
+        parser->tail_memo[parser->tail_memo_size].ext = ext;
+        parser->tail_memo[parser->tail_memo_size].name = name;
+        parser->tail_memo[parser->tail_memo_size].wants = wants;
+        parser->tail_memo_size++;
+    }
+    return wants;
+}
+
+/* Is `block` offered to `ext` -- by its inline content, when the children are
+ * the block's own, or by the name it answers NOW? "Now", because a hook that
+ * ran before this one may have replaced it, and the next extension must be
+ * matched against the node that stands there (F15 rule 1). */
+static bool S_extension_wants(
+    markdown_core_parser *parser,
+    const markdown_core_syntax_extension *ext,
+    markdown_core_node *block,
+    bool children_own
+) {
+    if (!ext->postprocess_block_func || !ext->postprocess_blocks) {
+        return false;
+    }
+    if (children_own && contains_inlines(block) && S_extension_names(parser, ext, S_INLINES_MEMBER)) {
+        return true;
+    }
+    return S_extension_names(parser, ext, markdown_core_node_get_type_string(block));
+}
+
+/* Asked at the block's EXIT, so a block nothing will touch is never queued. */
+static bool S_block_has_tail_work(markdown_core_parser *parser, markdown_core_node *block) {
+    markdown_core_llist *extensions;
+    if (contains_inlines(block)) {
+        return true;
+    }
+    /* A block that is not an inline container can still OWN inline-class
+     * children -- a directive block's CST-resident label -- and their
+     * ordinals (T2) are assigned in the tail. */
+    if (S_has_inline_child(block)) {
+        return true;
+    }
+    if ((parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) && S_type(block) == MARKDOWN_CORE_NODE_HTML_BLOCK) {
+        return true;
+    }
+    for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
+        if (S_extension_wants(parser, (const markdown_core_syntax_extension *)extensions->data, block, true)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool S_tail_queue_push(markdown_core_parser *parser, markdown_core_node *block) {
+    if (parser->tail_queue_size == parser->tail_queue_alloc) {
+        size_t grown = parser->tail_queue_alloc ? parser->tail_queue_alloc * 2 : 64;
+        markdown_core_node **queue =
+            (markdown_core_node **)parser->mem->realloc(parser->tail_queue, grown * sizeof(*queue));
+        if (!queue) {
+            return false;
+        }
+        parser->tail_queue = queue;
+        parser->tail_queue_alloc = grown;
+    }
+    parser->tail_queue[parser->tail_queue_size++] = block;
+    return true;
+}
+
+/* THE INLINE ORDINALS (T2, §4 D4). An inline's identity is its pre-order
+ * ordinal among the owning block's inline descendants: unique within the
+ * block -- so unique within any sibling list a consumer iterates -- and the
+ * pair (block's identity, ordinal) is unique in the document. Assigned at the
+ * end of the block's tail, after every pass that creates, merges or removes
+ * inline nodes (consolidation, the hooks, the strip), so the numbering is a
+ * function of the finished list; the parse is deterministic, so two
+ * projections of one unwritten CST number every inline identically, and the
+ * cache stores the list numbered, so a hit serves the same identities without
+ * a write. Only an OWNED list is numbered -- a borrowed one already carries
+ * its numbers and must not be written (F22). */
+static void S_number_inline_descendants(markdown_core_node *block) {
+    markdown_core_node *cur = block->first_child;
+    uint32_t ordinal = 0;
+    while (cur) {
+        /* A nested BLOCK owns its own namespace: its identity is its mint and
+         * its inlines are numbered at its own tail. The one block that mixes
+         * child classes is a directive block, whose label is inline-class and
+         * CST-resident; the label and its parsed content are what this skip
+         * leaves in THIS block's namespace. */
+        if (!MARKDOWN_CORE_NODE_BLOCK_P(cur)) {
+            cur->identifier = ++ordinal;
+            if (cur->first_child) {
+                cur = cur->first_child;
+                continue;
+            }
+        }
+        while (cur != block && !cur->next) {
+            cur = cur->parent;
+        }
+        cur = cur == block ? NULL : cur->next;
+    }
+}
+
+/* Does the block hold any inline-class child of its own -- a parsed inline
+ * list, or a CST-resident inline construct like a directive's label? This is
+ * what obliges a tail: the inline ordinals above are assigned there. */
+static bool S_has_inline_child(markdown_core_node *block) {
+    markdown_core_node *child;
+    for (child = block->first_child; child; child = child->next) {
+        if (!MARKDOWN_CORE_NODE_BLOCK_P(child)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* One block's tail. `*block` comes back reseated or NULL exactly as a hook
+ * leaves it, so the caller can tell a replaced root from a removed one. */
+static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **block) {
+    markdown_core_llist *extensions;
+    markdown_core_node *node = *block;
+    bool children_own = !MARKDOWN_CORE_NODE_BORROWED_P(node);
+
+    if (children_own && contains_inlines(node)) {
+        if (!markdown_core_consolidate_text_nodes_with_parser(parser, node)) {
+            parser->oom = true;
+        }
+    }
+
+    for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
+        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
+        if (!S_extension_wants(parser, ext, node, children_own)) {
+            continue;
+        }
+        ext->postprocess_block_func(ext, parser, &node);
+        if (!node) {
+            *block = NULL;
+            return;
+        }
+        children_own = !MARKDOWN_CORE_NODE_BORROWED_P(node);
+    }
+
+    if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
+        if (S_type(node) == MARKDOWN_CORE_NODE_HTML_BLOCK) {
+            /* The predicate, then the removal -- never a strip rooted at a
+             * block that is itself the comment (F13 requirement 3). */
+            if (S_html_literal_starts_with_comment(node)) {
+                markdown_core_node_free(node);
+                node = NULL;
+            }
+        } else if (children_own && contains_inlines(node)) {
+            if (!S_strip_inline_comments(node)) {
+                parser->oom = true;
+            }
+        }
+    }
+
+    /* THE CST-RESIDENT INLINE CHILD -- a directive's label. Inline-class, so
+     * the walk never queues it, and its list was silently missing every
+     * content pass the whole-tree tail used to give it: consolidation, the
+     * "*inlines" hooks, the strip (found on the landing review -- an
+     * unmatched `*` stayed three TEXT nodes, a `www.` never became a link).
+     * The passes run HERE, from the block that owns it, in the order the
+     * block's own list gets them and before the shared numbering. A label is
+     * never enrolled in the cache -- the clone leaves it unmarked -- so its
+     * children are always its own. */
+    if (node && children_own && !contains_inlines(node) && S_has_inline_child(node)) {
+        markdown_core_node *child;
+        for (child = node->first_child; child; child = child->next) {
+            markdown_core_node *content = child;
+            if (MARKDOWN_CORE_NODE_BLOCK_P(child) || !contains_inlines(child)) {
+                continue;
+            }
+            if (!markdown_core_consolidate_text_nodes_with_parser(parser, child)) {
+                parser->oom = true;
+            }
+            for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
+                const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
+                if (!ext->postprocess_block_func || !ext->postprocess_blocks ||
+                    !S_extension_names(parser, ext, S_INLINES_MEMBER)) {
+                    continue;
+                }
+                /* An "*inlines" pass rewrites CHILDREN and neither replaces
+                 * nor removes the node it is rooted at (F15 rule 2). */
+                ext->postprocess_block_func(ext, parser, &content);
+            }
+            if ((parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) && !S_strip_inline_comments(child)) {
+                parser->oom = true;
+            }
+        }
+    }
+
+    if (node && children_own && S_has_inline_child(node)) {
+        S_number_inline_descendants(node);
+    }
+
+    /* THE STORE, last, so the list the cache keeps is the one the tail
+     * finished with -- and the numbering above rides into it. A derived block
+     * that was replaced took its origin with it, and a block with no inline
+     * content never had one. */
+    if (node && (node->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
+        if (children_own && contains_inlines(node)) {
+            S_cache_store(parser, node);
+        } else {
+            node->link.origin = NULL;
+            node->flags &= ~MARKDOWN_CORE_NODE__ORIGIN;
+        }
+    }
+    *block = node;
+}
+
+/* Drain the queue in the order the walk filled it. A hook may replace or
+ * remove the block it is handed and nothing else, so no entry behind it
+ * dangles. The root is written back if a hook reseated it; a hook that
+ * removed the root leaves NULL, which the projection then answers. */
+static void S_run_block_tails(markdown_core_parser *parser, markdown_core_node **root) {
+    size_t i;
+    for (i = 0; i < parser->tail_queue_size; i++) {
+        markdown_core_node *block = parser->tail_queue[i];
+        bool is_root = block == *root;
+        S_run_block_tail(parser, &block);
+        if (is_root) {
+            *root = block;
+        }
+    }
+    parser->tail_queue_size = 0;
+}
+
 // string content into inline content where appropriate. `root` is a stated
-// CST -- under the split it is a DERIVED block skeleton, never parser->root.
-static void process_inlines(markdown_core_parser *parser, markdown_core_node *root, markdown_core_map *refmap,
-                            int options) {
-    markdown_core_iter *iter = markdown_core_iter_new(root);
+// CST: a DERIVED block skeleton for a re-projection, or `parser->root` itself
+// for the one projection that ends the parser's life (`finish`, T1). Every
+// block with tail work is queued at its EXIT for `S_run_block_tails`.
+static void process_inlines(
+    markdown_core_parser *parser,
+    markdown_core_node *root,
+    markdown_core_map *refmap,
+    int options
+) {
+    markdown_core_iter walk;
+    markdown_core_iter *iter = &walk;
     markdown_core_node *cur;
     markdown_core_event_type ev_type;
 
-    if (!iter) {
-        parser->oom = true;
-        return;
-    }
+    markdown_core_iter_init(iter, root);
 
     markdown_core_manage_extensions_special_characters(parser, true);
 
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
         if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
-            if (contains_inlines(cur)) {
-                markdown_core_parse_inlines(parser, cur, refmap, options);
+            if (!contains_inlines(cur)) {
+                continue;
+            }
+            if (!MARKDOWN_CORE_NODE_BORROWED_P(cur) && S_cache_fresh(parser, cur, refmap)) {
+                /* `finish` projects the CST in place (T1): the block IS its
+                 * own origin, and the cache's hold becomes the borrow's. */
+                cur->first_child = cur->link.holder->first_child;
+                cur->last_child = cur->link.holder->last_child;
+                cur->flags &= ~MARKDOWN_CORE_NODE__CACHE_OWNER;
+                parser->cache_hits++;
+            }
+            if (MARKDOWN_CORE_NODE_BORROWED_P(cur)) {
+                /* A BORROWER'S LIST IS NEITHER PARSED NOR ENTERED (F22). The
+                 * list is the cache's, and it is already there at this ENTER
+                 * -- unlike a block's own inlines, which are parsed below
+                 * after the lookahead was taken -- so the walk would descend
+                 * into it and meet a directive's label, an inline-class node
+                 * that `contains_inlines` claims, and parse it AGAIN into the
+                 * shared list. The block is queued here because the EXIT the
+                 * reset consumes is where it would otherwise be queued, and
+                 * its name hooks must still run (F15 rule 2). */
+                if (S_block_has_tail_work(parser, cur) && !S_tail_queue_push(parser, cur)) {
+                    parser->oom = true;
+                }
+                markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
+                continue;
+            }
+            markdown_core_parse_inlines(parser, cur, refmap, options);
+        } else if (MARKDOWN_CORE_NODE_BLOCK_P(cur) && S_block_has_tail_work(parser, cur)) {
+            /* COLLECTED, NOT ACTED ON: a hook may replace or remove the block
+             * and the walk is standing on it (F13 requirement 2). The walk
+             * never descends into a block's own inlines -- its lookahead was
+             * taken before they were parsed -- and is reset past a borrowed
+             * list above, so this EXIT follows the ENTER directly and the
+             * queue is the blocks in post-order. */
+            if (!S_tail_queue_push(parser, cur)) {
+                parser->oom = true;
             }
         }
     }
 
     markdown_core_manage_extensions_special_characters(parser, false);
-
-    markdown_core_iter_free(iter);
 }
 
 // Attempts to parse a list item marker (bullet or enumerated).
 // On success, returns length of the marker, and populates
 // data with the details.  On failure, returns 0.
-static bufsize_t parse_list_marker(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t pos,
-                                   bool interrupts_paragraph, markdown_core_list **dataptr) {
+static bufsize_t parse_list_marker(
+    markdown_core_parser *parser,
+    markdown_core_chunk *input,
+    bufsize_t pos,
+    bool interrupts_paragraph,
+    markdown_core_list **dataptr
+) {
     markdown_core_mem *mem = parser->mem;
     unsigned char c;
     bufsize_t startpos;
@@ -1371,9 +1820,11 @@ static bufsize_t parse_list_marker(markdown_core_parser *parser, markdown_core_c
 
 // Return 1 if list item belongs in list, else 0.
 static int lists_match(markdown_core_list *list_data, markdown_core_list *item_data) {
-    return (list_data->list_type == item_data->list_type && list_data->delimiter == item_data->delimiter &&
-            // list_data->marker_offset == item_data.marker_offset &&
-            list_data->bullet_char == item_data->bullet_char);
+    return (
+        list_data->list_type == item_data->list_type && list_data->delimiter == item_data->delimiter &&
+        // list_data->marker_offset == item_data.marker_offset &&
+        list_data->bullet_char == item_data->bullet_char
+    );
 }
 
 /* Close the open spine. What used to follow -- `process_inlines` -- is the
@@ -1409,8 +1860,11 @@ static int S_chunk_copy(markdown_core_mem *mem, markdown_core_chunk *dst, const 
     return 1;
 }
 
-static int S_optional_chunk_copy(markdown_core_mem *mem, markdown_core_optional_chunk *dst,
-                                 const markdown_core_optional_chunk *src) {
+static int S_optional_chunk_copy(
+    markdown_core_mem *mem,
+    markdown_core_optional_chunk *dst,
+    const markdown_core_optional_chunk *src
+) {
     if (!src->has_value) {
         *dst = markdown_core_optional_chunk_absent();
         return 1;
@@ -1428,7 +1882,68 @@ static int S_optional_chunk_copy(markdown_core_mem *mem, markdown_core_optional_
  * parser, which outlives the derivation). `user_data` is deliberately not
  * copied -- it is caller-owned decoration on a returned tree, and the parse's
  * own CST never carries any. */
-static markdown_core_node *S_clone_block_node(markdown_core_parser *parser, const markdown_core_node *src) {
+/* THE PROJECTION CACHE (docs/STREAMING.md T9). A CST block with inline
+ * content keeps the list its last projection produced, on a holder hung
+ * from the block (`link.holder`, CACHE_OWNER) and keyed by the block's write
+ * stamp (T3), both map generations (T4) and the extension set's generation
+ * -- an attach re-projects every block. A projection that finds the key
+ * unchanged aliases the list into the derived block -- shares it, never
+ * copies it (F12: copying costs more than the parse it replaces) -- and the
+ * per-block tail (T18) leaves an aliased list alone. A projection that finds
+ * it stale or absent parses, runs the block's tail, and then MOVES the
+ * children into a fresh holder and borrows them straight back: with the tail
+ * per block nothing touches them after the store, which is what the PoC's
+ * copy-per-miss existed to survive (F12). Only a projection against the
+ * parser's own map takes part: a generation names a map, not a set of
+ * definitions, and `refmap_independence` projects against another. */
+static bool S_cache_fresh(markdown_core_parser *parser, const markdown_core_node *block, markdown_core_map *refmap) {
+    const markdown_core_holder *holder = block->link.holder;
+    /* `diagnostics_on` here is the RECORDING projection (S_project raised it
+     * for exactly this walk): a hit skips the inline parse, and the inline
+     * parse is where every record-gated row speaks (label-too-long, the
+     * directive codes) -- so the recording projection re-parses instead of
+     * hitting. T10's rule extended to Requirement 13: correctness must never
+     * depend on the cache, and the diagnostic list is part of the model. Paid
+     * only when diagnostics were retained, and `finish` without them still
+     * hits in place. */
+    return refmap == parser->refmap && !parser->no_projection_cache && !parser->diagnostics_on &&
+           (block->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) && holder->stamp == block->stamp &&
+           holder->refgen == parser->refmap->generation && holder->footgen == parser->footnote_defs->generation &&
+           holder->extgen == parser->extension_generation;
+}
+
+static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_node *origin = node->link.origin;
+    markdown_core_holder *holder;
+
+    node->link.origin = NULL;
+    node->flags &= ~MARKDOWN_CORE_NODE__ORIGIN;
+    holder = markdown_core_holder_new(parser->mem);
+    if (!holder) {
+        /* Nothing is lost: the tree keeps its own children. */
+        return;
+    }
+    if (!markdown_core_holder_take_children(holder, node)) {
+        parser->oom = true;
+    }
+    holder->stamp = origin->stamp;
+    holder->refgen = parser->refmap->generation;
+    holder->footgen = parser->footnote_defs->generation;
+    holder->extgen = parser->extension_generation;
+    markdown_core_holder_hold(holder);
+    if (origin->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) {
+        markdown_core_holder_release(origin->link.holder);
+    }
+    origin->link.holder = holder;
+    origin->flags |= MARKDOWN_CORE_NODE__CACHE_OWNER;
+    markdown_core_node_borrow_children(node, holder);
+}
+
+static markdown_core_node *S_clone_block_node(
+    markdown_core_parser *parser,
+    const markdown_core_node *src,
+    markdown_core_map *refmap
+) {
     markdown_core_mem *mem = parser->mem;
     markdown_core_node *dst = (markdown_core_node *)mem->calloc(1, sizeof(*dst));
     if (!dst) {
@@ -1450,8 +1965,12 @@ static markdown_core_node *S_clone_block_node(markdown_core_parser *parser, cons
     dst->internal_offset = src->internal_offset;
     dst->content_mark = src->content_mark;
     dst->content_mark_count = src->content_mark_count;
+    /* THE CARRY (T2): the derived block IS the CST block to a consumer, and
+     * this line is what makes two projections of one CST name every block
+     * identically (F11). A clone is calloc'd, so losing this fails closed. */
+    dst->identifier = src->identifier;
     dst->type = src->type;
-    dst->flags = src->flags;
+    dst->flags = src->flags & ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN);
     dst->extension = src->extension;
 
     switch (S_type(dst)) {
@@ -1523,6 +2042,29 @@ static markdown_core_node *S_clone_block_node(markdown_core_parser *parser, cons
             goto lost;
         }
     }
+
+    /* THE HIT IS TAKEN HERE, where the origin is in hand, so the derived
+     * block never needs to find it again. A miss remembers the origin for
+     * the store at the end of its tail. Only BLOCK-class nodes with inline
+     * content take part: they are the ones the re-parse costs, and they are
+     * the ones the walk queues -- a CST-resident inline construct (a
+     * directive's label) is never queued, so enrolling it left ORIGIN and a
+     * CST pointer on a node the caller holds (found on the landing review).
+     * Its passes run from the block that owns it instead. */
+    if (MARKDOWN_CORE_NODE_BLOCK_P(dst) && contains_inlines(dst) && refmap == parser->refmap &&
+        !parser->no_projection_cache) {
+        if (S_cache_fresh(parser, src, refmap)) {
+            markdown_core_node_borrow_children(dst, src->link.holder);
+            parser->cache_hits++;
+        } else {
+            /* A miss remembers where it came from so its tail can store. A
+             * projection against another map never stores: what it resolves
+             * is that map's answer, and the key names this parser's. */
+            dst->link.origin = (markdown_core_node *)src;
+            dst->flags |= MARKDOWN_CORE_NODE__ORIGIN;
+            parser->cache_misses++;
+        }
+    }
     return dst;
 
 lost:
@@ -1532,8 +2074,12 @@ lost:
 
 /* Clone the block skeleton. Iterative, because block nesting is input-shaped.
  * Children are linked raw: the source tree already proved containment. */
-static markdown_core_node *S_clone_block_tree(markdown_core_parser *parser, const markdown_core_node *src_root) {
-    markdown_core_node *dst_root = S_clone_block_node(parser, src_root);
+static markdown_core_node *S_clone_block_tree(
+    markdown_core_parser *parser,
+    const markdown_core_node *src_root,
+    markdown_core_map *refmap
+) {
+    markdown_core_node *dst_root = S_clone_block_node(parser, src_root, refmap);
     markdown_core_node *dst_parent = dst_root;
     const markdown_core_node *src = src_root->first_child;
 
@@ -1541,7 +2087,7 @@ static markdown_core_node *S_clone_block_tree(markdown_core_parser *parser, cons
         return NULL;
     }
     while (src) {
-        markdown_core_node *dst = S_clone_block_node(parser, src);
+        markdown_core_node *dst = S_clone_block_node(parser, src, refmap);
         if (!dst) {
             markdown_core_node_free(dst_root);
             return NULL;
@@ -1572,23 +2118,60 @@ static markdown_core_node *S_clone_block_tree(markdown_core_parser *parser, cons
     return dst_root;
 }
 
-/* THE PROJECTION: AST = project(CST, refmap) (§12.1). Clone the block
- * skeleton, parse each content-bearing block's inlines against the map as it
- * now stands, then run the tail `finish` always ran -- consolidation, the
- * extension postprocessors, the comment strip -- on the derived tree. The CST
- * is not written: a later derivation, against this map or another, starts from
- * the same bytes.
+/* THE PROJECTION's work, on whichever block skeleton it is handed: parse
+ * each content-bearing block's inlines against the map as it now stands, then
+ * run the tail `finish` always ran -- consolidation, the extension
+ * postprocessors, the comment strip -- block by block (T18). Returns the
+ * projected root, which a hook may have replaced. The skeleton is CONSUMED:
+ * after this it is an AST, and projecting it again would not give the same
+ * answer. That is why a re-projection hands in a clone and `finish` hands in
+ * the CST itself.
  *
  * `record_diagnostics` gates the rows the projection itself raises (after
  * §12.9 that is `label-too-long` and the directive attribute/label codes).
  * They are CST facts read off the construct's own bytes, but the rule is that
  * a diagnostic speaks when its construct COMPLETES (§12.8 Q4) -- so only the
- * final derivation, over a fully closed CST, records; a derivation taken
- * mid-parse stays silent rather than describing an open block's prefix. */
-markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parser, markdown_core_map *refmap,
-                                                     int record_diagnostics) {
-    markdown_core_llist *extensions;
+ * final projection, over a fully closed CST, records; one taken mid-parse
+ * stays silent rather than describing an open block's prefix. */
+static markdown_core_node *S_project(
+    markdown_core_parser *parser,
+    markdown_core_node *skeleton,
+    markdown_core_map *refmap,
+    int record_diagnostics
+) {
     bool recording = parser->diagnostics_on;
+    /* A PROJECTION READS THE CST AND LEAVES NOTHING BEHIND THAT THE PARSE
+     * WILL READ BACK (docs/STREAMING.md F21, correcting F10). `parse_inlines`
+     * mints a mark for a block that has none -- an empty ATX heading, a
+     * directive's label -- into the parser's own vector; an open block that
+     * takes its next line after that finds its run no longer contiguous with
+     * the vector's end, its later marks land outside the run, and
+     * `content_place` answers from a foreign mark. Every position the
+     * projection needs is written into the nodes it builds while it runs, so
+     * the minted marks are scratch, and the vector is cut back to where the
+     * parse left it. */
+    bufsize_t marks_before = parser->line_marks_size;
+
+    parser->diagnostics_on = recording && record_diagnostics != 0;
+    process_inlines(parser, skeleton, refmap, parser->options);
+    parser->diagnostics_on = recording;
+
+    S_run_block_tails(parser, &skeleton);
+
+    parser->line_marks_size = marks_before;
+    return skeleton;
+}
+
+/* THE PROJECTION: AST = project(CST, refmap) (§12.1), as a NEW tree. Clone
+ * the block skeleton and project onto the clone. The CST is not written: a
+ * later derivation, against this map or another, starts from the same bytes.
+ * This is the RE-projection path -- `finish`, whose CST has no later, skips
+ * the clone and projects in place (T1). */
+markdown_core_node *markdown_core_parser_derive_tree(
+    markdown_core_parser *parser,
+    markdown_core_map *refmap,
+    int record_diagnostics
+) {
     markdown_core_node *derived;
 
     /* A parse that lost an allocation may hold a tree that is not all there --
@@ -1599,37 +2182,13 @@ markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parse
         return NULL;
     }
 
-    derived = S_clone_block_tree(parser, parser->root);
+    derived = S_clone_block_tree(parser, parser->root, refmap);
     if (!derived) {
         parser->oom = true;
         return NULL;
     }
 
-    parser->diagnostics_on = recording && record_diagnostics != 0;
-    process_inlines(parser, derived, refmap, parser->options);
-    parser->diagnostics_on = recording;
-
-    if (!markdown_core_consolidate_text_nodes_with_parser(parser, derived)) {
-        parser->oom = true;
-    }
-
-    for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
-        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
-        if (ext->postprocess_func) {
-            markdown_core_node *processed = ext->postprocess_func(ext, parser, derived);
-            if (processed) {
-                derived = processed;
-            }
-        }
-    }
-
-    if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
-        if (!S_strip_html_comments(derived)) {
-            parser->oom = true;
-        }
-    }
-
-    return derived;
+    return S_project(parser, derived, refmap, record_diagnostics);
 }
 
 markdown_core_node *markdown_core_parse_file(FILE *f, int options) {
@@ -1931,8 +2490,11 @@ static bool parse_block_quote_prefix(markdown_core_parser *parser, markdown_core
     return res;
 }
 
-static bool parse_footnote_definition_block_prefix(markdown_core_parser *parser, markdown_core_chunk *input,
-                                                   markdown_core_node *container) {
+static bool parse_footnote_definition_block_prefix(
+    markdown_core_parser *parser,
+    markdown_core_chunk *input,
+    markdown_core_node *container
+) {
     if (parser->indent >= 4) {
         S_advance_offset(parser, input, 4, true);
         return true;
@@ -1943,8 +2505,11 @@ static bool parse_footnote_definition_block_prefix(markdown_core_parser *parser,
     return false;
 }
 
-static bool parse_node_item_prefix(markdown_core_parser *parser, markdown_core_chunk *input,
-                                   markdown_core_node *container) {
+static bool parse_node_item_prefix(
+    markdown_core_parser *parser,
+    markdown_core_chunk *input,
+    markdown_core_node *container
+) {
     bool res = false;
 
     if (parser->indent >= container->as.list.marker_offset + container->as.list.padding) {
@@ -1960,8 +2525,12 @@ static bool parse_node_item_prefix(markdown_core_parser *parser, markdown_core_c
     return res;
 }
 
-static bool parse_code_block_prefix(markdown_core_parser *parser, markdown_core_chunk *input,
-                                    markdown_core_node *container, bool *should_continue) {
+static bool parse_code_block_prefix(
+    markdown_core_parser *parser,
+    markdown_core_chunk *input,
+    markdown_core_node *container,
+    bool *should_continue
+) {
     bool res = false;
 
     if (!container->as.code.fenced) { // indented
@@ -2024,8 +2593,12 @@ static bool parse_html_block_prefix(markdown_core_parser *parser, markdown_core_
     return res;
 }
 
-static bool parse_extension_block(markdown_core_parser *parser, markdown_core_node *container,
-                                  markdown_core_chunk *input, bool *should_continue) {
+static bool parse_extension_block(
+    markdown_core_parser *parser,
+    markdown_core_node *container,
+    markdown_core_chunk *input,
+    bool *should_continue
+) {
     int matched;
 
     if (!container->extension->last_block_matches) {
@@ -2068,8 +2641,11 @@ static bool parse_extension_block(markdown_core_parser *parser, markdown_core_no
  *
  * Returns: The last matching node, or NULL
  */
-static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markdown_core_chunk *input,
-                                             bool *all_matched) {
+static markdown_core_node *check_open_blocks(
+    markdown_core_parser *parser,
+    markdown_core_chunk *input,
+    bool *all_matched
+) {
     bool should_continue = true;
     *all_matched = false;
     markdown_core_node *container = parser->root;
@@ -2147,8 +2723,12 @@ done:
     return container;
 }
 
-static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,
-                            bool all_matched) {
+static void open_new_blocks(
+    markdown_core_parser *parser,
+    markdown_core_node **container,
+    markdown_core_chunk *input,
+    bool all_matched
+) {
     bool indented;
     markdown_core_list *data = NULL;
     bool maybe_lazy = S_type(parser->current) == MARKDOWN_CORE_NODE_PARAGRAPH;
@@ -2226,8 +2806,8 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             S_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
 
         } else if (!indented && ((matched = scan_html_block_start(input, parser->first_nonspace)) ||
-                                 (cont_type != MARKDOWN_CORE_NODE_PARAGRAPH &&
-                                  (matched = scan_html_block_start_7(input, parser->first_nonspace))))) {
+                                    (cont_type != MARKDOWN_CORE_NODE_PARAGRAPH &&
+                                        (matched = scan_html_block_start_7(input, parser->first_nonspace))))) {
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_HTML_BLOCK, parser->first_nonspace + 1);
             if (!*container) {
                 return;
@@ -2242,6 +2822,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
 
             if (has_content) {
 
+                markdown_core_parser_touch(parser, *container);
                 (*container)->type = (uint16_t)MARKDOWN_CORE_NODE_HEADING;
                 (*container)->as.heading.level = lev;
                 (*container)->as.heading.setext = true;
@@ -2312,8 +2893,13 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             (*container)->internal_offset = matched;
         } else if ((!indented || cont_type == MARKDOWN_CORE_NODE_LIST) && parser->indent < 4 &&
                    depth < MAX_LIST_DEPTH &&
-                   (matched = parse_list_marker(parser, input, parser->first_nonspace,
-                                                (*container)->type == MARKDOWN_CORE_NODE_PARAGRAPH, &data))) {
+                   (matched = parse_list_marker(
+                        parser,
+                        input,
+                        parser->first_nonspace,
+                        (*container)->type == MARKDOWN_CORE_NODE_PARAGRAPH,
+                        &data
+                    ))) {
 
             // Note that we can have new list items starting with >= 4
             // spaces indent, as long as the list container is still open.
@@ -2419,8 +3005,12 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
     }
 }
 
-static void add_text_to_container(markdown_core_parser *parser, markdown_core_node *container,
-                                  markdown_core_node *last_matched_container, markdown_core_chunk *input) {
+static void add_text_to_container(
+    markdown_core_parser *parser,
+    markdown_core_node *container,
+    markdown_core_node *last_matched_container,
+    markdown_core_chunk *input
+) {
     markdown_core_node *tmp;
     // what remains at parser->offset is a text line.  add the text to the
     // appropriate container.
@@ -2438,10 +3028,10 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
     const markdown_core_node_type ctype = S_type(container);
     const bool last_line_blank =
         (parser->blank && ctype != MARKDOWN_CORE_NODE_BLOCK_QUOTE && ctype != MARKDOWN_CORE_NODE_HEADING &&
-         ctype != MARKDOWN_CORE_NODE_THEMATIC_BREAK && !extension_accepts_lines(container) &&
-         !(ctype == MARKDOWN_CORE_NODE_CODE_BLOCK && container->as.code.fenced) &&
-         !(ctype == MARKDOWN_CORE_NODE_LIST_ITEM && container->first_child == NULL &&
-           container->start_line == parser->line_number));
+            ctype != MARKDOWN_CORE_NODE_THEMATIC_BREAK && !extension_accepts_lines(container) &&
+            !(ctype == MARKDOWN_CORE_NODE_CODE_BLOCK && container->as.code.fenced) &&
+            !(ctype == MARKDOWN_CORE_NODE_LIST_ITEM && container->first_child == NULL &&
+                container->start_line == parser->line_number));
 
     S_set_last_line_blank(container, last_line_blank);
 
@@ -2622,6 +3212,19 @@ finished:
         parser->last_line_length -= 1;
     }
 
+    /* THE SPINE IS STAMPED ONCE PER LINE (T3). A CST block is written only
+     * while it is open, and it is open only on this spine -- so every write
+     * the core cannot see, an extension's opaque state above all (formula's
+     * `closed`, directive's `consume_line`), is covered here whether or not
+     * its own site remembered to touch. A block that closed on this line was
+     * stamped by `finalize` and is no longer on the spine. */
+    {
+        markdown_core_node *spine;
+        for (spine = parser->current; spine; spine = spine->parent) {
+            markdown_core_parser_touch(parser, spine);
+        }
+    }
+
     markdown_core_strbuf_clear(&parser->curline);
 }
 
@@ -2643,13 +3246,26 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
         markdown_core_strbuf_clear(&parser->linebuf);
     }
 
-    /* Close the spine -- the CST is final -- then run the LAST DERIVATION.
-     * `finish` is that derivation plus the seal (§12.10 A): the caller gets a
-     * DERIVED tree, never `parser->root`, through the same projection any
-     * snapshot uses, and the reset below takes the CST with it. */
+    /* Close the spine -- the CST is final -- then run the LAST PROJECTION,
+     * IN PLACE (T1). `finish` is that projection plus the seal (§12.10 A).
+     * Nothing observes the CST after `finish`, so cloning it first was work
+     * with no reader, and the one-shot path paid for it in proportion to its
+     * block count (docs/STREAMING.md F1). And this is the first and only
+     * projection of this CST, so the projection's non-idempotence over the
+     * tree it writes cannot bite. The tree the caller gets IS `parser->root`:
+     * ownership flips here, and everything below, the reset included, must
+     * treat the CST as already gone. `oom` is tested first for the reason
+     * `derive_tree` tests it: a lost allocation leaves a tree that is not all
+     * there, and there is nothing to project. */
     finalize_document(parser);
 
-    res = markdown_core_parser_derive_tree(parser, parser->refmap, 1);
+    if (parser->oom) {
+        res = NULL;
+    } else {
+        res = S_project(parser, parser->root, parser->refmap, 1);
+        parser->root = NULL;
+        parser->current = NULL;
+    }
 
     markdown_core_strbuf_free(&parser->curline);
     markdown_core_strbuf_free(&parser->linebuf);
@@ -2675,11 +3291,16 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
         parser->oom = true;
     }
     if (parser->oom) {
+        /* Exactly one of these holds the tree: `res` once the projection ran
+         * and took it from `parser->root`, `parser->root` when the parse was
+         * lost before the projection could run. */
         if (res) {
             markdown_core_node_free(res);
         }
-        markdown_core_node_free(parser->root);
-        parser->root = NULL;
+        if (parser->root) {
+            markdown_core_node_free(parser->root);
+            parser->root = NULL;
+        }
         markdown_core_parser_reset(parser);
         return NULL;
     }
@@ -2715,9 +3336,10 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
         memset(&parser->diagnostics, 0, sizeof(parser->diagnostics));
     }
 
-    /* The parser's life ends here (ruling A): the reset disposes the CST --
-     * `parser->root` deliberately stays set so `dispose` frees it -- and what
-     * leaves is the derivation alone. */
+    /* The parser's life ends here (ruling A): the reset disposes what is
+     * still the parser's. The CST is not among it -- `parser->root` was
+     * cleared at the projection because the CST left as the result, and
+     * `dispose` frees only what it finds set. */
     markdown_core_parser_reset(parser);
 
     return res;
@@ -2762,8 +3384,12 @@ void markdown_core_concrete_dispose(markdown_core_concrete *concrete) {
     memset(concrete, 0, sizeof(*concrete));
 }
 
-markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser, markdown_core_node *parent,
-                                                   markdown_core_node_type block_type, int start_column) {
+markdown_core_node *markdown_core_parser_add_child(
+    markdown_core_parser *parser,
+    markdown_core_node *parent,
+    markdown_core_node_type block_type,
+    int start_column
+) {
     return add_child(parser, parent, block_type, start_column);
 }
 

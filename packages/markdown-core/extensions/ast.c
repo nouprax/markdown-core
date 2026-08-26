@@ -79,22 +79,19 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
     options->directives = true;
 }
 
-markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
-                                                     const markdown_core_parse_options *requested_options,
-                                                     markdown_core_error **error) {
+/* The one parser both public entries build -- `markdown_core_document_parse`
+ * and the session (T12) -- so the option mapping and the extension mask have
+ * one spelling. */
+static markdown_core_parser *S_parser_for_options(
+    const markdown_core_parse_options *requested_options,
+    markdown_core_error **error
+) {
     markdown_core_parse_options defaults;
     const markdown_core_parse_options *options = requested_options;
-    markdown_core_document *document;
     markdown_core_parser *parser;
-    markdown_core_diagnostics pending_diagnostics;
     unsigned extensions = 0;
     int native_options = MARKDOWN_CORE_OPT_VALIDATE_UTF8;
 
-    clear_error(error);
-    if (!source && length != 0) {
-        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "source must not be null when length is nonzero");
-        return NULL;
-    }
     if (!options) {
         markdown_core_parse_options_init(&defaults);
         options = &defaults;
@@ -140,6 +137,28 @@ markdown_core_document *markdown_core_document_parse(const uint8_t *source, size
     if (!markdown_core_core_extensions_attach(parser, extensions)) {
         markdown_core_parser_free(parser);
         set_error(error, MARKDOWN_CORE_ERROR_INTERNAL, "required syntax extension is unavailable");
+        return NULL;
+    }
+    return parser;
+}
+
+markdown_core_document *markdown_core_document_parse(
+    const uint8_t *source,
+    size_t length,
+    const markdown_core_parse_options *requested_options,
+    markdown_core_error **error
+) {
+    markdown_core_document *document;
+    markdown_core_parser *parser;
+    markdown_core_diagnostics pending_diagnostics;
+
+    clear_error(error);
+    if (!source && length != 0) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "source must not be null when length is nonzero");
+        return NULL;
+    }
+    parser = S_parser_for_options(requested_options, error);
+    if (!parser) {
         return NULL;
     }
 
@@ -191,6 +210,170 @@ void markdown_core_document_free(markdown_core_document *document) {
     free(document);
 }
 
+/* THE STREAM'S ENGINE SIDE (docs/STREAMING.md T12). One parser lives for the
+ * session's whole life; every `feed` hands its bytes over and returns a
+ * DERIVED document -- `markdown_core_parser_derive_tree`, the clone-and-
+ * project re-projection, whose closed blocks borrow the projection cache's
+ * lists (T9) under the holder count that lets a borrow outlive the parser
+ * itself (T19). The two total views are COPIES -- the copy-out is the price
+ * a feed pays to return a value (§6), and it is the only copying here; the
+ * tree shares. `recorded` is the retain target `finish` moves the diagnostic
+ * list into; a mid-stream document copies the live list instead, so it
+ * carries the rows the parse has recorded so far and none of the rows the
+ * final projection raises (§12.8 Q4). */
+struct markdown_core_session {
+    markdown_core_parser *parser;
+    markdown_core_diagnostics recorded;
+};
+
+static int S_concrete_copy(markdown_core_parser *parser, markdown_core_concrete *out) {
+    memset(out, 0, sizeof(*out));
+    out->mem = parser->mem;
+    markdown_core_strbuf_init(parser->mem, &out->source, parser->source.size);
+    markdown_core_strbuf_put(&out->source, parser->source.ptr, parser->source.size);
+    if (out->source.oom) {
+        markdown_core_concrete_dispose(out);
+        return 0;
+    }
+    if (parser->line_starts_size) {
+        out->line_starts = (bufsize_t *)parser->mem->calloc(parser->line_starts_size, sizeof(bufsize_t));
+        if (!out->line_starts) {
+            markdown_core_concrete_dispose(out);
+            return 0;
+        }
+        memcpy(out->line_starts, parser->line_starts, (size_t)parser->line_starts_size * sizeof(bufsize_t));
+        out->line_starts_size = parser->line_starts_size;
+    }
+    return 1;
+}
+
+static int S_diagnostics_copy(markdown_core_parser *parser, markdown_core_diagnostics *out) {
+    const markdown_core_diagnostics *live = &parser->diagnostics;
+    memset(out, 0, sizeof(*out));
+    if (!live->mem || live->entries_size == 0) {
+        /* Nothing recorded yet: a zeroed list reads as empty and disposes as
+         * one. */
+        return 1;
+    }
+    out->mem = parser->mem;
+    markdown_core_strbuf_init(parser->mem, &out->messages, live->messages.size);
+    markdown_core_strbuf_put(&out->messages, live->messages.ptr, live->messages.size);
+    out->entries = (markdown_core_diagnostic_record *)parser->mem->calloc(live->entries_size, sizeof(*out->entries));
+    if (out->messages.oom || !out->entries) {
+        markdown_core_diagnostics_dispose(out);
+        return 0;
+    }
+    /* The records carry offsets into the message pool, so they survive the
+     * copy verbatim. */
+    memcpy(out->entries, live->entries, (size_t)live->entries_size * sizeof(*out->entries));
+    out->entries_size = live->entries_size;
+    out->entries_alloc = live->entries_size;
+    return 1;
+}
+
+markdown_core_session *markdown_core_session_new(
+    const markdown_core_parse_options *options,
+    markdown_core_error **error
+) {
+    markdown_core_session *session;
+
+    clear_error(error);
+    session = (markdown_core_session *)calloc(1, sizeof(*session));
+    if (!session) {
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate session");
+        return NULL;
+    }
+    session->parser = S_parser_for_options(options, error);
+    if (!session->parser) {
+        free(session);
+        return NULL;
+    }
+    /* Requirement 13, asked for before the first byte exactly as the one-shot
+     * parse asks it: recording happens as the lines are read. */
+    markdown_core_parser_retain_diagnostics(session->parser, &session->recorded);
+    return session;
+}
+
+markdown_core_document *markdown_core_session_feed(
+    markdown_core_session *session,
+    const uint8_t *chunk,
+    size_t length,
+    markdown_core_error **error
+) {
+    markdown_core_document *document;
+
+    clear_error(error);
+    if (!session || !session->parser) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "the session is finished or null");
+        return NULL;
+    }
+    if (!chunk && length != 0) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "chunk must not be null when length is nonzero");
+        return NULL;
+    }
+    if (length) {
+        markdown_core_parser_feed(session->parser, (const char *)chunk, length);
+    }
+    document = (markdown_core_document *)calloc(1, sizeof(*document));
+    if (!document) {
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
+        return NULL;
+    }
+    document->root = markdown_core_parser_derive_tree(session->parser, session->parser->refmap, 0);
+    if (!document->root) {
+        free(document);
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
+        return NULL;
+    }
+    if (!S_concrete_copy(session->parser, &document->concrete) ||
+        !S_diagnostics_copy(session->parser, &document->diagnostics)) {
+        markdown_core_document_free(document);
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not copy the document's views");
+        return NULL;
+    }
+    return document;
+}
+
+markdown_core_document *markdown_core_session_finish(markdown_core_session *session, markdown_core_error **error) {
+    markdown_core_document *document;
+
+    clear_error(error);
+    if (!session || !session->parser) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "the session is finished or null");
+        return NULL;
+    }
+    document = (markdown_core_document *)calloc(1, sizeof(*document));
+    if (!document) {
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
+        return NULL;
+    }
+    markdown_core_parser_retain_concrete(session->parser, &document->concrete);
+    document->root = markdown_core_parser_finish(session->parser);
+    markdown_core_parser_free(session->parser);
+    session->parser = NULL;
+    if (!document->root) {
+        markdown_core_concrete_dispose(&document->concrete);
+        markdown_core_diagnostics_dispose(&session->recorded);
+        free(document);
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
+        return NULL;
+    }
+    document->diagnostics = session->recorded;
+    memset(&session->recorded, 0, sizeof(session->recorded));
+    return document;
+}
+
+void markdown_core_session_free(markdown_core_session *session) {
+    if (!session) {
+        return;
+    }
+    if (session->parser) {
+        markdown_core_parser_free(session->parser);
+    }
+    markdown_core_diagnostics_dispose(&session->recorded);
+    free(session);
+}
+
 const markdown_core_node *markdown_core_document_semantic(const markdown_core_document *document) {
     return document ? document->root : NULL;
 }
@@ -220,8 +403,11 @@ size_t markdown_core_document_diagnostic_count(const markdown_core_document *doc
     return document ? (size_t)document->diagnostics.entries_size : 0;
 }
 
-bool markdown_core_document_diagnostic_at(const markdown_core_document *document, size_t index,
-                                          markdown_core_diagnostic *diagnostic) {
+bool markdown_core_document_diagnostic_at(
+    const markdown_core_document *document,
+    size_t index,
+    markdown_core_diagnostic *diagnostic
+) {
     const markdown_core_diagnostic_record *entry;
     if (!document || !diagnostic || index >= (size_t)document->diagnostics.entries_size) {
         return false;
@@ -361,39 +547,41 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
 }
 
 const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
-    static const char *const names[] = {"None",
-                                        "Document",
-                                        "BlockQuote",
-                                        "Paragraph",
-                                        "Heading",
-                                        "ThematicBreak",
-                                        "List",
-                                        "ListItem",
-                                        "CodeBlock",
-                                        "HTMLBlock",
-                                        "FormulaBlock",
-                                        "Table",
-                                        "DirectiveBlock",
-                                        "FootnoteDefinition",
-                                        "Text",
-                                        "SoftBreak",
-                                        "LineBreak",
-                                        "Code",
-                                        "HTML",
-                                        "Formula",
-                                        "Emphasis",
-                                        "Strong",
-                                        "Strikethrough",
-                                        "Link",
-                                        "Image",
-                                        "Directive",
-                                        "FootnoteReference",
-                                        "TableRow",
-                                        "TableCell",
-                                        "DirectiveLabel",
-                                        "ReferenceDefinition",
-                                        "LinkReference",
-                                        "ImageReference"};
+    static const char *const names[] = {
+        "None",
+        "Document",
+        "BlockQuote",
+        "Paragraph",
+        "Heading",
+        "ThematicBreak",
+        "List",
+        "ListItem",
+        "CodeBlock",
+        "HTMLBlock",
+        "FormulaBlock",
+        "Table",
+        "DirectiveBlock",
+        "FootnoteDefinition",
+        "Text",
+        "SoftBreak",
+        "LineBreak",
+        "Code",
+        "HTML",
+        "Formula",
+        "Emphasis",
+        "Strong",
+        "Strikethrough",
+        "Link",
+        "Image",
+        "Directive",
+        "FootnoteReference",
+        "TableRow",
+        "TableCell",
+        "DirectiveLabel",
+        "ReferenceDefinition",
+        "LinkReference",
+        "ImageReference"
+    };
     if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_IMAGE_REFERENCE) {
         return "None";
     }
@@ -445,8 +633,12 @@ bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *l
     return true;
 }
 
-bool markdown_core_node_list_properties(const markdown_core_node *node, markdown_core_list_flavor *flavor,
-                                        markdown_core_optional_i64 *start, bool *tight) {
+bool markdown_core_node_list_properties(
+    const markdown_core_node *node,
+    markdown_core_list_flavor *flavor,
+    markdown_core_optional_i64 *start,
+    bool *tight
+) {
     if (!node || node->type != MARKDOWN_CORE_NODE_LIST || !flavor || !start || !tight) {
         return false;
     }
@@ -482,9 +674,14 @@ static void optional_string_from_chunk(markdown_core_optional_string *out, const
     string_from_chunk(&out->value, &chunk->value);
 }
 
-bool markdown_core_node_code_block_properties(const markdown_core_node *node, markdown_core_optional_string *info,
-                                              markdown_core_optional_string *language, markdown_core_string *literal,
-                                              bool *fenced, bool *closed) {
+bool markdown_core_node_code_block_properties(
+    const markdown_core_node *node,
+    markdown_core_optional_string *info,
+    markdown_core_optional_string *language,
+    markdown_core_string *literal,
+    bool *fenced,
+    bool *closed
+) {
     size_t start = 0;
     size_t end;
     if (!node || node->type != MARKDOWN_CORE_NODE_CODE_BLOCK || !info || !language || !literal || !fenced || !closed) {
@@ -499,7 +696,7 @@ bool markdown_core_node_code_block_properties(const markdown_core_node *node, ma
     language->value.data = NULL;
     language->value.length = 0;
     while (start < info->value.length && (info->value.data[start] == ' ' || info->value.data[start] == '\t' ||
-                                          info->value.data[start] == '\n' || info->value.data[start] == '\r')) {
+                                             info->value.data[start] == '\n' || info->value.data[start] == '\r')) {
         start++;
     }
     end = start;
@@ -533,8 +730,11 @@ bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_st
     }
 }
 
-bool markdown_core_node_formula_properties(const markdown_core_node *node, markdown_core_placement_mode *mode,
-                                           markdown_core_string *literal) {
+bool markdown_core_node_formula_properties(
+    const markdown_core_node *node,
+    markdown_core_placement_mode *mode,
+    markdown_core_string *literal
+) {
     const char *value;
     markdown_core_formula_mode native_mode;
     if (!node || !mode || !literal ||
@@ -558,8 +758,11 @@ bool markdown_core_node_table_column_count(const markdown_core_node *node, size_
     return true;
 }
 
-bool markdown_core_node_table_alignment_at(const markdown_core_node *node, size_t index,
-                                           markdown_core_table_alignment *alignment) {
+bool markdown_core_node_table_alignment_at(
+    const markdown_core_node *node,
+    size_t index,
+    markdown_core_table_alignment *alignment
+) {
     uint16_t count;
     uint8_t *alignments;
     if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !alignment) {
@@ -600,8 +803,12 @@ bool markdown_core_node_table_row_is_header(const markdown_core_node *node, bool
  * already holds, with a parser of its own to read it back; both are gone.
  * `has_attributes` distinguishes `:n` from `:n{}` -- absent from empty -- which
  * the old `null` versus `"{}"` said and a count alone cannot. */
-bool markdown_core_node_directive_properties(const markdown_core_node *node, markdown_core_string *name,
-                                             bool *has_attributes, size_t *attribute_count) {
+bool markdown_core_node_directive_properties(
+    const markdown_core_node *node,
+    markdown_core_string *name,
+    bool *has_attributes,
+    size_t *attribute_count
+) {
     const char *value;
     if (!node || !name || !has_attributes || !attribute_count ||
         (node->type != MARKDOWN_CORE_NODE_DIRECTIVE && node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
@@ -615,8 +822,12 @@ bool markdown_core_node_directive_properties(const markdown_core_node *node, mar
     return true;
 }
 
-bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, size_t index, markdown_core_string *name,
-                                               markdown_core_string *value) {
+bool markdown_core_node_directive_attribute_at(
+    const markdown_core_node *node,
+    size_t index,
+    markdown_core_string *name,
+    markdown_core_string *value
+) {
     const char *name_bytes;
     const char *value_bytes;
     size_t name_length;
@@ -624,8 +835,14 @@ bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, s
     if (!node || !name || !value) {
         return false;
     }
-    if (!markdown_core_extensions_directive_attribute_at((markdown_core_node *)node, index, &name_bytes, &name_length,
-                                                         &value_bytes, &value_length)) {
+    if (!markdown_core_extensions_directive_attribute_at(
+            (markdown_core_node *)node,
+            index,
+            &name_bytes,
+            &name_length,
+            &value_bytes,
+            &value_length
+        )) {
         return false;
     }
     name->data = (const uint8_t *)name_bytes;
@@ -635,8 +852,12 @@ bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, s
     return true;
 }
 
-static bool link_properties(const markdown_core_node *node, uint16_t expected, markdown_core_string *url,
-                            markdown_core_optional_string *title) {
+static bool link_properties(
+    const markdown_core_node *node,
+    uint16_t expected,
+    markdown_core_string *url,
+    markdown_core_optional_string *title
+) {
     if (!node || node->type != expected || !url || !title) {
         return false;
     }
@@ -645,13 +866,19 @@ static bool link_properties(const markdown_core_node *node, uint16_t expected, m
     return true;
 }
 
-bool markdown_core_node_link_properties(const markdown_core_node *node, markdown_core_string *destination,
-                                        markdown_core_optional_string *title) {
+bool markdown_core_node_link_properties(
+    const markdown_core_node *node,
+    markdown_core_string *destination,
+    markdown_core_optional_string *title
+) {
     return link_properties(node, MARKDOWN_CORE_NODE_LINK, destination, title);
 }
 
-bool markdown_core_node_image_properties(const markdown_core_node *node, markdown_core_string *source,
-                                         markdown_core_optional_string *title) {
+bool markdown_core_node_image_properties(
+    const markdown_core_node *node,
+    markdown_core_string *source,
+    markdown_core_optional_string *title
+) {
     return link_properties(node, MARKDOWN_CORE_NODE_IMAGE, source, title);
 }
 
@@ -663,8 +890,11 @@ bool markdown_core_node_image_properties(const markdown_core_node *node, markdow
  * a single load is not merely unlicensed, it is impossible: `as.association`
  * on a definition node would read a POINTER as `chunk.data`. It costs a branch
  * and buys a guarantee the union trick never had. */
-bool markdown_core_node_association(const markdown_core_node *node, markdown_core_string *label,
-                                    markdown_core_string *identifier) {
+bool markdown_core_node_association(
+    const markdown_core_node *node,
+    markdown_core_string *label,
+    markdown_core_string *identifier
+) {
     const markdown_core_association *association;
     if (!node || !label || !identifier) {
         return false;
@@ -692,8 +922,11 @@ bool markdown_core_node_association(const markdown_core_node *node, markdown_cor
     return true;
 }
 
-bool markdown_core_node_definition_resource(const markdown_core_node *node, markdown_core_string *destination,
-                                            markdown_core_optional_string *title) {
+bool markdown_core_node_definition_resource(
+    const markdown_core_node *node,
+    markdown_core_string *destination,
+    markdown_core_optional_string *title
+) {
     if (!node || node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION || !node->as.definition || !destination ||
         !title) {
         return false;
@@ -1086,8 +1319,12 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     }
 }
 
-bool markdown_core_document_dump(const markdown_core_document *document, uint8_t **output, size_t *length,
-                                 markdown_core_error **error) {
+bool markdown_core_document_dump(
+    const markdown_core_document *document,
+    uint8_t **output,
+    size_t *length,
+    markdown_core_error **error
+) {
     dump_buffer buffer = {0};
     clear_error(error);
     if (!document || !document->root || !output || !length) {

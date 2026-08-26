@@ -50,8 +50,10 @@ static uint8_t *dump_fed(const char *text, size_t length, enum feed_mode mode, s
      * point of comparison is the partition, so the option set only has to be
      * the same on both sides. */
     if (!markdown_core_core_extensions_attach(
-            parser, MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
-                        MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK | MARKDOWN_CORE_CORE_EXTENSION_TASKLIST)) {
+            parser,
+            MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
+                MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK | MARKDOWN_CORE_CORE_EXTENSION_TASKLIST
+        )) {
         markdown_core_parser_free(parser);
         return NULL;
     }
@@ -132,8 +134,13 @@ int main(int argc, char **argv) {
             fprintf(stderr, "example %d: parse or dump failed\n", test_case->example);
             failures++;
         } else if (whole_length != fed_length || memcmp(whole, fed, whole_length) != 0) {
-            fprintf(stderr, "example %d (line %d): one-%s feed differs from one-shot\n", test_case->example,
-                    test_case->start_line, label);
+            fprintf(
+                stderr,
+                "example %d (line %d): one-%s feed differs from one-shot\n",
+                test_case->example,
+                test_case->start_line,
+                label
+            );
             fprintf(stderr, "  one-shot:\n%.*s", (int)whole_length, (const char *)whole);
             fprintf(stderr, "  one-%s:\n%.*s", label, (int)fed_length, (const char *)fed);
             failures++;

@@ -119,8 +119,14 @@ static int fb_expect_entry(markdown_core_map *map, const char *label, long expec
         return -1;
     }
     if ((long)entry->age != expected) {
-        fprintf(stderr, "%s: label '%s' resolved to entry %ld, expected %ld\n", context, label, (long)entry->age,
-                expected);
+        fprintf(
+            stderr,
+            "%s: label '%s' resolved to entry %ld, expected %ld\n",
+            context,
+            label,
+            (long)entry->age,
+            expected
+        );
         return -1;
     }
     return 0;
@@ -529,8 +535,14 @@ static int case_key_index_probe_growth(void) {
         goto done;
     }
     for (i = 0; i < FB_CLUSTER; i++) {
-        if (!markdown_core_key_index_insert(&index, (const unsigned char *)keys[i], (bufsize_t)strlen(keys[i]),
-                                            (void *)(uintptr_t)(i + 1), 0, NULL)) {
+        if (!markdown_core_key_index_insert(
+                &index,
+                (const unsigned char *)keys[i],
+                (bufsize_t)strlen(keys[i]),
+                (void *)(uintptr_t)(i + 1),
+                0,
+                NULL
+            )) {
             fprintf(stderr, "cluster insert %zu failed\n", i);
             goto done;
         }
@@ -539,15 +551,24 @@ static int case_key_index_probe_growth(void) {
         fputs("cluster did not fill the table as constructed; retune with core/map.c hash\n", stderr);
         goto done;
     }
-    if (!markdown_core_key_index_insert(&index, (const unsigned char *)keys[FB_CLUSTER],
-                                        (bufsize_t)strlen(keys[FB_CLUSTER]), (void *)(uintptr_t)(FB_CLUSTER + 1), 0,
-                                        NULL)) {
+    if (!markdown_core_key_index_insert(
+            &index,
+            (const unsigned char *)keys[FB_CLUSTER],
+            (bufsize_t)strlen(keys[FB_CLUSTER]),
+            (void *)(uintptr_t)(FB_CLUSTER + 1),
+            0,
+            NULL
+        )) {
         fputs("probe-exhausted insert failed instead of growing\n", stderr);
         goto done;
     }
     if (index.capacity != 512 || index.size != FB_CLUSTER + 1) {
-        fprintf(stderr, "expected one growth to capacity 512, found capacity %zu size %zu\n", index.capacity,
-                index.size);
+        fprintf(
+            stderr,
+            "expected one growth to capacity 512, found capacity %zu size %zu\n",
+            index.capacity,
+            index.size
+        );
         goto done;
     }
     for (i = 0; i < FB_CLUSTER + 1; i++) {
@@ -754,9 +775,15 @@ static void fb_describe_node(const char *side, markdown_core_node *node) {
         return;
     }
     if (fb_node_has_literal(node) && node->as.literal.data && node->as.literal.len >= 0) {
-        fprintf(stderr, "  %s: type=%d literal='%.*s' (len %d)\n", side, (int)markdown_core_node_get_type(node),
-                (int)(node->as.literal.len < 40 ? node->as.literal.len : 40), (const char *)node->as.literal.data,
-                (int)node->as.literal.len);
+        fprintf(
+            stderr,
+            "  %s: type=%d literal='%.*s' (len %d)\n",
+            side,
+            (int)markdown_core_node_get_type(node),
+            (int)(node->as.literal.len < 40 ? node->as.literal.len : 40),
+            (const char *)node->as.literal.data,
+            (int)node->as.literal.len
+        );
     } else {
         fprintf(stderr, "  %s: type=%d\n", side, (int)markdown_core_node_get_type(node));
     }
@@ -824,8 +851,13 @@ static int fb_run_oom_sweep(size_t chunk) {
         doc = fb_sweep_parse_chunked(&fb_sweep_mem, chunk);
         if (doc) {
             if (fb_sweep_fired && !fb_tree_equal(control, doc)) {
-                fprintf(stderr, "allocation %lu / %lu (chunk %lu): lossy document reported as success\n", k, total,
-                        (unsigned long)chunk);
+                fprintf(
+                    stderr,
+                    "allocation %lu / %lu (chunk %lu): lossy document reported as success\n",
+                    k,
+                    total,
+                    (unsigned long)chunk
+                );
                 markdown_core_node_free(doc);
                 goto done;
             }
@@ -991,8 +1023,14 @@ static int fb_expect_descending_ages(markdown_core_map *map, size_t expected_siz
     while (entry) {
         expected_age--;
         if (entry->age != expected_age) {
-            fprintf(stderr, "%s: entry '%s' has age %zu, expected %zu\n", context, entry->label, entry->age,
-                    expected_age);
+            fprintf(
+                stderr,
+                "%s: entry '%s' has age %zu, expected %zu\n",
+                context,
+                entry->label,
+                entry->age,
+                expected_age
+            );
             return -1;
         }
         entry = entry->next;

@@ -71,7 +71,7 @@
             "upstream": "ListItem checked=true",
             "ours": "ListItem checked=false",
             "handling": "Keyed to one input rather than projected: upstream's substring search is a bug in one function, not a model this side could apply to a tree. Erasing `checked` in the normalizer would blind the gate to every real checked-state difference. REGISTERED at 0a.11, which is where the fix landed. The `pendingStep` this entry used to carry said Step 4c, a step number that stopped existing when the plan was re-ordered; the defect schedule owns it as D24.",
-            "evidence": "docs/reviews/2026-07-28-first-principles-review.md, finding I76, fixed in 7c5025d. Still present in upstream 0.29.0.gfm.13.",
+            "evidence": ", finding I76, fixed in 7c5025d. Still present in upstream 0.29.0.gfm.13.",
             "landed": "0a.11, together with D15. Activating it needed a CORPUS ADDITION and not a JSON edit: check-upstream-parity.mjs keys expectedDivergences by input and fails any entry the corpus never reaches, and `- [ ] call me [x] later` was in no fixture at all. The example is now the last one in extensions.txt."
         },
         {

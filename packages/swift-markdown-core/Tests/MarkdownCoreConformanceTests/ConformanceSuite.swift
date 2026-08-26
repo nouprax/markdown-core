@@ -55,20 +55,47 @@ import Testing
 
     @Test("all manifest cases match the shared canonical AST spec")
     func sharedCanonicalAST() throws {
-        let resource = try #require(
-            Bundle.module.url(forResource: "canonical-ast-fixtures", withExtension: "json")
-        )
-        let manifestData = try Data(contentsOf: resource)
-        let manifest = try JSONDecoder().decode(CanonicalManifest.self, from: manifestData)
-        #expect(manifest.schemaVersion == 1)
-        #expect(!manifest.cases.isEmpty)
-
-        for testCase in manifest.cases {
+        for testCase in try canonicalCases() {
             let document = try Document.parse(testCase.source, options: testCase.parseOptions.value)
             #expect(TreeDumper.dump(document) == testCase.expected, Comment(rawValue: testCase.name))
             #expect(document.dump() == testCase.expected, Comment(rawValue: testCase.name))
         }
     }
+
+    @Test("all manifest cases, streamed in 7-byte chunks, seal to the same goldens")
+    func sharedCanonicalASTStreamed() throws {
+        // THE STREAM'S corpus is the one-shot corpus (docs/STREAMING.md D6:
+        // T14 extends the corpora rather than adding a channel). 7 is prime,
+        // so the chunk boundary drifts through every alignment and splits
+        // line endings and construct delimiters somewhere in every case.
+        for testCase in try canonicalCases() {
+            let options = testCase.parseOptions.value
+            let session = try Session(options: options)
+            let bytes = Array(testCase.source.utf8)
+            var start = 0
+            while start < bytes.count {
+                let end = min(start + 7, bytes.count)
+                _ = try session.feed(chunk: Array(bytes[start..<end]))
+                start = end
+            }
+            let sealed = try session.finish()
+            #expect(TreeDumper.dump(sealed) == testCase.expected, Comment(rawValue: testCase.name))
+            #expect(sealed.dump() == testCase.expected, Comment(rawValue: testCase.name))
+            let oneShot = try Document.parse(testCase.source, options: options)
+            #expect(sealed.concrete == oneShot.concrete, Comment(rawValue: testCase.name))
+        }
+    }
+}
+
+private func canonicalCases() throws -> [CanonicalCase] {
+    let resource = try #require(
+        Bundle.module.url(forResource: "canonical-ast-fixtures", withExtension: "json")
+    )
+    let manifestData = try Data(contentsOf: resource)
+    let manifest = try JSONDecoder().decode(CanonicalManifest.self, from: manifestData)
+    #expect(manifest.schemaVersion == 1)
+    #expect(!manifest.cases.isEmpty)
+    return manifest.cases
 }
 
 private struct CanonicalManifest: Decodable {

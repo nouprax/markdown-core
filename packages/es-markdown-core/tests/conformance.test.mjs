@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { Document, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
+import { TextEncoder } from "node:util";
+import { Document, Session, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
 import { kindVisitor } from "./visitor.mjs";
 
 const canonicalFixtures = new URL("../build/generated/conformance/canonical-ast-fixtures.json", import.meta.url);
@@ -118,6 +119,31 @@ for (const testCase of canonicalManifest.cases) {
         const document = Document.parse(testCase.source, testCase.parseOptions);
         assert.equal(TreeDumper.dump(document), testCase.expected, testCase.name);
         assert.equal(document.dump(), testCase.expected, testCase.name);
+    });
+
+    // THE STREAM'S corpus is the one-shot corpus (docs/STREAMING.md D6: T14
+    // extends the corpora rather than adding a channel). 7 is prime, so the
+    // chunk boundary drifts through every alignment and splits line endings,
+    // UTF-8 sequences, and construct delimiters somewhere in every case.
+    test(`conformance: shared canonical AST case ${testCase.name} streamed in 7-byte chunks`, async () => {
+        const session = new Session(testCase.parseOptions);
+        try {
+            const bytes = new TextEncoder().encode(testCase.source);
+            for (let offset = 0; offset < bytes.length; offset += 7) {
+                session.feed(bytes.subarray(offset, Math.min(offset + 7, bytes.length)));
+            }
+            const sealed = session.finish();
+            assert.equal(TreeDumper.dump(sealed), testCase.expected, testCase.name);
+            assert.equal(sealed.dump(), testCase.expected, testCase.name);
+            const oneShot = Document.parse(testCase.source, testCase.parseOptions);
+            assert.deepEqual(sealed.concrete.source, oneShot.concrete.source, testCase.name);
+            assert.equal(sealed.concrete.lineCount, oneShot.concrete.lineCount, testCase.name);
+            for (let line = 1; line <= oneShot.concrete.lineCount; line += 1) {
+                assert.equal(sealed.concrete.lineStart(line), oneShot.concrete.lineStart(line), testCase.name);
+            }
+        } finally {
+            session.dispose();
+        }
     });
 }
 

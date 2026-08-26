@@ -11,6 +11,22 @@ internal actual fun nativeParse(
     return JvmNative.parse(source, options.toNativeMask())
 }
 
+internal actual fun nativeSessionNew(options: ParseOptions): Long {
+    DesktopNativeLoader.ensureLoaded()
+    val session = JvmNative.sessionNew(options.toNativeMask())
+    if (session == 0L) throw OutOfMemoryError("native session allocation failed")
+    return session
+}
+
+internal actual fun nativeSessionFeed(
+    session: Long,
+    chunk: ByteArray,
+): ByteArray = JvmNative.sessionFeed(session, chunk)
+
+internal actual fun nativeSessionFinish(session: Long): ByteArray = JvmNative.sessionFinish(session)
+
+internal actual fun nativeSessionFree(session: Long) = JvmNative.sessionFree(session)
+
 internal object JvmNative {
     // `@JvmSynthetic` because `internal` IS NOT PRIVATE ON THE JVM. This object
     // is reached from another compilation unit, so Kotlin has to emit it
@@ -18,11 +34,29 @@ internal object JvmNative {
     // point directly -- handing it a byte array and an options mask the decoder
     // never sees. JNI resolves by name and descriptor and does not consult the
     // synthetic flag, so the binding still links; only javac stops resolving it.
+    // The session entries carry it for the same reason, plus one of their own:
+    // a raw `long` handle freed twice or fed after free is native memory
+    // corruption, and only `Session` sequences those calls.
     @JvmSynthetic
     external fun parse(
         source: ByteArray,
         optionsMask: Int,
     ): ByteArray
+
+    @JvmSynthetic
+    external fun sessionNew(optionsMask: Int): Long
+
+    @JvmSynthetic
+    external fun sessionFeed(
+        session: Long,
+        chunk: ByteArray,
+    ): ByteArray
+
+    @JvmSynthetic
+    external fun sessionFinish(session: Long): ByteArray
+
+    @JvmSynthetic
+    external fun sessionFree(session: Long)
 }
 
 private object DesktopNativeLoader {

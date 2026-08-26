@@ -83,8 +83,11 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
     return markdown_core_node_can_contain_type(node, (markdown_core_node_type)child->type);
 }
 
-markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
-                                                            const markdown_core_syntax_extension *extension) {
+markdown_core_node *markdown_core_node_new_with_mem_and_ext(
+    markdown_core_node_type type,
+    markdown_core_mem *mem,
+    const markdown_core_syntax_extension *extension
+) {
     markdown_core_node *node = (markdown_core_node *)mem->calloc(1, sizeof(*node));
     if (!node) {
         return NULL;
@@ -117,8 +120,10 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_t
     return node;
 }
 
-markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
-                                                    const markdown_core_syntax_extension *extension) {
+markdown_core_node *markdown_core_node_new_with_ext(
+    markdown_core_node_type type,
+    const markdown_core_syntax_extension *extension
+) {
     return markdown_core_node_new_with_mem_and_ext(type, markdown_core_get_default_mem_allocator(), extension);
 }
 
@@ -173,6 +178,21 @@ static void free_node_as(markdown_core_node *node) {
 static void S_free_nodes(markdown_core_node *e) {
     markdown_core_node *next;
     while (e != NULL) {
+        /* A BORROWED LIST IS DETACHED, NOT WALKED. The children hanging off
+         * this block are the holder's, and the splice below would pull them
+         * into this walk and free them under every other borrower. Cut them
+         * loose, then release the one hold this block had. */
+        if (e->link.holder && !(e->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
+            markdown_core_holder *holder = e->link.holder;
+            if (!(e->flags & MARKDOWN_CORE_NODE__CACHE_OWNER)) {
+                e->first_child = NULL;
+                e->last_child = NULL;
+            }
+            e->link.holder = NULL;
+            e->flags &= ~MARKDOWN_CORE_NODE__CACHE_OWNER;
+            markdown_core_holder_release(holder);
+        }
+
         markdown_core_strbuf_free(&e->content);
 
         if (e->user_data && e->user_data_free_func) {
@@ -200,6 +220,48 @@ void markdown_core_node_free(markdown_core_node *node) {
     S_node_unlink(node);
     node->next = NULL;
     S_free_nodes(node);
+}
+
+markdown_core_holder *markdown_core_holder_new(markdown_core_mem *mem) {
+    markdown_core_holder *holder = (markdown_core_holder *)mem->calloc(1, sizeof(*holder));
+    if (holder) {
+        holder->mem = mem;
+    }
+    return holder;
+}
+
+void markdown_core_holder_hold(markdown_core_holder *holder) { holder->refs++; }
+
+void markdown_core_holder_release(markdown_core_holder *holder) {
+    if (holder->refs > 1) {
+        holder->refs--;
+        return;
+    }
+    /* The list's `next` chain is exactly what `S_free_nodes` walks; the
+     * `parent` it never reads is NULL on every node here. */
+    S_free_nodes(holder->first_child);
+    holder->mem->free(holder);
+}
+
+int markdown_core_holder_take_children(markdown_core_holder *holder, markdown_core_node *block) {
+    markdown_core_node *child;
+    int ok = markdown_core_node_own(block);
+    for (child = block->first_child; child; child = child->next) {
+        child->parent = NULL;
+    }
+    holder->first_child = block->first_child;
+    holder->last_child = block->last_child;
+    block->first_child = NULL;
+    block->last_child = NULL;
+    return ok;
+}
+
+void markdown_core_node_borrow_children(markdown_core_node *block, markdown_core_holder *holder) {
+    block->first_child = holder->first_child;
+    block->last_child = holder->last_child;
+    block->link.holder = holder;
+    block->flags &= ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN);
+    holder->refs++;
 }
 
 markdown_core_node_type markdown_core_node_get_type(markdown_core_node *node) {
@@ -958,12 +1020,23 @@ static void S_print_error(FILE *out, markdown_core_node *node, const char *elem)
     if (out == NULL) {
         return;
     }
-    fprintf(out, "Invalid '%s' in node type %s at %d:%d\n", elem, markdown_core_node_get_type_string(node),
-            node->start_line, node->start_column);
+    fprintf(
+        out,
+        "Invalid '%s' in node type %s at %d:%d\n",
+        elem,
+        markdown_core_node_get_type_string(node),
+        node->start_line,
+        node->start_column
+    );
 }
 
 int markdown_core_node_check(markdown_core_node *node, FILE *out) {
     markdown_core_node *cur;
+    /* A borrowed list's nodes have no parent by contract (node.h), so the
+     * parent check is not applied to them -- "repairing" it would hand the
+     * list to whichever borrower was checked last -- and the climb out of the
+     * list goes to the borrower, as the iterator's does. */
+    markdown_core_node *borrower = NULL;
     int errors = 0;
 
     if (!node) {
@@ -978,7 +1051,9 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
                 cur->first_child->prev = NULL;
                 ++errors;
             }
-            if (cur->first_child->parent != cur) {
+            if (MARKDOWN_CORE_NODE_BORROWED_P(cur)) {
+                borrower = cur;
+            } else if (cur->first_child->parent != cur) {
                 S_print_error(out, cur->first_child, "parent");
                 cur->first_child->parent = cur;
                 ++errors;
@@ -1006,12 +1081,15 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
             continue;
         }
 
-        if (cur->parent->last_child != cur) {
-            S_print_error(out, cur->parent, "last_child");
-            cur->parent->last_child = cur;
-            ++errors;
+        {
+            markdown_core_node *parent = cur->parent ? cur->parent : borrower;
+            if (parent->last_child != cur) {
+                S_print_error(out, parent, "last_child");
+                parent->last_child = cur;
+                ++errors;
+            }
+            cur = parent;
         }
-        cur = cur->parent;
         goto next_sibling;
     }
 

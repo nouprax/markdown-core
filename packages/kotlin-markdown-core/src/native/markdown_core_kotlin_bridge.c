@@ -350,25 +350,23 @@ static void apply_options(markdown_core_parse_options *options, uint32_t mask) {
     options->directives = (mask & (1u << 8)) != 0;
 }
 
-bool markdown_core_kotlin_parse(const uint8_t *source, size_t length, uint32_t options_mask, uint8_t **output,
-                                size_t *output_length) {
-    /* MKC5: an error lost its scope byte when Step 13 deleted
-     * `markdown_core_error_get_scope` -- a parse failure carries no scope. */
+/* THE ONE PAYLOAD WRITER. Every call that can answer with a document or an
+ * error answers through here -- the one-shot parse, a session's `feed` and its
+ * `finish` -- so the wire has a single contract and a streamed document crosses
+ * on exactly the path the one-shot one does. Takes ownership of both `document`
+ * and `error`; the caller keeps neither.
+ *
+ * MKC5: an error lost its scope byte when Step 13 deleted
+ * `markdown_core_error_get_scope` -- a parse failure carries no scope. */
+static bool deliver(
+    markdown_core_document *document,
+    markdown_core_error *error,
+    uint8_t **output,
+    size_t *output_length
+) {
     static const uint8_t magic[] = {'M', 'K', 'C', '5'};
-    markdown_core_parse_options options;
-    markdown_core_error *error = NULL;
-    markdown_core_document *document;
     bridge_buffer buffer = {0};
     const markdown_core_node *root;
-
-    if (output == NULL || output_length == NULL) {
-        return false;
-    }
-    *output = NULL;
-    *output_length = 0;
-    markdown_core_parse_options_init(&options);
-    apply_options(&options, options_mask);
-    document = markdown_core_document_parse(source, length, &options, &error);
 
     put_bytes(&buffer, magic, sizeof(magic));
     if (document == NULL) {
@@ -380,7 +378,6 @@ bool markdown_core_kotlin_parse(const uint8_t *source, size_t length, uint32_t o
         } else {
             put_string(&buffer, markdown_core_error_get_message(error), true);
         }
-        markdown_core_error_free(error);
     } else {
         put_u8(&buffer, 0);
         root = markdown_core_document_semantic(document);
@@ -390,8 +387,9 @@ bool markdown_core_kotlin_parse(const uint8_t *source, size_t length, uint32_t o
             write_node(&buffer, root);
             write_concrete(&buffer, document);
         }
-        markdown_core_document_free(document);
     }
+    markdown_core_error_free(error);
+    markdown_core_document_free(document);
 
     if (buffer.failed) {
         free(buffer.data);
@@ -401,5 +399,80 @@ bool markdown_core_kotlin_parse(const uint8_t *source, size_t length, uint32_t o
     *output_length = buffer.size;
     return true;
 }
+
+bool markdown_core_kotlin_parse(
+    const uint8_t *source,
+    size_t length,
+    uint32_t options_mask,
+    uint8_t **output,
+    size_t *output_length
+) {
+    markdown_core_parse_options options;
+    markdown_core_error *error = NULL;
+    markdown_core_document *document;
+
+    if (output == NULL || output_length == NULL) {
+        return false;
+    }
+    *output = NULL;
+    *output_length = 0;
+    markdown_core_parse_options_init(&options);
+    apply_options(&options, options_mask);
+    document = markdown_core_document_parse(source, length, &options, &error);
+    return deliver(document, error, output, output_length);
+}
+
+/* The one failure `markdown_core_session_new` can report is an allocation
+ * failure, so NULL is the whole answer and the error it came with -- which had
+ * to be allocated too -- is released here rather than crossing the wire. */
+markdown_core_kotlin_session *markdown_core_kotlin_session_new(uint32_t options_mask) {
+    markdown_core_parse_options options;
+    markdown_core_error *error = NULL;
+    markdown_core_session *session;
+
+    markdown_core_parse_options_init(&options);
+    apply_options(&options, options_mask);
+    session = markdown_core_session_new(&options, &error);
+    markdown_core_error_free(error);
+    return session;
+}
+
+bool markdown_core_kotlin_session_feed(
+    markdown_core_kotlin_session *session,
+    const uint8_t *chunk,
+    size_t length,
+    uint8_t **output,
+    size_t *output_length
+) {
+    markdown_core_error *error = NULL;
+    markdown_core_document *document;
+
+    if (output == NULL || output_length == NULL) {
+        return false;
+    }
+    *output = NULL;
+    *output_length = 0;
+    document = markdown_core_session_feed(session, chunk, length, &error);
+    return deliver(document, error, output, output_length);
+}
+
+bool markdown_core_kotlin_session_finish(
+    markdown_core_kotlin_session *session,
+    uint8_t **output,
+    size_t *output_length
+) {
+    markdown_core_error *error = NULL;
+    markdown_core_document *document;
+
+    if (output == NULL || output_length == NULL) {
+        return false;
+    }
+    *output = NULL;
+    *output_length = 0;
+    document = markdown_core_session_finish(session, &error);
+    return deliver(document, error, output, output_length);
+}
+
+void markdown_core_kotlin_session_free(markdown_core_kotlin_session *session) { markdown_core_session_free(session); }
 
 void markdown_core_kotlin_free(uint8_t *output) { free(output); }

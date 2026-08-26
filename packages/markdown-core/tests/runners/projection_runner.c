@@ -13,10 +13,31 @@
  * `finalize` is the only clearer, and neither is ever on the open spine. The
  * flag is the closed signal Stage 1 schedules projections on, so an open block
  * in a finished tree is a lie about completeness.
+ *
+ * borrow_across_feed: T19's gate, documented at its definition.
+ *
+ * projection_key: T3 and T4's gate, documented at its definition.
+ *
+ * dump_boundaries / feed_loop: the A/B oracle and the clock for a change to
+ * the projection, documented at their definitions. Both also take `--md FILE`
+ * or `--md-dir DIR` -- raw markdown, one case per file -- because the real
+ * corpus is not a fixture file.
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if !defined(_WIN32)
+#include <sys/resource.h>
+#endif
+
+/* The `--md-dir` corpus walk, same split as corpus_guard's: the Windows CRT
+ * has no dirent.h. */
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <dirent.h>
+#endif
 
 #include "test_support.h"
 
@@ -34,15 +55,22 @@
 
 /* Every extension and the footnote option, because the point is coverage of
  * every node KIND a parse can put in a tree, not agreement with any golden. */
+/* `--no-cache` turns the projection cache (T9) off for every parser a case
+ * builds -- the control side of T11's measurement. */
+static int pr_no_cache = 0;
+
 static markdown_core_parser *pr_parser_new(void) {
     markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_FOOTNOTES);
     if (!parser) {
         return NULL;
     }
+    parser->no_projection_cache = pr_no_cache != 0;
     if (!markdown_core_core_extensions_attach(
-            parser, MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
-                        MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK | MARKDOWN_CORE_CORE_EXTENSION_TASKLIST |
-                        MARKDOWN_CORE_CORE_EXTENSION_FORMULA | MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE)) {
+            parser,
+            MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
+                MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK | MARKDOWN_CORE_CORE_EXTENSION_TASKLIST |
+                MARKDOWN_CORE_CORE_EXTENSION_FORMULA | MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE
+        )) {
         markdown_core_parser_free(parser);
         return NULL;
     }
@@ -75,8 +103,14 @@ static int pr_count_open_blocks(markdown_core_node *root, int example, size_t *n
         }
         (*nodes_seen)++;
         if (node->flags & MARKDOWN_CORE_NODE__OPEN) {
-            fprintf(stderr, "example %d: %s at %d:%d is still open after finish\n", example,
-                    markdown_core_node_get_type_string(node), node->start_line, node->start_column);
+            fprintf(
+                stderr,
+                "example %d: %s at %d:%d is still open after finish\n",
+                example,
+                markdown_core_node_get_type_string(node),
+                node->start_line,
+                node->start_column
+            );
             open_nodes++;
         }
     }
@@ -103,8 +137,12 @@ static int case_closed_after_finish(const ts_spec_file *file) {
         }
         markdown_core_node_free(root);
     }
-    printf("closed after finish: %zu/%zu examples clean, %zu nodes\n", file->count - (size_t)failures, file->count,
-           nodes_seen);
+    printf(
+        "closed after finish: %zu/%zu examples clean, %zu nodes\n",
+        file->count - (size_t)failures,
+        file->count,
+        nodes_seen
+    );
     return failures ? -1 : 0;
 }
 
@@ -122,23 +160,46 @@ static uint8_t *pr_dump(markdown_core_node *root, size_t *length) {
 }
 
 /* A stable serialization of everything the CST states: node identity, place,
- * flags, content bytes and the content-to-source run. If a derivation writes
- * any of it, two fingerprints taken around the derivation differ. */
-static int pr_fingerprint(markdown_core_node *root, markdown_core_strbuf *out) {
+ * flags, content bytes and the content-to-source run -- and the SIZE of the
+ * parser's mark vector, which is CST state no node owns: a projection that
+ * minted marks into it grew it (F21), and every open block's later marks
+ * then landed outside their run. If a derivation writes any of it, two
+ * fingerprints taken around the derivation differ. */
+static int pr_fingerprint(markdown_core_parser *parser, markdown_core_strbuf *out) {
+    markdown_core_node *root = parser->root;
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_event_type ev_type;
+    char marks[48];
     if (!iter) {
         return -1;
     }
+    snprintf(marks, sizeof(marks), "marks=%u\n", (unsigned)parser->line_marks_size);
+    markdown_core_strbuf_puts(out, marks);
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node = markdown_core_iter_get_node(iter);
         if (ev_type != MARKDOWN_CORE_EVENT_ENTER) {
             continue;
         }
         char header[160];
-        snprintf(header, sizeof(header), "%u|%u|%d:%d..%d:%d|%d|%d+%d|%u:", (unsigned)node->type, (unsigned)node->flags,
-                 node->start_line, node->start_column, node->end_line, node->end_column, node->internal_offset,
-                 node->content_mark, node->content_mark_count, (unsigned)node->content.size);
+        snprintf(
+            header,
+            sizeof(header),
+            "%u#%u|%u|%d:%d..%d:%d|%d|%d+%d|%u:",
+            (unsigned)node->type,
+            (unsigned)node->identifier,
+            /* The cache (T9) hangs a holder on a CST block and says so in a
+             * flag. That is bookkeeping about the block, not a statement the
+             * CST makes, so it is outside what a derivation must not write. */
+            (unsigned)(node->flags & ~MARKDOWN_CORE_NODE__CACHE_OWNER),
+            node->start_line,
+            node->start_column,
+            node->end_line,
+            node->end_column,
+            node->internal_offset,
+            node->content_mark,
+            node->content_mark_count,
+            (unsigned)node->content.size
+        );
         markdown_core_strbuf_puts(out, header);
         if (node->content.size) {
             markdown_core_strbuf_put(out, node->content.ptr, node->content.size);
@@ -172,11 +233,15 @@ static int case_double_projection(const ts_spec_file *file) {
             continue;
         }
         markdown_core_parser_feed(parser, test_case->markdown, test_case->markdown_length);
+        /* Each tree is dumped BEFORE the next derivation runs. Dumping both at
+         * the end let a second derivation that wrote into the list the two
+         * trees share (T9, F22) change both dumps alike, and the gate agreed
+         * with itself while the tree was wrong. */
         first = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
-        second = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
         if (first) {
             first_dump = pr_dump(first, &first_length);
         }
+        second = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
         if (second) {
             second_dump = pr_dump(second, &second_length);
         }
@@ -185,8 +250,14 @@ static int case_double_projection(const ts_spec_file *file) {
             failures++;
         } else if (first_length != second_length || memcmp(first_dump, second_dump, first_length) != 0) {
             fprintf(stderr, "example %d: two projections of one CST differ\n", test_case->example);
-            fprintf(stderr, "  first:\n%.*s  second:\n%.*s", (int)first_length, (const char *)first_dump,
-                    (int)second_length, (const char *)second_dump);
+            fprintf(
+                stderr,
+                "  first:\n%.*s  second:\n%.*s",
+                (int)first_length,
+                (const char *)first_dump,
+                (int)second_length,
+                (const char *)second_dump
+            );
             failures++;
         }
         markdown_core_dump_free(first_dump);
@@ -237,20 +308,24 @@ static int case_refmap_independence(const ts_spec_file *file) {
         markdown_core_strbuf_init(parser->mem, &after, 0);
         markdown_core_parser_feed(parser, test_case->markdown, test_case->markdown_length);
 
-        if (pr_fingerprint(parser->root, &before) != 0) {
+        if (pr_fingerprint(parser, &before) != 0) {
             example_failed = 1;
         }
+        /* Each tree is dumped BEFORE the next derivation runs, the ordering
+         * F22 forced on `projection_double` -- a later derivation that wrote
+         * into a shared list would otherwise change both dumps alike and the
+         * gate would agree with itself (landing review). */
         first = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
-        other = markdown_core_parser_derive_tree(parser, empty_map, 0);
-        again = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
-        if (!example_failed && pr_fingerprint(parser->root, &after) != 0) {
-            example_failed = 1;
-        }
         if (first) {
             first_dump = pr_dump(first, &first_length);
         }
+        other = markdown_core_parser_derive_tree(parser, empty_map, 0);
+        again = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
         if (again) {
             again_dump = pr_dump(again, &again_length);
+        }
+        if (!example_failed && pr_fingerprint(parser, &after) != 0) {
+            example_failed = 1;
         }
         if (example_failed || !first_dump || !other || !again_dump) {
             fprintf(stderr, "example %d: derivation, dump or fingerprint failed\n", test_case->example);
@@ -259,8 +334,11 @@ static int case_refmap_independence(const ts_spec_file *file) {
             fprintf(stderr, "example %d: a derivation WROTE the CST\n", test_case->example);
             failures++;
         } else if (first_length != again_length || memcmp(first_dump, again_dump, first_length) != 0) {
-            fprintf(stderr, "example %d: projecting against another map poisoned the next projection\n",
-                    test_case->example);
+            fprintf(
+                stderr,
+                "example %d: projecting against another map poisoned the next projection\n",
+                test_case->example
+            );
             failures++;
         }
         markdown_core_dump_free(first_dump);
@@ -334,6 +412,13 @@ static int pr_slope_measure(const char *input, size_t length, double *seconds) {
     if (!parser) {
         return -1;
     }
+    /* Deriving one CST over and over is exactly what the projection cache
+     * (T9) serves, and served, the projection is the whole-CST clone -- an
+     * O(bytes) copy whose ns/byte is a memory-hierarchy fact (1.1 in cache,
+     * 12.5 out of it, measured) rather than an algorithm. This gate is about
+     * the RE-PROJECTION being linear in what it projects, so it measures with
+     * the cache off; the cached regime's bound is T15's. */
+    parser->no_projection_cache = true;
     markdown_core_parser_feed(parser, input, length);
     for (repeat = 0; repeat < PR_SLOPE_REPEATS; repeat++) {
         uint64_t started;
@@ -393,12 +478,2251 @@ static int case_projection_slope(const ts_spec_file *file) {
         double time_growth = timings[1] / timings[0];
         double normalized_slowdown = time_growth / input_growth;
         int failed = normalized_slowdown > PR_MAX_NORMALIZED_SLOWDOWN;
-        printf("projection slope: %zu bytes: %.6fs (%.3f ns/byte), %zu bytes: %.6fs (%.3f ns/byte), normalized "
-               "slowdown %.3fx%s\n",
-               lengths[0], timings[0], timings[0] * 1e9 / (double)lengths[0], lengths[1], timings[1],
-               timings[1] * 1e9 / (double)lengths[1], normalized_slowdown, failed ? " [NON-FLAT]" : "");
+        printf(
+            "projection slope: %zu bytes: %.6fs (%.3f ns/byte), %zu bytes: %.6fs (%.3f ns/byte), normalized "
+            "slowdown %.3fx%s\n",
+            lengths[0],
+            timings[0],
+            timings[0] * 1e9 / (double)lengths[0],
+            lengths[1],
+            timings[1],
+            timings[1] * 1e9 / (double)lengths[1],
+            normalized_slowdown,
+            failed ? " [NON-FLAT]" : ""
+        );
         return failed ? -1 : 0;
     }
+}
+
+/* T19's gate (docs/STREAMING.md §5): A BORROW HELD ACROSS A FEED THAT
+ * REPLACES IT STILL READS. The engine hands out no borrow yet -- that is T9 --
+ * so this case plays T9's part with T19's primitives. After every line it
+ * derives, moves each leaf block's children into a holder and borrows them
+ * back; where a leaf's subtree dumps as it did at the previous boundary it
+ * borrows the PREVIOUS holder instead, so one list is aliased by two live
+ * trees. Each boundary then asserts what a consumer could observe:
+ *
+ *   1. the borrowed tree dumps as the plain derivation did;
+ *   2. the previous tree still does after the new borrow was taken -- the
+ *      walk out of a shared list must land in ITS borrower, not the newest;
+ *   3. still does after the cache released its hold;
+ *   4. the new tree still does after the previous borrower was freed.
+ *
+ * The parser runs on a counting allocator and an example must end with zero
+ * live allocations: that is the leak ledger, because LSan is not available
+ * under the macOS ASan preset. */
+static long pr_live_allocations = 0;
+
+static void *pr_counting_calloc(size_t count, size_t size) {
+    void *block = calloc(count, size);
+    if (block) {
+        pr_live_allocations++;
+    }
+    return block;
+}
+
+static void *pr_counting_realloc(void *block, size_t size) {
+    void *grown = realloc(block, size);
+    if (grown && !block) {
+        pr_live_allocations++;
+    }
+    return grown;
+}
+
+static void pr_counting_free(void *block) {
+    if (block) {
+        pr_live_allocations--;
+    }
+    free(block);
+}
+
+static markdown_core_mem PR_COUNTING_MEM = {pr_counting_calloc, pr_counting_realloc, pr_counting_free};
+
+/* One boundary's tree and the holders it borrows from, index-aligned with
+ * its leaf blocks in walk order. */
+typedef struct pr_generation {
+    markdown_core_node *tree;
+    uint8_t *expected;
+    size_t expected_length;
+    markdown_core_holder **holders;
+    uint8_t **subtrees;
+    size_t *subtree_lengths;
+    size_t count;
+} pr_generation;
+
+static void pr_generation_clear(pr_generation *generation) {
+    size_t i;
+    if (generation->subtrees) {
+        for (i = 0; i < generation->count; i++) {
+            markdown_core_dump_free(generation->subtrees[i]);
+        }
+    }
+    free(generation->holders);
+    free(generation->subtrees);
+    free(generation->subtree_lengths);
+    markdown_core_dump_free(generation->expected);
+    memset(generation, 0, sizeof(*generation));
+}
+
+/* A block whose children are all inline -- vacuously so for a block with
+ * none, which is what puts the empty list under test as well. */
+static int pr_is_leaf_block(markdown_core_node *node) {
+    markdown_core_node *child;
+    if (!MARKDOWN_CORE_NODE_BLOCK_P(node)) {
+        return 0;
+    }
+    for (child = node->first_child; child; child = child->next) {
+        if (!MARKDOWN_CORE_NODE_INLINE_P(child)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int pr_collect_leaf_blocks(markdown_core_node *root, markdown_core_node ***out, size_t *count) {
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type ev_type;
+    markdown_core_node **items = NULL;
+    size_t n = 0, cap = 0;
+    if (!iter) {
+        return -1;
+    }
+    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (ev_type != MARKDOWN_CORE_EVENT_ENTER || !pr_is_leaf_block(node)) {
+            continue;
+        }
+        if (n == cap) {
+            markdown_core_node **grown;
+            cap = cap ? cap * 2 : 16;
+            grown = (markdown_core_node **)realloc(items, cap * sizeof(*items));
+            if (!grown) {
+                free(items);
+                markdown_core_iter_free(iter);
+                return -1;
+            }
+            items = grown;
+        }
+        items[n++] = node;
+    }
+    markdown_core_iter_free(iter);
+    *out = items;
+    *count = n;
+    return 0;
+}
+
+static int pr_dump_equals(markdown_core_node *root, const uint8_t *expected, size_t expected_length) {
+    size_t length = 0;
+    uint8_t *dump = pr_dump(root, &length);
+    int equal;
+    if (!dump) {
+        return 0;
+    }
+    equal = length == expected_length && memcmp(dump, expected, length) == 0;
+    markdown_core_dump_free(dump);
+    return equal;
+}
+
+static int pr_borrow_boundary(markdown_core_parser *parser, pr_generation *prev, int example, int boundary) {
+    pr_generation cur;
+    markdown_core_node **leaves = NULL;
+    size_t i;
+    int failed = 0;
+
+    memset(&cur, 0, sizeof(cur));
+    cur.tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+    if (!cur.tree) {
+        fprintf(stderr, "example %d boundary %d: derivation failed\n", example, boundary);
+        return -1;
+    }
+    cur.expected = pr_dump(cur.tree, &cur.expected_length);
+    if (!cur.expected || pr_collect_leaf_blocks(cur.tree, &leaves, &cur.count) != 0) {
+        fprintf(stderr, "example %d boundary %d: dump or leaf walk failed\n", example, boundary);
+        markdown_core_node_free(cur.tree);
+        pr_generation_clear(&cur);
+        return -1;
+    }
+    cur.holders = (markdown_core_holder **)calloc(cur.count ? cur.count : 1, sizeof(*cur.holders));
+    cur.subtrees = (uint8_t **)calloc(cur.count ? cur.count : 1, sizeof(*cur.subtrees));
+    cur.subtree_lengths = (size_t *)calloc(cur.count ? cur.count : 1, sizeof(*cur.subtree_lengths));
+    if (!cur.holders || !cur.subtrees || !cur.subtree_lengths) {
+        fputs("out of memory\n", stderr);
+        free(leaves);
+        markdown_core_node_free(cur.tree);
+        pr_generation_clear(&cur);
+        return -1;
+    }
+
+    /* Every leaf borrows: the previous boundary's holder when its subtree is
+     * unchanged, otherwise a fresh holder that takes the leaf's own children.
+     * The "cache" is the set `cur.holders`, holding each holder once. */
+    for (i = 0; i < cur.count; i++) {
+        markdown_core_node *leaf = leaves[i];
+        cur.subtrees[i] = pr_dump(leaf, &cur.subtree_lengths[i]);
+        if (!cur.subtrees[i]) {
+            failed = 1;
+            break;
+        }
+        if (prev->tree && i < prev->count && prev->subtree_lengths[i] == cur.subtree_lengths[i] &&
+            memcmp(prev->subtrees[i], cur.subtrees[i], cur.subtree_lengths[i]) == 0) {
+            while (leaf->first_child) {
+                markdown_core_node_free(leaf->first_child);
+            }
+            cur.holders[i] = prev->holders[i];
+        } else {
+            cur.holders[i] = markdown_core_holder_new(parser->mem);
+            if (!cur.holders[i]) {
+                failed = 1;
+                break;
+            }
+            if (!markdown_core_holder_take_children(cur.holders[i], leaf)) {
+                /* The release DESTROYS a fresh holder (no hold yet); the slot
+                 * must not keep the dangling pointer (landing review). */
+                markdown_core_holder_release(cur.holders[i]);
+                cur.holders[i] = NULL;
+                failed = 1;
+                break;
+            }
+            markdown_core_holder_hold(cur.holders[i]);
+        }
+        markdown_core_node_borrow_children(leaf, cur.holders[i]);
+    }
+    free(leaves);
+    if (failed) {
+        /* Unwind WITHOUT publishing: a generation with NULL slots must never
+         * reach the caller's release loop (landing review). Freeing the tree
+         * drops every borrow the built slots took; each fresh slot then holds
+         * exactly the one hold the cache took, and a slot aliasing the
+         * previous boundary's holder took none. `prev` stays as it was, and
+         * the caller's cleanup releases it as the last good generation. */
+        size_t built;
+        fprintf(stderr, "example %d boundary %d: could not build the borrow\n", example, boundary);
+        markdown_core_node_free(cur.tree);
+        cur.tree = NULL;
+        for (built = 0; built < cur.count; built++) {
+            int aliased = prev->tree && built < prev->count && cur.holders[built] == prev->holders[built];
+            if (cur.holders[built] && !aliased) {
+                markdown_core_holder_release(cur.holders[built]);
+            }
+        }
+        pr_generation_clear(&cur);
+        return -1;
+    }
+
+    if (!failed && !pr_dump_equals(cur.tree, cur.expected, cur.expected_length)) {
+        fprintf(stderr, "example %d boundary %d: the borrowed tree reads differently\n", example, boundary);
+        failed = 1;
+    }
+    if (!failed && prev->tree && !pr_dump_equals(prev->tree, prev->expected, prev->expected_length)) {
+        fprintf(
+            stderr,
+            "example %d boundary %d: the previous borrow stopped reading once the new one was taken\n",
+            example,
+            boundary
+        );
+        failed = 1;
+    }
+
+    /* The cache evicts what this boundary did not re-share. */
+    for (i = 0; i < prev->count; i++) {
+        if (i >= cur.count || cur.holders[i] != prev->holders[i]) {
+            markdown_core_holder_release(prev->holders[i]);
+        }
+    }
+    if (!failed && prev->tree && !pr_dump_equals(prev->tree, prev->expected, prev->expected_length)) {
+        fprintf(
+            stderr,
+            "example %d boundary %d: the previous borrow stopped reading once the cache let go\n",
+            example,
+            boundary
+        );
+        failed = 1;
+    }
+    if (prev->tree) {
+        markdown_core_node_free(prev->tree);
+        prev->tree = NULL;
+    }
+    if (!failed && !pr_dump_equals(cur.tree, cur.expected, cur.expected_length)) {
+        fprintf(
+            stderr,
+            "example %d boundary %d: the tree stopped reading once the previous borrower was freed\n",
+            example,
+            boundary
+        );
+        failed = 1;
+    }
+
+    pr_generation_clear(prev);
+    *prev = cur;
+    return failed ? -1 : 0;
+}
+
+static int case_borrow_across_feed(const ts_spec_file *file) {
+    size_t index;
+    size_t boundaries = 0;
+    int failures = 0;
+    for (index = 0; index < file->count; index++) {
+        const ts_spec_case *test_case = &file->cases[index];
+        const char *text = test_case->markdown;
+        size_t length = test_case->markdown_length;
+        markdown_core_parser *parser;
+        pr_generation prev;
+        size_t start = 0;
+        size_t i;
+        int boundary = 0;
+        int failed = 0;
+
+        pr_live_allocations = 0;
+        parser = markdown_core_parser_new_with_mem(
+            MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_FOOTNOTES,
+            &PR_COUNTING_MEM
+        );
+        if (!parser || !markdown_core_core_extensions_attach(
+                           parser,
+                           MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
+                               MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK | MARKDOWN_CORE_CORE_EXTENSION_TASKLIST |
+                               MARKDOWN_CORE_CORE_EXTENSION_FORMULA | MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE
+                       )) {
+            fprintf(stderr, "example %d: parser allocation failed\n", test_case->example);
+            if (parser) {
+                markdown_core_parser_free(parser);
+            }
+            failures++;
+            continue;
+        }
+        /* This case plays the cache's part itself, so the engine's (T9)
+         * stays out of its way. */
+        parser->no_projection_cache = true;
+        memset(&prev, 0, sizeof(prev));
+        for (i = 0; i < length && !failed; i++) {
+            if (text[i] == '\n') {
+                markdown_core_parser_feed(parser, text + start, i - start + 1);
+                start = i + 1;
+                failed = pr_borrow_boundary(parser, &prev, test_case->example, ++boundary) != 0;
+            }
+        }
+        if (!failed && start < length) {
+            markdown_core_parser_feed(parser, text + start, length - start);
+            failed = pr_borrow_boundary(parser, &prev, test_case->example, ++boundary) != 0;
+        }
+        boundaries += (size_t)boundary;
+
+        /* The cache empties; the last borrow alone keeps every list alive. */
+        for (i = 0; i < prev.count; i++) {
+            markdown_core_holder_release(prev.holders[i]);
+        }
+        if (!failed && prev.tree && !pr_dump_equals(prev.tree, prev.expected, prev.expected_length)) {
+            fprintf(stderr, "example %d: the last borrow stopped reading once the cache emptied\n", test_case->example);
+            failed = 1;
+        }
+        if (prev.tree) {
+            markdown_core_node_free(prev.tree);
+        }
+        pr_generation_clear(&prev);
+        markdown_core_parser_free(parser);
+        if (pr_live_allocations != 0) {
+            fprintf(
+                stderr,
+                "example %d: %ld allocation(s) still live after every hold was released\n",
+                test_case->example,
+                pr_live_allocations
+            );
+            failed = 1;
+        }
+        if (failed) {
+            failures++;
+        }
+    }
+    printf(
+        "borrow across feed: %zu/%zu examples agree over %zu boundaries\n",
+        file->count - (size_t)failures,
+        file->count,
+        boundaries
+    );
+    return failures ? -1 : 0;
+}
+
+/* THE A/B ORACLE FOR A CHANGE TO THE PROJECTION. Feeds every case one line
+ * at a time, derives after every line and finishes at the end, and prints
+ * each tree's canonical dump under a stable header -- twice per boundary,
+ * once with every extension and once with the comment strip added, because
+ * the strip is a tail pass with its own removal path. Two builds run over
+ * the same corpus and `diff` their output: a refactor of the projection is
+ * correct when the diff is empty, and the diff names the first boundary that
+ * moved when it is not. It is not a ctest row -- its oracle is another
+ * build -- so it prints and judges nothing. */
+static int pr_dump_boundaries_with(const ts_spec_case *test_case, int options, const char *label) {
+    markdown_core_parser *parser = markdown_core_parser_new(options);
+    const char *text = test_case->markdown;
+    if (parser) {
+        parser->no_projection_cache = pr_no_cache != 0;
+    }
+    size_t length = test_case->markdown_length;
+    size_t start = 0, i;
+    int boundary = 0;
+    markdown_core_node *tree;
+    uint8_t *dump;
+    size_t dump_length;
+
+    if (!parser || !markdown_core_core_extensions_attach(
+                       parser,
+                       MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
+                           MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK | MARKDOWN_CORE_CORE_EXTENSION_TASKLIST |
+                           MARKDOWN_CORE_CORE_EXTENSION_FORMULA | MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE
+                   )) {
+        if (parser) {
+            markdown_core_parser_free(parser);
+        }
+        return -1;
+    }
+    for (i = 0; i <= length; i++) {
+        if (i < length && text[i] != '\n') {
+            continue;
+        }
+        if (i == length && start == length) {
+            break;
+        }
+        markdown_core_parser_feed(parser, text + start, (i < length ? i + 1 : length) - start);
+        start = i + 1;
+        boundary++;
+        tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        dump = tree ? pr_dump(tree, &dump_length) : NULL;
+        printf("== example %d %s boundary %d\n", test_case->example, label, boundary);
+        if (dump) {
+            fwrite(dump, 1, dump_length, stdout);
+        } else {
+            puts("<derivation failed>");
+        }
+        markdown_core_dump_free(dump);
+        if (tree) {
+            markdown_core_node_free(tree);
+        }
+    }
+    tree = markdown_core_parser_finish(parser);
+    dump = tree ? pr_dump(tree, &dump_length) : NULL;
+    printf("== example %d %s finish\n", test_case->example, label);
+    if (dump) {
+        fwrite(dump, 1, dump_length, stdout);
+    } else {
+        puts("<finish failed>");
+    }
+    markdown_core_dump_free(dump);
+    if (tree) {
+        markdown_core_node_free(tree);
+    }
+    markdown_core_parser_free(parser);
+    return 0;
+}
+
+static int case_dump_boundaries(const ts_spec_file *file) {
+    size_t index;
+    int failures = 0;
+    for (index = 0; index < file->count; index++) {
+        const ts_spec_case *test_case = &file->cases[index];
+        if (pr_dump_boundaries_with(test_case, MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_FOOTNOTES, "plain") != 0 ||
+            pr_dump_boundaries_with(
+                test_case,
+                MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS,
+                "strip"
+            ) != 0) {
+            fprintf(stderr, "example %d: parser allocation failed\n", test_case->example);
+            failures++;
+        }
+    }
+    return failures ? -1 : 0;
+}
+
+/* THE CLOCK. What a Session's feed loop costs: every case fed one line at a
+ * time with a derivation after every line and a finish at the end, nothing
+ * dumped. `--repeats N` runs the whole corpus N times and reports the
+ * fastest, which is the aggregation F1 and F11 use; the boundary count is
+ * printed so two runs can be seen to have done the same work. */
+static int pr_repeats = 1;
+
+static int case_feed_loop(const ts_spec_file *file) {
+    size_t index;
+    int repeat;
+    uint64_t best_ns = 0;
+    size_t boundaries = 0;
+    size_t hits = 0, misses = 0;
+    for (repeat = 0; repeat < pr_repeats; repeat++) {
+        uint64_t started = ts_monotonic_ns();
+        uint64_t elapsed;
+        size_t seen = 0;
+        for (index = 0; index < file->count; index++) {
+            const ts_spec_case *test_case = &file->cases[index];
+            markdown_core_parser *parser = pr_parser_new();
+            const char *text = test_case->markdown;
+            size_t length = test_case->markdown_length;
+            size_t start = 0, i;
+            markdown_core_node *tree;
+            if (!parser) {
+                fprintf(stderr, "example %d: parser allocation failed\n", test_case->example);
+                return -1;
+            }
+            for (i = 0; i <= length; i++) {
+                if (i < length && text[i] != '\n') {
+                    continue;
+                }
+                if (i == length && start == length) {
+                    break;
+                }
+                markdown_core_parser_feed(parser, text + start, (i < length ? i + 1 : length) - start);
+                start = i + 1;
+                seen++;
+                tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+                if (tree) {
+                    markdown_core_node_free(tree);
+                }
+            }
+            /* Read before `finish`, which resets the parser and its ledger;
+             * the finish projection itself is therefore not counted. */
+            if (repeat == 0) {
+                hits += parser->cache_hits;
+                misses += parser->cache_misses;
+            }
+            tree = markdown_core_parser_finish(parser);
+            if (tree) {
+                markdown_core_node_free(tree);
+            }
+            markdown_core_parser_free(parser);
+        }
+        elapsed = ts_monotonic_ns() - started;
+        if (repeat == 0 || elapsed < best_ns) {
+            best_ns = elapsed;
+        }
+        boundaries = seen;
+    }
+    printf(
+        "feed loop: %zu documents, %zu boundaries, min of %d: %.2f ms; cache hits %zu, misses %zu (%.1f%%)\n",
+        file->count,
+        boundaries,
+        pr_repeats,
+        (double)best_ns / 1e6,
+        hits,
+        misses,
+        hits + misses ? 100.0 * (double)hits / (double)(hits + misses) : 0.0
+    );
+    return 0;
+}
+
+/* MSVC deprecates the POSIX name under /WX (fallback_runner's fb_strdup is
+ * the same answer). */
+static char *pr_strdup(const char *text) {
+    size_t length = strlen(text);
+    char *copy = (char *)malloc(length + 1);
+    if (copy) {
+        memcpy(copy, text, length + 1);
+    }
+    return copy;
+}
+
+/* One case per `.md` file, in name order, so two runs see the same corpus in
+ * the same order. */
+static int pr_case_from_file(const char *path, int example, ts_spec_case *out) {
+    size_t length = 0;
+    uint8_t *bytes = ts_read_file(path, &length);
+    if (!bytes) {
+        return -1;
+    }
+    memset(out, 0, sizeof(*out));
+    out->markdown = (char *)bytes;
+    out->markdown_length = length;
+    out->section = pr_strdup(path);
+    out->example = example;
+    return 0;
+}
+
+static int pr_name_compare(const void *a, const void *b) {
+    return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+
+/* Keep a copy of `name` when it ends in `.md`; both walk arms below filter
+ * through here, so the Windows pattern match never widens the corpus. */
+static int pr_push_md_name(char ***names, size_t *count, size_t *cap, const char *name) {
+    size_t n = strlen(name);
+    char *copy;
+    if (n < 4 || strcmp(name + n - 3, ".md") != 0) {
+        return 0;
+    }
+    if (*count == *cap) {
+        char **grown;
+        size_t grown_cap = *cap ? *cap * 2 : 64;
+        grown = (char **)realloc(*names, grown_cap * sizeof(*grown));
+        if (!grown) {
+            return -1;
+        }
+        *names = grown;
+        *cap = grown_cap;
+    }
+    copy = pr_strdup(name);
+    if (!copy) {
+        return -1;
+    }
+    (*names)[(*count)++] = copy;
+    return 0;
+}
+
+static int pr_load_md_dir(const char *dir, ts_spec_file *out) {
+    char **names = NULL;
+    size_t count = 0, cap = 0, i;
+    int failed = 0;
+#if defined(_WIN32)
+    {
+        char pattern[4096];
+        WIN32_FIND_DATAA entry;
+        HANDLE handle;
+        snprintf(pattern, sizeof(pattern), "%s\\*.md", dir);
+        handle = FindFirstFileA(pattern, &entry);
+        if (handle == INVALID_HANDLE_VALUE) {
+            return -1;
+        }
+        do {
+            if (!(entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+                pr_push_md_name(&names, &count, &cap, entry.cFileName) != 0) {
+                failed = 1;
+                break;
+            }
+        } while (FindNextFileA(handle, &entry));
+        FindClose(handle);
+    }
+#else
+    {
+        DIR *d = opendir(dir);
+        struct dirent *entry;
+        if (!d) {
+            return -1;
+        }
+        while ((entry = readdir(d)) != NULL) {
+            if (pr_push_md_name(&names, &count, &cap, entry->d_name) != 0) {
+                failed = 1;
+                break;
+            }
+        }
+        closedir(d);
+    }
+#endif
+    if (failed) {
+        for (i = 0; i < count; i++) {
+            free(names[i]);
+        }
+        free(names);
+        return -1;
+    }
+    qsort(names, count, sizeof(*names), pr_name_compare);
+    out->cases = (ts_spec_case *)calloc(count ? count : 1, sizeof(ts_spec_case));
+    out->count = 0;
+    if (!out->cases) {
+        return -1;
+    }
+    for (i = 0; i < count; i++) {
+        char path[4096];
+        snprintf(path, sizeof(path), "%s/%s", dir, names[i]);
+        if (pr_case_from_file(path, (int)i + 1, &out->cases[out->count]) == 0) {
+            out->count++;
+        }
+        free(names[i]);
+    }
+    free(names);
+    return 0;
+}
+
+/* T3 AND T4's GATE: THE CACHE KEY IS SOUND. Feeds every case one line at a
+ * time, derives after every line, pairs each CST block with its derived block
+ * (pre-order over blocks; the strip is off, so nothing is removed and the two
+ * skeletons stay one to one), and keeps every CST block's reading of the key
+ * -- its write stamp and the two map generations -- beside the dump of its
+ * derived subtree. At the next boundary, for every block seen before:
+ *
+ *   1. an unchanged key MUST mean an unchanged subtree -- a stale key here
+ *      is exactly a wrong tree served from the cache T9 builds on it;
+ *   2. a CLOSED block's stamp must never move again -- the invariant the
+ *      spine stamp rests on, and the one that gives a closed block its hit.
+ *
+ * It also reports what the key would buy: the share of block observations
+ * whose key was unchanged (T9's hit-rate ceiling on this corpus) and, among
+ * the changed, the share whose subtree had not in fact moved (the key's
+ * imprecision -- spurious, never wrong). */
+typedef struct pr_key_entry {
+    const markdown_core_node *block;
+    uint32_t stamp;
+    size_t refgen;
+    size_t footgen;
+    int closed;
+    uint8_t *dump;
+    size_t dump_length;
+} pr_key_entry;
+
+typedef struct pr_key_set {
+    pr_key_entry *items;
+    size_t count;
+} pr_key_set;
+
+static void pr_key_set_clear(pr_key_set *set) {
+    size_t i;
+    for (i = 0; i < set->count; i++) {
+        markdown_core_dump_free(set->items[i].dump);
+    }
+    free(set->items);
+    set->items = NULL;
+    set->count = 0;
+}
+
+static const pr_key_entry *pr_key_find(const pr_key_set *set, const markdown_core_node *block) {
+    size_t i;
+    for (i = 0; i < set->count; i++) {
+        if (set->items[i].block == block) {
+            return &set->items[i];
+        }
+    }
+    return NULL;
+}
+
+/* Pre-order over BLOCK nodes only: a leaf block's inline children are not
+ * descended into, and a block's siblings are blocks. */
+static int pr_collect_blocks(markdown_core_node *root, markdown_core_node ***out, size_t *count) {
+    markdown_core_node **items = NULL;
+    size_t n = 0, cap = 0;
+    markdown_core_node *cur = root;
+    while (cur) {
+        if (n == cap) {
+            markdown_core_node **grown;
+            cap = cap ? cap * 2 : 32;
+            grown = (markdown_core_node **)realloc(items, cap * sizeof(*items));
+            if (!grown) {
+                free(items);
+                return -1;
+            }
+            items = grown;
+        }
+        items[n++] = cur;
+        /* Descend to the first BLOCK-class child and walk only block
+         * siblings. The one mixed-class container is a labeled directive
+         * block, whose FIRST child is the inline-class label with the block
+         * children after it -- a first-child class test walked past its
+         * whole interior (landing review). */
+        {
+            markdown_core_node *child = cur->first_child;
+            while (child && !MARKDOWN_CORE_NODE_BLOCK_P(child)) {
+                child = child->next;
+            }
+            if (child) {
+                cur = child;
+                continue;
+            }
+        }
+        for (;;) {
+            markdown_core_node *sibling;
+            if (cur == root) {
+                cur = NULL;
+                break;
+            }
+            sibling = cur->next;
+            while (sibling && !MARKDOWN_CORE_NODE_BLOCK_P(sibling)) {
+                sibling = sibling->next;
+            }
+            if (sibling) {
+                cur = sibling;
+                break;
+            }
+            cur = cur->parent;
+        }
+    }
+    *out = items;
+    *count = n;
+    return 0;
+}
+
+typedef struct pr_key_stats {
+    size_t observations;
+    size_t revisits;
+    size_t unchanged_key;
+    size_t changed_key;
+    size_t spurious;
+} pr_key_stats;
+
+static int pr_key_boundary(
+    markdown_core_parser *parser,
+    pr_key_set *prev,
+    pr_key_stats *stats,
+    int example,
+    int boundary
+) {
+    bufsize_t marks_before = parser->line_marks_size;
+    markdown_core_node *tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+    markdown_core_node **cst = NULL, **derived = NULL;
+    size_t cst_count = 0, derived_count = 0, i;
+    pr_key_set cur;
+    int failed = 0;
+    size_t refgen = parser->refmap->generation;
+    size_t footgen = parser->footnote_defs->generation;
+
+    if (!tree) {
+        fprintf(stderr, "example %d boundary %d: derivation failed\n", example, boundary);
+        return -1;
+    }
+    /* Derive-then-feed is this case's shape, and it is the shape in which a
+     * derivation that grew the mark vector (F21) corrupts the NEXT line's
+     * positions -- so the growth is asserted here, at every boundary. */
+    if (parser->line_marks_size != marks_before) {
+        fprintf(
+            stderr,
+            "example %d boundary %d: the derivation grew the content-to-source map (%u -> %u marks)\n",
+            example,
+            boundary,
+            (unsigned)marks_before,
+            (unsigned)parser->line_marks_size
+        );
+        markdown_core_node_free(tree);
+        return -1;
+    }
+    if (pr_collect_blocks(parser->root, &cst, &cst_count) != 0 ||
+        pr_collect_blocks(tree, &derived, &derived_count) != 0) {
+        fputs("out of memory\n", stderr);
+        free(cst);
+        markdown_core_node_free(tree);
+        return -1;
+    }
+    if (cst_count != derived_count) {
+        fprintf(
+            stderr,
+            "example %d boundary %d: %zu CST blocks but %zu derived blocks\n",
+            example,
+            boundary,
+            cst_count,
+            derived_count
+        );
+        free(cst);
+        free(derived);
+        markdown_core_node_free(tree);
+        return -1;
+    }
+    cur.items = (pr_key_entry *)calloc(cst_count ? cst_count : 1, sizeof(*cur.items));
+    cur.count = 0;
+    if (!cur.items) {
+        fputs("out of memory\n", stderr);
+        free(cst);
+        free(derived);
+        markdown_core_node_free(tree);
+        return -1;
+    }
+    for (i = 0; i < cst_count; i++) {
+        pr_key_entry *entry = &cur.items[cur.count];
+        const pr_key_entry *seen;
+        entry->block = cst[i];
+        entry->stamp = cst[i]->stamp;
+        entry->refgen = refgen;
+        entry->footgen = footgen;
+        entry->closed = (cst[i]->flags & MARKDOWN_CORE_NODE__OPEN) == 0;
+        entry->dump = pr_dump(derived[i], &entry->dump_length);
+        if (!entry->dump) {
+            failed = 1;
+            break;
+        }
+        cur.count++;
+        stats->observations++;
+        seen = pr_key_find(prev, cst[i]);
+        if (!seen) {
+            continue;
+        }
+        stats->revisits++;
+        if (seen->closed && seen->stamp != entry->stamp) {
+            fprintf(
+                stderr,
+                "example %d boundary %d: a CLOSED %s at %d:%d was written (stamp %u -> %u)\n",
+                example,
+                boundary,
+                markdown_core_node_get_type_string(cst[i]),
+                cst[i]->start_line,
+                cst[i]->start_column,
+                seen->stamp,
+                entry->stamp
+            );
+            failed = 1;
+        }
+        if (seen->stamp == entry->stamp && seen->refgen == refgen && seen->footgen == footgen) {
+            stats->unchanged_key++;
+            if (seen->dump_length != entry->dump_length || memcmp(seen->dump, entry->dump, entry->dump_length) != 0) {
+                fprintf(
+                    stderr,
+                    "example %d boundary %d: STALE KEY -- %s at %d:%d kept stamp %u and generation %zu/%zu but its "
+                    "projection moved:\n  before:\n%.*s  after:\n%.*s",
+                    example,
+                    boundary,
+                    markdown_core_node_get_type_string(cst[i]),
+                    cst[i]->start_line,
+                    cst[i]->start_column,
+                    entry->stamp,
+                    refgen,
+                    footgen,
+                    (int)seen->dump_length,
+                    (const char *)seen->dump,
+                    (int)entry->dump_length,
+                    (const char *)entry->dump
+                );
+                failed = 1;
+            }
+        } else {
+            stats->changed_key++;
+            if (seen->dump_length == entry->dump_length && memcmp(seen->dump, entry->dump, entry->dump_length) == 0) {
+                stats->spurious++;
+            }
+        }
+    }
+    free(cst);
+    free(derived);
+    markdown_core_node_free(tree);
+    pr_key_set_clear(prev);
+    *prev = cur;
+    return failed ? -1 : 0;
+}
+
+static int case_projection_key(const ts_spec_file *file) {
+    size_t index;
+    size_t boundaries = 0;
+    pr_key_stats stats;
+    int failures = 0;
+    memset(&stats, 0, sizeof(stats));
+    for (index = 0; index < file->count; index++) {
+        const ts_spec_case *test_case = &file->cases[index];
+        markdown_core_parser *parser = pr_parser_new();
+        const char *text = test_case->markdown;
+        size_t length = test_case->markdown_length;
+        pr_key_set prev;
+        /* The key is sound only if a block RE-PROJECTED under an unchanged
+         * key projects the same; served from the cache (T9) it trivially
+         * would, so the cache is off here. */
+        if (parser) {
+            parser->no_projection_cache = true;
+        }
+        size_t start = 0, i;
+        int boundary = 0;
+        int failed = 0;
+        if (!parser) {
+            fprintf(stderr, "example %d: parser allocation failed\n", test_case->example);
+            failures++;
+            continue;
+        }
+        prev.items = NULL;
+        prev.count = 0;
+        for (i = 0; i <= length && !failed; i++) {
+            if (i < length && text[i] != '\n') {
+                continue;
+            }
+            if (i == length && start == length) {
+                break;
+            }
+            markdown_core_parser_feed(parser, text + start, (i < length ? i + 1 : length) - start);
+            start = i + 1;
+            failed = pr_key_boundary(parser, &prev, &stats, test_case->example, ++boundary) != 0;
+        }
+        boundaries += (size_t)boundary;
+        pr_key_set_clear(&prev);
+        markdown_core_parser_free(parser);
+        if (failed) {
+            failures++;
+        }
+    }
+    printf(
+        "projection key: %zu/%zu examples sound over %zu boundaries; %zu block observations, %zu revisits, key "
+        "unchanged %zu (%.1f%%), changed %zu of which %zu spurious (%.1f%%)\n",
+        file->count - (size_t)failures,
+        file->count,
+        boundaries,
+        stats.observations,
+        stats.revisits,
+        stats.unchanged_key,
+        stats.revisits ? 100.0 * (double)stats.unchanged_key / (double)stats.revisits : 0.0,
+        stats.changed_key,
+        stats.spurious,
+        stats.changed_key ? 100.0 * (double)stats.spurious / (double)stats.changed_key : 0.0
+    );
+    return failures ? -1 : 0;
+}
+
+/* T2 AND T5'S GATE: IDENTITY IS TOTAL, UNIQUE, PROJECTION-STABLE AND NEVER
+ * RESURRECTED (docs/STREAMING.md §4 D4, F11). Feeds every case one line at a
+ * time and derives TWICE after every line, asserting five things:
+ *
+ *   1. no node in a derived tree -- block OR inline -- carries identity 0: a
+ *      lost mint, carry or numbering fails closed, and this is where it
+ *      surfaces;
+ *   2. no two blocks in one derivation share an identity, and no two
+ *      SIBLINGS anywhere do -- which is the uniqueness any single ForEach
+ *      needs, inline ordinals included;
+ *   3. two projections of one unwritten CST name every node identically --
+ *      identity is a fact about the CST, not about the derivation
+ *      (closes F4);
+ *   4. a block identity that left the tree never comes back. Inline
+ *      ordinals are positional within their block and are not tracked here:
+ *      a re-parsed block reusing ordinal 1 is the SAME slot continuing, not
+ *      a resurrection.
+ *
+ * The finish tree joins the same asserts: it is the last projection, taken in
+ * place on the CST, and the consumer joins it against the boundary trees. */
+typedef struct pr_id_ledger {
+    uint32_t *ids;
+    size_t count;
+    size_t cap;
+} pr_id_ledger;
+
+static int pr_id_ledger_has(const pr_id_ledger *ledger, uint32_t id) {
+    size_t i;
+    for (i = 0; i < ledger->count; i++) {
+        if (ledger->ids[i] == id) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int pr_id_ledger_add(pr_id_ledger *ledger, uint32_t id) {
+    if (ledger->count == ledger->cap) {
+        uint32_t *grown;
+        ledger->cap = ledger->cap ? ledger->cap * 2 : 32;
+        grown = (uint32_t *)realloc(ledger->ids, ledger->cap * sizeof(*ledger->ids));
+        if (!grown) {
+            return -1;
+        }
+        ledger->ids = grown;
+    }
+    ledger->ids[ledger->count++] = id;
+    return 0;
+}
+
+/* Every node in the tree, ENTER order, inline nodes included. */
+static int pr_collect_all(markdown_core_node *root, markdown_core_node ***out, size_t *count) {
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type ev_type;
+    markdown_core_node **items = NULL;
+    size_t n = 0, cap = 0;
+    if (!iter) {
+        return -1;
+    }
+    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        if (ev_type != MARKDOWN_CORE_EVENT_ENTER) {
+            continue;
+        }
+        if (n == cap) {
+            markdown_core_node **grown;
+            cap = cap ? cap * 2 : 64;
+            grown = (markdown_core_node **)realloc(items, cap * sizeof(*items));
+            if (!grown) {
+                free(items);
+                markdown_core_iter_free(iter);
+                return -1;
+            }
+            items = grown;
+        }
+        items[n++] = markdown_core_iter_get_node(iter);
+    }
+    markdown_core_iter_free(iter);
+    *out = items;
+    *count = n;
+    return 0;
+}
+
+static int pr_identity_boundary(
+    markdown_core_parser *parser,
+    markdown_core_node *tree,
+    pr_id_ledger *alive,
+    pr_id_ledger *dead,
+    int example,
+    const char *boundary,
+    size_t *blocks_seen
+) {
+    markdown_core_node *second = NULL;
+    markdown_core_node **blocks = NULL;
+    markdown_core_node **all = NULL, **all_again = NULL;
+    size_t count = 0, all_count = 0, all_again_count = 0, i, j;
+    pr_id_ledger cur;
+    int failed = 0;
+
+    memset(&cur, 0, sizeof(cur));
+    if (pr_collect_blocks(tree, &blocks, &count) != 0 || pr_collect_all(tree, &all, &all_count) != 0) {
+        fputs("out of memory\n", stderr);
+        free(blocks);
+        return -1;
+    }
+    /* 1 and 2: total over every node, blocks unique in the derivation,
+     * siblings unique everywhere. */
+    for (i = 0; i < all_count && !failed; i++) {
+        markdown_core_node *first_sibling, *later_sibling;
+        if (all[i]->identifier == 0) {
+            fprintf(
+                stderr,
+                "example %d %s: %s at %d:%d has no identity\n",
+                example,
+                boundary,
+                markdown_core_node_get_type_string(all[i]),
+                all[i]->start_line,
+                all[i]->start_column
+            );
+            failed = 1;
+        }
+        for (first_sibling = all[i]->first_child; first_sibling && !failed; first_sibling = first_sibling->next) {
+            for (later_sibling = first_sibling->next; later_sibling && !failed; later_sibling = later_sibling->next) {
+                if (first_sibling->identifier == later_sibling->identifier) {
+                    fprintf(
+                        stderr,
+                        "example %d %s: two children of a %s share identity %u (%s and %s)\n",
+                        example,
+                        boundary,
+                        markdown_core_node_get_type_string(all[i]),
+                        (unsigned)first_sibling->identifier,
+                        markdown_core_node_get_type_string(first_sibling),
+                        markdown_core_node_get_type_string(later_sibling)
+                    );
+                    failed = 1;
+                }
+            }
+        }
+    }
+    for (i = 0; i < count && !failed; i++) {
+        for (j = i + 1; j < count && !failed; j++) {
+            if (blocks[i]->identifier == blocks[j]->identifier) {
+                fprintf(
+                    stderr,
+                    "example %d %s: two blocks share id %u (%s at %d:%d, %s at %d:%d)\n",
+                    example,
+                    boundary,
+                    (unsigned)blocks[i]->identifier,
+                    markdown_core_node_get_type_string(blocks[i]),
+                    blocks[i]->start_line,
+                    blocks[i]->start_column,
+                    markdown_core_node_get_type_string(blocks[j]),
+                    blocks[j]->start_line,
+                    blocks[j]->start_column
+                );
+                failed = 1;
+            }
+        }
+    }
+    /* 3: the second projection names every node -- inline included -- as the
+     * first did. `parser` is NULL for the finish tree, which has no second
+     * projection to take. CACHE OFF for this one derivation: with it on,
+     * every hit aliases the first tree's lists and the inline comparison is
+     * a node against itself (landing review) -- a fresh projection re-parses
+     * and re-numbers, which is what "two projections name every node
+     * identically" must actually mean. */
+    if (!failed && parser) {
+        bool cache_was_off = parser->no_projection_cache;
+        parser->no_projection_cache = true;
+        second = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        parser->no_projection_cache = cache_was_off;
+        if (!second || pr_collect_all(second, &all_again, &all_again_count) != 0) {
+            fprintf(stderr, "example %d %s: second derivation failed\n", example, boundary);
+            failed = 1;
+        } else if (all_again_count != all_count) {
+            fprintf(
+                stderr,
+                "example %d %s: %zu nodes in one projection, %zu in the next\n",
+                example,
+                boundary,
+                all_count,
+                all_again_count
+            );
+            failed = 1;
+        } else {
+            for (i = 0; i < all_count; i++) {
+                if (all[i]->identifier != all_again[i]->identifier || all[i]->type != all_again[i]->type) {
+                    fprintf(
+                        stderr,
+                        "example %d %s: two projections name a %s at %d:%d differently (%u vs %u)\n",
+                        example,
+                        boundary,
+                        markdown_core_node_get_type_string(all[i]),
+                        all[i]->start_line,
+                        all[i]->start_column,
+                        (unsigned)all[i]->identifier,
+                        (unsigned)all_again[i]->identifier
+                    );
+                    failed = 1;
+                    break;
+                }
+            }
+        }
+    }
+    /* 4: nothing this boundary shows was ever declared dead, and whatever the
+     * previous boundary showed that this one does not is dead from here on. */
+    for (i = 0; i < count && !failed; i++) {
+        if (pr_id_ledger_has(dead, blocks[i]->identifier)) {
+            fprintf(
+                stderr,
+                "example %d %s: dead id %u came back as %s at %d:%d\n",
+                example,
+                boundary,
+                (unsigned)blocks[i]->identifier,
+                markdown_core_node_get_type_string(blocks[i]),
+                blocks[i]->start_line,
+                blocks[i]->start_column
+            );
+            failed = 1;
+        }
+        if (!failed && pr_id_ledger_add(&cur, blocks[i]->identifier) != 0) {
+            fputs("out of memory\n", stderr);
+            failed = 1;
+        }
+    }
+    if (!failed) {
+        for (i = 0; i < alive->count; i++) {
+            if (!pr_id_ledger_has(&cur, alive->ids[i]) && pr_id_ledger_add(dead, alive->ids[i]) != 0) {
+                fputs("out of memory\n", stderr);
+                failed = 1;
+                break;
+            }
+        }
+    }
+    *blocks_seen += all_count;
+    free(blocks);
+    free(all);
+    free(all_again);
+    if (second) {
+        markdown_core_node_free(second);
+    }
+    free(alive->ids);
+    *alive = cur;
+    return failed ? -1 : 0;
+}
+
+static int case_block_identity(const ts_spec_file *file) {
+    size_t index;
+    size_t boundaries = 0;
+    size_t blocks_seen = 0;
+    int failures = 0;
+    for (index = 0; index < file->count; index++) {
+        const ts_spec_case *test_case = &file->cases[index];
+        markdown_core_parser *parser = pr_parser_new();
+        const char *text = test_case->markdown;
+        size_t length = test_case->markdown_length;
+        markdown_core_node *tree;
+        pr_id_ledger alive, dead;
+        size_t start = 0, i;
+        int boundary = 0;
+        int failed = 0;
+        char label[32];
+        if (!parser) {
+            fprintf(stderr, "example %d: parser allocation failed\n", test_case->example);
+            failures++;
+            continue;
+        }
+        memset(&alive, 0, sizeof(alive));
+        memset(&dead, 0, sizeof(dead));
+        for (i = 0; i <= length && !failed; i++) {
+            if (i < length && text[i] != '\n') {
+                continue;
+            }
+            if (i == length && start == length) {
+                break;
+            }
+            markdown_core_parser_feed(parser, text + start, (i < length ? i + 1 : length) - start);
+            start = i + 1;
+            snprintf(label, sizeof(label), "boundary %d", ++boundary);
+            tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+            if (!tree) {
+                fprintf(stderr, "example %d %s: derivation failed\n", test_case->example, label);
+                failed = 1;
+                break;
+            }
+            failed = pr_identity_boundary(parser, tree, &alive, &dead, test_case->example, label, &blocks_seen) != 0;
+            markdown_core_node_free(tree);
+        }
+        boundaries += (size_t)boundary;
+        if (!failed) {
+            tree = markdown_core_parser_finish(parser);
+            if (!tree) {
+                fprintf(stderr, "example %d finish: projection failed\n", test_case->example);
+                failed = 1;
+            } else {
+                failed =
+                    pr_identity_boundary(NULL, tree, &alive, &dead, test_case->example, "finish", &blocks_seen) != 0;
+                markdown_core_node_free(tree);
+            }
+        }
+        free(alive.ids);
+        free(dead.ids);
+        markdown_core_parser_free(parser);
+        if (failed) {
+            failures++;
+        }
+    }
+    printf(
+        "block identity: %zu/%zu examples sound over %zu boundaries, %zu node observations\n",
+        file->count - (size_t)failures,
+        file->count,
+        boundaries,
+        blocks_seen
+    );
+    return failures ? -1 : 0;
+}
+
+/* T5'S SECOND HALF, AND D4'S TWO RULED FORKS, AS SHAPES (§4 D4). Each
+ * document below crosses one of the identity-moving events, and the assert
+ * says which node the consumer keeps: a retype keeps the id (setext,
+ * paragraph -> table, the formula promotion); a split leaves the id on what
+ * the reader already had (the table's lead paragraph, a surviving paragraph
+ * losing its definitions); a death bequeaths it to the firstborn definition.
+ * Recorded per boundary as the derived root's direct children. */
+typedef struct ti_block {
+    uint16_t type;
+    uint32_t id;
+} ti_block;
+
+#define TI_MAX_CHILDREN 8
+#define TI_MAX_RECORDS 8
+
+typedef struct ti_record {
+    ti_block items[TI_MAX_CHILDREN];
+    size_t count;
+} ti_record;
+
+static int ti_snapshot(markdown_core_node *root, ti_record *out) {
+    markdown_core_node *child;
+    out->count = 0;
+    for (child = root->first_child; child; child = child->next) {
+        if (out->count == TI_MAX_CHILDREN) {
+            return -1;
+        }
+        out->items[out->count].type = child->type;
+        out->items[out->count].id = child->identifier;
+        out->count++;
+    }
+    return 0;
+}
+
+static int ti_run(const char *text, ti_record *records, size_t *count) {
+    markdown_core_parser *parser = pr_parser_new();
+    size_t length = strlen(text);
+    size_t start = 0, i;
+    markdown_core_node *tree;
+    int failed = 0;
+
+    *count = 0;
+    if (!parser) {
+        return -1;
+    }
+    for (i = 0; i <= length && !failed; i++) {
+        if (i < length && text[i] != '\n') {
+            continue;
+        }
+        if (i == length && start == length) {
+            break;
+        }
+        markdown_core_parser_feed(parser, text + start, (i < length ? i + 1 : length) - start);
+        start = i + 1;
+        tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        if (!tree || *count == TI_MAX_RECORDS || ti_snapshot(tree, &records[*count]) != 0) {
+            failed = 1;
+        } else {
+            (*count)++;
+        }
+        if (tree) {
+            markdown_core_node_free(tree);
+        }
+    }
+    if (!failed) {
+        tree = markdown_core_parser_finish(parser);
+        if (!tree || *count == TI_MAX_RECORDS || ti_snapshot(tree, &records[*count]) != 0) {
+            failed = 1;
+        } else {
+            (*count)++;
+        }
+        if (tree) {
+            markdown_core_node_free(tree);
+        }
+    }
+    markdown_core_parser_free(parser);
+    return failed ? -1 : 0;
+}
+
+static int ti_expect(
+    const char *name,
+    const ti_record *record,
+    const char *when,
+    const ti_block *expected,
+    size_t expected_count
+) {
+    size_t i;
+    if (record->count != expected_count) {
+        fprintf(
+            stderr,
+            "%s at %s: %zu top-level blocks where %zu were expected\n",
+            name,
+            when,
+            record->count,
+            expected_count
+        );
+        return -1;
+    }
+    for (i = 0; i < expected_count; i++) {
+        if (record->items[i].type != expected[i].type || record->items[i].id != expected[i].id) {
+            fprintf(
+                stderr,
+                "%s at %s: child %zu is type %u id %u where type %u id %u was expected\n",
+                name,
+                when,
+                i,
+                (unsigned)record->items[i].type,
+                (unsigned)record->items[i].id,
+                (unsigned)expected[i].type,
+                (unsigned)expected[i].id
+            );
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int case_block_identity_transitions(const ts_spec_file *file) {
+    ti_record r[TI_MAX_RECORDS];
+    size_t n;
+    int failures = 0;
+    (void)file;
+
+    /* A setext retype keeps the id: the underline rewrites the node in place. */
+    {
+        if (ti_run("text\n===\n", r, &n) != 0 || n < 2) {
+            fputs("setext: run failed\n", stderr);
+            failures++;
+        } else {
+            uint32_t x = r[0].items[0].id;
+            ti_block p[] = {{MARKDOWN_CORE_NODE_PARAGRAPH, x}};
+            ti_block h[] = {{MARKDOWN_CORE_NODE_HEADING, x}};
+            if (x == 0 || ti_expect("setext", &r[0], "boundary 1", p, 1) != 0 ||
+                ti_expect("setext", &r[n - 1], "finish", h, 1) != 0) {
+                failures++;
+            }
+        }
+    }
+    /* A paragraph -> table retype with no lead keeps the id the same way. */
+    {
+        if (ti_run("a|b\n-|-\n", r, &n) != 0 || n < 2) {
+            fputs("table retype: run failed\n", stderr);
+            failures++;
+        } else {
+            uint32_t x = r[0].items[0].id;
+            ti_block p[] = {{MARKDOWN_CORE_NODE_PARAGRAPH, x}};
+            ti_block t[] = {{MARKDOWN_CORE_NODE_TABLE, x}};
+            if (x == 0 || ti_expect("table retype", &r[0], "boundary 1", p, 1) != 0 ||
+                ti_expect("table retype", &r[n - 1], "finish", t, 1) != 0) {
+                failures++;
+            }
+        }
+    }
+    /* Fork 1: the lead paragraph keeps the id; the table is the new element. */
+    {
+        if (ti_run("Intro\na|b\n-|-\n", r, &n) != 0 || n < 3) {
+            fputs("lead split: run failed\n", stderr);
+            failures++;
+        } else {
+            uint32_t x = r[0].items[0].id;
+            uint32_t y = r[n - 1].count == 2 ? r[n - 1].items[1].id : 0;
+            ti_block p[] = {{MARKDOWN_CORE_NODE_PARAGRAPH, x}};
+            ti_block split[] = {{MARKDOWN_CORE_NODE_PARAGRAPH, x}, {MARKDOWN_CORE_NODE_TABLE, y}};
+            if (x == 0 || y == 0 || y == x || ti_expect("lead split", &r[0], "boundary 1", p, 1) != 0 ||
+                ti_expect("lead split", &r[1], "boundary 2", p, 1) != 0 ||
+                ti_expect("lead split", &r[n - 1], "finish", split, 2) != 0) {
+                failures++;
+            }
+        }
+    }
+    /* Fork 3, death: the paragraph became the definition, so the definition
+     * keeps the paragraph's id. */
+    {
+        if (ti_run("[a]: /url\n\nafter\n", r, &n) != 0 || n < 2) {
+            fputs("definition death: run failed\n", stderr);
+            failures++;
+        } else {
+            uint32_t x = r[0].items[0].id;
+            uint32_t z = r[n - 1].count == 2 ? r[n - 1].items[1].id : 0;
+            ti_block p[] = {{MARKDOWN_CORE_NODE_PARAGRAPH, x}};
+            ti_block fin[] = {{MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, x}, {MARKDOWN_CORE_NODE_PARAGRAPH, z}};
+            if (x == 0 || z == 0 || z == x || ti_expect("definition death", &r[0], "boundary 1", p, 1) != 0 ||
+                ti_expect("definition death", &r[n - 1], "finish", fin, 2) != 0) {
+                failures++;
+            }
+        }
+    }
+    /* Fork 3, survival: the visible text keeps the id; the definition is a
+     * fresh birth. */
+    {
+        if (ti_run("[a]: /url\ntext\n\nafter\n", r, &n) != 0 || n < 2) {
+            fputs("definition survival: run failed\n", stderr);
+            failures++;
+        } else {
+            uint32_t x = r[0].items[0].id;
+            uint32_t y = r[n - 1].count == 3 ? r[n - 1].items[0].id : 0;
+            uint32_t z = r[n - 1].count == 3 ? r[n - 1].items[2].id : 0;
+            ti_block p[] = {{MARKDOWN_CORE_NODE_PARAGRAPH, x}};
+            ti_block fin[] = {
+                {MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, y},
+                {MARKDOWN_CORE_NODE_PARAGRAPH, x},
+                {MARKDOWN_CORE_NODE_PARAGRAPH, z}
+            };
+            if (x == 0 || y == 0 || y == x || z == 0 || y == z ||
+                ti_expect("definition survival", &r[0], "boundary 1", p, 1) != 0 ||
+                ti_expect("definition survival", &r[n - 1], "finish", fin, 3) != 0) {
+                failures++;
+            }
+        }
+    }
+    /* Fork 3, several definitions from one death: the firstborn inherits and
+     * the rest are births. */
+    {
+        if (ti_run("[a]: /1\n[b]: /2\n\nafter\n", r, &n) != 0 || n < 2) {
+            fputs("definition firstborn: run failed\n", stderr);
+            failures++;
+        } else {
+            uint32_t x = r[0].items[0].id;
+            uint32_t y = r[n - 1].count == 3 ? r[n - 1].items[1].id : 0;
+            uint32_t z = r[n - 1].count == 3 ? r[n - 1].items[2].id : 0;
+            ti_block p[] = {{MARKDOWN_CORE_NODE_PARAGRAPH, x}};
+            ti_block fin[] = {
+                {MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, x},
+                {MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, y},
+                {MARKDOWN_CORE_NODE_PARAGRAPH, z}
+            };
+            if (x == 0 || y == 0 || y == x || z == 0 ||
+                ti_expect("definition firstborn", &r[0], "boundary 1", p, 1) != 0 ||
+                ti_expect("definition firstborn", &r[n - 1], "finish", fin, 3) != 0) {
+                failures++;
+            }
+        }
+    }
+    /* Inline identity (§4 D4, amended): two inlines with the same content in
+     * one block are distinguishable, and an append to the block leaves the
+     * inlines the reader already had with the ordinals they already had. */
+    {
+        markdown_core_parser *parser = pr_parser_new();
+        uint32_t first_pass[4], second_pass[4];
+        size_t first_count = 0, second_count = 0;
+        markdown_core_node *tree;
+        int ok = parser != NULL;
+        if (ok) {
+            markdown_core_parser_feed(parser, "x [a](u) y [a](u)\n", 18);
+            tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+            ok = tree != NULL;
+            if (ok) {
+                markdown_core_node **nodes = NULL;
+                size_t node_count = 0, i;
+                ok = pr_collect_all(tree, &nodes, &node_count) == 0;
+                for (i = 0; ok && i < node_count; i++) {
+                    if (nodes[i]->type == MARKDOWN_CORE_NODE_LINK && first_count < 4) {
+                        first_pass[first_count++] = nodes[i]->identifier;
+                    }
+                }
+                free(nodes);
+                markdown_core_node_free(tree);
+            }
+        }
+        if (ok) {
+            markdown_core_parser_feed(parser, "more\n", 5);
+            tree = markdown_core_parser_finish(parser);
+            ok = tree != NULL;
+            if (ok) {
+                markdown_core_node **nodes = NULL;
+                size_t node_count = 0, i;
+                ok = pr_collect_all(tree, &nodes, &node_count) == 0;
+                for (i = 0; ok && i < node_count; i++) {
+                    if (nodes[i]->type == MARKDOWN_CORE_NODE_LINK && second_count < 4) {
+                        second_pass[second_count++] = nodes[i]->identifier;
+                    }
+                }
+                free(nodes);
+                markdown_core_node_free(tree);
+            }
+        }
+        if (parser) {
+            markdown_core_parser_free(parser);
+        }
+        if (!ok || first_count != 2 || second_count != 2 || first_pass[0] == 0 || first_pass[0] == first_pass[1] ||
+            first_pass[0] != second_pass[0] || first_pass[1] != second_pass[1]) {
+            fprintf(
+                stderr,
+                "inline identity: %zu then %zu links, ids %u/%u then %u/%u -- want two distinct, both stable\n",
+                first_count,
+                second_count,
+                first_count > 0 ? (unsigned)first_pass[0] : 0,
+                first_count > 1 ? (unsigned)first_pass[1] : 0,
+                second_count > 0 ? (unsigned)second_pass[0] : 0,
+                second_count > 1 ? (unsigned)second_pass[1] : 0
+            );
+            failures++;
+        }
+    }
+    /* Fork 2: the formula promotion carries the id across every projection. */
+    {
+        if (ti_run("$$e$$\n\nafter\n", r, &n) != 0 || n < 2 || r[0].count != 1) {
+            fputs("formula promotion: run failed\n", stderr);
+            failures++;
+        } else {
+            uint32_t x = r[0].items[0].id;
+            uint32_t z = r[n - 1].count == 2 ? r[n - 1].items[1].id : 0;
+            ti_block fin[] = {{MARKDOWN_CORE_NODE_FORMULA_BLOCK, x}, {MARKDOWN_CORE_NODE_PARAGRAPH, z}};
+            if (x == 0 || z == 0 || z == x || ti_expect("formula promotion", &r[n - 1], "finish", fin, 2) != 0) {
+                failures++;
+            }
+        }
+    }
+
+    printf("block identity transitions: %s\n", failures ? "shapes moved" : "8/8 shapes hold");
+    return failures ? -1 : 0;
+}
+
+/* THE CACHE KEY'S EXTENSION AXIS (T9, amended on the landing review): an
+ * attach between a derivation and the next projection must read every cached
+ * list as stale. Autolink's "*inlines" pass is skipped for a borrowed block,
+ * so a hit minted before the attach would hand `finish` the un-autolinked
+ * list, and the same feed without the intermediate derivation would disagree.
+ * The control attached everything up front; the probe attaches autolink
+ * between the derivation that fills the cache and the finish that would have
+ * hit it, and the pre-attach derivation must DIFFER from the control -- a
+ * text autolink cannot change would let this gate pass while proving
+ * nothing. */
+static const char PR_ATTACH_TEXT[] = "visit www.example.com today\n\nsecond paragraph\n";
+
+static int case_attach_invalidation(const ts_spec_file *file) {
+    static const unsigned PR_ATTACH_REST =
+        MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
+        MARKDOWN_CORE_CORE_EXTENSION_TASKLIST | MARKDOWN_CORE_CORE_EXTENSION_FORMULA |
+        MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE;
+    markdown_core_parser *probe_parser = NULL;
+    markdown_core_node *control_root = NULL;
+    markdown_core_node *probe_root = NULL;
+    markdown_core_node *derived = NULL;
+    uint8_t *control_dump = NULL;
+    uint8_t *probe_dump = NULL;
+    uint8_t *derived_dump = NULL;
+    size_t control_length = 0;
+    size_t probe_length = 0;
+    size_t derived_length = 0;
+    int failures = 1;
+    (void)file;
+
+    control_root = pr_parse(PR_ATTACH_TEXT, sizeof(PR_ATTACH_TEXT) - 1);
+    if (!control_root || !(control_dump = pr_dump(control_root, &control_length))) {
+        fputs("attach invalidation: control parse failed\n", stderr);
+        goto done;
+    }
+
+    probe_parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_FOOTNOTES);
+    if (!probe_parser) {
+        fputs("attach invalidation: parser allocation failed\n", stderr);
+        goto done;
+    }
+    probe_parser->no_projection_cache = pr_no_cache != 0;
+    if (!markdown_core_core_extensions_attach(probe_parser, PR_ATTACH_REST)) {
+        fputs("attach invalidation: attach failed\n", stderr);
+        goto done;
+    }
+    markdown_core_parser_feed(probe_parser, PR_ATTACH_TEXT, sizeof(PR_ATTACH_TEXT) - 1);
+    derived = markdown_core_parser_derive_tree(probe_parser, probe_parser->refmap, 0);
+    if (!derived || !(derived_dump = pr_dump(derived, &derived_length))) {
+        fputs("attach invalidation: derivation failed\n", stderr);
+        goto done;
+    }
+    if (derived_length == control_length && memcmp(derived_dump, control_dump, control_length) == 0) {
+        fputs("attach invalidation: the probe text does not exercise autolink\n", stderr);
+        goto done;
+    }
+    if (!markdown_core_core_extensions_attach(probe_parser, MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK)) {
+        fputs("attach invalidation: attach failed\n", stderr);
+        goto done;
+    }
+    probe_root = markdown_core_parser_finish(probe_parser);
+    if (!probe_root || !(probe_dump = pr_dump(probe_root, &probe_length))) {
+        fputs("attach invalidation: finish failed\n", stderr);
+        goto done;
+    }
+    if (probe_length != control_length || memcmp(probe_dump, control_dump, control_length) != 0) {
+        fputs("attach invalidation: a hit outlived the attach\n", stderr);
+        fprintf(
+            stderr,
+            "  control:\n%.*s  probe:\n%.*s",
+            (int)control_length,
+            (const char *)control_dump,
+            (int)probe_length,
+            (const char *)probe_dump
+        );
+        goto done;
+    }
+    failures = 0;
+
+done:
+    markdown_core_dump_free(control_dump);
+    markdown_core_dump_free(probe_dump);
+    markdown_core_dump_free(derived_dump);
+    if (control_root) {
+        markdown_core_node_free(control_root);
+    }
+    if (probe_root) {
+        markdown_core_node_free(probe_root);
+    }
+    if (derived) {
+        markdown_core_node_free(derived);
+    }
+    if (probe_parser) {
+        markdown_core_parser_free(probe_parser);
+    }
+    printf("attach invalidation: %s\n", failures ? "stale list served" : "attach re-projects");
+    return failures ? -1 : 0;
+}
+
+/* THE RECORDING PROJECTION TAKES NO HITS (T9, amended on the same review):
+ * the record-gated rows speak from the inline parse a hit skips, so a
+ * derivation that filled the cache must not silence `finish`. One
+ * label-too-long reference sits in a paragraph the feed closes; the control
+ * finishes without any intermediate derivation, the probe derives first, and
+ * both must retain the same rows -- with the control's count asserted
+ * nonzero, because two empty lists agreeing would prove nothing. */
+static int pr_retained_rows(const char *text, size_t length, int derive_first, size_t *entries) {
+    markdown_core_parser *parser = pr_parser_new();
+    markdown_core_diagnostics diagnostics;
+    markdown_core_node *root;
+    if (!parser) {
+        return -1;
+    }
+    markdown_core_parser_retain_diagnostics(parser, &diagnostics);
+    markdown_core_parser_feed(parser, text, length);
+    if (derive_first) {
+        markdown_core_node *derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        if (!derived) {
+            markdown_core_diagnostics_dispose(&diagnostics);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        markdown_core_node_free(derived);
+    }
+    root = markdown_core_parser_finish(parser);
+    if (!root) {
+        markdown_core_diagnostics_dispose(&diagnostics);
+        markdown_core_parser_free(parser);
+        return -1;
+    }
+    *entries = (size_t)diagnostics.entries_size;
+    markdown_core_diagnostics_dispose(&diagnostics);
+    markdown_core_node_free(root);
+    markdown_core_parser_free(parser);
+    return 0;
+}
+
+static int case_diagnostics_after_derive(const ts_spec_file *file) {
+    /* The COLLAPSED form, because it is the one an over-long label reaches:
+     * `link_label` refuses to parse a second bracket past the cap, so
+     * `[text][longlabel]` falls back to prose, while `[text][]` adopts the
+     * link TEXT as its label after the cap check has already passed the empty
+     * brackets. */
+    static const char head[] = "see [";
+    static const char tail[] = "][]\n\nsecond paragraph\n";
+    size_t label_length = MAX_LINK_LABEL_LENGTH + 100;
+    size_t length = sizeof(head) - 1 + label_length + sizeof(tail) - 1;
+    char *text = (char *)malloc(length + 1);
+    size_t control = 0;
+    size_t probe = 0;
+    int failures = 0;
+    (void)file;
+
+    if (!text) {
+        fputs("diagnostics after derive: allocation failed\n", stderr);
+        return -1;
+    }
+    memcpy(text, head, sizeof(head) - 1);
+    memset(text + sizeof(head) - 1, 'a', label_length);
+    memcpy(text + sizeof(head) - 1 + label_length, tail, sizeof(tail));
+
+    if (pr_retained_rows(text, length, 0, &control) != 0 || pr_retained_rows(text, length, 1, &probe) != 0) {
+        fputs("diagnostics after derive: run failed\n", stderr);
+        failures++;
+    } else if (control == 0) {
+        fputs("diagnostics after derive: the control raised nothing to lose\n", stderr);
+        failures++;
+    } else if (probe != control) {
+        fprintf(stderr, "diagnostics after derive: %zu rows without a derivation, %zu with one\n", control, probe);
+        failures++;
+    }
+    free(text);
+    printf(
+        "diagnostics after derive: %s (%zu rows either way)\n",
+        failures ? "a derivation silenced finish" : "finish keeps its rows",
+        control
+    );
+    return failures ? -1 : 0;
+}
+
+/* THE LABEL'S TAIL (landing review, F18): a directive's CST-resident label is
+ * inline-class, so the walk never queues it, and its list silently missed
+ * every content pass -- an unmatched `*` stayed three TEXT nodes and a
+ * `www.` never became a link, where the whole-tree tail gave both their
+ * passes. The owning block's tail now runs them; this gate pins the shape on
+ * the finish path, the derive path, and a re-derivation (the label is not
+ * cached, so its passes run on every projection and must be idempotent). */
+static int lt_label_shape(markdown_core_node *root, const char *which) {
+    markdown_core_iter walk;
+    markdown_core_iter *iter = &walk;
+    markdown_core_event_type ev_type;
+    markdown_core_node *label = NULL;
+    markdown_core_iter_init(iter, root);
+    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (ev_type == MARKDOWN_CORE_EVENT_ENTER && node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
+            label = node;
+            break;
+        }
+    }
+    if (!label) {
+        fprintf(stderr, "label tail (%s): no DirectiveLabel in the tree\n", which);
+        return -1;
+    }
+    if (!label->first_child || label->first_child->type != MARKDOWN_CORE_NODE_TEXT || !label->first_child->next ||
+        label->first_child->next->type != MARKDOWN_CORE_NODE_LINK || label->first_child->next->next) {
+        fprintf(
+            stderr,
+            "label tail (%s): the label is not [consolidated text, autolink] -- its passes did not run\n",
+            which
+        );
+        return -1;
+    }
+    return 0;
+}
+
+static int case_label_tail(const ts_spec_file *file) {
+    static const char LT_TEXT[] = "::note[a *cat sees www.example.com]{k=v}\n\nafter\n";
+    markdown_core_parser *parser;
+    markdown_core_node *finished;
+    markdown_core_node *first;
+    markdown_core_node *second;
+    int failures = 0;
+    (void)file;
+
+    finished = pr_parse(LT_TEXT, sizeof(LT_TEXT) - 1);
+    if (!finished) {
+        fputs("label tail: parse failed\n", stderr);
+        return -1;
+    }
+    failures += lt_label_shape(finished, "finish") != 0;
+    markdown_core_node_free(finished);
+
+    parser = pr_parser_new();
+    if (!parser) {
+        return -1;
+    }
+    markdown_core_parser_feed(parser, LT_TEXT, sizeof(LT_TEXT) - 1);
+    first = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+    second = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+    if (!first || !second) {
+        fputs("label tail: derivation failed\n", stderr);
+        failures++;
+    } else {
+        failures += lt_label_shape(first, "derive") != 0;
+        failures += lt_label_shape(second, "re-derive") != 0;
+    }
+    if (first) {
+        markdown_core_node_free(first);
+    }
+    if (second) {
+        markdown_core_node_free(second);
+    }
+    markdown_core_parser_free(parser);
+    printf("label tail: %s\n", failures ? "the label missed its passes" : "the label gets every pass");
+    return failures ? -1 : 0;
+}
+
+/* T15 -- THE REACTIVE-LOOP BOUND, as counters rather than clocks. The
+ * projection side of a feed carries no term in the document already fed:
+ * `cache_misses` counts exactly the content blocks a projection re-parses
+ * (the cost F12 measured), so over a stream of independent blocks the
+ * per-feed miss delta must sit FLAT while the hit delta grows with the
+ * document -- a miss delta that moves with fed size names state being
+ * re-derived. Two terms are carved out and STATED rather than folded in
+ * (§6): the whole-CST clone every derivation pays by design, and the
+ * binding-side copy-out, which lives above this runner. The third term --
+ * a definition's arrival re-keys the whole document (F19) -- is asserted
+ * AS that term, so a change in its shape fails here instead of hiding. */
+static int case_feed_bound(const ts_spec_file *file) {
+    enum { FB_BLOCKS = 256, FB_WARMUP = 16 };
+    markdown_core_parser *parser;
+    size_t misses_before;
+    size_t hits_before;
+    size_t min_misses = (size_t)-1;
+    size_t max_misses = 0;
+    size_t first_hits_delta = 0;
+    size_t last_hits_delta = 0;
+    char line[64];
+    int i;
+    int failures = 0;
+    (void)file;
+
+    if (pr_no_cache) {
+        puts("feed bound: skipped under --no-cache (the bound is the cache's)");
+        return 0;
+    }
+    parser = pr_parser_new();
+    if (!parser) {
+        return -1;
+    }
+    for (i = 0; i < FB_BLOCKS; i++) {
+        markdown_core_node *derived;
+        snprintf(line, sizeof(line), "paragraph number %d with some text\n\n", i);
+        markdown_core_parser_feed(parser, line, strlen(line));
+        misses_before = parser->cache_misses;
+        hits_before = parser->cache_hits;
+        derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        if (!derived) {
+            fputs("feed bound: derivation failed\n", stderr);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        markdown_core_node_free(derived);
+        if (i >= FB_WARMUP) {
+            size_t misses = parser->cache_misses - misses_before;
+            if (misses < min_misses) {
+                min_misses = misses;
+            }
+            if (misses > max_misses) {
+                max_misses = misses;
+            }
+            if (i == FB_WARMUP) {
+                first_hits_delta = parser->cache_hits - hits_before;
+            }
+            last_hits_delta = parser->cache_hits - hits_before;
+        }
+    }
+    if (max_misses != min_misses) {
+        fprintf(
+            stderr,
+            "feed bound: misses per feed moved %zu..%zu -- the projection side carries a term in the fed document\n",
+            min_misses,
+            max_misses
+        );
+        failures++;
+    }
+    if (last_hits_delta <= first_hits_delta) {
+        fprintf(
+            stderr,
+            "feed bound: hits per feed did not grow (%zu -> %zu) -- the cache is not serving\n",
+            first_hits_delta,
+            last_hits_delta
+        );
+        failures++;
+    }
+    {
+        static const char DEF[] = "[zz]: /u\n\n";
+        markdown_core_node *derived;
+        size_t misses;
+        markdown_core_parser_feed(parser, DEF, sizeof(DEF) - 1);
+        misses_before = parser->cache_misses;
+        derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        if (!derived) {
+            fputs("feed bound: derivation failed\n", stderr);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        markdown_core_node_free(derived);
+        misses = parser->cache_misses - misses_before;
+        if (misses < FB_BLOCKS) {
+            fprintf(
+                stderr,
+                "feed bound: a definition's arrival re-keyed %zu of %d blocks -- F19's accepted term changed shape\n",
+                misses,
+                FB_BLOCKS
+            );
+            failures++;
+        }
+    }
+    markdown_core_parser_free(parser);
+    printf(
+        "feed bound: %s -- misses/feed flat at %zu over %d feeds, hits/feed %zu -> %zu; carved out and accepted "
+        "(§6): the whole-CST clone per feed, the binding copy-out, and the whole-document re-key per definition\n",
+        failures ? "MOVED" : "holds",
+        min_misses,
+        FB_BLOCKS - FB_WARMUP,
+        first_hits_delta,
+        last_hits_delta
+    );
+    return failures ? -1 : 0;
+}
+
+/* T16 -- RESIDENT MEMORY across a long stream, measured rather than assumed,
+ * and the bound stated so it is not later mistaken for a defect (§6):
+ * every block keeps its content bytes for life, the parser keeps the
+ * normalized source, and the cache keeps one projected list per closed
+ * block, so residency is O(bytes fed) with a constant factor -- THE GATE
+ * IS THE FACTOR. `ru_maxrss` is a peak: the tree handed back per feed is
+ * freed before the next, so the peak is the resident state plus one live
+ * projection, which is the consumer's own shape. Closes F9. */
+static int case_resident_memory(const ts_spec_file *file) {
+#if defined(_WIN32)
+    (void)file;
+    puts("resident memory: skipped (no getrusage on this host)");
+    return 0;
+#else
+    enum { RM_BLOCKS = 16384, RM_DERIVE_EVERY = 64 };
+    static const char RM_FILLER[] = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do "
+                                    "eiusmod tempor incididunt ut labore et dolore magna aliqua ut "
+                                    "enim ad minim veniam quis nostrud exercitation ullamco laboris";
+    struct rusage usage;
+    long baseline_kb;
+    long final_kb;
+    size_t fed = 0;
+    char line[512];
+    int i;
+    markdown_core_parser *parser;
+    double factor;
+    (void)file;
+
+    getrusage(RUSAGE_SELF, &usage);
+    baseline_kb = usage.ru_maxrss;
+    parser = pr_parser_new();
+    if (!parser) {
+        return -1;
+    }
+    for (i = 0; i < RM_BLOCKS; i++) {
+        int n = snprintf(line, sizeof(line), "block %d: %s\n\n", i, RM_FILLER);
+        markdown_core_parser_feed(parser, line, (size_t)n);
+        fed += (size_t)n;
+        if (i % RM_DERIVE_EVERY == RM_DERIVE_EVERY - 1) {
+            markdown_core_node *derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+            if (!derived) {
+                fputs("resident memory: derivation failed\n", stderr);
+                markdown_core_parser_free(parser);
+                return -1;
+            }
+            markdown_core_node_free(derived);
+        }
+    }
+    getrusage(RUSAGE_SELF, &usage);
+    final_kb = usage.ru_maxrss;
+    markdown_core_parser_free(parser);
+#if defined(__APPLE__)
+    /* ru_maxrss is bytes on Darwin and kilobytes on Linux. */
+    baseline_kb /= 1024;
+    final_kb /= 1024;
+#endif
+    factor = ((double)(final_kb - baseline_kb) * 1024.0) / (double)fed;
+    printf(
+        "resident memory: %.2fx of the %zu bytes fed stays resident (%ld KiB -> %ld KiB peak); the bound is "
+        "O(bytes fed) -- the CST keeps every block's content, the parser the normalized source, the cache one "
+        "list per closed block\n",
+        factor,
+        fed,
+        baseline_kb,
+        final_kb
+    );
+    if (factor > 24.0) {
+        fprintf(stderr, "resident memory: %.2fx exceeds the 24x tripwire\n", factor);
+        return -1;
+    }
+    return 0;
+#endif
+}
+
+/* T17 -- CARRIED EXTENSION STATE, gated structurally instead of through a
+ * golden (closes F8). The boundary derivation goes through the clone; the
+ * finish projection is taken in place on the CST with no clone at all --
+ * so a field of a block's extension payload that stops surviving the
+ * clone shows up as the SAME closed block dumping differently at the last
+ * boundary than at finish, joined on the identity T2 mints. Run twice:
+ * cache off (a pure clone-projection against the in-place one) and cache
+ * on (the served-list path against the same). A document whose FINALIZE
+ * mints definitions -- a dying paragraph's, a footnote's -- is skipped:
+ * those move the maps between the two projections, resolution may then
+ * legitimately move a closed block's rendering, and the generations are
+ * unreadable afterwards because finish's reset renews the maps. The
+ * finalize-minted definitions are counted STRUCTURALLY, as definition
+ * nodes the finish tree has that the boundary tree does not. The skip
+ * count is asserted a minority so the gate cannot go vacuous.
+ *
+ * One block is exempt BY THE RULING: the boundary tree's final top-level
+ * block. The formula promotion's `closed` lags one line deliberately
+ * (§1's backward-reach table), so the block at the spine's very end can
+ * read closed while its reinterpretation is still owed to the next line
+ * -- at finish that line has spoken. Every block the stream has actually
+ * left behind is compared. */
+typedef struct cs_entry {
+    uint32_t id;
+    uint8_t *dump;
+    size_t length;
+} cs_entry;
+
+static int cs_collect(markdown_core_node *root, int exempt_tail, cs_entry **out, size_t *count) {
+    markdown_core_iter walk;
+    markdown_core_iter *iter = &walk;
+    markdown_core_event_type ev_type;
+    markdown_core_node *tail = exempt_tail ? root->last_child : NULL;
+    size_t cap = 0;
+    *out = NULL;
+    *count = 0;
+    markdown_core_iter_init(iter, root);
+    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (ev_type == MARKDOWN_CORE_EVENT_ENTER && tail && node == tail) {
+            markdown_core_iter_reset(iter, node, MARKDOWN_CORE_EVENT_EXIT);
+            continue;
+        }
+        if (ev_type != MARKDOWN_CORE_EVENT_ENTER || !MARKDOWN_CORE_NODE_BLOCK_P(node) ||
+            (node->flags & MARKDOWN_CORE_NODE__OPEN) || node->identifier == 0) {
+            continue;
+        }
+        if (*count == cap) {
+            size_t grown = cap ? cap * 2 : 32;
+            cs_entry *entries = (cs_entry *)realloc(*out, grown * sizeof(cs_entry));
+            if (!entries) {
+                return -1;
+            }
+            *out = entries;
+            cap = grown;
+        }
+        (*out)[*count].id = node->identifier;
+        (*out)[*count].dump = pr_dump(node, &(*out)[*count].length);
+        if (!(*out)[*count].dump) {
+            return -1;
+        }
+        (*count)++;
+    }
+    return 0;
+}
+
+static void cs_free(cs_entry *entries, size_t count) {
+    size_t i;
+    for (i = 0; i < count; i++) {
+        markdown_core_dump_free(entries[i].dump);
+    }
+    free(entries);
+}
+
+static size_t cs_definition_count(markdown_core_node *root) {
+    markdown_core_iter walk;
+    markdown_core_iter *iter = &walk;
+    markdown_core_event_type ev_type;
+    size_t count = 0;
+    markdown_core_iter_init(iter, root);
+    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (ev_type == MARKDOWN_CORE_EVENT_ENTER && (node->type == MARKDOWN_CORE_NODE_REFERENCE_DEFINITION ||
+                                                        node->type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION)) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static int case_carried_state(const ts_spec_file *file) {
+    size_t index;
+    int cache_off;
+    int failures = 0;
+    size_t compared = 0;
+    size_t skipped = 0;
+    size_t documents = 0;
+    size_t multi_block = 0;
+
+    for (cache_off = 0; cache_off <= 1; cache_off++) {
+        for (index = 0; index < file->count; index++) {
+            const ts_spec_case *test_case = &file->cases[index];
+            markdown_core_parser *parser = pr_parser_new();
+            markdown_core_node *derived;
+            markdown_core_node *finished;
+            cs_entry *at_boundary = NULL;
+            cs_entry *at_finish = NULL;
+            size_t boundary_count = 0;
+            size_t finish_count = 0;
+            size_t boundary_definitions;
+            size_t i;
+            size_t j;
+            if (!parser) {
+                return -1;
+            }
+            parser->no_projection_cache = cache_off || pr_no_cache;
+            documents++;
+            markdown_core_parser_feed(parser, test_case->markdown, test_case->markdown_length);
+            derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+            if (!derived || cs_collect(derived, 1, &at_boundary, &boundary_count) != 0) {
+                fprintf(stderr, "example %d: boundary derivation failed\n", test_case->example);
+                cs_free(at_boundary, boundary_count);
+                if (derived) {
+                    markdown_core_node_free(derived);
+                }
+                markdown_core_parser_free(parser);
+                return -1;
+            }
+            boundary_definitions = cs_definition_count(derived);
+            if (derived->first_child && derived->first_child != derived->last_child) {
+                multi_block++;
+            }
+            markdown_core_node_free(derived);
+            finished = markdown_core_parser_finish(parser);
+            if (!finished || cs_collect(finished, 0, &at_finish, &finish_count) != 0) {
+                fprintf(stderr, "example %d: finish failed\n", test_case->example);
+                cs_free(at_boundary, boundary_count);
+                cs_free(at_finish, finish_count);
+                if (finished) {
+                    markdown_core_node_free(finished);
+                }
+                markdown_core_parser_free(parser);
+                return -1;
+            }
+            if (cs_definition_count(finished) != boundary_definitions) {
+                skipped++;
+            } else {
+                for (i = 0; i < boundary_count; i++) {
+                    int found = 0;
+                    for (j = 0; j < finish_count; j++) {
+                        if (at_finish[j].id != at_boundary[i].id) {
+                            continue;
+                        }
+                        found = 1;
+                        if (at_finish[j].length != at_boundary[i].length ||
+                            memcmp(at_finish[j].dump, at_boundary[i].dump, at_boundary[i].length) != 0) {
+                            fprintf(
+                                stderr,
+                                "example %d (cache %s): closed block %u dumps differently at finish\n",
+                                test_case->example,
+                                cache_off ? "off" : "on",
+                                at_boundary[i].id
+                            );
+                            failures++;
+                        }
+                        break;
+                    }
+                    if (!found) {
+                        fprintf(
+                            stderr,
+                            "example %d (cache %s): closed block %u vanished at finish\n",
+                            test_case->example,
+                            cache_off ? "off" : "on",
+                            at_boundary[i].id
+                        );
+                        failures++;
+                    }
+                    compared++;
+                }
+            }
+            cs_free(at_boundary, boundary_count);
+            cs_free(at_finish, finish_count);
+            markdown_core_node_free(finished);
+            markdown_core_parser_free(parser);
+        }
+    }
+    /* Vacuity is judged structurally: a corpus of one-block documents has
+     * nothing but spine tails, and the tail is the one ruled exemption. */
+    if ((compared == 0 && multi_block > 0) || skipped * 2 > documents) {
+        fprintf(
+            stderr,
+            "carried state: %zu blocks compared over %zu multi-block documents, %zu of %zu skipped -- vacuous\n",
+            compared,
+            multi_block,
+            skipped,
+            documents
+        );
+        failures++;
+    }
+    printf(
+        "carried state: %s -- %zu closed blocks agree between the cloned boundary projection and the in-place "
+        "finish, %zu resolution-moved documents skipped\n",
+        failures ? "DIVERGED" : "holds",
+        compared,
+        skipped
+    );
+    return failures ? -1 : 0;
 }
 
 typedef struct pr_case_entry {
@@ -411,12 +2735,26 @@ static const pr_case_entry PR_CASES[] = {
     {"closed_after_finish", case_closed_after_finish, 1},
     {"double_projection", case_double_projection, 1},
     {"refmap_independence", case_refmap_independence, 1},
+    {"borrow_across_feed", case_borrow_across_feed, 1},
+    {"projection_key", case_projection_key, 1},
+    {"block_identity", case_block_identity, 1},
+    {"block_identity_transitions", case_block_identity_transitions, 0},
+    {"attach_invalidation", case_attach_invalidation, 0},
+    {"diagnostics_after_derive", case_diagnostics_after_derive, 0},
+    {"label_tail", case_label_tail, 0},
+    {"feed_bound", case_feed_bound, 0},
+    {"resident_memory", case_resident_memory, 0},
+    {"carried_state", case_carried_state, 1},
+    {"dump_boundaries", case_dump_boundaries, 1},
+    {"feed_loop", case_feed_loop, 1},
     {"projection_slope", case_projection_slope, 0},
 };
 
 int main(int argc, char **argv) {
     const char *case_name = NULL;
     const char *spec = NULL;
+    const char *md = NULL;
+    const char *md_dir = NULL;
     ts_spec_file file;
     size_t i;
     int arg;
@@ -431,25 +2769,46 @@ int main(int argc, char **argv) {
             case_name = argv[++arg];
         } else if (strcmp(argv[arg], "--spec") == 0 && arg + 1 < argc) {
             spec = argv[++arg];
+        } else if (strcmp(argv[arg], "--md") == 0 && arg + 1 < argc) {
+            md = argv[++arg];
+        } else if (strcmp(argv[arg], "--md-dir") == 0 && arg + 1 < argc) {
+            md_dir = argv[++arg];
+        } else if (strcmp(argv[arg], "--repeats") == 0 && arg + 1 < argc) {
+            pr_repeats = atoi(argv[++arg]);
+        } else if (strcmp(argv[arg], "--no-cache") == 0) {
+            pr_no_cache = 1;
         } else {
-            fputs("usage: projection_runner [--list] --case NAME --spec FILE\n", stderr);
+            fputs("usage: projection_runner [--list] --case NAME (--spec FILE | --md FILE | --md-dir DIR)\n", stderr);
             return 2;
         }
     }
-    if (!case_name) {
-        fputs("usage: projection_runner [--list] --case NAME [--spec FILE]\n", stderr);
+    if (!case_name || pr_repeats < 1) {
+        fputs("usage: projection_runner [--list] --case NAME (--spec FILE | --md FILE | --md-dir DIR)\n", stderr);
         return 2;
     }
     for (i = 0; i < sizeof(PR_CASES) / sizeof(PR_CASES[0]); i++) {
         if (strcmp(PR_CASES[i].name, case_name) == 0) {
             int failed;
             if (PR_CASES[i].needs_spec) {
-                if (!spec) {
-                    fprintf(stderr, "case %s requires --spec FILE\n", case_name);
-                    return 2;
-                }
-                if (ts_spec_load(spec, &file) != 0) {
-                    fprintf(stderr, "projection_runner: cannot load %s\n", spec);
+                if (spec) {
+                    if (ts_spec_load(spec, &file) != 0) {
+                        fprintf(stderr, "projection_runner: cannot load %s\n", spec);
+                        return 2;
+                    }
+                } else if (md) {
+                    file.cases = (ts_spec_case *)calloc(1, sizeof(ts_spec_case));
+                    file.count = 1;
+                    if (!file.cases || pr_case_from_file(md, 1, &file.cases[0]) != 0) {
+                        fprintf(stderr, "projection_runner: cannot load %s\n", md);
+                        return 2;
+                    }
+                } else if (md_dir) {
+                    if (pr_load_md_dir(md_dir, &file) != 0) {
+                        fprintf(stderr, "projection_runner: cannot load %s\n", md_dir);
+                        return 2;
+                    }
+                } else {
+                    fprintf(stderr, "case %s requires --spec FILE, --md FILE or --md-dir DIR\n", case_name);
                     return 2;
                 }
                 failed = PR_CASES[i].run(&file) != 0;

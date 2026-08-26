@@ -2,8 +2,8 @@
 
 These six files are the **entire** permitted inheritance from this repository's
 history after `580d10c`. They are extracted here so that the history never needs
-to be opened again: the rule in [`docs/RECONSTRUCTION.md`](../../docs/RECONSTRUCTION.md)
-§4.9 forbids reading any commit, and this directory is what that rule carves out.
+to be opened again: the standing rule forbids taking anything from a commit
+after `580d10c`, and this directory is what that rule carves out.
 
 **96 examples**, covering the two named deliverables — the directive syntax fix
 and the formula fix:

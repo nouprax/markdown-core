@@ -161,6 +161,8 @@ typedef struct {
     int column;
 } markdown_core_line_mark;
 
+#define MARKDOWN_CORE_TAIL_MEMO 64
+
 struct markdown_core_parser {
     struct markdown_core_mem *mem;
     /* A hashtable of urls in the current document for cross-references */
@@ -249,6 +251,14 @@ struct markdown_core_parser {
     size_t total_size;
     markdown_core_llist *syntax_extensions;
     markdown_core_llist *inline_syntax_extensions;
+    /* THE EXTENSION SET's generation (T9 amendment): advanced by every
+     * attach. An attach changes what a projection produces for every block,
+     * closed ones included, and a closed block's stamp never moves -- the
+     * write clock cannot carry this axis, so the cache key carries it
+     * directly, the same shape as a map's generation (T4). An attach that
+     * fails half-way still counts: a spurious invalidation is a slow feed
+     * where a missed one is a wrong tree. */
+    size_t extension_generation;
     markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
      * the special/emphasis-skip characters of the attached inline extensions.
@@ -264,6 +274,44 @@ struct markdown_core_parser {
     markdown_core_line_mark *line_marks;
     bufsize_t line_marks_size;
     bufsize_t line_marks_alloc;
+    /* THE WRITE CLOCK (T3): advanced by every write to a CST block, and read
+     * into the block's `stamp`. Every write happens on the open spine, so the
+     * spine is stamped once per processed line as well as at each write --
+     * which is what covers an extension's opaque state, written where the
+     * core cannot see it. Wraps at 2^32 writes in one parse, which is more
+     * lines than a parse can be handed. */
+    uint32_t write_clock;
+    /* THE IDENTITY MINT (T2): counts the block ids handed out this parse.
+     * Advanced only by the block phase -- a projection never mints -- so the
+     * ids are a fact about the document rather than about how its bytes
+     * arrived, which is what makes them chunking-stable (F11). */
+    uint32_t block_ids_minted;
+    /* THE PROJECTION CACHE's switches and ledger (T9). `no_projection_cache`
+     * is for a runner that plays the cache's part itself or measures without
+     * it; it survives the reset, as the options do. The counters are per
+     * parse and read before `finish` resets them. */
+    bool no_projection_cache;
+    size_t cache_hits;
+    size_t cache_misses;
+    /* THE PER-BLOCK TAIL'S QUEUE (T18): the blocks a projection's walk found
+     * tail work for, in EXIT order, acted on after the walk -- a hook may
+     * replace or remove the block, and the walk must not be standing on it
+     * when it does. Reused across the projections of one parse; released
+     * with the parse. */
+    markdown_core_node **tail_queue;
+    size_t tail_queue_size;
+    size_t tail_queue_alloc;
+    /* THE NAME MEMO (F15): whether extension `ext` declared type name `name`,
+     * keyed on the name's POINTER -- every `get_type_string` answers a literal,
+     * so the steady state is a pointer compare and the set is walked only to
+     * fill an entry. Per parser, so parsers on different threads share
+     * nothing. Full is not wrong: a pair that does not fit is walked again. */
+    struct {
+        const void *ext;
+        const char *name;
+        bool wants;
+    } tail_memo[MARKDOWN_CORE_TAIL_MEMO];
+    size_t tail_memo_size;
 };
 
 /* THE PROJECTION (§12.1): a new tree derived from the parser's CST -- the
@@ -274,11 +322,26 @@ struct markdown_core_parser {
  *
  * `record_diagnostics` gates the rows the projection itself raises: a
  * diagnostic speaks when its construct COMPLETES (§12.8 Q4), so only the
- * final derivation -- `finish`'s, over a fully closed CST -- passes 1.
- * Internal: `finish` is built on this, and it is what a snapshot accessor
- * would call; it is not part of the public surface. */
-markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parser, markdown_core_map *refmap,
-                                                     int record_diagnostics);
+ * final projection -- `finish`'s, over a fully closed CST -- passes 1.
+ * Internal: this is the RE-projection, what a snapshot accessor calls while
+ * the parser lives on. `finish` shares its body but not its clone -- the last
+ * projection is taken in place on the CST (T1), because nothing can observe
+ * the CST afterwards. Not part of the public surface. */
+/* Stamp `node` with the next reading of the write clock (T3). Called by the
+ * core at every write it makes to a CST block and by an extension at a
+ * retype, and by the line loop over the whole open spine. */
+void markdown_core_parser_touch(markdown_core_parser *parser, markdown_core_node *node);
+
+/* Give `node` the next block identity (T2). Called by `add_child` for every
+ * block the block phase opens, and wherever a block is born outside it -- the
+ * root, a reference definition, a table's lead paragraph. */
+void markdown_core_parser_mint_block_id(markdown_core_parser *parser, markdown_core_node *node);
+
+markdown_core_node *markdown_core_parser_derive_tree(
+    markdown_core_parser *parser,
+    markdown_core_map *refmap,
+    int record_diagnostics
+);
 
 /* Ask `finish` to hand the normalized source and its line index over rather
  * than release them. `out` is zeroed here and filled at finish; a parse that
@@ -300,17 +363,32 @@ void markdown_core_concrete_dispose(markdown_core_concrete *concrete);
  *
  * A no-op when recording is off. An allocation it cannot make abandons the
  * parse: see the list's own comment above. */
-void markdown_core_parser_diagnose(markdown_core_parser *parser, markdown_core_diagnostic_severity severity,
-                                   markdown_core_diagnostic_code code, int start_line, int start_column, int end_line,
-                                   int end_column, const char *message, const unsigned char *subject,
-                                   bufsize_t subject_length);
+void markdown_core_parser_diagnose(
+    markdown_core_parser *parser,
+    markdown_core_diagnostic_severity severity,
+    markdown_core_diagnostic_code code,
+    int start_line,
+    int start_column,
+    int end_line,
+    int end_column,
+    const char *message,
+    const unsigned char *subject,
+    bufsize_t subject_length
+);
 
 /* The same over the LINE IN HAND, from line offset `from` to its last
  * non-space byte -- the block phase's form, where an offset IS a column. */
-void markdown_core_parser_diagnose_line(markdown_core_parser *parser, markdown_core_diagnostic_severity severity,
-                                        markdown_core_diagnostic_code code, const unsigned char *input, bufsize_t len,
-                                        bufsize_t from, const char *message, const unsigned char *subject,
-                                        bufsize_t subject_length);
+void markdown_core_parser_diagnose_line(
+    markdown_core_parser *parser,
+    markdown_core_diagnostic_severity severity,
+    markdown_core_diagnostic_code code,
+    const unsigned char *input,
+    bufsize_t len,
+    bufsize_t from,
+    const char *message,
+    const unsigned char *subject,
+    bufsize_t subject_length
+);
 
 void markdown_core_parser_retain_diagnostics(markdown_core_parser *parser, markdown_core_diagnostics *out);
 void markdown_core_diagnostics_dispose(markdown_core_diagnostics *diagnostics);

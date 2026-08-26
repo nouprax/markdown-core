@@ -7,6 +7,16 @@
 #include "parser.h"
 #include "iterator.h"
 
+void markdown_core_iter_init(markdown_core_iter *iter, markdown_core_node *root) {
+    iter->mem = root->content.mem;
+    iter->root = root;
+    iter->cur.ev_type = MARKDOWN_CORE_EVENT_NONE;
+    iter->cur.node = NULL;
+    iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
+    iter->next.node = root;
+    iter->borrower = NULL;
+}
+
 markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
     if (root == NULL) {
         return NULL;
@@ -16,12 +26,7 @@ markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
     if (!iter) {
         return NULL;
     }
-    iter->mem = mem;
-    iter->root = root;
-    iter->cur.ev_type = MARKDOWN_CORE_EVENT_NONE;
-    iter->cur.node = NULL;
-    iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-    iter->next.node = root;
+    markdown_core_iter_init(iter, root);
     return iter;
 }
 
@@ -40,6 +45,9 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
 
     /* roll forward to next item, setting both fields */
     if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
+        if (MARKDOWN_CORE_NODE_BORROWED_P(node)) {
+            iter->borrower = node;
+        }
         if (node->first_child == NULL) {
             /* stay on this node but exit */
             iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
@@ -54,20 +62,32 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
     } else if (node->next) {
         iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
         iter->next.node = node->next;
-    } else if (node->parent) {
-        iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
-        iter->next.node = node->parent;
     } else {
-        assert(false);
-        iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
-        iter->next.node = NULL;
+        /* A parentless node inside the walk is the last of a borrowed list:
+         * the way out is the borrower, not a parent it does not have. */
+        markdown_core_node *parent = node->parent ? node->parent : iter->borrower;
+        if (parent) {
+            iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
+            iter->next.node = parent;
+        } else {
+            assert(false);
+            iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
+            iter->next.node = NULL;
+        }
+    }
+
+    if (ev_type == MARKDOWN_CORE_EVENT_EXIT && node == iter->borrower) {
+        iter->borrower = NULL;
     }
 
     return ev_type;
 }
 
-void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_node *current,
-                              markdown_core_event_type event_type) {
+void markdown_core_iter_reset(
+    markdown_core_iter *iter,
+    markdown_core_node *current,
+    markdown_core_event_type event_type
+) {
     iter->next.ev_type = event_type;
     iter->next.node = current;
     markdown_core_iter_next(iter);
@@ -92,15 +112,14 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
     if (root == NULL) {
         return 1;
     }
-    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_iter walk;
+    markdown_core_iter *iter = &walk;
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(root->content.mem);
     markdown_core_event_type ev_type;
     markdown_core_node *cur, *tmp, *next;
     int ok = 1;
 
-    if (!iter) {
-        return 0;
-    }
+    markdown_core_iter_init(iter, root);
 
     /* EXIT, not ENTER, and that is Step 5's mutation rule: the only node a walk
      * may free is the one whose EXIT is current. `TEXT` was in the old
@@ -175,7 +194,6 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
     }
 
     markdown_core_strbuf_free(&buf);
-    markdown_core_iter_free(iter);
     return ok;
 }
 
@@ -189,8 +207,13 @@ int markdown_core_node_own(markdown_core_node *root) {
      * allocated is emptied rather than left borrowing the source buffer. */
     markdown_core_mem *mem = root->content.mem;
     markdown_core_node *cur = root;
+    /* Same climb as the iterator's: a borrowed list is parentless. */
+    markdown_core_node *borrower = NULL;
 
     while (cur) {
+        if (MARKDOWN_CORE_NODE_BORROWED_P(cur)) {
+            borrower = cur;
+        }
         switch (cur->type) {
         case MARKDOWN_CORE_NODE_TEXT:
         case MARKDOWN_CORE_NODE_HTML:
@@ -220,7 +243,7 @@ int markdown_core_node_own(markdown_core_node *root) {
             cur = cur->first_child;
         } else {
             while (cur != root && cur->next == NULL) {
-                cur = cur->parent;
+                cur = cur->parent ? cur->parent : borrower;
             }
             cur = (cur == root) ? NULL : cur->next;
         }

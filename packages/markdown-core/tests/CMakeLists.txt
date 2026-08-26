@@ -278,7 +278,7 @@ if(MARKDOWN_CORE_STATIC)
     # -- projecting against another map moves nothing and poisons nothing.
     # Both derive BEFORE finish, so the properties hold over the open spine
     # too, not only over the closed tree finish projects.
-    foreach(fixture spec regression extensions)
+    foreach(fixture spec regression extensions extensions-directive)
         markdown_core_add_test(
             projection_double_${fixture}
             "streaming"
@@ -295,6 +295,81 @@ if(MARKDOWN_CORE_STATIC)
             projection_runner
             --case
             refmap_independence
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+    endforeach()
+    # T19 (docs/STREAMING.md §5): a borrow held across a feed that replaces
+    # it still reads -- lifetime under the holder count, and a shared list
+    # walkable from every tree that aliases it, with a zero-leak ledger.
+    foreach(fixture spec regression extensions)
+        markdown_core_add_test(
+            projection_borrow_${fixture}
+            "streaming"
+            240
+            projection_runner
+            --case
+            borrow_across_feed
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+    endforeach()
+    # T3 and T4 (docs/STREAMING.md §5): the cache key is sound -- an unchanged
+    # write stamp and map generation mean an unchanged projection, and a
+    # closed block is never written again.
+    foreach(fixture spec regression extensions)
+        markdown_core_add_test(
+            projection_key_${fixture}
+            "streaming"
+            240
+            projection_runner
+            --case
+            projection_key
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+    endforeach()
+    # T2 and T5 (docs/STREAMING.md §5, §4 D4): a block's identity is total,
+    # unique, identical across two projections of one CST, and never
+    # resurrected -- over every fixture, fed one line at a time. The
+    # transitions case pins D4's ruled shapes: retypes and the formula
+    # promotion keep the id, a split leaves it on what the reader already
+    # had, a death bequeaths it to the firstborn definition.
+    foreach(fixture spec regression extensions extensions-directive extensions-formula-github)
+        markdown_core_add_test(
+            projection_identity_${fixture}
+            "streaming"
+            240
+            projection_runner
+            --case
+            block_identity
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+    endforeach()
+    markdown_core_add_test(projection_identity_transitions "streaming" 120 projection_runner --case
+                           block_identity_transitions)
+    # The cache key's two review-found axes (T9 amendments): an attach between
+    # a derivation and the next projection reads every cached list as stale,
+    # and the recording projection takes no hits -- a hit skips the inline
+    # parse the record-gated diagnostic rows speak from.
+    markdown_core_add_test(projection_attach_invalidation "streaming" 120 projection_runner --case attach_invalidation)
+    markdown_core_add_test(projection_diagnostics_after_derive "streaming" 120 projection_runner --case
+                           diagnostics_after_derive)
+    # Phase F's gates (T15, T16, T17). feed_bound is counter-based and
+    # deterministic; resident_memory reads ru_maxrss, so like the wall-clock
+    # gates it carries the complexity label the sanitizer presets exclude;
+    # carried_state joins the cloned boundary projection against the in-place
+    # finish on the block identity, over every extension corpus.
+    markdown_core_add_test(projection_label_tail "streaming" 120 projection_runner --case label_tail)
+    markdown_core_add_test(projection_feed_bound "streaming" 120 projection_runner --case feed_bound)
+    markdown_core_add_test(pathological_complexity_resident_memory "pathological;complexity" 240 projection_runner
+                           --case resident_memory)
+    set_tests_properties(pathological_complexity_resident_memory PROPERTIES RUN_SERIAL TRUE)
+    foreach(fixture extensions extensions-directive extensions-formula-github spec)
+        markdown_core_add_test(
+            projection_carried_state_${fixture}
+            "streaming"
+            240
+            projection_runner
+            --case
+            carried_state
             --spec
             "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
     endforeach()

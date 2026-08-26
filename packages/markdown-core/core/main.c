@@ -39,9 +39,11 @@ void print_usage(void) {
     printf("  --profile PROFILE named option set: default | gfm | gfm-smart | gfm-extended\n");
     printf("  --smart           Use smart punctuation\n");
     printf("  --validate-utf8   Replace UTF-8 invalid sequences with U+FFFD\n");
-    printf("  --strip-html-comments Strip HTML comment nodes from the parsed AST\n"
-           "  --source-index    Print the normalized source size and line index before the tree\n"
-           "  --diagnostics     Record diagnostics and print them before the tree\n");
+    printf(
+        "  --strip-html-comments Strip HTML comment nodes from the parsed AST\n"
+        "  --source-index    Print the normalized source size and line index before the tree\n"
+        "  --diagnostics     Record diagnostics and print them before the tree\n"
+    );
     printf("  --extension, -e EXTENSION_NAME  Specify an extension name to use\n");
     printf("  --list-extensions               List available extensions and quit\n");
     printf("  --strikethrough-double-tilde    Only parse strikethrough (if enabled)\n");
@@ -63,8 +65,12 @@ static bool print_document(markdown_core_node *document) {
 
     if (!markdown_core_document_dump(&facade_document, &dump, &length, &error)) {
         message = markdown_core_error_get_message(error);
-        fprintf(stderr, "AST dump failed: %.*s\n", (int)message.length,
-                message.data ? (const char *)message.data : "unknown error");
+        fprintf(
+            stderr,
+            "AST dump failed: %.*s\n",
+            (int)message.length,
+            message.data ? (const char *)message.data : "unknown error"
+        );
         markdown_core_error_free(error);
         return false;
     }
@@ -125,8 +131,10 @@ int main(int argc, char *argv[]) {
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--version") == 0) {
             printf("markdown-core %s", MARKDOWN_CORE_VERSION_STRING);
-            printf(" - CommonMark with GitHub Flavored Markdown converter\n(C) 2014-2016 John "
-                   "MacFarlane\n");
+            printf(
+                " - CommonMark with GitHub Flavored Markdown converter\n(C) 2014-2016 John "
+                "MacFarlane\n"
+            );
             goto success;
         } else if (strcmp(argv[i], "--profile") == 0) {
             /* A NAMED OPTION SET, so a comparison harness can ask for exactly

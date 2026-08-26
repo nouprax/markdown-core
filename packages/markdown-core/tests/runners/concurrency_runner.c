@@ -363,8 +363,13 @@ static int run_threads_and_verify(int iterations) {
                 }
                 if (workers[index].lengths[combined] != reference_length ||
                     memcmp(workers[index].dumps[combined], reference, reference_length) != 0) {
-                    fprintf(stderr, "concurrency: thread %d dump diverges (input %zu variant %d)\n", index, input,
-                            variant);
+                    fprintf(
+                        stderr,
+                        "concurrency: thread %d dump diverges (input %zu variant %d)\n",
+                        index,
+                        input,
+                        variant
+                    );
                     failures += 1;
                 }
             }

@@ -99,8 +99,13 @@ static char *cc_attributes(size_t size, size_t *length, int duplicates) {
      * the initial capacity always suffices. */
     written += (size_t)snprintf(input + written, capacity - written, ":x{");
     for (index = 0; index < attribute_count; index++) {
-        written += (size_t)snprintf(input + written, capacity - written, "%sk%zu=v", index ? " " : "",
-                                    duplicates ? index % 64 : index);
+        written += (size_t)snprintf(
+            input + written,
+            capacity - written,
+            "%sk%zu=v",
+            index ? " " : "",
+            duplicates ? index % 64 : index
+        );
     }
     written += (size_t)snprintf(input + written, capacity - written, "}");
     *length = written;
@@ -230,8 +235,14 @@ static int cc_run_expansion(const char *name) {
     markdown_core_document_free(document);
     ratio = (double)total.bytes / (double)length;
     failed = ratio > MAX_REFERENCE_EXPANSION;
-    printf("%s ... %s (%zu input bytes, %zu bytes of resource and association payload, %.3fx)\n", name,
-           failed ? "[FAILED reference expansion]" : "[PASSED]", length, total.bytes, ratio);
+    printf(
+        "%s ... %s (%zu input bytes, %zu bytes of resource and association payload, %.3fx)\n",
+        name,
+        failed ? "[FAILED reference expansion]" : "[PASSED]",
+        length,
+        total.bytes,
+        ratio
+    );
     free(input);
     return failed ? -1 : 0;
 }
@@ -249,11 +260,16 @@ typedef struct cc_case_entry {
 } cc_case_entry;
 
 static const cc_case_entry CC_CASES[] = {
-    {"valid_long_quoted_value", cc_quoted_value, 0},       {"valid_consecutive_backslashes", cc_backslashes, 0},
-    {"unclosed_long_quoted_value", cc_unclosed_quoted, 0}, {"unclosed_backslash_value", cc_unclosed_backslashes, 0},
-    {"many_unique_attributes", cc_unique_attributes, 0},   {"many_duplicate_attributes", cc_duplicate_attributes, 0},
-    {"many_unique_references", cc_unique_references, 0},   {"many_duplicate_references", cc_duplicate_references, 0},
-    {"read_unique_attributes", cc_unique_attributes, 1},   {"read_duplicate_attributes", cc_duplicate_attributes, 1},
+    {"valid_long_quoted_value", cc_quoted_value, 0},
+    {"valid_consecutive_backslashes", cc_backslashes, 0},
+    {"unclosed_long_quoted_value", cc_unclosed_quoted, 0},
+    {"unclosed_backslash_value", cc_unclosed_backslashes, 0},
+    {"many_unique_attributes", cc_unique_attributes, 0},
+    {"many_duplicate_attributes", cc_duplicate_attributes, 0},
+    {"many_unique_references", cc_unique_references, 0},
+    {"many_duplicate_references", cc_duplicate_references, 0},
+    {"read_unique_attributes", cc_unique_attributes, 1},
+    {"read_duplicate_attributes", cc_duplicate_attributes, 1},
 };
 
 /* Cases measured by output size rather than by time. */
@@ -267,7 +283,7 @@ static void cc_read_attributes(markdown_core_document *document) {
     const markdown_core_node *paragraph = root ? markdown_core_node_get_first_child(root) : NULL;
     const markdown_core_node *node;
     for (node = paragraph ? markdown_core_node_get_first_child(paragraph) : NULL; node;
-         node = markdown_core_node_get_next_sibling(node)) {
+        node = markdown_core_node_get_next_sibling(node)) {
         markdown_core_string directive_name;
         bool has_attributes = false;
         size_t count = 0;
