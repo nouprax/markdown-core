@@ -102,6 +102,7 @@ static void definition_create(markdown_core_map *map, markdown_core_chunk *label
 
     map->refs = entry;
     map->size++;
+    map->generation++;
     /* A definition may arrive after a lookup has prepared the map: every
      * mid-stream projection interleaves the two (§12.4). Reopening the
      * preparation is the whole mechanism -- the next lookup rebuilds, and

@@ -1178,6 +1178,55 @@ tail now runs beside.
 
 ---
 
+### F19 — the cache key is sound over 100,000 block observations, and what it would buy  · VERIFIED (T3, T4)
+
+`projection_key` pairs every CST block with its derived block at every line
+boundary (pre-order over blocks, strip off so the skeletons stay one to one)
+and asserts two things: an unchanged key — the block's write stamp and both
+map generations — means a byte-identical derived subtree, and a CLOSED
+block's stamp never moves again. **0 stale keys and 0 closed-block writes**
+over every fixture and both real corpora. Beside the assertions it counts
+what the key would buy T9: of the block observations that revisit a block
+seen at the previous boundary, the share whose key was unchanged is the
+hit-rate ceiling, and of the changed, the share whose subtree had not in
+fact moved is the key's imprecision — spurious, never wrong.
+
+| corpus | boundaries | revisits | key unchanged | changed, of which spurious |
+|---|---|---|---|---|
+| `spec` | 1,624 | 2,846 | 666 (23.4%) | 2,180 / 416 (19.1%) |
+| `regression` | 159 | 368 | 133 (36.1%) | 235 / 20 (8.5%) |
+| `extensions` | 266 | 2,351 | 1,836 (78.1%) | 515 / 46 (8.9%) |
+| **real corpus, 195 documents** | **40,583** | 4,332,113 | **3,880,072 (89.6%)** | 452,041 / **389,515 (86.2%)** |
+| second real corpus, 1,191 documents | 6,223 | 31,835 | 20,826 (65.4%) | 11,009 / 1,915 (17.4%) |
+
+The fixture ceilings are low because a fixture example is a few lines and
+most of its revisits are of the OPEN block; the real-corpus row is the one
+comparable to F12's 90.1%, which was the same rule measured with content
+size in place of the stamp. The spurious share is two things: a definition
+arriving bumps a generation and re-keys every block in the document (F6's
+crudeness, sized at 8.5 points in F12), and the spine stamp re-keys every
+open container on every line whether or not the line reached it.
+
+**Cost.** `stamp` fills the four bytes before `type` and pads to the next
+eight: 184 → **192**. Same `bench_runner`, 41 cases, 5 rounds alternated,
+head against the T18 tree `4b43e3e`, min of `median_ms`:
+
+```
+total   control=234.75 ms   head=235.80 ms   ratio=1.0045   (+0.4%)
+median per-case ratio 1.0022     slower >5%: 1 of 41     faster >5%: 0
+
+deep_nesting@32768 / @16384 / @8192              1.058 / 1.037 / 1.045
+```
+
+The one row over 5% has its siblings beside it and they agree, so it is
+not noise: the spine stamp is O(depth) per line, and `deep_nesting` is a
+document that is one spine 8,192 to 32,768 blocks deep. The block parser
+already walks that spine on every line to match its containers, so the
+class is unchanged and the constant is what the row reads. Real documents
+are a few blocks deep and the rest of the table is inside the spread.
+
+---
+
 ## 4. Decisions — RULED, 2026-08-25
 
 **The API shape is the ruling, and it answers most of §4 by dissolving it.**
@@ -1406,18 +1455,38 @@ and T4 are the cache key; T9 lands the cache and shares.
       before it); formula declares `formula_block`, `code_block`,
       `paragraph`, and its hook has no walk. Numbers and the two things the
       build found are F18.
-- [ ] **T3 — a write stamp on the CST block**, bumped whenever the parser writes
+- [x] **T3 — a write stamp on the CST block**, bumped whenever the parser writes
       that block (content appended, type retyped, closed). Half the cache key.
       It must hook the FIELD WRITES, not `markdown_core_node_set_type`: the
       setext retype writes `->type` directly
       ([blocks.c:2366](../packages/markdown-core/core/blocks.c#L2366)) and
       `tasklist.c:105` changes what a consumer sees without touching `type` at
-      all (F11).
-- [ ] **T4 — a generation counter on each definition map**, bumped on every
+      all (F11). **Done 2026-08-25.** `node->stamp` is the parser's **write
+      clock** as it stood at the block's last write, not a per-block count —
+      so a block born at an address another block died at can never read as
+      unchanged. `markdown_core_parser_touch` is called at birth (`add_child`,
+      the root, a reference definition, table's lead paragraph), at every
+      `add_line` and content mark, at `finalize`, at the setext and table
+      retypes and tasklist's item, **and over the whole open spine once per
+      processed line** — which is what covers the writes the core cannot see,
+      an extension's opaque state above all. The invariant that makes the
+      spine stamp complete is that a CST block is written only while open,
+      and open only on the spine; the gate below asserts it. The node grows
+      176 → 184 → **192** (F19).
+- [x] **T4 — a generation counter on each definition map**, bumped on every
       insert. O(1); flips nothing and walks nothing. Both maps reopen their
       preparation on insert already
       ([references.c:104-110](../packages/markdown-core/core/references.c#L104-L110)),
       which is where the counter goes. The other half of the cache key.
+      **Done 2026-08-25**: `map->generation++` beside `map->prepared = 0`.
+      Every insert counts, a duplicate label included — the first-wins fold
+      happens at preparation, and a spurious invalidation is a slow feed where
+      a missed one would be a wrong tree.
+      *The gate for both is `projection_key_{spec,regression,extensions}`
+      (F19): at every line boundary, every CST block is paired with its
+      derived block and an unchanged `(stamp, refmap generation, footnote
+      generation)` must mean a byte-identical derived subtree, and a closed
+      block's stamp must never move again.*
 - [ ] **T9 — cache a closed block's derived subtree** on its CST block and
       **share it into the tree a feed returns**. T18 has already taken the tail
       off the shared nodes and T19 keeps a borrow alive across the feed that
@@ -1574,6 +1643,10 @@ projected-tree copy cost and the owned/borrowed chunk census, all over the same
 195-document corpus, using PoC-only seams (`clone_only`,
 `derive_tree_no_inlines`, `clone_tree`) that are in the D4 patch and are not
 proposed for landing as they stand.
+
+**T3, T4 and F19** (2026-08-25): `projection_key` over the three fixtures
+and both real corpora, `sizeof`, and the 41-case 5-round bench against
+`4b43e3e`.
 
 **T18 and F18** (2026-08-25): the boundary A/B over eleven fixture corpora
 and two real corpora (195 and 1,191 documents) against `bd59279`, the ASan

@@ -103,6 +103,9 @@ static markdown_core_node *open_tasklist_item(
     }
 
     markdown_core_node_set_syntax_extension(parent_container, self);
+    /* The item's type does not move, but what a consumer sees does (F11) --
+     * a write for T3's purposes. */
+    markdown_core_parser_touch(parser, parent_container);
     markdown_core_parser_advance_offset(parser, (char *)input, 3, false);
 
     // Either an upper or lower case X means the task is completed -- read from

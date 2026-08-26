@@ -155,6 +155,10 @@ static markdown_core_node *make_document(markdown_core_mem *mem) {
     return e;
 }
 
+void markdown_core_parser_touch(markdown_core_parser *parser, markdown_core_node *node) {
+    node->stamp = ++parser->write_clock;
+}
+
 /* Appends and reports failure directly instead of relying on llist_append's
  * silent-drop behavior.
  *
@@ -270,6 +274,9 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
     parser->footnote_defs = markdown_core_footnote_definition_map_new(parser->mem);
     parser->root = document;
     parser->current = document;
+    if (document) {
+        markdown_core_parser_touch(parser, document);
+    }
 
     parser->syntax_extensions = saved_exts;
     parser->inline_syntax_extensions = saved_inline_exts;
@@ -319,6 +326,7 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
  * the line before. An extension container closing on its own fence is a fourth,
  * and `finalize` cannot know that from the type alone. */
 static void S_set_end_to_current_line(markdown_core_parser *parser, markdown_core_node *b) {
+    markdown_core_parser_touch(parser, b);
     b->end_line = parser->line_number;
     b->end_column = parser->curline.size;
     if (b->end_column && parser->curline.ptr[b->end_column - 1] == '\n') {
@@ -649,6 +657,7 @@ static bool S_record_line_start(markdown_core_parser *parser, bufsize_t start) {
 static void S_record_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t column) {
     markdown_core_line_mark *mark;
 
+    markdown_core_parser_touch(parser, node);
     if (parser->line_marks_size == parser->line_marks_alloc) {
         /* One mark per line, so the doubling never has a realistic ceiling to
          * reach; the guard is here because it is cheaper than reasoning about
@@ -689,6 +698,7 @@ static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown
     int chars_to_tab;
     int i;
     assert(node->flags & MARKDOWN_CORE_NODE__OPEN);
+    markdown_core_parser_touch(parser, node);
     /* Indentation stripped ahead of the content belongs to the CONTAINER that
      * stripped it, not to the block being written into -- the same rule the
      * block openers follow, and for the same reason: a block begins at its own
@@ -1010,6 +1020,7 @@ static markdown_core_node *S_new_reference_definition(
         parser->oom = true;
         return NULL;
     }
+    markdown_core_parser_touch(parser, node);
     definition = (markdown_core_definition *)parser->mem->calloc(1, sizeof(*definition));
     if (!definition) {
         parser->oom = true;
@@ -1100,6 +1111,7 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
 
     parent = b->parent;
     assert(b->flags & MARKDOWN_CORE_NODE__OPEN); // shouldn't call finalize on closed blocks
+    markdown_core_parser_touch(parser, b);
     b->flags &= ~MARKDOWN_CORE_NODE__OPEN;
 
     if (parser->curline.size == 0) {
@@ -1274,6 +1286,8 @@ static markdown_core_node *add_child(
         return NULL;
     }
     child->parent = parent;
+    markdown_core_parser_touch(parser, parent);
+    markdown_core_parser_touch(parser, child);
 
     if (parent->last_child) {
         parent->last_child->next = child;
@@ -2531,6 +2545,7 @@ static void open_new_blocks(
 
             if (has_content) {
 
+                markdown_core_parser_touch(parser, *container);
                 (*container)->type = (uint16_t)MARKDOWN_CORE_NODE_HEADING;
                 (*container)->as.heading.level = lev;
                 (*container)->as.heading.setext = true;
@@ -2918,6 +2933,19 @@ finished:
     }
     if (parser->last_line_length && input.data[parser->last_line_length - 1] == '\r') {
         parser->last_line_length -= 1;
+    }
+
+    /* THE SPINE IS STAMPED ONCE PER LINE (T3). A CST block is written only
+     * while it is open, and it is open only on this spine -- so every write
+     * the core cannot see, an extension's opaque state above all (formula's
+     * `closed`, directive's `consume_line`), is covered here whether or not
+     * its own site remembered to touch. A block that closed on this line was
+     * stamped by `finalize` and is no longer on the spine. */
+    {
+        markdown_core_node *spine;
+        for (spine = parser->current; spine; spine = spine->parent) {
+            markdown_core_parser_touch(parser, spine);
+        }
     }
 
     markdown_core_strbuf_clear(&parser->curline);

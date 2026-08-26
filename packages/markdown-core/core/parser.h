@@ -266,6 +266,13 @@ struct markdown_core_parser {
     markdown_core_line_mark *line_marks;
     bufsize_t line_marks_size;
     bufsize_t line_marks_alloc;
+    /* THE WRITE CLOCK (T3): advanced by every write to a CST block, and read
+     * into the block's `stamp`. Every write happens on the open spine, so the
+     * spine is stamped once per processed line as well as at each write --
+     * which is what covers an extension's opaque state, written where the
+     * core cannot see it. Wraps at 2^32 writes in one parse, which is more
+     * lines than a parse can be handed. */
+    uint32_t write_clock;
     /* THE PER-BLOCK TAIL'S QUEUE (T18): the blocks a projection's walk found
      * tail work for, in EXIT order, acted on after the walk -- a hook may
      * replace or remove the block, and the walk must not be standing on it
@@ -300,6 +307,11 @@ struct markdown_core_parser {
  * the parser lives on. `finish` shares its body but not its clone -- the last
  * projection is taken in place on the CST (T1), because nothing can observe
  * the CST afterwards. Not part of the public surface. */
+/* Stamp `node` with the next reading of the write clock (T3). Called by the
+ * core at every write it makes to a CST block and by an extension at a
+ * retype, and by the line loop over the whole open spine. */
+void markdown_core_parser_touch(markdown_core_parser *parser, markdown_core_node *node);
+
 markdown_core_node *markdown_core_parser_derive_tree(
     markdown_core_parser *parser,
     markdown_core_map *refmap,

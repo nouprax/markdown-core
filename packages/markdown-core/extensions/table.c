@@ -379,6 +379,10 @@ static void try_inserting_table_header_paragraph(
     // WITHOUT setting parser->oom, so the document comes back short and the
     // failure bit says everything was fine.
     paragraph = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+    if (paragraph) {
+        /* Born outside `add_child`, so stamped here or not at all (T3). */
+        markdown_core_parser_touch(parser, paragraph);
+    }
     if (!paragraph) {
         parser->oom = true;
         return;
@@ -528,6 +532,8 @@ static markdown_core_node *try_opening_table_header(
         free_table_row(parser->mem, delimiter_row);
         return NULL;
     }
+    /* A retype is a write to the block (T3); the node object survives it. */
+    markdown_core_parser_touch(parser, parent_container);
 
     if (header_row->paragraph_offset) {
         try_inserting_table_header_paragraph(

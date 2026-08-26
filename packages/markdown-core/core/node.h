@@ -159,6 +159,14 @@ struct markdown_core_node {
      * state of every node that is not a block that accumulates content. */
     int content_mark;
     int content_mark_count;
+    /* THE WRITE STAMP (docs/STREAMING.md T3): the parser's write clock as it
+     * stood the last time the block phase wrote this block -- content
+     * appended, closed, retyped, born. Half of the projection cache's key
+     * (T9): two readings that agree say the block's own bytes and shape are
+     * what they were. A CLOCK rather than a per-block count, so a block born
+     * at an address another block died at can never read as unchanged. Only
+     * the CST is stamped; a derived node carries its origin's reading. */
+    uint32_t stamp;
     uint16_t type;
     markdown_core_node_internal_flags flags;
 

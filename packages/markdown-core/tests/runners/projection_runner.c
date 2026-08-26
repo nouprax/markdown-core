@@ -16,6 +16,8 @@
  *
  * borrow_across_feed: T19's gate, documented at its definition.
  *
+ * projection_key: T3 and T4's gate, documented at its definition.
+ *
  * dump_boundaries / feed_loop: the A/B oracle and the clock for a change to
  * the projection, documented at their definitions. Both also take `--md FILE`
  * or `--md-dir DIR` -- raw markdown, one case per file -- because the real
@@ -988,6 +990,274 @@ static int pr_load_md_dir(const char *dir, ts_spec_file *out) {
     return 0;
 }
 
+/* T3 AND T4's GATE: THE CACHE KEY IS SOUND. Feeds every case one line at a
+ * time, derives after every line, pairs each CST block with its derived block
+ * (pre-order over blocks; the strip is off, so nothing is removed and the two
+ * skeletons stay one to one), and keeps every CST block's reading of the key
+ * -- its write stamp and the two map generations -- beside the dump of its
+ * derived subtree. At the next boundary, for every block seen before:
+ *
+ *   1. an unchanged key MUST mean an unchanged subtree -- a stale key here
+ *      is exactly a wrong tree served from the cache T9 builds on it;
+ *   2. a CLOSED block's stamp must never move again -- the invariant the
+ *      spine stamp rests on, and the one that gives a closed block its hit.
+ *
+ * It also reports what the key would buy: the share of block observations
+ * whose key was unchanged (T9's hit-rate ceiling on this corpus) and, among
+ * the changed, the share whose subtree had not in fact moved (the key's
+ * imprecision -- spurious, never wrong). */
+typedef struct pr_key_entry {
+    const markdown_core_node *block;
+    uint32_t stamp;
+    size_t refgen;
+    size_t footgen;
+    int closed;
+    uint8_t *dump;
+    size_t dump_length;
+} pr_key_entry;
+
+typedef struct pr_key_set {
+    pr_key_entry *items;
+    size_t count;
+} pr_key_set;
+
+static void pr_key_set_clear(pr_key_set *set) {
+    size_t i;
+    for (i = 0; i < set->count; i++) {
+        markdown_core_dump_free(set->items[i].dump);
+    }
+    free(set->items);
+    set->items = NULL;
+    set->count = 0;
+}
+
+static const pr_key_entry *pr_key_find(const pr_key_set *set, const markdown_core_node *block) {
+    size_t i;
+    for (i = 0; i < set->count; i++) {
+        if (set->items[i].block == block) {
+            return &set->items[i];
+        }
+    }
+    return NULL;
+}
+
+/* Pre-order over BLOCK nodes only: a leaf block's inline children are not
+ * descended into, and a block's siblings are blocks. */
+static int pr_collect_blocks(markdown_core_node *root, markdown_core_node ***out, size_t *count) {
+    markdown_core_node **items = NULL;
+    size_t n = 0, cap = 0;
+    markdown_core_node *cur = root;
+    while (cur) {
+        if (n == cap) {
+            markdown_core_node **grown;
+            cap = cap ? cap * 2 : 32;
+            grown = (markdown_core_node **)realloc(items, cap * sizeof(*items));
+            if (!grown) {
+                free(items);
+                return -1;
+            }
+            items = grown;
+        }
+        items[n++] = cur;
+        if (cur->first_child && MARKDOWN_CORE_NODE_BLOCK_P(cur->first_child)) {
+            cur = cur->first_child;
+            continue;
+        }
+        while (cur != root && cur->next == NULL) {
+            cur = cur->parent;
+        }
+        cur = (cur == root) ? NULL : cur->next;
+    }
+    *out = items;
+    *count = n;
+    return 0;
+}
+
+typedef struct pr_key_stats {
+    size_t observations;
+    size_t revisits;
+    size_t unchanged_key;
+    size_t changed_key;
+    size_t spurious;
+} pr_key_stats;
+
+static int pr_key_boundary(
+    markdown_core_parser *parser,
+    pr_key_set *prev,
+    pr_key_stats *stats,
+    int example,
+    int boundary
+) {
+    markdown_core_node *tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+    markdown_core_node **cst = NULL, **derived = NULL;
+    size_t cst_count = 0, derived_count = 0, i;
+    pr_key_set cur;
+    int failed = 0;
+    size_t refgen = parser->refmap->generation;
+    size_t footgen = parser->footnote_defs->generation;
+
+    if (!tree) {
+        fprintf(stderr, "example %d boundary %d: derivation failed\n", example, boundary);
+        return -1;
+    }
+    if (pr_collect_blocks(parser->root, &cst, &cst_count) != 0 ||
+        pr_collect_blocks(tree, &derived, &derived_count) != 0) {
+        fputs("out of memory\n", stderr);
+        free(cst);
+        markdown_core_node_free(tree);
+        return -1;
+    }
+    if (cst_count != derived_count) {
+        fprintf(
+            stderr,
+            "example %d boundary %d: %zu CST blocks but %zu derived blocks\n",
+            example,
+            boundary,
+            cst_count,
+            derived_count
+        );
+        free(cst);
+        free(derived);
+        markdown_core_node_free(tree);
+        return -1;
+    }
+    cur.items = (pr_key_entry *)calloc(cst_count ? cst_count : 1, sizeof(*cur.items));
+    cur.count = 0;
+    if (!cur.items) {
+        fputs("out of memory\n", stderr);
+        free(cst);
+        free(derived);
+        markdown_core_node_free(tree);
+        return -1;
+    }
+    for (i = 0; i < cst_count; i++) {
+        pr_key_entry *entry = &cur.items[cur.count];
+        const pr_key_entry *seen;
+        entry->block = cst[i];
+        entry->stamp = cst[i]->stamp;
+        entry->refgen = refgen;
+        entry->footgen = footgen;
+        entry->closed = (cst[i]->flags & MARKDOWN_CORE_NODE__OPEN) == 0;
+        entry->dump = pr_dump(derived[i], &entry->dump_length);
+        if (!entry->dump) {
+            failed = 1;
+            break;
+        }
+        cur.count++;
+        stats->observations++;
+        seen = pr_key_find(prev, cst[i]);
+        if (!seen) {
+            continue;
+        }
+        stats->revisits++;
+        if (seen->closed && seen->stamp != entry->stamp) {
+            fprintf(
+                stderr,
+                "example %d boundary %d: a CLOSED %s at %d:%d was written (stamp %u -> %u)\n",
+                example,
+                boundary,
+                markdown_core_node_get_type_string(cst[i]),
+                cst[i]->start_line,
+                cst[i]->start_column,
+                seen->stamp,
+                entry->stamp
+            );
+            failed = 1;
+        }
+        if (seen->stamp == entry->stamp && seen->refgen == refgen && seen->footgen == footgen) {
+            stats->unchanged_key++;
+            if (seen->dump_length != entry->dump_length || memcmp(seen->dump, entry->dump, entry->dump_length) != 0) {
+                fprintf(
+                    stderr,
+                    "example %d boundary %d: STALE KEY -- %s at %d:%d kept stamp %u and generation %zu/%zu but its "
+                    "projection moved:\n  before:\n%.*s  after:\n%.*s",
+                    example,
+                    boundary,
+                    markdown_core_node_get_type_string(cst[i]),
+                    cst[i]->start_line,
+                    cst[i]->start_column,
+                    entry->stamp,
+                    refgen,
+                    footgen,
+                    (int)seen->dump_length,
+                    (const char *)seen->dump,
+                    (int)entry->dump_length,
+                    (const char *)entry->dump
+                );
+                failed = 1;
+            }
+        } else {
+            stats->changed_key++;
+            if (seen->dump_length == entry->dump_length && memcmp(seen->dump, entry->dump, entry->dump_length) == 0) {
+                stats->spurious++;
+            }
+        }
+    }
+    free(cst);
+    free(derived);
+    markdown_core_node_free(tree);
+    pr_key_set_clear(prev);
+    *prev = cur;
+    return failed ? -1 : 0;
+}
+
+static int case_projection_key(const ts_spec_file *file) {
+    size_t index;
+    size_t boundaries = 0;
+    pr_key_stats stats;
+    int failures = 0;
+    memset(&stats, 0, sizeof(stats));
+    for (index = 0; index < file->count; index++) {
+        const ts_spec_case *test_case = &file->cases[index];
+        markdown_core_parser *parser = pr_parser_new();
+        const char *text = test_case->markdown;
+        size_t length = test_case->markdown_length;
+        pr_key_set prev;
+        size_t start = 0, i;
+        int boundary = 0;
+        int failed = 0;
+        if (!parser) {
+            fprintf(stderr, "example %d: parser allocation failed\n", test_case->example);
+            failures++;
+            continue;
+        }
+        prev.items = NULL;
+        prev.count = 0;
+        for (i = 0; i <= length && !failed; i++) {
+            if (i < length && text[i] != '\n') {
+                continue;
+            }
+            if (i == length && start == length) {
+                break;
+            }
+            markdown_core_parser_feed(parser, text + start, (i < length ? i + 1 : length) - start);
+            start = i + 1;
+            failed = pr_key_boundary(parser, &prev, &stats, test_case->example, ++boundary) != 0;
+        }
+        boundaries += (size_t)boundary;
+        pr_key_set_clear(&prev);
+        markdown_core_parser_free(parser);
+        if (failed) {
+            failures++;
+        }
+    }
+    printf(
+        "projection key: %zu/%zu examples sound over %zu boundaries; %zu block observations, %zu revisits, key "
+        "unchanged %zu (%.1f%%), changed %zu of which %zu spurious (%.1f%%)\n",
+        file->count - (size_t)failures,
+        file->count,
+        boundaries,
+        stats.observations,
+        stats.revisits,
+        stats.unchanged_key,
+        stats.revisits ? 100.0 * (double)stats.unchanged_key / (double)stats.revisits : 0.0,
+        stats.changed_key,
+        stats.spurious,
+        stats.changed_key ? 100.0 * (double)stats.spurious / (double)stats.changed_key : 0.0
+    );
+    return failures ? -1 : 0;
+}
+
 typedef struct pr_case_entry {
     const char *name;
     int (*run)(const ts_spec_file *file);
@@ -999,6 +1269,7 @@ static const pr_case_entry PR_CASES[] = {
     {"double_projection", case_double_projection, 1},
     {"refmap_independence", case_refmap_independence, 1},
     {"borrow_across_feed", case_borrow_across_feed, 1},
+    {"projection_key", case_projection_key, 1},
     {"dump_boundaries", case_dump_boundaries, 1},
     {"feed_loop", case_feed_loop, 1},
     {"projection_slope", case_projection_slope, 0},

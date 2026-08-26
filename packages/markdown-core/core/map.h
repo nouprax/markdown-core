@@ -49,6 +49,14 @@ struct markdown_core_map {
     size_t sorted_size;
     markdown_core_key_index index;
     size_t size;
+    /* THE GENERATION (docs/STREAMING.md T4): advanced by every insert, never
+     * by a lookup. The other half of the projection cache's key -- a
+     * projection taken at one generation resolved against exactly the
+     * definitions a projection at the same generation would. Every insert
+     * counts, a duplicate label included: the fold that makes the first one
+     * win happens at preparation, and a spurious invalidation is a slow feed
+     * where a missed one would be a wrong tree. */
+    size_t generation;
     int prepared;
     int indexed;
     /* Sticky flag: a definition or lookup structure was lost to allocation

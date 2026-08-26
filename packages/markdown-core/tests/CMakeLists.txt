@@ -312,6 +312,20 @@ if(MARKDOWN_CORE_STATIC)
             --spec
             "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
     endforeach()
+    # T3 and T4 (docs/STREAMING.md §5): the cache key is sound -- an unchanged
+    # write stamp and map generation mean an unchanged projection, and a
+    # closed block is never written again.
+    foreach(fixture spec regression extensions)
+        markdown_core_add_test(
+            projection_key_${fixture}
+            "streaming"
+            240
+            projection_runner
+            --case
+            projection_key
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+    endforeach()
     # Criterion 2's SECOND bound (§12.4, §12.10 D): projection is O(what is
     # projected) -- flat ns per content byte across document sizes, the same
     # two-endpoint normalized-slowdown shape as the construction slope gates.
