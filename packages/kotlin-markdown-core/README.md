@@ -36,8 +36,8 @@ println(document.dump())
 ```
 
 All parse options default to `true`: smart punctuation, footnotes, HTML comment
-stripping, tables, strikethrough, autolinks, task lists, formulas, dollar and
-LaTeX formula delimiters, and directives. The result is an immutable value tree
+stripping, tables, strikethrough, autolinks, task lists, formulas (dollar and
+LaTeX delimiters included), and directives. The result is an immutable value tree
 with source scopes. The package exposes parsing and read-only AST traversal,
 not rendering or mutation.
 

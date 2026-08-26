@@ -28,8 +28,8 @@ console.log(TreeDumper.dump(document.content[0]));
 ```
 
 All parse options default to `true`: smart punctuation, footnotes, HTML comment
-stripping, tables, strikethrough, autolinks, task lists, formulas, dollar and
-LaTeX formula delimiters, and directives. Pass only the options you want to
+stripping, tables, strikethrough, autolinks, task lists, formulas (dollar and
+LaTeX delimiters included), and directives. Pass only the options you want to
 override.
 
 `Document.parse` returns a discriminated `Markup` union with source scopes and

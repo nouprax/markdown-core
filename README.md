@@ -17,8 +17,18 @@ divergence history, and license relationship.
 
 ## Usage
 
-All platform APIs have one synchronous parse entry point: `Document.parse` in
-Swift, Kotlin, and ECMAScript, and `markdown_core_document_parse` in C.
+All platform APIs have two synchronous entry points. `Document.parse` in
+Swift, Kotlin, and ECMAScript (`markdown_core_document_parse` in C) parses a
+complete input. `Session` in Swift, Kotlin, and ECMAScript
+(`markdown_core_session_new`, `_feed`, `_finish`, and `_free` in C) parses a
+document that arrives in pieces: every `feed` returns the immutable document
+after those bytes — a mid-stream projection whose incomplete trailing line is
+not yet in it and whose open constructs are projected as they stand — and
+`finish` seals the stream, returning the same document a whole-input parse
+produces for the same bytes. Every document a session returns is a plain value
+that retains nothing native: it stays readable after every later feed and
+after the session itself is gone. The streaming model is specified in
+[docs/STREAMING.md](docs/STREAMING.md).
 
 A parse produces the AST, and every node carries a **`scope`**: the pair of
 `(line, column)` **boundaries** the element occupies. A scope is what a consumer
@@ -143,6 +153,16 @@ document and must not outlive it. Error objects and allocated dump buffers use
 their corresponding `markdown_core_error_free` and `markdown_core_dump_free`
 functions.
 
+A streaming parse opens a session with `markdown_core_session_new`, feeds
+chunks with `markdown_core_session_feed`, and seals the stream with
+`markdown_core_session_finish`. Each of those calls returns an owned document
+released with `markdown_core_document_free`; `markdown_core_session_free`
+releases the session itself. The C API also reports the parse's ordered
+diagnostic list — the places where a construct the author wrote did not become
+one and neither the tree nor the concrete view can say so — through
+`markdown_core_document_diagnostic_count` and
+`markdown_core_document_diagnostic_at`.
+
 The library initializes itself on the first parse. Concurrent parsing and
 read-only access are safe; callers must ensure that a document is freed only
 after all access to that document has finished. The complete C contract is in
@@ -161,7 +181,8 @@ after all access to that document has finished. The complete C contract is in
 ## Build
 
 Set up or validate the pinned contributor toolchain with
-[`docs/development-environment.md`](docs/development-environment.md). The
+[`docs/deprecated/development-environment.md`](docs/deprecated/development-environment.md)
+(archived with the engine reset, but still accurate for the toolchain). The
 non-interactive entry points are `scripts/init-environment.sh --check` and
 `scripts/init-environment.sh --install`.
 
@@ -261,8 +282,10 @@ the C test suite.
 ## Contributing and releasing
 
 Pinned compiler, SDK, runtime, and IDE versions are documented in
-[docs/toolchains.md](docs/toolchains.md). Release maintainers must follow
-[docs/releasing.md](docs/releasing.md), including the no-secret release dry run,
+[docs/deprecated/toolchains.md](docs/deprecated/toolchains.md). Release
+maintainers must follow
+[docs/deprecated/releasing.md](docs/deprecated/releasing.md), including the
+no-secret release dry run,
 protected tag/environment approval, Maven signing, npm OIDC, artifact
 attestation, and post-publication verification. Release notes start from
 [CHANGELOG.md](CHANGELOG.md).

@@ -8,8 +8,20 @@ promised to remain compatible between releases.
 
 The engine is reconstructed from the 1.0 baseline. The 2.0.0 line is withdrawn:
 its major version was bought with a session and incremental parsing API that no
-longer exists.
+longer exists. 3.0.0 ships a different streaming surface, described below.
 
+- A parse can be fed in pieces. `markdown_core_session_new`,
+  `markdown_core_session_feed`, `markdown_core_session_finish` and
+  `markdown_core_session_free` in C, and `Session` with `feed` and `finish` in
+  Swift, Kotlin and ECMAScript. Every `feed` returns the immutable document
+  after those bytes — a mid-stream projection whose incomplete trailing line is
+  not yet in it and whose open constructs are projected as they stand — and
+  `finish` seals the stream, returning the same document a whole-input parse
+  produces for the same bytes. Every returned document is a plain value that
+  retains nothing native and outlives the session. The block is the minimal
+  update unit; the model is specified in `docs/STREAMING.md`. This is not the
+  withdrawn 2.0.0 surface: there is no edit, no fork, and no snapshot handle —
+  the returned document is the only answer there is.
 - Keep the bytes of a footnote call whose label crosses a line ending, and read
   a label spelled with a character reference out of the source rather than out
   of a released buffer.
