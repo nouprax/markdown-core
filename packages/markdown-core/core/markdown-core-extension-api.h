@@ -322,10 +322,22 @@ typedef int (*markdown_core_accepts_lines_func)(
     markdown_core_node *node
 );
 
-typedef markdown_core_node *(*markdown_core_postprocess_func)(
+/** THE PER-BLOCK POSTPROCESS (docs/STREAMING.md T18, F15). Called once per
+ * projection for every block the descriptor's `postprocess_blocks` selects,
+ * after that block's inlines are parsed and consolidated, in extension attach
+ * order; the comment strip runs after the last hook. `*block` is IN/OUT:
+ * leave it to keep the node, reseat it to the node that replaced it, set it
+ * NULL to say the node is gone. An out-parameter has one spelling per
+ * outcome where a return value cannot tell "removed" from "unchanged"
+ * without a sentinel -- and the whole-tree hook this replaces returned its
+ * root unconditionally after an arm may have freed it, safe only because the
+ * root was always the DOCUMENT and matched nothing. A hook acts on the block
+ * it is handed and inside it; it never touches another block, which is what
+ * lets the core act on a queue of blocks after the walk that found them. */
+typedef void (*markdown_core_postprocess_block_func)(
     const markdown_core_syntax_extension *extension,
     markdown_core_parser *parser,
-    markdown_core_node *root
+    markdown_core_node **block
 );
 
 /** Called once, from `finalize`, on a block of this extension's own type, after

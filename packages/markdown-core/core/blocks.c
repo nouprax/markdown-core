@@ -62,13 +62,20 @@ static bool S_html_literal_starts_with_comment(markdown_core_node *node) {
     return literal->len - offset >= 4 && memcmp(literal->data + offset, "<!--", 4) == 0;
 }
 
-static bool S_strip_html_comments(markdown_core_node *root) {
+/* THE INLINE HALF OF THE COMMENT STRIP, per block (T18; F13 requirement 3).
+ * Frees every `HTML` node under `block` whose literal opens a comment, then
+ * re-consolidates the block. `block` itself is never freed here: a block that
+ * IS a comment is an `HTML_BLOCK`, and the tail removes that one after asking
+ * the same predicate. The whole-tree strip this replaces freed its own root
+ * inside its walk and then consolidated the freed pointer, which is why the
+ * judgement and the removal are two places now. */
+static bool S_strip_inline_comments(markdown_core_node *block) {
     bool stripped = false;
     markdown_core_iter walk;
     markdown_core_iter *iter = &walk;
     markdown_core_event_type ev_type;
 
-    markdown_core_iter_init(iter, root);
+    markdown_core_iter_init(iter, block);
 
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node = markdown_core_iter_get_node(iter);
@@ -78,14 +85,14 @@ static bool S_strip_html_comments(markdown_core_node *root) {
          * the old `S_is_leaf` list, so their EXIT was suppressed and freeing
          * at ENTER happened to be safe; with the contract total it is a
          * use-after-free on the very next `markdown_core_iter_next`. */
-        if (ev_type == MARKDOWN_CORE_EVENT_EXIT && S_html_literal_starts_with_comment(node)) {
+        if (ev_type == MARKDOWN_CORE_EVENT_EXIT && node != block && S_html_literal_starts_with_comment(node)) {
             markdown_core_node_free(node);
             stripped = true;
         }
     }
 
     if (stripped) {
-        return markdown_core_consolidate_text_nodes(root) != 0;
+        return markdown_core_consolidate_text_nodes(block) != 0;
     }
     return true;
 }
@@ -230,6 +237,11 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     parser->line_marks = NULL;
     parser->line_marks_size = 0;
     parser->line_marks_alloc = 0;
+
+    parser->mem->free(parser->tail_queue);
+    parser->tail_queue = NULL;
+    parser->tail_queue_size = 0;
+    parser->tail_queue_alloc = 0;
 
     /* Requirement 13's list. Released here whether or not it was retained: a
      * parse that FAILED never reaches the move, and the requirement's converse
@@ -1305,9 +1317,181 @@ void markdown_core_manage_extensions_special_characters(markdown_core_parser *pa
 }
 
 // Walk through node and all children, recursively, parsing
+/* THE PER-BLOCK TAIL (T18). What `finish` always ran over the whole tree
+ * after the inline parse -- consolidation, the extension postprocessors, the
+ * comment strip -- runs here over ONE block, in the order the whole-tree
+ * passes had: parse -> consolidate -> each declared hook in attach order ->
+ * strip. The order across blocks is free, because no pass moves a node to
+ * another parent (F15); the order within a block is not -- stripping before
+ * autolink turns `a<!-- x -->@b.com` into a link, and stripping before
+ * formula promotes `$$x$$<!-- c -->`.
+ *
+ * WHICH HALF A CACHE HIT SKIPS -- F15 rule 2, the resolution T18 owes. A pass
+ * over the block's CHILDREN (consolidation, a hook declared `"*inlines"`, the
+ * strip of inline comments) is skipped for a block whose children are
+ * borrowed from the projection cache: the cache stored them after those
+ * passes ran. A pass over the block NODE (a hook declared by name, the strip
+ * of a comment `HTML_BLOCK`) runs on every projection, because the node is
+ * the one part of a hit the cache never serves -- a `PARAGRAPH` around a
+ * standalone formula is a fresh paragraph on every projection, and only the
+ * hook makes it the `FormulaBlock` five gates pin. `holder` (T19) says which
+ * kind of block this is; today nothing sets it and every block is its own. */
+
+static const char S_INLINES_MEMBER[] = "*inlines";
+
+static bool S_set_names(const char *set, const char *name) {
+    const char *p;
+    for (p = set; *p; p += strlen(p) + 1) {
+        if (strcmp(p, name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* The memo is keyed on the name's POINTER, and the name is a function of the
+ * NODE rather than of its type: a `LIST_ITEM` carrying tasklist answers
+ * "tasklist" and a plain one "list_item"; a `TABLE_ROW` answers
+ * "table_header" or "table_row". Keyed on the type both would be wrong; keyed
+ * on the name there is nothing to special-case. A literal with the same bytes
+ * at another address misses once and takes its own entry. */
+static bool S_extension_names(
+    markdown_core_parser *parser,
+    const markdown_core_syntax_extension *ext,
+    const char *name
+) {
+    size_t i;
+    bool wants;
+    for (i = 0; i < parser->tail_memo_size; i++) {
+        if (parser->tail_memo[i].ext == ext && parser->tail_memo[i].name == name) {
+            return parser->tail_memo[i].wants;
+        }
+    }
+    wants = S_set_names(ext->postprocess_blocks, name);
+    if (parser->tail_memo_size < MARKDOWN_CORE_TAIL_MEMO) {
+        parser->tail_memo[parser->tail_memo_size].ext = ext;
+        parser->tail_memo[parser->tail_memo_size].name = name;
+        parser->tail_memo[parser->tail_memo_size].wants = wants;
+        parser->tail_memo_size++;
+    }
+    return wants;
+}
+
+/* Is `block` offered to `ext` -- by its inline content, when the children are
+ * the block's own, or by the name it answers NOW? "Now", because a hook that
+ * ran before this one may have replaced it, and the next extension must be
+ * matched against the node that stands there (F15 rule 1). */
+static bool S_extension_wants(
+    markdown_core_parser *parser,
+    const markdown_core_syntax_extension *ext,
+    markdown_core_node *block,
+    bool children_own
+) {
+    if (!ext->postprocess_block_func || !ext->postprocess_blocks) {
+        return false;
+    }
+    if (children_own && contains_inlines(block) && S_extension_names(parser, ext, S_INLINES_MEMBER)) {
+        return true;
+    }
+    return S_extension_names(parser, ext, markdown_core_node_get_type_string(block));
+}
+
+/* Asked at the block's EXIT, so a block nothing will touch is never queued. */
+static bool S_block_has_tail_work(markdown_core_parser *parser, markdown_core_node *block) {
+    markdown_core_llist *extensions;
+    if (contains_inlines(block)) {
+        return true;
+    }
+    if ((parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) && S_type(block) == MARKDOWN_CORE_NODE_HTML_BLOCK) {
+        return true;
+    }
+    for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
+        if (S_extension_wants(parser, (const markdown_core_syntax_extension *)extensions->data, block, true)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool S_tail_queue_push(markdown_core_parser *parser, markdown_core_node *block) {
+    if (parser->tail_queue_size == parser->tail_queue_alloc) {
+        size_t grown = parser->tail_queue_alloc ? parser->tail_queue_alloc * 2 : 64;
+        markdown_core_node **queue =
+            (markdown_core_node **)parser->mem->realloc(parser->tail_queue, grown * sizeof(*queue));
+        if (!queue) {
+            return false;
+        }
+        parser->tail_queue = queue;
+        parser->tail_queue_alloc = grown;
+    }
+    parser->tail_queue[parser->tail_queue_size++] = block;
+    return true;
+}
+
+/* One block's tail. `*block` comes back reseated or NULL exactly as a hook
+ * leaves it, so the caller can tell a replaced root from a removed one. */
+static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **block) {
+    markdown_core_llist *extensions;
+    markdown_core_node *node = *block;
+    bool children_own = node->holder == NULL;
+
+    if (children_own && contains_inlines(node)) {
+        if (!markdown_core_consolidate_text_nodes_with_parser(parser, node)) {
+            parser->oom = true;
+        }
+    }
+
+    for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
+        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
+        if (!S_extension_wants(parser, ext, node, children_own)) {
+            continue;
+        }
+        ext->postprocess_block_func(ext, parser, &node);
+        if (!node) {
+            *block = NULL;
+            return;
+        }
+        children_own = node->holder == NULL;
+    }
+
+    if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
+        if (S_type(node) == MARKDOWN_CORE_NODE_HTML_BLOCK) {
+            /* The predicate, then the removal -- never a strip rooted at a
+             * block that is itself the comment (F13 requirement 3). */
+            if (S_html_literal_starts_with_comment(node)) {
+                markdown_core_node_free(node);
+                node = NULL;
+            }
+        } else if (children_own && contains_inlines(node)) {
+            if (!S_strip_inline_comments(node)) {
+                parser->oom = true;
+            }
+        }
+    }
+    *block = node;
+}
+
+/* Drain the queue in the order the walk filled it. A hook may replace or
+ * remove the block it is handed and nothing else, so no entry behind it
+ * dangles. The root is written back if a hook reseated it; a hook that
+ * removed the root leaves NULL, which the projection then answers. */
+static void S_run_block_tails(markdown_core_parser *parser, markdown_core_node **root) {
+    size_t i;
+    for (i = 0; i < parser->tail_queue_size; i++) {
+        markdown_core_node *block = parser->tail_queue[i];
+        bool is_root = block == *root;
+        S_run_block_tail(parser, &block);
+        if (is_root) {
+            *root = block;
+        }
+    }
+    parser->tail_queue_size = 0;
+}
+
 // string content into inline content where appropriate. `root` is a stated
 // CST: a DERIVED block skeleton for a re-projection, or `parser->root` itself
-// for the one projection that ends the parser's life (`finish`, T1).
+// for the one projection that ends the parser's life (`finish`, T1). Every
+// block with tail work is queued at its EXIT for `S_run_block_tails`.
 static void process_inlines(
     markdown_core_parser *parser,
     markdown_core_node *root,
@@ -1328,6 +1512,15 @@ static void process_inlines(
         if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
             if (contains_inlines(cur)) {
                 markdown_core_parse_inlines(parser, cur, refmap, options);
+            }
+        } else if (MARKDOWN_CORE_NODE_BLOCK_P(cur) && S_block_has_tail_work(parser, cur)) {
+            /* COLLECTED, NOT ACTED ON: a hook may replace or remove the block
+             * and the walk is standing on it (F13 requirement 2). The walk
+             * never descends into a block's inlines -- its lookahead was taken
+             * before they were parsed -- so this EXIT follows the ENTER above
+             * directly and the queue is the blocks in post-order. */
+            if (!S_tail_queue_push(parser, cur)) {
+                parser->oom = true;
             }
         }
     }
@@ -1649,10 +1842,11 @@ static markdown_core_node *S_clone_block_tree(markdown_core_parser *parser, cons
 /* THE PROJECTION's work, on whichever block skeleton it is handed: parse
  * each content-bearing block's inlines against the map as it now stands, then
  * run the tail `finish` always ran -- consolidation, the extension
- * postprocessors, the comment strip. Returns the projected root, which a
- * postprocessor may have replaced. The skeleton is CONSUMED: after this it is
- * an AST, and projecting it again would not give the same answer. That is
- * why a re-projection hands in a clone and `finish` hands in the CST itself.
+ * postprocessors, the comment strip -- block by block (T18). Returns the
+ * projected root, which a hook may have replaced. The skeleton is CONSUMED:
+ * after this it is an AST, and projecting it again would not give the same
+ * answer. That is why a re-projection hands in a clone and `finish` hands in
+ * the CST itself.
  *
  * `record_diagnostics` gates the rows the projection itself raises (after
  * §12.9 that is `label-too-long` and the directive attribute/label codes).
@@ -1666,32 +1860,13 @@ static markdown_core_node *S_project(
     markdown_core_map *refmap,
     int record_diagnostics
 ) {
-    markdown_core_llist *extensions;
     bool recording = parser->diagnostics_on;
 
     parser->diagnostics_on = recording && record_diagnostics != 0;
     process_inlines(parser, skeleton, refmap, parser->options);
     parser->diagnostics_on = recording;
 
-    if (!markdown_core_consolidate_text_nodes_with_parser(parser, skeleton)) {
-        parser->oom = true;
-    }
-
-    for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
-        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
-        if (ext->postprocess_func) {
-            markdown_core_node *processed = ext->postprocess_func(ext, parser, skeleton);
-            if (processed) {
-                skeleton = processed;
-            }
-        }
-    }
-
-    if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
-        if (!S_strip_html_comments(skeleton)) {
-            parser->oom = true;
-        }
-    }
+    S_run_block_tails(parser, &skeleton);
 
     return skeleton;
 }

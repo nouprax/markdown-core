@@ -773,7 +773,8 @@ static markdown_core_node *new_formula_block_from_literal(
     return formula;
 }
 
-static int replace_with_formula_block(
+/* Answers the node that now stands where `oldnode` stood, or NULL on loss. */
+static markdown_core_node *replace_with_formula_block(
     const markdown_core_syntax_extension *extension,
     markdown_core_parser *parser,
     markdown_core_node *oldnode,
@@ -782,26 +783,31 @@ static int replace_with_formula_block(
 ) {
     markdown_core_node *formula = new_formula_block_from_literal(extension, parser->mem, oldnode, literal, literal_len);
     if (!formula) {
-        return 0;
+        return NULL;
     }
 
     if (markdown_core_node_replace(oldnode, formula)) {
         /* The bytes did not change hands, the node did. Said before the free,
          * because after it there is nothing left to name. */
         markdown_core_node_free(oldnode);
-        return 1;
+        return formula;
     }
     markdown_core_node_free(formula);
-    return 0;
+    return NULL;
 }
 
-static void postprocess_node(
+/* THREE ARMS, one per declared name, and the core hands each block over
+ * exactly once, so there is no walk here (docs/STREAMING.md F14). Arms 1 and
+ * 2 read no inlines; arm 3 is the semantics of a display formula written on
+ * one line, and it is the reason a name-declared hook runs on a cache hit as
+ * well: the paragraph is rebuilt from the CST on every projection. */
+static void postprocess_block(
     const markdown_core_syntax_extension *extension,
     markdown_core_parser *parser,
-    markdown_core_node *node
+    markdown_core_node **block
 ) {
-    markdown_core_node *child;
-    markdown_core_node *next;
+    markdown_core_node *node = *block;
+    markdown_core_node *replaced;
 
     if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(node);
@@ -818,15 +824,13 @@ static void postprocess_node(
     }
 
     if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code.info)) {
-        if (!replace_with_formula_block(
-                extension,
-                parser,
-                node,
-                node->as.code.literal.data,
-                node->as.code.literal.len
-            )) {
+        replaced =
+            replace_with_formula_block(extension, parser, node, node->as.code.literal.data, node->as.code.literal.len);
+        if (!replaced) {
             parser->oom = true;
+            return;
         }
+        *block = replaced;
         return;
     }
 
@@ -834,28 +838,14 @@ static void postprocess_node(
         node->first_child->type == MARKDOWN_CORE_NODE_FORMULA && is_standalone_formula_node(node->first_child)) {
         node_formula *formula = get_formula(node->first_child);
         if (formula) {
-            if (!replace_with_formula_block(extension, parser, node, formula->literal.data, formula->literal.len)) {
+            replaced = replace_with_formula_block(extension, parser, node, formula->literal.data, formula->literal.len);
+            if (!replaced) {
                 parser->oom = true;
+                return;
             }
-            return;
+            *block = replaced;
         }
     }
-
-    child = node->first_child;
-    while (child) {
-        next = child->next;
-        postprocess_node(extension, parser, child);
-        child = next;
-    }
-}
-
-static markdown_core_node *postprocess(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_parser *parser,
-    markdown_core_node *root
-) {
-    postprocess_node(extension, parser, root);
-    return root;
 }
 
 /* `$` and `\\` open a formula, and that is the whole set. `\\` is in the dispatch
@@ -867,7 +857,8 @@ const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_FORMULA = {
     .match_inline = match,
     .last_block_matches = formula_block_matches,
     .try_opening_block = try_opening_formula_block,
-    .postprocess_func = postprocess,
+    .postprocess_block_func = postprocess_block,
+    .postprocess_blocks = "formula_block\0code_block\0paragraph\0",
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,
     .accepts_lines_func = accepts_lines,

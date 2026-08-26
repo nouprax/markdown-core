@@ -161,6 +161,8 @@ typedef struct {
     int column;
 } markdown_core_line_mark;
 
+#define MARKDOWN_CORE_TAIL_MEMO 64
+
 struct markdown_core_parser {
     struct markdown_core_mem *mem;
     /* A hashtable of urls in the current document for cross-references */
@@ -264,6 +266,25 @@ struct markdown_core_parser {
     markdown_core_line_mark *line_marks;
     bufsize_t line_marks_size;
     bufsize_t line_marks_alloc;
+    /* THE PER-BLOCK TAIL'S QUEUE (T18): the blocks a projection's walk found
+     * tail work for, in EXIT order, acted on after the walk -- a hook may
+     * replace or remove the block, and the walk must not be standing on it
+     * when it does. Reused across the projections of one parse; released
+     * with the parse. */
+    markdown_core_node **tail_queue;
+    size_t tail_queue_size;
+    size_t tail_queue_alloc;
+    /* THE NAME MEMO (F15): whether extension `ext` declared type name `name`,
+     * keyed on the name's POINTER -- every `get_type_string` answers a literal,
+     * so the steady state is a pointer compare and the set is walked only to
+     * fill an entry. Per parser, so parsers on different threads share
+     * nothing. Full is not wrong: a pair that does not fit is walked again. */
+    struct {
+        const void *ext;
+        const char *name;
+        bool wants;
+    } tail_memo[MARKDOWN_CORE_TAIL_MEMO];
+    size_t tail_memo_size;
 };
 
 /* THE PROJECTION (§12.1): a new tree derived from the parser's CST -- the

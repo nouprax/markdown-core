@@ -651,20 +651,20 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
     markdown_core_chunk_free(parser->mem, &detached_chunk);
 }
 
-static markdown_core_node *postprocess(
+static void postprocess_block(
     const markdown_core_syntax_extension *ext,
     markdown_core_parser *parser,
-    markdown_core_node *root
+    markdown_core_node **block
 ) {
     markdown_core_iter walk;
     markdown_core_iter *iter = &walk;
     markdown_core_event_type ev;
     markdown_core_node *node;
+    markdown_core_node *root = *block;
     bool in_link = false;
 
-    if (!markdown_core_consolidate_text_nodes(root)) {
-        parser->oom = true;
-    }
+    /* Consolidated on the way in by the core's per-block tail (T18); the
+     * whole-tree walk this replaces consolidated the root itself first. */
     markdown_core_iter_init(iter, root);
 
     while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
@@ -692,14 +692,18 @@ static markdown_core_node *postprocess(
             postprocess_text(parser, node);
         }
     }
-
-    return root;
 }
 
 const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_AUTOLINK = {
     .name = "autolink",
     .match_inline = match,
-    .postprocess_func = postprocess,
+    .postprocess_block_func = postprocess_block,
+    /* Every block with inline content and no block by name: `table_cell` is a
+     * name minted by table, which attaches last, so a name list here would
+     * make this hook's block set depend on another extension being present;
+     * and `contains_inlines` is what the inline parse itself selects on, so
+     * filter and parse agree by construction (F15). */
+    .postprocess_blocks = "*inlines\0",
     .terminates_text = ":w",
     .dispatch = ":w",
 };

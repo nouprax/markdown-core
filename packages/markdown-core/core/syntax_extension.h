@@ -33,7 +33,35 @@ struct markdown_core_syntax_extension {
     markdown_core_can_contain_func can_contain_func;
     markdown_core_contains_inlines_func contains_inlines_func;
     markdown_core_accepts_lines_func accepts_lines_func;
-    markdown_core_postprocess_func postprocess_func;
+    markdown_core_postprocess_block_func postprocess_block_func;
+    /* WHICH BLOCKS `postprocess_block_func` WANTS, by TYPE NAME -- the string
+     * `markdown_core_node_get_type_string` answers, the one vocabulary the
+     * core and an extension share: the core cannot name an extension's block
+     * type, which lives in the extension's own header, but every block
+     * answers a name. The same idiom as the byte sets above with the element
+     * boundary written out, since here the element is itself a string: a
+     * NUL-separated list, walked as `for (p = set; *p; p += strlen(p) + 1)`,
+     * so each compare is a plain strcmp. THE SET ENDS WITH AN EMPTY NAME, so
+     * the literal spells its last NUL out before the one the compiler adds --
+     *
+     *     .postprocess_blocks = "formula_block\0code_block\0paragraph\0",
+     *
+     * A byte set needs no such thing because one NUL ends it; a name set
+     * without it walks off the end of the literal into whatever the linker
+     * put next, which ASan caught on the first build. NULL means no per-block
+     * hook.
+     *
+     * ONE MEMBER IS NOT A NAME. `"*inlines"` selects every block the parser's
+     * own `contains_inlines` answers true for, and `*` cannot begin a type
+     * name. The two kinds of member say two different things about what the
+     * hook DOES, and the projection cache (T9) acts on the difference:
+     * `"*inlines"` declares a pass over the block's INLINE CONTENT, and is not
+     * offered a block whose content was served from the cache, because the
+     * content was already rewritten when it was stored; a NAME declares a
+     * pass over the block NODE -- it may replace or remove it -- and is
+     * offered the block on every projection, hit or miss, because the node is
+     * the one part of a hit the cache never serves. */
+    const char *postprocess_blocks;
     markdown_core_close_block_func close_block_func;
     markdown_core_opaque_alloc_func opaque_alloc_func;
     markdown_core_opaque_free_func opaque_free_func;

@@ -1081,6 +1081,103 @@ half-millisecond the run-to-run spread already occupies.
 
 ---
 
+### F18 — the per-block tail is byte-identical at 101,000 boundaries, and two things it found  · VERIFIED (T18)
+
+**The gate, run rather than argued.** `dump_boundaries` (in
+`projection_runner`) feeds every document one line at a time, derives after
+every line, finishes, and prints each tree's canonical dump — once with every
+extension and once with the comment strip on, since the strip is the one
+tail pass with a removal path of its own. The T20 build (`bd59279`, the
+whole-tree tail) and the T18 build ran it over the same inputs and the
+outputs were `cmp`-identical:
+
+| input | dumps | plain + strip |
+|---|---|---|
+| `spec` | 4,586 | identical |
+| `extensions` | 598 | identical |
+| `regression` / `smart_punct` | 404 / 102 | identical |
+| `extensions-conflicts` / `-directive` / `-directive-option-gates` | 68 / 350 / 8 | identical |
+| `extensions-formula-github` / `-latex` / `-conflicts` / `-option-gates` | 96 / 80 / 32 / 28 | identical |
+| real corpus, 195 documents | **81,556** | identical |
+| second real corpus, 1,191 documents | 14,828 | identical |
+
+`spec.txt` and `extensions.txt` were the two corpora §7 said the per-block
+tail had never been run against; they are in the table. Correctness 91/91,
+conformance 2/2, asan and ubsan 79/79, goldens unmoved.
+
+**1. A NUL-separated name set ends with an EMPTY name, and the first build
+did not.** `for (p = set; *p; p += strlen(p) + 1)` — F15's idiom — steps
+past the last name onto whatever byte follows the literal, because a C
+literal carries one NUL and the walk needs two. `"*inlines"` therefore walked
+off the end into the neighbouring string in `.rodata`; the default build
+compared garbage names, matched none, and produced identical trees anyway,
+and **only ASan saw it**: `global-buffer-overflow` in `S_extension_wants`, 7
+of 79 rows. The descriptors now spell the terminator out
+(`"formula_block\0code_block\0paragraph\0"`) and
+[syntax_extension.h](../packages/markdown-core/core/syntax_extension.h) says
+why. A byte set needs no such thing, which is exactly why the idiom looked
+complete. Recorded because a correct tree is not evidence that the walk that
+built it stayed inside its bounds.
+
+**2. `audit-ast-projections` has been red since `ae0bb0b`, and it was not
+the engine.** Every gate row was swept for T18 and this one failed at the
+T18 tree, at the T20 control, and at `ae0bb0b` — green at `8d0910b`. The
+block-indented wrap put the C dump's last kind name on a line with no
+trailing comma and the audit's regex wanted `,` or `}` after the quote, so
+the row has read the C dump as one kind short for four commits. Fixed in
+`e3565ad`, script only. F2's lesson, a third costume: a red row is a fact
+about the row's instrument until it is checked against a tree known to be
+green.
+
+**Cost.** The one-shot path and the feed loop, head against `bd59279`, built
+and run in one session. One-shot: same `bench_runner`, 41 cases, 5 rounds,
+alternated within every round, min of `median_ms`:
+
+```
+total   control=249.00 ms   head=234.39 ms   ratio=0.9413   (-5.9%)
+median per-case ratio 0.9944     slower >5%: 3 of 41     faster >5%: 11
+
+deep_nesting@8192 / @16384 / @32768              0.743 / 0.722 / 0.710
+large_document@128 / @256 / @512                 0.949 / 0.915 / 0.912
+extensions@100 / @200 / @400                     0.955 / 0.994 / 0.962
+adversarial_links@16384 / @32768 / @65536        0.968 / 0.973 / 0.981
+inline-entity / block-fences / block-heading     1.068 / 1.067 / 1.062   (0.65 / 0.09 / 0.26 ms cases)
+```
+
+The feed loop, which is what a `Session` does — every document fed one line
+at a time, a derivation after every line, a finish at the end — over the 195
+real documents and the two largest fixtures, three alternated rounds each
+the min of three, best of the nine:
+
+```
+control       head    head/control
+real corpus   195 documents, 40,583 boundaries   1388.42 ms  1400.67 ms   1.009
+spec.txt      669 documents,  1,624 boundaries      1.42 ms     1.57 ms   (+0.15 ms)
+extensions.txt 33 documents,    266 boundaries      0.84 ms     0.87 ms   (+0.03 ms)
+
+round-to-round, corpus:  control 1388 / 1394 / 1411   head 1401 / 1428 / 1431
+```
+
+**The one-shot path got faster, and the feed loop did not get slower.** The
+whole-tree tail walked every node of the tree three or four times —
+consolidation, autolink (which consolidated again on entry), formula, the
+strip. Per block, a container with no inline content has no tail work and
+is never queued, let alone walked — which is all of `deep_nesting`'s tree —
+and a prose block is walked twice instead of four times, since autolink's
+own consolidation is gone and the strip is off by default. The three rows
+over 1.05 are the three smallest cases in the table, all under 0.7 ms at
+5 samples, which F1 and F11 both ruled is not a reading. On the feed loop
+the +0.9% sits inside the round-to-round spread and the two fixture rows
+move by less than the half-millisecond §7 says is not a finding. **The
+0.80× F16 predicted for this state did not happen**: that number priced a
+per-block tail built on `iter_new` — an allocation per block per pass —
+with no pre-filter and with autolink consolidating twice; T20 landed first,
+as §5 ordered, and the queue only ever holds blocks with work. Per §5 none
+of this is an argument about order: T9 is what removes the re-parse the
+tail now runs beside.
+
+---
+
 ## 4. Decisions — RULED, 2026-08-25
 
 **The API shape is the ruling, and it answers most of §4 by dissolving it.**
@@ -1286,7 +1383,29 @@ and T4 are the cache key; T9 lands the cache and shares.
       the two resolutions it builds. Formula's postprocess is
       three arms and only one of them needs the projection (F14).
       *Gate: byte-identical trees at every feed boundary over every fixture
-      corpus and the real corpus.*
+      corpus and the real corpus.* **Done 2026-08-25.** `postprocess_func`
+      is gone; the descriptor carries `postprocess_block_func(ext, parser,
+      node **block)` — IN/OUT, reseat on replace, NULL on remove — and
+      `postprocess_blocks`, a NUL-separated name set ending in an empty name
+      (F18), with `"*inlines"` as the content member. `process_inlines`'s
+      walk queues every block that has tail work at its EXIT on a queue the
+      parser keeps across projections, and `S_run_block_tails` drains it
+      after the walk: consolidate → each declaring extension in attach order,
+      the name re-resolved after every call (F15 rule 1) → the strip, whose
+      `HTML_BLOCK` arm asks the predicate and then frees, and whose inline
+      arm is a walk rooted at the block that never frees its root (F13
+      requirement 3). The memo is keyed on the name's pointer and lives on
+      the parser. **The resolution of F15 rule 2 that T18 builds: a hook
+      declared by NAME acts on the block node and runs on every projection,
+      hit or miss; `"*inlines"`, consolidation and the inline strip act on
+      the children and are skipped for a block whose `holder` (T19) is set.**
+      So formula's arm 3 promotes `$$x+y$$` on a hit without any cached
+      projected identity — the paragraph node is fresh every projection and
+      the hook is what makes it a `FormulaBlock`. Autolink declares
+      `"*inlines"` and no longer consolidates on entry (the core does, right
+      before it); formula declares `formula_block`, `code_block`,
+      `paragraph`, and its hook has no walk. Numbers and the two things the
+      build found are F18.
 - [ ] **T3 — a write stamp on the CST block**, bumped whenever the parser writes
       that block (content appended, type retyped, closed). Half the cache key.
       It must hook the FIELD WRITES, not `markdown_core_node_set_type`: the
@@ -1455,6 +1574,12 @@ projected-tree copy cost and the owned/borrowed chunk census, all over the same
 195-document corpus, using PoC-only seams (`clone_only`,
 `derive_tree_no_inlines`, `clone_tree`) that are in the D4 patch and are not
 proposed for landing as they stand.
+
+**T18 and F18** (2026-08-25): the boundary A/B over eleven fixture corpora
+and two real corpora (195 and 1,191 documents) against `bd59279`, the ASan
+row counts, the 41-case 5-round one-shot bench and the feed-loop timings —
+every number from the landed tree. The real corpora are the ones F12–F16
+used; they live outside the repository, per `tests/corpora/README.md`.
 
 **T19 and F17** (2026-08-25): the gate's first-run failure counts over the
 three fixtures, `sizeof(markdown_core_node)`, and the 41-case 5-round bench
