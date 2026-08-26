@@ -439,9 +439,9 @@ static void try_inserting_table_header_paragraph(
      * leaves with the lead's fresh mint. Swapped, not copied, so the ids stay
      * unique. `parent_container` is that paragraph, already retyped in place. */
     {
-        uint32_t fresh = paragraph->identity;
-        paragraph->identity = parent_container->identity;
-        parent_container->identity = fresh;
+        uint32_t fresh = paragraph->identifier;
+        paragraph->identifier = parent_container->identifier;
+        parent_container->identifier = fresh;
     }
 }
 

@@ -1532,8 +1532,9 @@ back in the vocabulary that produced them.
   label is inline-class and numbers in the directive block's namespace; the
   gate is what found that hole.
   Landed as **T2** (the mints and carries of F11, the two swaps above, and
-  the ordinal pass in the per-block tail — the field is `identity` on the
-  node, one field, two scopes) and gated by **T5**: `block_identity` — total
+  the ordinal pass in the per-block tail — the field is `identifier` on the
+  node, one field, two scopes: the identity is the concept, the identifier
+  is the value that carries it) and gated by **T5**: `block_identity` — total
   over every node, blocks unique per derivation, siblings unique everywhere,
   every node named identically by two projections of one unwritten CST, dead
   block ids never resurrected — over five fixture files (838 examples, 2,179
@@ -1760,7 +1761,7 @@ and the phase landed in the same session. **This is the consumer's axis, not
 the feed-cost one** — Phase B did not wait on it.
 
 - [x] **T2 — a stable id on the CST block**, minted at open, carried onto the
-      derived node by the clone. **Done 2026-08-26**: `identity` on the node,
+      derived node by the clone. **Done 2026-08-26**: `identifier` on the node,
       `block_ids_minted` on the parser, F11's four mint sites and two carry
       sites, plus the two ruled swaps — the table's lead paragraph inherits at
       the split, the firstborn reference definition inherits at the

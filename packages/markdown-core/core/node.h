@@ -187,7 +187,7 @@ struct markdown_core_node {
      * tracking across feeds, not the node's kind: a retype keeps it, and
      * when a block splits or dies the fragment that continues what the
      * consumer already renders inherits it (§4 D4). */
-    uint32_t identity;
+    uint32_t identifier;
     uint16_t type;
     markdown_core_node_internal_flags flags;
 

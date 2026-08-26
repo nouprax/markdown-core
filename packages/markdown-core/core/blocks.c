@@ -160,7 +160,7 @@ void markdown_core_parser_touch(markdown_core_parser *parser, markdown_core_node
 }
 
 void markdown_core_parser_mint_block_id(markdown_core_parser *parser, markdown_core_node *node) {
-    node->identity = ++parser->block_ids_minted;
+    node->identifier = ++parser->block_ids_minted;
 }
 
 /* Appends and reports failure directly instead of relying on llist_append's
@@ -1126,9 +1126,9 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
      * that keeps content keeps its id -- the visible text is the element the
      * consumer is tracking -- and its definitions stay fresh births. */
     if (!has_content && first_definition) {
-        uint32_t fresh = first_definition->identity;
-        first_definition->identity = b->identity;
-        b->identity = fresh;
+        uint32_t fresh = first_definition->identifier;
+        first_definition->identifier = b->identifier;
+        b->identifier = fresh;
     }
     return has_content;
 }
@@ -1508,7 +1508,7 @@ static void S_number_inline_descendants(markdown_core_node *block) {
          * CST-resident; the label and its parsed content are what this skip
          * leaves in THIS block's namespace. */
         if (!MARKDOWN_CORE_NODE_BLOCK_P(cur)) {
-            cur->identity = ++ordinal;
+            cur->identifier = ++ordinal;
             if (cur->first_child) {
                 cur = cur->first_child;
                 continue;
@@ -1919,7 +1919,7 @@ static markdown_core_node *S_clone_block_node(
     /* THE CARRY (T2): the derived block IS the CST block to a consumer, and
      * this line is what makes two projections of one CST name every block
      * identically (F11). A clone is calloc'd, so losing this fails closed. */
-    dst->identity = src->identity;
+    dst->identifier = src->identifier;
     dst->type = src->type;
     dst->flags = src->flags & ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN);
     dst->extension = src->extension;

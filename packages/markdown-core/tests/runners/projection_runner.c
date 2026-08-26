@@ -175,7 +175,7 @@ static int pr_fingerprint(markdown_core_parser *parser, markdown_core_strbuf *ou
             sizeof(header),
             "%u#%u|%u|%d:%d..%d:%d|%d|%d+%d|%u:",
             (unsigned)node->type,
-            (unsigned)node->identity,
+            (unsigned)node->identifier,
             /* The cache (T9) hangs a holder on a CST block and says so in a
              * flag. That is bookkeeping about the block, not a statement the
              * CST makes, so it is outside what a derivation must not write. */
@@ -1431,7 +1431,7 @@ static int pr_identity_boundary(
      * siblings unique everywhere. */
     for (i = 0; i < all_count && !failed; i++) {
         markdown_core_node *first_sibling, *later_sibling;
-        if (all[i]->identity == 0) {
+        if (all[i]->identifier == 0) {
             fprintf(
                 stderr,
                 "example %d %s: %s at %d:%d has no identity\n",
@@ -1445,14 +1445,14 @@ static int pr_identity_boundary(
         }
         for (first_sibling = all[i]->first_child; first_sibling && !failed; first_sibling = first_sibling->next) {
             for (later_sibling = first_sibling->next; later_sibling && !failed; later_sibling = later_sibling->next) {
-                if (first_sibling->identity == later_sibling->identity) {
+                if (first_sibling->identifier == later_sibling->identifier) {
                     fprintf(
                         stderr,
                         "example %d %s: two children of a %s share identity %u (%s and %s)\n",
                         example,
                         boundary,
                         markdown_core_node_get_type_string(all[i]),
-                        (unsigned)first_sibling->identity,
+                        (unsigned)first_sibling->identifier,
                         markdown_core_node_get_type_string(first_sibling),
                         markdown_core_node_get_type_string(later_sibling)
                     );
@@ -1463,13 +1463,13 @@ static int pr_identity_boundary(
     }
     for (i = 0; i < count && !failed; i++) {
         for (j = i + 1; j < count && !failed; j++) {
-            if (blocks[i]->identity == blocks[j]->identity) {
+            if (blocks[i]->identifier == blocks[j]->identifier) {
                 fprintf(
                     stderr,
                     "example %d %s: two blocks share id %u (%s at %d:%d, %s at %d:%d)\n",
                     example,
                     boundary,
-                    (unsigned)blocks[i]->identity,
+                    (unsigned)blocks[i]->identifier,
                     markdown_core_node_get_type_string(blocks[i]),
                     blocks[i]->start_line,
                     blocks[i]->start_column,
@@ -1501,7 +1501,7 @@ static int pr_identity_boundary(
             failed = 1;
         } else {
             for (i = 0; i < all_count; i++) {
-                if (all[i]->identity != all_again[i]->identity || all[i]->type != all_again[i]->type) {
+                if (all[i]->identifier != all_again[i]->identifier || all[i]->type != all_again[i]->type) {
                     fprintf(
                         stderr,
                         "example %d %s: two projections name a %s at %d:%d differently (%u vs %u)\n",
@@ -1510,8 +1510,8 @@ static int pr_identity_boundary(
                         markdown_core_node_get_type_string(all[i]),
                         all[i]->start_line,
                         all[i]->start_column,
-                        (unsigned)all[i]->identity,
-                        (unsigned)all_again[i]->identity
+                        (unsigned)all[i]->identifier,
+                        (unsigned)all_again[i]->identifier
                     );
                     failed = 1;
                     break;
@@ -1522,20 +1522,20 @@ static int pr_identity_boundary(
     /* 4: nothing this boundary shows was ever declared dead, and whatever the
      * previous boundary showed that this one does not is dead from here on. */
     for (i = 0; i < count && !failed; i++) {
-        if (pr_id_ledger_has(dead, blocks[i]->identity)) {
+        if (pr_id_ledger_has(dead, blocks[i]->identifier)) {
             fprintf(
                 stderr,
                 "example %d %s: dead id %u came back as %s at %d:%d\n",
                 example,
                 boundary,
-                (unsigned)blocks[i]->identity,
+                (unsigned)blocks[i]->identifier,
                 markdown_core_node_get_type_string(blocks[i]),
                 blocks[i]->start_line,
                 blocks[i]->start_column
             );
             failed = 1;
         }
-        if (!failed && pr_id_ledger_add(&cur, blocks[i]->identity) != 0) {
+        if (!failed && pr_id_ledger_add(&cur, blocks[i]->identifier) != 0) {
             fputs("out of memory\n", stderr);
             failed = 1;
         }
@@ -1661,7 +1661,7 @@ static int ti_snapshot(markdown_core_node *root, ti_record *out) {
             return -1;
         }
         out->items[out->count].type = child->type;
-        out->items[out->count].id = child->identity;
+        out->items[out->count].id = child->identifier;
         out->count++;
     }
     return 0;
@@ -1885,7 +1885,7 @@ static int case_block_identity_transitions(const ts_spec_file *file) {
                 ok = pr_collect_all(tree, &nodes, &node_count) == 0;
                 for (i = 0; ok && i < node_count; i++) {
                     if (nodes[i]->type == MARKDOWN_CORE_NODE_LINK && first_count < 4) {
-                        first_pass[first_count++] = nodes[i]->identity;
+                        first_pass[first_count++] = nodes[i]->identifier;
                     }
                 }
                 free(nodes);
@@ -1902,7 +1902,7 @@ static int case_block_identity_transitions(const ts_spec_file *file) {
                 ok = pr_collect_all(tree, &nodes, &node_count) == 0;
                 for (i = 0; ok && i < node_count; i++) {
                     if (nodes[i]->type == MARKDOWN_CORE_NODE_LINK && second_count < 4) {
-                        second_pass[second_count++] = nodes[i]->identity;
+                        second_pass[second_count++] = nodes[i]->identifier;
                     }
                 }
                 free(nodes);
