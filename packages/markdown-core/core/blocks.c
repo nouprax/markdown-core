@@ -1578,6 +1578,41 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
         }
     }
 
+    /* THE CST-RESIDENT INLINE CHILD -- a directive's label. Inline-class, so
+     * the walk never queues it, and its list was silently missing every
+     * content pass the whole-tree tail used to give it: consolidation, the
+     * "*inlines" hooks, the strip (found on the landing review -- an
+     * unmatched `*` stayed three TEXT nodes, a `www.` never became a link).
+     * The passes run HERE, from the block that owns it, in the order the
+     * block's own list gets them and before the shared numbering. A label is
+     * never enrolled in the cache -- the clone leaves it unmarked -- so its
+     * children are always its own. */
+    if (node && children_own && !contains_inlines(node) && S_has_inline_child(node)) {
+        markdown_core_node *child;
+        for (child = node->first_child; child; child = child->next) {
+            markdown_core_node *content = child;
+            if (MARKDOWN_CORE_NODE_BLOCK_P(child) || !contains_inlines(child)) {
+                continue;
+            }
+            if (!markdown_core_consolidate_text_nodes_with_parser(parser, child)) {
+                parser->oom = true;
+            }
+            for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
+                const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
+                if (!ext->postprocess_block_func || !ext->postprocess_blocks ||
+                    !S_extension_names(parser, ext, S_INLINES_MEMBER)) {
+                    continue;
+                }
+                /* An "*inlines" pass rewrites CHILDREN and neither replaces
+                 * nor removes the node it is rooted at (F15 rule 2). */
+                ext->postprocess_block_func(ext, parser, &content);
+            }
+            if ((parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) && !S_strip_inline_comments(child)) {
+                parser->oom = true;
+            }
+        }
+    }
+
     if (node && children_own && S_has_inline_child(node)) {
         S_number_inline_descendants(node);
     }
@@ -2010,9 +2045,14 @@ static markdown_core_node *S_clone_block_node(
 
     /* THE HIT IS TAKEN HERE, where the origin is in hand, so the derived
      * block never needs to find it again. A miss remembers the origin for
-     * the store at the end of its tail. Only blocks with inline content take
-     * part: they are the ones the re-parse costs. */
-    if (contains_inlines(dst) && refmap == parser->refmap && !parser->no_projection_cache) {
+     * the store at the end of its tail. Only BLOCK-class nodes with inline
+     * content take part: they are the ones the re-parse costs, and they are
+     * the ones the walk queues -- a CST-resident inline construct (a
+     * directive's label) is never queued, so enrolling it left ORIGIN and a
+     * CST pointer on a node the caller holds (found on the landing review).
+     * Its passes run from the block that owns it instead. */
+    if (MARKDOWN_CORE_NODE_BLOCK_P(dst) && contains_inlines(dst) && refmap == parser->refmap &&
+        !parser->no_projection_cache) {
         if (S_cache_fresh(parser, src, refmap)) {
             markdown_core_node_borrow_children(dst, src->link.holder);
             parser->cache_hits++;

@@ -311,17 +311,21 @@ static int case_refmap_independence(const ts_spec_file *file) {
         if (pr_fingerprint(parser, &before) != 0) {
             example_failed = 1;
         }
+        /* Each tree is dumped BEFORE the next derivation runs, the ordering
+         * F22 forced on `projection_double` -- a later derivation that wrote
+         * into a shared list would otherwise change both dumps alike and the
+         * gate would agree with itself (landing review). */
         first = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
-        other = markdown_core_parser_derive_tree(parser, empty_map, 0);
-        again = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
-        if (!example_failed && pr_fingerprint(parser, &after) != 0) {
-            example_failed = 1;
-        }
         if (first) {
             first_dump = pr_dump(first, &first_length);
         }
+        other = markdown_core_parser_derive_tree(parser, empty_map, 0);
+        again = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
         if (again) {
             again_dump = pr_dump(again, &again_length);
+        }
+        if (!example_failed && pr_fingerprint(parser, &after) != 0) {
+            example_failed = 1;
         }
         if (example_failed || !first_dump || !other || !again_dump) {
             fprintf(stderr, "example %d: derivation, dump or fingerprint failed\n", test_case->example);
@@ -548,8 +552,10 @@ typedef struct pr_generation {
 
 static void pr_generation_clear(pr_generation *generation) {
     size_t i;
-    for (i = 0; i < generation->count; i++) {
-        markdown_core_dump_free(generation->subtrees[i]);
+    if (generation->subtrees) {
+        for (i = 0; i < generation->count; i++) {
+            markdown_core_dump_free(generation->subtrees[i]);
+        }
     }
     free(generation->holders);
     free(generation->subtrees);
@@ -670,7 +676,10 @@ static int pr_borrow_boundary(markdown_core_parser *parser, pr_generation *prev,
                 break;
             }
             if (!markdown_core_holder_take_children(cur.holders[i], leaf)) {
+                /* The release DESTROYS a fresh holder (no hold yet); the slot
+                 * must not keep the dangling pointer (landing review). */
                 markdown_core_holder_release(cur.holders[i]);
+                cur.holders[i] = NULL;
                 failed = 1;
                 break;
             }
@@ -680,7 +689,24 @@ static int pr_borrow_boundary(markdown_core_parser *parser, pr_generation *prev,
     }
     free(leaves);
     if (failed) {
+        /* Unwind WITHOUT publishing: a generation with NULL slots must never
+         * reach the caller's release loop (landing review). Freeing the tree
+         * drops every borrow the built slots took; each fresh slot then holds
+         * exactly the one hold the cache took, and a slot aliasing the
+         * previous boundary's holder took none. `prev` stays as it was, and
+         * the caller's cleanup releases it as the last good generation. */
+        size_t built;
         fprintf(stderr, "example %d boundary %d: could not build the borrow\n", example, boundary);
+        markdown_core_node_free(cur.tree);
+        cur.tree = NULL;
+        for (built = 0; built < cur.count; built++) {
+            int aliased = prev->tree && built < prev->count && cur.holders[built] == prev->holders[built];
+            if (cur.holders[built] && !aliased) {
+                markdown_core_holder_release(cur.holders[built]);
+            }
+        }
+        pr_generation_clear(&cur);
+        return -1;
     }
 
     if (!failed && !pr_dump_equals(cur.tree, cur.expected, cur.expected_length)) {
@@ -1170,14 +1196,37 @@ static int pr_collect_blocks(markdown_core_node *root, markdown_core_node ***out
             items = grown;
         }
         items[n++] = cur;
-        if (cur->first_child && MARKDOWN_CORE_NODE_BLOCK_P(cur->first_child)) {
-            cur = cur->first_child;
-            continue;
+        /* Descend to the first BLOCK-class child and walk only block
+         * siblings. The one mixed-class container is a labeled directive
+         * block, whose FIRST child is the inline-class label with the block
+         * children after it -- a first-child class test walked past its
+         * whole interior (landing review). */
+        {
+            markdown_core_node *child = cur->first_child;
+            while (child && !MARKDOWN_CORE_NODE_BLOCK_P(child)) {
+                child = child->next;
+            }
+            if (child) {
+                cur = child;
+                continue;
+            }
         }
-        while (cur != root && cur->next == NULL) {
+        for (;;) {
+            markdown_core_node *sibling;
+            if (cur == root) {
+                cur = NULL;
+                break;
+            }
+            sibling = cur->next;
+            while (sibling && !MARKDOWN_CORE_NODE_BLOCK_P(sibling)) {
+                sibling = sibling->next;
+            }
+            if (sibling) {
+                cur = sibling;
+                break;
+            }
             cur = cur->parent;
         }
-        cur = (cur == root) ? NULL : cur->next;
     }
     *out = items;
     *count = n;
@@ -1551,9 +1600,16 @@ static int pr_identity_boundary(
     }
     /* 3: the second projection names every node -- inline included -- as the
      * first did. `parser` is NULL for the finish tree, which has no second
-     * projection to take. */
+     * projection to take. CACHE OFF for this one derivation: with it on,
+     * every hit aliases the first tree's lists and the inline comparison is
+     * a node against itself (landing review) -- a fresh projection re-parses
+     * and re-numbers, which is what "two projections name every node
+     * identically" must actually mean. */
     if (!failed && parser) {
+        bool cache_was_off = parser->no_projection_cache;
+        parser->no_projection_cache = true;
         second = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        parser->no_projection_cache = cache_was_off;
         if (!second || pr_collect_all(second, &all_again, &all_again_count) != 0) {
             fprintf(stderr, "example %d %s: second derivation failed\n", example, boundary);
             failed = 1;
@@ -2193,6 +2249,84 @@ static int case_diagnostics_after_derive(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+/* THE LABEL'S TAIL (landing review, F18): a directive's CST-resident label is
+ * inline-class, so the walk never queues it, and its list silently missed
+ * every content pass -- an unmatched `*` stayed three TEXT nodes and a
+ * `www.` never became a link, where the whole-tree tail gave both their
+ * passes. The owning block's tail now runs them; this gate pins the shape on
+ * the finish path, the derive path, and a re-derivation (the label is not
+ * cached, so its passes run on every projection and must be idempotent). */
+static int lt_label_shape(markdown_core_node *root, const char *which) {
+    markdown_core_iter walk;
+    markdown_core_iter *iter = &walk;
+    markdown_core_event_type ev_type;
+    markdown_core_node *label = NULL;
+    markdown_core_iter_init(iter, root);
+    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (ev_type == MARKDOWN_CORE_EVENT_ENTER && node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
+            label = node;
+            break;
+        }
+    }
+    if (!label) {
+        fprintf(stderr, "label tail (%s): no DirectiveLabel in the tree\n", which);
+        return -1;
+    }
+    if (!label->first_child || label->first_child->type != MARKDOWN_CORE_NODE_TEXT || !label->first_child->next ||
+        label->first_child->next->type != MARKDOWN_CORE_NODE_LINK || label->first_child->next->next) {
+        fprintf(
+            stderr,
+            "label tail (%s): the label is not [consolidated text, autolink] -- its passes did not run\n",
+            which
+        );
+        return -1;
+    }
+    return 0;
+}
+
+static int case_label_tail(const ts_spec_file *file) {
+    static const char LT_TEXT[] = "::note[a *cat sees www.example.com]{k=v}\n\nafter\n";
+    markdown_core_parser *parser;
+    markdown_core_node *finished;
+    markdown_core_node *first;
+    markdown_core_node *second;
+    int failures = 0;
+    (void)file;
+
+    finished = pr_parse(LT_TEXT, sizeof(LT_TEXT) - 1);
+    if (!finished) {
+        fputs("label tail: parse failed\n", stderr);
+        return -1;
+    }
+    failures += lt_label_shape(finished, "finish") != 0;
+    markdown_core_node_free(finished);
+
+    parser = pr_parser_new();
+    if (!parser) {
+        return -1;
+    }
+    markdown_core_parser_feed(parser, LT_TEXT, sizeof(LT_TEXT) - 1);
+    first = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+    second = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+    if (!first || !second) {
+        fputs("label tail: derivation failed\n", stderr);
+        failures++;
+    } else {
+        failures += lt_label_shape(first, "derive") != 0;
+        failures += lt_label_shape(second, "re-derive") != 0;
+    }
+    if (first) {
+        markdown_core_node_free(first);
+    }
+    if (second) {
+        markdown_core_node_free(second);
+    }
+    markdown_core_parser_free(parser);
+    printf("label tail: %s\n", failures ? "the label missed its passes" : "the label gets every pass");
+    return failures ? -1 : 0;
+}
+
 /* T15 -- THE REACTIVE-LOOP BOUND, as counters rather than clocks. The
  * projection side of a feed carries no term in the document already fed:
  * `cache_misses` counts exactly the content blocks a projection re-parses
@@ -2607,6 +2741,7 @@ static const pr_case_entry PR_CASES[] = {
     {"block_identity_transitions", case_block_identity_transitions, 0},
     {"attach_invalidation", case_attach_invalidation, 0},
     {"diagnostics_after_derive", case_diagnostics_after_derive, 0},
+    {"label_tail", case_label_tail, 0},
     {"feed_bound", case_feed_bound, 0},
     {"resident_memory", case_resident_memory, 0},
     {"carried_state", case_carried_state, 1},

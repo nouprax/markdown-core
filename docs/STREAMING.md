@@ -192,7 +192,7 @@ the trap is written down: `scripts/dev/gates.sh` builds nothing and says so in
 its own header, so every row it prints describes whatever binary already sits in
 `build/`, not the working tree.
 
-### F3 — there is no public streaming entry point at all  · VERIFIED
+### F3 — there is no public streaming entry point at all  · VERIFIED · **CLOSED by T12/T14**
 
 The public C ABI is 37 exported symbols. `markdown_core_document_parse(const
 uint8_t *source, size_t length, …)` takes the whole input. `feed`/`finish` are
@@ -1200,6 +1200,25 @@ tail now runs beside.
 
 ---
 
+**Amended 2026-08-26, on the landing review: the byte-identity held everywhere
+but one place the corpora never looked.** A directive's CST-resident label is
+inline-class, so the projection's walk never queues it, and its list missed
+every content pass the whole-tree tail used to give it — an unmatched `*`
+stayed three TEXT nodes, a `www.` never became a link — and the clone left
+`ORIGIN` and a raw CST pointer on the label of every returned tree. The owning
+block's tail now runs the label's passes (consolidation, the `"*inlines"`
+hooks, the strip, in the block's own order, before the shared numbering), and
+the clone enrolls only block-class nodes in the cache. The gate is
+`projection_label_tail` — red on the unfixed tree on all three paths (finish,
+derive, re-derive) — and the fixed dump is byte-identical to `origin/main`'s
+for the label shapes the corpora lack. The same review hardened three gates:
+the identity gate's second derivation runs cache-off (a hit aliased the first
+tree's lists, so the inline half of its comparison was a node against itself),
+`refmap_independence` dumps each tree before the next derivation (F22's
+ordering rule, which only `projection_double` had), and the block collection
+under the key and identity gates now descends into a labeled directive's
+interior.
+
 ### F19 — the cache key is sound over 100,000 block observations, and what it would buy  · VERIFIED (T3, T4)
 
 `projection_key` pairs every CST block with its derived block at every line
@@ -1482,7 +1501,7 @@ back in the vocabulary that produced them.
   value retains a C node, document, allocator, or WASM handle"*
   ([canonical-ast.md:32](specs/canonical-ast.md#L32)). All three bindings
   already work exactly this way — Swift frees the native document before `parse`
-  returns ([Document.swift:143](../packages/swift-markdown-core/Sources/MarkdownCore/Document.swift#L143)),
+  returns ([Document.swift:132](../packages/swift-markdown-core/Sources/MarkdownCore/Document.swift#L132)),
   ES frees it in a `finally` ([parser.ts:54](../packages/es-markdown-core/src/runtime/parser.ts#L54)),
   and Kotlin serialises the tree to a wire buffer and frees the document before
   returning ([markdown_core_kotlin_bridge.c:398](../packages/kotlin-markdown-core/src/native/markdown_core_kotlin_bridge.c#L398)).
@@ -1846,7 +1865,7 @@ expectation the owner never had, and it dies whole:
   and the write stamp and the generations stay what T3/T4 built them as —
   the cache's key, never the consumer's.
 
-### Phase E — the public surface  · D5 and D6 ruled
+### Phase E — the public surface  · DONE 2026-08-26 (D5 and D6 ruled)
 
 - [x] **T12 — export the streaming entry point** in C, carrying the shape §4
       rules: a session, `feed`, and the document's two total views. Whatever the
@@ -1869,11 +1888,27 @@ expectation the owner never had, and it dies whole:
 - ~~**T13 — the returned document carries the change classification** from
   T7.~~ Killed with Phase D (2026-08-26): `updated` carries identity, and
   identity is the whole signal.
-- [ ] **T14 — bindings** (Swift, Kotlin, ES) in the same release, and their
+- [x] **T14 — bindings** (Swift, Kotlin, ES) in the same release, and their
       conformance corpora. Swift is the semantic canon.
-      *Closes F3.*
+      *Closes F3.* **Done 2026-08-26**: `Session` in all three, the D5
+      spelling, every document built by the binding's one-shot conversion
+      path — Swift's `Document(copiedFrom:)`, Kotlin's one `deliver` payload
+      writer over the MKC5 wire, ES's shared copy-out — and `feed` takes
+      BYTES first (Swift `[UInt8]`, Kotlin `ByteArray`, ES `Uint8Array`,
+      each with a `String` convenience), because the ruled 7-byte chunking
+      splits UTF-8 sequences no string type can spell. Each binding re-runs
+      the shared canonical-AST manifest streamed in 7-byte chunks inside its
+      existing conformance channel (D6: the corpora extended, no new
+      pipeline), asserting the sealed document against the same goldens and
+      the concrete view against the one-shot parse. Validated locally:
+      Kotlin end-to-end (jvmTest 24/24, Kotlin/Native linuxX64, the Android
+      host suites, both ABI dumps regenerated, five JNI exports nm-verified);
+      ES to the edge of the WASM build (strict tsc, eslint, prettier,
+      clang-format, a host-cc -Werror compile of the bridge); Swift by
+      line-level inspection against the header — CI's macOS, iOS, browser
+      and emulator jobs carry the rest.
 
-### Phase F — bounds and gates
+### Phase F — bounds and gates  · DONE 2026-08-26
 
 - [x] **T15 — the reactive-loop bound as a gate:** the **projection** side of a
       feed is `O(open block + changed set)` and carries **no term in the

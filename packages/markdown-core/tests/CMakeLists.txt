@@ -357,6 +357,7 @@ if(MARKDOWN_CORE_STATIC)
     # gates it carries the complexity label the sanitizer presets exclude;
     # carried_state joins the cloned boundary projection against the in-place
     # finish on the block identity, over every extension corpus.
+    markdown_core_add_test(projection_label_tail "streaming" 120 projection_runner --case label_tail)
     markdown_core_add_test(projection_feed_bound "streaming" 120 projection_runner --case feed_bound)
     markdown_core_add_test(pathological_complexity_resident_memory "pathological;complexity" 240 projection_runner
                            --case resident_memory)
