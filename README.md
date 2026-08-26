@@ -25,9 +25,11 @@ document that arrives in pieces: every `feed` returns the immutable document
 after those bytes — a mid-stream projection whose incomplete trailing line is
 not yet in it and whose open constructs are projected as they stand — and
 `finish` seals the stream, returning the same document a whole-input parse
-produces for the same bytes. Every document a session returns is a plain value
-that retains nothing native: it stays readable after every later feed and
-after the session itself is gone. The streaming model is specified in
+produces for the same bytes. Every document a session returns is the caller's
+own and stays readable after every later feed and after the session itself is
+gone: in Swift, Kotlin, and ECMAScript it is a plain value that retains
+nothing native, and in C it is an owned handle released with
+`markdown_core_document_free`. The streaming model is specified in
 [docs/STREAMING.md](docs/STREAMING.md).
 
 A parse produces the AST, and every node carries a **`scope`**: the pair of
@@ -155,9 +157,9 @@ functions.
 
 A streaming parse opens a session with `markdown_core_session_new`, feeds
 chunks with `markdown_core_session_feed`, and seals the stream with
-`markdown_core_session_finish`. Each of those calls returns an owned document
-released with `markdown_core_document_free`; `markdown_core_session_free`
-releases the session itself. The C API also reports the parse's ordered
+`markdown_core_session_finish`. `feed` and `finish` each return an owned
+document released with `markdown_core_document_free`;
+`markdown_core_session_free` releases the session itself. The C API also reports the parse's ordered
 diagnostic list — the places where a construct the author wrote did not become
 one and neither the tree nor the concrete view can say so — through
 `markdown_core_document_diagnostic_count` and
@@ -282,12 +284,16 @@ the C test suite.
 ## Contributing and releasing
 
 Pinned compiler, SDK, runtime, and IDE versions are documented in
-[docs/deprecated/toolchains.md](docs/deprecated/toolchains.md). Release
-maintainers must follow
-[docs/deprecated/releasing.md](docs/deprecated/releasing.md), including the
-no-secret release dry run,
-protected tag/environment approval, Maven signing, npm OIDC, artifact
-attestation, and post-publication verification. Release notes start from
+[docs/deprecated/toolchains.md](docs/deprecated/toolchains.md). The release
+process itself is defined by
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which reads
+release notes from `docs/deprecated/releases/<VERSION>.md` and provides a
+`workflow_dispatch` recovery path. The archived runbook
+[docs/deprecated/releasing.md](docs/deprecated/releasing.md) records the
+surrounding practice — the no-secret release dry run, protected
+tag/environment approval, Maven signing, npm OIDC, artifact attestation, and
+post-publication verification — but has partially diverged from that workflow;
+where the two disagree, the workflow is right. Release notes start from
 [CHANGELOG.md](CHANGELOG.md).
 
 ## License
