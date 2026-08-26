@@ -28,11 +28,6 @@ private object AndroidNativeLoader {
 }
 
 internal object JvmNative {
-    external fun parse(
-        source: ByteArray,
-        optionsMask: Int,
-    ): ByteArray
-
     external fun sessionNew(optionsMask: Int): Long
 
     external fun sessionFeed(

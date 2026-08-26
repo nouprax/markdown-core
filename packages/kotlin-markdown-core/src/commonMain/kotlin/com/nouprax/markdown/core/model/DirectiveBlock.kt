@@ -5,6 +5,7 @@ public class DirectiveBlock internal constructor(
     public val attributes: kotlin.collections.List<DirectiveAttribute>?,
     public val label: DirectiveLabel?,
     public val content: kotlin.collections.List<Markup>,
+    override val id: Identity,
     override val scope: Scope,
 ) : Markup {
     override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitDirectiveBlock(this)

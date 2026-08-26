@@ -2,6 +2,7 @@ package com.nouprax.markdown.core
 
 internal fun WireReader.markup(): Markup {
     val kind = kind()
+    val id = identity()
     val nodeScope = scope()
     return when (kind) {
         WireKind.DOCUMENT -> {
@@ -11,27 +12,27 @@ internal fun WireReader.markup(): Markup {
         }
 
         WireKind.BLOCK_QUOTE -> {
-            BlockQuote(markupList(), nodeScope)
+            BlockQuote(markupList(), id, nodeScope)
         }
 
         WireKind.PARAGRAPH -> {
-            Paragraph(markupList(), nodeScope)
+            Paragraph(markupList(), id, nodeScope)
         }
 
         WireKind.HEADING -> {
-            Heading(int(), markupList(), nodeScope)
+            Heading(int(), markupList(), id, nodeScope)
         }
 
         WireKind.THEMATIC_BREAK -> {
-            ThematicBreak(nodeScope)
+            ThematicBreak(id, nodeScope)
         }
 
         WireKind.LIST -> {
-            readList(nodeScope)
+            readList(id, nodeScope)
         }
 
         WireKind.LIST_ITEM -> {
-            ListItem(nullableBoolean(), markupList(), nodeScope)
+            ListItem(nullableBoolean(), markupList(), id, nodeScope)
         }
 
         WireKind.CODE_BLOCK -> {
@@ -41,22 +42,23 @@ internal fun WireReader.markup(): Markup {
                 requiredString(),
                 boolean(),
                 boolean(),
+                id,
                 nodeScope,
             )
         }
 
         WireKind.HTML_BLOCK -> {
-            HTMLBlock(requiredString(), nodeScope)
+            HTMLBlock(requiredString(), id, nodeScope)
         }
 
         WireKind.FORMULA_BLOCK -> {
             // A formula block is always standalone: the wire stopped carrying
             // the byte at Q29 and the model no longer repeats the kind.
-            FormulaBlock(requiredString(), nodeScope)
+            FormulaBlock(requiredString(), id, nodeScope)
         }
 
         WireKind.TABLE -> {
-            readTable(nodeScope)
+            readTable(id, nodeScope)
         }
 
         WireKind.DIRECTIVE_BLOCK -> {
@@ -69,88 +71,89 @@ internal fun WireReader.markup(): Markup {
                 attributes,
                 label,
                 if (label == null) children else children.drop(1),
+                id,
                 nodeScope,
             )
         }
 
         WireKind.FOOTNOTE_DEFINITION -> {
-            FootnoteDefinition(requiredString(), requiredString(), markupList(), nodeScope)
+            FootnoteDefinition(requiredString(), requiredString(), markupList(), id, nodeScope)
         }
 
         WireKind.REFERENCE_DEFINITION -> {
-            ReferenceDefinition(requiredString(), requiredString(), requiredString(), string(), nodeScope)
+            ReferenceDefinition(requiredString(), requiredString(), requiredString(), string(), id, nodeScope)
         }
 
         WireKind.LINK_REFERENCE -> {
-            LinkReference(requiredString(), requiredString(), referenceForm(), markupList(), nodeScope)
+            LinkReference(requiredString(), referenceForm(), identity(), markupList(), id, nodeScope)
         }
 
         WireKind.IMAGE_REFERENCE -> {
-            ImageReference(requiredString(), requiredString(), referenceForm(), markupList(), nodeScope)
+            ImageReference(requiredString(), referenceForm(), identity(), markupList(), id, nodeScope)
         }
 
         WireKind.TEXT -> {
-            Text(requiredString(), nodeScope)
+            Text(requiredString(), id, nodeScope)
         }
 
         WireKind.SOFT_BREAK -> {
-            SoftBreak(nodeScope)
+            SoftBreak(id, nodeScope)
         }
 
         WireKind.LINE_BREAK -> {
-            LineBreak(nodeScope)
+            LineBreak(id, nodeScope)
         }
 
         WireKind.CODE -> {
-            Code(requiredString(), nodeScope)
+            Code(requiredString(), id, nodeScope)
         }
 
         WireKind.HTML -> {
-            HTML(requiredString(), nodeScope)
+            HTML(requiredString(), id, nodeScope)
         }
 
         WireKind.FORMULA -> {
-            Formula(placement(), requiredString(), nodeScope)
+            Formula(placement(), requiredString(), id, nodeScope)
         }
 
         WireKind.EMPHASIS -> {
-            Emphasis(markupList(), nodeScope)
+            Emphasis(markupList(), id, nodeScope)
         }
 
         WireKind.STRONG -> {
-            Strong(markupList(), nodeScope)
+            Strong(markupList(), id, nodeScope)
         }
 
         WireKind.STRIKETHROUGH -> {
-            Strikethrough(markupList(), nodeScope)
+            Strikethrough(markupList(), id, nodeScope)
         }
 
         WireKind.LINK -> {
-            Link(requiredString(), string(), markupList(), nodeScope)
+            Link(requiredString(), string(), markupList(), id, nodeScope)
         }
 
         WireKind.IMAGE -> {
-            Image(requiredString(), string(), markupList(), nodeScope)
+            Image(requiredString(), string(), markupList(), id, nodeScope)
         }
 
         WireKind.DIRECTIVE -> {
-            readDirective(nodeScope)
+            readDirective(id, nodeScope)
         }
 
         WireKind.FOOTNOTE_REFERENCE -> {
-            FootnoteReference(requiredString(), requiredString(), nodeScope)
+            FootnoteReference(requiredString(), identity(), id, nodeScope)
         }
 
         WireKind.TABLE_ROW -> {
-            readTableRow(nodeScope)
+            readTableRow(id, nodeScope)
         }
 
         WireKind.TABLE_CELL -> {
-            readTableCell(nodeScope)
+            readTableCell(id, nodeScope)
         }
 
         WireKind.DIRECTIVE_LABEL -> {
-            DirectiveLabel(markupList(), nodeScope)
+            DirectiveLabel(markupList(), id, nodeScope)
         }
     }
 }
@@ -176,7 +179,10 @@ internal fun WireReader.markupList(): kotlin.collections.List<Markup> {
     return immutableList(count) { markup() }
 }
 
-private fun WireReader.readList(scope: Scope): List {
+private fun WireReader.readList(
+    id: Identity,
+    scope: Scope,
+): List {
     val flavor =
         when (val rawValue = int()) {
             1 -> ListFlavor.BULLET
@@ -186,7 +192,7 @@ private fun WireReader.readList(scope: Scope): List {
     val startValue = long()
     val start = if (boolean()) startValue else null
     val tight = boolean()
-    return List(flavor, start, tight, readListItems(), scope)
+    return List(flavor, start, tight, readListItems(), id, scope)
 }
 
 private fun WireReader.readListItems(): kotlin.collections.List<ListItem> {
@@ -199,7 +205,10 @@ private fun WireReader.readListItems(): kotlin.collections.List<ListItem> {
     }
 }
 
-private fun WireReader.readDirective(scope: Scope): Directive {
+private fun WireReader.readDirective(
+    id: Identity,
+    scope: Scope,
+): Directive {
     // An inline directive is always embedded: the wire stopped carrying the
     // byte at Q29 and the model no longer repeats the kind.
     val name = requiredString()
@@ -207,7 +216,7 @@ private fun WireReader.readDirective(scope: Scope): Directive {
     val children = markupList()
     val label = children.firstOrNull() as? DirectiveLabel
     require(children.size == (if (label == null) 0 else 1)) { "inline directive contains block content" }
-    return Directive(name, attributes, label, scope)
+    return Directive(name, attributes, label, id, scope)
 }
 
 /**
@@ -226,7 +235,10 @@ private fun WireReader.directiveAttributes(): kotlin.collections.List<DirectiveA
     return immutableList(count) { DirectiveAttribute(requiredString(), requiredString()) }
 }
 
-private fun WireReader.readTable(scope: Scope): Table {
+private fun WireReader.readTable(
+    id: Identity,
+    scope: Scope,
+): Table {
     val alignmentCount = int()
     require(alignmentCount >= 0) { "invalid native table alignment count" }
     val alignments = immutableList(alignmentCount) { tableAlignment(byte().toInt() and 0xff) }
@@ -252,11 +264,15 @@ private fun WireReader.readTable(scope: Scope): Table {
         rows
             .filterIndexed { index, _ -> index != headerIndex }
             .immutableMap { it },
+        id,
         scope,
     )
 }
 
-private fun WireReader.readTableRow(scope: Scope): TableRow {
+private fun WireReader.readTableRow(
+    id: Identity,
+    scope: Scope,
+): TableRow {
     val header = boolean()
     val cellCount = int()
     require(cellCount >= 0) { "invalid native table cell count" }
@@ -266,10 +282,13 @@ private fun WireReader.readTableRow(scope: Scope): TableRow {
             require(cell is TableCell) { "table row contains a non-cell node" }
             cell
         }
-    return TableRow(header, cells, scope)
+    return TableRow(header, cells, id, scope)
 }
 
-private fun WireReader.readTableCell(scope: Scope): TableCell = TableCell(markupList(), scope)
+private fun WireReader.readTableCell(
+    id: Identity,
+    scope: Scope,
+): TableCell = TableCell(markupList(), id, scope)
 
 private fun tableAlignment(rawValue: Int): TableAlignment =
     when (rawValue) {
