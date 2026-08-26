@@ -157,8 +157,19 @@ const runtimeExports = [
 // `Concrete` joined the runtime list at Step 12.2; `RegionRole` left it with
 // the regions when 11a-11c were retired: a document
 // carries its concrete view, and a region's role is a value the caller compares
-// against rather than a type it only reads.
-const expectedRuntime = ["Concrete", "Document", "ParseError", "TreeDumper", "WalkEvent", "Walker", "visit"].sort();
+// against rather than a type it only reads. `Session` joined at T14
+// (docs/STREAMING.md D5): the stream's one handle, beside the documents it
+// returns.
+const expectedRuntime = [
+    "Concrete",
+    "Document",
+    "ParseError",
+    "Session",
+    "TreeDumper",
+    "WalkEvent",
+    "Walker",
+    "visit"
+].sort();
 if (runtimeExports.join("\n") !== expectedRuntime.join("\n")) {
     throw new Error(`Unexpected ES runtime exports: ${runtimeExports.join(", ")}`);
 }
