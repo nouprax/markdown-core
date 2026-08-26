@@ -209,11 +209,14 @@ of an unwritten CST are byte-identical in *content* (gated), but nothing lets a
 consumer say "this is the same block I already rendered". Identity is the
 precondition for a change signal.
 
-### F5 — there is no per-block change signal  · VERIFIED
+### F5 — there is no per-block change signal  · VERIFIED · ANSWERED by ruling, 2026-08-26 — none is owed
 
 `derive_tree` returns a whole tree and re-derives unconditionally. Nothing stamps
 a block with when it was last written or what map generation it was resolved
-against.
+against. *(T3 has since stamped the CST block — for the cache's key, which is
+the only consumer the stamp ever got: the ruling that kills Phase D, §5, says
+the identity-keyed view derives "what changed" from the identity T2 mints and
+is owed no classification.)*
 
 ### F6 — re-projection is O(whole document) by design  · VERIFIED mechanism, INHERITED numbers
 
@@ -1809,21 +1812,32 @@ the feed-cost one** — Phase B did not wait on it.
       under a directive BLOCK was reachable by no numbering pass) before the
       first full run was green.
 
-### Phase D — the change signal  · needs T2 and Phase B
+### Phase D — the change signal  · KILLED 2026-08-26, owner ruling
 
-D1 and D3 are dissolved (§4): the signal is the identity D4 mints, carried on
-the block, and a feed returns the document rather than answering a query.
+**No change signal is owed, and none will be built.** The consumer is the
+identity-keyed view D4 names — SwiftUI's `List`/`ForEach` and its equation
+checks — and it never expected the parser to say what changed: it re-renders
+an element when its identity is new and when its value stops comparing
+equal, and it reads both off the trees it is already holding. D3's
+dissolution said this and the phase did not hear it: *"a separate change
+list is derivable from identity by the consumer and adds a second thing to
+keep in step with the first."* The stamp pair T6/T7 would have carried out
+was exactly that second thing — a classification the consumer would have to
+trust instead of the equation it already runs. The phase encoded an
+expectation the owner never had, and it dies whole:
 
-- [ ] **T6 — stamp each derived block** with the `(write stamp, map generation)`
-      it was derived at.
-- [ ] **T7 — carry the stamp pair out on the returned block**, so a consumer
-      holding the previous `updated` classifies every block as new / changed /
-      unchanged by joining on identity and comparing stamps. No list, no query:
-      the tree it was handed carries it.
-- [ ] **T8 — gate:** for every fixture, feed to each block boundary and assert
-      the changed set is exactly the blocks whose bytes moved or whose
-      resolution moved. This is the gate that makes the whole design falsifiable.
-      *Closes F5.*
+- ~~**T6 — stamp each derived block** with the `(write stamp, map
+  generation)` it was derived at.~~
+- ~~**T7 — carry the stamp pair out on the returned block**, so a consumer
+  classifies every block as new / changed / unchanged.~~
+- ~~**T8 — gate:** the changed set is exactly the blocks whose bytes moved
+  or whose resolution moved.~~ T8's falsifiability claim is not lost with
+  it: the boundary A/B (F18), the key gate (F19) and the identity gates
+  (T5) are the design's falsifiers, and each pins a property the engine
+  actually owes. F5 is **answered** by this ruling rather than closed by a
+  task: identity (T2, landed) is the entire interface to "what changed",
+  and the write stamp and the generations stay what T3/T4 built them as —
+  the cache's key, never the consumer's.
 
 ### Phase E — the public surface  · D5 and D6 ruled
 
@@ -1831,7 +1845,9 @@ the block, and a feed returns the document rather than answering a query.
       rules: a session, `feed`, and the document's two total views. Whatever the
       C spelling, `scripts/audit-public-surface.sh` gates it against the header,
       the ELF version script and the Mach-O list together.
-- [ ] **T13 — the returned document carries the change classification** from T7.
+- ~~**T13 — the returned document carries the change classification** from
+  T7.~~ Killed with Phase D (2026-08-26): `updated` carries identity, and
+  identity is the whole signal.
 - [ ] **T14 — bindings** (Swift, Kotlin, ES) in the same release, and their
       conformance corpora. Swift is the semantic canon.
       *Closes F3.*
@@ -1890,9 +1906,11 @@ Stated so they are not later mistaken for defects.
   that retains no engine memory ([canonical-ast.md:32](specs/canonical-ast.md#L32)).
   So the engine-side bound above is not what the consumer pays: a feed also
   copies out what it returns. **This is accepted as the price of the shape**,
-  it is measured separately at T11 and bounded separately at T15, and it is the
-  reason the change classification exists — a consumer that re-renders only the
-  changed blocks pays the copy but not the render.
+  it is measured separately at T11 and bounded separately at T15, and identity
+  is what keeps the render side out of it — a consumer keyed on the ids
+  re-renders only the elements whose value stopped comparing equal, so it pays
+  the copy but not the render. (This clause first credited the change
+  classification; Phase D's ruling killed it as never owed.)
 - **The per-feed clone is a whole-document term and NO task removes it.**
   `markdown_core_parser_derive_tree`
   ([blocks.c:1711](../packages/markdown-core/core/blocks.c#L1711)) is
