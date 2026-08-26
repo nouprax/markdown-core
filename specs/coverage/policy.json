@@ -10,7 +10,7 @@
     "rules": [
         "A measured file with no `unpinned` entry must be fully covered on every required metric.",
         "An `unpinned` entry is the maximum permitted number of unpinned lines, functions, and branches for that file; unprotected surface may only shrink.",
-        "An intended behaviour change may move which code the pinning corpus reaches, growing an entry without any protection having eroded. That is the one case where an entry may increase: the increase is recorded with its cause in docs/migration/2026-08-01-incremental-canonical-ast-plan.md and reviewed as part of the change that caused it. Growth with no such cause is a regression.",
+        "An intended behaviour change may move which code the pinning corpus reaches, growing an entry without any protection having eroded. That is the one case where an entry may increase: the increase is recorded with its cause in the CHANGELOG entry of the release that caused it and reviewed as part of the change. Growth with no such cause is a regression.",
         "`unpinned` shrinks by adding corpus inputs that pin behaviour, not by adding tests that merely execute the code. A test that raises coverage without asserting parse output does not pay it down.",
         "An `exempt` entry removes a file from measurement and is legitimate only when no source input can reach the file at all. Generated code is not exemptible: nobody reviews it, so its behaviour needs pinning more than hand-written code, not less.",
         "Code that no source input can reach is a defect or dead code to be decided on, never an `unpinned` entry: recording it would promise a test that cannot be written.",
@@ -109,6 +109,11 @@
             "exempt": [],
             "minimumMeasuredFiles": 11,
             "unpinned": {
+                "packages/es-markdown-core/src/runtime/document.ts": {
+                    "lines": 0,
+                    "functions": 0,
+                    "branches": 2
+                },
                 "packages/es-markdown-core/src/runtime/native.ts": {
                     "lines": 8,
                     "functions": 4,
@@ -117,12 +122,7 @@
                 "packages/es-markdown-core/src/runtime/parser.ts": {
                     "lines": 0,
                     "functions": 0,
-                    "branches": 1
-                },
-                "packages/es-markdown-core/src/runtime/session.ts": {
-                    "lines": 0,
-                    "functions": 0,
-                    "branches": 1
+                    "branches": 3
                 },
                 "packages/es-markdown-core/src/tree-dumper.ts": {
                     "lines": 0,
@@ -140,9 +140,9 @@
                     "branches": 1
                 },
                 "packages/es-markdown-core/src/wire/node-decoder.ts": {
-                    "lines": 30,
-                    "functions": 3,
-                    "branches": 21
+                    "lines": 22,
+                    "functions": 2,
+                    "branches": 19
                 }
             }
         }

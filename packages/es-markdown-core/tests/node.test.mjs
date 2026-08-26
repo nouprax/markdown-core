@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TextEncoder } from "node:util";
-import { Document, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
+import { Document, ParseError, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
 // Past index.js for the instance itself: the heap is what this asserts about,
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
+import { copyOut, discardOut } from "../dist/runtime/parser.js";
 import { NodeDecoder } from "../dist/wire/node-decoder.js";
 import { kindVisitor } from "./visitor.mjs";
 
@@ -226,6 +227,7 @@ test("api: a document's chunked feeds equal the whole-text parse once sealed", (
 test("api: a document reads the same options however it was opened", () => {
     const markdown = "| a |\n| --- |\n| b |\n";
     assert.equal(new Document(markdown, { tables: false }).seal().semantic.content[0].kind, "paragraph");
+    assert.equal(new Document(undefined, { tables: false }).feed(markdown).semantic.content[0].kind, "paragraph");
     const gated = new Document({ tables: false });
     try {
         // The canonical spelling: a string chunk feeds its UTF-8 bytes.
@@ -298,15 +300,55 @@ test("errors: sealing releases the shell, and a sealed or disposed document refu
     assert.throws(() => document.feed("x"), /sealed or disposed/u);
     assert.throws(() => document.seal(), /sealed or disposed/u);
 
-    // Arguments are checked up front.
+    // Arguments are checked up front, in both constructor forms.
     assert.throws(() => new Document(null), TypeError);
     assert.throws(() => new Document({ tables: "yes" }), TypeError);
+    assert.throws(() => new Document(42, {}), TypeError);
     const typed = new Document();
     try {
         assert.throws(() => typed.feed(42), TypeError);
     } finally {
         typed.dispose();
     }
+});
+
+test("api: the constructor's initial chunk is bytes as much as text", () => {
+    const bytes = new TextEncoder().encode("# Bytes\n");
+    const read = new Document(bytes).seal();
+    assert.equal(read.semantic.content[0].kind, "heading");
+    assert.equal(read.dump(), new Document("# Bytes\n").seal().dump());
+});
+
+test("errors: ParseError carries its code, name, and message", () => {
+    // No text a caller can write produces one -- a parse failure is an
+    // allocation failure -- so the exported class is pinned directly: it is
+    // what a consumer's catch narrows on.
+    const error = new ParseError("allocationFailed", "out of memory");
+    assert.ok(error instanceof Error);
+    assert.equal(error.name, "ParseError");
+    assert.equal(error.code, "allocationFailed");
+    assert.equal(error.message, "out of memory");
+});
+
+test("errors: a read that never materialized is a ParseError, not a crash", () => {
+    // `copyOut` throwing is unreachable through text -- a parse failure is an
+    // allocation failure -- so it is reached the same way `discardOut`'s arm
+    // is: a call that answers with no document and no error behind the slot.
+    assert.throws(
+        () => copyOut(() => 0),
+        (error) => error instanceof ParseError && error.code === "internal"
+    );
+});
+
+test("errors: a discarded feed still surfaces a native failure and frees its slot", () => {
+    // The constructor's initial feed discards its read, and text never fails,
+    // so the error arm is reached the way the heap tests reach the runtime:
+    // past index.js, handing `discardOut` a call that answers with no
+    // document and no error behind the slot.
+    assert.throws(
+        () => discardOut(() => 0),
+        (error) => error instanceof ParseError && error.code === "internal"
+    );
 });
 
 test("errors: every wire guard fires when the native side answers out of range", () => {

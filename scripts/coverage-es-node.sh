@@ -31,7 +31,7 @@ node --test \
     --test-coverage-exclude='scripts/**' \
     --test-reporter=spec --test-reporter-destination=stdout \
     --test-reporter=lcov --test-reporter-destination="$report" \
-    tests/node.test.mjs tests/append.test.mjs tests/conformance.test.mjs
+    tests/node.test.mjs tests/conformance.test.mjs
 
 cd "$root"
 exec node scripts/check-coverage.mjs \

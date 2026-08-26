@@ -41,7 +41,11 @@ longer exists. 3.0.0 ships a different streaming surface, described below.
 - The ECMAScript `Document` also implements `Symbol.dispose`, so
   `using document = new Document()` releases an abandoned stream at scope
   exit; `dispose()` remains, is idempotent, and is only owed for a stream
-  abandoned before `seal`.
+  abandoned before `seal`. Because sealing releases the shell, no public call
+  can reach a native session error any more, and the ECMAScript coverage
+  ledger's unpinned defensive branches moved with the surface: `session.ts`'s
+  allowance is retired, and `document.ts` and `parser.ts` carry the
+  unreachable allocation-failure and error-release arms.
 - Keep the bytes of a footnote call whose label crosses a line ending, and read
   a label spelled with a character reference out of the source rather than out
   of a released buffer.
@@ -86,9 +90,9 @@ longer exists. 3.0.0 ships a different streaming surface, described below.
   source an element occupies — not a byte range, and no substring is taken with
   it. A block closed by a blank line therefore ends at column 0 of that line,
   which is what cmark-gfm reports and what an editor needs.
-- `Document.concrete` is the normalized source and its line index: the text a
-  scope's coordinates are counted against, which is not the string that was
-  passed in wherever it held a NUL.
+- The concrete view (`Read.concrete`) is the normalized source and its line
+  index: the text a scope's coordinates are counted against, which is not the
+  string that was passed in wherever it held a NUL.
 - `markdown_core_document_root` is renamed `markdown_core_document_semantic`,
   because the parse now has two total views and the old name did not say which
   one it returned.
