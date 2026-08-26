@@ -160,7 +160,7 @@ void markdown_core_parser_touch(markdown_core_parser *parser, markdown_core_node
 }
 
 void markdown_core_parser_mint_block_id(markdown_core_parser *parser, markdown_core_node *node) {
-    node->block_id = ++parser->block_ids_minted;
+    node->identity = ++parser->block_ids_minted;
 }
 
 /* Appends and reports failure directly instead of relying on llist_append's
@@ -1126,9 +1126,9 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
      * that keeps content keeps its id -- the visible text is the element the
      * consumer is tracking -- and its definitions stay fresh births. */
     if (!has_content && first_definition) {
-        uint32_t fresh = first_definition->block_id;
-        first_definition->block_id = b->block_id;
-        b->block_id = fresh;
+        uint32_t fresh = first_definition->identity;
+        first_definition->identity = b->identity;
+        b->identity = fresh;
     }
     return has_content;
 }
@@ -1389,6 +1389,9 @@ static const char S_INLINES_MEMBER[] = "*inlines";
 static bool S_cache_fresh(markdown_core_parser *parser, const markdown_core_node *block, markdown_core_map *refmap);
 static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node);
 
+/* The inline ordinals (T2), defined beside the tail that assigns them. */
+static bool S_has_inline_child(markdown_core_node *block);
+
 static bool S_set_names(const char *set, const char *name) {
     const char *p;
     for (p = set; *p; p += strlen(p) + 1) {
@@ -1452,6 +1455,12 @@ static bool S_block_has_tail_work(markdown_core_parser *parser, markdown_core_no
     if (contains_inlines(block)) {
         return true;
     }
+    /* A block that is not an inline container can still OWN inline-class
+     * children -- a directive block's CST-resident label -- and their
+     * ordinals (T2) are assigned in the tail. */
+    if (S_has_inline_child(block)) {
+        return true;
+    }
     if ((parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) && S_type(block) == MARKDOWN_CORE_NODE_HTML_BLOCK) {
         return true;
     }
@@ -1476,6 +1485,53 @@ static bool S_tail_queue_push(markdown_core_parser *parser, markdown_core_node *
     }
     parser->tail_queue[parser->tail_queue_size++] = block;
     return true;
+}
+
+/* THE INLINE ORDINALS (T2, §4 D4). An inline's identity is its pre-order
+ * ordinal among the owning block's inline descendants: unique within the
+ * block -- so unique within any sibling list a consumer iterates -- and the
+ * pair (block's identity, ordinal) is unique in the document. Assigned at the
+ * end of the block's tail, after every pass that creates, merges or removes
+ * inline nodes (consolidation, the hooks, the strip), so the numbering is a
+ * function of the finished list; the parse is deterministic, so two
+ * projections of one unwritten CST number every inline identically, and the
+ * cache stores the list numbered, so a hit serves the same identities without
+ * a write. Only an OWNED list is numbered -- a borrowed one already carries
+ * its numbers and must not be written (F22). */
+static void S_number_inline_descendants(markdown_core_node *block) {
+    markdown_core_node *cur = block->first_child;
+    uint32_t ordinal = 0;
+    while (cur) {
+        /* A nested BLOCK owns its own namespace: its identity is its mint and
+         * its inlines are numbered at its own tail. The one block that mixes
+         * child classes is a directive block, whose label is inline-class and
+         * CST-resident; the label and its parsed content are what this skip
+         * leaves in THIS block's namespace. */
+        if (!MARKDOWN_CORE_NODE_BLOCK_P(cur)) {
+            cur->identity = ++ordinal;
+            if (cur->first_child) {
+                cur = cur->first_child;
+                continue;
+            }
+        }
+        while (cur != block && !cur->next) {
+            cur = cur->parent;
+        }
+        cur = cur == block ? NULL : cur->next;
+    }
+}
+
+/* Does the block hold any inline-class child of its own -- a parsed inline
+ * list, or a CST-resident inline construct like a directive's label? This is
+ * what obliges a tail: the inline ordinals above are assigned there. */
+static bool S_has_inline_child(markdown_core_node *block) {
+    markdown_core_node *child;
+    for (child = block->first_child; child; child = child->next) {
+        if (!MARKDOWN_CORE_NODE_BLOCK_P(child)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /* One block's tail. `*block` comes back reseated or NULL exactly as a hook
@@ -1519,9 +1575,14 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
         }
     }
 
+    if (node && children_own && S_has_inline_child(node)) {
+        S_number_inline_descendants(node);
+    }
+
     /* THE STORE, last, so the list the cache keeps is the one the tail
-     * finished with. A derived block that was replaced took its origin with
-     * it, and a block with no inline content never had one. */
+     * finished with -- and the numbering above rides into it. A derived block
+     * that was replaced took its origin with it, and a block with no inline
+     * content never had one. */
     if (node && (node->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
         if (children_own && contains_inlines(node)) {
             S_cache_store(parser, node);
@@ -1858,7 +1919,7 @@ static markdown_core_node *S_clone_block_node(
     /* THE CARRY (T2): the derived block IS the CST block to a consumer, and
      * this line is what makes two projections of one CST name every block
      * identically (F11). A clone is calloc'd, so losing this fails closed. */
-    dst->block_id = src->block_id;
+    dst->identity = src->identity;
     dst->type = src->type;
     dst->flags = src->flags & ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN);
     dst->extension = src->extension;

@@ -175,7 +175,7 @@ static int pr_fingerprint(markdown_core_parser *parser, markdown_core_strbuf *ou
             sizeof(header),
             "%u#%u|%u|%d:%d..%d:%d|%d|%d+%d|%u:",
             (unsigned)node->type,
-            (unsigned)node->block_id,
+            (unsigned)node->identity,
             /* The cache (T9) hangs a holder on a CST block and says so in a
              * flag. That is bookkeeping about the block, not a statement the
              * CST makes, so it is outside what a derivation must not write. */
@@ -1323,16 +1323,23 @@ static int case_projection_key(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
-/* T2 AND T5'S GATE: A BLOCK'S IDENTITY IS TOTAL, UNIQUE, PROJECTION-STABLE
- * AND NEVER RESURRECTED (docs/STREAMING.md §4 D4, F11). Feeds every case one
- * line at a time and derives TWICE after every line, asserting four things:
+/* T2 AND T5'S GATE: IDENTITY IS TOTAL, UNIQUE, PROJECTION-STABLE AND NEVER
+ * RESURRECTED (docs/STREAMING.md §4 D4, F11). Feeds every case one line at a
+ * time and derives TWICE after every line, asserting five things:
  *
- *   1. no block in a derived tree carries id 0 -- a lost mint or carry fails
- *      closed, and this is where it surfaces;
- *   2. no two blocks in one derivation share an id;
- *   3. two projections of one unwritten CST name every block identically --
- *      the id is a fact about the CST, not about the derivation (closes F4);
- *   4. an id that left the tree never comes back.
+ *   1. no node in a derived tree -- block OR inline -- carries identity 0: a
+ *      lost mint, carry or numbering fails closed, and this is where it
+ *      surfaces;
+ *   2. no two blocks in one derivation share an identity, and no two
+ *      SIBLINGS anywhere do -- which is the uniqueness any single ForEach
+ *      needs, inline ordinals included;
+ *   3. two projections of one unwritten CST name every node identically --
+ *      identity is a fact about the CST, not about the derivation
+ *      (closes F4);
+ *   4. a block identity that left the tree never comes back. Inline
+ *      ordinals are positional within their block and are not tracked here:
+ *      a re-parsed block reusing ordinal 1 is the SAME slot continuing, not
+ *      a resurrection.
  *
  * The finish tree joins the same asserts: it is the last projection, taken in
  * place on the CST, and the consumer joins it against the boundary trees. */
@@ -1366,6 +1373,38 @@ static int pr_id_ledger_add(pr_id_ledger *ledger, uint32_t id) {
     return 0;
 }
 
+/* Every node in the tree, ENTER order, inline nodes included. */
+static int pr_collect_all(markdown_core_node *root, markdown_core_node ***out, size_t *count) {
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type ev_type;
+    markdown_core_node **items = NULL;
+    size_t n = 0, cap = 0;
+    if (!iter) {
+        return -1;
+    }
+    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        if (ev_type != MARKDOWN_CORE_EVENT_ENTER) {
+            continue;
+        }
+        if (n == cap) {
+            markdown_core_node **grown;
+            cap = cap ? cap * 2 : 64;
+            grown = (markdown_core_node **)realloc(items, cap * sizeof(*items));
+            if (!grown) {
+                free(items);
+                markdown_core_iter_free(iter);
+                return -1;
+            }
+            items = grown;
+        }
+        items[n++] = markdown_core_iter_get_node(iter);
+    }
+    markdown_core_iter_free(iter);
+    *out = items;
+    *count = n;
+    return 0;
+}
+
 static int pr_identity_boundary(
     markdown_core_parser *parser,
     markdown_core_node *tree,
@@ -1377,37 +1416,60 @@ static int pr_identity_boundary(
 ) {
     markdown_core_node *second = NULL;
     markdown_core_node **blocks = NULL, **again = NULL;
-    size_t count = 0, again_count = 0, i, j;
+    markdown_core_node **all = NULL, **all_again = NULL;
+    size_t count = 0, again_count = 0, all_count = 0, all_again_count = 0, i, j;
     pr_id_ledger cur;
     int failed = 0;
 
     memset(&cur, 0, sizeof(cur));
-    if (pr_collect_blocks(tree, &blocks, &count) != 0) {
+    if (pr_collect_blocks(tree, &blocks, &count) != 0 || pr_collect_all(tree, &all, &all_count) != 0) {
         fputs("out of memory\n", stderr);
+        free(blocks);
         return -1;
     }
-    /* 1 and 2: total, and unique within one derivation. */
-    for (i = 0; i < count && !failed; i++) {
-        if (blocks[i]->block_id == 0) {
+    /* 1 and 2: total over every node, blocks unique in the derivation,
+     * siblings unique everywhere. */
+    for (i = 0; i < all_count && !failed; i++) {
+        markdown_core_node *first_sibling, *later_sibling;
+        if (all[i]->identity == 0) {
             fprintf(
                 stderr,
                 "example %d %s: %s at %d:%d has no identity\n",
                 example,
                 boundary,
-                markdown_core_node_get_type_string(blocks[i]),
-                blocks[i]->start_line,
-                blocks[i]->start_column
+                markdown_core_node_get_type_string(all[i]),
+                all[i]->start_line,
+                all[i]->start_column
             );
             failed = 1;
         }
+        for (first_sibling = all[i]->first_child; first_sibling && !failed; first_sibling = first_sibling->next) {
+            for (later_sibling = first_sibling->next; later_sibling && !failed; later_sibling = later_sibling->next) {
+                if (first_sibling->identity == later_sibling->identity) {
+                    fprintf(
+                        stderr,
+                        "example %d %s: two children of a %s share identity %u (%s and %s)\n",
+                        example,
+                        boundary,
+                        markdown_core_node_get_type_string(all[i]),
+                        (unsigned)first_sibling->identity,
+                        markdown_core_node_get_type_string(first_sibling),
+                        markdown_core_node_get_type_string(later_sibling)
+                    );
+                    failed = 1;
+                }
+            }
+        }
+    }
+    for (i = 0; i < count && !failed; i++) {
         for (j = i + 1; j < count && !failed; j++) {
-            if (blocks[i]->block_id == blocks[j]->block_id) {
+            if (blocks[i]->identity == blocks[j]->identity) {
                 fprintf(
                     stderr,
                     "example %d %s: two blocks share id %u (%s at %d:%d, %s at %d:%d)\n",
                     example,
                     boundary,
-                    (unsigned)blocks[i]->block_id,
+                    (unsigned)blocks[i]->identity,
                     markdown_core_node_get_type_string(blocks[i]),
                     blocks[i]->start_line,
                     blocks[i]->start_column,
@@ -1419,36 +1481,37 @@ static int pr_identity_boundary(
             }
         }
     }
-    /* 3: the second projection names every block as the first did. `parser`
-     * is NULL for the finish tree, which has no second projection to take. */
+    /* 3: the second projection names every node -- inline included -- as the
+     * first did. `parser` is NULL for the finish tree, which has no second
+     * projection to take. */
     if (!failed && parser) {
         second = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
-        if (!second || pr_collect_blocks(second, &again, &again_count) != 0) {
+        if (!second || pr_collect_all(second, &all_again, &all_again_count) != 0) {
             fprintf(stderr, "example %d %s: second derivation failed\n", example, boundary);
             failed = 1;
-        } else if (again_count != count) {
+        } else if (all_again_count != all_count) {
             fprintf(
                 stderr,
-                "example %d %s: %zu blocks in one projection, %zu in the next\n",
+                "example %d %s: %zu nodes in one projection, %zu in the next\n",
                 example,
                 boundary,
-                count,
-                again_count
+                all_count,
+                all_again_count
             );
             failed = 1;
         } else {
-            for (i = 0; i < count; i++) {
-                if (blocks[i]->block_id != again[i]->block_id) {
+            for (i = 0; i < all_count; i++) {
+                if (all[i]->identity != all_again[i]->identity || all[i]->type != all_again[i]->type) {
                     fprintf(
                         stderr,
                         "example %d %s: two projections name a %s at %d:%d differently (%u vs %u)\n",
                         example,
                         boundary,
-                        markdown_core_node_get_type_string(blocks[i]),
-                        blocks[i]->start_line,
-                        blocks[i]->start_column,
-                        (unsigned)blocks[i]->block_id,
-                        (unsigned)again[i]->block_id
+                        markdown_core_node_get_type_string(all[i]),
+                        all[i]->start_line,
+                        all[i]->start_column,
+                        (unsigned)all[i]->identity,
+                        (unsigned)all_again[i]->identity
                     );
                     failed = 1;
                     break;
@@ -1459,20 +1522,20 @@ static int pr_identity_boundary(
     /* 4: nothing this boundary shows was ever declared dead, and whatever the
      * previous boundary showed that this one does not is dead from here on. */
     for (i = 0; i < count && !failed; i++) {
-        if (pr_id_ledger_has(dead, blocks[i]->block_id)) {
+        if (pr_id_ledger_has(dead, blocks[i]->identity)) {
             fprintf(
                 stderr,
                 "example %d %s: dead id %u came back as %s at %d:%d\n",
                 example,
                 boundary,
-                (unsigned)blocks[i]->block_id,
+                (unsigned)blocks[i]->identity,
                 markdown_core_node_get_type_string(blocks[i]),
                 blocks[i]->start_line,
                 blocks[i]->start_column
             );
             failed = 1;
         }
-        if (!failed && pr_id_ledger_add(&cur, blocks[i]->block_id) != 0) {
+        if (!failed && pr_id_ledger_add(&cur, blocks[i]->identity) != 0) {
             fputs("out of memory\n", stderr);
             failed = 1;
         }
@@ -1486,9 +1549,11 @@ static int pr_identity_boundary(
             }
         }
     }
-    *blocks_seen += count;
+    *blocks_seen += all_count;
     free(blocks);
     free(again);
+    free(all);
+    free(all_again);
     if (second) {
         markdown_core_node_free(second);
     }
@@ -1559,7 +1624,7 @@ static int case_block_identity(const ts_spec_file *file) {
         }
     }
     printf(
-        "block identity: %zu/%zu examples sound over %zu boundaries, %zu block observations\n",
+        "block identity: %zu/%zu examples sound over %zu boundaries, %zu node observations\n",
         file->count - (size_t)failures,
         file->count,
         boundaries,
@@ -1596,7 +1661,7 @@ static int ti_snapshot(markdown_core_node *root, ti_record *out) {
             return -1;
         }
         out->items[out->count].type = child->type;
-        out->items[out->count].id = child->block_id;
+        out->items[out->count].id = child->identity;
         out->count++;
     }
     return 0;
@@ -1801,6 +1866,67 @@ static int case_block_identity_transitions(const ts_spec_file *file) {
             }
         }
     }
+    /* Inline identity (§4 D4, amended): two inlines with the same content in
+     * one block are distinguishable, and an append to the block leaves the
+     * inlines the reader already had with the ordinals they already had. */
+    {
+        markdown_core_parser *parser = pr_parser_new();
+        uint32_t first_pass[4], second_pass[4];
+        size_t first_count = 0, second_count = 0;
+        markdown_core_node *tree;
+        int ok = parser != NULL;
+        if (ok) {
+            markdown_core_parser_feed(parser, "x [a](u) y [a](u)\n", 18);
+            tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+            ok = tree != NULL;
+            if (ok) {
+                markdown_core_node **nodes = NULL;
+                size_t node_count = 0, i;
+                ok = pr_collect_all(tree, &nodes, &node_count) == 0;
+                for (i = 0; ok && i < node_count; i++) {
+                    if (nodes[i]->type == MARKDOWN_CORE_NODE_LINK && first_count < 4) {
+                        first_pass[first_count++] = nodes[i]->identity;
+                    }
+                }
+                free(nodes);
+                markdown_core_node_free(tree);
+            }
+        }
+        if (ok) {
+            markdown_core_parser_feed(parser, "more\n", 5);
+            tree = markdown_core_parser_finish(parser);
+            ok = tree != NULL;
+            if (ok) {
+                markdown_core_node **nodes = NULL;
+                size_t node_count = 0, i;
+                ok = pr_collect_all(tree, &nodes, &node_count) == 0;
+                for (i = 0; ok && i < node_count; i++) {
+                    if (nodes[i]->type == MARKDOWN_CORE_NODE_LINK && second_count < 4) {
+                        second_pass[second_count++] = nodes[i]->identity;
+                    }
+                }
+                free(nodes);
+                markdown_core_node_free(tree);
+            }
+        }
+        if (parser) {
+            markdown_core_parser_free(parser);
+        }
+        if (!ok || first_count != 2 || second_count != 2 || first_pass[0] == 0 || first_pass[0] == first_pass[1] ||
+            first_pass[0] != second_pass[0] || first_pass[1] != second_pass[1]) {
+            fprintf(
+                stderr,
+                "inline identity: %zu then %zu links, ids %u/%u then %u/%u -- want two distinct, both stable\n",
+                first_count,
+                second_count,
+                first_count > 0 ? (unsigned)first_pass[0] : 0,
+                first_count > 1 ? (unsigned)first_pass[1] : 0,
+                second_count > 0 ? (unsigned)second_pass[0] : 0,
+                second_count > 1 ? (unsigned)second_pass[1] : 0
+            );
+            failures++;
+        }
+    }
     /* Fork 2: the formula promotion carries the id across every projection. */
     {
         if (ti_run("$$e$$\n\nafter\n", r, &n) != 0 || n < 2 || r[0].count != 1) {
@@ -1816,7 +1942,7 @@ static int case_block_identity_transitions(const ts_spec_file *file) {
         }
     }
 
-    printf("block identity transitions: %s\n", failures ? "shapes moved" : "7/7 shapes hold");
+    printf("block identity transitions: %s\n", failures ? "shapes moved" : "8/8 shapes hold");
     return failures ? -1 : 0;
 }
 
