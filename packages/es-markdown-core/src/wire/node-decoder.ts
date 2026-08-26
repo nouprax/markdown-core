@@ -1,7 +1,7 @@
 import type { MarkupBase } from "../model/base.js";
 import type { DirectiveAttribute } from "../model/directive-attribute.js";
 import type { DirectiveLabel } from "../model/directive-label.js";
-import type { Document } from "../model/document.js";
+import type { Semantic } from "../model/semantic.js";
 import type { Markup } from "../model/markup.js";
 import type { TableCell, TableRow } from "../model/table.js";
 import { ParseError, type ParseErrorCode } from "../parse-error.js";
@@ -63,13 +63,13 @@ export class NodeDecoder {
         this.scratch = 0;
     }
 
-    /** The root, without its concrete view: `parseDocument` attaches that. */
-    decodeDocument(node: number): Omit<Document, "concrete" | "ownerOf"> {
-        const document = this.copyMarkup(node);
-        if (document.kind !== "document") {
+    /** The root of the semantic tree; the concrete view travels beside it in the `Read`. */
+    decodeSemantic(node: number): Semantic {
+        const semantic = this.copyMarkup(node);
+        if (semantic.kind !== "document") {
             throw new ParseError("internal", "parser returned an invalid document tree");
         }
-        return document;
+        return semantic;
     }
 
     parseError(error: number): ParseError {

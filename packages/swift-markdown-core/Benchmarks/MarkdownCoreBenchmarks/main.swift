@@ -10,14 +10,14 @@ let repeatCount = 10
 
 func benchmark(_ workload: String, source: String) throws {
     for _ in 0..<warmupCount {
-        _ = try Document.parse(source)
+        _ = try Document(markdown: source).seal()
     }
 
     let clock = ContinuousClock()
     var durations: [Duration] = []
     durations.reserveCapacity(repeatCount)
     for _ in 0..<repeatCount {
-        durations.append(try clock.measure { _ = try Document.parse(source) })
+        durations.append(try clock.measure { _ = try Document(markdown: source).seal() })
     }
     durations.sort()
     let median = durations[repeatCount / 2].components
@@ -30,7 +30,7 @@ func benchmark(_ workload: String, source: String) throws {
         let peakRSSKiB = -1
     #endif
     print(
-        "benchmark runtime=swift boundary=native_parse_and_value_copy workload=\(workload) "
+        "benchmark runtime=swift boundary=native_feed_seal_and_value_copy workload=\(workload) "
             + "bytes=\(source.utf8.count) warmup=\(warmupCount) repeats=\(repeatCount) "
             + "median_ns=\(Int64(medianNanoseconds)) peak_rss_kib=\(peakRSSKiB)"
     )

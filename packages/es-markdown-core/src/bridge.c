@@ -55,24 +55,12 @@ static void es_apply_options(markdown_core_parse_options *options, uint32_t flag
     options->directives = (flags & (1u << 8)) != 0;
 }
 
-markdown_core_document *es_document_parse(
-    const uint8_t *source,
-    size_t length,
-    uint32_t flags,
-    markdown_core_error **error
-) {
-    markdown_core_parse_options options;
-    es_apply_options(&options, flags);
-    return markdown_core_document_parse(source, length, &options, error);
-}
-
 void es_document_free(markdown_core_document *document) { markdown_core_document_free(document); }
 
-/* THE STREAM (docs/STREAMING.md §4 D5) crosses this bridge on the parse's own
- * path: `es_session_feed` and `es_session_finish` answer with the same
- * document-or-error pair `es_document_parse` answers with, so the binding
- * reads a streamed document through exactly the decoder the one-shot one
- * uses, and frees it the same way. */
+/* THE STREAM (docs/STREAMING.md §4 D5, under 3.0's names) is the one entry
+ * this bridge has: `es_session_feed` and `es_session_finish` answer with the
+ * same document-or-error pair, so the binding reads every document through
+ * one decoder and frees it one way. */
 
 /* The one failure `markdown_core_session_new` can report is an allocation
  * failure, so NULL is the whole answer and the error it came with -- which

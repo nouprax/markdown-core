@@ -30,7 +30,7 @@ public struct List: Markup {
     public let tight: Bool
 
     /// Dispatches to the visitor's `List` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: Visitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension List {
@@ -61,7 +61,7 @@ public struct ListItem: Markup {
     public let checked: Bool?
 
     /// Dispatches to the visitor's `ListItem` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: Visitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension ListItem {

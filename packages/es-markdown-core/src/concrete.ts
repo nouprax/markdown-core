@@ -26,12 +26,16 @@ export class Concrete {
     }
 
     /** How many lines the normalized source has. */
-    get lineCount(): number {
+    get lines(): number {
         return this.#lineStarts.length;
     }
 
-    /** Where `line` begins in `source`, counting lines from 1. */
-    lineStart(line: number): number {
+    /**
+     * The byte offset in `source` where `line` begins, counting lines from 1.
+     * An OFFSET, not a boundary: this indexes bytes, which a `Scope` never
+     * does.
+     */
+    offset(line: number): number {
         if (!Number.isInteger(line) || line < 1 || line > this.#lineStarts.length) {
             throw new RangeError(`no line ${line}`);
         }

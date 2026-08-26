@@ -8,8 +8,47 @@ promised to remain compatible between releases.
 
 The engine is reconstructed from the 1.0 baseline. The 2.0.0 line is withdrawn:
 its major version was bought with a session and incremental parsing API that no
-longer exists.
+longer exists. 3.0.0 ships a different streaming surface, described below.
 
+- The bindings' one entry is the living `Document`, fed in pieces and
+  answering with `Read` values. Every `feed` returns the read after those
+  bytes — a mid-stream projection whose incomplete trailing line is not yet in
+  it and whose open constructs are projected as they stand — and `seal` ends
+  the stream and releases the native shell, returning the sealed read,
+  identical for the same bytes however they were fed. The whole-text parse is
+  `Document(markdown).seal()`: a one-chunk stream, so the bindings'
+  `Document.parse` one-shot entries are deleted and feed/seal partition
+  invariance is the only identity there is. Every read is a plain value that
+  retains nothing native and outlives the document. The block is the minimal
+  update unit; the model is specified in `docs/STREAMING.md`. This is not the
+  withdrawn 2.0.0 surface: there is no edit, no fork, and no snapshot handle —
+  the returned read is the only answer there is. In C the surface keeps both
+  entries under its own names: `markdown_core_document_parse`, and
+  `markdown_core_session_new`, `_feed`, `_finish` and `_free`.
+- A `Read` is the parse under its two total views: `semantic`, the tree, and
+  `concrete`, the normalized source its scopes are counted against — the pair
+  the C handle already publishes as siblings, copied out. The root node type
+  is renamed `Document` → `Semantic` in all three bindings, completing the
+  `concrete: Concrete` naming symmetry; it is an ordinary `Markup` carrying
+  nothing but `content` and `scope`, and the visitor case is `visitSemantic`
+  (Swift: `visit(_: Semantic)`). The C node kind and the canonical dump label
+  keep `document`/`Document`. Swift's visitor protocol `MarkupVisitor` is
+  renamed `Visitor`, matching Kotlin and ECMAScript.
+- `Concrete.lineCount` is renamed `lines`, and `lineStart` is renamed
+  `offset(line)` (Swift: `offset(of:)`): the answer is a byte OFFSET into
+  `source`, which a `Scope` boundary never is, and the old name invited the
+  one confusion the two views exist to prevent.
+- The ECMAScript `Document` also implements `Symbol.dispose`, so
+  `using document = new Document()` releases an abandoned stream at scope
+  exit; `dispose()` remains, is idempotent, and is only owed for a stream
+  abandoned before `seal`. Because sealing releases the shell, no public call
+  can reach a native session error any more, and the coverage ledgers'
+  unpinned defensive surface moved with it: in ECMAScript, `session.ts`'s
+  allowance is retired and `document.ts` and `parser.ts` carry the
+  unreachable allocation-failure and error-release arms; in Swift,
+  `NativeValues.swift`'s native-error constructors join for the same reason,
+  and the root's precondition arms move from `Document.swift` to
+  `Semantic.swift` beside `Read.swift`'s copy-in guard.
 - Keep the bytes of a footnote call whose label crosses a line ending, and read
   a label spelled with a character reference out of the source rather than out
   of a released buffer.
@@ -54,9 +93,9 @@ longer exists.
   source an element occupies — not a byte range, and no substring is taken with
   it. A block closed by a blank line therefore ends at column 0 of that line,
   which is what cmark-gfm reports and what an editor needs.
-- `Document.concrete` is the normalized source and its line index: the text a
-  scope's coordinates are counted against, which is not the string that was
-  passed in wherever it held a NUL.
+- The concrete view (`Read.concrete`) is the normalized source and its line
+  index: the text a scope's coordinates are counted against, which is not the
+  string that was passed in wherever it held a NUL.
 - `markdown_core_document_root` is renamed `markdown_core_document_semantic`,
   because the parse now has two total views and the old name did not say which
   one it returned.

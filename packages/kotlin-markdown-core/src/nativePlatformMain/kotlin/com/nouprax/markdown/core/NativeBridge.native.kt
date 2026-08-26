@@ -3,7 +3,6 @@
 package com.nouprax.markdown.core
 
 import com.nouprax.markdown.core.internal.nativebridge.markdown_core_kotlin_free
-import com.nouprax.markdown.core.internal.nativebridge.markdown_core_kotlin_parse
 import com.nouprax.markdown.core.internal.nativebridge.markdown_core_kotlin_session
 import com.nouprax.markdown.core.internal.nativebridge.markdown_core_kotlin_session_feed
 import com.nouprax.markdown.core.internal.nativebridge.markdown_core_kotlin_session_finish
@@ -44,32 +43,6 @@ private inline fun payload(invoke: (CPointer<CPointerVar<UByteVar>>, CPointer<si
 
 private fun Long.toSession(): CPointer<markdown_core_kotlin_session> =
     requireNotNull(toCPointer<markdown_core_kotlin_session>())
-
-internal actual fun nativeParse(
-    source: ByteArray,
-    options: ParseOptions,
-): ByteArray =
-    payload { output, outputLength ->
-        if (source.isEmpty()) {
-            markdown_core_kotlin_parse(
-                null,
-                0u,
-                options.toNativeMask().toUInt(),
-                output,
-                outputLength,
-            )
-        } else {
-            source.usePinned { pinned ->
-                markdown_core_kotlin_parse(
-                    pinned.addressOf(0).reinterpret(),
-                    source.size.toULong(),
-                    options.toNativeMask().toUInt(),
-                    output,
-                    outputLength,
-                )
-            }
-        }
-    }
 
 internal actual fun nativeSessionNew(options: ParseOptions): Long {
     val session =

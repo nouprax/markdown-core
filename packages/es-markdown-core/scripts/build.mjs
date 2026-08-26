@@ -39,7 +39,6 @@ const output = path.join(dist, "markdown-core.wasm");
 const exported = [
     "malloc",
     "free",
-    "es_document_parse",
     "es_document_free",
     "es_document_root",
     "es_document_source",

@@ -42,8 +42,8 @@ public struct Walker: Sendable {
 /// Every child of a node, in the order the C tree holds them. `Walker` walks
 /// with it, so a walk and a hand-written descent cannot disagree about what a
 /// node's children are.
-struct ChildrenVisitor: MarkupVisitor {
-    mutating func visit(_ node: Document) -> [any Markup] { node.content }
+struct ChildrenVisitor: Visitor {
+    mutating func visit(_ node: Semantic) -> [any Markup] { node.content }
 
     mutating func visit(_ node: BlockQuote) -> [any Markup] { node.content }
 

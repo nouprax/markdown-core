@@ -2,6 +2,13 @@ import Foundation
 import MarkdownCore
 import Testing
 
+/// The tree of a whole-text parse: `Document(markdown:options:).seal()`,
+/// keeping only the semantic view; the streamed cases spell the full entry
+/// out themselves.
+private func parse(_ source: String, options: ParseOptions = .init()) throws -> Semantic {
+    try Document(markdown: source, options: options).seal().semantic
+}
+
 @Suite("conformance") struct ConformanceSuite {
     @Test("public node kinds are reachable through Swift values")
     func schemaReachability() throws {
@@ -15,11 +22,11 @@ import Testing
                 + ":::container[Title]{kind=demo}\nBody\n:::\n",
             "$$\ny\n$$\n",
         ]
-        let documents = try sources.map { try Document.parse($0) }
+        let documents = try sources.map { try parse($0) }
         let nodes = documents.flatMap(flatten)
         let kinds = Set(nodes.map(kindName))
         let expected: Set<String> = [
-            "Document", "BlockQuote", "Paragraph", "Heading", "ThematicBreak", "List",
+            "Semantic", "BlockQuote", "Paragraph", "Heading", "ThematicBreak", "List",
             "ListItem", "CodeBlock", "HTMLBlock", "FormulaBlock", "Table",
             "DirectiveBlock", "DirectiveLabel", "FootnoteDefinition", "Text", "SoftBreak",
             "LineBreak",
@@ -33,7 +40,7 @@ import Testing
 
     @Test("field and nullability mapping uses Swift-native types")
     func fieldsAndNullability() throws {
-        let document = try Document.parse(
+        let document = try parse(
             "3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image \"title\")\n"
         )
         let ordered = try #require(document.content[0] as? MarkdownCore.List)
@@ -56,7 +63,7 @@ import Testing
     @Test("all manifest cases match the shared canonical AST spec")
     func sharedCanonicalAST() throws {
         for testCase in try canonicalCases() {
-            let document = try Document.parse(testCase.source, options: testCase.parseOptions.value)
+            let document = try parse(testCase.source, options: testCase.parseOptions.value)
             #expect(TreeDumper.dump(document) == testCase.expected, Comment(rawValue: testCase.name))
             #expect(document.dump() == testCase.expected, Comment(rawValue: testCase.name))
         }
@@ -70,19 +77,19 @@ import Testing
         // line endings and construct delimiters somewhere in every case.
         for testCase in try canonicalCases() {
             let options = testCase.parseOptions.value
-            let session = try Session(options: options)
+            let document = try Document(options: options)
             let bytes = Array(testCase.source.utf8)
             var start = 0
             while start < bytes.count {
                 let end = min(start + 7, bytes.count)
-                _ = try session.feed(chunk: Array(bytes[start..<end]))
+                _ = try document.feed(chunk: Array(bytes[start..<end]))
                 start = end
             }
-            let sealed = try session.finish()
-            #expect(TreeDumper.dump(sealed) == testCase.expected, Comment(rawValue: testCase.name))
+            let sealed = try document.seal()
+            #expect(TreeDumper.dump(sealed.semantic) == testCase.expected, Comment(rawValue: testCase.name))
             #expect(sealed.dump() == testCase.expected, Comment(rawValue: testCase.name))
-            let oneShot = try Document.parse(testCase.source, options: options)
-            #expect(sealed.concrete == oneShot.concrete, Comment(rawValue: testCase.name))
+            let wholeText = try Document(markdown: testCase.source, options: options).seal()
+            #expect(sealed.concrete == wholeText.concrete, Comment(rawValue: testCase.name))
         }
     }
 }

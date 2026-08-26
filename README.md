@@ -17,26 +17,35 @@ divergence history, and license relationship.
 
 ## Usage
 
-All platform APIs have one synchronous parse entry point: `Document.parse` in
-Swift, Kotlin, and ECMAScript, and `markdown_core_document_parse` in C.
+In Swift, Kotlin, and ECMAScript the living **`Document`** is the one entry
+into the parser: a `Document` is fed text — in one piece or many — and yields
+**`Read`** values. Every `feed` returns the read after those bytes: an
+immutable value the caller owns outright — a mid-stream projection whose
+incomplete trailing line is not yet in it and whose open constructs are
+projected as they stand. **`seal`** ends the stream and releases the native
+shell, returning the sealed read — identical for the same bytes however they
+were fed. The whole-text parse is one line, `Document(markdown).seal()`: a
+one-chunk stream. Every read stays readable after every later feed and after
+the document itself is gone. The streaming model is specified in
+[docs/STREAMING.md](docs/STREAMING.md).
 
-A parse produces the AST, and every node carries a **`scope`**: the pair of
-`(line, column)` **boundaries** the element occupies. A scope is what a consumer
-follows to map an element back to the source it came from — it is not a byte
-range, and no substring is taken with it.
+A `Read` is the parse under its two total views, and the pair is closed over
+its own coordinate system. **`semantic`** (the root type `Semantic`, an
+ordinary `Markup` node) is the tree with policy applied; every node carries a
+**`scope`** — the pair of `(line, column)` **boundaries** the element
+occupies, not a byte range, and no substring is taken with it. **`concrete`**
+is what those numbers are counted against: the **normalized source** — UTF-8
+as fed, every NUL replaced by the three bytes of U+FFFD, every line ending a
+single `\n` and every line having one — with its line index (`lines`,
+`offset(line)`), because an input containing a NUL has a buffer whose columns
+no longer agree with the parser's.
 
-Those numbers are counted against the **normalized source**, not against the
-string you passed: UTF-8 as fed, every NUL replaced by the three bytes of
-U+FFFD, every line ending a single `\n` and every line having one. `concrete`
-publishes that source and its line index, because an input containing a NUL has
-a buffer whose columns no longer agree with the parser's.
-
-A `Document` IS the AST and carries `concrete` beside its `content`. In C the
-two are siblings — a `markdown_core_document` is a handle and the root is a node
-it lends out — and in the bindings they are not, because the handle is gone by
-the time `parse` returns. The Swift, Kotlin, and ECMAScript bindings copy both
-into platform values and retain no native parser handle afterwards. The C API
-exposes an owned document with borrowed node views.
+In C the two views are siblings on one handle — a `markdown_core_document`
+lends out the root node and the source — which is exactly the shape `Read`
+copies out; the bindings retain no native parser handle inside a read. The C
+facade keeps its own names and both of its entries:
+`markdown_core_document_parse` for a complete input, and the session
+(`markdown_core_session_new`, `_feed`, `_finish`, `_free`) for a stream.
 
 The default parse options enable smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas (including
@@ -57,12 +66,16 @@ The root Swift package supports iOS 18 and macOS 15 or later and exports the
 ```swift
 import MarkdownCore
 
-let document = try Document.parse(
-    "# Hello",
+let read = try Document(
+    markdown: "# Hello",
     options: ParseOptions(directives: false)
-)
-print(document.dump())
-print(document.concrete.lineCount)
+).seal()
+print(read.dump())
+print(read.concrete.lines)
+
+let streaming = try Document()
+let updated = try streaming.feed(chunk: "# Str")
+let grown = try streaming.feed(chunk: "eamed\n") // then .seal()
 ```
 
 The Swift AST is an immutable, `Sendable` value tree. The module also provides
@@ -86,12 +99,14 @@ kotlin {
 import com.nouprax.markdown.core.ParseOptions
 import com.nouprax.markdown.core.Document
 
-val document = Document.parse(
-    "# Hello",
-    ParseOptions(directives = false),
-)
-println(document.dump())
-println(document.concrete.lineCount)
+val read = Document("# Hello", ParseOptions(directives = false)).seal()
+println(read.dump())
+println(read.concrete.lines)
+
+Document().use { document ->
+    val updated = document.feed("# Str")
+    val grown = document.feed("eamed\n") // then .seal()
+}
 ```
 
 The published targets are Android (API 21 or later), JVM 17, macOS arm64, and
@@ -111,12 +126,15 @@ pnpm add @nouprax/es-markdown-core
 ```js
 import { Document, TreeDumper, Walker } from "@nouprax/es-markdown-core";
 
-const document = Document.parse("# Hello", { directives: false });
-new Walker().walk(document, (event, node) => {
+const read = new Document("# Hello", { directives: false }).seal();
+new Walker().walk(read.semantic, (event, node) => {
   console.log(event, node.kind, node.scope);
 });
-console.log(TreeDumper.dump(document));
-console.log(document.concrete.lineCount);
+console.log(TreeDumper.dump(read.semantic));
+console.log(read.concrete.lines);
+
+using streaming = new Document(); // dispose() also works
+const updated = streaming.feed("# Streamed\n");
 ```
 
 The package supports Node.js 20 or later and browser environments that can load
@@ -143,6 +161,16 @@ document and must not outlive it. Error objects and allocated dump buffers use
 their corresponding `markdown_core_error_free` and `markdown_core_dump_free`
 functions.
 
+A streaming parse opens a session with `markdown_core_session_new`, feeds
+chunks with `markdown_core_session_feed`, and seals the stream with
+`markdown_core_session_finish`. `feed` and `finish` each return an owned
+document released with `markdown_core_document_free`;
+`markdown_core_session_free` releases the session itself. The C API also reports the parse's ordered
+diagnostic list — the places where a construct the author wrote did not become
+one and neither the tree nor the concrete view can say so — through
+`markdown_core_document_diagnostic_count` and
+`markdown_core_document_diagnostic_at`.
+
 The library initializes itself on the first parse. Concurrent parsing and
 read-only access are safe; callers must ensure that a document is freed only
 after all access to that document has finished. The complete C contract is in
@@ -161,7 +189,8 @@ after all access to that document has finished. The complete C contract is in
 ## Build
 
 Set up or validate the pinned contributor toolchain with
-[`docs/development-environment.md`](docs/development-environment.md). The
+[`docs/deprecated/development-environment.md`](docs/deprecated/development-environment.md)
+(archived with the engine reset, but still accurate for the toolchain). The
 non-interactive entry points are `scripts/init-environment.sh --check` and
 `scripts/init-environment.sh --install`.
 
@@ -261,10 +290,16 @@ the C test suite.
 ## Contributing and releasing
 
 Pinned compiler, SDK, runtime, and IDE versions are documented in
-[docs/toolchains.md](docs/toolchains.md). Release maintainers must follow
-[docs/releasing.md](docs/releasing.md), including the no-secret release dry run,
-protected tag/environment approval, Maven signing, npm OIDC, artifact
-attestation, and post-publication verification. Release notes start from
+[docs/deprecated/toolchains.md](docs/deprecated/toolchains.md). The release
+process itself is defined by
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which reads
+release notes from `docs/deprecated/releases/<VERSION>.md` and provides a
+`workflow_dispatch` recovery path. The archived runbook
+[docs/deprecated/releasing.md](docs/deprecated/releasing.md) records the
+surrounding practice — the no-secret release dry run, protected
+tag/environment approval, Maven signing, npm OIDC, artifact attestation, and
+post-publication verification — but has partially diverged from that workflow;
+where the two disagree, the workflow is right. Release notes start from
 [CHANGELOG.md](CHANGELOG.md).
 
 ## License

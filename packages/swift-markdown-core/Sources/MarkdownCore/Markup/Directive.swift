@@ -17,7 +17,7 @@ public struct Directive: Markup {
     public let label: DirectiveLabel?
 
     /// Dispatches to the visitor's `Directive` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: Visitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension Directive {

@@ -1599,6 +1599,23 @@ back in the vocabulary that produced them.
   ([tests/CMakeLists.txt:120](../packages/markdown-core/tests/CMakeLists.txt#L120)) —
   so T12 exports what this shape needs and `scripts/audit-public-surface.sh`
   gates the result the way it gates every symbol today.
+
+  **Owner naming ruling, 2026-08-26 — the shape stands, the names moved.**
+  D5's mechanics are unchanged; the 3.0 bindings spell them as: the session is
+  the living **`Document`** (in an editor, the document IS the continuously
+  fed thing); `finish` is **`seal`**, and sealing also releases the native
+  shell — a sealed document is a closed one; the value a feed or seal returns
+  is a **`Read`** — `{ semantic, concrete }`, the pair being closed over its
+  own coordinate system; the tree's root node is **`Semantic`**, an ordinary
+  `Markup` completing the `concrete: Concrete` naming symmetry (the C kind
+  and the dump label keep `document`/`Document`); `Concrete.lineCount` and
+  `lineStart` are **`lines`** and **`offset(line)`** — an offset indexes
+  bytes, which a `Scope` never does. The bindings' one-shot entries are
+  deleted: the whole-text parse is `Document(markdown).seal()`, a
+  one-chunk stream, so feed/seal partition invariance is the only identity
+  and the duplicate one-shot bridge paths die. The C facade keeps its own
+  names and both entries; "the document" below refers to D5's returned value,
+  today's `Read`.
 - **D6 — bindings with C, or C first? · RULED: together, one release.** Swift,
   Kotlin and ES land the shape in the same release as the C entry point. Swift
   is the semantic canon. Each binding's conformance entry already exists

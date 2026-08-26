@@ -45,8 +45,8 @@ private struct DumpRecord {
     let children: Int
 }
 
-private struct DumpVisitor: MarkupVisitor {
-    mutating func visit(_ node: Document) -> DumpRecord {
+private struct DumpVisitor: Visitor {
+    mutating func visit(_ node: Semantic) -> DumpRecord {
         record("Document", node, children: node.content.count)
     }
 

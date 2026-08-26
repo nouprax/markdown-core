@@ -67,16 +67,16 @@ printf '%s\n' \
     '        )' \
     '    ]' \
     ')' >"$consumer/Package.swift"
-# `Document.parse` is the entry point Step 12 settled. This snippet was
-# restored from `main`, where `Document` had a throwing string initializer, and
-# it named a symbol this branch does not have -- so the gate failed on the
-# CONSUMER after the archive itself had already built clean.
+# `Document(markdown:).seal()` is the whole-text entry the 3.0 surface
+# settled: the living document is the one way in, and the sealed read carries
+# the two views. Keep this snippet in lockstep with the public API -- it has
+# already caught one restore that named a symbol the branch did not have.
 printf '%s\n' \
     'import MarkdownCore' \
     '' \
-    'let document = try Document.parse("## archived consumer")' \
-    'guard (document.content.first as? Heading)?.level == 2 else { fatalError("parse failed") }' \
-    'print(document.dump())' >"$consumer/Sources/Consumer/main.swift"
+    'let read = try Document(markdown: "## archived consumer").seal()' \
+    'guard (read.semantic.content.first as? Heading)?.level == 2 else { fatalError("parse failed") }' \
+    'print(read.dump())' >"$consumer/Sources/Consumer/main.swift"
 
 CLANG_MODULE_CACHE_PATH="$temporary/consumer-module-cache" \
     swift run --disable-sandbox --package-path "$consumer" Consumer >/dev/null

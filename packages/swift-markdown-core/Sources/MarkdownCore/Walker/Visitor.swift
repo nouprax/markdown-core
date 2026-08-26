@@ -4,9 +4,9 @@
 /// conformance that forgets a kind does not compile. That is the point: the
 /// kind set is closed, and a kind added tomorrow breaks every visitor loudly
 /// rather than being silently skipped.
-public protocol MarkupVisitor {
+public protocol Visitor {
     associatedtype Result
-    mutating func visit(_ node: Document) -> Result
+    mutating func visit(_ node: Semantic) -> Result
     mutating func visit(_ node: BlockQuote) -> Result
     mutating func visit(_ node: Paragraph) -> Result
     mutating func visit(_ node: Heading) -> Result

@@ -8,7 +8,7 @@
         "module": "NodeNext",
         "moduleResolution": "NodeNext",
         "target": "ES2022",
-        "lib": ["ES2023", "DOM"],
+        "lib": ["ES2023", "ESNext.Disposable", "DOM"],
         "exactOptionalPropertyTypes": true,
         "forceConsistentCasingInFileNames": true,
         "isolatedDeclarations": true,

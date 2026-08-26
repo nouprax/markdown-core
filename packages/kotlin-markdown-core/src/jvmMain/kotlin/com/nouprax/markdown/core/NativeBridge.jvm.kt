@@ -3,14 +3,6 @@ package com.nouprax.markdown.core
 import java.nio.file.Files
 import java.nio.file.Path
 
-internal actual fun nativeParse(
-    source: ByteArray,
-    options: ParseOptions,
-): ByteArray {
-    DesktopNativeLoader.ensureLoaded()
-    return JvmNative.parse(source, options.toNativeMask())
-}
-
 internal actual fun nativeSessionNew(options: ParseOptions): Long {
     DesktopNativeLoader.ensureLoaded()
     val session = JvmNative.sessionNew(options.toNativeMask())
@@ -36,13 +28,7 @@ internal object JvmNative {
     // synthetic flag, so the binding still links; only javac stops resolving it.
     // The session entries carry it for the same reason, plus one of their own:
     // a raw `long` handle freed twice or fed after free is native memory
-    // corruption, and only `Session` sequences those calls.
-    @JvmSynthetic
-    external fun parse(
-        source: ByteArray,
-        optionsMask: Int,
-    ): ByteArray
-
+    // corruption, and only `Document` sequences those calls.
     @JvmSynthetic
     external fun sessionNew(optionsMask: Int): Long
 

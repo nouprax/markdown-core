@@ -1,6 +1,6 @@
 import { Concrete } from "../concrete.js";
-import type { Document } from "../model/document.js";
 import { ParseError } from "../parse-error.js";
+import type { Read } from "../read.js";
 import type { ParseOptions } from "../parse-options.js";
 import { NodeDecoder } from "../wire/node-decoder.js";
 import { native } from "./native.js";
@@ -23,17 +23,6 @@ const options = [
     { name: "directives", defaultValue: true, mask: 1 << 8 }
 ] as const satisfies readonly OptionDescriptor[];
 
-const utf8Encoder = new TextEncoder();
-
-export function parseDocument(source: string, parseOptions: ParseOptions = {}): Document {
-    if (typeof source !== "string") throw new TypeError("source must be a string");
-    const flags = optionsMask(parseOptions);
-    const bytes = utf8Encoder.encode(source);
-    return withHeapBytes(bytes, (sourcePointer) =>
-        copyOut((errorOutput) => native.es_document_parse(sourcePointer, bytes.length, flags, errorOutput))
-    );
-}
-
 /**
  * Copies `bytes` into WASM memory for the duration of `action`, and frees the
  * copy on the way out. The pointer is valid for exactly `bytes.length` bytes
@@ -51,15 +40,13 @@ export function withHeapBytes<Result>(bytes: Uint8Array, action: (pointer: numbe
 }
 
 /**
- * THE ONE WAY A DOCUMENT LEAVES WASM. `invoke` runs a native call that
- * answers with a document pointer or writes an error behind the given output
- * slot -- the one-shot parse, a session's `feed`, and its `finish` all answer
- * that way -- and this copies the document out as a value or throws the
- * `ParseError` behind the slot. Every native handle is released before it
- * returns, so a streamed document borrows nothing, exactly as a parsed one
- * does.
+ * THE ONE WAY A READ LEAVES WASM. `invoke` runs a native call that answers
+ * with a document pointer or writes an error behind the given output slot --
+ * a document's `feed` and its `seal` both answer that way -- and this copies
+ * the read out as a value or throws the `ParseError` behind the slot. Every
+ * native handle is released before it returns, so a read borrows nothing.
  */
-export function copyOut(invoke: (errorOutput: number) => number): Document {
+export function copyOut(invoke: (errorOutput: number) => number): Read {
     const errorOutput = allocate(Uint32Array.BYTES_PER_ELEMENT);
     let documentPointer = 0;
     let errorPointer = 0;
@@ -71,8 +58,8 @@ export function copyOut(invoke: (errorOutput: number) => number): Document {
         const decoder = new NodeDecoder(native);
         try {
             if (!documentPointer) throw decoder.parseError(errorPointer);
-            return withConcrete(
-                decoder.decodeDocument(native.es_document_root(documentPointer)),
+            return makeRead(
+                decoder.decodeSemantic(native.es_document_root(documentPointer)),
                 readConcrete(documentPointer)
             );
         } finally {
@@ -94,16 +81,45 @@ export function copyOut(invoke: (errorOutput: number) => number): Document {
  * of any size.
  */
 /**
- * The root, given the source its scopes are counted against.
- *
- * Defined ON the decoded root rather than spread into a new object: `dump` is
- * not enumerable, and a spread would leave it behind. `concrete` is data and
- * enumerates.
+ * Runs a native call whose read is DISCARDED -- the `Document` constructor's
+ * initial feed -- so an error still surfaces and a healthy tree is not
+ * decoded just to be thrown away. The native document is freed on the way
+ * out, exactly as `copyOut` frees the one it copies.
  */
-function withConcrete(root: Omit<Document, "concrete">, concrete: Concrete): Document {
-    const document = root as Document;
-    Object.defineProperty(document, "concrete", { enumerable: true, value: concrete });
-    return document;
+export function discardOut(invoke: (errorOutput: number) => number): void {
+    const errorOutput = allocate(Uint32Array.BYTES_PER_ELEMENT);
+    let documentPointer = 0;
+    let errorPointer = 0;
+    try {
+        dataView().setUint32(errorOutput, 0, true);
+        documentPointer = invoke(errorOutput);
+        errorPointer = dataView().getUint32(errorOutput, true);
+        if (!documentPointer) {
+            const decoder = new NodeDecoder(native);
+            try {
+                throw decoder.parseError(errorPointer);
+            } finally {
+                decoder.dispose();
+            }
+        }
+    } finally {
+        if (documentPointer) native.es_document_free(documentPointer);
+        if (errorPointer) native.es_error_free(errorPointer);
+        native.free(errorOutput);
+    }
+}
+
+/**
+ * The pair, sealed shut: `semantic` and `concrete` are data and enumerate;
+ * `dump` is a convenience and does not.
+ */
+function makeRead(semantic: Read["semantic"], concrete: Concrete): Read {
+    const read = { semantic, concrete } as { semantic: Read["semantic"]; concrete: Concrete; dump?: () => string };
+    Object.defineProperty(read, "dump", {
+        enumerable: false,
+        value: () => semantic.dump()
+    });
+    return read as Read;
 }
 
 function readConcrete(documentPointer: number): Concrete {
