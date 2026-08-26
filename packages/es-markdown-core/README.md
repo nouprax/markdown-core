@@ -37,6 +37,32 @@ recursively readonly TypeScript properties. The JavaScript objects are not
 runtime-frozen. The package exposes parsing and AST traversal, not rendering or
 AST mutation.
 
+## Stream Markdown
+
+`Session` parses a document that arrives in pieces. Every `feed` returns the
+document after those bytes — a mid-stream projection whose incomplete trailing
+line is not yet in it — and `finish` seals the stream, returning the same
+document `Document.parse` produces for the same bytes. A chunk is a string, or
+a `Uint8Array` of raw UTF-8 that may end anywhere, mid-character included:
+
+```js
+import { Session } from "@nouprax/es-markdown-core";
+
+const session = new Session();
+try {
+  let updated = session.feed("# Str");
+  updated = session.feed("eamed\n");
+  console.log(session.finish().dump());
+} finally {
+  session.dispose();
+}
+```
+
+Every returned document is a plain value: it stays readable after later feeds
+and after the session is disposed. After `finish`, further `feed` and `finish`
+calls throw `ParseError` with code `invalidArgument`; `dispose` releases the
+native session, is idempotent, and is owed exactly once per session.
+
 ## Traverse and Inspect
 
 Use `Walker` for a read-only depth-first traversal:

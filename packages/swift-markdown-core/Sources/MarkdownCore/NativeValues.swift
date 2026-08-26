@@ -13,6 +13,33 @@ extension ParseError {
             message: markdown_core_error_get_message(error).requiredString
         )
     }
+
+    /// Reads the native error into a value and FREES it. Every C entry point
+    /// that fails hands its error object over exactly once, so the handover
+    /// ends here — the one place a throw is built from a native failure.
+    static func take(_ error: OpaquePointer?) -> ParseError {
+        defer { markdown_core_error_free(error) }
+        return ParseError(from: error)
+    }
+}
+
+extension ParseOptions {
+    /// The C spelling of this option set, field for field. One mapping, read
+    /// by the one-shot parse and the session alike, so the two entries cannot
+    /// disagree about what an option means.
+    var native: markdown_core_parse_options {
+        markdown_core_parse_options(
+            smart_punctuation: smartPunctuation,
+            footnotes: footnotes,
+            strip_html_comments: stripHTMLComments,
+            tables: tables,
+            strikethrough: strikethrough,
+            autolinks: autolinks,
+            task_lists: taskLists,
+            formulas: formulas,
+            directives: directives
+        )
+    }
 }
 
 extension Scope {

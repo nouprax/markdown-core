@@ -8,6 +8,16 @@ export interface NativeExports extends WebAssembly.Exports {
     es_document_source(document: number, dataOutput: number, lengthOutput: number): void;
     es_document_line_count(document: number): number;
     es_document_line_starts(document: number, output: number): void;
+    /** Returns the session, or 0 for an allocation failure -- the one failure
+     * opening a session can report, so 0 is the whole answer and no error
+     * crosses the wire. */
+    es_session_new(flags: number): number;
+    /** Returns the document after those bytes, on exactly the wire
+     * `es_document_parse` answers on: a document pointer, or 0 with the error
+     * behind `errorOutput`. */
+    es_session_feed(session: number, chunk: number, length: number, errorOutput: number): number;
+    es_session_finish(session: number, errorOutput: number): number;
+    es_session_free(session: number): void;
     es_error_code(error: number): number;
     es_error_free(error: number): void;
     es_node_kind(node: number): number;

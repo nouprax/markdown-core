@@ -26,18 +26,46 @@ const options = [
 const utf8Encoder = new TextEncoder();
 
 export function parseDocument(source: string, parseOptions: ParseOptions = {}): Document {
-    validateInput(source, parseOptions);
+    if (typeof source !== "string") throw new TypeError("source must be a string");
+    const flags = optionsMask(parseOptions);
     const bytes = utf8Encoder.encode(source);
-    let sourcePointer = 0;
-    let errorOutput = 0;
+    return withHeapBytes(bytes, (sourcePointer) =>
+        copyOut((errorOutput) => native.es_document_parse(sourcePointer, bytes.length, flags, errorOutput))
+    );
+}
+
+/**
+ * Copies `bytes` into WASM memory for the duration of `action`, and frees the
+ * copy on the way out. The pointer is valid for exactly `bytes.length` bytes
+ * (one byte is still reserved for an empty input, because `malloc(0)` may
+ * answer 0 and 0 is this boundary's failure value).
+ */
+export function withHeapBytes<Result>(bytes: Uint8Array, action: (pointer: number) => Result): Result {
+    const pointer = allocate(Math.max(bytes.length, 1));
+    try {
+        new Uint8Array(native.memory.buffer, pointer, bytes.length).set(bytes);
+        return action(pointer);
+    } finally {
+        native.free(pointer);
+    }
+}
+
+/**
+ * THE ONE WAY A DOCUMENT LEAVES WASM. `invoke` runs a native call that
+ * answers with a document pointer or writes an error behind the given output
+ * slot -- the one-shot parse, a session's `feed`, and its `finish` all answer
+ * that way -- and this copies the document out as a value or throws the
+ * `ParseError` behind the slot. Every native handle is released before it
+ * returns, so a streamed document borrows nothing, exactly as a parsed one
+ * does.
+ */
+export function copyOut(invoke: (errorOutput: number) => number): Document {
+    const errorOutput = allocate(Uint32Array.BYTES_PER_ELEMENT);
     let documentPointer = 0;
     let errorPointer = 0;
     try {
-        sourcePointer = allocate(Math.max(bytes.length, 1));
-        errorOutput = allocate(Uint32Array.BYTES_PER_ELEMENT);
-        new Uint8Array(native.memory.buffer, sourcePointer, bytes.length).set(bytes);
         dataView().setUint32(errorOutput, 0, true);
-        documentPointer = native.es_document_parse(sourcePointer, bytes.length, optionsMask(parseOptions), errorOutput);
+        documentPointer = invoke(errorOutput);
         errorPointer = dataView().getUint32(errorOutput, true);
 
         const decoder = new NodeDecoder(native);
@@ -53,8 +81,7 @@ export function parseDocument(source: string, parseOptions: ParseOptions = {}): 
     } finally {
         if (documentPointer) native.es_document_free(documentPointer);
         if (errorPointer) native.es_error_free(errorPointer);
-        if (errorOutput) native.free(errorOutput);
-        if (sourcePointer) native.free(sourcePointer);
+        native.free(errorOutput);
     }
 }
 
@@ -101,14 +128,13 @@ function readConcrete(documentPointer: number): Concrete {
     }
 }
 
-function validateInput(source: string, parseOptions: ParseOptions): void {
-    if (typeof source !== "string") throw new TypeError("source must be a string");
+/** The option flags the C bridge reads, validated on the way: the one
+ * checking and encoding of `ParseOptions`, whether a parse or a session is
+ * about to read them. */
+export function optionsMask(parseOptions: ParseOptions): number {
     if (parseOptions === null || typeof parseOptions !== "object") {
         throw new TypeError("options must be an object");
     }
-}
-
-function optionsMask(parseOptions: ParseOptions): number {
     let flags = 0;
     for (const option of options) {
         const value = Object.hasOwn(parseOptions, option.name) ? parseOptions[option.name] : option.defaultValue;

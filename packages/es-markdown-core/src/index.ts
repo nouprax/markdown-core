@@ -32,6 +32,7 @@ export type { ThematicBreak } from "./model/thematic-break.js";
 export type { ParseOptions } from "./parse-options.js";
 export { ParseError } from "./parse-error.js";
 export type { ParseErrorCode } from "./parse-error.js";
+export { Session } from "./runtime/session.js";
 export { TreeDumper } from "./tree-dumper.js";
 export type { ReferenceForm } from "./values.js";
 export type { ListFlavor, PlacementMode, Position, Scope, TableAlignment } from "./values.js";

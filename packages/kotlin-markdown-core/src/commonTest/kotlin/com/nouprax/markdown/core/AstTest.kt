@@ -1,6 +1,7 @@
 package com.nouprax.markdown.core
 
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -104,6 +105,35 @@ class AstTest {
             val document = Document.parse(testCase.source, testCase.options)
             assertEquals(testCase.expected, TreeDumper.dump(document), testCase.name)
             assertEquals(testCase.expected, document.dump(), testCase.name)
+        }
+    }
+
+    @Test
+    fun allManifestCasesStreamedInSevenByteChunksMatchTheSharedCanonicalAstSpec() {
+        // T14 (docs/STREAMING.md D6): the stream is gated by the SAME corpus
+        // as the one-shot parse rather than a corpus of its own. Seven is
+        // prime, so the chunk boundaries drift across every line ending the
+        // fixtures carry, and the sealed document must still answer with the
+        // manifest's expected dump -- which IS the one-shot parse's answer,
+        // pinned by the test above.
+        assertTrue(canonicalAstCases.isNotEmpty())
+        for (testCase in canonicalAstCases) {
+            Session(testCase.options).use { session ->
+                val bytes = testCase.source.encodeToByteArray()
+                var index = 0
+                while (index < bytes.size) {
+                    val end = minOf(index + 7, bytes.size)
+                    session.feed(bytes.copyOfRange(index, end))
+                    index = end
+                }
+                val sealed = session.finish()
+                assertEquals(testCase.expected, sealed.dump(), testCase.name)
+                assertContentEquals(
+                    Document.parse(testCase.source, testCase.options).concrete.source,
+                    sealed.concrete.source,
+                    testCase.name,
+                )
+            }
         }
     }
 }

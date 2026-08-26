@@ -42,6 +42,19 @@ static bool es_write_optional_string(markdown_core_optional_string value, uintpt
     return es_write_string(value.value, data, length);
 }
 
+static void es_apply_options(markdown_core_parse_options *options, uint32_t flags) {
+    markdown_core_parse_options_init(options);
+    options->smart_punctuation = (flags & (1u << 0)) != 0;
+    options->footnotes = (flags & (1u << 1)) != 0;
+    options->strip_html_comments = (flags & (1u << 2)) != 0;
+    options->tables = (flags & (1u << 3)) != 0;
+    options->strikethrough = (flags & (1u << 4)) != 0;
+    options->autolinks = (flags & (1u << 5)) != 0;
+    options->task_lists = (flags & (1u << 6)) != 0;
+    options->formulas = (flags & (1u << 7)) != 0;
+    options->directives = (flags & (1u << 8)) != 0;
+}
+
 markdown_core_document *es_document_parse(
     const uint8_t *source,
     size_t length,
@@ -49,20 +62,45 @@ markdown_core_document *es_document_parse(
     markdown_core_error **error
 ) {
     markdown_core_parse_options options;
-    markdown_core_parse_options_init(&options);
-    options.smart_punctuation = (flags & (1u << 0)) != 0;
-    options.footnotes = (flags & (1u << 1)) != 0;
-    options.strip_html_comments = (flags & (1u << 2)) != 0;
-    options.tables = (flags & (1u << 3)) != 0;
-    options.strikethrough = (flags & (1u << 4)) != 0;
-    options.autolinks = (flags & (1u << 5)) != 0;
-    options.task_lists = (flags & (1u << 6)) != 0;
-    options.formulas = (flags & (1u << 7)) != 0;
-    options.directives = (flags & (1u << 8)) != 0;
+    es_apply_options(&options, flags);
     return markdown_core_document_parse(source, length, &options, error);
 }
 
 void es_document_free(markdown_core_document *document) { markdown_core_document_free(document); }
+
+/* THE STREAM (docs/STREAMING.md §4 D5) crosses this bridge on the parse's own
+ * path: `es_session_feed` and `es_session_finish` answer with the same
+ * document-or-error pair `es_document_parse` answers with, so the binding
+ * reads a streamed document through exactly the decoder the one-shot one
+ * uses, and frees it the same way. */
+
+/* The one failure `markdown_core_session_new` can report is an allocation
+ * failure, so NULL is the whole answer and the error it came with -- which
+ * had to be allocated too -- is released here rather than crossing the wire. */
+markdown_core_session *es_session_new(uint32_t flags) {
+    markdown_core_parse_options options;
+    markdown_core_error *error = NULL;
+    markdown_core_session *session;
+    es_apply_options(&options, flags);
+    session = markdown_core_session_new(&options, &error);
+    markdown_core_error_free(error);
+    return session;
+}
+
+markdown_core_document *es_session_feed(
+    markdown_core_session *session,
+    const uint8_t *chunk,
+    size_t length,
+    markdown_core_error **error
+) {
+    return markdown_core_session_feed(session, chunk, length, error);
+}
+
+markdown_core_document *es_session_finish(markdown_core_session *session, markdown_core_error **error) {
+    return markdown_core_session_finish(session, error);
+}
+
+void es_session_free(markdown_core_session *session) { markdown_core_session_free(session); }
 
 const markdown_core_node *es_document_root(const markdown_core_document *document) {
     return markdown_core_document_semantic(document);

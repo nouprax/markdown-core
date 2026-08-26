@@ -10,8 +10,9 @@
 # `checkKotlinAbi` does not overlap with this: its dump is the Kotlin API, and
 # every name below is absent from it by construction.
 #
-# JvmNative is deliberately NOT here -- its one member carries @JvmSynthetic, so
-# javac cannot resolve it, and the audit asserts that separately.
+# JvmNative is deliberately NOT here -- every member it has carries
+# @JvmSynthetic (the parse, and since T14 the session's four), so javac cannot
+# resolve any of them, and the audit asserts that separately.
 
 # `when` over an enum compiles to a lookup table in a nested class.
 DumpVisitor$WhenMappings
@@ -40,5 +41,5 @@ WireKind
 WireKind$Companion
 WireReader
 
-# The JNI object itself. The CLASS is reachable; its only member is not.
+# The JNI object itself. The CLASS is reachable; its members are not.
 JvmNative

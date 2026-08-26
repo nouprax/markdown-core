@@ -495,6 +495,15 @@ final class com.nouprax.markdown.core/Scope { // com.nouprax.markdown.core/Scope
     final fun toString(): kotlin/String // com.nouprax.markdown.core/Scope.toString|toString(){}[0]
 }
 
+final class com.nouprax.markdown.core/Session : kotlin/AutoCloseable { // com.nouprax.markdown.core/Session|null[0]
+    constructor <init>(com.nouprax.markdown.core/ParseOptions = ...) // com.nouprax.markdown.core/Session.<init>|<init>(com.nouprax.markdown.core.ParseOptions){}[0]
+
+    final fun close() // com.nouprax.markdown.core/Session.close|close(){}[0]
+    final fun feed(kotlin/ByteArray): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/Session.feed|feed(kotlin.ByteArray){}[0]
+    final fun feed(kotlin/String): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/Session.feed|feed(kotlin.String){}[0]
+    final fun finish(): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/Session.finish|finish(){}[0]
+}
+
 final class com.nouprax.markdown.core/SoftBreak : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/SoftBreak|null[0]
     final val scope // com.nouprax.markdown.core/SoftBreak.scope|{}scope[0]
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/SoftBreak.scope.<get-scope>|<get-scope>(){}[0]

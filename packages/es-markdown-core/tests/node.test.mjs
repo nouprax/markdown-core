@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TextEncoder } from "node:util";
-import { Document, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
+import { Document, ParseError, Session, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
 // Past index.js for the instance itself: the heap is what this asserts about,
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
@@ -187,6 +187,120 @@ test("ast: the decoder's reference, formula, list and empty-string arms are exer
     assert.equal(list.flavor, "ordered");
     assert.equal(list.start, 3);
     assert.equal(list.items.length, 2);
+});
+
+// THE STREAM (docs/STREAMING.md §4 D5). Everything below reads a document
+// value the session returned, and nothing native stands behind it: a feed's
+// answer outlives every later feed, the finish, and the session itself.
+test("api: a session's chunked feeds sealed by finish equal the one-shot parse", () => {
+    // CRLF line endings and characters of two, three and four UTF-8 bytes, so
+    // a 7-byte chunk boundary lands inside a line ending and inside every
+    // multi-byte width there is -- the splits only a byte stream can spell.
+    const source = "# Héllo 🚀 中文\r\n\r\n> quoted *em* and `code`\r\n\r\n- [x] tick\r\nsee [a] and $x$.\r\n";
+    const bytes = new TextEncoder().encode(source);
+    const session = new Session();
+    try {
+        for (let offset = 0; offset < bytes.length; offset += 7) {
+            session.feed(bytes.subarray(offset, Math.min(offset + 7, bytes.length)));
+        }
+        const sealed = session.finish();
+        const oneShot = Document.parse(source);
+        assert.equal(sealed.dump(), oneShot.dump());
+        assert.deepEqual(sealed.concrete.source, oneShot.concrete.source);
+        assert.equal(sealed.concrete.lineCount, oneShot.concrete.lineCount);
+        for (let line = 1; line <= oneShot.concrete.lineCount; line += 1) {
+            assert.equal(sealed.concrete.lineStart(line), oneShot.concrete.lineStart(line));
+        }
+    } finally {
+        session.dispose();
+    }
+});
+
+test("api: a session reads the same options the one-shot parse does", () => {
+    const markdown = "| a |\n| --- |\n| b |\n";
+    const gated = new Session({ tables: false });
+    try {
+        // The canonical spelling: a string chunk feeds its UTF-8 bytes.
+        assert.equal(gated.feed(markdown).content[0].kind, "paragraph");
+        assert.equal(gated.finish().content[0].kind, "paragraph");
+    } finally {
+        gated.dispose();
+    }
+    const open = new Session();
+    try {
+        open.feed(markdown);
+        assert.equal(open.finish().content[0].kind, "table");
+    } finally {
+        open.dispose();
+    }
+});
+
+test("api: an empty feed is legal and an unfed session seals to the empty document", () => {
+    const session = new Session();
+    try {
+        assert.deepEqual(session.feed("").content, []);
+        assert.deepEqual(session.feed(new Uint8Array(0)).content, []);
+        const sealed = session.finish();
+        assert.deepEqual(sealed.content, []);
+        assert.equal(sealed.dump(), Document.parse("").dump());
+    } finally {
+        session.dispose();
+    }
+});
+
+test("ownership: a mid-stream document is a value later feeds cannot disturb", () => {
+    const session = new Session();
+    // The trailing line's ending has not arrived, so "tail" is not yet in the
+    // projection -- not in the tree and not in the concrete view.
+    const early = session.feed("# Heading\n\ntail");
+    assert.equal(early.content.length, 1);
+    assert.equal(early.content[0].kind, "heading");
+    assert.deepEqual(early.concrete.source, new TextEncoder().encode("# Heading\n\n"));
+    const record = early.dump();
+
+    // A later feed completes the line; the value already returned does not
+    // move, and the new answer carries the completed line.
+    const grown = session.feed(" grows\n");
+    assert.equal(early.dump(), record);
+    assert.equal(early.content.length, 1);
+    assert.equal(grown.content[1].kind, "paragraph");
+    assert.equal(grown.content[1].content[0].literal, "tail grows");
+
+    // The sealed document equals the one-shot parse of the same bytes, and
+    // every earlier answer survives the session's death.
+    const sealed = session.finish();
+    session.dispose();
+    assert.equal(sealed.dump(), Document.parse("# Heading\n\ntail grows\n").dump());
+    assert.equal(early.dump(), record);
+    assert.equal(early.content[0].kind, "heading");
+});
+
+test("errors: a sealed session refuses feed and finish, and a disposed one refuses everything", () => {
+    const session = new Session();
+    session.feed("done\n");
+    session.finish();
+    // The stream is sealed: the refusal is the parser's, crosses the wire as
+    // an error, and names the code the C surface rules for it.
+    const sealedRefusal = (error) => error instanceof ParseError && error.code === "invalidArgument";
+    assert.throws(() => session.feed("late\n"), sealedRefusal);
+    assert.throws(() => session.finish(), sealedRefusal);
+
+    // Disposal is idempotent, and a disposed session refuses up front rather
+    // than calling into freed native memory.
+    session.dispose();
+    session.dispose();
+    assert.throws(() => session.feed("x"), /session has been disposed/u);
+    assert.throws(() => session.finish(), /session has been disposed/u);
+
+    // Arguments are checked the way `parse` checks its own.
+    assert.throws(() => new Session(null), TypeError);
+    assert.throws(() => new Session({ tables: "yes" }), TypeError);
+    const typed = new Session();
+    try {
+        assert.throws(() => typed.feed(42), TypeError);
+    } finally {
+        typed.dispose();
+    }
 });
 
 test("errors: every wire guard fires when the native side answers out of range", () => {

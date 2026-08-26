@@ -120,41 +120,36 @@ public struct Document: Markup {
     ///   Text the parser could not read the way its author meant is not an
     ///   error: it produces a document, and the diagnostics say so.
     public static func parse(_ source: String, options: ParseOptions = .init()) throws -> Document {
-        var nativeOptions = markdown_core_parse_options(
-            smart_punctuation: options.smartPunctuation,
-            footnotes: options.footnotes,
-            strip_html_comments: options.stripHTMLComments,
-            tables: options.tables,
-            strikethrough: options.strikethrough,
-            autolinks: options.autolinks,
-            task_lists: options.taskLists,
-            formulas: options.formulas,
-            directives: options.directives
-        )
+        var nativeOptions = options.native
         var nativeError: OpaquePointer?
         let bytes = Array(source.utf8)
         let nativeDocument = bytes.withUnsafeBufferPointer { buffer in
             markdown_core_document_parse(buffer.baseAddress, buffer.count, &nativeOptions, &nativeError)
         }
         guard let nativeDocument else {
-            defer { markdown_core_error_free(nativeError) }
-            throw ParseError(from: nativeError)
+            throw ParseError.take(nativeError)
         }
         defer { markdown_core_document_free(nativeDocument) }
-
-        guard let root = markdown_core_document_semantic(nativeDocument),
-            markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT,
-            let concrete = Concrete(from: nativeDocument)
-        else {
-            throw ParseError(code: .internal, message: "parser returned an invalid document tree")
-        }
-        return Document(from: root, concrete: concrete)
+        return try Document(copiedFrom: nativeDocument)
     }
 }
 
 extension Document {
     init(from node: OpaquePointer, concrete: Concrete) {
         self.init(scope: Self.scope(from: node), content: Self.children(from: node), concrete: concrete)
+    }
+
+    /// Copies a native document out as values — the one conversion, shared by
+    /// the one-shot parse and by every document a ``Session`` returns. The
+    /// handle stays with the caller, who frees it as soon as this returns.
+    init(copiedFrom nativeDocument: OpaquePointer) throws {
+        guard let root = markdown_core_document_semantic(nativeDocument),
+            markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT,
+            let concrete = Concrete(from: nativeDocument)
+        else {
+            throw ParseError(code: .internal, message: "parser returned an invalid document tree")
+        }
+        self.init(from: root, concrete: concrete)
     }
 }
 

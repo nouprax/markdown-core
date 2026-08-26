@@ -1,6 +1,7 @@
 import {
     Concrete,
     Document,
+    Session,
     TreeDumper,
     visit,
     Walker,
@@ -30,6 +31,20 @@ void lineCount;
 concrete.source = source;
 // @ts-expect-error the concrete view is readonly
 document.concrete = concrete;
+// The stream hands out the same document values the one-shot parse does, and
+// a chunk is a string or raw UTF-8 bytes -- nothing else crosses.
+const session: Session = new Session({ tables: false });
+const updated: Document = session.feed("# streamed");
+const fedBytes: Document = session.feed(new Uint8Array([35, 32, 104, 105, 10]));
+const sealed: Document = session.finish();
+const disposal: void = session.dispose();
+void updated;
+void fedBytes;
+void sealed;
+void disposal;
+// @ts-expect-error a chunk is a string or a Uint8Array
+session.feed(42);
+
 const visitor: Visitor<string> = {
     visitDocument: (node) => node.kind,
     visitBlockQuote: (node) => node.kind,
