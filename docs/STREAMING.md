@@ -1243,13 +1243,19 @@ Speed is not an argument in this section. What each step costs is in F12–F16.
       over 1,624 boundaries, 43/43 regression over 159, 33/33 extensions over
       266. Correctness 91/91, asan and ubsan 79/79 (rebuilt, per F2), goldens
       unmoved. Cost and the two things the gate found are F17.
-- [ ] **T20 — `markdown_core_iter_init`: a walk that does not allocate.**
+- [x] **T20 — `markdown_core_iter_init`: a walk that does not allocate.**
       `markdown_core_iter_new` callocs
       ([iterator.c:15](../packages/markdown-core/core/iterator.c#L15)), which is
       right once per document and wrong once per block per pass per feed. The
       struct is already complete in the internal header, so the walk can live on
       the caller's stack. Correctness 88/88 unmoved. Independent of everything
-      else; see F16 for what it costs.
+      else; see F16 for what it costs. **Done 2026-08-25**: `iter_new` is
+      `calloc` + `iter_init`; consolidation, the comment strip,
+      `process_inlines` and autolink's postprocess hold the walk on their
+      stack. Correctness 91/91, asan and ubsan 79/79 (rebuilt), goldens
+      unmoved. Not benched on its own: on the whole-tree path it removes four
+      allocations per projection, which no 5-round run can see; its measured
+      value (F16) is on the per-block path T18 opens.
 
 ### Phase B — make a feed stop re-parsing  · needs no decision
 

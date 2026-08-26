@@ -26,6 +26,14 @@ struct markdown_core_iter {
     markdown_core_node *borrower;
 };
 
+/* THE SAME WALK WITHOUT THE ALLOCATION (docs/STREAMING.md T20).
+ * `markdown_core_iter_new` callocs, which is right for a walk taken once per
+ * document and wrong once per block per pass per feed: three passes over a
+ * hundred-block document go from 3 allocations to 300. The struct is complete
+ * here, so a caller inside the engine holds it on its stack. `root` must not
+ * be NULL; there is no failure to report. */
+void markdown_core_iter_init(markdown_core_iter *iter, markdown_core_node *root);
+
 /* Consolidation with the region set kept in step: the survivor of each merged
  * text run takes the regions the nodes it absorbed owned (requirement 11b).
  * `markdown_core_consolidate_text_nodes` is this with no parser. */

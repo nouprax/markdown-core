@@ -64,12 +64,11 @@ static bool S_html_literal_starts_with_comment(markdown_core_node *node) {
 
 static bool S_strip_html_comments(markdown_core_node *root) {
     bool stripped = false;
-    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_iter walk;
+    markdown_core_iter *iter = &walk;
     markdown_core_event_type ev_type;
 
-    if (!iter) {
-        return false;
-    }
+    markdown_core_iter_init(iter, root);
 
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node = markdown_core_iter_get_node(iter);
@@ -84,8 +83,6 @@ static bool S_strip_html_comments(markdown_core_node *root) {
             stripped = true;
         }
     }
-
-    markdown_core_iter_free(iter);
 
     if (stripped) {
         return markdown_core_consolidate_text_nodes(root) != 0;
@@ -1317,14 +1314,12 @@ static void process_inlines(
     markdown_core_map *refmap,
     int options
 ) {
-    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_iter walk;
+    markdown_core_iter *iter = &walk;
     markdown_core_node *cur;
     markdown_core_event_type ev_type;
 
-    if (!iter) {
-        parser->oom = true;
-        return;
-    }
+    markdown_core_iter_init(iter, root);
 
     markdown_core_manage_extensions_special_characters(parser, true);
 
@@ -1338,8 +1333,6 @@ static void process_inlines(
     }
 
     markdown_core_manage_extensions_special_characters(parser, false);
-
-    markdown_core_iter_free(iter);
 }
 
 // Attempts to parse a list item marker (bullet or enumerated).

@@ -656,7 +656,8 @@ static markdown_core_node *postprocess(
     markdown_core_parser *parser,
     markdown_core_node *root
 ) {
-    markdown_core_iter *iter;
+    markdown_core_iter walk;
+    markdown_core_iter *iter = &walk;
     markdown_core_event_type ev;
     markdown_core_node *node;
     bool in_link = false;
@@ -664,11 +665,7 @@ static markdown_core_node *postprocess(
     if (!markdown_core_consolidate_text_nodes(root)) {
         parser->oom = true;
     }
-    iter = markdown_core_iter_new(root);
-    if (!iter) {
-        parser->oom = true;
-        return NULL;
-    }
+    markdown_core_iter_init(iter, root);
 
     while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         node = markdown_core_iter_get_node(iter);
@@ -695,8 +692,6 @@ static markdown_core_node *postprocess(
             postprocess_text(parser, node);
         }
     }
-
-    markdown_core_iter_free(iter);
 
     return root;
 }
