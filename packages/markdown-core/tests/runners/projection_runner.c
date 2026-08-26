@@ -15,7 +15,13 @@
  * in a finished tree is a lie about completeness.
  *
  * borrow_across_feed: T19's gate, documented at its definition.
+ *
+ * dump_boundaries / feed_loop: the A/B oracle and the clock for a change to
+ * the projection, documented at their definitions. Both also take `--md FILE`
+ * or `--md-dir DIR` -- raw markdown, one case per file -- because the real
+ * corpus is not a fixture file.
  */
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -767,6 +773,221 @@ static int case_borrow_across_feed(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+/* THE A/B ORACLE FOR A CHANGE TO THE PROJECTION. Feeds every case one line
+ * at a time, derives after every line and finishes at the end, and prints
+ * each tree's canonical dump under a stable header -- twice per boundary,
+ * once with every extension and once with the comment strip added, because
+ * the strip is a tail pass with its own removal path. Two builds run over
+ * the same corpus and `diff` their output: a refactor of the projection is
+ * correct when the diff is empty, and the diff names the first boundary that
+ * moved when it is not. It is not a ctest row -- its oracle is another
+ * build -- so it prints and judges nothing. */
+static int pr_dump_boundaries_with(const ts_spec_case *test_case, int options, const char *label) {
+    markdown_core_parser *parser = markdown_core_parser_new(options);
+    const char *text = test_case->markdown;
+    size_t length = test_case->markdown_length;
+    size_t start = 0, i;
+    int boundary = 0;
+    markdown_core_node *tree;
+    uint8_t *dump;
+    size_t dump_length;
+
+    if (!parser || !markdown_core_core_extensions_attach(
+                       parser,
+                       MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
+                           MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK | MARKDOWN_CORE_CORE_EXTENSION_TASKLIST |
+                           MARKDOWN_CORE_CORE_EXTENSION_FORMULA | MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE
+                   )) {
+        if (parser) {
+            markdown_core_parser_free(parser);
+        }
+        return -1;
+    }
+    for (i = 0; i <= length; i++) {
+        if (i < length && text[i] != '\n') {
+            continue;
+        }
+        if (i == length && start == length) {
+            break;
+        }
+        markdown_core_parser_feed(parser, text + start, (i < length ? i + 1 : length) - start);
+        start = i + 1;
+        boundary++;
+        tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        dump = tree ? pr_dump(tree, &dump_length) : NULL;
+        printf("== example %d %s boundary %d\n", test_case->example, label, boundary);
+        if (dump) {
+            fwrite(dump, 1, dump_length, stdout);
+        } else {
+            puts("<derivation failed>");
+        }
+        markdown_core_dump_free(dump);
+        if (tree) {
+            markdown_core_node_free(tree);
+        }
+    }
+    tree = markdown_core_parser_finish(parser);
+    dump = tree ? pr_dump(tree, &dump_length) : NULL;
+    printf("== example %d %s finish\n", test_case->example, label);
+    if (dump) {
+        fwrite(dump, 1, dump_length, stdout);
+    } else {
+        puts("<finish failed>");
+    }
+    markdown_core_dump_free(dump);
+    if (tree) {
+        markdown_core_node_free(tree);
+    }
+    markdown_core_parser_free(parser);
+    return 0;
+}
+
+static int case_dump_boundaries(const ts_spec_file *file) {
+    size_t index;
+    int failures = 0;
+    for (index = 0; index < file->count; index++) {
+        const ts_spec_case *test_case = &file->cases[index];
+        if (pr_dump_boundaries_with(test_case, MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_FOOTNOTES, "plain") != 0 ||
+            pr_dump_boundaries_with(
+                test_case,
+                MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS,
+                "strip"
+            ) != 0) {
+            fprintf(stderr, "example %d: parser allocation failed\n", test_case->example);
+            failures++;
+        }
+    }
+    return failures ? -1 : 0;
+}
+
+/* THE CLOCK. What a Session's feed loop costs: every case fed one line at a
+ * time with a derivation after every line and a finish at the end, nothing
+ * dumped. `--repeats N` runs the whole corpus N times and reports the
+ * fastest, which is the aggregation F1 and F11 use; the boundary count is
+ * printed so two runs can be seen to have done the same work. */
+static int pr_repeats = 1;
+
+static int case_feed_loop(const ts_spec_file *file) {
+    size_t index;
+    int repeat;
+    uint64_t best_ns = 0;
+    size_t boundaries = 0;
+    for (repeat = 0; repeat < pr_repeats; repeat++) {
+        uint64_t started = ts_monotonic_ns();
+        uint64_t elapsed;
+        size_t seen = 0;
+        for (index = 0; index < file->count; index++) {
+            const ts_spec_case *test_case = &file->cases[index];
+            markdown_core_parser *parser = pr_parser_new();
+            const char *text = test_case->markdown;
+            size_t length = test_case->markdown_length;
+            size_t start = 0, i;
+            markdown_core_node *tree;
+            if (!parser) {
+                fprintf(stderr, "example %d: parser allocation failed\n", test_case->example);
+                return -1;
+            }
+            for (i = 0; i <= length; i++) {
+                if (i < length && text[i] != '\n') {
+                    continue;
+                }
+                if (i == length && start == length) {
+                    break;
+                }
+                markdown_core_parser_feed(parser, text + start, (i < length ? i + 1 : length) - start);
+                start = i + 1;
+                seen++;
+                tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+                if (tree) {
+                    markdown_core_node_free(tree);
+                }
+            }
+            tree = markdown_core_parser_finish(parser);
+            if (tree) {
+                markdown_core_node_free(tree);
+            }
+            markdown_core_parser_free(parser);
+        }
+        elapsed = ts_monotonic_ns() - started;
+        if (repeat == 0 || elapsed < best_ns) {
+            best_ns = elapsed;
+        }
+        boundaries = seen;
+    }
+    printf(
+        "feed loop: %zu documents, %zu boundaries, min of %d: %.2f ms\n",
+        file->count,
+        boundaries,
+        pr_repeats,
+        (double)best_ns / 1e6
+    );
+    return 0;
+}
+
+/* One case per `.md` file, in name order, so two runs see the same corpus in
+ * the same order. */
+static int pr_case_from_file(const char *path, int example, ts_spec_case *out) {
+    size_t length = 0;
+    uint8_t *bytes = ts_read_file(path, &length);
+    if (!bytes) {
+        return -1;
+    }
+    memset(out, 0, sizeof(*out));
+    out->markdown = (char *)bytes;
+    out->markdown_length = length;
+    out->section = strdup(path);
+    out->example = example;
+    return 0;
+}
+
+static int pr_name_compare(const void *a, const void *b) {
+    return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+
+static int pr_load_md_dir(const char *dir, ts_spec_file *out) {
+    DIR *d = opendir(dir);
+    struct dirent *entry;
+    char **names = NULL;
+    size_t count = 0, cap = 0, i;
+    if (!d) {
+        return -1;
+    }
+    while ((entry = readdir(d)) != NULL) {
+        size_t n = strlen(entry->d_name);
+        if (n < 4 || strcmp(entry->d_name + n - 3, ".md") != 0) {
+            continue;
+        }
+        if (count == cap) {
+            char **grown;
+            cap = cap ? cap * 2 : 64;
+            grown = (char **)realloc(names, cap * sizeof(*names));
+            if (!grown) {
+                closedir(d);
+                return -1;
+            }
+            names = grown;
+        }
+        names[count++] = strdup(entry->d_name);
+    }
+    closedir(d);
+    qsort(names, count, sizeof(*names), pr_name_compare);
+    out->cases = (ts_spec_case *)calloc(count ? count : 1, sizeof(ts_spec_case));
+    out->count = 0;
+    if (!out->cases) {
+        return -1;
+    }
+    for (i = 0; i < count; i++) {
+        char path[4096];
+        snprintf(path, sizeof(path), "%s/%s", dir, names[i]);
+        if (pr_case_from_file(path, (int)i + 1, &out->cases[out->count]) == 0) {
+            out->count++;
+        }
+        free(names[i]);
+    }
+    free(names);
+    return 0;
+}
+
 typedef struct pr_case_entry {
     const char *name;
     int (*run)(const ts_spec_file *file);
@@ -778,12 +999,16 @@ static const pr_case_entry PR_CASES[] = {
     {"double_projection", case_double_projection, 1},
     {"refmap_independence", case_refmap_independence, 1},
     {"borrow_across_feed", case_borrow_across_feed, 1},
+    {"dump_boundaries", case_dump_boundaries, 1},
+    {"feed_loop", case_feed_loop, 1},
     {"projection_slope", case_projection_slope, 0},
 };
 
 int main(int argc, char **argv) {
     const char *case_name = NULL;
     const char *spec = NULL;
+    const char *md = NULL;
+    const char *md_dir = NULL;
     ts_spec_file file;
     size_t i;
     int arg;
@@ -798,25 +1023,44 @@ int main(int argc, char **argv) {
             case_name = argv[++arg];
         } else if (strcmp(argv[arg], "--spec") == 0 && arg + 1 < argc) {
             spec = argv[++arg];
+        } else if (strcmp(argv[arg], "--md") == 0 && arg + 1 < argc) {
+            md = argv[++arg];
+        } else if (strcmp(argv[arg], "--md-dir") == 0 && arg + 1 < argc) {
+            md_dir = argv[++arg];
+        } else if (strcmp(argv[arg], "--repeats") == 0 && arg + 1 < argc) {
+            pr_repeats = atoi(argv[++arg]);
         } else {
-            fputs("usage: projection_runner [--list] --case NAME --spec FILE\n", stderr);
+            fputs("usage: projection_runner [--list] --case NAME (--spec FILE | --md FILE | --md-dir DIR)\n", stderr);
             return 2;
         }
     }
-    if (!case_name) {
-        fputs("usage: projection_runner [--list] --case NAME [--spec FILE]\n", stderr);
+    if (!case_name || pr_repeats < 1) {
+        fputs("usage: projection_runner [--list] --case NAME (--spec FILE | --md FILE | --md-dir DIR)\n", stderr);
         return 2;
     }
     for (i = 0; i < sizeof(PR_CASES) / sizeof(PR_CASES[0]); i++) {
         if (strcmp(PR_CASES[i].name, case_name) == 0) {
             int failed;
             if (PR_CASES[i].needs_spec) {
-                if (!spec) {
-                    fprintf(stderr, "case %s requires --spec FILE\n", case_name);
-                    return 2;
-                }
-                if (ts_spec_load(spec, &file) != 0) {
-                    fprintf(stderr, "projection_runner: cannot load %s\n", spec);
+                if (spec) {
+                    if (ts_spec_load(spec, &file) != 0) {
+                        fprintf(stderr, "projection_runner: cannot load %s\n", spec);
+                        return 2;
+                    }
+                } else if (md) {
+                    file.cases = (ts_spec_case *)calloc(1, sizeof(ts_spec_case));
+                    file.count = 1;
+                    if (!file.cases || pr_case_from_file(md, 1, &file.cases[0]) != 0) {
+                        fprintf(stderr, "projection_runner: cannot load %s\n", md);
+                        return 2;
+                    }
+                } else if (md_dir) {
+                    if (pr_load_md_dir(md_dir, &file) != 0) {
+                        fprintf(stderr, "projection_runner: cannot load %s\n", md_dir);
+                        return 2;
+                    }
+                } else {
+                    fprintf(stderr, "case %s requires --spec FILE, --md FILE or --md-dir DIR\n", case_name);
                     return 2;
                 }
                 failed = PR_CASES[i].run(&file) != 0;
