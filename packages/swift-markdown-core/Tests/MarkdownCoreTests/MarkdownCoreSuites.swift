@@ -1,18 +1,18 @@
 import MarkdownCoreC
 import Testing
 
+// `@testable` for one reason, and it is stated at the use below: `ParseError`
+// cannot be reached through the public surface, because no input a Swift caller
+// can hand `Document` is invalid. Everything else here goes through the
+// published API.
+@testable import MarkdownCore
+
 /// The tree of a whole-text parse: `Document(markdown:options:).seal()`,
 /// keeping only the semantic view. The lifecycle and concrete tests spell
 /// the full entry out themselves.
 private func parse(_ source: String, options: ParseOptions = .init()) throws -> Semantic {
     try Document(markdown: source, options: options).seal().semantic
 }
-
-// `@testable` for one reason, and it is stated at the use below: `ParseError`
-// cannot be reached through the public surface, because no input a Swift caller
-// can hand `Document` is invalid. Everything else here goes through the
-// published API.
-@testable import MarkdownCore
 
 @Suite("api") struct APISuite {
     @Test("parse options and visitor dispatch use the public Swift API")
