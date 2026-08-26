@@ -174,6 +174,20 @@ struct markdown_core_node {
      * at an address another block died at can never read as unchanged. Only
      * the CST is stamped; a derived node carries its origin's reading. */
     uint32_t stamp;
+    /* THE NODE'S IDENTITY (docs/STREAMING.md D4, T2), in two scopes that
+     * together cover every collection a consumer can iterate. A BLOCK's
+     * identity is minted once when the block phase opens it, carried onto
+     * every derived node by the clone, and never reused within a parse: it is
+     * document-unique. An INLINE's identity is its pre-order ordinal among
+     * the owning block's inline descendants, assigned by the projection at
+     * the end of the block's tail: it is unique within the block, so an
+     * inline's full identity is the PAIR (owning block's identity, this
+     * ordinal). Zero is "no identity" -- a lost mint or carry -- so a loss
+     * fails closed (F11). The identity names the element a consumer is
+     * tracking across feeds, not the node's kind: a retype keeps it, and
+     * when a block splits or dies the fragment that continues what the
+     * consumer already renders inherits it (§4 D4). */
+    uint32_t identifier;
     uint16_t type;
     markdown_core_node_internal_flags flags;
 

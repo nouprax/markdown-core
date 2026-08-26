@@ -273,6 +273,11 @@ struct markdown_core_parser {
      * core cannot see it. Wraps at 2^32 writes in one parse, which is more
      * lines than a parse can be handed. */
     uint32_t write_clock;
+    /* THE IDENTITY MINT (T2): counts the block ids handed out this parse.
+     * Advanced only by the block phase -- a projection never mints -- so the
+     * ids are a fact about the document rather than about how its bytes
+     * arrived, which is what makes them chunking-stable (F11). */
+    uint32_t block_ids_minted;
     /* THE PROJECTION CACHE's switches and ledger (T9). `no_projection_cache`
      * is for a runner that plays the cache's part itself or measures without
      * it; it survives the reset, as the options do. The counters are per
@@ -318,6 +323,11 @@ struct markdown_core_parser {
  * core at every write it makes to a CST block and by an extension at a
  * retype, and by the line loop over the whole open spine. */
 void markdown_core_parser_touch(markdown_core_parser *parser, markdown_core_node *node);
+
+/* Give `node` the next block identity (T2). Called by `add_child` for every
+ * block the block phase opens, and wherever a block is born outside it -- the
+ * root, a reference definition, a table's lead paragraph. */
+void markdown_core_parser_mint_block_id(markdown_core_parser *parser, markdown_core_node *node);
 
 markdown_core_node *markdown_core_parser_derive_tree(
     markdown_core_parser *parser,

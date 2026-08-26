@@ -436,6 +436,11 @@ it either.
 across projections AND across chunkings, unique, total and cheap. Which of the
 two nodes inherits in forks 1 and 3 is a statement about what a consumer should
 see, and the frequencies above are the input to that ruling, not the ruling.
+**Ruled 2026-08-26 in §4 D4**: the owner named the consumer — an
+identity-keyed view, SwiftUI's `List`/`ForEach` — and both forks fell out of
+"is this an element I already have?": fork 1 swaps (the lead keeps the id),
+fork 3 inherits at death (the firstborn definition takes the paragraph's id)
+and mints on survival. T2 and T5 carry the landed form and its gates.
 
 ### F12 — a feed re-parses the whole document today, and the re-parse and the projection's tail are ~88% of it between them  · VERIFIED · **table corrected**
 
@@ -1475,26 +1480,69 @@ back in the vocabulary that produced them.
   identity cannot be joined against the tree the consumer is holding. So there
   is no fork here: **the signal is identity carried on the block**, and the only
   open question is what identity is minted from — which is D4.
-- **D4 — what is a block's identity minted from? · PoC DONE (F11); the two
-  inheritance questions are OPEN.** The mechanism is settled and measured: a
-  `uint32_t` minted once per block, four mint sites, two carry sites, stable
-  and unique over 878 fixture documents and 195 real ones across 85,694
-  derivations, failing closed when a carry is removed, and costing **+0.7%**
-  with the node going 176 → 184 bytes. **F11 has the numbers and the method.**
-  What a PoC cannot rule is what a consumer should SEE, and it turned up two
-  questions rather than the one §4 first asked:
-  **(a)** when a paragraph becomes a table and a lead paragraph splits off, the
-  surviving node object is the TABLE, so it keeps the id and the unchanged lead
-  text is minted new — or the two swap. Frequency: **0 of 14** real table
-  retypes split a lead; 3 of 28 across fixtures.
-  **(b)** the one the PoC found rather than predicted: **every death is a
-  paragraph** — 2,264 of 2,264 real, 18 of 18 on spec — because a paragraph
-  consumed entirely by reference definitions is freed and a
-  `REFERENCE_DEFINITION` is born with a fresh id. Typing a definition is
-  **birth → death → birth**, and at 2,264 events it dwarfs all 34 retypes.
-  Should the definition inherit the paragraph's id? Today it does not.
-  **Phase C** starts once (a) and (b) are ruled; nothing else in D4 is open,
-  and Phase B does not wait on it.
+- **D4 — what is a block's identity minted from? · RULED 2026-08-26, and
+  landed (T2, T5).** The mechanism was settled by PoC (F11): a `uint32_t`
+  minted once per block, four mint sites, two carry sites, chunking-stable,
+  unique, failing closed, costing **+0.7%**. What the PoC could not rule —
+  which node inherits in forks 1 and 3 — is ruled by the owner naming what
+  the id is FOR. **An id answers exactly one question, the consumer's: is
+  this an element I already have?** The consumer is an identity-keyed view —
+  SwiftUI's `List`/`ForEach` and its equation checks — so the id must hold
+  still across streaming (the element the reader is watching never
+  re-identifies as bytes arrive) and must tell apart two blocks with
+  identical content in one document (which is why it is a mint and never a
+  content hash). Everything else follows from that one sentence, and each of
+  F11's events gets its answer from it rather than from which node object
+  happened to survive:
+  - **a retype keeps the id** — setext, paragraph → table, the formula
+    promotion's carry: the reader's element was reinterpreted, not replaced;
+  - **a split leaves the id on what the reader already had** — fork 1 is the
+    SWAP: the table's lead paragraph, the text the reader saw first and which
+    did not change, keeps the id, and the table leaves with the lead's fresh
+    mint ([table.c](../packages/markdown-core/extensions/table.c),
+    `try_inserting_table_header_paragraph`);
+  - **a death bequeaths the id to the firstborn** — fork 3: a paragraph
+    consumed entirely by reference definitions IS its first definition to the
+    reader who typed it, so that definition inherits and later definitions
+    from the same paragraph are births; the swap sits in
+    `resolve_reference_link_definitions`, which also covers the
+    emptied-at-the-setext-check arrival. A paragraph that keeps content keeps
+    its id — the visible text is what the consumer is tracking — and its
+    definitions are then all births, so the 99.5% one-to-one figure and the
+    11 tie-breaks in F11 collapse into one rule.
+  **Amended the same day, by the owner: identity is TOTAL over everything a
+  `ForEach` can iterate, not blocks alone.** An inline cannot mint — it does
+  not survive in the CST: every projection rebuilds it, and the cache shares
+  what was built — so an inline's identity is its **pre-order ordinal among
+  its owning block's inline-class descendants**, assigned at the end of the
+  block's tail, after consolidation, the hooks and the strip have finished
+  the list. The pair (block identity, ordinal) is unique in the document;
+  the ordinal alone is unique within any sibling list a consumer iterates,
+  which is the distinguishability a `ForEach` needs — two identical links in
+  one paragraph are two ordinals. Stability is the parse's determinism: two
+  projections of one unwritten CST number every inline identically (gated),
+  a cache hit serves the very nodes the numbers were written on, and an
+  append to an open block extends the trailing text run in place, leaving
+  every earlier ordinal where the reader already had it. When the inline
+  parse rebalances (a delimiter finally closes), the block's own bytes moved
+  and its stamp says so; within it an ordinal is positional — the slot the
+  consumer keys, not a resurrection, which is why the dead-id ledger tracks
+  blocks alone. A nested block inside the walk keeps its mint — the one
+  block that mixes child classes is the directive block, whose CST-resident
+  label is inline-class and numbers in the directive block's namespace; the
+  gate is what found that hole.
+  Landed as **T2** (the mints and carries of F11, the two swaps above, and
+  the ordinal pass in the per-block tail — the field is `identifier` on the
+  node, one field, two scopes: the identity is the concept, the identifier
+  is the value that carries it) and gated by **T5**: `block_identity` — total
+  over every node, blocks unique per derivation, siblings unique everywhere,
+  every node named identically by two projections of one unwritten CST, dead
+  block ids never resurrected — over five fixture files (838 examples, 2,179
+  boundaries, 22,521 node observations, 0 failures), and
+  `block_identity_transitions`, which pins all eight ruled shapes.
+  `sizeof(markdown_core_node)` is 184 → 192 — T3's stamp had already taken
+  the padding hole F11 measured, so the field still costs the 8 bytes F11
+  priced. Nothing in D4 is open.
 - **D5 — the public surface · RULED: the shape above.** `Session`, `feed`
   returning the document, and the document's two total views `concrete` and
   `semantic` — which are the two the facade already publishes
@@ -1706,17 +1754,44 @@ and T4 are the cache key; T9 lands the cache and shares.
       T14), so there is no copy-out to time; it is owed with Phase E and
       bounded at T15.
 
-### Phase C — make a block addressable  · needs D4
+### Phase C — make a block addressable  · DONE 2026-08-26 (D4 ruled in §4)
 
-D4's mechanism is settled by PoC (F11); its two inheritance forks are not.
-Nothing here starts before they are ruled. **This is the consumer's axis, not
-the feed-cost one** — Phase B does not wait on it.
+D4's two inheritance forks were ruled by the owner's consumer model (§4 D4)
+and the phase landed in the same session. **This is the consumer's axis, not
+the feed-cost one** — Phase B did not wait on it.
 
-- [ ] **T2 — a stable id on the CST block**, minted at open, carried onto the
-      derived node by the clone. F11 has the mint and carry sites.
-- [ ] **T5 — gate:** two projections of an unwritten CST produce identical ids,
+- [x] **T2 — a stable id on the CST block**, minted at open, carried onto the
+      derived node by the clone. **Done 2026-08-26**: `identifier` on the node,
+      `block_ids_minted` on the parser, F11's four mint sites and two carry
+      sites, plus the two ruled swaps — the table's lead paragraph inherits at
+      the split, the firstborn reference definition inherits at the
+      paragraph's death (both in §4 D4). The mint is advanced only by the
+      block phase, so a projection never renames a block and the ids stay a
+      fact about the document (F11's chunking argument, unchanged). Amended
+      same day for the owner's totality requirement (§4 D4): inlines carry
+      per-block pre-order ordinals in the same field, assigned by
+      `S_number_inline_descendants` at the end of the block's tail — after
+      every pass that shapes the list, before the cache stores it — and a
+      block that owns a CST-resident inline construct (a directive's label)
+      now takes a tail for exactly that assignment.
+- [x] **T5 — gate:** two projections of an unwritten CST produce identical ids,
       and a retype preserves the id of the block it rewrites.
-      *Closes F4.*
+      *Closes F4.* **Done 2026-08-26**: `projection_identity_*` — five fixture
+      files fed one line at a time, two derivations per boundary plus finish:
+      no node without identity, no duplicate block id within a derivation, no
+      duplicate among siblings anywhere, both derivations name every node —
+      inline included — identically, a dead block id never returns (838
+      examples, 2,179 boundaries, 22,521 node observations, 0 failures);
+      `projection_identity_transitions` pins the eight ruled shapes — setext
+      and table retypes keep the id, the lead split leaves it on the lead, a
+      death bequeaths it to the firstborn definition, a surviving paragraph
+      keeps it and births its definitions, the formula promotion carries it,
+      and two same-content links in one paragraph are distinct and keep their
+      ordinals across an append. The CST fingerprint in `refmap_independence`
+      now carries the identity too, so a derivation that renamed a CST block
+      would read as a write. The gate found the directive-label hole (a label
+      under a directive BLOCK was reachable by no numbering pass) before the
+      first full run was green.
 
 ### Phase D — the change signal  · needs T2 and Phase B
 
@@ -1886,6 +1961,21 @@ The PoC seams they use (`poc_set_reuse`, `poc_set_per_block_tail`,
 `postprocess_blocks`, the holder refcount, `markdown_core_iter_init`) are in the
 D4 patch and only `markdown_core_iter_init` is proposed for landing as it
 stands.
+
+**T2 and T5** (2026-08-26): D4's forks ruled from the owner's consumer model
+and the identity field landed; amended the same day when the owner extended
+the requirement to every element a `ForEach` can iterate — the inline
+ordinal pass, the directive-label hole the extended gate caught on its first
+run, and the re-run of every suite below with the amendment in. The gate
+counts are in §5's T5 entry, alongside the
+`ctest --preset correctness` sweep (red rows only among
+`pathological_complexity_{valid,unclosed}_long_quoted_value`, wall-clock
+gates this container also fails at the UNCHANGED head — measured
+interleaved, base 2.32x–4.60x against head 1.84x–4.62x, both straddling the
+bound, small-input times identical, and both pass standalone — which is
+F2's shared-runner regime, not a regression), the
+ASan and UBSan correctness presets 90/90 each, conformance 2/2, and
+`sizeof(markdown_core_node)` read at 192 against 184 at head.
 
 **Inherited from the Stage 1 design work and not re-measured**: F6's 36.9% /
 23.0% / 7.2%, F7's 27.40% / 80.1% / 8-of-90 / 4.08%, F8, F9, and the
