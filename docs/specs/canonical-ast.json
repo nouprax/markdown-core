@@ -18,6 +18,7 @@
     "kinds": [
         {
             "name": "Document",
+            "bindingType": "Semantic",
             "fields": [
                 {
                     "name": "content",

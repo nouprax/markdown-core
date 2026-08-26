@@ -172,9 +172,8 @@ const modelProjections = [
     projection({
         label: "Swift model",
         directories: ["packages/swift-markdown-core/Sources/MarkdownCore"],
-        // Document is a final class — it owns the native parse, which a value
-        // type cannot release — while every other kind is a struct. Both are
-        // declarations; only the keyword differs.
+        // Every kind is a struct today; the class alternation survives from
+        // the era when the root owned the native parse, and it costs nothing.
         declaration: (kind) => new RegExp(`public (?:final class|struct) ${kind}\\b[^\\n]*\\{`),
         field: /public (?:let|var) ([A-Za-z]+)\s*:\s*([^\n]+)/g,
         optional: (m) => m[2].trim().endsWith("?")
@@ -203,6 +202,13 @@ const modelProjections = [
 
 const kinds = definition();
 const contract = JSON.parse(fs.readFileSync(path.join(root, CONTRACT_PATH), "utf8"));
+
+/** The type name a binding declares for a kind. The contract carries a
+ * `bindingType` where the ruled type name differs from the kind -- the root
+ * is `Semantic` in every binding while the C enum, the wire, the manifest,
+ * and the dump label keep `Document`. */
+const bindingName = new Map(contract.kinds.map((kind) => [kind.name, kind.bindingType ?? kind.name]));
+const bindingNames = () => [...kinds.keys()].map((kind) => bindingName.get(kind));
 
 /** A field the dump cannot print, because it IS the child structure -- which
  * is any field whose type names a KIND. The predicate used to list four of
@@ -277,7 +283,7 @@ const kindSurfaces = [
     },
     {
         label: "Kotlin dumper",
-        expect: [...kinds.keys()],
+        expect: bindingNames(),
         actual: namedKinds(
             "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/TreeDumper.kt",
             /override fun visit([A-Za-z]+)\(/g
@@ -285,10 +291,10 @@ const kindSurfaces = [
     },
     {
         label: "ES export list",
-        expect: [...kinds.keys()],
+        expect: bindingNames(),
         actual: namedKinds("packages/es-markdown-core/src/index.ts", /export (?:type )?\{([^}]*)\}/g, (m) => m[1])
             .flatMap((names) => names.split(",").map((n) => n.trim()))
-            .filter((name) => kinds.has(name))
+            .filter((name) => bindingNames().includes(name))
     },
     {
         label: "ES wire kinds",
@@ -304,12 +310,12 @@ const kindSurfaces = [
     },
     {
         label: "ES dumper",
-        expect: [...kinds.keys()],
+        expect: bindingNames(),
         actual: namedKinds("packages/es-markdown-core/src/tree-dumper.ts", /^\s+visit([A-Za-z]+): \(/gm)
     },
     {
         label: "Swift dumper",
-        expect: [...kinds.keys()],
+        expect: bindingNames(),
         actual: namedKinds(
             "packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift",
             /mutating func visit\(_:? ?n?o?d?e?:? (?:MarkdownCore\.)?([A-Za-z]+)\)/g
@@ -317,7 +323,7 @@ const kindSurfaces = [
     },
     {
         label: "Swift walker",
-        expect: [...kinds.keys()],
+        expect: bindingNames(),
         actual: namedKinds(
             "packages/swift-markdown-core/Sources/MarkdownCore/Walker/Walker.swift",
             /mutating func visit\(_:? ?n?o?d?e?:? (?:MarkdownCore\.)?([A-Za-z]+)\)/g
@@ -440,7 +446,7 @@ const optionality = new Map(
 
 for (const { label, fieldsOf } of modelProjections) {
     for (const [kind, expected] of kinds) {
-        const declared = fieldsOf(kind);
+        const declared = fieldsOf(bindingName.get(kind));
         if (declared === null) {
             console.error(`${label}: no declaration for ${kind}`);
             failed = true;
