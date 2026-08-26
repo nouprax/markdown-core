@@ -79,25 +79,19 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
     options->directives = true;
 }
 
-markdown_core_document *markdown_core_document_parse(
-    const uint8_t *source,
-    size_t length,
+/* The one parser both public entries build -- `markdown_core_document_parse`
+ * and the session (T12) -- so the option mapping and the extension mask have
+ * one spelling. */
+static markdown_core_parser *S_parser_for_options(
     const markdown_core_parse_options *requested_options,
     markdown_core_error **error
 ) {
     markdown_core_parse_options defaults;
     const markdown_core_parse_options *options = requested_options;
-    markdown_core_document *document;
     markdown_core_parser *parser;
-    markdown_core_diagnostics pending_diagnostics;
     unsigned extensions = 0;
     int native_options = MARKDOWN_CORE_OPT_VALIDATE_UTF8;
 
-    clear_error(error);
-    if (!source && length != 0) {
-        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "source must not be null when length is nonzero");
-        return NULL;
-    }
     if (!options) {
         markdown_core_parse_options_init(&defaults);
         options = &defaults;
@@ -143,6 +137,28 @@ markdown_core_document *markdown_core_document_parse(
     if (!markdown_core_core_extensions_attach(parser, extensions)) {
         markdown_core_parser_free(parser);
         set_error(error, MARKDOWN_CORE_ERROR_INTERNAL, "required syntax extension is unavailable");
+        return NULL;
+    }
+    return parser;
+}
+
+markdown_core_document *markdown_core_document_parse(
+    const uint8_t *source,
+    size_t length,
+    const markdown_core_parse_options *requested_options,
+    markdown_core_error **error
+) {
+    markdown_core_document *document;
+    markdown_core_parser *parser;
+    markdown_core_diagnostics pending_diagnostics;
+
+    clear_error(error);
+    if (!source && length != 0) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "source must not be null when length is nonzero");
+        return NULL;
+    }
+    parser = S_parser_for_options(requested_options, error);
+    if (!parser) {
         return NULL;
     }
 
@@ -192,6 +208,170 @@ void markdown_core_document_free(markdown_core_document *document) {
     markdown_core_diagnostics_dispose(&document->diagnostics);
     markdown_core_node_free(document->root);
     free(document);
+}
+
+/* THE STREAM'S ENGINE SIDE (docs/STREAMING.md T12). One parser lives for the
+ * session's whole life; every `feed` hands its bytes over and returns a
+ * DERIVED document -- `markdown_core_parser_derive_tree`, the clone-and-
+ * project re-projection, whose closed blocks borrow the projection cache's
+ * lists (T9) under the holder count that lets a borrow outlive the parser
+ * itself (T19). The two total views are COPIES -- the copy-out is the price
+ * a feed pays to return a value (§6), and it is the only copying here; the
+ * tree shares. `recorded` is the retain target `finish` moves the diagnostic
+ * list into; a mid-stream document copies the live list instead, so it
+ * carries the rows the parse has recorded so far and none of the rows the
+ * final projection raises (§12.8 Q4). */
+struct markdown_core_session {
+    markdown_core_parser *parser;
+    markdown_core_diagnostics recorded;
+};
+
+static int S_concrete_copy(markdown_core_parser *parser, markdown_core_concrete *out) {
+    memset(out, 0, sizeof(*out));
+    out->mem = parser->mem;
+    markdown_core_strbuf_init(parser->mem, &out->source, parser->source.size);
+    markdown_core_strbuf_put(&out->source, parser->source.ptr, parser->source.size);
+    if (out->source.oom) {
+        markdown_core_concrete_dispose(out);
+        return 0;
+    }
+    if (parser->line_starts_size) {
+        out->line_starts = (bufsize_t *)parser->mem->calloc(parser->line_starts_size, sizeof(bufsize_t));
+        if (!out->line_starts) {
+            markdown_core_concrete_dispose(out);
+            return 0;
+        }
+        memcpy(out->line_starts, parser->line_starts, (size_t)parser->line_starts_size * sizeof(bufsize_t));
+        out->line_starts_size = parser->line_starts_size;
+    }
+    return 1;
+}
+
+static int S_diagnostics_copy(markdown_core_parser *parser, markdown_core_diagnostics *out) {
+    const markdown_core_diagnostics *live = &parser->diagnostics;
+    memset(out, 0, sizeof(*out));
+    if (!live->mem || live->entries_size == 0) {
+        /* Nothing recorded yet: a zeroed list reads as empty and disposes as
+         * one. */
+        return 1;
+    }
+    out->mem = parser->mem;
+    markdown_core_strbuf_init(parser->mem, &out->messages, live->messages.size);
+    markdown_core_strbuf_put(&out->messages, live->messages.ptr, live->messages.size);
+    out->entries = (markdown_core_diagnostic_record *)parser->mem->calloc(live->entries_size, sizeof(*out->entries));
+    if (out->messages.oom || !out->entries) {
+        markdown_core_diagnostics_dispose(out);
+        return 0;
+    }
+    /* The records carry offsets into the message pool, so they survive the
+     * copy verbatim. */
+    memcpy(out->entries, live->entries, (size_t)live->entries_size * sizeof(*out->entries));
+    out->entries_size = live->entries_size;
+    out->entries_alloc = live->entries_size;
+    return 1;
+}
+
+markdown_core_session *markdown_core_session_new(
+    const markdown_core_parse_options *options,
+    markdown_core_error **error
+) {
+    markdown_core_session *session;
+
+    clear_error(error);
+    session = (markdown_core_session *)calloc(1, sizeof(*session));
+    if (!session) {
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate session");
+        return NULL;
+    }
+    session->parser = S_parser_for_options(options, error);
+    if (!session->parser) {
+        free(session);
+        return NULL;
+    }
+    /* Requirement 13, asked for before the first byte exactly as the one-shot
+     * parse asks it: recording happens as the lines are read. */
+    markdown_core_parser_retain_diagnostics(session->parser, &session->recorded);
+    return session;
+}
+
+markdown_core_document *markdown_core_session_feed(
+    markdown_core_session *session,
+    const uint8_t *chunk,
+    size_t length,
+    markdown_core_error **error
+) {
+    markdown_core_document *document;
+
+    clear_error(error);
+    if (!session || !session->parser) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "the session is finished or null");
+        return NULL;
+    }
+    if (!chunk && length != 0) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "chunk must not be null when length is nonzero");
+        return NULL;
+    }
+    if (length) {
+        markdown_core_parser_feed(session->parser, (const char *)chunk, length);
+    }
+    document = (markdown_core_document *)calloc(1, sizeof(*document));
+    if (!document) {
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
+        return NULL;
+    }
+    document->root = markdown_core_parser_derive_tree(session->parser, session->parser->refmap, 0);
+    if (!document->root) {
+        free(document);
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
+        return NULL;
+    }
+    if (!S_concrete_copy(session->parser, &document->concrete) ||
+        !S_diagnostics_copy(session->parser, &document->diagnostics)) {
+        markdown_core_document_free(document);
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not copy the document's views");
+        return NULL;
+    }
+    return document;
+}
+
+markdown_core_document *markdown_core_session_finish(markdown_core_session *session, markdown_core_error **error) {
+    markdown_core_document *document;
+
+    clear_error(error);
+    if (!session || !session->parser) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "the session is finished or null");
+        return NULL;
+    }
+    document = (markdown_core_document *)calloc(1, sizeof(*document));
+    if (!document) {
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
+        return NULL;
+    }
+    markdown_core_parser_retain_concrete(session->parser, &document->concrete);
+    document->root = markdown_core_parser_finish(session->parser);
+    markdown_core_parser_free(session->parser);
+    session->parser = NULL;
+    if (!document->root) {
+        markdown_core_concrete_dispose(&document->concrete);
+        markdown_core_diagnostics_dispose(&session->recorded);
+        free(document);
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
+        return NULL;
+    }
+    document->diagnostics = session->recorded;
+    memset(&session->recorded, 0, sizeof(session->recorded));
+    return document;
+}
+
+void markdown_core_session_free(markdown_core_session *session) {
+    if (!session) {
+        return;
+    }
+    if (session->parser) {
+        markdown_core_parser_free(session->parser);
+    }
+    markdown_core_diagnostics_dispose(&session->recorded);
+    free(session);
 }
 
 const markdown_core_node *markdown_core_document_semantic(const markdown_core_document *document) {

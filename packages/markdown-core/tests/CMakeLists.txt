@@ -352,6 +352,26 @@ if(MARKDOWN_CORE_STATIC)
     markdown_core_add_test(projection_attach_invalidation "streaming" 120 projection_runner --case attach_invalidation)
     markdown_core_add_test(projection_diagnostics_after_derive "streaming" 120 projection_runner --case
                            diagnostics_after_derive)
+    # Phase F's gates (T15, T16, T17). feed_bound is counter-based and
+    # deterministic; resident_memory reads ru_maxrss, so like the wall-clock
+    # gates it carries the complexity label the sanitizer presets exclude;
+    # carried_state joins the cloned boundary projection against the in-place
+    # finish on the block identity, over every extension corpus.
+    markdown_core_add_test(projection_feed_bound "streaming" 120 projection_runner --case feed_bound)
+    markdown_core_add_test(pathological_complexity_resident_memory "pathological;complexity" 240 projection_runner
+                           --case resident_memory)
+    set_tests_properties(pathological_complexity_resident_memory PROPERTIES RUN_SERIAL TRUE)
+    foreach(fixture extensions extensions-directive extensions-formula-github spec)
+        markdown_core_add_test(
+            projection_carried_state_${fixture}
+            "streaming"
+            240
+            projection_runner
+            --case
+            carried_state
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+    endforeach()
     # Criterion 2's SECOND bound (§12.4, §12.10 D): projection is O(what is
     # projected) -- flat ns per content byte across document sizes, the same
     # two-endpoint normalized-slowdown shape as the construction slope gates.

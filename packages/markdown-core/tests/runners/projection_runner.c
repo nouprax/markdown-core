@@ -27,6 +27,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if !defined(_WIN32)
+#include <sys/resource.h>
+#endif
+
 /* The `--md-dir` corpus walk, same split as corpus_guard's: the Windows CRT
  * has no dirent.h. */
 #if defined(_WIN32)
@@ -2189,6 +2193,404 @@ static int case_diagnostics_after_derive(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+/* T15 -- THE REACTIVE-LOOP BOUND, as counters rather than clocks. The
+ * projection side of a feed carries no term in the document already fed:
+ * `cache_misses` counts exactly the content blocks a projection re-parses
+ * (the cost F12 measured), so over a stream of independent blocks the
+ * per-feed miss delta must sit FLAT while the hit delta grows with the
+ * document -- a miss delta that moves with fed size names state being
+ * re-derived. Two terms are carved out and STATED rather than folded in
+ * (§6): the whole-CST clone every derivation pays by design, and the
+ * binding-side copy-out, which lives above this runner. The third term --
+ * a definition's arrival re-keys the whole document (F19) -- is asserted
+ * AS that term, so a change in its shape fails here instead of hiding. */
+static int case_feed_bound(const ts_spec_file *file) {
+    enum { FB_BLOCKS = 256, FB_WARMUP = 16 };
+    markdown_core_parser *parser;
+    size_t misses_before;
+    size_t hits_before;
+    size_t min_misses = (size_t)-1;
+    size_t max_misses = 0;
+    size_t first_hits_delta = 0;
+    size_t last_hits_delta = 0;
+    char line[64];
+    int i;
+    int failures = 0;
+    (void)file;
+
+    if (pr_no_cache) {
+        puts("feed bound: skipped under --no-cache (the bound is the cache's)");
+        return 0;
+    }
+    parser = pr_parser_new();
+    if (!parser) {
+        return -1;
+    }
+    for (i = 0; i < FB_BLOCKS; i++) {
+        markdown_core_node *derived;
+        snprintf(line, sizeof(line), "paragraph number %d with some text\n\n", i);
+        markdown_core_parser_feed(parser, line, strlen(line));
+        misses_before = parser->cache_misses;
+        hits_before = parser->cache_hits;
+        derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        if (!derived) {
+            fputs("feed bound: derivation failed\n", stderr);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        markdown_core_node_free(derived);
+        if (i >= FB_WARMUP) {
+            size_t misses = parser->cache_misses - misses_before;
+            if (misses < min_misses) {
+                min_misses = misses;
+            }
+            if (misses > max_misses) {
+                max_misses = misses;
+            }
+            if (i == FB_WARMUP) {
+                first_hits_delta = parser->cache_hits - hits_before;
+            }
+            last_hits_delta = parser->cache_hits - hits_before;
+        }
+    }
+    if (max_misses != min_misses) {
+        fprintf(
+            stderr,
+            "feed bound: misses per feed moved %zu..%zu -- the projection side carries a term in the fed document\n",
+            min_misses,
+            max_misses
+        );
+        failures++;
+    }
+    if (last_hits_delta <= first_hits_delta) {
+        fprintf(
+            stderr,
+            "feed bound: hits per feed did not grow (%zu -> %zu) -- the cache is not serving\n",
+            first_hits_delta,
+            last_hits_delta
+        );
+        failures++;
+    }
+    {
+        static const char DEF[] = "[zz]: /u\n\n";
+        markdown_core_node *derived;
+        size_t misses;
+        markdown_core_parser_feed(parser, DEF, sizeof(DEF) - 1);
+        misses_before = parser->cache_misses;
+        derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        if (!derived) {
+            fputs("feed bound: derivation failed\n", stderr);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        markdown_core_node_free(derived);
+        misses = parser->cache_misses - misses_before;
+        if (misses < FB_BLOCKS) {
+            fprintf(
+                stderr,
+                "feed bound: a definition's arrival re-keyed %zu of %d blocks -- F19's accepted term changed shape\n",
+                misses,
+                FB_BLOCKS
+            );
+            failures++;
+        }
+    }
+    markdown_core_parser_free(parser);
+    printf(
+        "feed bound: %s -- misses/feed flat at %zu over %d feeds, hits/feed %zu -> %zu; carved out and accepted "
+        "(§6): the whole-CST clone per feed, the binding copy-out, and the whole-document re-key per definition\n",
+        failures ? "MOVED" : "holds",
+        min_misses,
+        FB_BLOCKS - FB_WARMUP,
+        first_hits_delta,
+        last_hits_delta
+    );
+    return failures ? -1 : 0;
+}
+
+/* T16 -- RESIDENT MEMORY across a long stream, measured rather than assumed,
+ * and the bound stated so it is not later mistaken for a defect (§6):
+ * every block keeps its content bytes for life, the parser keeps the
+ * normalized source, and the cache keeps one projected list per closed
+ * block, so residency is O(bytes fed) with a constant factor -- THE GATE
+ * IS THE FACTOR. `ru_maxrss` is a peak: the tree handed back per feed is
+ * freed before the next, so the peak is the resident state plus one live
+ * projection, which is the consumer's own shape. Closes F9. */
+static int case_resident_memory(const ts_spec_file *file) {
+#if defined(_WIN32)
+    (void)file;
+    puts("resident memory: skipped (no getrusage on this host)");
+    return 0;
+#else
+    enum { RM_BLOCKS = 16384, RM_DERIVE_EVERY = 64 };
+    static const char RM_FILLER[] = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do "
+                                    "eiusmod tempor incididunt ut labore et dolore magna aliqua ut "
+                                    "enim ad minim veniam quis nostrud exercitation ullamco laboris";
+    struct rusage usage;
+    long baseline_kb;
+    long final_kb;
+    size_t fed = 0;
+    char line[512];
+    int i;
+    markdown_core_parser *parser;
+    double factor;
+    (void)file;
+
+    getrusage(RUSAGE_SELF, &usage);
+    baseline_kb = usage.ru_maxrss;
+    parser = pr_parser_new();
+    if (!parser) {
+        return -1;
+    }
+    for (i = 0; i < RM_BLOCKS; i++) {
+        int n = snprintf(line, sizeof(line), "block %d: %s\n\n", i, RM_FILLER);
+        markdown_core_parser_feed(parser, line, (size_t)n);
+        fed += (size_t)n;
+        if (i % RM_DERIVE_EVERY == RM_DERIVE_EVERY - 1) {
+            markdown_core_node *derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+            if (!derived) {
+                fputs("resident memory: derivation failed\n", stderr);
+                markdown_core_parser_free(parser);
+                return -1;
+            }
+            markdown_core_node_free(derived);
+        }
+    }
+    getrusage(RUSAGE_SELF, &usage);
+    final_kb = usage.ru_maxrss;
+    markdown_core_parser_free(parser);
+#if defined(__APPLE__)
+    /* ru_maxrss is bytes on Darwin and kilobytes on Linux. */
+    baseline_kb /= 1024;
+    final_kb /= 1024;
+#endif
+    factor = ((double)(final_kb - baseline_kb) * 1024.0) / (double)fed;
+    printf(
+        "resident memory: %.2fx of the %zu bytes fed stays resident (%ld KiB -> %ld KiB peak); the bound is "
+        "O(bytes fed) -- the CST keeps every block's content, the parser the normalized source, the cache one "
+        "list per closed block\n",
+        factor,
+        fed,
+        baseline_kb,
+        final_kb
+    );
+    if (factor > 24.0) {
+        fprintf(stderr, "resident memory: %.2fx exceeds the 24x tripwire\n", factor);
+        return -1;
+    }
+    return 0;
+#endif
+}
+
+/* T17 -- CARRIED EXTENSION STATE, gated structurally instead of through a
+ * golden (closes F8). The boundary derivation goes through the clone; the
+ * finish projection is taken in place on the CST with no clone at all --
+ * so a field of a block's extension payload that stops surviving the
+ * clone shows up as the SAME closed block dumping differently at the last
+ * boundary than at finish, joined on the identity T2 mints. Run twice:
+ * cache off (a pure clone-projection against the in-place one) and cache
+ * on (the served-list path against the same). A document whose FINALIZE
+ * mints definitions -- a dying paragraph's, a footnote's -- is skipped:
+ * those move the maps between the two projections, resolution may then
+ * legitimately move a closed block's rendering, and the generations are
+ * unreadable afterwards because finish's reset renews the maps. The
+ * finalize-minted definitions are counted STRUCTURALLY, as definition
+ * nodes the finish tree has that the boundary tree does not. The skip
+ * count is asserted a minority so the gate cannot go vacuous.
+ *
+ * One block is exempt BY THE RULING: the boundary tree's final top-level
+ * block. The formula promotion's `closed` lags one line deliberately
+ * (§1's backward-reach table), so the block at the spine's very end can
+ * read closed while its reinterpretation is still owed to the next line
+ * -- at finish that line has spoken. Every block the stream has actually
+ * left behind is compared. */
+typedef struct cs_entry {
+    uint32_t id;
+    uint8_t *dump;
+    size_t length;
+} cs_entry;
+
+static int cs_collect(markdown_core_node *root, int exempt_tail, cs_entry **out, size_t *count) {
+    markdown_core_iter walk;
+    markdown_core_iter *iter = &walk;
+    markdown_core_event_type ev_type;
+    markdown_core_node *tail = exempt_tail ? root->last_child : NULL;
+    size_t cap = 0;
+    *out = NULL;
+    *count = 0;
+    markdown_core_iter_init(iter, root);
+    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (ev_type == MARKDOWN_CORE_EVENT_ENTER && tail && node == tail) {
+            markdown_core_iter_reset(iter, node, MARKDOWN_CORE_EVENT_EXIT);
+            continue;
+        }
+        if (ev_type != MARKDOWN_CORE_EVENT_ENTER || !MARKDOWN_CORE_NODE_BLOCK_P(node) ||
+            (node->flags & MARKDOWN_CORE_NODE__OPEN) || node->identifier == 0) {
+            continue;
+        }
+        if (*count == cap) {
+            size_t grown = cap ? cap * 2 : 32;
+            cs_entry *entries = (cs_entry *)realloc(*out, grown * sizeof(cs_entry));
+            if (!entries) {
+                return -1;
+            }
+            *out = entries;
+            cap = grown;
+        }
+        (*out)[*count].id = node->identifier;
+        (*out)[*count].dump = pr_dump(node, &(*out)[*count].length);
+        if (!(*out)[*count].dump) {
+            return -1;
+        }
+        (*count)++;
+    }
+    return 0;
+}
+
+static void cs_free(cs_entry *entries, size_t count) {
+    size_t i;
+    for (i = 0; i < count; i++) {
+        markdown_core_dump_free(entries[i].dump);
+    }
+    free(entries);
+}
+
+static size_t cs_definition_count(markdown_core_node *root) {
+    markdown_core_iter walk;
+    markdown_core_iter *iter = &walk;
+    markdown_core_event_type ev_type;
+    size_t count = 0;
+    markdown_core_iter_init(iter, root);
+    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (ev_type == MARKDOWN_CORE_EVENT_ENTER && (node->type == MARKDOWN_CORE_NODE_REFERENCE_DEFINITION ||
+                                                        node->type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION)) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static int case_carried_state(const ts_spec_file *file) {
+    size_t index;
+    int cache_off;
+    int failures = 0;
+    size_t compared = 0;
+    size_t skipped = 0;
+    size_t documents = 0;
+    size_t multi_block = 0;
+
+    for (cache_off = 0; cache_off <= 1; cache_off++) {
+        for (index = 0; index < file->count; index++) {
+            const ts_spec_case *test_case = &file->cases[index];
+            markdown_core_parser *parser = pr_parser_new();
+            markdown_core_node *derived;
+            markdown_core_node *finished;
+            cs_entry *at_boundary = NULL;
+            cs_entry *at_finish = NULL;
+            size_t boundary_count = 0;
+            size_t finish_count = 0;
+            size_t boundary_definitions;
+            size_t i;
+            size_t j;
+            if (!parser) {
+                return -1;
+            }
+            parser->no_projection_cache = cache_off || pr_no_cache;
+            documents++;
+            markdown_core_parser_feed(parser, test_case->markdown, test_case->markdown_length);
+            derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+            if (!derived || cs_collect(derived, 1, &at_boundary, &boundary_count) != 0) {
+                fprintf(stderr, "example %d: boundary derivation failed\n", test_case->example);
+                cs_free(at_boundary, boundary_count);
+                if (derived) {
+                    markdown_core_node_free(derived);
+                }
+                markdown_core_parser_free(parser);
+                return -1;
+            }
+            boundary_definitions = cs_definition_count(derived);
+            if (derived->first_child && derived->first_child != derived->last_child) {
+                multi_block++;
+            }
+            markdown_core_node_free(derived);
+            finished = markdown_core_parser_finish(parser);
+            if (!finished || cs_collect(finished, 0, &at_finish, &finish_count) != 0) {
+                fprintf(stderr, "example %d: finish failed\n", test_case->example);
+                cs_free(at_boundary, boundary_count);
+                cs_free(at_finish, finish_count);
+                if (finished) {
+                    markdown_core_node_free(finished);
+                }
+                markdown_core_parser_free(parser);
+                return -1;
+            }
+            if (cs_definition_count(finished) != boundary_definitions) {
+                skipped++;
+            } else {
+                for (i = 0; i < boundary_count; i++) {
+                    int found = 0;
+                    for (j = 0; j < finish_count; j++) {
+                        if (at_finish[j].id != at_boundary[i].id) {
+                            continue;
+                        }
+                        found = 1;
+                        if (at_finish[j].length != at_boundary[i].length ||
+                            memcmp(at_finish[j].dump, at_boundary[i].dump, at_boundary[i].length) != 0) {
+                            fprintf(
+                                stderr,
+                                "example %d (cache %s): closed block %u dumps differently at finish\n",
+                                test_case->example,
+                                cache_off ? "off" : "on",
+                                at_boundary[i].id
+                            );
+                            failures++;
+                        }
+                        break;
+                    }
+                    if (!found) {
+                        fprintf(
+                            stderr,
+                            "example %d (cache %s): closed block %u vanished at finish\n",
+                            test_case->example,
+                            cache_off ? "off" : "on",
+                            at_boundary[i].id
+                        );
+                        failures++;
+                    }
+                    compared++;
+                }
+            }
+            cs_free(at_boundary, boundary_count);
+            cs_free(at_finish, finish_count);
+            markdown_core_node_free(finished);
+            markdown_core_parser_free(parser);
+        }
+    }
+    /* Vacuity is judged structurally: a corpus of one-block documents has
+     * nothing but spine tails, and the tail is the one ruled exemption. */
+    if ((compared == 0 && multi_block > 0) || skipped * 2 > documents) {
+        fprintf(
+            stderr,
+            "carried state: %zu blocks compared over %zu multi-block documents, %zu of %zu skipped -- vacuous\n",
+            compared,
+            multi_block,
+            skipped,
+            documents
+        );
+        failures++;
+    }
+    printf(
+        "carried state: %s -- %zu closed blocks agree between the cloned boundary projection and the in-place "
+        "finish, %zu resolution-moved documents skipped\n",
+        failures ? "DIVERGED" : "holds",
+        compared,
+        skipped
+    );
+    return failures ? -1 : 0;
+}
+
 typedef struct pr_case_entry {
     const char *name;
     int (*run)(const ts_spec_file *file);
@@ -2205,6 +2607,9 @@ static const pr_case_entry PR_CASES[] = {
     {"block_identity_transitions", case_block_identity_transitions, 0},
     {"attach_invalidation", case_attach_invalidation, 0},
     {"diagnostics_after_derive", case_diagnostics_after_derive, 0},
+    {"feed_bound", case_feed_bound, 0},
+    {"resident_memory", case_resident_memory, 0},
+    {"carried_state", case_carried_state, 1},
     {"dump_boundaries", case_dump_boundaries, 1},
     {"feed_loop", case_feed_loop, 1},
     {"projection_slope", case_projection_slope, 0},

@@ -287,6 +287,52 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_document_parse(
 MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *document);
 
 /**
+ * THE STREAM (docs/STREAMING.md §4 D5): a session, `feed`, and the document's
+ * two total views -- the same `semantic` and `source` every document
+ * publishes. `feed` returns THE DOCUMENT AFTER THOSE BYTES: a value the
+ * caller owns outright, frees with `markdown_core_document_free`, and keeps
+ * -- it stays readable after every later feed and after the session itself
+ * is gone. There is no ask and no snapshot handle; the return value is the
+ * only answer there is.
+ *
+ * What a mid-stream document is: the projection of the parse as it stands.
+ * A trailing line whose ending has not arrived is not yet in it, an open
+ * construct is projected as it stands (a list still open has not settled
+ * its tightness), and its diagnostics are the rows the parse has recorded
+ * so far -- the rows the final projection itself raises (`label-too-long`,
+ * the directive codes) speak only over the fully closed document (§12.8 Q4).
+ *
+ * `finish` ends the stream: the pending line is processed, every construct
+ * closes, and the SEALED document comes back -- byte-identical, diagnostics
+ * included, to what `markdown_core_document_parse` returns for the same
+ * bytes. It also ends the session's parse: `feed` and `finish` after it
+ * report MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, and only
+ * `markdown_core_session_free` remains to take the shell back.
+ */
+typedef struct markdown_core_session markdown_core_session;
+
+/** Opens a session. `options == NULL` selects the defaults, exactly as
+ * `markdown_core_document_parse` reads them. */
+MARKDOWN_CORE_API markdown_core_session *markdown_core_session_new(
+    const markdown_core_parse_options *options,
+    markdown_core_error **error
+);
+/** Feeds exactly `length` UTF-8 bytes and returns the document after them.
+ * `length == 0` is a legal feed: the document as it stands. */
+MARKDOWN_CORE_API markdown_core_document *markdown_core_session_feed(
+    markdown_core_session *session,
+    const uint8_t *chunk,
+    size_t length,
+    markdown_core_error **error
+);
+/** Ends the stream and returns the sealed document. */
+MARKDOWN_CORE_API markdown_core_document *markdown_core_session_finish(
+    markdown_core_session *session,
+    markdown_core_error **error
+);
+MARKDOWN_CORE_API void markdown_core_session_free(markdown_core_session *session);
+
+/**
  * THE PARSE, AND WHAT ITS COORDINATES ARE COUNTED AGAINST.
  *
  * `markdown_core_document_semantic` is the tree. Every node carries a `scope`,

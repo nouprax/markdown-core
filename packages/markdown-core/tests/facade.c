@@ -99,6 +99,45 @@ static void check_fixture(const char *fixture_dir, const char *name, const char 
         failures++;
     }
     markdown_core_dump_free(actual);
+    actual = NULL;
+
+    /* THE SAME BYTES, STREAMED (T12): fed in 7-byte chunks through a session,
+     * the sealed document dumps onto the same reviewed golden and carries the
+     * same diagnostic rows. The chunk size is prime so line endings, UTF-8
+     * sequences and construct boundaries all get split. */
+    {
+        size_t oneshot_rows = markdown_core_document_diagnostic_count(document);
+        markdown_core_session *session = markdown_core_session_new(&options, &error);
+        markdown_core_document *sealed = NULL;
+        size_t offset;
+        check(session != NULL && error == NULL, "the session opens under the manifest's options");
+        for (offset = 0; session && offset < markdown_length; offset += 7) {
+            size_t chunk = markdown_length - offset < 7 ? markdown_length - offset : 7;
+            markdown_core_document *streamed = markdown_core_session_feed(session, markdown + offset, chunk, &error);
+            check(streamed != NULL && error == NULL, "every feed returns the document after those bytes");
+            markdown_core_document_free(streamed);
+        }
+        if (session) {
+            sealed = markdown_core_session_finish(session, &error);
+            check(sealed != NULL && error == NULL, "the stream seals");
+        }
+        if (sealed) {
+            check(markdown_core_document_dump(sealed, &actual, &actual_length, &error), "sealed dump succeeds");
+            if (actual && (actual_length != expected_length || memcmp(actual, expected, expected_length) != 0)) {
+                fprintf(stderr, "FAILED: %s sealed stream differs from reviewed golden\n", name);
+                fwrite(actual, 1, actual_length, stderr);
+                failures++;
+            }
+            markdown_core_dump_free(actual);
+            actual = NULL;
+            check(
+                markdown_core_document_diagnostic_count(sealed) == oneshot_rows,
+                "the sealed stream carries the one-shot parse's diagnostic rows"
+            );
+            markdown_core_document_free(sealed);
+        }
+        markdown_core_session_free(session);
+    }
     markdown_core_document_free(document);
 
 done:
@@ -516,6 +555,138 @@ static void check_diagnostics(void) {
     );
 }
 
+/* THE STREAM (T12), in the order the header states it: a mid-stream document
+ * is the projection as it stands; it is a value that outlives every later
+ * feed and the session itself (T19's borrow); the pending line's bytes join
+ * only when their ending arrives; `finish` seals -- byte-identical,
+ * diagnostics included, to the one-shot parse -- and ends the parse, after
+ * which `feed` and `finish` refuse and only `free` remains. */
+static void check_session(void) {
+    static const char *const FULL = "# heading\n"
+                                    "\n"
+                                    "paragraph text\n"
+                                    "\n"
+                                    "- a\n"
+                                    "- b\n";
+    markdown_core_error *error = NULL;
+    markdown_core_session *session = markdown_core_session_new(NULL, &error);
+    markdown_core_document *first = NULL;
+    markdown_core_document *second = NULL;
+    markdown_core_document *sealed = NULL;
+    markdown_core_document *oneshot = NULL;
+    uint8_t *before = NULL;
+    uint8_t *after = NULL;
+    size_t before_length = 0;
+    size_t after_length = 0;
+    markdown_core_string text;
+
+    check(session != NULL && error == NULL, "a session opens on the defaults");
+    if (!session) {
+        return;
+    }
+
+    /* "paragraph" has no line ending yet: the heading is in this document,
+     * the pending prefix is not. */
+    first = markdown_core_session_feed(session, (const uint8_t *)"# heading\n\nparagraph", 20, &error);
+    check(first != NULL && error == NULL, "a feed returns the document after those bytes");
+    if (first) {
+        text = markdown_core_document_source(first);
+        check(
+            text.length == 11 && memcmp(text.data, "# heading\n\n", 11) == 0,
+            "a line whose ending has not arrived is not yet in the document"
+        );
+        check(markdown_core_document_semantic(first) != NULL, "the mid-stream document has its semantic view");
+    }
+
+    second = markdown_core_session_feed(session, (const uint8_t *)" text\n\n- a\n- b\n", 15, &error);
+    check(second != NULL && error == NULL, "a later feed returns a later document");
+    if (first) {
+        text = markdown_core_document_source(first);
+        check(
+            text.length == 11 && memcmp(text.data, "# heading\n\n", 11) == 0,
+            "an earlier document is a value a later feed cannot move"
+        );
+    }
+    if (second) {
+        check(markdown_core_document_dump(second, &before, &before_length, &error), "the mid-stream dump succeeds");
+    }
+
+    check(
+        markdown_core_session_feed(session, NULL, 4, &error) == NULL && error != NULL &&
+            markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+        "a null chunk with bytes is refused"
+    );
+    markdown_core_error_free(error);
+    error = NULL;
+
+    {
+        markdown_core_document *unmoved = markdown_core_session_feed(session, NULL, 0, &error);
+        check(unmoved != NULL && error == NULL, "a zero-length feed is legal and answers");
+        markdown_core_document_free(unmoved);
+    }
+
+    sealed = markdown_core_session_finish(session, &error);
+    check(sealed != NULL && error == NULL, "the stream seals");
+    check(
+        markdown_core_session_feed(session, (const uint8_t *)"x", 1, &error) == NULL && error != NULL &&
+            markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+        "a feed after the seal is refused"
+    );
+    markdown_core_error_free(error);
+    error = NULL;
+    check(
+        markdown_core_session_finish(session, &error) == NULL && error != NULL &&
+            markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+        "a second seal is refused"
+    );
+    markdown_core_error_free(error);
+    error = NULL;
+
+    /* The sealed stream and the one-shot parse are the same document. */
+    oneshot = markdown_core_document_parse((const uint8_t *)FULL, strlen(FULL), NULL, &error);
+    check(oneshot != NULL, "the control parses");
+    if (sealed && oneshot) {
+        uint8_t *sealed_dump = NULL;
+        uint8_t *oneshot_dump = NULL;
+        size_t sealed_length = 0;
+        size_t oneshot_length = 0;
+        check(
+            markdown_core_document_dump(sealed, &sealed_dump, &sealed_length, &error) &&
+                markdown_core_document_dump(oneshot, &oneshot_dump, &oneshot_length, &error),
+            "both dumps succeed"
+        );
+        check(
+            sealed_dump && oneshot_dump && sealed_length == oneshot_length &&
+                memcmp(sealed_dump, oneshot_dump, sealed_length) == 0,
+            "the sealed stream is the one-shot parse"
+        );
+        check(
+            markdown_core_document_diagnostic_count(sealed) == markdown_core_document_diagnostic_count(oneshot),
+            "and carries its diagnostic rows"
+        );
+        markdown_core_dump_free(sealed_dump);
+        markdown_core_dump_free(oneshot_dump);
+    }
+
+    /* T19's borrow, seen from the surface: the session is gone and the
+     * mid-stream document still dumps the same bytes. */
+    markdown_core_session_free(session);
+    if (second && before) {
+        check(markdown_core_document_dump(second, &after, &after_length, &error), "the survivor still dumps");
+        check(
+            after && after_length == before_length && memcmp(after, before, before_length) == 0,
+            "a document outlives the session that fed it"
+        );
+    }
+    markdown_core_dump_free(before);
+    markdown_core_dump_free(after);
+    markdown_core_document_free(first);
+    markdown_core_document_free(second);
+    markdown_core_document_free(sealed);
+    markdown_core_document_free(oneshot);
+    markdown_core_session_free(NULL);
+}
+
 int main(int argc, char **argv) {
     const char *fixture_dir;
     int i;
@@ -528,6 +699,7 @@ int main(int argc, char **argv) {
     check_null_and_empty();
     check_source_and_lines();
     check_diagnostics();
+    check_session();
     for (i = 3; i < argc; i += 2) {
         check_fixture(fixture_dir, argv[i], argv[i + 1]);
     }

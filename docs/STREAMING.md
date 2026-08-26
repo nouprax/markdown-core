@@ -239,19 +239,26 @@ This is the finding that sizes the cache. It is also the finding that says a
 cache which serves stale closed blocks is answering a different question from
 the one the consumer asked.
 
-### F8 — carried extension state is invisible to every oracle  · INHERITED
+### F8 — carried extension state is invisible to every oracle  · INHERITED · **CLOSED by T17**
 
 `TABLE_VISITED`, `n_rows`, `n_nonempty_cells`, formula `block_delim`/`closed`,
 directive `fence_length`/`closed`/`consume_line` are all load-bearing carried
 state that no tree-equality gate can see. Stage 1's `opaque_copy_func` hook makes
-them cross the clone, but nothing gates the *fields*.
+them cross the clone, but nothing gates the *fields*. *(T17's gate does, from
+the other side: the boundary derivation goes through the clone and the finish
+projection does not, so a field that stops surviving the clone makes the same
+closed block dump differently in the two — see `projection_carried_state_*`.)*
 
-### F9 — the resident-memory bound is unmeasured  · INHERITED
+### F9 — the resident-memory bound is unmeasured  · INHERITED · **CLOSED by T16**
 
 The split chose that every block **keeps** its content buffer for life. That is a
 direct reversal of an earlier intent to release it at close, and the memory cost
 of the choice was never measured. Under repeated projection it is the bound that
-matters most.
+matters most. *(Measured 2026-08-26, `pathological_complexity_resident_memory`:
+streaming 3.28 MB of paragraph blocks with a derivation every 64 feeds keeps
+**8.3× of the bytes fed** resident at peak — the CST's content buffers, the
+normalized source, the cache's one list per closed block, and the one live
+projection a consumer holds. The bound is O(bytes fed); the gate trips at 24×.)*
 
 ### F10 — a suspected CST write does **not** reproduce  · ~~VERIFIED NEGATIVE~~ **WITHDRAWN by F21**
 
@@ -1841,10 +1848,24 @@ expectation the owner never had, and it dies whole:
 
 ### Phase E — the public surface  · D5 and D6 ruled
 
-- [ ] **T12 — export the streaming entry point** in C, carrying the shape §4
+- [x] **T12 — export the streaming entry point** in C, carrying the shape §4
       rules: a session, `feed`, and the document's two total views. Whatever the
       C spelling, `scripts/audit-public-surface.sh` gates it against the header,
-      the ELF version script and the Mach-O list together.
+      the ELF version script and the Mach-O list together. **Done 2026-08-26**:
+      four symbols — `markdown_core_session_new`, `_feed`, `_finish`, `_free` —
+      and the header, the ELF version script and the Mach-O list agree at 41.
+      The C spelling adds `finish`, the latitude this entry grants: the sealed
+      document — list tightness, the finalize-minted definitions, the
+      record-gated diagnostic rows — exists only at the last projection, so a
+      session that could never end could never hand it over; after it the
+      session refuses everything but `free`. `feed` returns the mid-stream
+      projection as a VALUE: the tree shares the cache's lists under T19's
+      holds (a document outlives the session that fed it — gated), the two
+      views are copies (§6's copy-out made flesh), and its diagnostics are the
+      rows recorded so far (§12.8 Q4 — the final projection's own rows speak
+      at `finish`). Gate: `facade_native` — every canonical fixture fed in
+      7-byte chunks seals byte-identical to the one-shot parse, diagnostic
+      rows included — plus the session behavior checks in `facade.c`.
 - ~~**T13 — the returned document carries the change classification** from
   T7.~~ Killed with Phase D (2026-08-26): `updated` carries identity, and
   identity is the whole signal.
@@ -1854,7 +1875,7 @@ expectation the owner never had, and it dies whole:
 
 ### Phase F — bounds and gates
 
-- [ ] **T15 — the reactive-loop bound as a gate:** the **projection** side of a
+- [x] **T15 — the reactive-loop bound as a gate:** the **projection** side of a
       feed is `O(open block + changed set)` and carries **no term in the
       document already fed**. Two terms are carved out and reported beside it
       rather than folded in, because both are accepted: the **whole-CST clone**
@@ -1863,16 +1884,39 @@ expectation the owner never had, and it dies whole:
       nothing to skip. A fitted
       slope in document size fails and names the state being re-derived. The
       binding-side copy-out is bounded separately and stated, not hidden inside
-      this one.
-- [ ] **T16 — measure resident memory** across a long stream, and state the
+      this one. **Done 2026-08-26**, as counters rather than clocks:
+      `projection_feed_bound` streams 256 independent blocks, derives per
+      feed, and asserts the per-feed **cache-miss delta** — exactly the blocks
+      a projection re-parses, the cost F12 measured — sits FLAT (it is 1, the
+      block the feed closed) while the hit delta grows with the document. The
+      two carved-out terms are stated in its output, and the third — a
+      definition's arrival re-keys the whole document (F19) — is asserted AS
+      that term, so a change in its shape fails the gate instead of hiding.
+- [x] **T16 — measure resident memory** across a long stream, and state the
       bound that comes with every block keeping its content buffer for life.
       F14's first draft claimed clearing a formula block's content at close would
       reduce it; `markdown_core_strbuf_clear` returns nothing to the allocator,
       so that saving needs `_free` and is untested.
-      *Closes F9.*
-- [ ] **T17 — structural invariants over carried opaque extension state**, so a
+      *Closes F9.* **Done 2026-08-26**:
+      `pathological_complexity_resident_memory` streams 3.28 MB of paragraph
+      blocks with a derivation every 64 feeds and reads `ru_maxrss`: **8.3× of
+      the bytes fed stays resident at peak** — the CST's content buffers, the
+      normalized source, the cache's one list per closed block, and the one
+      live projection a consumer holds. The bound is O(bytes fed); the gate
+      trips at 24×. Numbers in F9.
+- [x] **T17 — structural invariants over carried opaque extension state**, so a
       field that stops surviving the clone fails a gate rather than a golden.
-      *Closes F8.*
+      *Closes F8.* **Done 2026-08-26**: `projection_carried_state_*` joins the
+      cloned boundary projection against the clone-free in-place finish on the
+      identity T2 mints — a field that stops surviving the clone makes the
+      same closed block dump differently in the two — run cache-on and
+      cache-off over four corpora (510 closed blocks agree on spec, 294 on
+      extensions, 8 on directive). A document whose finalize mints definitions
+      is skipped structurally and counted; the boundary tree's final top-level
+      block is exempt by the ruling (the formula promotion's `closed` lags one
+      line, §1), so every block the stream has actually left behind is
+      compared, and a corpus of one-block documents reads as tails, not as a
+      vacuous pass.
 
 ---
 
