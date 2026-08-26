@@ -24,9 +24,9 @@ public final class com/nouprax/markdown/core/CodeBlock : com/nouprax/markdown/co
 }
 
 public final class com/nouprax/markdown/core/Concrete {
-	public final fun getLineCount ()I
+	public final fun getLines ()I
 	public final fun getSource ()[B
-	public final fun lineStart (I)I
+	public final fun offset (I)I
 }
 
 public final class com/nouprax/markdown/core/Directive : com/nouprax/markdown/core/Markup {
@@ -60,18 +60,16 @@ public final class com/nouprax/markdown/core/DirectiveLabel : com/nouprax/markdo
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
-public final class com/nouprax/markdown/core/Document : com/nouprax/markdown/core/Markup {
-	public static final field Companion Lcom/nouprax/markdown/core/Document$Companion;
-	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
-	public fun dump ()Ljava/lang/String;
-	public final fun getConcrete ()Lcom/nouprax/markdown/core/Concrete;
-	public final fun getContent ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
-}
-
-public final class com/nouprax/markdown/core/Document$Companion {
-	public final fun parse (Ljava/lang/String;Lcom/nouprax/markdown/core/ParseOptions;)Lcom/nouprax/markdown/core/Document;
-	public static synthetic fun parse$default (Lcom/nouprax/markdown/core/Document$Companion;Ljava/lang/String;Lcom/nouprax/markdown/core/ParseOptions;ILjava/lang/Object;)Lcom/nouprax/markdown/core/Document;
+public final class com/nouprax/markdown/core/Document : java/lang/AutoCloseable {
+	public fun <init> ()V
+	public fun <init> (Lcom/nouprax/markdown/core/ParseOptions;)V
+	public synthetic fun <init> (Lcom/nouprax/markdown/core/ParseOptions;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Lcom/nouprax/markdown/core/ParseOptions;)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/nouprax/markdown/core/ParseOptions;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun close ()V
+	public final fun feed (Ljava/lang/String;)Lcom/nouprax/markdown/core/Read;
+	public final fun feed ([B)Lcom/nouprax/markdown/core/Read;
+	public final fun seal ()Lcom/nouprax/markdown/core/Read;
 }
 
 public final class com/nouprax/markdown/core/Emphasis : com/nouprax/markdown/core/Markup {
@@ -287,6 +285,12 @@ public final class com/nouprax/markdown/core/Position {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class com/nouprax/markdown/core/Read {
+	public final fun dump ()Ljava/lang/String;
+	public final fun getConcrete ()Lcom/nouprax/markdown/core/Concrete;
+	public final fun getSemantic ()Lcom/nouprax/markdown/core/Semantic;
+}
+
 public final class com/nouprax/markdown/core/ReferenceDefinition : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
@@ -319,14 +323,11 @@ public final class com/nouprax/markdown/core/Scope {
 	public fun toString ()Ljava/lang/String;
 }
 
-public final class com/nouprax/markdown/core/Session : java/lang/AutoCloseable {
-	public fun <init> ()V
-	public fun <init> (Lcom/nouprax/markdown/core/ParseOptions;)V
-	public synthetic fun <init> (Lcom/nouprax/markdown/core/ParseOptions;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public fun close ()V
-	public final fun feed (Ljava/lang/String;)Lcom/nouprax/markdown/core/Document;
-	public final fun feed ([B)Lcom/nouprax/markdown/core/Document;
-	public final fun finish ()Lcom/nouprax/markdown/core/Document;
+public final class com/nouprax/markdown/core/Semantic : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/SoftBreak : com/nouprax/markdown/core/Markup {
@@ -408,7 +409,6 @@ public abstract interface class com/nouprax/markdown/core/Visitor {
 	public abstract fun visitDirective (Lcom/nouprax/markdown/core/Directive;)Ljava/lang/Object;
 	public abstract fun visitDirectiveBlock (Lcom/nouprax/markdown/core/DirectiveBlock;)Ljava/lang/Object;
 	public abstract fun visitDirectiveLabel (Lcom/nouprax/markdown/core/DirectiveLabel;)Ljava/lang/Object;
-	public abstract fun visitDocument (Lcom/nouprax/markdown/core/Document;)Ljava/lang/Object;
 	public abstract fun visitEmphasis (Lcom/nouprax/markdown/core/Emphasis;)Ljava/lang/Object;
 	public abstract fun visitFootnoteDefinition (Lcom/nouprax/markdown/core/FootnoteDefinition;)Ljava/lang/Object;
 	public abstract fun visitFootnoteReference (Lcom/nouprax/markdown/core/FootnoteReference;)Ljava/lang/Object;
@@ -426,6 +426,7 @@ public abstract interface class com/nouprax/markdown/core/Visitor {
 	public abstract fun visitListItem (Lcom/nouprax/markdown/core/ListItem;)Ljava/lang/Object;
 	public abstract fun visitParagraph (Lcom/nouprax/markdown/core/Paragraph;)Ljava/lang/Object;
 	public abstract fun visitReferenceDefinition (Lcom/nouprax/markdown/core/ReferenceDefinition;)Ljava/lang/Object;
+	public abstract fun visitSemantic (Lcom/nouprax/markdown/core/Semantic;)Ljava/lang/Object;
 	public abstract fun visitSoftBreak (Lcom/nouprax/markdown/core/SoftBreak;)Ljava/lang/Object;
 	public abstract fun visitStrikethrough (Lcom/nouprax/markdown/core/Strikethrough;)Ljava/lang/Object;
 	public abstract fun visitStrong (Lcom/nouprax/markdown/core/Strong;)Ljava/lang/Object;

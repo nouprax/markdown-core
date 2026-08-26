@@ -10,18 +10,38 @@ The engine is reconstructed from the 1.0 baseline. The 2.0.0 line is withdrawn:
 its major version was bought with a session and incremental parsing API that no
 longer exists. 3.0.0 ships a different streaming surface, described below.
 
-- A parse can be fed in pieces. `markdown_core_session_new`,
-  `markdown_core_session_feed`, `markdown_core_session_finish` and
-  `markdown_core_session_free` in C, and `Session` with `feed` and `finish` in
-  Swift, Kotlin and ECMAScript. Every `feed` returns the immutable document
-  after those bytes — a mid-stream projection whose incomplete trailing line is
-  not yet in it and whose open constructs are projected as they stand — and
-  `finish` seals the stream, returning the same document a whole-input parse
-  produces for the same bytes. Every returned document is a plain value that
-  retains nothing native and outlives the session. The block is the minimal
+- The bindings' one entry is the living `Document`, fed in pieces and
+  answering with `Read` values. Every `feed` returns the read after those
+  bytes — a mid-stream projection whose incomplete trailing line is not yet in
+  it and whose open constructs are projected as they stand — and `seal` ends
+  the stream and releases the native shell, returning the sealed read,
+  identical for the same bytes however they were fed. The whole-text parse is
+  `Document(markdown).seal()`: a one-chunk stream, so the bindings'
+  `Document.parse` one-shot entries are deleted and feed/seal partition
+  invariance is the only identity there is. Every read is a plain value that
+  retains nothing native and outlives the document. The block is the minimal
   update unit; the model is specified in `docs/STREAMING.md`. This is not the
   withdrawn 2.0.0 surface: there is no edit, no fork, and no snapshot handle —
-  the returned document is the only answer there is.
+  the returned read is the only answer there is. In C the surface keeps both
+  entries under its own names: `markdown_core_document_parse`, and
+  `markdown_core_session_new`, `_feed`, `_finish` and `_free`.
+- A `Read` is the parse under its two total views: `semantic`, the tree, and
+  `concrete`, the normalized source its scopes are counted against — the pair
+  the C handle already publishes as siblings, copied out. The root node type
+  is renamed `Document` → `Semantic` in all three bindings, completing the
+  `concrete: Concrete` naming symmetry; it is an ordinary `Markup` carrying
+  nothing but `content` and `scope`, and the visitor case is `visitSemantic`
+  (Swift: `visit(_: Semantic)`). The C node kind and the canonical dump label
+  keep `document`/`Document`. Swift's visitor protocol `MarkupVisitor` is
+  renamed `Visitor`, matching Kotlin and ECMAScript.
+- `Concrete.lineCount` is renamed `lines`, and `lineStart` is renamed
+  `offset(line)` (Swift: `offset(of:)`): the answer is a byte OFFSET into
+  `source`, which a `Scope` boundary never is, and the old name invited the
+  one confusion the two views exist to prevent.
+- The ECMAScript `Document` also implements `Symbol.dispose`, so
+  `using document = new Document()` releases an abandoned stream at scope
+  exit; `dispose()` remains, is idempotent, and is only owed for a stream
+  abandoned before `seal`.
 - Keep the bytes of a footnote call whose label crosses a line ending, and read
   a label spelled with a character reference out of the source rather than out
   of a released buffer.

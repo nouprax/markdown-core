@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { TextEncoder } from "node:util";
-import { Document, Session, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
+import { Document, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
 import { kindVisitor } from "./visitor.mjs";
+
+// The whole-text parse, keeping only the semantic tree; the streamed cases
+// below spell the full entry out themselves.
+const parse = (source, options) => new Document(source, options).seal().semantic;
 
 const canonicalFixtures = new URL("../build/generated/conformance/canonical-ast-fixtures.json", import.meta.url);
 const canonicalManifest = JSON.parse(await readFile(canonicalFixtures, "utf8"));
@@ -18,7 +22,7 @@ test("conformance: public node schema is reachable", () => {
         "| left | center |\n| :--- | :----: |\n| a | b |\n\n::leaf[Label]{id=value}\n\n:::container[Title]{kind=demo}\nBody\n:::\n",
         "$$\ny\n$$\n"
     ];
-    const documents = sources.map((source) => Document.parse(source));
+    const documents = sources.map((source) => parse(source));
     const nodes = documents.flatMap(flatten);
     assert.deepEqual(
         new Set(nodes.map((node) => node.kind)),
@@ -61,9 +65,7 @@ test("conformance: public node schema is reachable", () => {
 });
 
 test("conformance: fields, nullability, and typed table nodes map to JavaScript", () => {
-    const document = Document.parse(
-        '3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image "title")\n'
-    );
+    const document = parse('3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image "title")\n');
     assert.equal(document.content[0].flavor, "ordered");
     assert.equal(document.content[0].start, 3);
     assert.equal(document.content[0].tight, true);
@@ -97,7 +99,7 @@ test("conformance: fields, nullability, and typed table nodes map to JavaScript"
 });
 
 test("conformance: directive labels preserve missing, empty, and populated states", () => {
-    const document = Document.parse(":missing{id=1}\n\n:empty[]\n\n:label[text]\n\n::block[title]\n");
+    const document = parse(":missing{id=1}\n\n:empty[]\n\n:label[text]\n\n::block[title]\n");
     const missing = document.content[0].content[0];
     const empty = document.content[1].content[0];
     const label = document.content[2].content[0];
@@ -116,7 +118,7 @@ test("conformance: directive labels preserve missing, empty, and populated state
 
 for (const testCase of canonicalManifest.cases) {
     test(`conformance: shared canonical AST case ${testCase.name}`, async () => {
-        const document = Document.parse(testCase.source, testCase.parseOptions);
+        const document = parse(testCase.source, testCase.parseOptions);
         assert.equal(TreeDumper.dump(document), testCase.expected, testCase.name);
         assert.equal(document.dump(), testCase.expected, testCase.name);
     });
@@ -126,23 +128,23 @@ for (const testCase of canonicalManifest.cases) {
     // chunk boundary drifts through every alignment and splits line endings,
     // UTF-8 sequences, and construct delimiters somewhere in every case.
     test(`conformance: shared canonical AST case ${testCase.name} streamed in 7-byte chunks`, async () => {
-        const session = new Session(testCase.parseOptions);
+        const document = new Document(testCase.parseOptions);
         try {
             const bytes = new TextEncoder().encode(testCase.source);
             for (let offset = 0; offset < bytes.length; offset += 7) {
-                session.feed(bytes.subarray(offset, Math.min(offset + 7, bytes.length)));
+                document.feed(bytes.subarray(offset, Math.min(offset + 7, bytes.length)));
             }
-            const sealed = session.finish();
-            assert.equal(TreeDumper.dump(sealed), testCase.expected, testCase.name);
+            const sealed = document.seal();
+            assert.equal(TreeDumper.dump(sealed.semantic), testCase.expected, testCase.name);
             assert.equal(sealed.dump(), testCase.expected, testCase.name);
-            const oneShot = Document.parse(testCase.source, testCase.parseOptions);
-            assert.deepEqual(sealed.concrete.source, oneShot.concrete.source, testCase.name);
-            assert.equal(sealed.concrete.lineCount, oneShot.concrete.lineCount, testCase.name);
-            for (let line = 1; line <= oneShot.concrete.lineCount; line += 1) {
-                assert.equal(sealed.concrete.lineStart(line), oneShot.concrete.lineStart(line), testCase.name);
+            const wholeText = new Document(testCase.source, testCase.parseOptions).seal();
+            assert.deepEqual(sealed.concrete.source, wholeText.concrete.source, testCase.name);
+            assert.equal(sealed.concrete.lines, wholeText.concrete.lines, testCase.name);
+            for (let line = 1; line <= wholeText.concrete.lines; line += 1) {
+                assert.equal(sealed.concrete.offset(line), wholeText.concrete.offset(line), testCase.name);
             }
         } finally {
-            session.dispose();
+            document.dispose();
         }
     });
 }

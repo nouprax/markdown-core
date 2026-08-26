@@ -122,7 +122,7 @@ error rather than silently dropping a value.
 
 | Kind | Fields in canonical order | Nullability and invariants |
 | --- | --- | --- |
-| `Document` | `content: [Markup]` | block content |
+| `Document` | `content: [Markup]` | block content; the root kind. Binding TYPES name it `Semantic` (the C enum and the dump label keep `Document`) |
 | `BlockQuote` | `content: [Markup]` | block content |
 | `Paragraph` | `content: [Markup]` | inline content |
 | `Heading` | `level: Int`, `content: [Markup]` | `level` is 1 through 6; inline content |
@@ -173,11 +173,14 @@ validates the owning edge: the value in `Table.header` is true and values in
 
 ## ParseOptions
 
-`Document.parse(source, options = ParseOptions.default)` is the only parsing
-entry point. A parse is the `Document` this table describes,
-and `Document.concrete` — the normalized source its scopes are counted against,
-and that source's line index. This table is the AST's contract; `concrete` has no
-kinds and no fields of its own, and it is not a dumped field. `ParseOptions` is immutable and contains exactly these booleans:
+The living `Document` is the bindings' only parsing entry:
+`Document(markdown, options).seal()` for whole text, `Document(options)` plus
+`feed` for a stream. Either way a parse is a `Read` — `semantic`, the tree this
+table describes, beside `concrete`, the normalized source its scopes are
+counted against and that source's line index (`lines`, `offset(line)`). The C
+facade keeps its own entries (`markdown_core_document_parse` and the session).
+This table is the AST's contract; `concrete` has no kinds and no fields of its
+own, and it is not a dumped field. `ParseOptions` is immutable and contains exactly these booleans:
 
 | Field | Default |
 | --- | --- |
@@ -232,7 +235,7 @@ native-handle callback.
 Swift, Kotlin, and TypeScript publish `TreeDumper.dump(markup)` and a
 convenience `Markup.dump()` method. Both traverse that platform's immutable
 typed tree through its exhaustive Visitor and read-only Walker; they do not
-call the C diagnostic dump. Dumping a non-Document Markup treats that value as
+call the C diagnostic dump. Dumping a non-root Markup treats that value as
 the root and emits only its subtree. The canonical text grammar is defined in
 `canonical-ast-dump.md` and is diagnostic rather than a serialization API.
 

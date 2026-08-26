@@ -1,5 +1,5 @@
 export const kindVisitor = {
-    visitDocument: (node) => node.kind,
+    visitSemantic: (node) => node.kind,
     visitBlockQuote: (node) => node.kind,
     visitParagraph: (node) => node.kind,
     visitHeading: (node) => node.kind,

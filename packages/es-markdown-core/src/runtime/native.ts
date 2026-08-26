@@ -2,7 +2,6 @@ export interface NativeExports extends WebAssembly.Exports {
     readonly memory: WebAssembly.Memory;
     malloc(size: number): number;
     free(pointer: number): void;
-    es_document_parse(source: number, length: number, flags: number, errorOutput: number): number;
     es_document_free(document: number): void;
     es_document_root(document: number): number;
     es_document_source(document: number, dataOutput: number, lengthOutput: number): void;
@@ -12,9 +11,9 @@ export interface NativeExports extends WebAssembly.Exports {
      * opening a session can report, so 0 is the whole answer and no error
      * crosses the wire. */
     es_session_new(flags: number): number;
-    /** Returns the document after those bytes, on exactly the wire
-     * `es_document_parse` answers on: a document pointer, or 0 with the error
-     * behind `errorOutput`. */
+    /** Returns the document after those bytes: a document pointer, or 0
+     * with the error behind `errorOutput` -- the one wire every read
+     * crosses on. */
     es_session_feed(session: number, chunk: number, length: number, errorOutput: number): number;
     es_session_finish(session: number, errorOutput: number): number;
     es_session_free(session: number): void;

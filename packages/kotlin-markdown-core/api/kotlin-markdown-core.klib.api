@@ -83,7 +83,6 @@ abstract interface <#A: kotlin/Any?> com.nouprax.markdown.core/Visitor { // com.
     abstract fun visitDirective(com.nouprax.markdown.core/Directive): #A // com.nouprax.markdown.core/Visitor.visitDirective|visitDirective(com.nouprax.markdown.core.Directive){}[0]
     abstract fun visitDirectiveBlock(com.nouprax.markdown.core/DirectiveBlock): #A // com.nouprax.markdown.core/Visitor.visitDirectiveBlock|visitDirectiveBlock(com.nouprax.markdown.core.DirectiveBlock){}[0]
     abstract fun visitDirectiveLabel(com.nouprax.markdown.core/DirectiveLabel): #A // com.nouprax.markdown.core/Visitor.visitDirectiveLabel|visitDirectiveLabel(com.nouprax.markdown.core.DirectiveLabel){}[0]
-    abstract fun visitDocument(com.nouprax.markdown.core/Document): #A // com.nouprax.markdown.core/Visitor.visitDocument|visitDocument(com.nouprax.markdown.core.Document){}[0]
     abstract fun visitEmphasis(com.nouprax.markdown.core/Emphasis): #A // com.nouprax.markdown.core/Visitor.visitEmphasis|visitEmphasis(com.nouprax.markdown.core.Emphasis){}[0]
     abstract fun visitFootnoteDefinition(com.nouprax.markdown.core/FootnoteDefinition): #A // com.nouprax.markdown.core/Visitor.visitFootnoteDefinition|visitFootnoteDefinition(com.nouprax.markdown.core.FootnoteDefinition){}[0]
     abstract fun visitFootnoteReference(com.nouprax.markdown.core/FootnoteReference): #A // com.nouprax.markdown.core/Visitor.visitFootnoteReference|visitFootnoteReference(com.nouprax.markdown.core.FootnoteReference){}[0]
@@ -101,6 +100,7 @@ abstract interface <#A: kotlin/Any?> com.nouprax.markdown.core/Visitor { // com.
     abstract fun visitListItem(com.nouprax.markdown.core/ListItem): #A // com.nouprax.markdown.core/Visitor.visitListItem|visitListItem(com.nouprax.markdown.core.ListItem){}[0]
     abstract fun visitParagraph(com.nouprax.markdown.core/Paragraph): #A // com.nouprax.markdown.core/Visitor.visitParagraph|visitParagraph(com.nouprax.markdown.core.Paragraph){}[0]
     abstract fun visitReferenceDefinition(com.nouprax.markdown.core/ReferenceDefinition): #A // com.nouprax.markdown.core/Visitor.visitReferenceDefinition|visitReferenceDefinition(com.nouprax.markdown.core.ReferenceDefinition){}[0]
+    abstract fun visitSemantic(com.nouprax.markdown.core/Semantic): #A // com.nouprax.markdown.core/Visitor.visitSemantic|visitSemantic(com.nouprax.markdown.core.Semantic){}[0]
     abstract fun visitSoftBreak(com.nouprax.markdown.core/SoftBreak): #A // com.nouprax.markdown.core/Visitor.visitSoftBreak|visitSoftBreak(com.nouprax.markdown.core.SoftBreak){}[0]
     abstract fun visitStrikethrough(com.nouprax.markdown.core/Strikethrough): #A // com.nouprax.markdown.core/Visitor.visitStrikethrough|visitStrikethrough(com.nouprax.markdown.core.Strikethrough){}[0]
     abstract fun visitStrong(com.nouprax.markdown.core/Strong): #A // com.nouprax.markdown.core/Visitor.visitStrong|visitStrong(com.nouprax.markdown.core.Strong){}[0]
@@ -155,12 +155,12 @@ final class com.nouprax.markdown.core/CodeBlock : com.nouprax.markdown.core/Mark
 }
 
 final class com.nouprax.markdown.core/Concrete { // com.nouprax.markdown.core/Concrete|null[0]
-    final val lineCount // com.nouprax.markdown.core/Concrete.lineCount|{}lineCount[0]
-        final fun <get-lineCount>(): kotlin/Int // com.nouprax.markdown.core/Concrete.lineCount.<get-lineCount>|<get-lineCount>(){}[0]
+    final val lines // com.nouprax.markdown.core/Concrete.lines|{}lines[0]
+        final fun <get-lines>(): kotlin/Int // com.nouprax.markdown.core/Concrete.lines.<get-lines>|<get-lines>(){}[0]
     final val source // com.nouprax.markdown.core/Concrete.source|{}source[0]
         final fun <get-source>(): kotlin/ByteArray // com.nouprax.markdown.core/Concrete.source.<get-source>|<get-source>(){}[0]
 
-    final fun lineStart(kotlin/Int): kotlin/Int // com.nouprax.markdown.core/Concrete.lineStart|lineStart(kotlin.Int){}[0]
+    final fun offset(kotlin/Int): kotlin/Int // com.nouprax.markdown.core/Concrete.offset|offset(kotlin.Int){}[0]
 }
 
 final class com.nouprax.markdown.core/Directive : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Directive|null[0]
@@ -207,19 +207,14 @@ final class com.nouprax.markdown.core/DirectiveLabel : com.nouprax.markdown.core
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/DirectiveLabel.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
 }
 
-final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Document|null[0]
-    final val concrete // com.nouprax.markdown.core/Document.concrete|{}concrete[0]
-        final fun <get-concrete>(): com.nouprax.markdown.core/Concrete // com.nouprax.markdown.core/Document.concrete.<get-concrete>|<get-concrete>(){}[0]
-    final val content // com.nouprax.markdown.core/Document.content|{}content[0]
-        final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/Document.content.<get-content>|<get-content>(){}[0]
-    final val scope // com.nouprax.markdown.core/Document.scope|{}scope[0]
-        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Document.scope.<get-scope>|<get-scope>(){}[0]
+final class com.nouprax.markdown.core/Document : kotlin/AutoCloseable { // com.nouprax.markdown.core/Document|null[0]
+    constructor <init>(com.nouprax.markdown.core/ParseOptions = ...) // com.nouprax.markdown.core/Document.<init>|<init>(com.nouprax.markdown.core.ParseOptions){}[0]
+    constructor <init>(kotlin/String, com.nouprax.markdown.core/ParseOptions = ...) // com.nouprax.markdown.core/Document.<init>|<init>(kotlin.String;com.nouprax.markdown.core.ParseOptions){}[0]
 
-    final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/Document.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
-
-    final object Companion { // com.nouprax.markdown.core/Document.Companion|null[0]
-        final fun parse(kotlin/String, com.nouprax.markdown.core/ParseOptions = ...): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/Document.Companion.parse|parse(kotlin.String;com.nouprax.markdown.core.ParseOptions){}[0]
-    }
+    final fun close() // com.nouprax.markdown.core/Document.close|close(){}[0]
+    final fun feed(kotlin/ByteArray): com.nouprax.markdown.core/Read // com.nouprax.markdown.core/Document.feed|feed(kotlin.ByteArray){}[0]
+    final fun feed(kotlin/String): com.nouprax.markdown.core/Read // com.nouprax.markdown.core/Document.feed|feed(kotlin.String){}[0]
+    final fun seal(): com.nouprax.markdown.core/Read // com.nouprax.markdown.core/Document.seal|seal(){}[0]
 }
 
 final class com.nouprax.markdown.core/Emphasis : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Emphasis|null[0]
@@ -464,6 +459,15 @@ final class com.nouprax.markdown.core/Position { // com.nouprax.markdown.core/Po
     final fun toString(): kotlin/String // com.nouprax.markdown.core/Position.toString|toString(){}[0]
 }
 
+final class com.nouprax.markdown.core/Read { // com.nouprax.markdown.core/Read|null[0]
+    final val concrete // com.nouprax.markdown.core/Read.concrete|{}concrete[0]
+        final fun <get-concrete>(): com.nouprax.markdown.core/Concrete // com.nouprax.markdown.core/Read.concrete.<get-concrete>|<get-concrete>(){}[0]
+    final val semantic // com.nouprax.markdown.core/Read.semantic|{}semantic[0]
+        final fun <get-semantic>(): com.nouprax.markdown.core/Semantic // com.nouprax.markdown.core/Read.semantic.<get-semantic>|<get-semantic>(){}[0]
+
+    final fun dump(): kotlin/String // com.nouprax.markdown.core/Read.dump|dump(){}[0]
+}
+
 final class com.nouprax.markdown.core/ReferenceDefinition : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/ReferenceDefinition|null[0]
     final val destination // com.nouprax.markdown.core/ReferenceDefinition.destination|{}destination[0]
         final fun <get-destination>(): kotlin/String // com.nouprax.markdown.core/ReferenceDefinition.destination.<get-destination>|<get-destination>(){}[0]
@@ -495,13 +499,13 @@ final class com.nouprax.markdown.core/Scope { // com.nouprax.markdown.core/Scope
     final fun toString(): kotlin/String // com.nouprax.markdown.core/Scope.toString|toString(){}[0]
 }
 
-final class com.nouprax.markdown.core/Session : kotlin/AutoCloseable { // com.nouprax.markdown.core/Session|null[0]
-    constructor <init>(com.nouprax.markdown.core/ParseOptions = ...) // com.nouprax.markdown.core/Session.<init>|<init>(com.nouprax.markdown.core.ParseOptions){}[0]
+final class com.nouprax.markdown.core/Semantic : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Semantic|null[0]
+    final val content // com.nouprax.markdown.core/Semantic.content|{}content[0]
+        final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/Semantic.content.<get-content>|<get-content>(){}[0]
+    final val scope // com.nouprax.markdown.core/Semantic.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Semantic.scope.<get-scope>|<get-scope>(){}[0]
 
-    final fun close() // com.nouprax.markdown.core/Session.close|close(){}[0]
-    final fun feed(kotlin/ByteArray): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/Session.feed|feed(kotlin.ByteArray){}[0]
-    final fun feed(kotlin/String): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/Session.feed|feed(kotlin.String){}[0]
-    final fun finish(): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/Session.finish|finish(){}[0]
+    final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/Semantic.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
 }
 
 final class com.nouprax.markdown.core/SoftBreak : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/SoftBreak|null[0]

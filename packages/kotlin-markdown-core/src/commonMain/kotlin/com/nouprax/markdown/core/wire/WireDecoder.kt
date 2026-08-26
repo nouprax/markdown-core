@@ -7,37 +7,53 @@ internal object WireDecoder {
      */
     private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x35)
 
-    fun decodeDocument(bytes: ByteArray): Document {
+    fun decodeRead(bytes: ByteArray): Read {
         val reader = WireReader(bytes)
+        reader.header()
+        return reader.read()
+    }
+
+    /**
+     * Decodes only the header of a payload whose read is discarded -- the
+     * [Document] constructor's initial feed -- so an error still surfaces and
+     * a healthy tree is not built just to be thrown away.
+     */
+    fun decodeDiscarded(bytes: ByteArray) {
+        WireReader(bytes).header()
+    }
+
+    /** The magic and the status: the part of every payload that says whether
+     * a tree or an error follows, throwing the error's exception itself. */
+    private fun WireReader.header() {
         magic.forEachIndexed { index, expected ->
-            val actual = reader.byte()
+            val actual = byte()
             require(actual == expected) {
                 "invalid native bridge payload at byte $index: expected ${expected.toUByte()}, got ${actual.toUByte()}"
             }
         }
-        when (reader.byte().toInt()) {
+        when (byte().toInt()) {
             0 -> Unit
-            1 -> throw reader.error()
-            else -> error("unsupported native bridge status")
+            1 -> throw error()
+            else -> kotlin.error("unsupported native bridge status")
         }
-        return reader.document()
     }
 }
 
 /**
  * THE ROOT IS READ BY HAND, and it is the only node that is.
  *
- * A document carries the concrete view, the wire writes that view AFTER the
- * tree, and a node is built as it is read -- so the root's own fields are read
- * here, the view after them, and the document constructed from both.
+ * A read carries the concrete view beside the tree, the wire writes that view
+ * AFTER the tree, and a node is built as it is read -- so the root's own
+ * fields are read here, the view after them, and the read constructed from
+ * both.
  */
-private fun WireReader.document(): Document {
+private fun WireReader.read(): Read {
     require(kind() == WireKind.DOCUMENT) { "native bridge returned an invalid document tree" }
     val rootScope = scope()
     val content = markupList()
     val concrete = concrete()
     require(finished) { "native bridge returned a truncated payload" }
-    return Document(content, rootScope, concrete)
+    return Read(Semantic(content, rootScope), concrete)
 }
 
 /**

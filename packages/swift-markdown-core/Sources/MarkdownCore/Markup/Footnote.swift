@@ -15,7 +15,7 @@ public struct FootnoteDefinition: Markup {
     public let identifier: String
 
     /// Dispatches to the visitor's `FootnoteDefinition` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: Visitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension FootnoteDefinition {
@@ -42,7 +42,7 @@ public struct FootnoteReference: Markup {
     public let identifier: String
 
     /// Dispatches to the visitor's `FootnoteReference` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: Visitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension FootnoteReference {

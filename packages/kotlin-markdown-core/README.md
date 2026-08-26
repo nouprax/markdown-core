@@ -22,47 +22,50 @@ JVM-only Gradle and Maven consumers can use
 
 ## Parse Markdown
 
+The living `Document` is the one entry into the parser: it is fed text -- in
+one piece or many -- and yields `Read` values, each the pair of the parse's
+two total views: `semantic`, the tree, and `concrete`, the normalized source
+its scopes are counted against. The whole-text parse is a one-chunk stream:
+
 ```kotlin
 import com.nouprax.markdown.core.Document
 import com.nouprax.markdown.core.ParseOptions
 
-val document = Document.parse(
-    "# Hello",
-    ParseOptions(directives = false),
-)
+val read = Document("# Hello", ParseOptions(directives = false)).seal()
 
-println(document.content.first()::class.simpleName)
-println(document.dump())
+println(read.semantic.content.first()::class.simpleName)
+println(read.dump())
 ```
 
 All parse options default to `true`: smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas (dollar and
-LaTeX delimiters included), and directives. The result is an immutable value tree
-with source scopes. The package exposes parsing and read-only AST traversal,
-not rendering or mutation.
+LaTeX delimiters included), and directives. `semantic` is an immutable value
+tree with source scopes; `concrete` carries the normalized source bytes with
+`lines` and `offset(line)`. The package exposes parsing and read-only AST
+traversal, not rendering or mutation.
 
 ## Stream Markdown
 
-`Session` parses a document that arrives in pieces. Every `feed` returns the
-immutable document after those bytes -- a mid-stream projection whose
-incomplete trailing line is not yet in it -- and `finish` seals the stream,
-returning the same document `Document.parse` produces for the same bytes.
-Chunks are raw UTF-8 and may end anywhere, mid-character included:
+Every `feed` returns the read after those bytes -- a mid-stream projection
+whose incomplete trailing line is not yet in it -- and `seal` ends the stream
+and releases the native shell, returning the sealed read, identical for the
+same bytes however they were fed. Chunks are raw UTF-8 and may end anywhere,
+mid-character included:
 
 ```kotlin
-import com.nouprax.markdown.core.Session
+import com.nouprax.markdown.core.Document
 
-Session().use { session ->
-    var updated = session.feed("# Str")
-    updated = session.feed("eamed\n")
-    println(session.finish().dump())
+Document().use { document ->
+    var updated = document.feed("# Str")
+    updated = document.feed("eamed\n")
+    println(document.seal().dump())
 }
 ```
 
-Every returned document is a plain value: it stays readable after later feeds
-and after the session is closed. After `finish`, further `feed` and `finish`
-calls throw `ParseException` with `ParseErrorCode.INVALID_ARGUMENT`; `close`
-releases the session and is idempotent.
+Every returned read is a plain value: it stays readable after later feeds and
+after the document is closed. Sealing IS closing: after `seal`, every call
+throws `IllegalStateException`. `close` releases a stream abandoned before
+`seal` and is idempotent, which is what `use` leans on.
 
 ## Traverse and Inspect
 
@@ -72,7 +75,7 @@ Use `Walker` for a depth-first traversal:
 import com.nouprax.markdown.core.WalkEvent
 import com.nouprax.markdown.core.Walker
 
-Walker.walk(document) { event, node ->
+Walker.walk(read.semantic) { event, node ->
     if (event == WalkEvent.ENTERING) {
         println(node)
     }
@@ -85,9 +88,9 @@ Every immutable `Markup` exposes `dump()`, which delegates to the public
 ```kotlin
 import com.nouprax.markdown.core.TreeDumper
 
-val document = Document.parse("# Hello")
-println(document.dump())
-println(TreeDumper.dump(document.content.first()))
+val read = Document("# Hello").seal()
+println(read.dump())
+println(TreeDumper.dump(read.semantic.content.first()))
 ```
 
 On JDK 26 and later, JVM applications should launch with

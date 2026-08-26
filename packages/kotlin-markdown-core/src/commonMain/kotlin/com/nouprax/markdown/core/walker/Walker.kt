@@ -35,7 +35,7 @@ public object Walker {
  */
 internal fun Markup.children(): kotlin.collections.List<Markup> =
     when (this) {
-        is Document -> content
+        is Semantic -> content
 
         is BlockQuote -> content
 

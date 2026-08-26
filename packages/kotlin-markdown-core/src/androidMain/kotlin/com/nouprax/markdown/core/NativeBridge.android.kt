@@ -1,13 +1,5 @@
 package com.nouprax.markdown.core
 
-internal actual fun nativeParse(
-    source: ByteArray,
-    options: ParseOptions,
-): ByteArray {
-    AndroidNativeLoader.ensureLoaded()
-    return JvmNative.parse(source, options.toNativeMask())
-}
-
 internal actual fun nativeSessionNew(options: ParseOptions): Long {
     AndroidNativeLoader.ensureLoaded()
     val session = JvmNative.sessionNew(options.toNativeMask())

@@ -28,7 +28,7 @@ public struct LinkReference: Markup {
     public let content: [any Markup]
 
     /// Dispatches to the visitor's `LinkReference` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: Visitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 /// An image reference. As ``LinkReference``; the content is parsed alt text.
@@ -45,7 +45,7 @@ public struct ImageReference: Markup {
     public let content: [any Markup]
 
     /// Dispatches to the visitor's `ImageReference` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: Visitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 func referenceForm(from node: OpaquePointer) -> ReferenceForm {

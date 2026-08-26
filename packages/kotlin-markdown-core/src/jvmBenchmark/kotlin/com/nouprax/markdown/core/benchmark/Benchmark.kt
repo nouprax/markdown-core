@@ -25,16 +25,16 @@ private fun benchmark(
     workload: String,
     source: String,
 ) {
-    Document.parse(source)
+    Document(source).seal()
     val samples =
         kotlin.collections
-            .List(5) { measureNanoTime { Document.parse(source) } }
+            .List(5) { measureNanoTime { Document(source).seal() } }
             .sorted()
     val runtime = Runtime.getRuntime()
     val heapUsedKiB = (runtime.totalMemory() - runtime.freeMemory()) / 1024
     val heapCommittedKiB = runtime.totalMemory() / 1024
     println(
-        "benchmark runtime=kotlin boundary=jni_parse_and_value_copy workload=$workload " +
+        "benchmark runtime=kotlin boundary=jni_feed_seal_and_value_copy workload=$workload " +
             "bytes=${source.encodeToByteArray().size} warmup=1 repeats=5 " +
             "median_ns=${samples[samples.size / 2]} heap_used_kib=$heapUsedKiB " +
             "heap_committed_kib=$heapCommittedKiB rss_kib=${residentSetKiB()}",

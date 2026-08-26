@@ -1,7 +1,7 @@
 package com.nouprax.markdown.core
 
 public interface Visitor<Result> {
-    public fun visitDocument(node: Document): Result
+    public fun visitSemantic(node: Semantic): Result
 
     public fun visitBlockQuote(node: BlockQuote): Result
 

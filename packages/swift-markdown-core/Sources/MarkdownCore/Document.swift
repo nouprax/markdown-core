@@ -84,115 +84,141 @@ public struct ParseError: Error, Sendable {
     public let message: String
 }
 
-/// A parse, under two total views.
+/// The living document: the one entry into this parser, fed in pieces and
+/// answering with ``Read`` values (docs/STREAMING.md §4 D5, under 3.0's
+/// names).
 ///
-/// The document IS the semantic view -- the tree with policy applied, which may
-/// omit bytes: a fence, a bullet and a reference definition's punctuation are in
-/// no literal anywhere. ``concrete`` omits nothing. Every byte of the source is
-/// in exactly one region of the concrete view and every region has exactly one
-/// owner in this tree, so the pair is complete.
+/// `feed(chunk:)` hands it the next bytes and returns THE READ AFTER
+/// THOSE BYTES — a mid-stream projection: a trailing line whose ending has not
+/// arrived is not yet in it, and an open construct is projected as it stands
+/// (a list still open has not settled its tightness). ``seal()`` ends the
+/// stream: the pending line is processed, every construct closes, and the
+/// sealed read comes back — the whole text's, identical for the same bytes
+/// however they were fed — and the native shell goes with it: a sealed
+/// document refuses every later call.
 ///
-/// In C the two are siblings, because a `markdown_core_document` is a handle and
-/// the root is a node it lends out. Here they are not: the handle is gone by the
-/// time `parse` returns, the tree is a value, and the concrete view hangs off
-/// the root it names into.
-public struct Document: Markup {
-    /// The whole document's boundaries. See ``Scope``.
-    public let scope: Scope
-    /// The document's blocks. Block content, not inline.
-    public let content: [any Markup]
-    /// The text every scope in this tree is counted against.
-    public let concrete: Concrete
+/// Every read either call returns is built the same way: the native handle is
+/// released before the call returns, so the result is a value that borrows
+/// nothing. It stays readable after every later feed, after ``seal()``, and
+/// after the document itself is gone.
+///
+/// The document itself is a native resource mid-parse, not a value: it is
+/// deliberately not `Sendable`, and feeding one document from two isolation
+/// domains is the caller's race. The reads it returns are `Sendable` like
+/// every other value this module hands out. A stream abandoned instead of
+/// sealed needs no explicit call: `deinit` frees the shell.
+public final class Document {
+    // The native session, private the way every native anything is: no
+    // handle is part of the public surface. `nil` once sealed, which is the
+    // same "gone" `deinit` leaves behind.
+    private var native: OpaquePointer?
 
-    /// Dispatches to the visitor's `Document` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    /// Parses `source` and returns the whole tree as values.
+    /// Opens a document.
     ///
-    /// The native parse is released before this returns, so the result borrows
-    /// nothing and is safe to hold, copy and send across isolation boundaries.
-    ///
-    /// - Parameters:
-    ///   - source: the Markdown to parse. It is read as UTF-8.
-    ///   - options: which constructs to recognise. Everything, by default.
-    /// - Returns: the parsed document.
-    /// - Throws: ``ParseError`` when there is no document to return at all.
-    ///   Text the parser could not read the way its author meant is not an
-    ///   error: it produces a document, and the diagnostics say so.
-    public static func parse(_ source: String, options: ParseOptions = .init()) throws -> Document {
+    /// - Parameter options: which constructs to recognise. Everything, by
+    ///   default.
+    /// - Throws: ``ParseError`` when the native session cannot be created,
+    ///   which is an allocation failure and nothing finer.
+    public init(options: ParseOptions = .init()) throws {
         var nativeOptions = options.native
         var nativeError: OpaquePointer?
-        let bytes = Array(source.utf8)
+        let session = markdown_core_session_new(&nativeOptions, &nativeError)
+        guard let session else { throw ParseError.take(nativeError) }
+        native = session
+    }
+
+    /// Opens a document and feeds it `markdown` in one step — exactly
+    /// ``init(options:)`` followed by one feed whose returned read is
+    /// discarded (and, being discarded, never copied out), so the whole-text
+    /// parse is `Document(markdown: text).seal()`.
+    ///
+    /// - Parameters:
+    ///   - markdown: the first piece of the stream, or the whole text.
+    ///   - options: which constructs to recognise. Everything, by default.
+    /// - Throws: ``ParseError``, exactly as ``init(options:)`` and
+    ///   `feed(chunk:)` throw it.
+    public convenience init(markdown: String, options: ParseOptions = .init()) throws {
+        try self.init(options: options)
+        var nativeError: OpaquePointer?
+        let bytes = Array(markdown.utf8)
         let nativeDocument = bytes.withUnsafeBufferPointer { buffer in
-            markdown_core_document_parse(buffer.baseAddress, buffer.count, &nativeOptions, &nativeError)
+            markdown_core_session_feed(native, buffer.baseAddress, buffer.count, &nativeError)
+        }
+        guard let nativeDocument else { throw ParseError.take(nativeError) }
+        markdown_core_document_free(nativeDocument)
+    }
+
+    deinit {
+        if let native { markdown_core_session_free(native) }
+    }
+
+    /// Feeds exactly the bytes of `chunk` and returns the read after them.
+    ///
+    /// Bytes, not a `String`, because a chunk boundary owes the text nothing:
+    /// it may fall inside a UTF-8 sequence or between a CR and its LF, and the
+    /// stream repairs both — a split no `String` could even spell. An empty
+    /// chunk is a legal feed: the read as it stands.
+    ///
+    /// - Parameter chunk: the next bytes of the stream, read as UTF-8.
+    /// - Returns: the read after those bytes, as a value the caller keeps.
+    ///   An incomplete trailing line is not yet in it.
+    /// - Throws: ``ParseError`` — `.invalidArgument` once ``seal()`` has
+    ///   ended the stream, `.allocationFailed` when the projection could not
+    ///   be built. Text is never a failure: it produces a read.
+    public func feed(chunk: [UInt8]) throws -> Read {
+        let session = try live()
+        var nativeError: OpaquePointer?
+        let nativeDocument = chunk.withUnsafeBufferPointer { buffer in
+            markdown_core_session_feed(session, buffer.baseAddress, buffer.count, &nativeError)
         }
         guard let nativeDocument else {
             throw ParseError.take(nativeError)
         }
         defer { markdown_core_document_free(nativeDocument) }
-        return try Document(copiedFrom: nativeDocument)
-    }
-}
-
-extension Document {
-    init(from node: OpaquePointer, concrete: Concrete) {
-        self.init(scope: Self.scope(from: node), content: Self.children(from: node), concrete: concrete)
+        return try Read(copiedFrom: nativeDocument)
     }
 
-    /// Copies a native document out as values — the one conversion, shared by
-    /// the one-shot parse and by every document a ``Session`` returns. The
-    /// handle stays with the caller, who frees it as soon as this returns.
-    init(copiedFrom nativeDocument: OpaquePointer) throws {
-        guard let root = markdown_core_document_semantic(nativeDocument),
-            markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT,
-            let concrete = Concrete(from: nativeDocument)
-        else {
-            throw ParseError(code: .internal, message: "parser returned an invalid document tree")
+    /// Feeds a chunk that is whole text — its UTF-8 bytes, exactly as the byte
+    /// form takes them. A producer of `String` pieces never splits a scalar,
+    /// so the byte form's one extra power is not needed here; everything else
+    /// is the same call.
+    ///
+    /// - Parameter chunk: the next piece of the stream.
+    /// - Returns: the read after those bytes, as a value the caller keeps.
+    /// - Throws: ``ParseError``, exactly as the byte form throws it.
+    public func feed(chunk: String) throws -> Read {
+        try feed(chunk: Array(chunk.utf8))
+    }
+
+    /// Ends the stream, returns the sealed read, and releases the native
+    /// shell.
+    ///
+    /// The pending line is processed and every construct closes, so the
+    /// result is identical for the same bytes however they were fed. Sealing
+    /// is the end of the object: after it returns, `feed(chunk:)` and
+    /// a second ``seal()`` throw `.invalidArgument`.
+    ///
+    /// - Returns: the sealed read.
+    /// - Throws: ``ParseError`` — `.invalidArgument` for a document already
+    ///   sealed, `.allocationFailed` when the final projection could not be
+    ///   built (the shell then remains, and `deinit` still frees it).
+    public func seal() throws -> Read {
+        let session = try live()
+        var nativeError: OpaquePointer?
+        guard let nativeDocument = markdown_core_session_finish(session, &nativeError) else {
+            throw ParseError.take(nativeError)
         }
-        self.init(from: root, concrete: concrete)
+        defer { markdown_core_document_free(nativeDocument) }
+        let sealed = try Read(copiedFrom: nativeDocument)
+        markdown_core_session_free(session)
+        native = nil
+        return sealed
     }
-}
 
-// Keep the exhaustive native-kind switch in one place so a newly added native
-// kind cannot silently bypass value-tree copying.
-// swiftlint:disable:next cyclomatic_complexity
-func markup(from node: OpaquePointer) -> any Markup {
-    switch markdown_core_node_get_kind(node) {
-    case MARKDOWN_CORE_KIND_DOCUMENT:
-        // A document is only ever the ROOT, and the root is built by `parse`,
-        // which is the only place the concrete view exists to build it with.
-        preconditionFailure("a document node cannot be a child")
-    case MARKDOWN_CORE_KIND_BLOCK_QUOTE: BlockQuote(from: node)
-    case MARKDOWN_CORE_KIND_PARAGRAPH: Paragraph(from: node)
-    case MARKDOWN_CORE_KIND_HEADING: Heading(from: node)
-    case MARKDOWN_CORE_KIND_THEMATIC_BREAK: ThematicBreak(from: node)
-    case MARKDOWN_CORE_KIND_LIST: List(from: node)
-    case MARKDOWN_CORE_KIND_LIST_ITEM: ListItem(from: node)
-    case MARKDOWN_CORE_KIND_CODE_BLOCK: CodeBlock(from: node)
-    case MARKDOWN_CORE_KIND_HTML_BLOCK: HTMLBlock(from: node)
-    case MARKDOWN_CORE_KIND_FORMULA_BLOCK: FormulaBlock(from: node)
-    case MARKDOWN_CORE_KIND_TABLE: Table(from: node)
-    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK: DirectiveBlock(from: node)
-    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION: FootnoteDefinition(from: node)
-    case MARKDOWN_CORE_KIND_TEXT: Text(from: node)
-    case MARKDOWN_CORE_KIND_SOFT_BREAK: SoftBreak(from: node)
-    case MARKDOWN_CORE_KIND_LINE_BREAK: LineBreak(from: node)
-    case MARKDOWN_CORE_KIND_CODE: Code(from: node)
-    case MARKDOWN_CORE_KIND_HTML: HTML(from: node)
-    case MARKDOWN_CORE_KIND_FORMULA: Formula(from: node)
-    case MARKDOWN_CORE_KIND_EMPHASIS: Emphasis(from: node)
-    case MARKDOWN_CORE_KIND_STRONG: Strong(from: node)
-    case MARKDOWN_CORE_KIND_STRIKETHROUGH: Strikethrough(from: node)
-    case MARKDOWN_CORE_KIND_LINK: Link(from: node)
-    case MARKDOWN_CORE_KIND_IMAGE: Image(from: node)
-    case MARKDOWN_CORE_KIND_DIRECTIVE: Directive(from: node)
-    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE: FootnoteReference(from: node)
-    case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node)
-    case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node)
-    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL: DirectiveLabel(from: node)
-    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION: ReferenceDefinition(from: node)
-    case MARKDOWN_CORE_KIND_LINK_REFERENCE: LinkReference(from: node)
-    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: ImageReference(from: node)
-    default: preconditionFailure("native parser returned an unknown node kind")
+    private func live() throws -> OpaquePointer {
+        guard let native else {
+            throw ParseError(code: .invalidArgument, message: "the document is sealed")
+        }
+        return native
     }
 }

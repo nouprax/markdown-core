@@ -17,7 +17,7 @@ public struct Link: Markup {
     public let title: String?
 
     /// Dispatches to the visitor's `Link` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: Visitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension Link {

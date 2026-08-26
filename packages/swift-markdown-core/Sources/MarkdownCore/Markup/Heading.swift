@@ -13,7 +13,7 @@ public struct Heading: Markup {
     public let level: Int32
 
     /// Dispatches to the visitor's `Heading` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: Visitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension Heading {

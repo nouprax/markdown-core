@@ -10,7 +10,7 @@ public struct DirectiveLabel: Markup {
     public let content: [any Markup]
 
     /// Dispatches to the visitor's `DirectiveLabel` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: Visitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension DirectiveLabel {

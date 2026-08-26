@@ -4,8 +4,8 @@ import MarkdownCoreC
 ///
 /// A scope is a pair of BOUNDARIES — it says which line-and-column range an
 /// element occupies, and no substring is taken with it. Those numbers are not
-/// counted against the string you passed to ``Document/parse(_:options:)``:
-/// they are counted against the NORMALIZED source, which is what this carries,
+/// counted against the string you fed the ``Document``: they are counted
+/// against the NORMALIZED source, which is what this carries,
 /// and the two differ wherever the input held a NUL.
 public struct Concrete: Sendable, Hashable {
     /// The NORMALIZED source: UTF-8 as fed, every NUL replaced by the three
@@ -25,11 +25,12 @@ public struct Concrete: Sendable, Hashable {
     }
 
     /// How many lines the normalized source has.
-    public var lineCount: Int { lineStarts.count }
+    public var lines: Int { lineStarts.count }
 
-    /// Where `line` begins in ``source``, counting lines from 1, or `nil` when
-    /// there is no such line.
-    public func lineStart(_ line: Int) -> Int? {
+    /// The byte offset in ``source`` where `line` begins, counting lines from
+    /// 1, or `nil` when there is no such line. An OFFSET, not a boundary:
+    /// this indexes bytes, which a ``Scope`` never does.
+    public func offset(of line: Int) -> Int? {
         guard line >= 1, line <= lineStarts.count else { return nil }
         return Int(lineStarts[line - 1])
     }

@@ -1,52 +1,54 @@
 import {
     Concrete,
     Document,
-    Session,
     TreeDumper,
     visit,
     Walker,
     type Heading,
     type Markup,
+    type Read,
+    type Semantic,
     type Table,
     type TableCell,
     type TableRow,
     type Visitor
 } from "@nouprax/es-markdown-core";
 
-const document: Document = Document.parse("# typed", { tables: true });
-const concrete: Concrete = document.concrete;
-const diagnostic: string = document.dump();
-const explicitDiagnostic: string = TreeDumper.dump(document);
+const read: Read = new Document("# typed", { tables: true }).seal();
+const semantic: Semantic = read.semantic;
+const concrete: Concrete = read.concrete;
+const diagnostic: string = read.dump();
+const explicitDiagnostic: string = TreeDumper.dump(semantic);
 void diagnostic;
 void explicitDiagnostic;
 // The source a scope is counted against is bytes and a line index, and both
 // outlive the WASM handle.
 const source: Uint8Array = concrete.source;
-const lineStart: number = concrete.lineStart(1);
-const lineCount: number = concrete.lineCount;
+const offset: number = concrete.offset(1);
+const lines: number = concrete.lines;
 void source;
-void lineStart;
-void lineCount;
+void offset;
+void lines;
 // @ts-expect-error the source is readonly
 concrete.source = source;
-// @ts-expect-error the concrete view is readonly
-document.concrete = concrete;
-// The stream hands out the same document values the one-shot parse does, and
-// a chunk is a string or raw UTF-8 bytes -- nothing else crosses.
-const session: Session = new Session({ tables: false });
-const updated: Document = session.feed("# streamed");
-const fedBytes: Document = session.feed(new Uint8Array([35, 32, 104, 105, 10]));
-const sealed: Document = session.finish();
-const disposal: void = session.dispose();
+// @ts-expect-error the read's views are readonly
+read.concrete = concrete;
+// The stream hands out `Read` values, and a chunk is a string or raw UTF-8
+// bytes -- nothing else crosses.
+const streaming: Document = new Document({ tables: false });
+const updated: Read = streaming.feed("# streamed");
+const fedBytes: Read = streaming.feed(new Uint8Array([35, 32, 104, 105, 10]));
+const sealed: Read = streaming.seal();
+const disposal: void = streaming.dispose();
 void updated;
 void fedBytes;
 void sealed;
 void disposal;
 // @ts-expect-error a chunk is a string or a Uint8Array
-session.feed(42);
+streaming.feed(42);
 
 const visitor: Visitor<string> = {
-    visitDocument: (node) => node.kind,
+    visitSemantic: (node) => node.kind,
     visitBlockQuote: (node) => node.kind,
     visitParagraph: (node) => node.kind,
     visitHeading(node: Heading) {
@@ -81,14 +83,14 @@ const visitor: Visitor<string> = {
     visitDirective: (node) => node.kind,
     visitFootnoteReference: (node) => node.kind
 };
-visit(document, visitor);
-new Walker().walk(document, (_event, node) => visit(node, visitor));
+visit(semantic, visitor);
+new Walker().walk(semantic, (_event, node) => visit(node, visitor));
 // @ts-expect-error recursively readonly content cannot be replaced
-document.content[0] = document;
+semantic.content[0] = semantic;
 // @ts-expect-error readonly scope values cannot be mutated
-document.scope.start.line = 2;
+semantic.scope.start.line = 2;
 // @ts-expect-error diagnostic methods cannot be replaced
-document.dump = () => "replacement";
+semantic.dump = () => "replacement";
 
 declare const table: Table;
 const rowMarkup: Markup = table.header;
@@ -101,6 +103,6 @@ void cell;
 
 // @ts-expect-error Visitor is exhaustive and requires one method per Markup kind
 const incompleteVisitor: Visitor<string> = {
-    visitDocument: (node) => node.kind
+    visitSemantic: (node) => node.kind
 };
 void incompleteVisitor;
