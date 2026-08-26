@@ -4,8 +4,8 @@ import com.nouprax.markdown.core.Document
 import com.nouprax.markdown.core.TreeDumper
 
 fun main() {
-    val document = Document.parse("héllo 🚀\n")
-    check(document.content.size == 1)
-    check(document.dump() == TreeDumper.dump(document))
-    check(document.concrete.source.size == "héllo 🚀\n".encodeToByteArray().size)
+    val read = Document("héllo 🚀\n").seal()
+    check(read.semantic.content.size == 1)
+    check(read.dump() == TreeDumper.dump(read.semantic))
+    check(read.concrete.source.size == "héllo 🚀\n".encodeToByteArray().size)
 }
