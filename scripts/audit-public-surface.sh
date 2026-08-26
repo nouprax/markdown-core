@@ -79,8 +79,8 @@ grep -q 'public enum TreeDumper' packages/swift-markdown-core/Sources/MarkdownCo
     || fail "Swift does not expose the reviewed Markup diagnostic dump API"
 grep -q 'public struct TableRow: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
     && grep -q 'public struct TableCell: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
-    && grep -q 'visit(_ node: TableRow)' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift \
-    && grep -q 'visit(_ node: TableCell)' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift \
+    && grep -q 'visit(_ node: TableRow)' packages/swift-markdown-core/Sources/MarkdownCore/Walker/Visitor.swift \
+    && grep -q 'visit(_ node: TableCell)' packages/swift-markdown-core/Sources/MarkdownCore/Walker/Visitor.swift \
     || fail "Swift table rows and cells are not first-class Markup visitor nodes"
 # The kind count is the CONTRACT's, not a number written here. It was 28 in
 # three places until Step 7 added a 29th kind and all three said the same wrong
@@ -88,10 +88,10 @@ grep -q 'public struct TableRow: Markup' packages/swift-markdown-core/Sources/Ma
 kind_count=$(node -e 'process.stdout.write(String(JSON.parse(require("node:fs").readFileSync("docs/specs/canonical-ast.json", "utf8")).kinds.length))')
 
 if grep -R -n 'defaultVisit' packages/swift-markdown-core/Sources/MarkdownCore; then
-    fail "Swift MarkupVisitor exposes a catch-all fallback"
+    fail "Swift Visitor exposes a catch-all fallback"
 fi
-test "$(grep -c 'mutating func visit' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift)" -eq "$kind_count" \
-    || fail "Swift MarkupVisitor is not exhaustive over all $kind_count Markup kinds"
+test "$(grep -c 'mutating func visit' packages/swift-markdown-core/Sources/MarkdownCore/Walker/Visitor.swift)" -eq "$kind_count" \
+    || fail "Swift Visitor is not exhaustive over all $kind_count Markup kinds"
 
 grep -q 'explicitApi()' packages/kotlin-markdown-core/build.gradle.kts \
     || fail "Kotlin explicit API mode is disabled"
@@ -155,16 +155,14 @@ const runtimeExports = [
     )
 ].sort();
 // `Concrete` joined the runtime list at Step 12.2; `RegionRole` left it with
-// the regions when 11a-11c were retired: a document
-// carries its concrete view, and a region's role is a value the caller compares
-// against rather than a type it only reads. `Session` joined at T14
-// (docs/STREAMING.md D5): the stream's one handle, beside the documents it
-// returns.
+// the regions when 11a-11c were retired. `Session` joined at T14
+// (docs/STREAMING.md D5) and became the living `Document` when the 3.0 names
+// were formalized: the stream's one handle, beside the `Read` values it
+// returns (`Read` and `Semantic` are types, not runtime exports).
 const expectedRuntime = [
     "Concrete",
     "Document",
     "ParseError",
-    "Session",
     "TreeDumper",
     "WalkEvent",
     "Walker",
