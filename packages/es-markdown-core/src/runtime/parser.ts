@@ -1,8 +1,7 @@
-import { Concrete } from "../concrete.js";
 import { ParseError } from "../parse-error.js";
 import type { Read } from "../read.js";
 import type { ParseOptions } from "../parse-options.js";
-import { NodeDecoder } from "../wire/node-decoder.js";
+import { decodeDiscarded, decodeRead } from "../wire/wire-decoder.js";
 import { native } from "./native.js";
 
 interface OptionDescriptor {
@@ -40,72 +39,46 @@ export function withHeapBytes<Result>(bytes: Uint8Array, action: (pointer: numbe
 }
 
 /**
- * THE ONE WAY A READ LEAVES WASM. `invoke` runs a native call that answers
- * with a document pointer or writes an error behind the given output slot --
- * a document's `feed` and its `seal` both answer that way -- and this copies
- * the read out as a value or throws the `ParseError` behind the slot. Every
- * native handle is released before it returns, so a read borrows nothing.
+ * THE ONE WAY A READ LEAVES WASM. `invoke` runs a native call that writes an
+ * MKC6 payload behind the given output slot -- a document's `feed` and its
+ * `seal` both answer that way -- and this copies the payload out in ONE
+ * crossing, releases the native buffer, and decodes the copy: a `Read` value,
+ * or the `ParseError` the payload carried. Nothing native survives the call.
  */
-export function copyOut(invoke: (errorOutput: number) => number): Read {
-    const errorOutput = allocate(Uint32Array.BYTES_PER_ELEMENT);
-    let documentPointer = 0;
-    let errorPointer = 0;
-    try {
-        dataView().setUint32(errorOutput, 0, true);
-        documentPointer = invoke(errorOutput);
-        errorPointer = dataView().getUint32(errorOutput, true);
-
-        const decoder = new NodeDecoder(native);
-        try {
-            if (!documentPointer) throw decoder.parseError(errorPointer);
-            return makeRead(
-                decoder.decodeSemantic(native.es_document_root(documentPointer)),
-                readConcrete(documentPointer)
-            );
-        } finally {
-            decoder.dispose();
-        }
-    } finally {
-        if (documentPointer) native.es_document_free(documentPointer);
-        if (errorPointer) native.es_error_free(errorPointer);
-        native.free(errorOutput);
-    }
+export function copyOut(invoke: (output: number) => number): Read {
+    const { semantic, concrete } = decodeRead(takePayload(invoke));
+    return makeRead(semantic, concrete);
 }
 
 /**
- * Copies the whole concrete view out of WASM memory, which the caller frees as
- * soon as this returns.
- *
- * Every array is read out in ONE crossing: the view is copied whole either way,
- * and a call per line or per region is tens of thousands of them on a document
- * of any size.
- */
-/**
  * Runs a native call whose read is DISCARDED -- the `Document` constructor's
  * initial feed -- so an error still surfaces and a healthy tree is not
- * decoded just to be thrown away. The native document is freed on the way
- * out, exactly as `copyOut` frees the one it copies.
+ * decoded just to be thrown away. Only the payload's envelope is read.
  */
-export function discardOut(invoke: (errorOutput: number) => number): void {
-    const errorOutput = allocate(Uint32Array.BYTES_PER_ELEMENT);
-    let documentPointer = 0;
-    let errorPointer = 0;
+export function discardOut(invoke: (output: number) => number): void {
+    decodeDiscarded(takePayload(invoke));
+}
+
+/** Runs the native call and copies its payload out of WASM memory, freeing
+ * the native buffer on the way. A zero return is the one failure with no
+ * payload to decode: the buffer itself could not be built. */
+function takePayload(invoke: (output: number) => number): Uint8Array {
+    const output = allocate(2 * Uint32Array.BYTES_PER_ELEMENT);
+    let payloadPointer = 0;
     try {
-        dataView().setUint32(errorOutput, 0, true);
-        documentPointer = invoke(errorOutput);
-        errorPointer = dataView().getUint32(errorOutput, true);
-        if (!documentPointer) {
-            const decoder = new NodeDecoder(native);
-            try {
-                throw decoder.parseError(errorPointer);
-            } finally {
-                decoder.dispose();
-            }
+        const view = dataView();
+        view.setUint32(output, 0, true);
+        view.setUint32(output + 4, 0, true);
+        if (!invoke(output)) {
+            throw new ParseError("allocationFailed", "failed to serialize the native document");
         }
+        const after = dataView();
+        payloadPointer = after.getUint32(output, true);
+        const payloadLength = after.getUint32(output + 4, true);
+        return new Uint8Array(native.memory.buffer, payloadPointer, payloadLength).slice();
     } finally {
-        if (documentPointer) native.es_document_free(documentPointer);
-        if (errorPointer) native.es_error_free(errorPointer);
-        native.free(errorOutput);
+        if (payloadPointer) native.es_wire_free(payloadPointer);
+        native.free(output);
     }
 }
 
@@ -113,35 +86,16 @@ export function discardOut(invoke: (errorOutput: number) => number): void {
  * The pair, sealed shut: `semantic` and `concrete` are data and enumerate;
  * `dump` is a convenience and does not.
  */
-function makeRead(semantic: Read["semantic"], concrete: Concrete): Read {
-    const read = { semantic, concrete } as { semantic: Read["semantic"]; concrete: Concrete; dump?: () => string };
+function makeRead(semantic: Read["semantic"], concrete: Read["concrete"]): Read {
+    const read = {
+        semantic,
+        concrete
+    } as { semantic: Read["semantic"]; concrete: Read["concrete"]; dump?: () => string };
     Object.defineProperty(read, "dump", {
         enumerable: false,
         value: () => semantic.dump()
     });
     return read as Read;
-}
-
-function readConcrete(documentPointer: number): Concrete {
-    const sourceOutput = allocate(Uint32Array.BYTES_PER_ELEMENT * 2);
-    let lineOutput = 0;
-    try {
-        native.es_document_source(documentPointer, sourceOutput, sourceOutput + 4);
-        const sourcePointer = dataView().getUint32(sourceOutput, true);
-        const sourceLength = dataView().getUint32(sourceOutput + 4, true);
-        const source = new Uint8Array(native.memory.buffer, sourcePointer, sourceLength).slice();
-
-        const lineCount = native.es_document_line_count(documentPointer);
-        lineOutput = allocate(Math.max(lineCount, 1) * Uint32Array.BYTES_PER_ELEMENT);
-        native.es_document_line_starts(documentPointer, lineOutput);
-        const lineStarts = new Uint32Array(native.memory.buffer, lineOutput, lineCount).slice();
-
-        return new Concrete(source, lineStarts);
-    } finally {
-        for (const pointer of [lineOutput, sourceOutput]) {
-            if (pointer) native.free(pointer);
-        }
-    }
 }
 
 /** The option flags the C bridge reads, validated on the way: the one

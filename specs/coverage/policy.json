@@ -130,7 +130,7 @@
                 "packages/es-markdown-core/src/runtime/parser.ts": {
                     "lines": 0,
                     "functions": 0,
-                    "branches": 3
+                    "branches": 1
                 },
                 "packages/es-markdown-core/src/tree-dumper.ts": {
                     "lines": 0,
@@ -147,10 +147,10 @@
                     "functions": 1,
                     "branches": 1
                 },
-                "packages/es-markdown-core/src/wire/node-decoder.ts": {
-                    "lines": 22,
-                    "functions": 2,
-                    "branches": 19
+                "packages/es-markdown-core/src/wire/wire-decoder.ts": {
+                    "lines": 4,
+                    "functions": 1,
+                    "branches": 7
                 }
             }
         }

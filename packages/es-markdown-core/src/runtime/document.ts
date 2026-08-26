@@ -76,7 +76,7 @@ export class Document {
         const bytes = typeof initial === "string" ? utf8Encoder.encode(initial) : initial;
         const session = this.#native;
         withHeapBytes(bytes, (chunkPointer) =>
-            discardOut((errorOutput) => native.es_session_feed(session, chunkPointer, bytes.length, errorOutput))
+            discardOut((output) => native.es_session_feed(session, chunkPointer, bytes.length, output, output + 4))
         );
     }
 
@@ -102,7 +102,7 @@ export class Document {
         if (!(bytes instanceof Uint8Array)) throw new TypeError("chunk must be a string or a Uint8Array");
         const session = this.#live();
         return withHeapBytes(bytes, (chunkPointer) =>
-            copyOut((errorOutput) => native.es_session_feed(session, chunkPointer, bytes.length, errorOutput))
+            copyOut((output) => native.es_session_feed(session, chunkPointer, bytes.length, output, output + 4))
         );
     }
 
@@ -120,7 +120,7 @@ export class Document {
      * could not be built; the shell then remains for `dispose`.
      */
     seal(): Read {
-        const sealed = copyOut((errorOutput) => native.es_session_finish(this.#live(), errorOutput));
+        const sealed = copyOut((output) => native.es_session_finish(this.#live(), output, output + 4));
         this.dispose();
         return sealed;
     }

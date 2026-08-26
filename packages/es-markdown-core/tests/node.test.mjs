@@ -6,7 +6,7 @@ import { Document, ParseError, TreeDumper, visit, Walker, WalkEvent } from "../d
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
 import { copyOut, discardOut } from "../dist/runtime/parser.js";
-import { NodeDecoder } from "../dist/wire/node-decoder.js";
+import { decodeRead } from "../dist/wire/wire-decoder.js";
 import { kindVisitor } from "./visitor.mjs";
 
 // The whole-text parse: the one entry, sealed in the same breath. `parse`
@@ -45,7 +45,7 @@ test("ast: typed fields are copied from direct WASM accessors", () => {
 test("ast: every Markup exposes the canonical diagnostic dump", () => {
     const document = parse("# Heading\n");
     assert.equal(document.dump(), TreeDumper.dump(document));
-    assert.match(document.content[0].dump(), /^Heading scope=/);
+    assert.match(document.content[0].dump(), /^Heading id=\d+:0 scope=/u);
     assert.equal(Object.keys(document).includes("dump"), false);
 });
 
@@ -179,7 +179,10 @@ test("ast: the decoder's reference, formula, list and empty-string arms are exer
 
     const reference = paragraph.content.find((node) => node.kind === "linkReference");
     assert.equal(reference.form, "shortcut");
-    assert.equal(reference.identifier, "foo");
+    // THE EDGE: the reference names the definition it resolved to, and the
+    // name is the definition node's own identity.
+    assert.deepEqual(reference.definition, definition.id);
+    assert.equal(definition.norm, "foo");
 
     const formula = paragraph.content.find((node) => node.kind === "formula");
     assert.equal(formula.mode, "standalone");
@@ -331,53 +334,146 @@ test("errors: ParseError carries its code, name, and message", () => {
 });
 
 test("errors: a read that never materialized is a ParseError, not a crash", () => {
-    // `copyOut` throwing is unreachable through text -- a parse failure is an
-    // allocation failure -- so it is reached the same way `discardOut`'s arm
-    // is: a call that answers with no document and no error behind the slot.
+    // `copyOut` throwing here is unreachable through text -- the one payload
+    // the bridge cannot build is the one it could not allocate -- so it is
+    // reached by handing it a call that answers with no payload at all.
     assert.throws(
         () => copyOut(() => 0),
-        (error) => error instanceof ParseError && error.code === "internal"
+        (error) => error instanceof ParseError && error.code === "allocationFailed"
     );
 });
 
 test("errors: a discarded feed still surfaces a native failure and frees its slot", () => {
     // The constructor's initial feed discards its read, and text never fails,
     // so the error arm is reached the way the heap tests reach the runtime:
-    // past index.js, handing `discardOut` a call that answers with no
-    // document and no error behind the slot.
+    // past index.js, handing `discardOut` a call that answers with no payload.
     assert.throws(
         () => discardOut(() => 0),
-        (error) => error instanceof ParseError && error.code === "internal"
+        (error) => error instanceof ParseError && error.code === "allocationFailed"
     );
 });
 
-test("errors: every wire guard fires when the native side answers out of range", () => {
+test("errors: every refusal the wire reader can make is reached by a payload", () => {
     // These guards exist because the two sides of the wire are versioned
-    // separately -- the Kotlin bridge's bump to MKC5 is the same hazard -- and
-    // a decoder that silently mapped an unknown value would turn a protocol
-    // mismatch into a wrong document. Nothing proved any of them fires, so a
-    // renumbering could have removed the check and stayed green.
-    const decoder = new NodeDecoder(native);
-    try {
-        assert.throws(() => decoder.referenceForm(9), /invalid reference form 9/u);
-        assert.throws(() => decoder.placement(9), /invalid placement mode 9/u);
-        assert.throws(() => decoder.listFlavor(9), /invalid list flavor 9/u);
-        assert.throws(() => decoder.tableAlignment(9), /invalid table alignment 9/u);
-        assert.throws(() => decoder.boolean(9, "checked"), /invalid checked 9/u);
-        assert.throws(() => decoder.count(-1, "column count"), /invalid column count -1/u);
+    // separately -- the MKC6 bump is the same hazard -- and a decoder that
+    // silently mapped an unknown value would turn a protocol mismatch into a
+    // wrong document. The payloads the bridge actually writes are well
+    // formed, so the malformed ones are written by hand: `MKC6` is the magic,
+    // and the byte after it is the status -- 1 means an error follows.
+    const payload = (...parts) => {
+        const out = [];
+        for (const part of parts) {
+            if (typeof part === "string") out.push(...new TextEncoder().encode(part));
+            else if (typeof part === "number") out.push(part & 0xff);
+            else for (let shift = 0; shift < 4; shift += 1) out.push((part.int >> (shift * 8)) & 0xff);
+        }
+        return Uint8Array.from(out);
+    };
+    const int = (value) => ({ int: value });
 
-        // The valid answers still map, so the guards reject rather than
-        // everything throwing for some unrelated reason.
-        assert.equal(decoder.referenceForm(3), "shortcut");
-        assert.equal(decoder.placement(2), "standalone");
-        assert.equal(decoder.listFlavor(2), "ordered");
-        assert.equal(decoder.tableAlignment(0), "none");
-        assert.equal(decoder.nullableBoolean(-1, "checked"), null);
-    } finally {
-        decoder.dispose();
-    }
+    // A native error crosses as a code and a message, which is the only path
+    // that builds a ParseError out of a payload.
+    assert.throws(
+        () => decodeRead(payload("MKC6", 1, int(1), int(3), "bad")),
+        (error) => error instanceof ParseError && error.code === "invalidArgument" && error.message === "bad"
+    );
+    assert.throws(
+        () => decodeRead(payload("MKC6", 1, int(99), int(1), "x")),
+        (error) => error instanceof ParseError && error.code === "internal"
+    );
 
-    // A disposed decoder holds a freed scratch pointer, and reading through it
-    // would be a use-after-free in WASM memory rather than an error.
-    assert.throws(() => decoder.requireLive(), /decoder has been disposed/u);
+    // A status that is neither, a magic from the wrong wire version, a root
+    // that is not a document, and a payload that stops mid-value.
+    assert.throws(() => decodeRead(payload("MKC6", 2)), /unsupported native bridge status/u);
+    assert.throws(() => decodeRead(payload("MKC5", 0)), /invalid native bridge payload/u);
+    assert.throws(() => decodeRead(payload("MKC6", 0, 3)), /invalid document tree/u);
+    assert.throws(() => decodeRead(payload("MKC6", 0, 1, int(1), int(1))), /truncated native bridge payload/u);
+    assert.throws(() => decodeRead(payload("MKC6", 1, int(1), int(-2))), /invalid native bridge string/u);
+});
+
+test("errors: every out-of-range value inside a node payload is refused", () => {
+    // One malformed NODE per guard, each wrapped in a well-formed envelope and
+    // document root, so the refusal is the node's own rather than the
+    // envelope's. The builder mirrors the wire: kind byte, identity, scope,
+    // then the kind's fields.
+    const int = (value) => ({ int: value });
+    const long = (value) => ({ long: value });
+    const bytes = (...parts) => {
+        const out = [];
+        for (const part of parts) {
+            if (typeof part === "string") out.push(...new TextEncoder().encode(part));
+            else if (typeof part === "number") out.push(part & 0xff);
+            else if ("long" in part) for (let shift = 0; shift < 8; shift += 1) out.push(Number((BigInt(part.long) >> BigInt(shift * 8)) & 0xffn));
+            else for (let shift = 0; shift < 4; shift += 1) out.push((part.int >> (shift * 8)) & 0xff);
+        }
+        return out;
+    };
+    const identity = (block, ordinal) => bytes(int(block), int(ordinal));
+    const scope = () => bytes(int(1), int(1), int(1), int(1));
+    // A document root carrying exactly one child, which is the malformed node.
+    const wrap = (...node) =>
+        Uint8Array.from([
+            ...bytes("MKC6", 0, 1),
+            ...identity(1, 0),
+            ...scope(),
+            ...bytes(int(1)),
+            ...bytes(...node)
+        ]);
+    const child = (kind, ...fields) => wrap(kind, ...identity(2, 0), ...scope(), ...fields);
+
+    assert.throws(() => decodeRead(child(99)), /unknown node kind 99/u);
+    assert.throws(() => decodeRead(child(1)), /a document node cannot be a child/u);
+    assert.throws(() => decodeRead(child(4, int(9))), /invalid heading level 9/u);
+    assert.throws(() => decodeRead(child(6, int(9))), /invalid list flavor 9/u);
+    assert.throws(() => decodeRead(child(6, int(1), long(3), 1, 1)), /start value for a bullet list/u);
+    assert.throws(() => decodeRead(child(7, 7)), /invalid list item checked state 7/u);
+    assert.throws(() => decodeRead(child(8, int(-1), int(-1), int(0), 9)), /invalid code fenced state 9/u);
+    assert.throws(() => decodeRead(child(11, int(1), 9)), /invalid table alignment/u);
+    assert.throws(() => decodeRead(child(19, int(9))), /invalid placement mode 9/u);
+    assert.throws(() => decodeRead(child(31, int(0), int(9))), /invalid reference form 9/u);
+    assert.throws(() => decodeRead(wrap(3, ...identity(2, 0), ...scope(), int(-1))), /invalid child count -1/u);
+
+    const paragraph = () => bytes(3, ...identity(3, 0), ...scope(), int(0));
+    assert.throws(
+        () => decodeRead(child(6, int(1), long(0), 0, 0, int(1), ...paragraph())),
+        /list contains a non-item node/u
+    );
+    assert.throws(() => decodeRead(child(11, int(0), int(1), ...paragraph())), /table contains a non-row node/u);
+    const headerlessRow = () => bytes(27, ...identity(3, 0), ...scope(), 0, int(0));
+    assert.throws(() => decodeRead(child(11, int(0), int(1), ...headerlessRow())), /contains 0 header rows/u);
+    assert.throws(
+        () => decodeRead(child(27, 0, int(1), ...paragraph())),
+        /table row contains a non-cell node/u
+    );
+    assert.throws(
+        () => decodeRead(child(25, int(0), 0, int(1))),
+        /an absent directive attribute container cannot hold attributes/u
+    );
+    assert.throws(
+        () => decodeRead(child(25, int(0), 0, int(0), int(1), ...paragraph())),
+        /inline directive contains block content/u
+    );
+
+    // A complete, healthy payload with one byte too many: the reader must
+    // refuse the surplus rather than decode a prefix and call it the document.
+    const complete = Uint8Array.from([
+        ...bytes("MKC6", 0, 1),
+        ...identity(1, 0),
+        ...scope(),
+        ...bytes(int(0), int(0), int(0), 0)
+    ]);
+    assert.throws(() => decodeRead(complete), /returned a truncated payload/u);
+
+    // An ordered list whose start does not fit a double: the reader refuses
+    // precision loss rather than rounding a value the source wrote.
+    assert.throws(
+        () => decodeRead(child(6, int(2), long(0x7fffffffffffffffn), 1, 0, int(0))),
+        /exceeds JavaScript integer precision/u
+    );
+
+    // And the third error code the envelope can carry.
+    assert.throws(
+        () => decodeRead(Uint8Array.from(bytes("MKC6", 1, int(2), int(1), "x"))),
+        (error) => error instanceof ParseError && error.code === "allocationFailed"
+    );
 });
