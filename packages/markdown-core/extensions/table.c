@@ -380,8 +380,10 @@ static void try_inserting_table_header_paragraph(
     // failure bit says everything was fine.
     paragraph = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
     if (paragraph) {
-        /* Born outside `add_child`, so stamped here or not at all (T3). */
+        /* Born outside `add_child`, so stamped here or not at all (T3), and
+         * minted here for the same reason (T2). */
         markdown_core_parser_touch(parser, paragraph);
+        markdown_core_parser_mint_block_id(parser, paragraph);
     }
     if (!paragraph) {
         parser->oom = true;
@@ -429,6 +431,17 @@ static void try_inserting_table_header_paragraph(
         // buffer by now, and freeing the struct alone leaks it.
         parser->oom = true;
         markdown_core_node_free(paragraph);
+        return;
+    }
+    /* D4's fork 1 (§4): the lead is the text the reader saw FIRST and which
+     * did not change, so it keeps the identity of the paragraph the table was
+     * split out of; the table -- the element that is new to the consumer --
+     * leaves with the lead's fresh mint. Swapped, not copied, so the ids stay
+     * unique. `parent_container` is that paragraph, already retyped in place. */
+    {
+        uint32_t fresh = paragraph->block_id;
+        paragraph->block_id = parent_container->block_id;
+        parent_container->block_id = fresh;
     }
 }
 

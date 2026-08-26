@@ -173,8 +173,9 @@ static int pr_fingerprint(markdown_core_parser *parser, markdown_core_strbuf *ou
         snprintf(
             header,
             sizeof(header),
-            "%u|%u|%d:%d..%d:%d|%d|%d+%d|%u:",
+            "%u#%u|%u|%d:%d..%d:%d|%d|%d+%d|%u:",
             (unsigned)node->type,
+            (unsigned)node->block_id,
             /* The cache (T9) hangs a holder on a CST block and says so in a
              * flag. That is bookkeeping about the block, not a statement the
              * CST makes, so it is outside what a derivation must not write. */
@@ -1322,6 +1323,503 @@ static int case_projection_key(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+/* T2 AND T5'S GATE: A BLOCK'S IDENTITY IS TOTAL, UNIQUE, PROJECTION-STABLE
+ * AND NEVER RESURRECTED (docs/STREAMING.md §4 D4, F11). Feeds every case one
+ * line at a time and derives TWICE after every line, asserting four things:
+ *
+ *   1. no block in a derived tree carries id 0 -- a lost mint or carry fails
+ *      closed, and this is where it surfaces;
+ *   2. no two blocks in one derivation share an id;
+ *   3. two projections of one unwritten CST name every block identically --
+ *      the id is a fact about the CST, not about the derivation (closes F4);
+ *   4. an id that left the tree never comes back.
+ *
+ * The finish tree joins the same asserts: it is the last projection, taken in
+ * place on the CST, and the consumer joins it against the boundary trees. */
+typedef struct pr_id_ledger {
+    uint32_t *ids;
+    size_t count;
+    size_t cap;
+} pr_id_ledger;
+
+static int pr_id_ledger_has(const pr_id_ledger *ledger, uint32_t id) {
+    size_t i;
+    for (i = 0; i < ledger->count; i++) {
+        if (ledger->ids[i] == id) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int pr_id_ledger_add(pr_id_ledger *ledger, uint32_t id) {
+    if (ledger->count == ledger->cap) {
+        uint32_t *grown;
+        ledger->cap = ledger->cap ? ledger->cap * 2 : 32;
+        grown = (uint32_t *)realloc(ledger->ids, ledger->cap * sizeof(*ledger->ids));
+        if (!grown) {
+            return -1;
+        }
+        ledger->ids = grown;
+    }
+    ledger->ids[ledger->count++] = id;
+    return 0;
+}
+
+static int pr_identity_boundary(
+    markdown_core_parser *parser,
+    markdown_core_node *tree,
+    pr_id_ledger *alive,
+    pr_id_ledger *dead,
+    int example,
+    const char *boundary,
+    size_t *blocks_seen
+) {
+    markdown_core_node *second = NULL;
+    markdown_core_node **blocks = NULL, **again = NULL;
+    size_t count = 0, again_count = 0, i, j;
+    pr_id_ledger cur;
+    int failed = 0;
+
+    memset(&cur, 0, sizeof(cur));
+    if (pr_collect_blocks(tree, &blocks, &count) != 0) {
+        fputs("out of memory\n", stderr);
+        return -1;
+    }
+    /* 1 and 2: total, and unique within one derivation. */
+    for (i = 0; i < count && !failed; i++) {
+        if (blocks[i]->block_id == 0) {
+            fprintf(
+                stderr,
+                "example %d %s: %s at %d:%d has no identity\n",
+                example,
+                boundary,
+                markdown_core_node_get_type_string(blocks[i]),
+                blocks[i]->start_line,
+                blocks[i]->start_column
+            );
+            failed = 1;
+        }
+        for (j = i + 1; j < count && !failed; j++) {
+            if (blocks[i]->block_id == blocks[j]->block_id) {
+                fprintf(
+                    stderr,
+                    "example %d %s: two blocks share id %u (%s at %d:%d, %s at %d:%d)\n",
+                    example,
+                    boundary,
+                    (unsigned)blocks[i]->block_id,
+                    markdown_core_node_get_type_string(blocks[i]),
+                    blocks[i]->start_line,
+                    blocks[i]->start_column,
+                    markdown_core_node_get_type_string(blocks[j]),
+                    blocks[j]->start_line,
+                    blocks[j]->start_column
+                );
+                failed = 1;
+            }
+        }
+    }
+    /* 3: the second projection names every block as the first did. `parser`
+     * is NULL for the finish tree, which has no second projection to take. */
+    if (!failed && parser) {
+        second = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        if (!second || pr_collect_blocks(second, &again, &again_count) != 0) {
+            fprintf(stderr, "example %d %s: second derivation failed\n", example, boundary);
+            failed = 1;
+        } else if (again_count != count) {
+            fprintf(
+                stderr,
+                "example %d %s: %zu blocks in one projection, %zu in the next\n",
+                example,
+                boundary,
+                count,
+                again_count
+            );
+            failed = 1;
+        } else {
+            for (i = 0; i < count; i++) {
+                if (blocks[i]->block_id != again[i]->block_id) {
+                    fprintf(
+                        stderr,
+                        "example %d %s: two projections name a %s at %d:%d differently (%u vs %u)\n",
+                        example,
+                        boundary,
+                        markdown_core_node_get_type_string(blocks[i]),
+                        blocks[i]->start_line,
+                        blocks[i]->start_column,
+                        (unsigned)blocks[i]->block_id,
+                        (unsigned)again[i]->block_id
+                    );
+                    failed = 1;
+                    break;
+                }
+            }
+        }
+    }
+    /* 4: nothing this boundary shows was ever declared dead, and whatever the
+     * previous boundary showed that this one does not is dead from here on. */
+    for (i = 0; i < count && !failed; i++) {
+        if (pr_id_ledger_has(dead, blocks[i]->block_id)) {
+            fprintf(
+                stderr,
+                "example %d %s: dead id %u came back as %s at %d:%d\n",
+                example,
+                boundary,
+                (unsigned)blocks[i]->block_id,
+                markdown_core_node_get_type_string(blocks[i]),
+                blocks[i]->start_line,
+                blocks[i]->start_column
+            );
+            failed = 1;
+        }
+        if (!failed && pr_id_ledger_add(&cur, blocks[i]->block_id) != 0) {
+            fputs("out of memory\n", stderr);
+            failed = 1;
+        }
+    }
+    if (!failed) {
+        for (i = 0; i < alive->count; i++) {
+            if (!pr_id_ledger_has(&cur, alive->ids[i]) && pr_id_ledger_add(dead, alive->ids[i]) != 0) {
+                fputs("out of memory\n", stderr);
+                failed = 1;
+                break;
+            }
+        }
+    }
+    *blocks_seen += count;
+    free(blocks);
+    free(again);
+    if (second) {
+        markdown_core_node_free(second);
+    }
+    free(alive->ids);
+    *alive = cur;
+    return failed ? -1 : 0;
+}
+
+static int case_block_identity(const ts_spec_file *file) {
+    size_t index;
+    size_t boundaries = 0;
+    size_t blocks_seen = 0;
+    int failures = 0;
+    for (index = 0; index < file->count; index++) {
+        const ts_spec_case *test_case = &file->cases[index];
+        markdown_core_parser *parser = pr_parser_new();
+        const char *text = test_case->markdown;
+        size_t length = test_case->markdown_length;
+        markdown_core_node *tree;
+        pr_id_ledger alive, dead;
+        size_t start = 0, i;
+        int boundary = 0;
+        int failed = 0;
+        char label[32];
+        if (!parser) {
+            fprintf(stderr, "example %d: parser allocation failed\n", test_case->example);
+            failures++;
+            continue;
+        }
+        memset(&alive, 0, sizeof(alive));
+        memset(&dead, 0, sizeof(dead));
+        for (i = 0; i <= length && !failed; i++) {
+            if (i < length && text[i] != '\n') {
+                continue;
+            }
+            if (i == length && start == length) {
+                break;
+            }
+            markdown_core_parser_feed(parser, text + start, (i < length ? i + 1 : length) - start);
+            start = i + 1;
+            snprintf(label, sizeof(label), "boundary %d", ++boundary);
+            tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+            if (!tree) {
+                fprintf(stderr, "example %d %s: derivation failed\n", test_case->example, label);
+                failed = 1;
+                break;
+            }
+            failed = pr_identity_boundary(parser, tree, &alive, &dead, test_case->example, label, &blocks_seen) != 0;
+            markdown_core_node_free(tree);
+        }
+        boundaries += (size_t)boundary;
+        if (!failed) {
+            tree = markdown_core_parser_finish(parser);
+            if (!tree) {
+                fprintf(stderr, "example %d finish: projection failed\n", test_case->example);
+                failed = 1;
+            } else {
+                failed =
+                    pr_identity_boundary(NULL, tree, &alive, &dead, test_case->example, "finish", &blocks_seen) != 0;
+                markdown_core_node_free(tree);
+            }
+        }
+        free(alive.ids);
+        free(dead.ids);
+        markdown_core_parser_free(parser);
+        if (failed) {
+            failures++;
+        }
+    }
+    printf(
+        "block identity: %zu/%zu examples sound over %zu boundaries, %zu block observations\n",
+        file->count - (size_t)failures,
+        file->count,
+        boundaries,
+        blocks_seen
+    );
+    return failures ? -1 : 0;
+}
+
+/* T5'S SECOND HALF, AND D4'S TWO RULED FORKS, AS SHAPES (§4 D4). Each
+ * document below crosses one of the identity-moving events, and the assert
+ * says which node the consumer keeps: a retype keeps the id (setext,
+ * paragraph -> table, the formula promotion); a split leaves the id on what
+ * the reader already had (the table's lead paragraph, a surviving paragraph
+ * losing its definitions); a death bequeaths it to the firstborn definition.
+ * Recorded per boundary as the derived root's direct children. */
+typedef struct ti_block {
+    uint16_t type;
+    uint32_t id;
+} ti_block;
+
+#define TI_MAX_CHILDREN 8
+#define TI_MAX_RECORDS 8
+
+typedef struct ti_record {
+    ti_block items[TI_MAX_CHILDREN];
+    size_t count;
+} ti_record;
+
+static int ti_snapshot(markdown_core_node *root, ti_record *out) {
+    markdown_core_node *child;
+    out->count = 0;
+    for (child = root->first_child; child; child = child->next) {
+        if (out->count == TI_MAX_CHILDREN) {
+            return -1;
+        }
+        out->items[out->count].type = child->type;
+        out->items[out->count].id = child->block_id;
+        out->count++;
+    }
+    return 0;
+}
+
+static int ti_run(const char *text, ti_record *records, size_t *count) {
+    markdown_core_parser *parser = pr_parser_new();
+    size_t length = strlen(text);
+    size_t start = 0, i;
+    markdown_core_node *tree;
+    int failed = 0;
+
+    *count = 0;
+    if (!parser) {
+        return -1;
+    }
+    for (i = 0; i <= length && !failed; i++) {
+        if (i < length && text[i] != '\n') {
+            continue;
+        }
+        if (i == length && start == length) {
+            break;
+        }
+        markdown_core_parser_feed(parser, text + start, (i < length ? i + 1 : length) - start);
+        start = i + 1;
+        tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        if (!tree || *count == TI_MAX_RECORDS || ti_snapshot(tree, &records[*count]) != 0) {
+            failed = 1;
+        } else {
+            (*count)++;
+        }
+        if (tree) {
+            markdown_core_node_free(tree);
+        }
+    }
+    if (!failed) {
+        tree = markdown_core_parser_finish(parser);
+        if (!tree || *count == TI_MAX_RECORDS || ti_snapshot(tree, &records[*count]) != 0) {
+            failed = 1;
+        } else {
+            (*count)++;
+        }
+        if (tree) {
+            markdown_core_node_free(tree);
+        }
+    }
+    markdown_core_parser_free(parser);
+    return failed ? -1 : 0;
+}
+
+static int ti_expect(
+    const char *name,
+    const ti_record *record,
+    const char *when,
+    const ti_block *expected,
+    size_t expected_count
+) {
+    size_t i;
+    if (record->count != expected_count) {
+        fprintf(
+            stderr,
+            "%s at %s: %zu top-level blocks where %zu were expected\n",
+            name,
+            when,
+            record->count,
+            expected_count
+        );
+        return -1;
+    }
+    for (i = 0; i < expected_count; i++) {
+        if (record->items[i].type != expected[i].type || record->items[i].id != expected[i].id) {
+            fprintf(
+                stderr,
+                "%s at %s: child %zu is type %u id %u where type %u id %u was expected\n",
+                name,
+                when,
+                i,
+                (unsigned)record->items[i].type,
+                (unsigned)record->items[i].id,
+                (unsigned)expected[i].type,
+                (unsigned)expected[i].id
+            );
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int case_block_identity_transitions(const ts_spec_file *file) {
+    ti_record r[TI_MAX_RECORDS];
+    size_t n;
+    int failures = 0;
+    (void)file;
+
+    /* A setext retype keeps the id: the underline rewrites the node in place. */
+    {
+        if (ti_run("text\n===\n", r, &n) != 0 || n < 2) {
+            fputs("setext: run failed\n", stderr);
+            failures++;
+        } else {
+            uint32_t x = r[0].items[0].id;
+            ti_block p[] = {{MARKDOWN_CORE_NODE_PARAGRAPH, x}};
+            ti_block h[] = {{MARKDOWN_CORE_NODE_HEADING, x}};
+            if (x == 0 || ti_expect("setext", &r[0], "boundary 1", p, 1) != 0 ||
+                ti_expect("setext", &r[n - 1], "finish", h, 1) != 0) {
+                failures++;
+            }
+        }
+    }
+    /* A paragraph -> table retype with no lead keeps the id the same way. */
+    {
+        if (ti_run("a|b\n-|-\n", r, &n) != 0 || n < 2) {
+            fputs("table retype: run failed\n", stderr);
+            failures++;
+        } else {
+            uint32_t x = r[0].items[0].id;
+            ti_block p[] = {{MARKDOWN_CORE_NODE_PARAGRAPH, x}};
+            ti_block t[] = {{MARKDOWN_CORE_NODE_TABLE, x}};
+            if (x == 0 || ti_expect("table retype", &r[0], "boundary 1", p, 1) != 0 ||
+                ti_expect("table retype", &r[n - 1], "finish", t, 1) != 0) {
+                failures++;
+            }
+        }
+    }
+    /* Fork 1: the lead paragraph keeps the id; the table is the new element. */
+    {
+        if (ti_run("Intro\na|b\n-|-\n", r, &n) != 0 || n < 3) {
+            fputs("lead split: run failed\n", stderr);
+            failures++;
+        } else {
+            uint32_t x = r[0].items[0].id;
+            uint32_t y = r[n - 1].count == 2 ? r[n - 1].items[1].id : 0;
+            ti_block p[] = {{MARKDOWN_CORE_NODE_PARAGRAPH, x}};
+            ti_block split[] = {{MARKDOWN_CORE_NODE_PARAGRAPH, x}, {MARKDOWN_CORE_NODE_TABLE, y}};
+            if (x == 0 || y == 0 || y == x || ti_expect("lead split", &r[0], "boundary 1", p, 1) != 0 ||
+                ti_expect("lead split", &r[1], "boundary 2", p, 1) != 0 ||
+                ti_expect("lead split", &r[n - 1], "finish", split, 2) != 0) {
+                failures++;
+            }
+        }
+    }
+    /* Fork 3, death: the paragraph became the definition, so the definition
+     * keeps the paragraph's id. */
+    {
+        if (ti_run("[a]: /url\n\nafter\n", r, &n) != 0 || n < 2) {
+            fputs("definition death: run failed\n", stderr);
+            failures++;
+        } else {
+            uint32_t x = r[0].items[0].id;
+            uint32_t z = r[n - 1].count == 2 ? r[n - 1].items[1].id : 0;
+            ti_block p[] = {{MARKDOWN_CORE_NODE_PARAGRAPH, x}};
+            ti_block fin[] = {{MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, x}, {MARKDOWN_CORE_NODE_PARAGRAPH, z}};
+            if (x == 0 || z == 0 || z == x || ti_expect("definition death", &r[0], "boundary 1", p, 1) != 0 ||
+                ti_expect("definition death", &r[n - 1], "finish", fin, 2) != 0) {
+                failures++;
+            }
+        }
+    }
+    /* Fork 3, survival: the visible text keeps the id; the definition is a
+     * fresh birth. */
+    {
+        if (ti_run("[a]: /url\ntext\n\nafter\n", r, &n) != 0 || n < 2) {
+            fputs("definition survival: run failed\n", stderr);
+            failures++;
+        } else {
+            uint32_t x = r[0].items[0].id;
+            uint32_t y = r[n - 1].count == 3 ? r[n - 1].items[0].id : 0;
+            uint32_t z = r[n - 1].count == 3 ? r[n - 1].items[2].id : 0;
+            ti_block p[] = {{MARKDOWN_CORE_NODE_PARAGRAPH, x}};
+            ti_block fin[] = {
+                {MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, y},
+                {MARKDOWN_CORE_NODE_PARAGRAPH, x},
+                {MARKDOWN_CORE_NODE_PARAGRAPH, z}
+            };
+            if (x == 0 || y == 0 || y == x || z == 0 || y == z ||
+                ti_expect("definition survival", &r[0], "boundary 1", p, 1) != 0 ||
+                ti_expect("definition survival", &r[n - 1], "finish", fin, 3) != 0) {
+                failures++;
+            }
+        }
+    }
+    /* Fork 3, several definitions from one death: the firstborn inherits and
+     * the rest are births. */
+    {
+        if (ti_run("[a]: /1\n[b]: /2\n\nafter\n", r, &n) != 0 || n < 2) {
+            fputs("definition firstborn: run failed\n", stderr);
+            failures++;
+        } else {
+            uint32_t x = r[0].items[0].id;
+            uint32_t y = r[n - 1].count == 3 ? r[n - 1].items[1].id : 0;
+            uint32_t z = r[n - 1].count == 3 ? r[n - 1].items[2].id : 0;
+            ti_block p[] = {{MARKDOWN_CORE_NODE_PARAGRAPH, x}};
+            ti_block fin[] = {
+                {MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, x},
+                {MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, y},
+                {MARKDOWN_CORE_NODE_PARAGRAPH, z}
+            };
+            if (x == 0 || y == 0 || y == x || z == 0 ||
+                ti_expect("definition firstborn", &r[0], "boundary 1", p, 1) != 0 ||
+                ti_expect("definition firstborn", &r[n - 1], "finish", fin, 3) != 0) {
+                failures++;
+            }
+        }
+    }
+    /* Fork 2: the formula promotion carries the id across every projection. */
+    {
+        if (ti_run("$$e$$\n\nafter\n", r, &n) != 0 || n < 2 || r[0].count != 1) {
+            fputs("formula promotion: run failed\n", stderr);
+            failures++;
+        } else {
+            uint32_t x = r[0].items[0].id;
+            uint32_t z = r[n - 1].count == 2 ? r[n - 1].items[1].id : 0;
+            ti_block fin[] = {{MARKDOWN_CORE_NODE_FORMULA_BLOCK, x}, {MARKDOWN_CORE_NODE_PARAGRAPH, z}};
+            if (x == 0 || z == 0 || z == x || ti_expect("formula promotion", &r[n - 1], "finish", fin, 2) != 0) {
+                failures++;
+            }
+        }
+    }
+
+    printf("block identity transitions: %s\n", failures ? "shapes moved" : "7/7 shapes hold");
+    return failures ? -1 : 0;
+}
+
 typedef struct pr_case_entry {
     const char *name;
     int (*run)(const ts_spec_file *file);
@@ -1334,6 +1832,8 @@ static const pr_case_entry PR_CASES[] = {
     {"refmap_independence", case_refmap_independence, 1},
     {"borrow_across_feed", case_borrow_across_feed, 1},
     {"projection_key", case_projection_key, 1},
+    {"block_identity", case_block_identity, 1},
+    {"block_identity_transitions", case_block_identity_transitions, 0},
     {"dump_boundaries", case_dump_boundaries, 1},
     {"feed_loop", case_feed_loop, 1},
     {"projection_slope", case_projection_slope, 0},

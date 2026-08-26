@@ -326,6 +326,25 @@ if(MARKDOWN_CORE_STATIC)
             --spec
             "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
     endforeach()
+    # T2 and T5 (docs/STREAMING.md §5, §4 D4): a block's identity is total,
+    # unique, identical across two projections of one CST, and never
+    # resurrected -- over every fixture, fed one line at a time. The
+    # transitions case pins D4's ruled shapes: retypes and the formula
+    # promotion keep the id, a split leaves it on what the reader already
+    # had, a death bequeaths it to the firstborn definition.
+    foreach(fixture spec regression extensions extensions-directive extensions-formula-github)
+        markdown_core_add_test(
+            projection_identity_${fixture}
+            "streaming"
+            240
+            projection_runner
+            --case
+            block_identity
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+    endforeach()
+    markdown_core_add_test(projection_identity_transitions "streaming" 120 projection_runner --case
+                           block_identity_transitions)
     # Criterion 2's SECOND bound (§12.4, §12.10 D): projection is O(what is
     # projected) -- flat ns per content byte across document sizes, the same
     # two-endpoint normalized-slowdown shape as the construction slope gates.

@@ -159,6 +159,10 @@ void markdown_core_parser_touch(markdown_core_parser *parser, markdown_core_node
     node->stamp = ++parser->write_clock;
 }
 
+void markdown_core_parser_mint_block_id(markdown_core_parser *parser, markdown_core_node *node) {
+    node->block_id = ++parser->block_ids_minted;
+}
+
 /* Appends and reports failure directly instead of relying on llist_append's
  * silent-drop behavior.
  *
@@ -278,6 +282,7 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
     parser->current = document;
     if (document) {
         markdown_core_parser_touch(parser, document);
+        markdown_core_parser_mint_block_id(parser, document);
     }
 
     parser->syntax_extensions = saved_exts;
@@ -1023,6 +1028,10 @@ static markdown_core_node *S_new_reference_definition(
         return NULL;
     }
     markdown_core_parser_touch(parser, node);
+    /* Born outside `add_child`, so minted here (T2). When the harvest empties
+     * the paragraph, the caller hands the firstborn the paragraph's identity
+     * instead (§4 D4); this mint is then the id that dies unobserved. */
+    markdown_core_parser_mint_block_id(parser, node);
     definition = (markdown_core_definition *)parser->mem->calloc(1, sizeof(*definition));
     if (!definition) {
         parser->oom = true;
@@ -1063,10 +1072,14 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
     markdown_core_strbuf *node_content = &b->content;
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
     markdown_core_reference_parts parts;
+    markdown_core_node *first_definition = NULL;
     bufsize_t consumed = 0;
     while (chunk.len && chunk.data[0] == '[' &&
            (pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap, &parts))) {
-        S_new_reference_definition(parser, b, consumed, consumed + pos, &parts);
+        markdown_core_node *definition = S_new_reference_definition(parser, b, consumed, consumed + pos, &parts);
+        if (definition && !first_definition) {
+            first_definition = definition;
+        }
         consumed += pos;
         chunk.data += pos;
         chunk.len -= pos;
@@ -1101,7 +1114,23 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
         b->start_line = line;
         b->start_column = column;
     }
-    return !is_blank(&b->content, 0);
+    bool has_content = !is_blank(&b->content, 0);
+    /* D4's fork 3 (§4): a harvest that empties the paragraph is the reader's
+     * text BECOMING the definition, so the firstborn definition takes the
+     * paragraph's identity -- the paragraph the consumer watched grow does not
+     * die and come back as a stranger. The ids are SWAPPED, not copied: the
+     * paragraph leaves with the definition's fresh mint, which nothing has
+     * observed -- it is either freed by the caller or, when the line that
+     * emptied it here becomes its next content (a `===` after nothing but
+     * definitions), it carries on as what it then is: new content. A paragraph
+     * that keeps content keeps its id -- the visible text is the element the
+     * consumer is tracking -- and its definitions stay fresh births. */
+    if (!has_content && first_definition) {
+        uint32_t fresh = first_definition->block_id;
+        first_definition->block_id = b->block_id;
+        b->block_id = fresh;
+    }
+    return has_content;
 }
 
 static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_node *b) {
@@ -1290,6 +1319,7 @@ static markdown_core_node *add_child(
     child->parent = parent;
     markdown_core_parser_touch(parser, parent);
     markdown_core_parser_touch(parser, child);
+    markdown_core_parser_mint_block_id(parser, child);
 
     if (parent->last_child) {
         parent->last_child->next = child;
@@ -1825,6 +1855,10 @@ static markdown_core_node *S_clone_block_node(
     dst->internal_offset = src->internal_offset;
     dst->content_mark = src->content_mark;
     dst->content_mark_count = src->content_mark_count;
+    /* THE CARRY (T2): the derived block IS the CST block to a consumer, and
+     * this line is what makes two projections of one CST name every block
+     * identically (F11). A clone is calloc'd, so losing this fails closed. */
+    dst->block_id = src->block_id;
     dst->type = src->type;
     dst->flags = src->flags & ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN);
     dst->extension = src->extension;

@@ -762,6 +762,10 @@ static markdown_core_node *new_formula_block_from_literal(
     }
 
     get_formula(formula)->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
+    /* THE CARRY (T2, F11 fork 2): the promotion runs inside the projection,
+     * so a mint here would rename the block on every derivation -- the one
+     * "retype" that is a `markdown_core_node_replace` must inherit. */
+    formula->block_id = oldnode->block_id;
     formula->start_line = oldnode->start_line;
     formula->start_column = oldnode->start_column;
     formula->end_line = oldnode->end_line;

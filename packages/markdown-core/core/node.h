@@ -174,6 +174,14 @@ struct markdown_core_node {
      * at an address another block died at can never read as unchanged. Only
      * the CST is stamped; a derived node carries its origin's reading. */
     uint32_t stamp;
+    /* THE BLOCK'S IDENTITY (docs/STREAMING.md D4, T2): minted once when the
+     * block phase opens the block, carried onto every derived node by the
+     * clone, never reused within a parse. Zero is "no identity" -- an inline
+     * node, or a lost carry -- so a lost identity fails closed (F11). The id
+     * names the element a consumer is tracking across feeds, not the node's
+     * kind: a retype keeps it, and when a block splits or dies the fragment
+     * that continues what the consumer already renders inherits it (§4 D4). */
+    uint32_t block_id;
     uint16_t type;
     markdown_core_node_internal_flags flags;
 
