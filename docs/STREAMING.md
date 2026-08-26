@@ -1025,6 +1025,62 @@ delays the only work that answers the owner's constraint on `feed`.
 
 ---
 
+### F17 — a shared list can carry no parent, and a holder's list must own its bytes  · VERIFIED (T19)
+
+Two things T19's gate found that the D4/F12 PoC could not, because its
+measurement never had two derived trees alive at once: it freed each tree
+before deriving the next.
+
+**1. `parent` is per node, and a shared list is aliased by several.** The
+PoC's hand-out rewrote each shared child's `parent` to the block it was
+lending to (`c->parent = cur`). That is right for one live borrower and wrong
+for two: the tree the consumer still holds and the tree the next feed returned
+alias the same list, and the walk out of the OLDER tree's list climbs, via
+`parent`, into the NEWER tree. That is the exact case §5's gate names — *a
+borrow held across a feed that replaces it still reads* — so the PoC's shape
+would have failed T19's own gate. The shape that holds: a shared list's nodes
+have **`parent == NULL`**, and the iterator remembers the borrower it entered
+through and climbs out to it
+([iterator.h](../packages/markdown-core/core/iterator.h)) — one slot, because
+a list is one level deep (a node in a holder's list is never itself a
+borrower). `markdown_core_node_own` and `markdown_core_node_check` climb the
+same way. Two consequences, stated so they are not later read as defects:
+`markdown_core_node_parent` on a shared inline answers NULL, and an insert
+beside one fails closed, having no parent to insert under — a borrower READS
+a shared list and never writes it.
+
+**2. A holder outlives the block it was filled from, so its list must own its
+bytes.** The gate's first run failed 11 of 669 spec examples, 1 of 43
+regression and 4 of 33 extensions, every one on the fourth assertion only —
+the new tree stopped reading once the previous borrower was freed. The moved
+inlines held chunks that borrowed the block's `content` buffer (F12's census
+counted 7.6% of inline chunks BORROWED; this is where they point), and the
+block died with its tree. `markdown_core_holder_take_children` therefore runs
+`markdown_core_node_own` on the way in. **This is a requirement on T9's
+store, not only on the gate's**: the store copies rather than moves, and the
+copy has to produce OWNED chunks for the same reason — a copy that borrowed
+the source block's buffer would fail identically the moment the derived tree
+that block sits in is freed.
+
+**Cost.** The holder is a struct, not a node — `mem`, the list's two ends,
+`refs` — so `refs` lives on the holder and the node carries one pointer:
+`sizeof(markdown_core_node)` 176 → **184**, where the PoC's node-holder shape
+paid 16 (`refs` and `borrowed_from` on every node). Same `bench_runner` and
+method as F1, 41 cases, **5 rounds**, head and `1ce6938` alternated within
+every round, min of `median_ms`:
+
+```
+total   control=247.29 ms   head=247.10 ms   ratio=0.9992
+median per-case ratio 1.0058     slower >5%: 0 of 41     faster >5%: 1
+```
+
+The one >5% is `adversarial_links@65536` at 0.929 with its @16384/@32768
+siblings at 1.022 / 0.999 — the signature F1 and F11 both recorded as noise
+for that family. The pointer is not free; at 5 samples it is under the
+half-millisecond the run-to-run spread already occupies.
+
+---
+
 ## 4. Decisions — RULED, 2026-08-25
 
 **The API shape is the ruling, and it answers most of §4 by dissolving it.**
@@ -1156,7 +1212,7 @@ Speed is not an argument in this section. What each step costs is in F12–F16.
       still holds the tree). Correctness 88/88, conformance 2/2, asan and
       ubsan 76/76 each (rebuilt, per F2), all ten `projection_*` rows green,
       goldens unmoved. Numbers in F1.
-- [ ] **T19 — a holder reference count, so a borrow survives the feed that
+- [x] **T19 — a holder reference count, so a borrow survives the feed that
       replaces it.** The tree a feed returns is a BORROW; what needs solving is
       not who frees it but a consumer still holding it when `feed` is called
       again. One counter per cached subtree holder, not one per inline;
@@ -1165,7 +1221,28 @@ Speed is not an argument in this section. What each step costs is in F12–F16.
       into the free walk. **Inert until something shares** — `calloc` gives
       `refs == 0` and every path that exists today keeps its behaviour — so it
       lands on its own. *Gate: correctness 88/88 unmoved, and a borrow held
-      across a feed that replaces it still reads.*
+      across a feed that replaces it still reads.* **Done 2026-08-25.** Built
+      as `markdown_core_holder` ([node.h](../packages/markdown-core/core/node.h)),
+      a struct and not a node: `hold` / `release`, where a fresh holder has no
+      hold and its first release destroys it; `take_children` moves a block's
+      own children in and OWNS their bytes (F17); `borrow_children` aliases the
+      list under a childless block and holds; `markdown_core_node_free` on a
+      borrower detaches the list and releases. Nothing in the engine takes a
+      hold yet — `calloc` leaves `holder == NULL` on every node — so every
+      existing path is unchanged. The gate is
+      `projection_borrow_{spec,regression,extensions}` (`borrow_across_feed`
+      in `projection_runner`), which plays T9's part with T19's primitives:
+      feed a line, derive, move every leaf block's children into a holder and
+      borrow them back — or borrow the PREVIOUS boundary's holder where the
+      leaf's subtree dumped identically, so one list is aliased by two live
+      trees — and assert at every boundary that the borrowed tree dumps as the
+      plain derivation did, that the previous tree still does after the new
+      borrow and again after the cache's release, and that the new tree still
+      does after the previous borrower is freed; the parser runs on a counting
+      allocator and every example ends at zero live allocations. 669/669 spec
+      over 1,624 boundaries, 43/43 regression over 159, 33/33 extensions over
+      266. Correctness 91/91, asan and ubsan 79/79 (rebuilt, per F2), goldens
+      unmoved. Cost and the two things the gate found are F17.
 - [ ] **T20 — `markdown_core_iter_init`: a walk that does not allocate.**
       `markdown_core_iter_new` callocs
       ([iterator.c:15](../packages/markdown-core/core/iterator.c#L15)), which is
@@ -1372,6 +1449,10 @@ projected-tree copy cost and the owned/borrowed chunk census, all over the same
 195-document corpus, using PoC-only seams (`clone_only`,
 `derive_tree_no_inlines`, `clone_tree`) that are in the D4 patch and are not
 proposed for landing as they stand.
+
+**T19 and F17** (2026-08-25): the gate's first-run failure counts over the
+three fixtures, `sizeof(markdown_core_node)`, and the 41-case 5-round bench
+against `1ce6938` — every number in F17 is from the landed tree, not a PoC.
 
 **F13, F14, F15 and F16** (2026-08-25): the per-block tail, formula's three
 arms, the declared type-name filter and the ASan proof. **Every number in these

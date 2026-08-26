@@ -135,6 +135,8 @@ enum markdown_core_node__internal_flags {
 
 typedef uint16_t markdown_core_node_internal_flags;
 
+typedef struct markdown_core_holder markdown_core_holder;
+
 struct markdown_core_node {
     markdown_core_strbuf content;
 
@@ -162,6 +164,17 @@ struct markdown_core_node {
 
     const markdown_core_syntax_extension *extension;
 
+    /* NON-NULL ON A BORROWER: `first_child`..`last_child` are the holder's
+     * list, aliased here, not this node's own (docs/STREAMING.md T19). The
+     * free walk detaches them and releases one hold instead of freeing them.
+     * Every node in an aliased list has `parent == NULL`: a list can be
+     * aliased by several borrowers at once -- the tree a consumer still holds
+     * and the one the next feed returned -- so it can carry no single parent,
+     * and the iterator climbs out of it to the borrower it entered through.
+     * A borrower READS the list and never writes it; an insert beside a
+     * shared node fails closed, having no parent to insert under. */
+    markdown_core_holder *holder;
+
     union {
         markdown_core_chunk literal;
         markdown_core_list list;
@@ -176,6 +189,33 @@ struct markdown_core_node {
         void *opaque;
     } as;
 };
+
+/* A HOLDER owns a child list that borrowers alias (docs/STREAMING.md T19).
+ * One count per LIST, not one per node: `refs` is the number of holds,
+ * `release` drops one and destroys the list with the last. A fresh holder has
+ * no hold, so its first `release` destroys it -- the rule an ordinary node
+ * already lives under. The list is one level deep: a node in it is never
+ * itself a borrower, which is what lets the iterator remember one borrower
+ * rather than a stack of them. */
+struct markdown_core_holder {
+    markdown_core_mem *mem;
+    markdown_core_node *first_child;
+    markdown_core_node *last_child;
+    uint32_t refs;
+};
+
+markdown_core_holder *markdown_core_holder_new(markdown_core_mem *mem);
+void markdown_core_holder_hold(markdown_core_holder *holder);
+void markdown_core_holder_release(markdown_core_holder *holder);
+/* Move `block`'s OWN children into the holder's empty list. `block` is left
+ * childless and the children parentless. The list is made SELF-CONTAINED on
+ * the way in: an inline chunk that borrowed the block's content buffer would
+ * dangle once the block is freed under a holder that outlives it -- F12
+ * counted 7.6% of inline chunks borrowed. Returns 0 when a copy could not be
+ * allocated; the chunk is then emptied rather than left borrowing. */
+int markdown_core_holder_take_children(markdown_core_holder *holder, markdown_core_node *block);
+/* Alias the holder's list under a childless `block`, which takes one hold. */
+void markdown_core_node_borrow_children(markdown_core_node *block, markdown_core_holder *holder);
 
 static MARKDOWN_CORE_INLINE markdown_core_mem *markdown_core_node_mem(markdown_core_node *node) {
     return node->content.mem;

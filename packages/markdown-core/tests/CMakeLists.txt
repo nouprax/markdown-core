@@ -298,6 +298,20 @@ if(MARKDOWN_CORE_STATIC)
             --spec
             "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
     endforeach()
+    # T19 (docs/STREAMING.md §5): a borrow held across a feed that replaces
+    # it still reads -- lifetime under the holder count, and a shared list
+    # walkable from every tree that aliases it, with a zero-leak ledger.
+    foreach(fixture spec regression extensions)
+        markdown_core_add_test(
+            projection_borrow_${fixture}
+            "streaming"
+            240
+            projection_runner
+            --case
+            borrow_across_feed
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+    endforeach()
     # Criterion 2's SECOND bound (§12.4, §12.10 D): projection is O(what is
     # projected) -- flat ns per content byte across document sizes, the same
     # two-endpoint normalized-slowdown shape as the construction slope gates.

@@ -13,6 +13,8 @@
  * `finalize` is the only clearer, and neither is ever on the open spine. The
  * flag is the closed signal Stage 1 schedules projections on, so an open block
  * in a finished tree is a lie about completeness.
+ *
+ * borrow_across_feed: T19's gate, documented at its definition.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -442,6 +444,329 @@ static int case_projection_slope(const ts_spec_file *file) {
     }
 }
 
+/* T19's gate (docs/STREAMING.md §5): A BORROW HELD ACROSS A FEED THAT
+ * REPLACES IT STILL READS. The engine hands out no borrow yet -- that is T9 --
+ * so this case plays T9's part with T19's primitives. After every line it
+ * derives, moves each leaf block's children into a holder and borrows them
+ * back; where a leaf's subtree dumps as it did at the previous boundary it
+ * borrows the PREVIOUS holder instead, so one list is aliased by two live
+ * trees. Each boundary then asserts what a consumer could observe:
+ *
+ *   1. the borrowed tree dumps as the plain derivation did;
+ *   2. the previous tree still does after the new borrow was taken -- the
+ *      walk out of a shared list must land in ITS borrower, not the newest;
+ *   3. still does after the cache released its hold;
+ *   4. the new tree still does after the previous borrower was freed.
+ *
+ * The parser runs on a counting allocator and an example must end with zero
+ * live allocations: that is the leak ledger, because LSan is not available
+ * under the macOS ASan preset. */
+static long pr_live_allocations = 0;
+
+static void *pr_counting_calloc(size_t count, size_t size) {
+    void *block = calloc(count, size);
+    if (block) {
+        pr_live_allocations++;
+    }
+    return block;
+}
+
+static void *pr_counting_realloc(void *block, size_t size) {
+    void *grown = realloc(block, size);
+    if (grown && !block) {
+        pr_live_allocations++;
+    }
+    return grown;
+}
+
+static void pr_counting_free(void *block) {
+    if (block) {
+        pr_live_allocations--;
+    }
+    free(block);
+}
+
+static markdown_core_mem PR_COUNTING_MEM = {pr_counting_calloc, pr_counting_realloc, pr_counting_free};
+
+/* One boundary's tree and the holders it borrows from, index-aligned with
+ * its leaf blocks in walk order. */
+typedef struct pr_generation {
+    markdown_core_node *tree;
+    uint8_t *expected;
+    size_t expected_length;
+    markdown_core_holder **holders;
+    uint8_t **subtrees;
+    size_t *subtree_lengths;
+    size_t count;
+} pr_generation;
+
+static void pr_generation_clear(pr_generation *generation) {
+    size_t i;
+    for (i = 0; i < generation->count; i++) {
+        markdown_core_dump_free(generation->subtrees[i]);
+    }
+    free(generation->holders);
+    free(generation->subtrees);
+    free(generation->subtree_lengths);
+    markdown_core_dump_free(generation->expected);
+    memset(generation, 0, sizeof(*generation));
+}
+
+/* A block whose children are all inline -- vacuously so for a block with
+ * none, which is what puts the empty list under test as well. */
+static int pr_is_leaf_block(markdown_core_node *node) {
+    markdown_core_node *child;
+    if (!MARKDOWN_CORE_NODE_BLOCK_P(node)) {
+        return 0;
+    }
+    for (child = node->first_child; child; child = child->next) {
+        if (!MARKDOWN_CORE_NODE_INLINE_P(child)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int pr_collect_leaf_blocks(markdown_core_node *root, markdown_core_node ***out, size_t *count) {
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type ev_type;
+    markdown_core_node **items = NULL;
+    size_t n = 0, cap = 0;
+    if (!iter) {
+        return -1;
+    }
+    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (ev_type != MARKDOWN_CORE_EVENT_ENTER || !pr_is_leaf_block(node)) {
+            continue;
+        }
+        if (n == cap) {
+            markdown_core_node **grown;
+            cap = cap ? cap * 2 : 16;
+            grown = (markdown_core_node **)realloc(items, cap * sizeof(*items));
+            if (!grown) {
+                free(items);
+                markdown_core_iter_free(iter);
+                return -1;
+            }
+            items = grown;
+        }
+        items[n++] = node;
+    }
+    markdown_core_iter_free(iter);
+    *out = items;
+    *count = n;
+    return 0;
+}
+
+static int pr_dump_equals(markdown_core_node *root, const uint8_t *expected, size_t expected_length) {
+    size_t length = 0;
+    uint8_t *dump = pr_dump(root, &length);
+    int equal;
+    if (!dump) {
+        return 0;
+    }
+    equal = length == expected_length && memcmp(dump, expected, length) == 0;
+    markdown_core_dump_free(dump);
+    return equal;
+}
+
+static int pr_borrow_boundary(markdown_core_parser *parser, pr_generation *prev, int example, int boundary) {
+    pr_generation cur;
+    markdown_core_node **leaves = NULL;
+    size_t i;
+    int failed = 0;
+
+    memset(&cur, 0, sizeof(cur));
+    cur.tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+    if (!cur.tree) {
+        fprintf(stderr, "example %d boundary %d: derivation failed\n", example, boundary);
+        return -1;
+    }
+    cur.expected = pr_dump(cur.tree, &cur.expected_length);
+    if (!cur.expected || pr_collect_leaf_blocks(cur.tree, &leaves, &cur.count) != 0) {
+        fprintf(stderr, "example %d boundary %d: dump or leaf walk failed\n", example, boundary);
+        markdown_core_node_free(cur.tree);
+        pr_generation_clear(&cur);
+        return -1;
+    }
+    cur.holders = (markdown_core_holder **)calloc(cur.count ? cur.count : 1, sizeof(*cur.holders));
+    cur.subtrees = (uint8_t **)calloc(cur.count ? cur.count : 1, sizeof(*cur.subtrees));
+    cur.subtree_lengths = (size_t *)calloc(cur.count ? cur.count : 1, sizeof(*cur.subtree_lengths));
+    if (!cur.holders || !cur.subtrees || !cur.subtree_lengths) {
+        fputs("out of memory\n", stderr);
+        free(leaves);
+        markdown_core_node_free(cur.tree);
+        pr_generation_clear(&cur);
+        return -1;
+    }
+
+    /* Every leaf borrows: the previous boundary's holder when its subtree is
+     * unchanged, otherwise a fresh holder that takes the leaf's own children.
+     * The "cache" is the set `cur.holders`, holding each holder once. */
+    for (i = 0; i < cur.count; i++) {
+        markdown_core_node *leaf = leaves[i];
+        cur.subtrees[i] = pr_dump(leaf, &cur.subtree_lengths[i]);
+        if (!cur.subtrees[i]) {
+            failed = 1;
+            break;
+        }
+        if (prev->tree && i < prev->count && prev->subtree_lengths[i] == cur.subtree_lengths[i] &&
+            memcmp(prev->subtrees[i], cur.subtrees[i], cur.subtree_lengths[i]) == 0) {
+            while (leaf->first_child) {
+                markdown_core_node_free(leaf->first_child);
+            }
+            cur.holders[i] = prev->holders[i];
+        } else {
+            cur.holders[i] = markdown_core_holder_new(parser->mem);
+            if (!cur.holders[i]) {
+                failed = 1;
+                break;
+            }
+            if (!markdown_core_holder_take_children(cur.holders[i], leaf)) {
+                markdown_core_holder_release(cur.holders[i]);
+                failed = 1;
+                break;
+            }
+            markdown_core_holder_hold(cur.holders[i]);
+        }
+        markdown_core_node_borrow_children(leaf, cur.holders[i]);
+    }
+    free(leaves);
+    if (failed) {
+        fprintf(stderr, "example %d boundary %d: could not build the borrow\n", example, boundary);
+    }
+
+    if (!failed && !pr_dump_equals(cur.tree, cur.expected, cur.expected_length)) {
+        fprintf(stderr, "example %d boundary %d: the borrowed tree reads differently\n", example, boundary);
+        failed = 1;
+    }
+    if (!failed && prev->tree && !pr_dump_equals(prev->tree, prev->expected, prev->expected_length)) {
+        fprintf(
+            stderr,
+            "example %d boundary %d: the previous borrow stopped reading once the new one was taken\n",
+            example,
+            boundary
+        );
+        failed = 1;
+    }
+
+    /* The cache evicts what this boundary did not re-share. */
+    for (i = 0; i < prev->count; i++) {
+        if (i >= cur.count || cur.holders[i] != prev->holders[i]) {
+            markdown_core_holder_release(prev->holders[i]);
+        }
+    }
+    if (!failed && prev->tree && !pr_dump_equals(prev->tree, prev->expected, prev->expected_length)) {
+        fprintf(
+            stderr,
+            "example %d boundary %d: the previous borrow stopped reading once the cache let go\n",
+            example,
+            boundary
+        );
+        failed = 1;
+    }
+    if (prev->tree) {
+        markdown_core_node_free(prev->tree);
+        prev->tree = NULL;
+    }
+    if (!failed && !pr_dump_equals(cur.tree, cur.expected, cur.expected_length)) {
+        fprintf(
+            stderr,
+            "example %d boundary %d: the tree stopped reading once the previous borrower was freed\n",
+            example,
+            boundary
+        );
+        failed = 1;
+    }
+
+    pr_generation_clear(prev);
+    *prev = cur;
+    return failed ? -1 : 0;
+}
+
+static int case_borrow_across_feed(const ts_spec_file *file) {
+    size_t index;
+    size_t boundaries = 0;
+    int failures = 0;
+    for (index = 0; index < file->count; index++) {
+        const ts_spec_case *test_case = &file->cases[index];
+        const char *text = test_case->markdown;
+        size_t length = test_case->markdown_length;
+        markdown_core_parser *parser;
+        pr_generation prev;
+        size_t start = 0;
+        size_t i;
+        int boundary = 0;
+        int failed = 0;
+
+        pr_live_allocations = 0;
+        parser = markdown_core_parser_new_with_mem(
+            MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_FOOTNOTES,
+            &PR_COUNTING_MEM
+        );
+        if (!parser || !markdown_core_core_extensions_attach(
+                           parser,
+                           MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
+                               MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK | MARKDOWN_CORE_CORE_EXTENSION_TASKLIST |
+                               MARKDOWN_CORE_CORE_EXTENSION_FORMULA | MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE
+                       )) {
+            fprintf(stderr, "example %d: parser allocation failed\n", test_case->example);
+            if (parser) {
+                markdown_core_parser_free(parser);
+            }
+            failures++;
+            continue;
+        }
+        memset(&prev, 0, sizeof(prev));
+        for (i = 0; i < length && !failed; i++) {
+            if (text[i] == '\n') {
+                markdown_core_parser_feed(parser, text + start, i - start + 1);
+                start = i + 1;
+                failed = pr_borrow_boundary(parser, &prev, test_case->example, ++boundary) != 0;
+            }
+        }
+        if (!failed && start < length) {
+            markdown_core_parser_feed(parser, text + start, length - start);
+            failed = pr_borrow_boundary(parser, &prev, test_case->example, ++boundary) != 0;
+        }
+        boundaries += (size_t)boundary;
+
+        /* The cache empties; the last borrow alone keeps every list alive. */
+        for (i = 0; i < prev.count; i++) {
+            markdown_core_holder_release(prev.holders[i]);
+        }
+        if (!failed && prev.tree && !pr_dump_equals(prev.tree, prev.expected, prev.expected_length)) {
+            fprintf(stderr, "example %d: the last borrow stopped reading once the cache emptied\n", test_case->example);
+            failed = 1;
+        }
+        if (prev.tree) {
+            markdown_core_node_free(prev.tree);
+        }
+        pr_generation_clear(&prev);
+        markdown_core_parser_free(parser);
+        if (pr_live_allocations != 0) {
+            fprintf(
+                stderr,
+                "example %d: %ld allocation(s) still live after every hold was released\n",
+                test_case->example,
+                pr_live_allocations
+            );
+            failed = 1;
+        }
+        if (failed) {
+            failures++;
+        }
+    }
+    printf(
+        "borrow across feed: %zu/%zu examples agree over %zu boundaries\n",
+        file->count - (size_t)failures,
+        file->count,
+        boundaries
+    );
+    return failures ? -1 : 0;
+}
+
 typedef struct pr_case_entry {
     const char *name;
     int (*run)(const ts_spec_file *file);
@@ -452,6 +777,7 @@ static const pr_case_entry PR_CASES[] = {
     {"closed_after_finish", case_closed_after_finish, 1},
     {"double_projection", case_double_projection, 1},
     {"refmap_independence", case_refmap_independence, 1},
+    {"borrow_across_feed", case_borrow_across_feed, 1},
     {"projection_slope", case_projection_slope, 0},
 };
 
