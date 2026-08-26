@@ -57,7 +57,7 @@
                 "packages/kotlin-markdown-core/src/"
             ],
             "exempt": [],
-            "minimumMeasuredFiles": 40,
+            "minimumMeasuredFiles": 42,
             "unpinned": {
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Markup.kt": {
                     "lines": 0,
@@ -85,9 +85,9 @@
                     "branches": 28
                 },
                 "packages/kotlin-markdown-core/src/jvmMain/kotlin/com/nouprax/markdown/core/NativeBridge.jvm.kt": {
-                    "lines": 5,
+                    "lines": 3,
                     "functions": 0,
-                    "branches": 15
+                    "branches": 14
                 }
             }
         },
