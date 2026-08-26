@@ -23,10 +23,17 @@
  * or `--md-dir DIR` -- raw markdown, one case per file -- because the real
  * corpus is not a fixture file.
  */
-#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* The `--md-dir` corpus walk, same split as corpus_guard's: the Windows CRT
+ * has no dirent.h. */
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <dirent.h>
+#endif
 
 #include "test_support.h"
 
@@ -969,6 +976,17 @@ static int case_feed_loop(const ts_spec_file *file) {
     return 0;
 }
 
+/* MSVC deprecates the POSIX name under /WX (fallback_runner's fb_strdup is
+ * the same answer). */
+static char *pr_strdup(const char *text) {
+    size_t length = strlen(text);
+    char *copy = (char *)malloc(length + 1);
+    if (copy) {
+        memcpy(copy, text, length + 1);
+    }
+    return copy;
+}
+
 /* One case per `.md` file, in name order, so two runs see the same corpus in
  * the same order. */
 static int pr_case_from_file(const char *path, int example, ts_spec_case *out) {
@@ -980,7 +998,7 @@ static int pr_case_from_file(const char *path, int example, ts_spec_case *out) {
     memset(out, 0, sizeof(*out));
     out->markdown = (char *)bytes;
     out->markdown_length = length;
-    out->section = strdup(path);
+    out->section = pr_strdup(path);
     out->example = example;
     return 0;
 }
@@ -989,32 +1007,78 @@ static int pr_name_compare(const void *a, const void *b) {
     return strcmp(*(const char *const *)a, *(const char *const *)b);
 }
 
-static int pr_load_md_dir(const char *dir, ts_spec_file *out) {
-    DIR *d = opendir(dir);
-    struct dirent *entry;
-    char **names = NULL;
-    size_t count = 0, cap = 0, i;
-    if (!d) {
+/* Keep a copy of `name` when it ends in `.md`; both walk arms below filter
+ * through here, so the Windows pattern match never widens the corpus. */
+static int pr_push_md_name(char ***names, size_t *count, size_t *cap, const char *name) {
+    size_t n = strlen(name);
+    char *copy;
+    if (n < 4 || strcmp(name + n - 3, ".md") != 0) {
+        return 0;
+    }
+    if (*count == *cap) {
+        char **grown;
+        size_t grown_cap = *cap ? *cap * 2 : 64;
+        grown = (char **)realloc(*names, grown_cap * sizeof(*grown));
+        if (!grown) {
+            return -1;
+        }
+        *names = grown;
+        *cap = grown_cap;
+    }
+    copy = pr_strdup(name);
+    if (!copy) {
         return -1;
     }
-    while ((entry = readdir(d)) != NULL) {
-        size_t n = strlen(entry->d_name);
-        if (n < 4 || strcmp(entry->d_name + n - 3, ".md") != 0) {
-            continue;
+    (*names)[(*count)++] = copy;
+    return 0;
+}
+
+static int pr_load_md_dir(const char *dir, ts_spec_file *out) {
+    char **names = NULL;
+    size_t count = 0, cap = 0, i;
+    int failed = 0;
+#if defined(_WIN32)
+    {
+        char pattern[4096];
+        WIN32_FIND_DATAA entry;
+        HANDLE handle;
+        snprintf(pattern, sizeof(pattern), "%s\\*.md", dir);
+        handle = FindFirstFileA(pattern, &entry);
+        if (handle == INVALID_HANDLE_VALUE) {
+            return -1;
         }
-        if (count == cap) {
-            char **grown;
-            cap = cap ? cap * 2 : 64;
-            grown = (char **)realloc(names, cap * sizeof(*names));
-            if (!grown) {
-                closedir(d);
-                return -1;
+        do {
+            if (!(entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+                pr_push_md_name(&names, &count, &cap, entry.cFileName) != 0) {
+                failed = 1;
+                break;
             }
-            names = grown;
-        }
-        names[count++] = strdup(entry->d_name);
+        } while (FindNextFileA(handle, &entry));
+        FindClose(handle);
     }
-    closedir(d);
+#else
+    {
+        DIR *d = opendir(dir);
+        struct dirent *entry;
+        if (!d) {
+            return -1;
+        }
+        while ((entry = readdir(d)) != NULL) {
+            if (pr_push_md_name(&names, &count, &cap, entry->d_name) != 0) {
+                failed = 1;
+                break;
+            }
+        }
+        closedir(d);
+    }
+#endif
+    if (failed) {
+        for (i = 0; i < count; i++) {
+            free(names[i]);
+        }
+        free(names);
+        return -1;
+    }
     qsort(names, count, sizeof(*names), pr_name_compare);
     out->cases = (ts_spec_case *)calloc(count ? count : 1, sizeof(ts_spec_case));
     out->count = 0;
@@ -1415,9 +1479,9 @@ static int pr_identity_boundary(
     size_t *blocks_seen
 ) {
     markdown_core_node *second = NULL;
-    markdown_core_node **blocks = NULL, **again = NULL;
+    markdown_core_node **blocks = NULL;
     markdown_core_node **all = NULL, **all_again = NULL;
-    size_t count = 0, again_count = 0, all_count = 0, all_again_count = 0, i, j;
+    size_t count = 0, all_count = 0, all_again_count = 0, i, j;
     pr_id_ledger cur;
     int failed = 0;
 
@@ -1551,7 +1615,6 @@ static int pr_identity_boundary(
     }
     *blocks_seen += all_count;
     free(blocks);
-    free(again);
     free(all);
     free(all_again);
     if (second) {
