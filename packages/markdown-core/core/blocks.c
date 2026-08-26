@@ -1875,6 +1875,17 @@ static markdown_core_node *S_project(
     int record_diagnostics
 ) {
     bool recording = parser->diagnostics_on;
+    /* A PROJECTION READS THE CST AND LEAVES NOTHING BEHIND THAT THE PARSE
+     * WILL READ BACK (docs/STREAMING.md F21, correcting F10). `parse_inlines`
+     * mints a mark for a block that has none -- an empty ATX heading, a
+     * directive's label -- into the parser's own vector; an open block that
+     * takes its next line after that finds its run no longer contiguous with
+     * the vector's end, its later marks land outside the run, and
+     * `content_place` answers from a foreign mark. Every position the
+     * projection needs is written into the nodes it builds while it runs, so
+     * the minted marks are scratch, and the vector is cut back to where the
+     * parse left it. */
+    bufsize_t marks_before = parser->line_marks_size;
 
     parser->diagnostics_on = recording && record_diagnostics != 0;
     process_inlines(parser, skeleton, refmap, parser->options);
@@ -1882,6 +1893,7 @@ static markdown_core_node *S_project(
 
     S_run_block_tails(parser, &skeleton);
 
+    parser->line_marks_size = marks_before;
     return skeleton;
 }
 

@@ -144,14 +144,21 @@ static uint8_t *pr_dump(markdown_core_node *root, size_t *length) {
 }
 
 /* A stable serialization of everything the CST states: node identity, place,
- * flags, content bytes and the content-to-source run. If a derivation writes
- * any of it, two fingerprints taken around the derivation differ. */
-static int pr_fingerprint(markdown_core_node *root, markdown_core_strbuf *out) {
+ * flags, content bytes and the content-to-source run -- and the SIZE of the
+ * parser's mark vector, which is CST state no node owns: a projection that
+ * minted marks into it grew it (F21), and every open block's later marks
+ * then landed outside their run. If a derivation writes any of it, two
+ * fingerprints taken around the derivation differ. */
+static int pr_fingerprint(markdown_core_parser *parser, markdown_core_strbuf *out) {
+    markdown_core_node *root = parser->root;
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_event_type ev_type;
+    char marks[48];
     if (!iter) {
         return -1;
     }
+    snprintf(marks, sizeof(marks), "marks=%u\n", (unsigned)parser->line_marks_size);
+    markdown_core_strbuf_puts(out, marks);
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node = markdown_core_iter_get_node(iter);
         if (ev_type != MARKDOWN_CORE_EVENT_ENTER) {
@@ -277,13 +284,13 @@ static int case_refmap_independence(const ts_spec_file *file) {
         markdown_core_strbuf_init(parser->mem, &after, 0);
         markdown_core_parser_feed(parser, test_case->markdown, test_case->markdown_length);
 
-        if (pr_fingerprint(parser->root, &before) != 0) {
+        if (pr_fingerprint(parser, &before) != 0) {
             example_failed = 1;
         }
         first = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
         other = markdown_core_parser_derive_tree(parser, empty_map, 0);
         again = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
-        if (!example_failed && pr_fingerprint(parser->root, &after) != 0) {
+        if (!example_failed && pr_fingerprint(parser, &after) != 0) {
             example_failed = 1;
         }
         if (first) {
@@ -1088,6 +1095,7 @@ static int pr_key_boundary(
     int example,
     int boundary
 ) {
+    bufsize_t marks_before = parser->line_marks_size;
     markdown_core_node *tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
     markdown_core_node **cst = NULL, **derived = NULL;
     size_t cst_count = 0, derived_count = 0, i;
@@ -1098,6 +1106,21 @@ static int pr_key_boundary(
 
     if (!tree) {
         fprintf(stderr, "example %d boundary %d: derivation failed\n", example, boundary);
+        return -1;
+    }
+    /* Derive-then-feed is this case's shape, and it is the shape in which a
+     * derivation that grew the mark vector (F21) corrupts the NEXT line's
+     * positions -- so the growth is asserted here, at every boundary. */
+    if (parser->line_marks_size != marks_before) {
+        fprintf(
+            stderr,
+            "example %d boundary %d: the derivation grew the content-to-source map (%u -> %u marks)\n",
+            example,
+            boundary,
+            (unsigned)marks_before,
+            (unsigned)parser->line_marks_size
+        );
+        markdown_core_node_free(tree);
         return -1;
     }
     if (pr_collect_blocks(parser->root, &cst, &cst_count) != 0 ||
