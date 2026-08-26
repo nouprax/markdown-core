@@ -197,6 +197,9 @@ int markdown_core_parser_attach_syntax_extension(
     markdown_core_parser *parser,
     const markdown_core_syntax_extension *extension
 ) {
+    /* Counted before the append so a half-attached extension (the second
+     * append lost) still invalidates: the first list DID change. */
+    parser->extension_generation++;
     if (!S_extension_list_append(parser->mem, &parser->syntax_extensions, extension)) {
         return 0;
     }
@@ -1847,7 +1850,8 @@ static int S_optional_chunk_copy(
 /* THE PROJECTION CACHE (docs/STREAMING.md T9). A CST block with inline
  * content keeps the list its last projection produced, on a holder hung
  * from the block (`link.holder`, CACHE_OWNER) and keyed by the block's write
- * stamp (T3) and both map generations (T4). A projection that finds the key
+ * stamp (T3), both map generations (T4) and the extension set's generation
+ * -- an attach re-projects every block. A projection that finds the key
  * unchanged aliases the list into the derived block -- shares it, never
  * copies it (F12: copying costs more than the parse it replaces) -- and the
  * per-block tail (T18) leaves an aliased list alone. A projection that finds
@@ -1859,9 +1863,18 @@ static int S_optional_chunk_copy(
  * definitions, and `refmap_independence` projects against another. */
 static bool S_cache_fresh(markdown_core_parser *parser, const markdown_core_node *block, markdown_core_map *refmap) {
     const markdown_core_holder *holder = block->link.holder;
-    return refmap == parser->refmap && !parser->no_projection_cache &&
+    /* `diagnostics_on` here is the RECORDING projection (S_project raised it
+     * for exactly this walk): a hit skips the inline parse, and the inline
+     * parse is where every record-gated row speaks (label-too-long, the
+     * directive codes) -- so the recording projection re-parses instead of
+     * hitting. T10's rule extended to Requirement 13: correctness must never
+     * depend on the cache, and the diagnostic list is part of the model. Paid
+     * only when diagnostics were retained, and `finish` without them still
+     * hits in place. */
+    return refmap == parser->refmap && !parser->no_projection_cache && !parser->diagnostics_on &&
            (block->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) && holder->stamp == block->stamp &&
-           holder->refgen == parser->refmap->generation && holder->footgen == parser->footnote_defs->generation;
+           holder->refgen == parser->refmap->generation && holder->footgen == parser->footnote_defs->generation &&
+           holder->extgen == parser->extension_generation;
 }
 
 static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node) {
@@ -1881,6 +1894,7 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
     holder->stamp = origin->stamp;
     holder->refgen = parser->refmap->generation;
     holder->footgen = parser->footnote_defs->generation;
+    holder->extgen = parser->extension_generation;
     markdown_core_holder_hold(holder);
     if (origin->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) {
         markdown_core_holder_release(origin->link.holder);

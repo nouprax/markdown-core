@@ -2009,6 +2009,186 @@ static int case_block_identity_transitions(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+/* THE CACHE KEY'S EXTENSION AXIS (T9, amended on the landing review): an
+ * attach between a derivation and the next projection must read every cached
+ * list as stale. Autolink's "*inlines" pass is skipped for a borrowed block,
+ * so a hit minted before the attach would hand `finish` the un-autolinked
+ * list, and the same feed without the intermediate derivation would disagree.
+ * The control attached everything up front; the probe attaches autolink
+ * between the derivation that fills the cache and the finish that would have
+ * hit it, and the pre-attach derivation must DIFFER from the control -- a
+ * text autolink cannot change would let this gate pass while proving
+ * nothing. */
+static const char PR_ATTACH_TEXT[] = "visit www.example.com today\n\nsecond paragraph\n";
+
+static int case_attach_invalidation(const ts_spec_file *file) {
+    static const unsigned PR_ATTACH_REST =
+        MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
+        MARKDOWN_CORE_CORE_EXTENSION_TASKLIST | MARKDOWN_CORE_CORE_EXTENSION_FORMULA |
+        MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE;
+    markdown_core_parser *probe_parser = NULL;
+    markdown_core_node *control_root = NULL;
+    markdown_core_node *probe_root = NULL;
+    markdown_core_node *derived = NULL;
+    uint8_t *control_dump = NULL;
+    uint8_t *probe_dump = NULL;
+    uint8_t *derived_dump = NULL;
+    size_t control_length = 0;
+    size_t probe_length = 0;
+    size_t derived_length = 0;
+    int failures = 1;
+    (void)file;
+
+    control_root = pr_parse(PR_ATTACH_TEXT, sizeof(PR_ATTACH_TEXT) - 1);
+    if (!control_root || !(control_dump = pr_dump(control_root, &control_length))) {
+        fputs("attach invalidation: control parse failed\n", stderr);
+        goto done;
+    }
+
+    probe_parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_FOOTNOTES);
+    if (!probe_parser) {
+        fputs("attach invalidation: parser allocation failed\n", stderr);
+        goto done;
+    }
+    probe_parser->no_projection_cache = pr_no_cache != 0;
+    if (!markdown_core_core_extensions_attach(probe_parser, PR_ATTACH_REST)) {
+        fputs("attach invalidation: attach failed\n", stderr);
+        goto done;
+    }
+    markdown_core_parser_feed(probe_parser, PR_ATTACH_TEXT, sizeof(PR_ATTACH_TEXT) - 1);
+    derived = markdown_core_parser_derive_tree(probe_parser, probe_parser->refmap, 0);
+    if (!derived || !(derived_dump = pr_dump(derived, &derived_length))) {
+        fputs("attach invalidation: derivation failed\n", stderr);
+        goto done;
+    }
+    if (derived_length == control_length && memcmp(derived_dump, control_dump, control_length) == 0) {
+        fputs("attach invalidation: the probe text does not exercise autolink\n", stderr);
+        goto done;
+    }
+    if (!markdown_core_core_extensions_attach(probe_parser, MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK)) {
+        fputs("attach invalidation: attach failed\n", stderr);
+        goto done;
+    }
+    probe_root = markdown_core_parser_finish(probe_parser);
+    if (!probe_root || !(probe_dump = pr_dump(probe_root, &probe_length))) {
+        fputs("attach invalidation: finish failed\n", stderr);
+        goto done;
+    }
+    if (probe_length != control_length || memcmp(probe_dump, control_dump, control_length) != 0) {
+        fputs("attach invalidation: a hit outlived the attach\n", stderr);
+        fprintf(
+            stderr,
+            "  control:\n%.*s  probe:\n%.*s",
+            (int)control_length,
+            (const char *)control_dump,
+            (int)probe_length,
+            (const char *)probe_dump
+        );
+        goto done;
+    }
+    failures = 0;
+
+done:
+    markdown_core_dump_free(control_dump);
+    markdown_core_dump_free(probe_dump);
+    markdown_core_dump_free(derived_dump);
+    if (control_root) {
+        markdown_core_node_free(control_root);
+    }
+    if (probe_root) {
+        markdown_core_node_free(probe_root);
+    }
+    if (derived) {
+        markdown_core_node_free(derived);
+    }
+    if (probe_parser) {
+        markdown_core_parser_free(probe_parser);
+    }
+    printf("attach invalidation: %s\n", failures ? "stale list served" : "attach re-projects");
+    return failures ? -1 : 0;
+}
+
+/* THE RECORDING PROJECTION TAKES NO HITS (T9, amended on the same review):
+ * the record-gated rows speak from the inline parse a hit skips, so a
+ * derivation that filled the cache must not silence `finish`. One
+ * label-too-long reference sits in a paragraph the feed closes; the control
+ * finishes without any intermediate derivation, the probe derives first, and
+ * both must retain the same rows -- with the control's count asserted
+ * nonzero, because two empty lists agreeing would prove nothing. */
+static int pr_retained_rows(const char *text, size_t length, int derive_first, size_t *entries) {
+    markdown_core_parser *parser = pr_parser_new();
+    markdown_core_diagnostics diagnostics;
+    markdown_core_node *root;
+    if (!parser) {
+        return -1;
+    }
+    markdown_core_parser_retain_diagnostics(parser, &diagnostics);
+    markdown_core_parser_feed(parser, text, length);
+    if (derive_first) {
+        markdown_core_node *derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        if (!derived) {
+            markdown_core_diagnostics_dispose(&diagnostics);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        markdown_core_node_free(derived);
+    }
+    root = markdown_core_parser_finish(parser);
+    if (!root) {
+        markdown_core_diagnostics_dispose(&diagnostics);
+        markdown_core_parser_free(parser);
+        return -1;
+    }
+    *entries = (size_t)diagnostics.entries_size;
+    markdown_core_diagnostics_dispose(&diagnostics);
+    markdown_core_node_free(root);
+    markdown_core_parser_free(parser);
+    return 0;
+}
+
+static int case_diagnostics_after_derive(const ts_spec_file *file) {
+    /* The COLLAPSED form, because it is the one an over-long label reaches:
+     * `link_label` refuses to parse a second bracket past the cap, so
+     * `[text][longlabel]` falls back to prose, while `[text][]` adopts the
+     * link TEXT as its label after the cap check has already passed the empty
+     * brackets. */
+    static const char head[] = "see [";
+    static const char tail[] = "][]\n\nsecond paragraph\n";
+    size_t label_length = MAX_LINK_LABEL_LENGTH + 100;
+    size_t length = sizeof(head) - 1 + label_length + sizeof(tail) - 1;
+    char *text = (char *)malloc(length + 1);
+    size_t control = 0;
+    size_t probe = 0;
+    int failures = 0;
+    (void)file;
+
+    if (!text) {
+        fputs("diagnostics after derive: allocation failed\n", stderr);
+        return -1;
+    }
+    memcpy(text, head, sizeof(head) - 1);
+    memset(text + sizeof(head) - 1, 'a', label_length);
+    memcpy(text + sizeof(head) - 1 + label_length, tail, sizeof(tail));
+
+    if (pr_retained_rows(text, length, 0, &control) != 0 || pr_retained_rows(text, length, 1, &probe) != 0) {
+        fputs("diagnostics after derive: run failed\n", stderr);
+        failures++;
+    } else if (control == 0) {
+        fputs("diagnostics after derive: the control raised nothing to lose\n", stderr);
+        failures++;
+    } else if (probe != control) {
+        fprintf(stderr, "diagnostics after derive: %zu rows without a derivation, %zu with one\n", control, probe);
+        failures++;
+    }
+    free(text);
+    printf(
+        "diagnostics after derive: %s (%zu rows either way)\n",
+        failures ? "a derivation silenced finish" : "finish keeps its rows",
+        control
+    );
+    return failures ? -1 : 0;
+}
+
 typedef struct pr_case_entry {
     const char *name;
     int (*run)(const ts_spec_file *file);
@@ -2023,6 +2203,8 @@ static const pr_case_entry PR_CASES[] = {
     {"projection_key", case_projection_key, 1},
     {"block_identity", case_block_identity, 1},
     {"block_identity_transitions", case_block_identity_transitions, 0},
+    {"attach_invalidation", case_attach_invalidation, 0},
+    {"diagnostics_after_derive", case_diagnostics_after_derive, 0},
     {"dump_boundaries", case_dump_boundaries, 1},
     {"feed_loop", case_feed_loop, 1},
     {"projection_slope", case_projection_slope, 0},

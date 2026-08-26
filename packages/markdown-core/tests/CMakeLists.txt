@@ -345,6 +345,13 @@ if(MARKDOWN_CORE_STATIC)
     endforeach()
     markdown_core_add_test(projection_identity_transitions "streaming" 120 projection_runner --case
                            block_identity_transitions)
+    # The cache key's two review-found axes (T9 amendments): an attach between
+    # a derivation and the next projection reads every cached list as stale,
+    # and the recording projection takes no hits -- a hit skips the inline
+    # parse the record-gated diagnostic rows speak from.
+    markdown_core_add_test(projection_attach_invalidation "streaming" 120 projection_runner --case attach_invalidation)
+    markdown_core_add_test(projection_diagnostics_after_derive "streaming" 120 projection_runner --case
+                           diagnostics_after_derive)
     # Criterion 2's SECOND bound (§12.4, §12.10 D): projection is O(what is
     # projected) -- flat ns per content byte across document sizes, the same
     # two-endpoint normalized-slowdown shape as the construction slope gates.

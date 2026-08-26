@@ -1324,6 +1324,22 @@ total   control=238.31 ms   head=236.10 ms   ratio=0.9907   (-0.9%)
 median per-case ratio 0.9977     slower >5%: 0 of 41     faster >5%: 0
 ```
 
+**Amended 2026-08-26, on the landing review (PR #119): the key had two
+missing axes, both found by an automated reviewer and both confirmed.**
+First, the extension set: an attach changes what a projection produces for
+every block, closed ones included, and a closed block's stamp never moves —
+so `attach` now advances `parser->extension_generation` and the holder
+records and compares it, the same shape as a map's generation. Second, the
+recording projection: the record-gated diagnostic rows (label-too-long, the
+directive codes) speak from the inline parse a hit skips, so a mid-stream
+derivation that filled the cache silenced `finish` — `S_cache_fresh` now
+answers stale while `diagnostics_on` is raised, which costs nothing unless
+diagnostics were retained and keeps `finish`'s in-place hits otherwise. The
+gates are `projection_attach_invalidation` and
+`projection_diagnostics_after_derive`, each with its vacuity guard: the
+probe text must differ un-autolinked, and the control must raise rows to
+lose.
+
 ### F21 — F10 was wrong: a projection minted marks into the parser's vector, and positions after it were wrong  · VERIFIED, FIXED (`e34cf20`)
 
 F10 recorded that `markdown_core_parse_inlines` mints a content mark for a

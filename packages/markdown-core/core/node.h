@@ -246,11 +246,13 @@ struct markdown_core_holder {
     markdown_core_node *last_child;
     uint32_t refs;
     /* THE KEY the list was projected under (T9): the origin's write stamp
-     * (T3) and both map generations (T4). A reading that agrees on all three
-     * says the list is what projecting the block now would produce. */
+     * (T3), both map generations (T4), and the extension set's generation. A
+     * reading that agrees on all four says the list is what projecting the
+     * block now would produce. */
     uint32_t stamp;
     size_t refgen;
     size_t footgen;
+    size_t extgen;
 };
 
 /* Does this node alias a holder's list? The one question every walk asks. */

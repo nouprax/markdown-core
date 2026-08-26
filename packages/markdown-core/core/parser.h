@@ -251,6 +251,14 @@ struct markdown_core_parser {
     size_t total_size;
     markdown_core_llist *syntax_extensions;
     markdown_core_llist *inline_syntax_extensions;
+    /* THE EXTENSION SET's generation (T9 amendment): advanced by every
+     * attach. An attach changes what a projection produces for every block,
+     * closed ones included, and a closed block's stamp never moves -- the
+     * write clock cannot carry this axis, so the cache key carries it
+     * directly, the same shape as a map's generation (T4). An attach that
+     * fails half-way still counts: a spurious invalidation is a slow feed
+     * where a missed one is a wrong tree. */
+    size_t extension_generation;
     markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
      * the special/emphasis-skip characters of the attached inline extensions.
