@@ -2090,10 +2090,9 @@ static void wire_serialization(test_batch_runner *runner) {
         "two serializations of one document are byte-identical");
     markdown_core_wire_free(again);
 
+    OK(runner, !markdown_core_document_wire(NULL, &again, &again_length, &error), "the wire refuses a null document");
     OK(runner,
-        !markdown_core_document_wire(NULL, &again, &again_length, &error),
-        "the wire refuses a null document");
-    OK(runner, error != NULL && markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+        error != NULL && markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
         "the refusal names its reason");
     markdown_core_error_free(error);
     error = NULL;
