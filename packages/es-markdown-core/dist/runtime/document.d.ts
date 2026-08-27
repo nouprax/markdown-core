@@ -27,8 +27,9 @@ export declare class Document {
     /**
      * Opens a document; with `markdown`, feeds it in the same step — exactly
      * `new Document(options)` followed by one `feed` whose returned read is
-     * discarded (and, being discarded, never decoded), so the whole-text
-     * parse is `new Document(markdown).seal()`.
+     * discarded — and, being discarded by contract, never built: the native
+     * side takes the bytes without projecting or serializing a read nothing
+     * would decode. The whole-text parse is `new Document(markdown).seal()`.
      *
      * @param markdown the first piece of the stream, or the whole text.
      * @param options which constructs to recognise. Everything, by default.

@@ -4,6 +4,7 @@ package com.nouprax.markdown.core
 
 import com.nouprax.markdown.core.internal.nativebridge.markdown_core_kotlin_free
 import com.nouprax.markdown.core.internal.nativebridge.markdown_core_kotlin_session
+import com.nouprax.markdown.core.internal.nativebridge.markdown_core_kotlin_session_advance
 import com.nouprax.markdown.core.internal.nativebridge.markdown_core_kotlin_session_feed
 import com.nouprax.markdown.core.internal.nativebridge.markdown_core_kotlin_session_finish
 import com.nouprax.markdown.core.internal.nativebridge.markdown_core_kotlin_session_free
@@ -61,6 +62,26 @@ internal actual fun nativeSessionFeed(
         } else {
             chunk.usePinned { pinned ->
                 markdown_core_kotlin_session_feed(
+                    session.toSession(),
+                    pinned.addressOf(0).reinterpret(),
+                    chunk.size.toULong(),
+                    output,
+                    outputLength,
+                )
+            }
+        }
+    }
+
+internal actual fun nativeSessionAdvance(
+    session: Long,
+    chunk: ByteArray,
+): ByteArray =
+    payload { output, outputLength ->
+        if (chunk.isEmpty()) {
+            markdown_core_kotlin_session_advance(session.toSession(), null, 0u, output, outputLength)
+        } else {
+            chunk.usePinned { pinned ->
+                markdown_core_kotlin_session_advance(
                     session.toSession(),
                     pinned.addressOf(0).reinterpret(),
                     chunk.size.toULong(),

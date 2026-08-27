@@ -330,6 +330,21 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_session_finish(
     markdown_core_session *session,
     markdown_core_error **error
 );
+/** Feeds exactly `length` UTF-8 bytes and answers NOTHING: no projection is
+ * taken and no document is built. The one legitimate caller is a read the
+ * caller's own contract DISCARDS -- the bindings' `Document(markdown)`
+ * constructor, whose initial feed's read is thrown away undecoded -- and for
+ * that lifecycle a full `markdown_core_session_feed` derives, copies and
+ * frees a document nothing looks at. Returns false with `*error` set exactly
+ * where `_feed` would have failed; a later `_feed` or `_finish` answers as if
+ * the same bytes had arrived through it, which is feed/seal partition
+ * invariance doing the work. */
+MARKDOWN_CORE_API bool markdown_core_session_advance(
+    markdown_core_session *session,
+    const uint8_t *chunk,
+    size_t length,
+    markdown_core_error **error
+);
 MARKDOWN_CORE_API void markdown_core_session_free(markdown_core_session *session);
 
 /**
@@ -591,9 +606,13 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  * `markdown_core_wire_free`. The layout changes only with the version this
  * library ships, which is why the buffer carries no version of its own --
  * a transport that can skew (a prebuilt native library beside newer binding
- * code) wraps this payload in its own versioned envelope. */
+ * code) wraps this payload in its own versioned envelope. `prefix` is that
+ * envelope's room: the buffer's first `prefix` bytes are reserved, zeroed,
+ * for the caller to write, and `*length` counts them -- so the wrap costs no
+ * second allocation and no copy of the payload. Pass 0 for the bare payload. */
 MARKDOWN_CORE_API bool markdown_core_document_wire(
     const markdown_core_document *document,
+    size_t prefix,
     uint8_t **output,
     size_t *length,
     markdown_core_error **error

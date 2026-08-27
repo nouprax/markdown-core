@@ -363,6 +363,34 @@ markdown_core_document *markdown_core_session_finish(markdown_core_session *sess
     return document;
 }
 
+bool markdown_core_session_advance(
+    markdown_core_session *session,
+    const uint8_t *chunk,
+    size_t length,
+    markdown_core_error **error
+) {
+    clear_error(error);
+    if (!session || !session->parser) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "the session is finished or null");
+        return false;
+    }
+    if (!chunk && length != 0) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "chunk must not be null when length is nonzero");
+        return false;
+    }
+    if (length) {
+        markdown_core_parser_feed(session->parser, (const char *)chunk, length);
+    }
+    /* The sticky flag is the one failure a feed can bank without a projection
+     * to surface it; answering it here keeps "advance then feed" and "feed
+     * twice" indistinguishable. */
+    if (session->parser->oom) {
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
+        return false;
+    }
+    return true;
+}
+
 void markdown_core_session_free(markdown_core_session *session) {
     if (!session) {
         return;
@@ -1705,6 +1733,7 @@ static void wire_concrete(dump_buffer *buffer, const markdown_core_document *doc
 
 bool markdown_core_document_wire(
     const markdown_core_document *document,
+    size_t prefix,
     uint8_t **output,
     size_t *length,
     markdown_core_error **error
@@ -1717,6 +1746,14 @@ bool markdown_core_document_wire(
     }
     *output = NULL;
     *length = 0;
+    /* The caller's envelope room, zeroed, IN the one allocation: a transport
+     * that wrapped the payload afterwards was allocating a second full-size
+     * buffer and copying the first into it while both were live. */
+    buffer_reserve(&buffer, prefix);
+    if (!buffer.failed && prefix != 0) {
+        memset(buffer.data, 0, prefix);
+        buffer.size = prefix;
+    }
     wire_node(&buffer, document->root);
     wire_concrete(&buffer, document);
     if (buffer.failed) {

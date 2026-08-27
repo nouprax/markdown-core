@@ -6,6 +6,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_session_new;
     markdown_core_session_feed;
     markdown_core_session_finish;
+    markdown_core_session_advance;
     markdown_core_session_free;
     markdown_core_document_semantic;
     markdown_core_document_source;

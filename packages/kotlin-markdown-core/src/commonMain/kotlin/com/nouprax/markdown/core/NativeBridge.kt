@@ -15,6 +15,16 @@ internal expect fun nativeSessionFeed(
     chunk: ByteArray,
 ): ByteArray
 
+/**
+ * Feed whose read is DISCARDED BY CONTRACT -- the constructor's initial feed.
+ * The native side takes the bytes without projecting or serializing a read
+ * nothing would decode; the payload is the bare envelope, or the error in it.
+ */
+internal expect fun nativeSessionAdvance(
+    session: Long,
+    chunk: ByteArray,
+): ByteArray
+
 internal expect fun nativeSessionFinish(session: Long): ByteArray
 
 internal expect fun nativeSessionFree(session: Long)

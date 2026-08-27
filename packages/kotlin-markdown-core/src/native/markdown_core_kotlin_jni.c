@@ -71,6 +71,39 @@ JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_sessionFee
     return S_payload_to_array(environment, succeeded, output, output_length);
 }
 
+JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_sessionAdvance(
+    JNIEnv *environment,
+    jobject receiver,
+    jlong session,
+    jbyteArray chunk
+) {
+    jbyte *chunk_bytes = NULL;
+    jsize chunk_length;
+    uint8_t *output = NULL;
+    size_t output_length = 0;
+    bool succeeded;
+    (void)receiver;
+
+    chunk_length = (*environment)->GetArrayLength(environment, chunk);
+    if (chunk_length != 0) {
+        chunk_bytes = (*environment)->GetByteArrayElements(environment, chunk, NULL);
+        if (chunk_bytes == NULL) {
+            return NULL;
+        }
+    }
+    succeeded = markdown_core_kotlin_session_advance(
+        (markdown_core_kotlin_session *)(intptr_t)session,
+        (const uint8_t *)chunk_bytes,
+        (size_t)chunk_length,
+        &output,
+        &output_length
+    );
+    if (chunk_bytes != NULL) {
+        (*environment)->ReleaseByteArrayElements(environment, chunk, chunk_bytes, JNI_ABORT);
+    }
+    return S_payload_to_array(environment, succeeded, output, output_length);
+}
+
 JNIEXPORT jbyteArray JNICALL
 Java_com_nouprax_markdown_core_JvmNative_sessionFinish(JNIEnv *environment, jobject receiver, jlong session) {
     uint8_t *output = NULL;

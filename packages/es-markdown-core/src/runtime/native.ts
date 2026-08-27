@@ -13,6 +13,16 @@ export interface NativeExports extends WebAssembly.Exports {
      * The buffer is the caller's to release with `es_wire_free`. */
     es_session_feed(session: number, chunk: number, length: number, dataOutput: number, lengthOutput: number): number;
     es_session_finish(session: number, dataOutput: number, lengthOutput: number): number;
+    /** Feed whose read is DISCARDED BY CONTRACT (the constructor's initial
+     * feed): no projection, no serialization -- the answer is the bare MKC6
+     * envelope, or the error behind it. */
+    es_session_advance(
+        session: number,
+        chunk: number,
+        length: number,
+        dataOutput: number,
+        lengthOutput: number
+    ): number;
     es_session_free(session: number): void;
     es_wire_free(pointer: number): void;
 }

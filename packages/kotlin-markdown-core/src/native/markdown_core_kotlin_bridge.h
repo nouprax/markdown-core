@@ -30,6 +30,16 @@ bool markdown_core_kotlin_session_finish(
     uint8_t **output,
     size_t *output_length
 );
+/* Feed whose read is DISCARDED BY CONTRACT (the constructor's initial feed):
+ * no projection, no serialization -- the answer is the bare MKC6 envelope,
+ * status 0, or the error's code and message behind status 1. */
+bool markdown_core_kotlin_session_advance(
+    markdown_core_kotlin_session *session,
+    const uint8_t *chunk,
+    size_t length,
+    uint8_t **output,
+    size_t *output_length
+);
 void markdown_core_kotlin_session_free(markdown_core_kotlin_session *session);
 
 void markdown_core_kotlin_free(uint8_t *output);

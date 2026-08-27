@@ -2082,15 +2082,26 @@ static void wire_serialization(test_batch_runner *runner) {
         return;
     }
     OK(runner,
-        markdown_core_document_wire(document, &whole, &whole_length, &error) && whole != NULL && whole_length > 0,
+        markdown_core_document_wire(document, 0, &whole, &whole_length, &error) && whole != NULL && whole_length > 0,
         "the wire serializes a parsed document");
     OK(runner,
-        markdown_core_document_wire(document, &again, &again_length, &error) && again_length == whole_length &&
+        markdown_core_document_wire(document, 0, &again, &again_length, &error) && again_length == whole_length &&
             memcmp(whole, again, whole_length) == 0,
         "two serializations of one document are byte-identical");
     markdown_core_wire_free(again);
 
-    OK(runner, !markdown_core_document_wire(NULL, &again, &again_length, &error), "the wire refuses a null document");
+    /* THE ENVELOPE ROOM: a transport's prefix rides in the one allocation,
+     * zeroed, ahead of the same payload bytes. */
+    OK(runner,
+        markdown_core_document_wire(document, 5, &again, &again_length, &error) && again_length == whole_length + 5 &&
+            again[0] == 0 && again[4] == 0 && memcmp(again + 5, whole, whole_length) == 0,
+        "a prefixed serialization reserves zeroed envelope room ahead of the payload");
+    markdown_core_wire_free(again);
+    again = NULL;
+
+    OK(runner,
+        !markdown_core_document_wire(NULL, 0, &again, &again_length, &error),
+        "the wire refuses a null document");
     OK(runner,
         error != NULL && markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
         "the refusal names its reason");
@@ -2099,21 +2110,31 @@ static void wire_serialization(test_batch_runner *runner) {
 
     /* Partition invariance rides through: the sealed stream's wire equals the
      * whole-text parse's, byte for byte, however the bytes were fed. */
+    /* Partition invariance rides through `advance` exactly as through `feed`:
+     * an advance takes the bytes and answers nothing -- no projection, no
+     * document -- which is the discarded-read lifecycle the bindings'
+     * `Document(markdown)` constructor documents. */
     session = markdown_core_session_new(&options, NULL);
     if (session) {
         markdown_core_document *sealed;
         for (index = 0; index < strlen(markdown); index += 3) {
             size_t length = strlen(markdown) - index < 3 ? strlen(markdown) - index : 3;
             const uint8_t *chunk = (const uint8_t *)markdown + index;
-            markdown_core_document_free(markdown_core_session_feed(session, chunk, length, NULL));
+            OK(runner, markdown_core_session_advance(session, chunk, length, NULL), "an advance takes its bytes");
         }
         sealed = markdown_core_session_finish(session, NULL);
         OK(runner,
-            sealed != NULL && markdown_core_document_wire(sealed, &streamed, &streamed_length, NULL) &&
+            sealed != NULL && markdown_core_document_wire(sealed, 0, &streamed, &streamed_length, NULL) &&
                 streamed_length == whole_length && memcmp(streamed, whole, whole_length) == 0,
-            "the sealed stream's wire equals the whole-text parse's");
+            "the stream sealed after advances equals the whole-text parse");
         markdown_core_wire_free(streamed);
         markdown_core_document_free(sealed);
+        OK(runner,
+            !markdown_core_session_advance(session, (const uint8_t *)"x", 1, &error) && error != NULL &&
+                markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+            "an advance after finish is refused with the finished-session error");
+        markdown_core_error_free(error);
+        error = NULL;
         markdown_core_session_free(session);
     } else {
         OK(runner, 0, "wire session opens");

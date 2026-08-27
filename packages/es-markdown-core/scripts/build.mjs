@@ -42,6 +42,7 @@ const exported = [
     "es_session_new",
     "es_session_feed",
     "es_session_finish",
+    "es_session_advance",
     "es_session_free",
     "es_wire_free"
 ].map((name) => `_${name}`);

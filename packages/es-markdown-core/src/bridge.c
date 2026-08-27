@@ -82,42 +82,53 @@ static void es_apply_options(markdown_core_parse_options *options, uint32_t flag
     options->directives = (flags & (1u << 8)) != 0;
 }
 
-/* THE ONE PAYLOAD WRITER. A session's `feed` and its `finish` both answer
- * through here, so the wire has a single contract and a streamed document
- * crosses on exactly one path. Takes ownership of both `document` and
- * `error`; the caller keeps neither. */
+static const uint8_t envelope_magic[] = {'M', 'K', 'C', '6'};
+
+/* The five envelope bytes, written into room the buffer already holds --
+ * `markdown_core_document_wire` reserved it in the payload's own allocation,
+ * so a successful read costs no second buffer and no copy. */
+static void stamp_envelope(uint8_t *buffer, uint8_t status) {
+    memcpy(buffer, envelope_magic, sizeof(envelope_magic));
+    buffer[sizeof(envelope_magic)] = status;
+}
+
+/* THE ONE PAYLOAD WRITER. A session's `feed`, its `advance` and its `finish`
+ * all answer through here, so the wire has a single contract and a streamed
+ * document crosses on exactly one path. Takes ownership of both `document`
+ * and `error`; the caller keeps neither. `document == NULL` with no error is
+ * an ADVANCE's healthy answer: the envelope alone, nothing behind it. */
 static bool deliver(
     markdown_core_document *document,
     markdown_core_error *error,
     uintptr_t *output,
     size_t *output_length
 ) {
-    static const uint8_t magic[] = {'M', 'K', 'C', '6'};
     es_buffer buffer = {0};
 
-    put_bytes(&buffer, magic, sizeof(magic));
-    if (document == NULL) {
-        put_u8(&buffer, 1);
-        put_i32(&buffer, error == NULL ? MARKDOWN_CORE_ERROR_INTERNAL : markdown_core_error_get_code(error));
-        if (error == NULL) {
-            markdown_core_string fallback = {(const uint8_t *)"markdown parsing failed", 23};
-            put_string(&buffer, fallback);
-        } else {
-            put_string(&buffer, markdown_core_error_get_message(error));
-        }
-    } else {
+    if (document != NULL) {
         uint8_t *wire = NULL;
         size_t wire_length = 0;
-        put_u8(&buffer, 0);
-        if (!markdown_core_document_wire(document, &wire, &wire_length, NULL)) {
-            buffer.failed = true;
-        } else {
-            put_bytes(&buffer, wire, wire_length);
-            markdown_core_wire_free(wire);
+        bool serialized = markdown_core_document_wire(document, sizeof(envelope_magic) + 1, &wire, &wire_length, NULL);
+        markdown_core_error_free(error);
+        markdown_core_document_free(document);
+        if (!serialized) {
+            return false;
         }
+        stamp_envelope(wire, 0);
+        *output = (uintptr_t)wire;
+        *output_length = wire_length;
+        return true;
+    }
+
+    put_bytes(&buffer, envelope_magic, sizeof(envelope_magic));
+    if (error == NULL) {
+        put_u8(&buffer, 0);
+    } else {
+        put_u8(&buffer, 1);
+        put_i32(&buffer, markdown_core_error_get_code(error));
+        put_string(&buffer, markdown_core_error_get_message(error));
     }
     markdown_core_error_free(error);
-    markdown_core_document_free(document);
 
     if (buffer.failed) {
         free(buffer.data);
@@ -155,6 +166,9 @@ bool es_session_feed(
     *output = 0;
     *output_length = 0;
     document = markdown_core_session_feed(session, chunk, length, &error);
+    if (document == NULL && error == NULL) {
+        return false;
+    }
     return deliver(document, error, output, output_length);
 }
 
@@ -165,7 +179,28 @@ bool es_session_finish(markdown_core_session *session, uintptr_t *output, size_t
     *output = 0;
     *output_length = 0;
     document = markdown_core_session_finish(session, &error);
+    if (document == NULL && error == NULL) {
+        return false;
+    }
     return deliver(document, error, output, output_length);
+}
+
+bool es_session_advance(
+    markdown_core_session *session,
+    const uint8_t *chunk,
+    size_t length,
+    uintptr_t *output,
+    size_t *output_length
+) {
+    markdown_core_error *error = NULL;
+
+    *output = 0;
+    *output_length = 0;
+    /* The read this call would have produced is DISCARDED BY CONTRACT -- the
+     * constructor's initial feed -- so nothing is projected and nothing is
+     * serialized: the envelope alone answers, or the error rides in it. */
+    markdown_core_session_advance(session, chunk, length, &error);
+    return deliver(NULL, error, output, output_length);
 }
 
 void es_session_free(markdown_core_session *session) { markdown_core_session_free(session); }

@@ -58,14 +58,21 @@ longer exists. 3.0.0 ships a different streaming surface, described below.
   In C, `markdown_core_node_reference_definition` reads the edge and
   `markdown_core_node_association` keeps its five-kind contract under its
   own names.
-- The whole read crosses a binding boundary as ONE buffer.
-  `markdown_core_document_wire` serializes the document's two total views —
-  the canonical BYTES beside the canonical dump's TEXT, the two changing
-  together or not at all — and both managed bridges wrap it in a versioned
-  MKC6 envelope: the Kotlin transport keeps its single JNI crossing, and the
-  ECMAScript runtime stops walking per-field wasm accessors (thousands of
-  boundary crossings per document become one; the large-document decode
-  drops from 45.7ms to 32.6ms while now carrying the identity data). The
+- The whole read crosses a binding boundary as ONE buffer, in ONE
+  allocation. `markdown_core_document_wire` serializes the document's two
+  total views — the canonical BYTES beside the canonical dump's TEXT, the
+  two changing together or not at all — with caller-reserved prefix room, so
+  a transport's versioned envelope is stamped into the payload's own
+  allocation rather than copied into a second one; both managed bridges wrap
+  it in that MKC6 envelope. The Kotlin transport keeps its single JNI
+  crossing, and the ECMAScript runtime stops walking per-field wasm
+  accessors — thousands of boundary crossings per document become one, and
+  the large-document feed-seal-copy drops from 45.7ms to 27.7ms while now
+  carrying the identity data. A read the caller's contract DISCARDS — the
+  `Document(markdown)` constructor's initial feed — stops being built at
+  all: `markdown_core_session_advance` takes the bytes without projecting or
+  serializing a document nothing would decode, which is what takes the
+  Kotlin large-document number from 26.6ms to 18.1ms. The
   ECMAScript coverage ledger's unpinned surface shrinks with the walk it
   covered: the retired decoder's 22-line allowance becomes the wire
   decoder's 4-line, statically unreachable remainder.
