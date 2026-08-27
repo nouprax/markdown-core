@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-/* An entry is a normalized LABEL and the IDENTITY of the definition block that
+/* A record is a normalized LABEL and the IDENTITY of the definition block that
  * registered it -- nothing else. It used to carry a `size` (the byte count
  * D9's expansion budget charged; a reference that names its definition copies
  * nothing) and then an `age` (its position in registration order, the
@@ -18,16 +18,16 @@ extern "C" {
  * `definition` is a value, never a node: a map that owned a node is how a
  * definition nested inside another came to be freed while the tree still
  * pointed at it (D11). Both preparation paths below fold duplicates to the
- * SMALLEST identity, so the entry a lookup answers with carries the
+ * SMALLEST identity, so the record a lookup answers with carries the
  * first-in-document-order winner's, which is the tiebreak the model
  * specifies. */
-struct markdown_core_map_entry {
-    struct markdown_core_map_entry *next;
+struct markdown_core_map_record {
+    struct markdown_core_map_record *next;
     unsigned char *label;
     uint32_t definition;
 };
 
-typedef struct markdown_core_map_entry markdown_core_map_entry;
+typedef struct markdown_core_map_record markdown_core_map_record;
 
 typedef struct markdown_core_key_index_slot {
     uint64_t hash;
@@ -45,12 +45,12 @@ typedef struct markdown_core_key_index {
 
 struct markdown_core_map;
 
-typedef void (*markdown_core_map_free_f)(struct markdown_core_map *, markdown_core_map_entry *);
+typedef void (*markdown_core_map_free_f)(struct markdown_core_map *, markdown_core_map_record *);
 
 struct markdown_core_map {
     markdown_core_mem *mem;
-    markdown_core_map_entry *refs;
-    markdown_core_map_entry **sorted;
+    markdown_core_map_record *refs;
+    markdown_core_map_record **sorted;
     /* Entries in `sorted` after the duplicate fold. It is NOT `size`: `size`
      * counts every insert, duplicates included -- it sizes the next
      * preparation and answers "is there anything to look up" -- and no
@@ -90,7 +90,7 @@ int markdown_core_key_index_insert(
 void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len);
 markdown_core_map *markdown_core_map_new(markdown_core_mem *mem, markdown_core_map_free_f free);
 void markdown_core_map_free(markdown_core_map *map);
-markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label);
+markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label);
 
 #ifdef __cplusplus
 }

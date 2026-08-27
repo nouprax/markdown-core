@@ -1699,7 +1699,7 @@ static bufsize_t manual_scan_link_url(markdown_core_chunk *input, bufsize_t offs
     return i - offset;
 }
 
-// The definition set's entry for the label between `[^` and `]`, or NULL when
+// The definition set's record for the label between `[^` and `]`, or NULL when
 // the document defines no such label.
 //
 // The span is the same one the reference node's literal is cut from, so the
@@ -1708,7 +1708,7 @@ static bufsize_t manual_scan_link_url(markdown_core_chunk *input, bufsize_t offs
 // `[^Foo Bar]` find `[^foo   bar]`. The ENTRY is the answer rather than a
 // bool: it carries the winning definition's identity, which the call that
 // resolves against it records (D4).
-static markdown_core_map_entry *S_footnote_definition_for(
+static markdown_core_map_record *S_footnote_definition_for(
     markdown_core_parser *parser,
     subject *subj,
     bufsize_t label_start,
@@ -1749,7 +1749,7 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     int found_label;
     markdown_core_node *tmp, *tmpnext;
     bool is_image;
-    markdown_core_map_entry *matched_definition = NULL;
+    markdown_core_map_record *matched_definition = NULL;
 
     advance(subj); // advance past ]
     initial_pos = subj->pos;
@@ -1912,7 +1912,7 @@ noMatch:
          * who writes it and gets prose has no other way to find out. */
         bool caret_written = opener->position < subj->input.len && subj->input.data[opener->position] == '^' &&
                              (literal->len > 1 || opener->inl_text->next->next);
-        markdown_core_map_entry *footnote_definition =
+        markdown_core_map_record *footnote_definition =
             caret_written ? S_footnote_definition_for(parser, subj, opener->position, initial_pos) : NULL;
         if (footnote_definition != NULL) {
 
@@ -1969,7 +1969,7 @@ noMatch:
                     return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
                 }
                 /* THE EDGE (D4): the call names the definition it resolved to.
-                 * The entry's identity is the first-in-document-order winner's,
+                 * The record's identity is the first-in-document-order winner's,
                  * folded at map preparation, so a repeated label resolves every
                  * call to the definition that opens first. */
                 fnref->as.footnote_reference.definition = footnote_definition->definition;
@@ -2067,7 +2067,7 @@ match:
         inl->as.reference.form = form;
         /* THE EDGE (D4): the reference names the definition it resolved to --
          * the first-in-document-order winner for its label, folded into the
-         * entry at map preparation. A reference node exists only because this
+         * record at map preparation. A reference node exists only because this
          * lookup succeeded, so the field never means "unresolved". */
         inl->as.reference.definition = matched_definition->definition;
         goto placed;
@@ -2820,7 +2820,7 @@ bufsize_t markdown_core_parse_reference_inline(
         parts->url = url;
         parts->title = title;
     }
-    // The map is NOT written here: an entry carries the registering definition
+    // The map is NOT written here: a record carries the registering definition
     // block's identity, and the node this scan's parts become does not exist
     // yet -- and when the harvest empties its paragraph the firstborn takes the
     // paragraph's identity (§4 D4 fork 3). The caller registers each label

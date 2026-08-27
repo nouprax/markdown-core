@@ -97,34 +97,34 @@ static char *fb_strdup(const char *text) {
     return copy;
 }
 
-/* WHICH DEFINITION a label resolves to, by the entry's identity. The map used
- * to hold a destination (Step 9b.2 took it off the entry) and then an `age`;
+/* WHICH DEFINITION a label resolves to, by the record's identity. The map used
+ * to hold a destination (Step 9b.2 took it off the record) and then an `age`;
  * the identity subsumed the age, because mints are monotone in document order
  * (D4), so first-definition-wins IS smallest-identity-wins and the duplicate
  * label must answer with the smallest of its registrations' values -- that
  * value is what every resolving reference records. `expected < 0` means the
  * label must not resolve at all. */
-static int fb_expect_entry(markdown_core_map *map, const char *label, long expected, const char *context) {
+static int fb_expect_record(markdown_core_map *map, const char *label, long expected, const char *context) {
     markdown_core_chunk chunk = fb_chunk(label);
-    markdown_core_map_entry *entry = markdown_core_map_lookup(map, &chunk);
+    markdown_core_map_record *record = markdown_core_map_lookup(map, &chunk);
     if (expected < 0) {
-        if (entry) {
+        if (record) {
             fprintf(stderr, "%s: label '%s' unexpectedly resolved\n", context, label);
             return -1;
         }
         return 0;
     }
-    if (!entry) {
+    if (!record) {
         fprintf(stderr, "%s: label '%s' did not resolve\n", context, label);
         return -1;
     }
-    if ((long)entry->definition != expected) {
+    if ((long)record->definition != expected) {
         fprintf(
             stderr,
             "%s: label '%s' carries definition %lu, expected %ld\n",
             context,
             label,
-            (unsigned long)entry->definition,
+            (unsigned long)record->definition,
             expected
         );
         return -1;
@@ -158,14 +158,14 @@ static int fb_check_reference_map(markdown_core_map *map, const char *context) {
     int i;
     for (i = 0; i < FB_UNIQUE_REFERENCES; i++) {
         snprintf(label, sizeof(label), "ref%d", i);
-        if (fb_expect_entry(map, label, i + 1, context) != 0) {
+        if (fb_expect_record(map, label, i + 1, context) != 0) {
             return -1;
         }
     }
-    if (fb_expect_entry(map, "dup", FB_UNIQUE_REFERENCES + 1, context) != 0) {
+    if (fb_expect_record(map, "dup", FB_UNIQUE_REFERENCES + 1, context) != 0) {
         return -1;
     }
-    return fb_expect_entry(map, "missing", -1, context);
+    return fb_expect_record(map, "missing", -1, context);
 }
 
 /* Identical definitions resolve identically through the hash index and
@@ -219,7 +219,7 @@ static int case_map_prepare_oom(void) {
 
     fb_block_slot_tables = 1;
     fb_block_pointer_arrays = 1;
-    if (fb_expect_entry(map, "ref1", -1, "prepare under OOM") != 0) {
+    if (fb_expect_record(map, "ref1", -1, "prepare under OOM") != 0) {
         goto done;
     }
     if (map->prepared) {
@@ -228,7 +228,7 @@ static int case_map_prepare_oom(void) {
     }
     fb_block_slot_tables = 0;
     fb_block_pointer_arrays = 0;
-    if (fb_expect_entry(map, "ref1", 2, "recovery after OOM") != 0) {
+    if (fb_expect_record(map, "ref1", 2, "recovery after OOM") != 0) {
         goto done;
     }
     if (!map->indexed) {
@@ -1035,7 +1035,7 @@ static int case_definition_after_lookup(void) {
     fb_create_reference(map, "dup", 2);
     fb_create_reference(map, "dup", 3);
 
-    if (fb_expect_entry(map, "a", 1, "first lookup") != 0) {
+    if (fb_expect_record(map, "a", 1, "first lookup") != 0) {
         goto done;
     }
     if (!map->prepared || !map->indexed) {
@@ -1051,31 +1051,31 @@ static int case_definition_after_lookup(void) {
         goto done;
     }
 
-    if (fb_expect_entry(map, "late", 4, "definition after lookup") != 0) {
+    if (fb_expect_record(map, "late", 4, "definition after lookup") != 0) {
         goto done;
     }
-    if (fb_expect_entry(map, "dup", 2, "first-wins across re-preparation") != 0) {
+    if (fb_expect_record(map, "dup", 2, "first-wins across re-preparation") != 0) {
         goto done;
     }
 
     /* Identity 6, and the rebuild it forces is sent down the pointer-sort path. */
     fb_create_reference(map, "later", 6);
     fb_block_slot_tables = 1;
-    if (fb_expect_entry(map, "later", 6, "sorted re-preparation") != 0) {
+    if (fb_expect_record(map, "later", 6, "sorted re-preparation") != 0) {
         goto done;
     }
     if (map->indexed) {
         fputs("lookup dispatched into a hash table the sort path did not build\n", stderr);
         goto done;
     }
-    if (fb_expect_entry(map, "dup", 2, "first-wins on the sorted path") != 0) {
+    if (fb_expect_record(map, "dup", 2, "first-wins on the sorted path") != 0) {
         goto done;
     }
     fb_block_slot_tables = 0;
 
     /* Identity 7, and the rebuild goes back to the hash path. */
     fb_create_reference(map, "last", 7);
-    if (fb_expect_entry(map, "last", 7, "hash re-preparation") != 0) {
+    if (fb_expect_record(map, "last", 7, "hash re-preparation") != 0) {
         goto done;
     }
     if (!map->indexed) {
@@ -1086,13 +1086,13 @@ static int case_definition_after_lookup(void) {
      * on both preparation paths -- the winner is stated as a comparison, not
      * left to traversal or registration order. */
     fb_create_reference(map, "dup", 1);
-    if (fb_expect_entry(map, "dup", 1, "smallest-wins registered last, hash path") != 0) {
+    if (fb_expect_record(map, "dup", 1, "smallest-wins registered last, hash path") != 0) {
         goto done;
     }
     fb_create_reference(map, "shuffle", 9);
     fb_create_reference(map, "shuffle", 8);
     fb_block_slot_tables = 1;
-    if (fb_expect_entry(map, "shuffle", 8, "smallest-wins registered last, sorted path") != 0) {
+    if (fb_expect_record(map, "shuffle", 8, "smallest-wins registered last, sorted path") != 0) {
         goto done;
     }
     fb_block_slot_tables = 0;
@@ -1107,7 +1107,7 @@ static int case_definition_after_lookup(void) {
     }
     label = fb_chunk("fn2");
     markdown_core_footnote_definition_create(footnotes, &label, 2);
-    if (fb_expect_entry(footnotes, "fn2", 2, "footnote definition after lookup") != 0) {
+    if (fb_expect_record(footnotes, "fn2", 2, "footnote definition after lookup") != 0) {
         goto done;
     }
     result = 0;

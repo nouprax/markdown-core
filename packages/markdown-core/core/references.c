@@ -62,16 +62,16 @@ void markdown_core_association_free(markdown_core_mem *mem, markdown_core_associ
     markdown_core_chunk_free(mem, &association->identifier);
 }
 
-/* One free function for both sets: an entry is a label and nothing else. */
-static void definition_free(markdown_core_map *map, markdown_core_map_entry *entry) {
-    if (entry != NULL) {
-        map->mem->free(entry->label);
-        map->mem->free(entry);
+/* One free function for both sets: a record is a label and nothing else. */
+static void definition_free(markdown_core_map *map, markdown_core_map_record *record) {
+    if (record != NULL) {
+        map->mem->free(record->label);
+        map->mem->free(record);
     }
 }
 
 static void definition_create(markdown_core_map *map, markdown_core_chunk *label, uint32_t definition) {
-    markdown_core_map_entry *entry;
+    markdown_core_map_record *record;
     unsigned char *reflabel;
     int lost = 0;
 
@@ -90,21 +90,21 @@ static void definition_create(markdown_core_map *map, markdown_core_chunk *label
         return;
     }
 
-    entry = (markdown_core_map_entry *)map->mem->calloc(1, sizeof(*entry));
-    if (!entry) {
+    record = (markdown_core_map_record *)map->mem->calloc(1, sizeof(*record));
+    if (!record) {
         map->oom = 1;
         map->mem->free(reflabel);
         return;
     }
-    entry->label = reflabel;
+    record->label = reflabel;
     /* The registering definition block's identity (D4). Mints are monotone in
      * document order, so the value itself says which of two definitions of one
      * label came first; the preparation folds duplicates to the smallest, and
      * nothing here picks a winner. */
-    entry->definition = definition;
-    entry->next = map->refs;
+    record->definition = definition;
+    record->next = map->refs;
 
-    map->refs = entry;
+    map->refs = record;
     map->size++;
     map->generation++;
     /* A definition may arrive after a lookup has prepared the map: every
