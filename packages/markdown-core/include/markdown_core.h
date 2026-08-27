@@ -518,37 +518,27 @@ typedef struct markdown_core_identity {
     uint32_t ordinal;
 } markdown_core_identity;
 
-/** The identity field a node carries, in the scope it is minted in.
- *
- * A node's full identity is a PAIR the tree's shape composes and a lone node
- * cannot: an inline handed out of a shared child list has no parent link to
- * climb. So this accessor reports the node's OWN field -- `*identifier` -- and
- * says which scope it lives in: `*block` true means the node is block-class
- * and the value is its document-unique mint (its identity is `(identifier,
- * 0)`, and it opens the namespace its inline descendants are numbered in);
- * false means the node is inline-class and the value is its ordinal, so its
- * identity is `(owning block's identifier, identifier)` for the nearest
- * block-class ancestor the caller's own walk passed through. Answers for every
- * kind; refuses only NULL arguments. */
-MARKDOWN_CORE_API bool markdown_core_node_identifier(
-    const markdown_core_node *node,
-    uint32_t *identifier,
-    bool *block
-);
+/** A node's identity, answered whole from the node alone -- like
+ * `markdown_core_node_scope`, by value, `{0, 0}` for NULL. A block's is
+ * `(its mint, 0)`; an inline's is `(owning block's mint, its ordinal)`, the
+ * owner stamped by the same pass that assigns the ordinal, so no caller ever
+ * composes the pair itself. */
+MARKDOWN_CORE_API markdown_core_identity markdown_core_node_identity(const markdown_core_node *node);
 
 /** THE DEFINITION EDGE (docs/STREAMING.md §4 D4): the identity of the
  * definition a reference resolved to. Answers for `LinkReference`,
  * `ImageReference` and `FootnoteReference`, and refuses every other kind.
  *
- * `*definition` is the winning definition BLOCK's mint -- its full identity is
- * the pair `(definition, 0)` -- and the winner for a repeated label is the
- * definition that opens first in document order, while every later definition
- * of the same label stays in the tree where it was written. The field never
- * means "unresolved": a well-formed reference that resolves to nothing is
- * prose, so a reference node exists only because resolution succeeded. */
+ * The target is a definition BLOCK, so its ordinal is 0 by construction. The
+ * winner for a repeated label is the definition that opens first in document
+ * order -- block mints are monotone in parse order, so it is also the one
+ * with the smallest identity -- while every later definition of the same
+ * label stays in the tree where it was written. The edge never means
+ * "unresolved": a well-formed reference that resolves to nothing is prose, so
+ * a reference node exists only because resolution succeeded. */
 MARKDOWN_CORE_API bool markdown_core_node_reference_definition(
     const markdown_core_node *node,
-    uint32_t *definition
+    markdown_core_identity *definition
 );
 
 /** Allocates the canonical file-tree dump. Free it with markdown_core_dump_free. */

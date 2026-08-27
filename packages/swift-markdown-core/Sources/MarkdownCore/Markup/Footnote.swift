@@ -23,15 +23,15 @@ public struct FootnoteDefinition: Markup {
 }
 
 extension FootnoteDefinition {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var label = markdown_core_string()
         var identifier = markdown_core_string()
         markdown_core_node_association(node, &label, &identifier)
         self.init(
             id: id,
             scope: Self.scope(from: node),
-            content: Self.children(from: node, owner: id.block),
+            content: Self.children(from: node),
             label: label.requiredString,
             norm: identifier.requiredString
         )
@@ -57,8 +57,8 @@ public struct FootnoteReference: Markup {
 }
 
 extension FootnoteReference {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var label = markdown_core_string()
         var identifier = markdown_core_string()
         markdown_core_node_association(node, &label, &identifier)

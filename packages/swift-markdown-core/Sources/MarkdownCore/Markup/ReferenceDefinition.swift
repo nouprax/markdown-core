@@ -27,8 +27,8 @@ public struct ReferenceDefinition: Markup {
 }
 
 extension ReferenceDefinition {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var label = markdown_core_string()
         var identifier = markdown_core_string()
         var destination = markdown_core_string()

@@ -15,8 +15,8 @@ public struct Paragraph: Markup {
 }
 
 extension Paragraph {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
-        self.init(id: id, scope: Self.scope(from: node), content: Self.children(from: node, owner: id.block))
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
+        self.init(id: id, scope: Self.scope(from: node), content: Self.children(from: node))
     }
 }

@@ -204,6 +204,15 @@ struct markdown_core_node {
      * when a block splits or dies the fragment that continues what the
      * consumer already renders inherits it (§4 D4). */
     uint32_t identifier;
+    /* THE OTHER HALF OF AN INLINE'S PAIR: the owning block's identity,
+     * stamped by the same numbering pass that assigns the ordinal above --
+     * the one moment anything stands inside the block and beside the inline
+     * at once. MEANINGFUL ONLY ON INLINE-CLASS NODES: a block IS its own
+     * owner and reads nothing here, which is what spares every mint, retype
+     * and identity handoff from maintaining a second field. Zero is "no
+     * owner" -- an inline that never passed a tail -- and fails closed with
+     * the ordinal it accompanies. */
+    uint32_t owner;
     uint16_t type;
     markdown_core_node_internal_flags flags;
 

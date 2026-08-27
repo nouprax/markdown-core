@@ -15,8 +15,8 @@ public struct HTML: Markup {
 }
 
 extension HTML {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var literal = markdown_core_string()
         markdown_core_node_literal(node, &literal)
         self.init(id: id, scope: Self.scope(from: node), literal: literal.requiredString)

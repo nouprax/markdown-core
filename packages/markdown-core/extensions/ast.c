@@ -947,30 +947,36 @@ bool markdown_core_node_reference_form(const markdown_core_node *node, markdown_
     return true;
 }
 
-/* The identity field in the scope it is minted in (D4). The PAIR is composed
- * by the caller's walk, not here: an inline handed out of a shared child list
- * has `parent == NULL` above the list it sits in, so a lone node cannot climb
- * to its owning block and this accessor does not pretend to. */
-bool markdown_core_node_identifier(const markdown_core_node *node, uint32_t *identifier, bool *block) {
-    if (!node || !identifier || !block) {
-        return false;
+/* The whole pair from the node alone (D4): a block is its own owner, and an
+ * inline learned its owner from the numbering pass -- the one moment anything
+ * stood inside the block and beside the inline at once, which matters because
+ * a shared child list carries no parent link to climb (T19). */
+markdown_core_identity markdown_core_node_identity(const markdown_core_node *node) {
+    markdown_core_identity identity = {0, 0};
+    if (!node) {
+        return identity;
     }
-    *identifier = node->identifier;
-    *block = MARKDOWN_CORE_NODE_TYPE_BLOCK_P((markdown_core_node_type)node->type);
-    return true;
+    if (MARKDOWN_CORE_NODE_TYPE_BLOCK_P((markdown_core_node_type)node->type)) {
+        identity.block = node->identifier;
+    } else {
+        identity.block = node->owner;
+        identity.ordinal = node->identifier;
+    }
+    return identity;
 }
 
-bool markdown_core_node_reference_definition(const markdown_core_node *node, uint32_t *definition) {
+bool markdown_core_node_reference_definition(const markdown_core_node *node, markdown_core_identity *definition) {
     if (!node || !definition) {
         return false;
     }
+    definition->ordinal = 0;
     switch (node->type) {
     case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
-        *definition = node->as.footnote_reference.definition;
+        definition->block = node->as.footnote_reference.definition;
         return true;
     case MARKDOWN_CORE_NODE_LINK_REFERENCE:
     case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
-        *definition = node->as.reference.definition;
+        definition->block = node->as.reference.definition;
         return true;
     default:
         return false;
@@ -1146,7 +1152,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     markdown_core_list_flavor flavor;
     markdown_core_placement_mode mode;
     markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
-    uint32_t definition = 0;
+    markdown_core_identity definition = {0, 0};
     bool x, y, has_attributes;
     size_t count, i;
     int32_t level;
@@ -1282,7 +1288,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " label=");
         buffer_json_string(buffer, a);
         buffer_cstr(buffer, " definition=");
-        buffer_identity(buffer, definition, 0);
+        buffer_identity(buffer, definition.block, definition.ordinal);
         break;
     case MARKDOWN_CORE_KIND_LINK_REFERENCE:
     case MARKDOWN_CORE_KIND_IMAGE_REFERENCE:
@@ -1294,7 +1300,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " form=");
         buffer_cstr(buffer, form_name(form));
         buffer_cstr(buffer, " definition=");
-        buffer_identity(buffer, definition, 0);
+        buffer_identity(buffer, definition.block, definition.ordinal);
         break;
     case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
         markdown_core_node_association(node, &a, &b);
@@ -1333,23 +1339,17 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     }
 }
 
-/* `owner` is the nearest block-class ancestor's identity, which the WALK
- * carries because a lone node cannot answer it (markdown_core_node_identifier):
- * an inline's `id=` is the pair (owner, its own ordinal), and a block's is
- * (its own mint, 0) -- and it becomes the owner its descendants print under. */
-static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth, uint32_t owner) {
+static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_scope scope = markdown_core_node_scope(node);
     const markdown_core_node *child;
     size_t count = markdown_core_node_child_count(node);
     size_t i;
-    uint32_t identifier = 0;
-    bool block = false;
+    markdown_core_identity identity = markdown_core_node_identity(node);
     if (kind == MARKDOWN_CORE_KIND_NONE) {
         buffer->failed = true;
         return;
     }
-    markdown_core_node_identifier(node, &identifier, &block);
     if (depth) {
         for (i = 0; i + 1 < depth; i++) {
             buffer_cstr(buffer, buffer->more[i] ? "│   " : "    ");
@@ -1358,7 +1358,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     }
     buffer_cstr(buffer, markdown_core_node_kind_name(kind));
     buffer_cstr(buffer, " id=");
-    buffer_identity(buffer, block ? identifier : owner, block ? 0 : identifier);
+    buffer_identity(buffer, identity.block, identity.ordinal);
     buffer_cstr(buffer, " scope=");
     buffer_i64(buffer, scope.start.line);
     buffer_cstr(buffer, ":");
@@ -1379,7 +1379,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
             return;
         }
         buffer->more[depth] = next != NULL;
-        dump_node(buffer, child, depth + 1, block ? identifier : owner);
+        dump_node(buffer, child, depth + 1);
         child = next;
     }
 }
@@ -1398,7 +1398,7 @@ bool markdown_core_document_dump(
     }
     *output = NULL;
     *length = 0;
-    dump_node(&buffer, document->root, 0, 0);
+    dump_node(&buffer, document->root, 0);
     free(buffer.more);
     if (buffer.failed) {
         free(buffer.data);
@@ -1460,14 +1460,14 @@ static void wire_optional_string(dump_buffer *buffer, markdown_core_optional_str
     }
 }
 
-static void wire_identity(dump_buffer *buffer, uint32_t block, uint32_t ordinal) {
-    wire_u32(buffer, block);
-    wire_u32(buffer, ordinal);
+static void wire_identity(dump_buffer *buffer, markdown_core_identity identity) {
+    wire_u32(buffer, identity.block);
+    wire_u32(buffer, identity.ordinal);
 }
 
-static void wire_node(dump_buffer *buffer, const markdown_core_node *node, uint32_t owner);
+static void wire_node(dump_buffer *buffer, const markdown_core_node *node);
 
-static void wire_children(dump_buffer *buffer, const markdown_core_node *node, uint32_t owner) {
+static void wire_children(dump_buffer *buffer, const markdown_core_node *node) {
     const markdown_core_node *child = markdown_core_node_get_first_child(node);
     size_t count = markdown_core_node_child_count(node);
     if (count > INT32_MAX) {
@@ -1476,11 +1476,11 @@ static void wire_children(dump_buffer *buffer, const markdown_core_node *node, u
     }
     wire_i32(buffer, (int32_t)count);
     for (; child; child = markdown_core_node_get_next_sibling(child)) {
-        wire_node(buffer, child, owner);
+        wire_node(buffer, child);
     }
 }
 
-static void wire_node(dump_buffer *buffer, const markdown_core_node *node, uint32_t owner) {
+static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_string first = {NULL, 0};
     markdown_core_string second = {NULL, 0};
@@ -1488,19 +1488,10 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node, uint3
     markdown_core_optional_string optional_first = {false, {NULL, 0}};
     markdown_core_optional_string optional_second = {false, {NULL, 0}};
     markdown_core_scope scope = markdown_core_node_scope(node);
-    uint32_t identifier = 0;
-    uint32_t definition = 0;
-    bool block = false;
-
-    /* The identity the walk composes (markdown_core_node_identifier): a block
-     * writes (its mint, 0) and opens the namespace its descendants ride in. */
-    markdown_core_node_identifier(node, &identifier, &block);
-    if (block) {
-        owner = identifier;
-    }
+    markdown_core_identity definition = {0, 0};
 
     wire_u8(buffer, (uint8_t)kind);
-    wire_identity(buffer, owner, block ? 0 : identifier);
+    wire_identity(buffer, markdown_core_node_identity(node));
     wire_i32(buffer, scope.start.line);
     wire_i32(buffer, scope.start.column);
     wire_i32(buffer, scope.end.line);
@@ -1515,13 +1506,13 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node, uint3
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
     case MARKDOWN_CORE_KIND_TABLE_CELL:
     case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
-        wire_children(buffer, node, owner);
+        wire_children(buffer, node);
         break;
     case MARKDOWN_CORE_KIND_HEADING: {
         int32_t level = 0;
         markdown_core_node_heading_level(node, &level);
         wire_i32(buffer, level);
-        wire_children(buffer, node, owner);
+        wire_children(buffer, node);
         break;
     }
     case MARKDOWN_CORE_KIND_THEMATIC_BREAK:
@@ -1537,14 +1528,14 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node, uint3
         wire_i64(buffer, start.value);
         wire_u8(buffer, start.has_value ? 1 : 0);
         wire_u8(buffer, tight ? 1 : 0);
-        wire_children(buffer, node, owner);
+        wire_children(buffer, node);
         break;
     }
     case MARKDOWN_CORE_KIND_LIST_ITEM: {
         markdown_core_optional_bool checked;
         markdown_core_node_list_item_checked(node, &checked);
         wire_u8(buffer, checked.has_value ? (checked.value ? 1 : 0) : UINT8_MAX);
-        wire_children(buffer, node, owner);
+        wire_children(buffer, node);
         break;
     }
     case MARKDOWN_CORE_KIND_CODE_BLOCK: {
@@ -1594,7 +1585,7 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node, uint3
             markdown_core_node_table_alignment_at(node, index, &alignment);
             wire_u8(buffer, (uint8_t)alignment);
         }
-        wire_children(buffer, node, owner);
+        wire_children(buffer, node);
         break;
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
@@ -1623,14 +1614,14 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node, uint3
             wire_string(buffer, first);
             wire_string(buffer, second);
         }
-        wire_children(buffer, node, owner);
+        wire_children(buffer, node);
         break;
     }
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
         markdown_core_node_association(node, &first, &second);
         wire_string(buffer, first);
         wire_string(buffer, second);
-        wire_children(buffer, node, owner);
+        wire_children(buffer, node);
         break;
     case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
         markdown_core_node_association(node, &first, &second);
@@ -1647,7 +1638,7 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node, uint3
         markdown_core_node_association(node, &first, &second);
         markdown_core_node_reference_definition(node, &definition);
         wire_string(buffer, first);
-        wire_identity(buffer, definition, 0);
+        wire_identity(buffer, definition);
         break;
     case MARKDOWN_CORE_KIND_LINK_REFERENCE:
     case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: {
@@ -1657,8 +1648,8 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node, uint3
         markdown_core_node_reference_definition(node, &definition);
         wire_string(buffer, first);
         wire_i32(buffer, (int32_t)form);
-        wire_identity(buffer, definition, 0);
-        wire_children(buffer, node, owner);
+        wire_identity(buffer, definition);
+        wire_children(buffer, node);
         break;
     }
     /* A DESTINATION IS REQUIRED (Q26) and always has a length on the wire. */
@@ -1666,19 +1657,19 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node, uint3
         markdown_core_node_link_properties(node, &first, &optional_first);
         wire_string(buffer, first);
         wire_optional_string(buffer, optional_first);
-        wire_children(buffer, node, owner);
+        wire_children(buffer, node);
         break;
     case MARKDOWN_CORE_KIND_IMAGE:
         markdown_core_node_image_properties(node, &first, &optional_first);
         wire_string(buffer, first);
         wire_optional_string(buffer, optional_first);
-        wire_children(buffer, node, owner);
+        wire_children(buffer, node);
         break;
     case MARKDOWN_CORE_KIND_TABLE_ROW: {
         bool header = false;
         markdown_core_node_table_row_is_header(node, &header);
         wire_u8(buffer, header ? 1 : 0);
-        wire_children(buffer, node, owner);
+        wire_children(buffer, node);
         break;
     }
     default:
@@ -1726,7 +1717,7 @@ bool markdown_core_document_wire(
     }
     *output = NULL;
     *length = 0;
-    wire_node(&buffer, document->root, 0);
+    wire_node(&buffer, document->root);
     wire_concrete(&buffer, document);
     if (buffer.failed) {
         free(buffer.data);

@@ -97,10 +97,10 @@ static void definition_create(markdown_core_map *map, markdown_core_chunk *label
         return;
     }
     entry->label = reflabel;
-    entry->age = map->size;
-    /* The registering definition block's identity (D4). Duplicates fold to the
-     * OLDEST entry at preparation, so a lookup's answer carries the
-     * first-in-document-order winner's identity without picking one here. */
+    /* The registering definition block's identity (D4). Mints are monotone in
+     * document order, so the value itself says which of two definitions of one
+     * label came first; the preparation folds duplicates to the smallest, and
+     * nothing here picks a winner. */
     entry->definition = definition;
     entry->next = map->refs;
 

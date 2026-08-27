@@ -33,8 +33,8 @@ public struct Table: Markup {
 }
 
 extension Table {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var count = 0
         markdown_core_node_table_column_count(node, &count)
         let alignments = (0..<count).map { index in
@@ -42,7 +42,7 @@ extension Table {
             markdown_core_node_table_alignment_at(node, index, &alignment)
             return TableAlignment(from: alignment)
         }
-        let rows: [TableRow] = Self.typedChildren(from: node, owner: id.block)
+        let rows: [TableRow] = Self.typedChildren(from: node)
         let headers = rows.filter(\.isHeader)
         precondition(headers.count == 1, "table must contain exactly one header row")
         self.init(
@@ -73,11 +73,11 @@ public struct TableRow: Markup {
 }
 
 extension TableRow {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var header = false
         markdown_core_node_table_row_is_header(node, &header)
-        let cells: [TableCell] = Self.typedChildren(from: node, owner: id.block)
+        let cells: [TableCell] = Self.typedChildren(from: node)
         self.init(
             id: id,
             isHeader: header,
@@ -103,8 +103,8 @@ public struct TableCell: Markup {
 }
 
 extension TableCell {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
-        self.init(id: id, content: Self.children(from: node, owner: id.block), scope: Self.scope(from: node))
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
+        self.init(id: id, content: Self.children(from: node), scope: Self.scope(from: node))
     }
 }

@@ -27,8 +27,8 @@ public struct CodeBlock: Markup {
 }
 
 extension CodeBlock {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var info = markdown_core_optional_string()
         var language = markdown_core_optional_string()
         var literal = markdown_core_string()

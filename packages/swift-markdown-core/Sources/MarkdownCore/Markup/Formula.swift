@@ -22,8 +22,8 @@ public struct Formula: Markup {
 }
 
 extension Formula {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var mode = MARKDOWN_CORE_PLACEMENT_EMBEDDED
         var literal = markdown_core_string()
         markdown_core_node_formula_properties(node, &mode, &literal)

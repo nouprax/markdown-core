@@ -218,11 +218,20 @@ unsigned char *normalize_map_label(markdown_core_mem *mem, markdown_core_chunk *
 
 static int labelcmp(const unsigned char *a, const unsigned char *b) { return strcmp((const char *)a, (const char *)b); }
 
+/* Ties break on the definition identity: mints are monotone in document
+ * order (D4), so the smallest value IS the first definition in the source,
+ * and the dedup below keeps the first of each label's run. */
 static int refcmp(const void *p1, const void *p2) {
     markdown_core_map_entry *r1 = *(markdown_core_map_entry **)p1;
     markdown_core_map_entry *r2 = *(markdown_core_map_entry **)p2;
     int res = labelcmp(r1->label, r2->label);
-    return res ? res : ((int)r1->age - (int)r2->age);
+    if (res) {
+        return res;
+    }
+    if (r1->definition == r2->definition) {
+        return 0;
+    }
+    return r1->definition < r2->definition ? -1 : 1;
 }
 
 static int refsearch(const void *label, const void *p2) {
@@ -301,19 +310,35 @@ static int index_map(markdown_core_map *map) {
     if (!markdown_core_key_index_init(&map->index, map->mem, map_index_expected_size(map))) {
         return 0;
     }
-    /* Entries are linked newest-first. Replacing while traversing therefore
-     * leaves the oldest (first source) definition in each slot. */
+    /* The smallest identity wins each slot -- first in document order, by
+     * D4's monotone mints -- stated as a comparison rather than left to
+     * traversal order, so both preparation paths answer identically whatever
+     * order the entries arrived in. */
     for (ref = map->refs; ref; ref = ref->next) {
+        void *existing = NULL;
         if (!markdown_core_key_index_insert(
                 &map->index,
                 ref->label,
                 (bufsize_t)strlen((char *)ref->label),
                 ref,
-                1,
-                NULL
+                0,
+                &existing
             )) {
             markdown_core_key_index_free(&map->index);
             return 0;
+        }
+        if (existing != NULL && ((markdown_core_map_entry *)existing)->definition > ref->definition) {
+            if (!markdown_core_key_index_insert(
+                    &map->index,
+                    ref->label,
+                    (bufsize_t)strlen((char *)ref->label),
+                    ref,
+                    1,
+                    NULL
+                )) {
+                markdown_core_key_index_free(&map->index);
+                return 0;
+            }
         }
     }
     map->prepared = 1;

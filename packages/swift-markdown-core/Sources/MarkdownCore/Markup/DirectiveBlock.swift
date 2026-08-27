@@ -26,15 +26,15 @@ public struct DirectiveBlock: Markup {
 }
 
 extension DirectiveBlock {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         self.init(
             id: id,
             scope: Self.scope(from: node),
             name: DirectiveValues(from: node).name,
             attributes: DirectiveValues(from: node).attributes,
-            label: Self.directiveLabel(from: node, owner: id.block),
-            content: Self.directiveContent(from: node, owner: id.block)
+            label: Self.directiveLabel(from: node),
+            content: Self.directiveContent(from: node)
         )
     }
 }

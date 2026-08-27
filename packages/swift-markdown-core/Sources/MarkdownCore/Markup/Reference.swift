@@ -67,8 +67,8 @@ func referenceForm(from node: OpaquePointer) -> ReferenceForm {
 }
 
 extension LinkReference {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var label = markdown_core_string()
         var identifier = markdown_core_string()
         markdown_core_node_association(node, &label, &identifier)
@@ -78,14 +78,14 @@ extension LinkReference {
             label: label.requiredString,
             form: referenceForm(from: node),
             definition: referenceDefinition(from: node),
-            content: Self.children(from: node, owner: id.block)
+            content: Self.children(from: node)
         )
     }
 }
 
 extension ImageReference {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var label = markdown_core_string()
         var identifier = markdown_core_string()
         markdown_core_node_association(node, &label, &identifier)
@@ -95,7 +95,7 @@ extension ImageReference {
             label: label.requiredString,
             form: referenceForm(from: node),
             definition: referenceDefinition(from: node),
-            content: Self.children(from: node, owner: id.block)
+            content: Self.children(from: node)
         )
     }
 }

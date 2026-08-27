@@ -22,15 +22,15 @@ public struct Image: Markup {
 }
 
 extension Image {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var source = markdown_core_string()
         var title = markdown_core_optional_string()
         markdown_core_node_image_properties(node, &source, &title)
         self.init(
             id: id,
             scope: Self.scope(from: node),
-            content: Self.children(from: node, owner: id.block),
+            content: Self.children(from: node),
             source: source.requiredString,
             title: title.string
         )

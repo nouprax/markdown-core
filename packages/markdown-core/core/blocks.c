@@ -1527,6 +1527,12 @@ static void S_number_inline_descendants(markdown_core_node *block) {
          * leaves in THIS block's namespace. */
         if (!MARKDOWN_CORE_NODE_BLOCK_P(cur)) {
             cur->identifier = ++ordinal;
+            /* The pair's other half, stamped here because this is the one
+             * moment anything stands inside the block and beside the inline
+             * at once: a shared child list carries no parent to climb (T19),
+             * so an inline that did not learn its owner here could never
+             * answer it. */
+            cur->owner = block->identifier;
             if (cur->first_child) {
                 cur = cur->first_child;
                 continue;
@@ -1982,8 +1988,11 @@ static markdown_core_node *S_clone_block_node(
     dst->content_mark_count = src->content_mark_count;
     /* THE CARRY (T2): the derived block IS the CST block to a consumer, and
      * this line is what makes two projections of one CST name every block
-     * identically (F11). A clone is calloc'd, so losing this fails closed. */
+     * identically (F11). A clone is calloc'd, so losing this fails closed.
+     * The owner rides along for the one inline-class subtree the skeleton
+     * carries -- a directive's CST-resident label. */
     dst->identifier = src->identifier;
+    dst->owner = src->owner;
     dst->type = src->type;
     dst->flags = src->flags & ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN);
     dst->extension = src->extension;

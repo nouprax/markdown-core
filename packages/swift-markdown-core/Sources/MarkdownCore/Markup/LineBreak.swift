@@ -15,8 +15,8 @@ public struct LineBreak: Markup {
 }
 
 extension LineBreak {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         self.init(id: id, scope: Self.scope(from: node))
     }
 }

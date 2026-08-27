@@ -39,7 +39,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_association;
     markdown_core_node_definition_resource;
     markdown_core_node_reference_form;
-    markdown_core_node_identifier;
+    markdown_core_node_identity;
     markdown_core_node_reference_definition;
     markdown_core_document_dump;
     markdown_core_dump_free;

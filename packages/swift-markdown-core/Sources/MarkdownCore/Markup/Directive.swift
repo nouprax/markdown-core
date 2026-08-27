@@ -24,15 +24,15 @@ public struct Directive: Markup {
 }
 
 extension Directive {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         let values = DirectiveValues(from: node)
         self.init(
             id: id,
             scope: Self.scope(from: node),
             name: values.name,
             attributes: values.attributes,
-            label: Self.directiveLabel(from: node, owner: id.block)
+            label: Self.directiveLabel(from: node)
         )
     }
 }

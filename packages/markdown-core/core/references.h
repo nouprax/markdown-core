@@ -53,14 +53,16 @@ void markdown_core_association_free(markdown_core_mem *mem, markdown_core_associ
  * It holds no NODE either: a map that owns a node is how a definition nested
  * inside another came to be freed while the tree still pointed at it (D11).
  * The identity is a VALUE, so D11's shape cannot return through it. The winner
- * between two definitions of one label is first-in-document-order, decided by
- * the entry's `age` at preparation and never by registration timing within a
- * block -- ENTER versus EXIT still decides nothing, because a definition's age
- * is stamped from a count no preparation rewrites (§12.4).
+ * between two definitions of one label is first-in-document-order, and
+ * DOCUMENT ORDER IS ON THE VALUE ITSELF: block mints are monotone in parse
+ * order (D4), so the preparation folds duplicates to the smallest identity and
+ * registration timing decides nothing at all -- ENTER versus EXIT included
+ * (§12.4).
  *
  * `definition` on both `_create` calls is the registering definition block's
  * identity; the caller reads it AFTER any identity handoff the harvest
- * performs (§4 D4 fork 3), so the map carries the id the tree keeps. */
+ * performs (§4 D4 fork 3), so the map carries the id the tree keeps -- and the
+ * handoff hands the firstborn an EARLIER mint, so monotonicity survives it. */
 markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem);
 void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label, uint32_t definition);
 markdown_core_map *markdown_core_footnote_definition_map_new(markdown_core_mem *mem);

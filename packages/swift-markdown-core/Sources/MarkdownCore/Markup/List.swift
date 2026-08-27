@@ -37,8 +37,8 @@ public struct List: Markup {
 }
 
 extension List {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET
         var start = markdown_core_optional_i64()
         var tight = false
@@ -46,7 +46,7 @@ extension List {
         self.init(
             id: id,
             scope: Self.scope(from: node),
-            items: Self.typedChildren(from: node, owner: id.block),
+            items: Self.typedChildren(from: node),
             flavor: flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? .ordered : .bullet,
             start: start.has_value ? start.value : nil,
             tight: tight
@@ -73,14 +73,14 @@ public struct ListItem: Markup {
 }
 
 extension ListItem {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var checked = markdown_core_optional_bool()
         markdown_core_node_list_item_checked(node, &checked)
         self.init(
             id: id,
             scope: Self.scope(from: node),
-            content: Self.children(from: node, owner: id.block),
+            content: Self.children(from: node),
             checked: checked.has_value ? checked.value : nil
         )
     }

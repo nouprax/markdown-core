@@ -20,14 +20,14 @@ public struct Heading: Markup {
 }
 
 extension Heading {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var level: Int32 = 0
         markdown_core_node_heading_level(node, &level)
         self.init(
             id: id,
             scope: Self.scope(from: node),
-            content: Self.children(from: node, owner: id.block),
+            content: Self.children(from: node),
             level: level
         )
     }

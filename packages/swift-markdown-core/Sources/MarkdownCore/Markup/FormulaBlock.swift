@@ -15,8 +15,8 @@ public struct FormulaBlock: Markup {
 }
 
 extension FormulaBlock {
-    init(from node: OpaquePointer, owner: UInt32) {
-        let id = Self.identity(from: node, owner: owner)
+    init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         // A formula BLOCK is always standalone -- the engine's own
         // `markdown_core_extensions_set_formula_mode` refuses any other value
         // for this kind -- so the mode is the kind and the model does not

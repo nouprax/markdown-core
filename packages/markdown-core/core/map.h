@@ -8,21 +8,22 @@ extern "C" {
 #endif
 
 /* An entry is a normalized LABEL and the IDENTITY of the definition block that
- * registered it. It used to carry a `size`, which was the number of bytes
- * resolving against it copied into a node -- the quantity D9's expansion budget
- * charged. A reference that names its definition copies nothing, so there is
- * nothing to charge and no field to carry it.
+ * registered it -- nothing else. It used to carry a `size` (the byte count
+ * D9's expansion budget charged; a reference that names its definition copies
+ * nothing) and then an `age` (its position in registration order, the
+ * first-wins tiebreak); the identity subsumes the age, because block mints are
+ * monotone in document order (D4), so DOCUMENT ORDER IS ON THE VALUE ITSELF
+ * and registration order decides nothing at all.
  *
- * `definition` is the registering definition's block identity (docs/STREAMING.md
- * D4) -- a value, never a node: a map that owned a node is how a definition
- * nested inside another came to be freed while the tree still pointed at it
- * (D11). Both preparation paths below fold duplicates to the OLDEST entry, so
- * the entry a lookup answers with carries the FIRST-IN-DOCUMENT-ORDER winner's
- * identity, which is the tiebreak the model specifies. */
+ * `definition` is a value, never a node: a map that owned a node is how a
+ * definition nested inside another came to be freed while the tree still
+ * pointed at it (D11). Both preparation paths below fold duplicates to the
+ * SMALLEST identity, so the entry a lookup answers with carries the
+ * first-in-document-order winner's, which is the tiebreak the model
+ * specifies. */
 struct markdown_core_map_entry {
     struct markdown_core_map_entry *next;
     unsigned char *label;
-    size_t age;
     uint32_t definition;
 };
 
@@ -51,10 +52,9 @@ struct markdown_core_map {
     markdown_core_map_entry *refs;
     markdown_core_map_entry **sorted;
     /* Entries in `sorted` after the duplicate fold. It is NOT `size`: `size`
-     * counts every insert because `entry->age` is stamped from it, and a
-     * preparation that overwrote it with the deduped count handed a later
-     * definition an age an existing entry already holds -- the first-wins
-     * tiebreak then decides between the two by nothing (§12.4). */
+     * counts every insert, duplicates included -- it sizes the next
+     * preparation and answers "is there anything to look up" -- and no
+     * preparation rewrites it (§12.4). */
     size_t sorted_size;
     markdown_core_key_index index;
     size_t size;
