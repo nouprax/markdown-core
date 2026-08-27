@@ -27,7 +27,8 @@ or semantics.
 ## Core rules
 
 - `Markup` is the only abstract AST node type.
-- Every `Markup` has a non-optional `scope: Scope`.
+- Every `Markup` has a non-optional `id: Identity` and a non-optional
+  `scope: Scope`.
 - AST values are immutable after construction and own their strings and
   collections. No value retains a C node, document, allocator, or WASM handle.
 - Collections are ordered and read-only. Their order is source order unless a
@@ -39,6 +40,31 @@ or semantics.
   property of its directive and contains inline `Markup` values.
 - The AST contains parsing semantics only. Renderer state, security policy,
   layout, highlighting, generated HTML, and MS-private syntax are excluded.
+
+## Identity
+
+```text
+Identity(block: integer, ordinal: integer)
+```
+
+A node's identity is the name a consumer tracks an element by across a
+stream's feeds — the render key (docs/STREAMING.md §4 D4). `block` is the
+owning block's document-unique mint — the block is the minimal update unit, so
+it alone names the region an incremental consumer re-renders — and `ordinal`
+is the node's pre-order ordinal among that block's inline descendants, 0 for
+the block itself. The pair is unique within one document and never reused
+within a parse; it is not stable across documents. The halves are opaque
+values: compare them, key maps by them, and derive nothing else from them.
+Bindings copy both halves from `markdown_core_node_identity` without
+composing, offsetting, or reinterpreting them.
+
+The three reference kinds also carry `definition: Identity`: the identity of
+the definition the reference resolved to, which is the first definition of its
+label in document order — block mints are monotone in parse order, so it is
+also the smallest. A reference node exists only because resolution succeeded
+(a well-formed reference that resolves to nothing is prose), so the edge never
+means "unresolved", and every later definition of the same label stays in the
+tree where it was written.
 
 ## Coordinates
 
@@ -137,8 +163,8 @@ error rather than silently dropping a value.
 | `TableCell` | `content: [Markup]` | inline content |
 | `DirectiveBlock` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes is an ordered sequence of name/value pairs sorted by name; label is a node whose scope spans its brackets; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
 | `DirectiveLabel` | `content: [Markup]` | inline content; the scope spans the brackets, so an empty label is still a place |
-| `FootnoteDefinition` | `label: String`, `identifier: String`, `content: [Markup]` | `label` is non-empty and as written; `identifier` KEEPS the leading `^`, so a footnote and a link definition of one name cannot collide; block content |
-| `ReferenceDefinition` | `label: String`, `identifier: String`, `destination: String`, `title: String?` | `label` is the bytes between the brackets as written, delimiters excluded, escapes and character references unresolved, whitespace uncollapsed, case unfolded; `identifier` is the match key — full Unicode case fold, trimmed, internal whitespace collapsed — and is compared with memcmp over its bytes; neither derives the other; `destination` is never absent, because a definition that could not build one is not produced at all; absent and empty title remain distinct; leaf |
+| `FootnoteDefinition` | `label: String`, `norm: String`, `content: [Markup]` | `label` is non-empty and as written; `norm` is the match key the label folds to and KEEPS the leading `^`, so a footnote and a link definition of one name cannot collide; block content |
+| `ReferenceDefinition` | `label: String`, `norm: String`, `destination: String`, `title: String?` | `label` is the bytes between the brackets as written, delimiters excluded, escapes and character references unresolved, whitespace uncollapsed, case unfolded; `norm` is the match key — full Unicode case fold, trimmed, internal whitespace collapsed — and is compared with memcmp over its bytes; neither derives the other; `destination` is never absent, because a definition that could not build one is not produced at all; absent and empty title remain distinct; leaf |
 | `Text` | `literal: String` | leaf |
 | `SoftBreak` | none | leaf |
 | `LineBreak` | none | leaf |
@@ -150,10 +176,10 @@ error rather than silently dropping a value.
 | `Strikethrough` | `content: [Markup]` | inline content |
 | `Link` | `destination: String`, `title: String?`, `content: [Markup]` | `destination` is never absent (Q26): `[a]()` and `[a](<>)` wrote one and wrote nothing in it, and a link with no destination at all is a `LinkReference`; absent and empty title remain distinct; inline content |
 | `Image` | `source: String`, `title: String?`, `content: [Markup]` | `source` is never absent, for the reason `Link.destination` is not; absent and empty title remain distinct; content is parsed alt-text inline content |
-| `LinkReference` | `label: String`, `identifier: String`, `form: ReferenceForm`, `content: [Markup]` | `label` and `identifier` are exactly as on `ReferenceDefinition`; the node carries NO destination — the destination is stated once, at the definition; `form` records which of the three spellings the source used, and all three resolve identically; inline content |
-| `ImageReference` | `label: String`, `identifier: String`, `form: ReferenceForm`, `content: [Markup]` | as `LinkReference`; content is parsed alt-text inline content |
+| `LinkReference` | `label: String`, `form: ReferenceForm`, `definition: Identity`, `content: [Markup]` | `label` is as written, exactly as on `ReferenceDefinition`; the node carries NO destination and NO match key — the destination is stated once, at the definition, and `definition` names it: the identity of the first definition of this label in document order, whose `norm` IS the match key; `form` records which of the three spellings the source used, and all three resolve identically; inline content |
+| `ImageReference` | `label: String`, `form: ReferenceForm`, `definition: Identity`, `content: [Markup]` | as `LinkReference`; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?` | attributes is an ordered sequence of name/value pairs sorted by name; label is a node whose scope spans its brackets; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
-| `FootnoteReference` | `label: String`, `identifier: String` | `label` is non-empty and as written; `identifier` KEEPS the leading `^`; no form — there is one footnote call syntax; leaf |
+| `FootnoteReference` | `label: String`, `definition: Identity` | `label` is non-empty and as written; `definition` is the identity of the first `FootnoteDefinition` of this label in document order, whose `norm` — caret included — is the match key; no form — there is one footnote call syntax; leaf |
 
 Every row above also has the final inherited field `scope: Scope`; it is not
 repeated in the table.

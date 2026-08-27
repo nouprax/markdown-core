@@ -24,13 +24,13 @@ must traverse the typed immutable AST.
 The root line is:
 
 ```text
-Kind scope=L:C..L:C <fields> children=N
+Kind id=B:O scope=L:C..L:C <fields> children=N
 ```
 
 Every descendant line is:
 
 ```text
-<ancestor-prefix><connector>Kind scope=L:C..L:C <fields> children=N
+<ancestor-prefix><connector>Kind id=B:O scope=L:C..L:C <fields> children=N
 ```
 
 Connectors and prefixes are exact UTF-8:
@@ -62,10 +62,13 @@ generic tree formatter to schema-specific edge names.
 - Directive attributes are normalized string-map JSON strings produced by the
   parser from source attribute-list syntax. The dump applies normal JSON string
   escaping around that already-normalized value and does not decode it again.
+- An identity prints as `block:ordinal`, two base-10 integers — the same
+  pair everywhere it appears, whether as a node's own `id=` or as the
+  `definition=` a reference names.
 - Every optional and default-bearing field is printed; fields are never
   omitted because they are null, empty, false, or default.
-- Scope is always printed immediately after the kind. Kind-specific fields
-  follow it, and `children` is always last.
+- `id` is always printed immediately after the kind and `scope` immediately
+  after it. Kind-specific fields follow, and `children` is always last.
 
 The dump prints the native C parser's public scope coordinates exactly, without
 normalizing or interpreting particular line/column combinations.
@@ -77,7 +80,9 @@ was a scalar presence field until Step 7 made it a node.
 
 ## Field order by record kind
 
-Fields appear after `scope` and before `children` in exactly this order:
+`id` and `scope` are inherited fields and lead every line; the table below
+names what follows them. Fields appear after `scope` and before `children` in
+exactly this order:
 
 This table is CHECKED against `canonical-ast.json` by
 `scripts/audit-ast-projections.mjs`: every kind appears exactly once and its
@@ -99,26 +104,26 @@ it a node, and no row for `DirectiveLabel` at all.
 | `Table` | `alignments` |
 | `TableRow` | `isHeader` |
 | `DirectiveBlock` | `name`, `attributes` |
-| `FootnoteDefinition` | `label`, `identifier` |
-| `ReferenceDefinition` | `label`, `identifier`, `destination`, `title` |
+| `FootnoteDefinition` | `label`, `norm` |
+| `ReferenceDefinition` | `label`, `norm`, `destination`, `title` |
 | `Text` | `literal` |
 | `Code` | `literal` |
 | `HTML` | `literal` |
 | `Formula` | `mode`, `literal` |
 | `Link` | `destination`, `title` |
 | `Image` | `source`, `title` |
-| `LinkReference`, `ImageReference` | `label`, `identifier`, `form` |
+| `LinkReference`, `ImageReference` | `label`, `form`, `definition` |
 | `Directive` | `name`, `attributes` |
-| `FootnoteReference` | `label`, `identifier` |
+| `FootnoteReference` | `label`, `definition` |
 
 Example:
 
 ```text
-Document scope=1:1..1:10 children=1
-└── Paragraph scope=1:1..1:10 children=1
-    └── Directive scope=1:1..1:10 name="badge" attributes=null children=1
-        └── DirectiveLabel scope=1:7..1:10 children=1
-            └── Text scope=1:8..1:9 literal="ok" children=0
+Document id=1:0 scope=1:1..1:10 children=1
+└── Paragraph id=2:0 scope=1:1..1:10 children=1
+    └── Directive id=2:1 scope=1:1..1:10 name="badge" attributes=null children=1
+        └── DirectiveLabel id=2:2 scope=1:7..1:10 children=1
+            └── Text id=2:3 scope=1:8..1:9 literal="ok" children=0
 ```
 
 Any public behavior-bearing field added later must be added to this table, the
