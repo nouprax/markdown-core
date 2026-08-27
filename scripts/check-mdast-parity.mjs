@@ -66,12 +66,15 @@ function project(node) {
     }
     const fields = {};
     for (const key of MDAST_COMPARED[node.kind] ?? []) {
-        // This repository's dump names an image's target `source`; mdast and
-        // cmark both call it a destination. One name reaches the comparison.
+        // This repository's dump names an image's target `source`, and a
+        // definition's match key `norm`; mdast calls them destination and
+        // identifier. One name reaches the comparison.
         let value =
             node.kind === "Image" && key === "destination"
                 ? (node.fields.destination ?? node.fields.source)
-                : node.fields[key];
+                : key === "identifier"
+                  ? (node.fields.identifier ?? node.fields.norm)
+                  : node.fields[key];
         // Both sides spell a directive's attributes as sorted `key="value"`
         // pairs now; the dump brackets the group so it reads as one field, and
         // spells an empty container `[]` where the oracle spells it "null".

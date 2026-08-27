@@ -137,7 +137,7 @@ private struct DumpVisitor: Visitor {
         record(
             "FootnoteDefinition",
             node,
-            fields: association(node.label, node.identifier),
+            fields: definitionAssociation(node.label, node.norm),
             children: node.content.count
         )
     }
@@ -146,7 +146,7 @@ private struct DumpVisitor: Visitor {
         record(
             "ReferenceDefinition",
             node,
-            fields: association(node.label, node.identifier) + [
+            fields: definitionAssociation(node.label, node.norm) + [
                 "destination=\(jsonString(node.destination))",
                 "title=\(optionalString(node.title))",
             ]
@@ -157,7 +157,11 @@ private struct DumpVisitor: Visitor {
         record(
             "LinkReference",
             node,
-            fields: association(node.label, node.identifier) + ["form=\(formName(node.form))"],
+            fields: [
+                "label=\(jsonString(node.label))",
+                "form=\(formName(node.form))",
+                "definition=\(identity(node.definition))",
+            ],
             children: node.content.count
         )
     }
@@ -166,14 +170,20 @@ private struct DumpVisitor: Visitor {
         record(
             "ImageReference",
             node,
-            fields: association(node.label, node.identifier) + ["form=\(formName(node.form))"],
+            fields: [
+                "label=\(jsonString(node.label))",
+                "form=\(formName(node.form))",
+                "definition=\(identity(node.definition))",
+            ],
             children: node.content.count
         )
     }
 
-    /// The two fields five kinds carry identically, in contract order.
-    private func association(_ label: String, _ identifier: String) -> [String] {
-        ["label=\(jsonString(label))", "identifier=\(jsonString(identifier))"]
+    /// A definition's two halves, in contract order: the label as written and
+    /// the match key it folds to. A REFERENCE does not print its key — it
+    /// prints `definition=`, and the key is the winning definition's `norm`.
+    private func definitionAssociation(_ label: String, _ norm: String) -> [String] {
+        ["label=\(jsonString(label))", "norm=\(jsonString(norm))"]
     }
 
     private func formName(_ form: ReferenceForm) -> String {
@@ -251,7 +261,11 @@ private struct DumpVisitor: Visitor {
     }
 
     mutating func visit(_ node: FootnoteReference) -> DumpRecord {
-        record("FootnoteReference", node, fields: association(node.label, node.identifier))
+        record(
+            "FootnoteReference",
+            node,
+            fields: ["label=\(jsonString(node.label))", "definition=\(identity(node.definition))"]
+        )
     }
 
     mutating func visit(_ node: TableRow) -> DumpRecord {
@@ -275,7 +289,7 @@ private struct DumpVisitor: Visitor {
     ) -> DumpRecord {
         let fieldText = fields.isEmpty ? "" : " " + fields.joined(separator: " ")
         return DumpRecord(
-            line: "\(kind) \(scope(node.scope))\(fieldText) children=\(children)",
+            line: "\(kind) id=\(identity(node.id)) \(scope(node.scope))\(fieldText) children=\(children)",
             children: children
         )
     }
@@ -287,6 +301,10 @@ private struct DumpVisitor: Visitor {
         let pairs = attributes.map { "\($0.name)=\(jsonString($0.value))" }.joined(separator: " ")
         return ["name=\(jsonString(name))", "attributes=[\(pairs)]"]
     }
+}
+
+private func identity(_ value: Identity) -> String {
+    "\(value.block):\(value.ordinal)"
 }
 
 private func scope(_ value: Scope) -> String {

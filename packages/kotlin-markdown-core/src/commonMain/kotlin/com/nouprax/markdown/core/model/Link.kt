@@ -10,6 +10,7 @@ public class Link internal constructor(
     /** Optional: `[a](/u)` wrote no title, `[a](/u "")` wrote an empty one. */
     public val title: String?,
     public val content: kotlin.collections.List<Markup>,
+    override val id: Identity,
     override val scope: Scope,
 ) : Markup {
     override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitLink(this)

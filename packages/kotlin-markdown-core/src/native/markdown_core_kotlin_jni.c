@@ -2,11 +2,11 @@
 
 #include <jni.h>
 
-/* One bridge payload becomes one Java byte array, whoever produced it: the
- * one-shot parse and the session's feed and finish all funnel their MKC5
- * bytes through here. `succeeded == false` is the bridge saying the payload
- * buffer itself could not be built, which is the one failure with no payload
- * to decode -- it surfaces as the OutOfMemoryError it is. */
+/* One bridge payload becomes one Java byte array: the session's feed and
+ * finish both funnel their MKC6 bytes through here. `succeeded == false` is
+ * the bridge saying the payload buffer itself could not be built, which is
+ * the one failure with no payload to decode -- it surfaces as the
+ * OutOfMemoryError it is. */
 static jbyteArray S_payload_to_array(JNIEnv *environment, bool succeeded, uint8_t *output, size_t output_length) {
     jbyteArray result;
 
@@ -27,35 +27,6 @@ static jbyteArray S_payload_to_array(JNIEnv *environment, bool succeeded, uint8_
     }
     markdown_core_kotlin_free(output);
     return result;
-}
-
-JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_parse(
-    JNIEnv *environment,
-    jobject receiver,
-    jbyteArray source,
-    jint options_mask
-) {
-    jbyte *source_bytes;
-    jsize source_length;
-    uint8_t *output = NULL;
-    size_t output_length = 0;
-    bool succeeded;
-    (void)receiver;
-
-    source_length = (*environment)->GetArrayLength(environment, source);
-    source_bytes = (*environment)->GetByteArrayElements(environment, source, NULL);
-    if (source_bytes == NULL) {
-        return NULL;
-    }
-    succeeded = markdown_core_kotlin_parse(
-        (const uint8_t *)source_bytes,
-        (size_t)source_length,
-        (uint32_t)options_mask,
-        &output,
-        &output_length
-    );
-    (*environment)->ReleaseByteArrayElements(environment, source, source_bytes, JNI_ABORT);
-    return S_payload_to_array(environment, succeeded, output, output_length);
 }
 
 JNIEXPORT jlong JNICALL
@@ -88,6 +59,39 @@ JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_sessionFee
         }
     }
     succeeded = markdown_core_kotlin_session_feed(
+        (markdown_core_kotlin_session *)(intptr_t)session,
+        (const uint8_t *)chunk_bytes,
+        (size_t)chunk_length,
+        &output,
+        &output_length
+    );
+    if (chunk_bytes != NULL) {
+        (*environment)->ReleaseByteArrayElements(environment, chunk, chunk_bytes, JNI_ABORT);
+    }
+    return S_payload_to_array(environment, succeeded, output, output_length);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_sessionAdvance(
+    JNIEnv *environment,
+    jobject receiver,
+    jlong session,
+    jbyteArray chunk
+) {
+    jbyte *chunk_bytes = NULL;
+    jsize chunk_length;
+    uint8_t *output = NULL;
+    size_t output_length = 0;
+    bool succeeded;
+    (void)receiver;
+
+    chunk_length = (*environment)->GetArrayLength(environment, chunk);
+    if (chunk_length != 0) {
+        chunk_bytes = (*environment)->GetByteArrayElements(environment, chunk, NULL);
+        if (chunk_bytes == NULL) {
+            return NULL;
+        }
+    }
+    succeeded = markdown_core_kotlin_session_advance(
         (markdown_core_kotlin_session *)(intptr_t)session,
         (const uint8_t *)chunk_bytes,
         (size_t)chunk_length,

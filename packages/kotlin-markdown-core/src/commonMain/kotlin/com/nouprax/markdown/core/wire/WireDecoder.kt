@@ -2,10 +2,13 @@ package com.nouprax.markdown.core
 
 internal object WireDecoder {
     /**
-     * `MKC5`: an error lost its scope byte at Step 13, which deleted
-     * `markdown_core_error_get_scope` -- a parse failure carries no scope.
+     * `MKC6`: the payload after the envelope is the facade's own
+     * `markdown_core_document_wire` bytes -- every node leads with its
+     * identity, a definition's match key rides where `identifier` did, and a
+     * reference carries the identity of the definition it resolved to instead
+     * of repeating that key.
      */
-    private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x35)
+    private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x36)
 
     fun decodeRead(bytes: ByteArray): Read {
         val reader = WireReader(bytes)
@@ -49,11 +52,12 @@ internal object WireDecoder {
  */
 private fun WireReader.read(): Read {
     require(kind() == WireKind.DOCUMENT) { "native bridge returned an invalid document tree" }
+    val rootId = identity()
     val rootScope = scope()
     val content = markupList()
     val concrete = concrete()
     require(finished) { "native bridge returned a truncated payload" }
-    return Read(Semantic(content, rootScope), concrete)
+    return Read(Semantic(content, rootId, rootScope), concrete)
 }
 
 /**
@@ -123,6 +127,8 @@ internal class WireReader(
     }
 
     fun scope(): Scope = Scope(Position(int(), int()), Position(int(), int()))
+
+    fun identity(): Identity = Identity(int(), int())
 
     fun kind(): WireKind = WireKind.from(byte().toInt() and 0xff)
 

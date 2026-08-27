@@ -1,45 +1,72 @@
-#include <stdint.h>
+#include <limits.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "markdown_core.h"
 
-enum es_string_field {
-    ES_STRING_CODE_INFO = 1,
-    ES_STRING_CODE_LANGUAGE,
-    ES_STRING_CODE_LITERAL,
-    ES_STRING_LITERAL,
-    ES_STRING_FORMULA_LITERAL,
-    ES_STRING_DIRECTIVE_NAME,
-    ES_STRING_DIRECTIVE_ATTRIBUTE_NAME,
-    ES_STRING_DIRECTIVE_ATTRIBUTE_VALUE,
-    ES_STRING_LINK_DESTINATION,
-    ES_STRING_LINK_TITLE,
-    ES_STRING_IMAGE_SOURCE,
-    ES_STRING_IMAGE_TITLE,
-    ES_STRING_ERROR_MESSAGE = 14,
-    ES_STRING_DEFINITION_DESTINATION,
-    ES_STRING_DEFINITION_TITLE,
-    ES_STRING_ASSOCIATION_LABEL,
-    ES_STRING_ASSOCIATION_IDENTIFIER
-};
+/* THE ENVELOPE, and nothing else: the document's bytes are the facade's
+ * `markdown_core_document_wire` -- the canonical wire, written once beside the
+ * canonical dump and decoded by every binding -- and what this bridge adds is
+ * the four magic bytes and the status that say whether a tree or an error
+ * follows. One buffer per read is the whole point: the wasm boundary used to
+ * be crossed once per FIELD, which was thousands of calls for a document a
+ * single decode pass reads in one. */
 
-static bool es_write_string(markdown_core_string value, uintptr_t *data, size_t *length) {
-    *data = (uintptr_t)value.data;
-    *length = value.length;
-    return true;
+typedef struct es_buffer {
+    uint8_t *data;
+    size_t size;
+    size_t capacity;
+    bool failed;
+} es_buffer;
+
+static void put_bytes(es_buffer *buffer, const uint8_t *bytes, size_t length) {
+    if (buffer->failed || length > SIZE_MAX - buffer->size) {
+        buffer->failed = true;
+        return;
+    }
+    if (buffer->size + length > buffer->capacity) {
+        size_t capacity = buffer->capacity == 0 ? 64 : buffer->capacity;
+        uint8_t *data;
+        while (capacity < buffer->size + length) {
+            if (capacity > SIZE_MAX / 2) {
+                capacity = buffer->size + length;
+                break;
+            }
+            capacity *= 2;
+        }
+        data = (uint8_t *)realloc(buffer->data, capacity);
+        if (data == NULL) {
+            buffer->failed = true;
+            return;
+        }
+        buffer->data = data;
+        buffer->capacity = capacity;
+    }
+    if (length != 0) {
+        memcpy(buffer->data + buffer->size, bytes, length);
+        buffer->size += length;
+    }
 }
 
-/* PRESENCE IS THE RETURN VALUE, not the pointer. This boundary used to have
- * one channel for two facts -- a null `data` meant both "absent" and "present
- * but the bytes live nowhere" -- and requirement 14 says the two are different
- * answers, so `es_string` now says which it gave. */
-static bool es_write_optional_string(markdown_core_optional_string value, uintptr_t *data, size_t *length) {
-    if (!value.has_value) {
-        *data = 0;
-        *length = 0;
-        return false;
+static void put_u8(es_buffer *buffer, uint8_t value) { put_bytes(buffer, &value, 1); }
+
+static void put_i32(es_buffer *buffer, int32_t value) {
+    uint32_t bits = (uint32_t)value;
+    size_t index;
+    for (index = 0; index < 4; ++index) {
+        put_u8(buffer, (uint8_t)(bits >> (index * 8)));
     }
-    return es_write_string(value.value, data, length);
+}
+
+static void put_string(es_buffer *buffer, markdown_core_string value) {
+    if (value.length > INT32_MAX) {
+        buffer->failed = true;
+        return;
+    }
+    put_i32(buffer, (int32_t)value.length);
+    put_bytes(buffer, value.data, value.length);
 }
 
 static void es_apply_options(markdown_core_parse_options *options, uint32_t flags) {
@@ -55,14 +82,65 @@ static void es_apply_options(markdown_core_parse_options *options, uint32_t flag
     options->directives = (flags & (1u << 8)) != 0;
 }
 
-void es_document_free(markdown_core_document *document) { markdown_core_document_free(document); }
+static const uint8_t envelope_magic[] = {'M', 'K', 'C', '6'};
 
-/* THE STREAM (docs/STREAMING.md §4 D5, under 3.0's names) is the one entry
- * this bridge has: `es_session_feed` and `es_session_finish` answer with the
- * same document-or-error pair, so the binding reads every document through
- * one decoder and frees it one way. */
+/* The five envelope bytes, written into room the buffer already holds --
+ * `markdown_core_document_wire` reserved it in the payload's own allocation,
+ * so a successful read costs no second buffer and no copy. */
+static void stamp_envelope(uint8_t *buffer, uint8_t status) {
+    memcpy(buffer, envelope_magic, sizeof(envelope_magic));
+    buffer[sizeof(envelope_magic)] = status;
+}
 
-/* The one failure `markdown_core_session_new` can report is an allocation
+/* THE ONE PAYLOAD WRITER. A session's `feed`, its `advance` and its `finish`
+ * all answer through here, so the wire has a single contract and a streamed
+ * document crosses on exactly one path. Takes ownership of both `document`
+ * and `error`; the caller keeps neither. `document == NULL` with no error is
+ * an ADVANCE's healthy answer: the envelope alone, nothing behind it. */
+static bool deliver(
+    markdown_core_document *document,
+    markdown_core_error *error,
+    uintptr_t *output,
+    size_t *output_length
+) {
+    es_buffer buffer = {0};
+
+    if (document != NULL) {
+        uint8_t *wire = NULL;
+        size_t wire_length = 0;
+        bool serialized = markdown_core_document_wire(document, sizeof(envelope_magic) + 1, &wire, &wire_length, NULL);
+        markdown_core_error_free(error);
+        markdown_core_document_free(document);
+        if (!serialized) {
+            return false;
+        }
+        stamp_envelope(wire, 0);
+        *output = (uintptr_t)wire;
+        *output_length = wire_length;
+        return true;
+    }
+
+    put_bytes(&buffer, envelope_magic, sizeof(envelope_magic));
+    if (error == NULL) {
+        put_u8(&buffer, 0);
+    } else {
+        put_u8(&buffer, 1);
+        put_i32(&buffer, markdown_core_error_get_code(error));
+        put_string(&buffer, markdown_core_error_get_message(error));
+    }
+    markdown_core_error_free(error);
+
+    if (buffer.failed) {
+        free(buffer.data);
+        return false;
+    }
+    *output = (uintptr_t)buffer.data;
+    *output_length = buffer.size;
+    return true;
+}
+
+/* THE STREAM (docs/STREAMING.md §4 D5) is the one entry this bridge has.
+ * The one failure `markdown_core_session_new` can report is an allocation
  * failure, so NULL is the whole answer and the error it came with -- which
  * had to be allocated too -- is released here rather than crossing the wire. */
 markdown_core_session *es_session_new(uint32_t flags) {
@@ -75,225 +153,56 @@ markdown_core_session *es_session_new(uint32_t flags) {
     return session;
 }
 
-markdown_core_document *es_session_feed(
+bool es_session_feed(
     markdown_core_session *session,
     const uint8_t *chunk,
     size_t length,
-    markdown_core_error **error
+    uintptr_t *output,
+    size_t *output_length
 ) {
-    return markdown_core_session_feed(session, chunk, length, error);
+    markdown_core_error *error = NULL;
+    markdown_core_document *document;
+
+    *output = 0;
+    *output_length = 0;
+    document = markdown_core_session_feed(session, chunk, length, &error);
+    if (document == NULL && error == NULL) {
+        return false;
+    }
+    return deliver(document, error, output, output_length);
 }
 
-markdown_core_document *es_session_finish(markdown_core_session *session, markdown_core_error **error) {
-    return markdown_core_session_finish(session, error);
+bool es_session_finish(markdown_core_session *session, uintptr_t *output, size_t *output_length) {
+    markdown_core_error *error = NULL;
+    markdown_core_document *document;
+
+    *output = 0;
+    *output_length = 0;
+    document = markdown_core_session_finish(session, &error);
+    if (document == NULL && error == NULL) {
+        return false;
+    }
+    return deliver(document, error, output, output_length);
+}
+
+bool es_session_advance(
+    markdown_core_session *session,
+    const uint8_t *chunk,
+    size_t length,
+    uintptr_t *output,
+    size_t *output_length
+) {
+    markdown_core_error *error = NULL;
+
+    *output = 0;
+    *output_length = 0;
+    /* The read this call would have produced is DISCARDED BY CONTRACT -- the
+     * constructor's initial feed -- so nothing is projected and nothing is
+     * serialized: the envelope alone answers, or the error rides in it. */
+    markdown_core_session_advance(session, chunk, length, &error);
+    return deliver(NULL, error, output, output_length);
 }
 
 void es_session_free(markdown_core_session *session) { markdown_core_session_free(session); }
 
-const markdown_core_node *es_document_root(const markdown_core_document *document) {
-    return markdown_core_document_semantic(document);
-}
-
-void es_document_source(const markdown_core_document *document, uintptr_t *data, size_t *length) {
-    es_write_string(markdown_core_document_source(document), data, length);
-}
-
-size_t es_document_line_count(const markdown_core_document *document) {
-    return markdown_core_document_line_count(document);
-}
-
-/* Written whole rather than one call per line: the binding copies the entire
- * index anyway, and a call per line is 8410 crossings on a 674 KB document. */
-void es_document_line_starts(const markdown_core_document *document, uint32_t *out) {
-    size_t count = markdown_core_document_line_count(document);
-    size_t line;
-    for (line = 1; line <= count; line++) {
-        size_t offset = 0;
-        markdown_core_document_line_start(document, line, &offset);
-        out[line - 1] = (uint32_t)offset;
-    }
-}
-
-int32_t es_error_code(const markdown_core_error *error) { return (int32_t)markdown_core_error_get_code(error); }
-
-void es_error_free(markdown_core_error *error) { markdown_core_error_free(error); }
-
-int32_t es_node_kind(const markdown_core_node *node) { return (int32_t)markdown_core_node_get_kind(node); }
-
-const markdown_core_node *es_node_first_child(const markdown_core_node *node) {
-    return markdown_core_node_get_first_child(node);
-}
-
-const markdown_core_node *es_node_next_sibling(const markdown_core_node *node) {
-    return markdown_core_node_get_next_sibling(node);
-}
-
-int32_t es_scope_coordinate(const markdown_core_node *node, int32_t coordinate) {
-    markdown_core_scope scope = markdown_core_node_scope(node);
-    switch (coordinate) {
-    case 0:
-        return scope.start.line;
-    case 1:
-        return scope.start.column;
-    case 2:
-        return scope.end.line;
-    default:
-        return scope.end.column;
-    }
-}
-
-int32_t es_node_heading_level(const markdown_core_node *node) {
-    int32_t value = 0;
-    markdown_core_node_heading_level(node, &value);
-    return value;
-}
-
-int32_t es_node_list_flavor(const markdown_core_node *node) {
-    markdown_core_list_flavor flavor;
-    markdown_core_optional_i64 start;
-    bool tight;
-    markdown_core_node_list_properties(node, &flavor, &start, &tight);
-    return (int32_t)flavor;
-}
-
-int32_t es_node_list_tight(const markdown_core_node *node) {
-    markdown_core_list_flavor flavor;
-    markdown_core_optional_i64 start;
-    bool tight;
-    markdown_core_node_list_properties(node, &flavor, &start, &tight);
-    return tight;
-}
-
-int32_t es_node_list_start_state(const markdown_core_node *node, int64_t *value) {
-    markdown_core_list_flavor flavor;
-    markdown_core_optional_i64 start;
-    bool tight;
-    markdown_core_node_list_properties(node, &flavor, &start, &tight);
-    *value = start.value;
-    return start.has_value;
-}
-
-int32_t es_node_checked(const markdown_core_node *node) {
-    markdown_core_optional_bool checked;
-    markdown_core_node_list_item_checked(node, &checked);
-    return checked.has_value ? (checked.value ? 1 : 0) : -1;
-}
-
-int32_t es_node_code_flag(const markdown_core_node *node, int32_t field) {
-    markdown_core_optional_string info, language;
-    markdown_core_string literal;
-    bool fenced, closed;
-    markdown_core_node_code_block_properties(node, &info, &language, &literal, &fenced, &closed);
-    return field == 0 ? fenced : closed;
-}
-
-int32_t es_node_reference_form(const markdown_core_node *node) {
-    markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
-    markdown_core_node_reference_form(node, &form);
-    return (int32_t)form;
-}
-
-int32_t es_node_formula_mode(const markdown_core_node *node) {
-    markdown_core_placement_mode mode;
-    markdown_core_string literal;
-    markdown_core_node_formula_properties(node, &mode, &literal);
-    return (int32_t)mode;
-}
-
-size_t es_node_table_column_count(const markdown_core_node *node) {
-    size_t count = 0;
-    markdown_core_node_table_column_count(node, &count);
-    return count;
-}
-
-int32_t es_node_table_alignment(const markdown_core_node *node, size_t index) {
-    markdown_core_table_alignment alignment = MARKDOWN_CORE_TABLE_ALIGNMENT_NONE;
-    markdown_core_node_table_alignment_at(node, index, &alignment);
-    return (int32_t)alignment;
-}
-
-int32_t es_node_table_row_header(const markdown_core_node *node) {
-    bool value = false;
-    markdown_core_node_table_row_is_header(node, &value);
-    return value;
-}
-
-/* -1 when the source wrote no attribute container at all, so an absent one and
- * an empty one stay apart on a single return value. */
-int32_t es_node_directive_attribute_count(const markdown_core_node *node) {
-    markdown_core_string name;
-    bool has_attributes = false;
-    size_t count = 0;
-    markdown_core_node_directive_properties(node, &name, &has_attributes, &count);
-    return has_attributes ? (int32_t)count : -1;
-}
-
-/* Set immediately before an attribute read. The bridge is single-threaded --
- * one wasm instance, one call at a time -- so a slot is enough, and it keeps
- * es_string's signature the one every other field already uses. */
-static size_t es_attribute_index = 0;
-
-void es_set_attribute_index(int32_t index) { es_attribute_index = index < 0 ? 0 : (size_t)index; }
-
-bool es_string(const void *object, int32_t field, uintptr_t *data, size_t *length) {
-    markdown_core_string first = {NULL, 0}, second = {NULL, 0}, third = {NULL, 0};
-    markdown_core_optional_string opt_first = {false, {NULL, 0}}, opt_second = {false, {NULL, 0}};
-    const markdown_core_node *node = (const markdown_core_node *)object;
-    bool first_bool, second_bool;
-    markdown_core_placement_mode mode;
-    size_t count;
-    switch (field) {
-    case ES_STRING_CODE_INFO:
-    case ES_STRING_CODE_LANGUAGE:
-        markdown_core_node_code_block_properties(node, &opt_first, &opt_second, &third, &first_bool, &second_bool);
-        return es_write_optional_string(field == ES_STRING_CODE_INFO ? opt_first : opt_second, data, length);
-    case ES_STRING_CODE_LITERAL:
-        markdown_core_node_code_block_properties(node, &opt_first, &opt_second, &third, &first_bool, &second_bool);
-        return es_write_string(third, data, length);
-    case ES_STRING_LITERAL:
-        markdown_core_node_literal(node, &first);
-        break;
-    case ES_STRING_FORMULA_LITERAL:
-        markdown_core_node_formula_properties(node, &mode, &first);
-        break;
-    case ES_STRING_DIRECTIVE_NAME:
-        markdown_core_node_directive_properties(node, &first, &first_bool, &count);
-        break;
-    case ES_STRING_DIRECTIVE_ATTRIBUTE_NAME:
-    case ES_STRING_DIRECTIVE_ATTRIBUTE_VALUE:
-        /* The index rides in `es_attribute_index`: `es_string` takes a field
-         * and an object, and an attribute needs one more number than that. */
-        markdown_core_node_directive_attribute_at(node, es_attribute_index, &first, &second);
-        first = field == ES_STRING_DIRECTIVE_ATTRIBUTE_NAME ? first : second;
-        break;
-    case ES_STRING_LINK_DESTINATION:
-        markdown_core_node_link_properties(node, &first, &opt_first);
-        break;
-    case ES_STRING_LINK_TITLE:
-        markdown_core_node_link_properties(node, &first, &opt_first);
-        return es_write_optional_string(opt_first, data, length);
-    case ES_STRING_IMAGE_SOURCE:
-        markdown_core_node_image_properties(node, &first, &opt_first);
-        break;
-    case ES_STRING_IMAGE_TITLE:
-        markdown_core_node_image_properties(node, &first, &opt_first);
-        return es_write_optional_string(opt_first, data, length);
-    case ES_STRING_DEFINITION_DESTINATION:
-        markdown_core_node_definition_resource(node, &first, &opt_first);
-        break;
-    case ES_STRING_DEFINITION_TITLE:
-        markdown_core_node_definition_resource(node, &first, &opt_first);
-        return es_write_optional_string(opt_first, data, length);
-    case ES_STRING_ASSOCIATION_LABEL:
-    case ES_STRING_ASSOCIATION_IDENTIFIER:
-        markdown_core_node_association(node, &first, &second);
-        first = field == ES_STRING_ASSOCIATION_LABEL ? first : second;
-        break;
-    case ES_STRING_ERROR_MESSAGE:
-        first = markdown_core_error_get_message((const markdown_core_error *)object);
-        break;
-    default:
-        break;
-    }
-    return es_write_string(first, data, length);
-}
+void es_wire_free(uint8_t *output) { free(output); }

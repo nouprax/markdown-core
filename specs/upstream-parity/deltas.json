@@ -54,7 +54,7 @@
         {
             "id": "refdef-title-rewind",
             "kind": "deliberate-difference",
-            "summary": "When a definition's title candidate is followed by non-whitespace (the title-rewind case), upstream keeps the scanned title in its reference map even though the title bytes stay paragraph text, so a reference to that label resolves with a title the definition does not have. Markdown Core drops the title with the rewind: scalar, map entry, and concrete spelling agree that the definition has none.",
+            "summary": "When a definition's title candidate is followed by non-whitespace (the title-rewind case), upstream keeps the scanned title in its reference map even though the title bytes stay paragraph text, so a reference to that label resolves with a title the definition does not have. Markdown Core drops the title with the rewind: scalar, map record, and concrete spelling agree that the definition has none.",
             "example": "[foo]: /url + a following \"title\" ok line, then [foo]",
             "upstream": "Link title=\"title\"",
             "ours": "Link title=null",

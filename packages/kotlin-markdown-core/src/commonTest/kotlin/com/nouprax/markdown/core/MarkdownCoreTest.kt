@@ -69,8 +69,8 @@ class ErrorsTest {
 
     @Test
     fun everyWireGuardFiresWhenTheNativeSideAnswersOutOfRange() {
-        // The two sides of the wire are versioned separately -- MKC5 is that
-        // hazard made concrete -- and a decoder that mapped an unknown value
+        // The two sides of the wire are versioned separately -- the MKC6 bump
+        // is that hazard made concrete -- and a decoder that mapped an unknown value
         // instead of refusing it turns a protocol mismatch into a wrong
         // document. Nothing proved any of these fired.
         assertFailsWith<IllegalStateException> { WireKind.from(0) }
@@ -79,7 +79,7 @@ class ErrorsTest {
 
         // A header the decoder accepts, followed by nothing it can read.
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeRead("MKC5".encodeToByteArray())
+            WireDecoder.decodeRead("MKC6".encodeToByteArray())
         }
     }
 
@@ -87,7 +87,7 @@ class ErrorsTest {
     fun everyRefusalTheWireReaderCanMakeIsReachedByAPayload() {
         // The reader is one `require` after another and a corpus reaches none
         // of them: every payload the bridge actually writes is well formed. So
-        // write the malformed ones by hand. `MKC5` is the magic; the byte after
+        // write the malformed ones by hand. `MKC6` is the magic; the byte after
         // it is the status, and 1 means the payload is an error rather than a
         // document.
         fun payload(vararg parts: Any): ByteArray {
@@ -107,33 +107,33 @@ class ErrorsTest {
         // path that builds a ParseException.
         val failure =
             assertFailsWith<ParseException> {
-                WireDecoder.decodeRead(payload("MKC5", 1.toByte(), 1, 3, "bad"))
+                WireDecoder.decodeRead(payload("MKC6", 1.toByte(), 1, 3, "bad"))
             }
         assertEquals(ParseErrorCode.INVALID_ARGUMENT, failure.code)
         assertEquals("bad", failure.message)
         assertEquals(
             ParseErrorCode.INTERNAL,
             assertFailsWith<ParseException> {
-                WireDecoder.decodeRead(payload("MKC5", 1.toByte(), 99, 1, "x"))
+                WireDecoder.decodeRead(payload("MKC6", 1.toByte(), 99, 1, "x"))
             }.code,
         )
 
         // A status that is neither, a magic from the wrong wire version, a
         // root that is not a document, and a payload that stops mid-value.
         assertFailsWith<IllegalStateException> {
-            WireDecoder.decodeRead(payload("MKC5", 2.toByte()))
+            WireDecoder.decodeRead(payload("MKC6", 2.toByte()))
         }
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeRead(payload("MKC4", 0.toByte()))
+            WireDecoder.decodeRead(payload("MKC5", 0.toByte()))
         }
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeRead(payload("MKC5", 0.toByte(), 3.toByte()))
+            WireDecoder.decodeRead(payload("MKC6", 0.toByte(), 3.toByte()))
         }
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeRead(payload("MKC5", 0.toByte(), 1.toByte(), 1, 1))
+            WireDecoder.decodeRead(payload("MKC6", 0.toByte(), 1.toByte(), 1, 1))
         }
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeRead(payload("MKC5", 1.toByte(), 1, -2))
+            WireDecoder.decodeRead(payload("MKC6", 1.toByte(), 1, -2))
         }
     }
 

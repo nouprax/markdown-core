@@ -7,17 +7,27 @@
 extern "C" {
 #endif
 
-/* An entry is a normalized LABEL and nothing else. It used to carry a `size`,
- * which was the number of bytes resolving against it copied into a node -- the
- * quantity D9's expansion budget charged. A reference that names its definition
- * copies nothing, so there is nothing to charge and no field to carry it. */
-struct markdown_core_map_entry {
-    struct markdown_core_map_entry *next;
+/* A record is a normalized LABEL and the IDENTITY of the definition block that
+ * registered it -- nothing else. It used to carry a `size` (the byte count
+ * D9's expansion budget charged; a reference that names its definition copies
+ * nothing) and then an `age` (its position in registration order, the
+ * first-wins tiebreak); the identity subsumes the age, because block mints are
+ * monotone in document order (D4), so DOCUMENT ORDER IS ON THE VALUE ITSELF
+ * and registration order decides nothing at all.
+ *
+ * `definition` is a value, never a node: a map that owned a node is how a
+ * definition nested inside another came to be freed while the tree still
+ * pointed at it (D11). Both preparation paths below fold duplicates to the
+ * SMALLEST identity, so the record a lookup answers with carries the
+ * first-in-document-order winner's, which is the tiebreak the model
+ * specifies. */
+struct markdown_core_map_record {
+    struct markdown_core_map_record *next;
     unsigned char *label;
-    size_t age;
+    uint32_t definition;
 };
 
-typedef struct markdown_core_map_entry markdown_core_map_entry;
+typedef struct markdown_core_map_record markdown_core_map_record;
 
 typedef struct markdown_core_key_index_slot {
     uint64_t hash;
@@ -35,17 +45,16 @@ typedef struct markdown_core_key_index {
 
 struct markdown_core_map;
 
-typedef void (*markdown_core_map_free_f)(struct markdown_core_map *, markdown_core_map_entry *);
+typedef void (*markdown_core_map_free_f)(struct markdown_core_map *, markdown_core_map_record *);
 
 struct markdown_core_map {
     markdown_core_mem *mem;
-    markdown_core_map_entry *refs;
-    markdown_core_map_entry **sorted;
+    markdown_core_map_record *refs;
+    markdown_core_map_record **sorted;
     /* Entries in `sorted` after the duplicate fold. It is NOT `size`: `size`
-     * counts every insert because `entry->age` is stamped from it, and a
-     * preparation that overwrote it with the deduped count handed a later
-     * definition an age an existing entry already holds -- the first-wins
-     * tiebreak then decides between the two by nothing (§12.4). */
+     * counts every insert, duplicates included -- it sizes the next
+     * preparation and answers "is there anything to look up" -- and no
+     * preparation rewrites it (§12.4). */
     size_t sorted_size;
     markdown_core_key_index index;
     size_t size;
@@ -81,7 +90,7 @@ int markdown_core_key_index_insert(
 void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len);
 markdown_core_map *markdown_core_map_new(markdown_core_mem *mem, markdown_core_map_free_f free);
 void markdown_core_map_free(markdown_core_map *map);
-markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label);
+markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label);
 
 #ifdef __cplusplus
 }

@@ -306,7 +306,7 @@ const kindSurfaces = [
     {
         label: "ES decoder",
         expect: [...kinds.keys()].map(camel),
-        actual: namedKinds("packages/es-markdown-core/src/wire/node-decoder.ts", /case "([a-zA-Z]+)":/g)
+        actual: namedKinds("packages/es-markdown-core/src/wire/wire-decoder.ts", /case "([a-zA-Z]+)":/g)
     },
     {
         label: "ES dumper",

@@ -238,9 +238,15 @@ export const MDAST_COMPARED = {
     Link: ["destination", "title"],
     Image: ["destination", "title"],
     TableRow: ["isHeader"],
+    // `identifier` is mdast's name for the match key; this side renamed the
+    // definition's copy `norm`, and the projection maps one onto the other.
+    // A REFERENCE no longer carries the key at all -- it names its definition
+    // by identity, which mdast cannot express -- so the references compare on
+    // the label bytes and the form, and the key is compared once, at the
+    // definition.
     ReferenceDefinition: ["label", "identifier", "destination", "title"],
-    LinkReference: ["label", "identifier", "form"],
-    ImageReference: ["label", "identifier", "form"],
+    LinkReference: ["label", "form"],
+    ImageReference: ["label", "form"],
     // §5.6: footnote label bytes used to be compared by NOBODY, on either
     // side. mdast's `label` is the authored spelling and so is this side's, so
     // there is something to compare as of Step 9b.2. `identifier` is NOT

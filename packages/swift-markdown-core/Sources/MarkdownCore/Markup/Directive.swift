@@ -6,6 +6,9 @@ import MarkdownCoreC
 /// directive is always embedded and a ``DirectiveBlock`` always standalone, so
 /// the value was implied by the kind.
 public struct Directive: Markup {
+    /// The node's identity: the name a consumer tracks this element by across
+    /// a stream's feeds — the render key. See ``Identity``.
+    public let id: Identity
     /// Where it is, its leading colon included. See ``Scope``.
     public let scope: Scope
     /// The directive's name, without its colons.
@@ -22,8 +25,10 @@ public struct Directive: Markup {
 
 extension Directive {
     init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         let values = DirectiveValues(from: node)
         self.init(
+            id: id,
             scope: Self.scope(from: node),
             name: values.name,
             attributes: values.attributes,

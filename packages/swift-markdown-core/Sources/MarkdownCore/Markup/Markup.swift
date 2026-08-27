@@ -41,6 +41,36 @@ public struct Scope: Sendable, Hashable {
     }
 }
 
+/// A node's identity: the name a consumer tracks an element by across a
+/// stream's feeds — the render key (docs/STREAMING.md §4 D4).
+///
+/// ``block`` is the owning block's document-unique mint — the block is the
+/// minimal update unit, so it alone names the region an incremental consumer
+/// re-renders — and ``ordinal`` is the node's pre-order ordinal among that
+/// block's inline descendants, 0 for the block itself. The pair is unique
+/// within one document and never reused within a parse; it is not stable
+/// across documents. The halves are opaque values: compare them, key
+/// dictionaries by them, and derive nothing else from them.
+public struct Identity: Sendable, Hashable {
+    /// The owning block's document-unique mint; a block's own.
+    public let block: UInt32
+    /// The pre-order ordinal within the owning block; 0 for the block itself.
+    public let ordinal: UInt32
+
+    /// Creates an identity from its two halves. Neither is validated; the
+    /// parser is what produces meaningful pairs.
+    public init(block: UInt32, ordinal: UInt32) {
+        self.block = block
+        self.ordinal = ordinal
+    }
+}
+
+extension Identity {
+    init(from value: markdown_core_identity) {
+        self.init(block: value.block, ordinal: value.ordinal)
+    }
+}
+
 /// One node of the parsed document.
 ///
 /// Every kind is a value type and every kind is `Sendable`: the native parse
@@ -50,6 +80,9 @@ public struct Scope: Sendable, Hashable {
 /// The set of conforming kinds is closed. ``Visitor`` names all of them,
 /// which is what makes a visitor exhaustive at compile time.
 public protocol Markup: Sendable {
+    /// The node's identity: the name a consumer tracks this element by across
+    /// a stream's feeds — the render key. See ``Identity``.
+    var id: Identity { get }
     /// Where this element is, as a pair of boundaries. See ``Scope`` for what
     /// those boundaries are and are not.
     var scope: Scope { get }
@@ -81,6 +114,13 @@ extension Markup {
         Scope(from: markdown_core_node_scope(node))
     }
 
+    /// The node's whole identity, answered by the C side from the node alone
+    /// — the engine stamps an inline's owner in the same pass that assigns
+    /// its ordinal, so no walk here composes anything.
+    static func identity(from node: OpaquePointer) -> Identity {
+        Identity(from: markdown_core_node_identifier(node))
+    }
+
     /// Every child, in source order, as the C tree holds them.
     static func children(from node: OpaquePointer) -> [any Markup] {
         var result: [any Markup] = []
@@ -92,6 +132,15 @@ extension Markup {
         }
         return result
     }
+}
+
+/// The definition edge a reference carries: the identity of the definition it
+/// resolved to — the first definition of its label in document order. The
+/// target is a block, so its ordinal is 0 by construction.
+func referenceDefinition(from node: OpaquePointer) -> Identity {
+    var definition = markdown_core_identity()
+    markdown_core_node_reference_definition(node, &definition)
+    return Identity(from: definition)
 }
 
 extension Markup {

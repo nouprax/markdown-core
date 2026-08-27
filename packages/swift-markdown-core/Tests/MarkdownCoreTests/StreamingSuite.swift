@@ -41,6 +41,40 @@ import Testing
         #expect(held.concrete.source == Array("# Heading\n\n".utf8))
     }
 
+    @Test("a block keeps its identity across feeds and a reference names the first definition")
+    func identityAcrossFeedsAndTheDefinitionEdge() throws {
+        let document = try Document()
+        // The heading is the element a consumer renders; later feeds and the
+        // seal must keep calling it by the same name (D4) -- the render key.
+        let first = try document.feed(chunk: "# Title\n\nsee [a] and [^n].\n\n")
+        let heading = try #require(first.semantic.content.first as? Heading)
+        let second = try document.feed(chunk: "[a]: /first\n\n[a]: /second\n\n[^n]: note\n")
+        #expect(second.semantic.content.first?.id == heading.id)
+        let sealed = try document.seal()
+        #expect(sealed.semantic.content.first?.id == heading.id)
+
+        // Duplicate definitions: both stay in the tree, and the reference
+        // names the FIRST by identity -- its own match key is the winning
+        // definition's norm.
+        let definitions = sealed.semantic.content.compactMap { $0 as? ReferenceDefinition }
+        #expect(definitions.count == 2)
+        let paragraph = try #require(sealed.semantic.content[1] as? Paragraph)
+        let reference = try #require(paragraph.content.compactMap { $0 as? LinkReference }.first)
+        #expect(reference.definition == definitions.first?.id)
+        #expect(definitions.first?.norm == "a")
+        let footnote = try #require(sealed.semantic.content.compactMap { $0 as? FootnoteDefinition }.first)
+        let call = try #require(paragraph.content.compactMap { $0 as? FootnoteReference }.first)
+        #expect(call.definition == footnote.id)
+        #expect(footnote.norm == "^n")
+
+        // An inline's identity is (owning block, ordinal): unique within its
+        // paragraph, owned by it.
+        for node in paragraph.content {
+            #expect(node.id.block == paragraph.id.block)
+        }
+        #expect(Set(paragraph.content.map { $0.id }).count == paragraph.content.count)
+    }
+
     @Test("sealing releases the shell and a sealed document refuses every call")
     func sealedDocumentRefuses() throws {
         let document = try Document(markdown: "done\n")

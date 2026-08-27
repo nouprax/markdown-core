@@ -45,7 +45,7 @@ public class Document(
      * parse is `Document(markdown).seal()`.
      */
     public constructor(markdown: String, options: ParseOptions = ParseOptions()) : this(options) {
-        WireDecoder.decodeDiscarded(nativeSessionFeed(live(), markdown.encodeToByteArray()))
+        WireDecoder.decodeDiscarded(nativeSessionAdvance(live(), markdown.encodeToByteArray()))
     }
 
     /**

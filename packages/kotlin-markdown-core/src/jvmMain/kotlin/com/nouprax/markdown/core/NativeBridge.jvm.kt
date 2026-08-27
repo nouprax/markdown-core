@@ -15,6 +15,11 @@ internal actual fun nativeSessionFeed(
     chunk: ByteArray,
 ): ByteArray = JvmNative.sessionFeed(session, chunk)
 
+internal actual fun nativeSessionAdvance(
+    session: Long,
+    chunk: ByteArray,
+): ByteArray = JvmNative.sessionAdvance(session, chunk)
+
 internal actual fun nativeSessionFinish(session: Long): ByteArray = JvmNative.sessionFinish(session)
 
 internal actual fun nativeSessionFree(session: Long) = JvmNative.sessionFree(session)
@@ -34,6 +39,12 @@ internal object JvmNative {
 
     @JvmSynthetic
     external fun sessionFeed(
+        session: Long,
+        chunk: ByteArray,
+    ): ByteArray
+
+    @JvmSynthetic
+    external fun sessionAdvance(
         session: Long,
         chunk: ByteArray,
     ): ByteArray

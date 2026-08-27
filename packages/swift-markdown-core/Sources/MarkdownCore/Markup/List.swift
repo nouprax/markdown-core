@@ -13,6 +13,9 @@ public enum ListFlavor: String, Sendable {
 
 /// A bulleted or numbered list.
 public struct List: Markup {
+    /// The node's identity: the name a consumer tracks this element by across
+    /// a stream's feeds — the render key. See ``Identity``.
+    public let id: Identity
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
     /// A list owns `ListItem`s and nothing else. The contract has said so since
@@ -35,11 +38,13 @@ public struct List: Markup {
 
 extension List {
     init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET
         var start = markdown_core_optional_i64()
         var tight = false
         markdown_core_node_list_properties(node, &flavor, &start, &tight)
         self.init(
+            id: id,
             scope: Self.scope(from: node),
             items: Self.typedChildren(from: node),
             flavor: flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? .ordered : .bullet,
@@ -51,6 +56,9 @@ extension List {
 
 /// One item of a ``List``.
 public struct ListItem: Markup {
+    /// The node's identity: the name a consumer tracks this element by across
+    /// a stream's feeds — the render key. See ``Identity``.
+    public let id: Identity
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
     /// The item's blocks. Block content, not inline.
@@ -66,9 +74,11 @@ public struct ListItem: Markup {
 
 extension ListItem {
     init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var checked = markdown_core_optional_bool()
         markdown_core_node_list_item_checked(node, &checked)
         self.init(
+            id: id,
             scope: Self.scope(from: node),
             content: Self.children(from: node),
             checked: checked.has_value ? checked.value : nil

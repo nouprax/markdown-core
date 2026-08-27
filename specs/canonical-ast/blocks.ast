@@ -1,33 +1,33 @@
-Document scope=1:1..21:38 children=10
-├── Heading scope=1:1..1:9 level=1 children=1
-│   └── Text scope=1:3..1:9 literal="Heading" children=0
-├── BlockQuote scope=3:1..3:7 children=1
-│   └── Paragraph scope=3:3..3:7 children=1
-│       └── Text scope=3:3..3:7 literal="Quote" children=0
-├── ThematicBreak scope=5:1..6:0 children=0
-├── List scope=7:1..8:0 flavor=ordered start=3 tight=true children=1
-│   └── ListItem scope=7:1..8:0 checked=null children=1
-│       └── Paragraph scope=7:4..7:10 children=1
-│           └── Text scope=7:4..7:10 literal="ordered" children=0
-├── List scope=9:1..10:0 flavor=bullet start=null tight=true children=1
-│   └── ListItem scope=9:1..10:0 checked=true children=1
-│       └── Paragraph scope=9:7..9:10 children=1
-│           └── Text scope=9:7..9:10 literal="task" children=0
-├── CodeBlock scope=11:1..13:3 info="swift title=\"demo\"" language="swift" literal="let x = 1\n" fenced=true closed=true children=0
-├── HTMLBlock scope=15:1..15:22 literal="<section>raw</section>\n" children=0
-├── ReferenceDefinition scope=17:1..17:32 label="note" identifier="note" destination="/destination" title="The title" children=0
-├── FootnoteDefinition scope=19:1..20:0 label="note" identifier="^note" children=1
-│   └── Paragraph scope=19:10..19:17 children=1
-│       └── Text scope=19:10..19:17 literal="Footnote" children=0
-└── Paragraph scope=21:1..21:38 children=7
-    ├── LinkReference scope=21:1..21:9 label="note" identifier="note" form=full children=1
-    │   └── Text scope=21:2..21:2 literal="a" children=0
-    ├── Text scope=21:10..21:10 literal=" " children=0
-    ├── LinkReference scope=21:11..21:18 label="note" identifier="note" form=collapsed children=1
-    │   └── Text scope=21:12..21:15 literal="note" children=0
-    ├── Text scope=21:19..21:19 literal=" " children=0
-    ├── LinkReference scope=21:20..21:25 label="note" identifier="note" form=shortcut children=1
-    │   └── Text scope=21:21..21:24 literal="note" children=0
-    ├── Text scope=21:26..21:26 literal=" " children=0
-    └── ImageReference scope=21:27..21:38 label="note" identifier="note" form=full children=1
-        └── Text scope=21:29..21:31 literal="alt" children=0
+Document id=1:0 scope=1:1..21:38 children=10
+├── Heading id=2:0 scope=1:1..1:9 level=1 children=1
+│   └── Text id=2:1 scope=1:3..1:9 literal="Heading" children=0
+├── BlockQuote id=3:0 scope=3:1..3:7 children=1
+│   └── Paragraph id=4:0 scope=3:3..3:7 children=1
+│       └── Text id=4:1 scope=3:3..3:7 literal="Quote" children=0
+├── ThematicBreak id=5:0 scope=5:1..6:0 children=0
+├── List id=6:0 scope=7:1..8:0 flavor=ordered start=3 tight=true children=1
+│   └── ListItem id=7:0 scope=7:1..8:0 checked=null children=1
+│       └── Paragraph id=8:0 scope=7:4..7:10 children=1
+│           └── Text id=8:1 scope=7:4..7:10 literal="ordered" children=0
+├── List id=9:0 scope=9:1..10:0 flavor=bullet start=null tight=true children=1
+│   └── ListItem id=10:0 scope=9:1..10:0 checked=true children=1
+│       └── Paragraph id=11:0 scope=9:7..9:10 children=1
+│           └── Text id=11:1 scope=9:7..9:10 literal="task" children=0
+├── CodeBlock id=12:0 scope=11:1..13:3 info="swift title=\"demo\"" language="swift" literal="let x = 1\n" fenced=true closed=true children=0
+├── HTMLBlock id=13:0 scope=15:1..15:22 literal="<section>raw</section>\n" children=0
+├── ReferenceDefinition id=14:0 scope=17:1..17:32 label="note" norm="note" destination="/destination" title="The title" children=0
+├── FootnoteDefinition id=16:0 scope=19:1..20:0 label="note" norm="^note" children=1
+│   └── Paragraph id=17:0 scope=19:10..19:17 children=1
+│       └── Text id=17:1 scope=19:10..19:17 literal="Footnote" children=0
+└── Paragraph id=18:0 scope=21:1..21:38 children=7
+    ├── LinkReference id=18:1 scope=21:1..21:9 label="note" form=full definition=14:0 children=1
+    │   └── Text id=18:2 scope=21:2..21:2 literal="a" children=0
+    ├── Text id=18:3 scope=21:10..21:10 literal=" " children=0
+    ├── LinkReference id=18:4 scope=21:11..21:18 label="note" form=collapsed definition=14:0 children=1
+    │   └── Text id=18:5 scope=21:12..21:15 literal="note" children=0
+    ├── Text id=18:6 scope=21:19..21:19 literal=" " children=0
+    ├── LinkReference id=18:7 scope=21:20..21:25 label="note" form=shortcut definition=14:0 children=1
+    │   └── Text id=18:8 scope=21:21..21:24 literal="note" children=0
+    ├── Text id=18:9 scope=21:26..21:26 literal=" " children=0
+    └── ImageReference id=18:10 scope=21:27..21:38 label="note" form=full definition=14:0 children=1
+        └── Text id=18:11 scope=21:29..21:31 literal="alt" children=0

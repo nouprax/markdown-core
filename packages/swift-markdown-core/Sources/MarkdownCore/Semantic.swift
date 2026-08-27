@@ -8,6 +8,8 @@ import MarkdownCoreC
 /// ``Concrete`` is not self-interpreting, which is why the two travel together
 /// as a ``Read`` and never alone.
 public struct Semantic: Markup {
+    /// The root's identity: its own mint with ordinal 0, like every block's.
+    public let id: Identity
     /// The whole tree's boundaries. See ``Scope``.
     public let scope: Scope
     /// The tree's blocks. Block content, not inline.
@@ -19,7 +21,7 @@ public struct Semantic: Markup {
 
 extension Semantic {
     init(from node: OpaquePointer) {
-        self.init(scope: Self.scope(from: node), content: Self.children(from: node))
+        self.init(id: Self.identity(from: node), scope: Self.scope(from: node), content: Self.children(from: node))
     }
 }
 

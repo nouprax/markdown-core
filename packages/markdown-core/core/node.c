@@ -147,9 +147,11 @@ static void free_node_as(markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
         markdown_core_chunk_free(NODE_MEM(node), &node->as.literal);
         break;
-    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
     case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
         markdown_core_association_free(NODE_MEM(node), &node->as.association);
+        break;
+    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
+        markdown_core_association_free(NODE_MEM(node), &node->as.footnote_reference.association);
         break;
     case MARKDOWN_CORE_NODE_LINK_REFERENCE:
     case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:

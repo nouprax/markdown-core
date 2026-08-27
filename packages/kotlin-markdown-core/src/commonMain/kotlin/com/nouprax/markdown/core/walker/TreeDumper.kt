@@ -132,7 +132,7 @@ private class DumpVisitor : Visitor<DumpRecord> {
         record(
             "FootnoteDefinition",
             node,
-            fields = association(node.label, node.identifier),
+            fields = definitionAssociation(node.label, node.norm),
             children = node.content.size,
         )
 
@@ -141,7 +141,7 @@ private class DumpVisitor : Visitor<DumpRecord> {
             "ReferenceDefinition",
             node,
             fields =
-                association(node.label, node.identifier) +
+                definitionAssociation(node.label, node.norm) +
                     listOf(
                         "destination=${jsonString(node.destination)}",
                         "title=${optionalString(node.title)}",
@@ -152,7 +152,12 @@ private class DumpVisitor : Visitor<DumpRecord> {
         record(
             "LinkReference",
             node,
-            fields = association(node.label, node.identifier) + listOf("form=${formName(node.form)}"),
+            fields =
+                listOf(
+                    "label=${jsonString(node.label)}",
+                    "form=${formName(node.form)}",
+                    "definition=${identity(node.definition)}",
+                ),
             children = node.content.size,
         )
 
@@ -160,15 +165,22 @@ private class DumpVisitor : Visitor<DumpRecord> {
         record(
             "ImageReference",
             node,
-            fields = association(node.label, node.identifier) + listOf("form=${formName(node.form)}"),
+            fields =
+                listOf(
+                    "label=${jsonString(node.label)}",
+                    "form=${formName(node.form)}",
+                    "definition=${identity(node.definition)}",
+                ),
             children = node.content.size,
         )
 
-    /** The two fields five kinds carry identically, in contract order. */
-    private fun association(
+    /** A definition's two halves, in contract order: the label as written and
+     * the match key it folds to. A REFERENCE does not print its key -- it
+     * prints `definition=`, and the key is the winning definition's `norm`. */
+    private fun definitionAssociation(
         label: String,
-        identifier: String,
-    ): kotlin.collections.List<String> = listOf("label=${jsonString(label)}", "identifier=${jsonString(identifier)}")
+        norm: String,
+    ): kotlin.collections.List<String> = listOf("label=${jsonString(label)}", "norm=${jsonString(norm)}")
 
     private fun formName(form: ReferenceForm): String =
         when (form) {
@@ -241,7 +253,15 @@ private class DumpVisitor : Visitor<DumpRecord> {
         )
 
     override fun visitFootnoteReference(node: FootnoteReference): DumpRecord =
-        record("FootnoteReference", node, fields = association(node.label, node.identifier))
+        record(
+            "FootnoteReference",
+            node,
+            fields =
+                listOf(
+                    "label=${jsonString(node.label)}",
+                    "definition=${identity(node.definition)}",
+                ),
+        )
 }
 
 private fun record(
@@ -252,7 +272,7 @@ private fun record(
 ): DumpRecord {
     val fieldText = if (fields.isEmpty()) "" else " ${fields.joinToString(" ")}"
     return DumpRecord(
-        line = "$kind ${scope(node.scope)}$fieldText children=$children",
+        line = "$kind id=${identity(node.id)} ${scope(node.scope)}$fieldText children=$children",
         children = children,
     )
 }
@@ -269,6 +289,8 @@ private fun directiveFields(
                     ?: "null"
             ),
     )
+
+private fun identity(value: Identity): String = "${value.block}:${value.ordinal}"
 
 private fun scope(value: Scope): String =
     "scope=${value.start.line}:${value.start.column}..${value.end.line}:${value.end.column}"

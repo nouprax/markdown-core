@@ -37,27 +37,36 @@ int markdown_core_association_init(
 );
 void markdown_core_association_free(markdown_core_mem *mem, markdown_core_association *association);
 
-/* THE DEFINITION SETS. Both maps hold normalized labels and NOTHING ELSE.
+/* THE DEFINITION SETS. Both maps hold normalized labels and, beside each, the
+ * registering definition's block identity (docs/STREAMING.md D4).
  *
- * A map answers ONE question -- is this label defined -- and it is the only
- * thing that can answer it while the inline phase is running. It holds no
- * resource, which is what deletes D9: resolving a reference used to COPY the
- * definition's destination and title into the node, so one definition with a
- * long destination referenced many times turned a small document into a large
- * tree, and the running expansion budget that bounded it made WHETHER A
- * REFERENCE RESOLVES depend on how many resolved before it. A reference that
- * NAMES its definition costs nothing to resolve, so there is nothing to charge
- * and no budget to break resolution.
+ * A map answers TWO questions -- is this label defined, and WHICH definition
+ * wins it -- and it is the only thing that can answer them while the inline
+ * phase is running. It holds no resource, which is what deletes D9: resolving
+ * a reference used to COPY the definition's destination and title into the
+ * node, so one definition with a long destination referenced many times turned
+ * a small document into a large tree, and the running expansion budget that
+ * bounded it made WHETHER A REFERENCE RESOLVES depend on how many resolved
+ * before it. A reference that NAMES its definition costs nothing to resolve,
+ * so there is nothing to charge and no budget to break resolution.
  *
  * It holds no NODE either: a map that owns a node is how a definition nested
  * inside another came to be freed while the tree still pointed at it (D11).
- * Because it holds no node and picks no winner between two definitions of one
- * label, registration ORDER decides nothing -- which is measured, not assumed,
- * and is why D11's ENTER-versus-EXIT question does not arise in this shape. */
+ * The identity is a VALUE, so D11's shape cannot return through it. The winner
+ * between two definitions of one label is first-in-document-order, and
+ * DOCUMENT ORDER IS ON THE VALUE ITSELF: block mints are monotone in parse
+ * order (D4), so the preparation folds duplicates to the smallest identity and
+ * registration timing decides nothing at all -- ENTER versus EXIT included
+ * (§12.4).
+ *
+ * `definition` on both `_create` calls is the registering definition block's
+ * identity; the caller reads it AFTER any identity handoff the harvest
+ * performs (§4 D4 fork 3), so the map carries the id the tree keeps -- and the
+ * handoff hands the firstborn an EARLIER mint, so monotonicity survives it. */
 markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem);
-void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label);
+void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label, uint32_t definition);
 markdown_core_map *markdown_core_footnote_definition_map_new(markdown_core_mem *mem);
-void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label);
+void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label, uint32_t definition);
 
 #ifdef __cplusplus
 }

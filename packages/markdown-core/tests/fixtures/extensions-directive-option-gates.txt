@@ -21,15 +21,15 @@ in for eleven releases.
 ```````````````````````````````` example
 Use :cite[smith04] here.
 .
-Document scope=1:1..1:24 children=1
-└── Paragraph scope=1:1..1:24 children=1
-    └── Text scope=1:1..1:24 literal="Use :cite[smith04] here." children=0
+Document id=1:0 scope=1:1..1:24 children=1
+└── Paragraph id=2:0 scope=1:1..1:24 children=1
+    └── Text id=2:1 scope=1:1..1:24 literal="Use :cite[smith04] here." children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 ::youtube[Video]{vid=01ab2cd3efg}
 .
-Document scope=1:1..1:33 children=1
-└── Paragraph scope=1:1..1:33 children=1
-    └── Text scope=1:1..1:33 literal="::youtube[Video]{vid=01ab2cd3efg}" children=0
+Document id=1:0 scope=1:1..1:33 children=1
+└── Paragraph id=2:0 scope=1:1..1:33 children=1
+    └── Text id=2:1 scope=1:1..1:33 literal="::youtube[Video]{vid=01ab2cd3efg}" children=0
 ````````````````````````````````

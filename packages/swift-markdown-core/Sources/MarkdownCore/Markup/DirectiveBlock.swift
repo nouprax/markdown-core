@@ -6,6 +6,9 @@ import MarkdownCoreC
 /// leaves the directive standing and the punctuation as prose rather than
 /// failing the parse; a diagnostic says so.
 public struct DirectiveBlock: Markup {
+    /// The node's identity: the name a consumer tracks this element by across
+    /// a stream's feeds — the render key. See ``Identity``.
+    public let id: Identity
     /// Where it is, opening fence through closing fence. See ``Scope``.
     public let scope: Scope
     /// The directive's name, without its colons.
@@ -24,7 +27,9 @@ public struct DirectiveBlock: Markup {
 
 extension DirectiveBlock {
     init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         self.init(
+            id: id,
             scope: Self.scope(from: node),
             name: DirectiveValues(from: node).name,
             attributes: DirectiveValues(from: node).attributes,

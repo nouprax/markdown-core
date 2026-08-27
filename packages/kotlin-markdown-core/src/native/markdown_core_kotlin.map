@@ -1,8 +1,8 @@
 {
     global:
-        Java_com_nouprax_markdown_core_JvmNative_parse;
         Java_com_nouprax_markdown_core_JvmNative_sessionNew;
         Java_com_nouprax_markdown_core_JvmNative_sessionFeed;
+        Java_com_nouprax_markdown_core_JvmNative_sessionAdvance;
         Java_com_nouprax_markdown_core_JvmNative_sessionFinish;
         Java_com_nouprax_markdown_core_JvmNative_sessionFree;
     local:

@@ -14,6 +14,9 @@ public enum TableAlignment: String, Sendable {
 
 /// A GFM table. Requires the `tables` extension.
 public struct Table: Markup {
+    /// The node's identity: the name a consumer tracks this element by across
+    /// a stream's feeds — the render key. See ``Identity``.
+    public let id: Identity
     /// One entry per column, from the delimiter row. A row may hold fewer
     /// cells than this; the trailing columns are simply absent from it.
     public let alignments: [TableAlignment]
@@ -31,6 +34,7 @@ public struct Table: Markup {
 
 extension Table {
     init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var count = 0
         markdown_core_node_table_column_count(node, &count)
         let alignments = (0..<count).map { index in
@@ -42,6 +46,7 @@ extension Table {
         let headers = rows.filter(\.isHeader)
         precondition(headers.count == 1, "table must contain exactly one header row")
         self.init(
+            id: id,
             alignments: alignments,
             header: headers[0],
             rows: rows.filter { !$0.isHeader },
@@ -52,6 +57,9 @@ extension Table {
 
 /// One row of a ``Table``.
 public struct TableRow: Markup {
+    /// The node's identity: the name a consumer tracks this element by across
+    /// a stream's feeds — the render key. See ``Identity``.
+    public let id: Identity
     /// True only for the row reached through ``Table/header``, and false for
     /// every entry in ``Table/rows``.
     public let isHeader: Bool
@@ -66,10 +74,12 @@ public struct TableRow: Markup {
 
 extension TableRow {
     init(from node: OpaquePointer) {
+        let id = Self.identity(from: node)
         var header = false
         markdown_core_node_table_row_is_header(node, &header)
         let cells: [TableCell] = Self.typedChildren(from: node)
         self.init(
+            id: id,
             isHeader: header,
             cells: cells,
             scope: Self.scope(from: node)
@@ -79,6 +89,9 @@ extension TableRow {
 
 /// One cell of a ``TableRow``.
 public struct TableCell: Markup {
+    /// The node's identity: the name a consumer tracks this element by across
+    /// a stream's feeds — the render key. See ``Identity``.
+    public let id: Identity
     /// The cell's inline content.
     public let content: [any Markup]
     /// Where it is. A cell the parser completed to fill a short row has a
@@ -91,6 +104,7 @@ public struct TableCell: Markup {
 
 extension TableCell {
     init(from node: OpaquePointer) {
-        self.init(content: Self.children(from: node), scope: Self.scope(from: node))
+        let id = Self.identity(from: node)
+        self.init(id: id, content: Self.children(from: node), scope: Self.scope(from: node))
     }
 }

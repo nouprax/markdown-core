@@ -51,12 +51,14 @@ const verbose = process.argv.includes("--verbose");
 
 const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdown-core", "pnpm build:c");
 const parse = (input) => parseCanonicalDump(runBinary(ours, ["--profile", ledger.profile], input));
-// A reference RESOLVED is a `LinkReference` naming that identifier; a reference
-// that did not is prose, brackets intact. Neither is stated by a destination
-// any more: the node carries none.
-const resolved = (tree, identifier) =>
-    [...walkWithPath(tree)].filter(({ node }) => node.kind === "LinkReference" && node.fields.identifier === identifier)
-        .length;
+// A reference RESOLVED is a `LinkReference` carrying that label; a reference
+// that did not is prose, brackets intact -- a reference node exists only
+// because resolution succeeded, so the KIND is the fact and the label names
+// which reference it was. Neither is stated by a destination (the node
+// carries none) nor by a match key (the reference stopped repeating the
+// winning definition's `norm` and names the definition's identity instead).
+const resolved = (tree, label) =>
+    [...walkWithPath(tree)].filter(({ node }) => node.kind === "LinkReference" && node.fields.label === label).length;
 const unresolved = (tree, label) =>
     [...walkWithPath(tree)].filter(({ node }) => node.kind === "Text" && node.fields.literal === label).length;
 

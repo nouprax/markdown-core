@@ -2,45 +2,29 @@ export interface NativeExports extends WebAssembly.Exports {
     readonly memory: WebAssembly.Memory;
     malloc(size: number): number;
     free(pointer: number): void;
-    es_document_free(document: number): void;
-    es_document_root(document: number): number;
-    es_document_source(document: number, dataOutput: number, lengthOutput: number): void;
-    es_document_line_count(document: number): number;
-    es_document_line_starts(document: number, output: number): void;
     /** Returns the session, or 0 for an allocation failure -- the one failure
      * opening a session can report, so 0 is the whole answer and no error
      * crosses the wire. */
     es_session_new(flags: number): number;
-    /** Returns the document after those bytes: a document pointer, or 0
-     * with the error behind `errorOutput` -- the one wire every read
-     * crosses on. */
-    es_session_feed(session: number, chunk: number, length: number, errorOutput: number): number;
-    es_session_finish(session: number, errorOutput: number): number;
+    /** Writes the MKC6 payload after those bytes -- the envelope around the
+     * facade's own wire, carrying the document or the error -- behind the two
+     * output slots, and returns nonzero. Zero means the payload buffer itself
+     * could not be built, which is the one failure with nothing to decode.
+     * The buffer is the caller's to release with `es_wire_free`. */
+    es_session_feed(session: number, chunk: number, length: number, dataOutput: number, lengthOutput: number): number;
+    es_session_finish(session: number, dataOutput: number, lengthOutput: number): number;
+    /** Feed whose read is DISCARDED BY CONTRACT (the constructor's initial
+     * feed): no projection, no serialization -- the answer is the bare MKC6
+     * envelope, or the error behind it. */
+    es_session_advance(
+        session: number,
+        chunk: number,
+        length: number,
+        dataOutput: number,
+        lengthOutput: number
+    ): number;
     es_session_free(session: number): void;
-    es_error_code(error: number): number;
-    es_error_free(error: number): void;
-    es_node_kind(node: number): number;
-    es_node_first_child(node: number): number;
-    es_node_next_sibling(node: number): number;
-    es_scope_coordinate(node: number, field: number): number;
-    es_node_heading_level(node: number): number;
-    es_node_list_flavor(node: number): number;
-    es_node_list_tight(node: number): number;
-    es_node_list_start_state(node: number, output: number): number;
-    es_node_checked(node: number): number;
-    es_node_code_flag(node: number, field: number): number;
-    es_node_formula_mode(node: number): number;
-    es_node_reference_form(node: number): number;
-    es_node_table_column_count(node: number): number;
-    es_node_table_alignment(node: number, index: number): number;
-    es_node_table_row_header(node: number): number;
-    es_node_directive_mode(node: number): number;
-    es_node_directive_attribute_count(node: number): number;
-    es_set_attribute_index(index: number): void;
-    /** Returns whether the field was PRESENT. A `false` answer means the source
-     * did not write it; a `true` answer with length 0 means it wrote it and it
-     * was empty, and the two are different facts (requirement 14). */
-    es_string(object: number, field: number, dataOutput: number, lengthOutput: number): number;
+    es_wire_free(pointer: number): void;
 }
 
 const wasmURL = new URL("../markdown-core.wasm", import.meta.url);

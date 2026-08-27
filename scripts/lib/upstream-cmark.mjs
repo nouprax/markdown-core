@@ -283,18 +283,16 @@ export function applyUpstreamReferenceModel(root, fired) {
     const survey = (node) => {
         if (node.kind === "ReferenceDefinition") {
             fired?.add("reference-definition-node");
-            // GROUPED BY `identifier`, WHICH THE ENGINE STATES. Folding the raw
-            // label here instead would need the full Unicode case fold: `[SS]`
-            // defines the label `[\u1e9e]` refers to, and JavaScript has no
-            // full case fold — `toLowerCase()` maps \u1e9e to \u00df, not to
-            // `ss`, so the projection would resolve to the wrong definition on
-            // an input cmark gets right. The check is not weakened by trusting
-            // the key: a reference that resolved to the WRONG definition names
-            // that one here, and its destination is still compared; one that
-            // resolved to none stays `Text` where upstream has a `Link`.
-            const key = node.fields.identifier ?? "";
-            // The earliest definition of a label wins, in both models.
-            if (!definitions.has(key)) definitions.set(key, node.fields);
+            // KEYED BY THE DEFINITION'S OWN IDENTITY. A reference stopped
+            // carrying a match key and NAMES its definition instead
+            // (`definition=` is the winning definition's `id=`), so following
+            // the edge IS the projection — and the check got stronger for it:
+            // upstream resolves by its own label fold, this walk resolves by
+            // the engine's stated edge, and a reference whose edge names the
+            // wrong definition shows up as a destination difference on an
+            // input cmark gets right. One that resolved to none stays `Text`
+            // where upstream has a `Link`.
+            definitions.set(node.fields.id ?? "", node.fields);
         }
         for (const child of node.children) survey(child);
     };
@@ -306,7 +304,7 @@ export function applyUpstreamReferenceModel(root, fired) {
             .map((child) => {
                 if (child.kind === "LinkReference" || child.kind === "ImageReference") {
                     fired?.add("reference-definition-node");
-                    const found = definitions.get(child.fields.identifier ?? "");
+                    const found = definitions.get(child.fields.definition ?? "");
                     rewrite(child);
                     return {
                         kind: child.kind === "LinkReference" ? "Link" : "Image",

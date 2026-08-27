@@ -218,23 +218,32 @@ unsigned char *normalize_map_label(markdown_core_mem *mem, markdown_core_chunk *
 
 static int labelcmp(const unsigned char *a, const unsigned char *b) { return strcmp((const char *)a, (const char *)b); }
 
+/* Ties break on the definition identity: mints are monotone in document
+ * order (D4), so the smallest value IS the first definition in the source,
+ * and the dedup below keeps the first of each label's run. */
 static int refcmp(const void *p1, const void *p2) {
-    markdown_core_map_entry *r1 = *(markdown_core_map_entry **)p1;
-    markdown_core_map_entry *r2 = *(markdown_core_map_entry **)p2;
+    markdown_core_map_record *r1 = *(markdown_core_map_record **)p1;
+    markdown_core_map_record *r2 = *(markdown_core_map_record **)p2;
     int res = labelcmp(r1->label, r2->label);
-    return res ? res : ((int)r1->age - (int)r2->age);
+    if (res) {
+        return res;
+    }
+    if (r1->definition == r2->definition) {
+        return 0;
+    }
+    return r1->definition < r2->definition ? -1 : 1;
 }
 
 static int refsearch(const void *label, const void *p2) {
-    markdown_core_map_entry *ref = *(markdown_core_map_entry **)p2;
+    markdown_core_map_record *ref = *(markdown_core_map_record **)p2;
     return labelcmp((const unsigned char *)label, ref->label);
 }
 
 static int sort_map(markdown_core_map *map) {
     size_t i = 0, last = 0, size = map->size;
-    markdown_core_map_entry *r = map->refs, **sorted = NULL;
+    markdown_core_map_record *r = map->refs, **sorted = NULL;
 
-    sorted = (markdown_core_map_entry **)map->mem->calloc(size, sizeof(markdown_core_map_entry *));
+    sorted = (markdown_core_map_record **)map->mem->calloc(size, sizeof(markdown_core_map_record *));
     if (!sorted) {
         return 0;
     }
@@ -243,7 +252,7 @@ static int sort_map(markdown_core_map *map) {
         r = r->next;
     }
 
-    qsort(sorted, size, sizeof(markdown_core_map_entry *), refcmp);
+    qsort(sorted, size, sizeof(markdown_core_map_record *), refcmp);
 
     for (i = 1; i < size; i++) {
         if (labelcmp(sorted[i]->label, sorted[last]->label) != 0) {
@@ -267,13 +276,13 @@ static int sort_map(markdown_core_map *map) {
 }
 
 /* Duplicate-heavy definition lists should not pre-size the table by every
- * source occurrence. Sample up to 1024 entries; a unique-heavy sample keeps
+ * source occurrence. Sample up to 1024 records; a unique-heavy sample keeps
  * the flat total-count allocation, a duplicate-heavy one starts at the
  * sampled unique count and relies on amortized growth. */
 static size_t map_index_expected_size(markdown_core_map *map) {
     const size_t sample_limit = 1024;
     markdown_core_key_index sample;
-    markdown_core_map_entry *ref;
+    markdown_core_map_record *ref;
     size_t sampled = 0;
     size_t unique;
     if (map->size <= sample_limit) {
@@ -294,26 +303,42 @@ static size_t map_index_expected_size(markdown_core_map *map) {
 }
 
 static int index_map(markdown_core_map *map) {
-    markdown_core_map_entry *ref;
+    markdown_core_map_record *ref;
     /* A re-preparation drops the previous table first: `key_index_init`'s
      * memset would zero the handle over live slots and leak them. */
     markdown_core_key_index_free(&map->index);
     if (!markdown_core_key_index_init(&map->index, map->mem, map_index_expected_size(map))) {
         return 0;
     }
-    /* Entries are linked newest-first. Replacing while traversing therefore
-     * leaves the oldest (first source) definition in each slot. */
+    /* The smallest identity wins each slot -- first in document order, by
+     * D4's monotone mints -- stated as a comparison rather than left to
+     * traversal order, so both preparation paths answer identically whatever
+     * order the records arrived in. */
     for (ref = map->refs; ref; ref = ref->next) {
+        void *existing = NULL;
         if (!markdown_core_key_index_insert(
                 &map->index,
                 ref->label,
                 (bufsize_t)strlen((char *)ref->label),
                 ref,
-                1,
-                NULL
+                0,
+                &existing
             )) {
             markdown_core_key_index_free(&map->index);
             return 0;
+        }
+        if (existing != NULL && ((markdown_core_map_record *)existing)->definition > ref->definition) {
+            if (!markdown_core_key_index_insert(
+                    &map->index,
+                    ref->label,
+                    (bufsize_t)strlen((char *)ref->label),
+                    ref,
+                    1,
+                    NULL
+                )) {
+                markdown_core_key_index_free(&map->index);
+                return 0;
+            }
         }
     }
     map->prepared = 1;
@@ -321,9 +346,9 @@ static int index_map(markdown_core_map *map) {
     return 1;
 }
 
-markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label) {
-    markdown_core_map_entry **ref = NULL;
-    markdown_core_map_entry *r = NULL;
+markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label) {
+    markdown_core_map_record **ref = NULL;
+    markdown_core_map_record *r = NULL;
     unsigned char *norm;
 
     if (label->len < 1 || label->len > MAX_LINK_LABEL_LENGTH) {
@@ -354,11 +379,11 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
     }
 
     if (map->indexed) {
-        r = (markdown_core_map_entry *)
+        r = (markdown_core_map_record *)
             markdown_core_key_index_lookup(&map->index, norm, (bufsize_t)strlen((char *)norm));
     } else {
-        ref = (markdown_core_map_entry **)
-            bsearch(norm, map->sorted, map->sorted_size, sizeof(markdown_core_map_entry *), refsearch);
+        ref = (markdown_core_map_record **)
+            bsearch(norm, map->sorted, map->sorted_size, sizeof(markdown_core_map_record *), refsearch);
     }
     map->mem->free(norm);
 
@@ -370,7 +395,7 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
 }
 
 void markdown_core_map_free(markdown_core_map *map) {
-    markdown_core_map_entry *ref;
+    markdown_core_map_record *ref;
 
     if (map == NULL) {
         return;
@@ -378,7 +403,7 @@ void markdown_core_map_free(markdown_core_map *map) {
 
     ref = map->refs;
     while (ref) {
-        markdown_core_map_entry *next = ref->next;
+        markdown_core_map_record *next = ref->next;
         map->free(map, ref);
         ref = next;
     }

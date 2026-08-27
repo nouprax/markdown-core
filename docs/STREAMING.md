@@ -1588,6 +1588,29 @@ back in the vocabulary that produced them.
   `sizeof(markdown_core_node)` is 184 → 192 — T3's stamp had already taken
   the padding hole F11 measured, so the field still costs the 8 bytes F11
   priced. Nothing in D4 is open.
+
+  **Export addendum (owner ruling, 2026-08-27).** The identity leaves the
+  engine, and the C side answers it WHOLE: the same numbering pass that
+  assigns an inline's ordinal stamps the owning block's mint into a second
+  field (`owner`, meaningful only on inline-class nodes — a block is its own
+  owner — at a further 8 bytes on the node), so
+  `markdown_core_node_identifier` returns the pair from a lone node the way
+  `_scope` returns a scope, and no binding composes anything. Every binding
+  `Markup` carries it as **`id: Identity`** — `(block, ordinal)`, the render
+  key — and the dump leads every line with `id=block:ordinal`. The
+  references grew the edge D4 existed to serve: `LinkReference`,
+  `ImageReference` and `FootnoteReference` carry **`definition: Identity`**,
+  the identity of the first definition of their label in document order,
+  stamped at resolution from the reference map's entries — which now carry
+  the registering definition's identity INSTEAD of an age, because mints are
+  monotone in document order, so document order is on the value itself and
+  both preparation paths fold duplicates to the smallest. The definitions
+  rename their match key **`norm`** in the bindings (the reference kinds
+  stop carrying it at all: theirs equals the winning definition's by
+  construction), and the whole read crosses every boundary as one buffer:
+  `markdown_core_document_wire`, the canonical BYTES beside the canonical
+  TEXT, which the Kotlin and ECMAScript bridges wrap in a versioned MKC6
+  envelope and decode in one pass.
 - **D5 — the public surface · RULED: the shape above.** `Session`, `feed`
   returning the document, and the document's two total views `concrete` and
   `semantic` — which are the two the facade already publishes

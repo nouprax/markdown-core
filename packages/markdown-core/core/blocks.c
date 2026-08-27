@@ -1076,6 +1076,7 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
     markdown_core_reference_parts parts;
     markdown_core_node *first_definition = NULL;
+    markdown_core_node *registered;
     bufsize_t consumed = 0;
     while (chunk.len && chunk.data[0] == '[' &&
            (pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap, &parts))) {
@@ -1132,6 +1133,20 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
         uint32_t fresh = first_definition->identifier;
         first_definition->identifier = b->identifier;
         b->identifier = fresh;
+    }
+    /* THE MAP LEARNS THE LABELS LAST, after the identity handoff above, so the
+     * identity each entry carries is the one the tree keeps -- registering
+     * inside the scan would have stamped the firstborn's unobserved mint. The
+     * walk is exactly this call's harvest: `insert_before(b, ...)` placed its
+     * definitions in source order, ending at `b`, and an earlier arrival's
+     * definitions sit before this call's firstborn. Registration order still
+     * matches document order, which is what the entry's `age` tiebreak reads. */
+    for (registered = first_definition; registered && registered != b; registered = registered->next) {
+        markdown_core_reference_create(
+            parser->refmap,
+            &registered->as.definition->association.label,
+            registered->identifier
+        );
     }
     return has_content;
 }
@@ -1512,6 +1527,12 @@ static void S_number_inline_descendants(markdown_core_node *block) {
          * leaves in THIS block's namespace. */
         if (!MARKDOWN_CORE_NODE_BLOCK_P(cur)) {
             cur->identifier = ++ordinal;
+            /* The pair's other half, stamped here because this is the one
+             * moment anything stands inside the block and beside the inline
+             * at once: a shared child list carries no parent to climb (T19),
+             * so an inline that did not learn its owner here could never
+             * answer it. */
+            cur->owner = block->identifier;
             if (cur->first_child) {
                 cur = cur->first_child;
                 continue;
@@ -1967,8 +1988,11 @@ static markdown_core_node *S_clone_block_node(
     dst->content_mark_count = src->content_mark_count;
     /* THE CARRY (T2): the derived block IS the CST block to a consumer, and
      * this line is what makes two projections of one CST name every block
-     * identically (F11). A clone is calloc'd, so losing this fails closed. */
+     * identically (F11). A clone is calloc'd, so losing this fails closed.
+     * The owner rides along for the one inline-class subtree the skeleton
+     * carries -- a directive's CST-resident label. */
     dst->identifier = src->identifier;
+    dst->owner = src->owner;
     dst->type = src->type;
     dst->flags = src->flags & ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN);
     dst->extension = src->extension;
@@ -2885,10 +2909,19 @@ static void open_new_blocks(
              * this replaced held a NODE per entry and used registration order
              * as the tie-break for a repeated label, so on EXIT a definition
              * nested inside another closed first, won the label, and the outer
-             * one was freed with everything written in it (D11). A set of
-             * labels owns no node and picks no winner, so order decides
-             * nothing left to get wrong. */
-            markdown_core_footnote_definition_create(parser->footnote_defs, &(*container)->as.literal);
+             * one was freed with everything written in it (D11). An entry owns
+             * no node -- the identity beside the label is a value -- and the
+             * winner is decided by entry age at preparation, so registration
+             * order within a block still decides nothing.
+             *
+             * The identity registered is the mint `add_child` just made; a
+             * footnote definition is never retyped and never harvested, so
+             * this is the id the block keeps. */
+            markdown_core_footnote_definition_create(
+                parser->footnote_defs,
+                &(*container)->as.association.label,
+                (*container)->identifier
+            );
 
             (*container)->internal_offset = matched;
         } else if ((!indented || cont_type == MARKDOWN_CORE_NODE_LIST) && parser->indent < 4 &&

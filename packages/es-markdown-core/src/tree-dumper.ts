@@ -27,7 +27,7 @@ import type { Strong } from "./model/strong.js";
 import type { Table, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
 import type { ThematicBreak } from "./model/thematic-break.js";
-import type { Scope } from "./values.js";
+import type { Identity, Scope } from "./values.js";
 import { visit, type Visitor } from "./visitor.js";
 import { Walker, WalkEvent } from "./walker.js";
 
@@ -107,17 +107,27 @@ const dumpVisitor: Visitor<DumpRecord> = {
         ),
     visitDirectiveLabel: (node: DirectiveLabel) => record("DirectiveLabel", node, [], node.content.length),
     visitFootnoteDefinition: (node: FootnoteDefinition) =>
-        record("FootnoteDefinition", node, association(node), node.content.length),
+        record("FootnoteDefinition", node, definitionAssociation(node), node.content.length),
     visitReferenceDefinition: (node: ReferenceDefinition) =>
         record("ReferenceDefinition", node, [
-            ...association(node),
+            ...definitionAssociation(node),
             `destination=${jsonString(node.destination)}`,
             `title=${optionalString(node.title)}`
         ]),
     visitLinkReference: (node: LinkReference) =>
-        record("LinkReference", node, [...association(node), `form=${node.form}`], node.content.length),
+        record(
+            "LinkReference",
+            node,
+            [`label=${jsonString(node.label)}`, `form=${node.form}`, `definition=${identity(node.definition)}`],
+            node.content.length
+        ),
     visitImageReference: (node: ImageReference) =>
-        record("ImageReference", node, [...association(node), `form=${node.form}`], node.content.length),
+        record(
+            "ImageReference",
+            node,
+            [`label=${jsonString(node.label)}`, `form=${node.form}`, `definition=${identity(node.definition)}`],
+            node.content.length
+        ),
     visitText: (node: Text) => record("Text", node, [`literal=${jsonString(node.literal)}`]),
     visitSoftBreak: (node: SoftBreak) => record("SoftBreak", node),
     visitLineBreak: (node: LineBreak) => record("LineBreak", node),
@@ -144,17 +154,28 @@ const dumpVisitor: Visitor<DumpRecord> = {
         ),
     visitDirective: (node: Directive) =>
         record("Directive", node, directiveFields(node.name, node.attributes), node.label === null ? 0 : 1),
-    visitFootnoteReference: (node: FootnoteReference) => record("FootnoteReference", node, association(node))
+    visitFootnoteReference: (node: FootnoteReference) =>
+        record("FootnoteReference", node, [
+            `label=${jsonString(node.label)}`,
+            `definition=${identity(node.definition)}`
+        ])
 };
 
 /** The two fields five kinds carry identically, in contract order. */
-function association(node: { readonly label: string; readonly identifier: string }): readonly string[] {
-    return [`label=${jsonString(node.label)}`, `identifier=${jsonString(node.identifier)}`];
+/** A definition's two halves, in contract order: the label as written and the
+ * match key it folds to. A REFERENCE does not print its key -- it prints
+ * `definition=`, and the key is the winning definition's `norm`. */
+function definitionAssociation(node: { readonly label: string; readonly norm: string }): readonly string[] {
+    return [`label=${jsonString(node.label)}`, `norm=${jsonString(node.norm)}`];
 }
 
 function record(kind: string, node: Markup, fields: readonly string[] = [], children = 0): DumpRecord {
     const fieldText = fields.length === 0 ? "" : ` ${fields.join(" ")}`;
-    return { line: `${kind} ${scope(node.scope)}${fieldText} children=${children}`, children };
+    return { line: `${kind} id=${identity(node.id)} ${scope(node.scope)}${fieldText} children=${children}`, children };
+}
+
+function identity(value: Identity): string {
+    return `${value.block}:${value.ordinal}`;
 }
 
 function directiveFields(name: string, attributes: readonly DirectiveAttribute[] | null): readonly string[] {

@@ -1814,40 +1814,40 @@ static void source_pos(test_batch_runner *runner) {
         runner,
         markdown,
         0,
-        "Document scope=1:1..10:20 children=3\n"
-        "├── Heading scope=1:1..1:13 level=1 children=3\n"
-        "│   ├── Text scope=1:3..1:5 literal=\"Hi \" children=0\n"
-        "│   ├── Emphasis scope=1:6..1:12 children=1\n"
-        "│   │   └── Text scope=1:7..1:11 literal=\"there\" children=0\n"
-        "│   └── Text scope=1:13..1:13 literal=\".\" children=0\n"
-        "├── Paragraph scope=3:1..4:42 children=8\n"
-        "│   ├── Text scope=3:1..3:14 literal=\"Hello “ \" children=0\n"
-        "│   ├── Link scope=3:15..3:37 destination=\"http://www.google.com\" "
+        "Document id=1:0 scope=1:1..10:20 children=3\n"
+        "├── Heading id=2:0 scope=1:1..1:13 level=1 children=3\n"
+        "│   ├── Text id=2:1 scope=1:3..1:5 literal=\"Hi \" children=0\n"
+        "│   ├── Emphasis id=2:2 scope=1:6..1:12 children=1\n"
+        "│   │   └── Text id=2:3 scope=1:7..1:11 literal=\"there\" children=0\n"
+        "│   └── Text id=2:4 scope=1:13..1:13 literal=\".\" children=0\n"
+        "├── Paragraph id=3:0 scope=3:1..4:42 children=8\n"
+        "│   ├── Text id=3:1 scope=3:1..3:14 literal=\"Hello “ \" children=0\n"
+        "│   ├── Link id=3:2 scope=3:15..3:37 destination=\"http://www.google.com\" "
         "title=null children=1\n"
-        "│   │   └── Text scope=3:16..3:36 literal=\"http://www.google.com\" "
+        "│   │   └── Text id=3:3 scope=3:16..3:36 literal=\"http://www.google.com\" "
         "children=0\n"
-        "│   ├── SoftBreak scope=3:38..3:38 children=0\n"
-        "│   ├── Text scope=4:1..4:6 literal=\"there \" children=0\n"
-        "│   ├── Code scope=4:7..4:10 literal=\"hi\" children=0\n"
-        "│   ├── Text scope=4:11..4:14 literal=\" -- \" children=0\n"
-        "│   ├── Link scope=4:15..4:41 destination=\"www.google.com\" title=\"ok\" "
+        "│   ├── SoftBreak id=3:4 scope=3:38..3:38 children=0\n"
+        "│   ├── Text id=3:5 scope=4:1..4:6 literal=\"there \" children=0\n"
+        "│   ├── Code id=3:6 scope=4:7..4:10 literal=\"hi\" children=0\n"
+        "│   ├── Text id=3:7 scope=4:11..4:14 literal=\" -- \" children=0\n"
+        "│   ├── Link id=3:8 scope=4:15..4:41 destination=\"www.google.com\" title=\"ok\" "
         "children=1\n"
-        "│   │   └── Text scope=4:16..4:19 literal=\"okay\" children=0\n"
-        "│   └── Text scope=4:42..4:42 literal=\".\" children=0\n"
-        "└── BlockQuote scope=6:1..10:20 children=1\n"
-        "    └── List scope=6:3..10:20 flavor=ordered start=1 tight=false children=2\n"
-        "        ├── ListItem scope=6:3..8:1 checked=null children=1\n"
-        "        │   └── Paragraph scope=6:6..7:10 children=3\n"
-        "        │       ├── Text scope=6:6..6:10 literal=\"Okay.\" children=0\n"
-        "        │       ├── SoftBreak scope=6:11..6:11 children=0\n"
-        "        │       └── Text scope=7:6..7:10 literal=\"Sure.\" children=0\n"
-        "        └── ListItem scope=9:3..10:20 checked=null children=1\n"
-        "            └── Paragraph scope=9:6..10:20 children=3\n"
-        "                ├── Text scope=9:6..9:15 literal=\"Yes, okay.\" children=0\n"
-        "                ├── SoftBreak scope=9:16..9:16 children=0\n"
-        "                └── Image scope=10:6..10:20 source=\"hi\" title=\"yes\" "
+        "│   │   └── Text id=3:9 scope=4:16..4:19 literal=\"okay\" children=0\n"
+        "│   └── Text id=3:10 scope=4:42..4:42 literal=\".\" children=0\n"
+        "└── BlockQuote id=4:0 scope=6:1..10:20 children=1\n"
+        "    └── List id=5:0 scope=6:3..10:20 flavor=ordered start=1 tight=false children=2\n"
+        "        ├── ListItem id=6:0 scope=6:3..8:1 checked=null children=1\n"
+        "        │   └── Paragraph id=7:0 scope=6:6..7:10 children=3\n"
+        "        │       ├── Text id=7:1 scope=6:6..6:10 literal=\"Okay.\" children=0\n"
+        "        │       ├── SoftBreak id=7:2 scope=6:11..6:11 children=0\n"
+        "        │       └── Text id=7:3 scope=7:6..7:10 literal=\"Sure.\" children=0\n"
+        "        └── ListItem id=8:0 scope=9:3..10:20 checked=null children=1\n"
+        "            └── Paragraph id=9:0 scope=9:6..10:20 children=3\n"
+        "                ├── Text id=9:1 scope=9:6..9:15 literal=\"Yes, okay.\" children=0\n"
+        "                ├── SoftBreak id=9:2 scope=9:16..9:16 children=0\n"
+        "                └── Image id=9:3 scope=10:6..10:20 source=\"hi\" title=\"yes\" "
         "children=1\n"
-        "                    └── Text scope=10:8..10:9 literal=\"ok\" children=0\n",
+        "                    └── Text id=9:4 scope=10:8..10:9 literal=\"ok\" children=0\n",
         "scopes are as expected"
     );
 }
@@ -1858,12 +1858,12 @@ static void source_pos_inlines(test_batch_runner *runner) {
         "*first*\n"
         "second\n",
         0,
-        "Document scope=1:1..2:6 children=1\n"
-        "└── Paragraph scope=1:1..2:6 children=3\n"
-        "    ├── Emphasis scope=1:1..1:7 children=1\n"
-        "    │   └── Text scope=1:2..1:6 literal=\"first\" children=0\n"
-        "    ├── SoftBreak scope=1:8..1:8 children=0\n"
-        "    └── Text scope=2:1..2:6 literal=\"second\" children=0\n",
+        "Document id=1:0 scope=1:1..2:6 children=1\n"
+        "└── Paragraph id=2:0 scope=1:1..2:6 children=3\n"
+        "    ├── Emphasis id=2:1 scope=1:1..1:7 children=1\n"
+        "    │   └── Text id=2:2 scope=1:2..1:6 literal=\"first\" children=0\n"
+        "    ├── SoftBreak id=2:3 scope=1:8..1:8 children=0\n"
+        "    └── Text id=2:4 scope=2:1..2:6 literal=\"second\" children=0\n",
         "closed emphasis scopes are as expected"
     );
     test_facade_dump(
@@ -1871,12 +1871,12 @@ static void source_pos_inlines(test_batch_runner *runner) {
         "*first\n"
         "second*\n",
         0,
-        "Document scope=1:1..2:7 children=1\n"
-        "└── Paragraph scope=1:1..2:7 children=1\n"
-        "    └── Emphasis scope=1:1..2:7 children=3\n"
-        "        ├── Text scope=1:2..1:6 literal=\"first\" children=0\n"
-        "        ├── SoftBreak scope=1:7..1:7 children=0\n"
-        "        └── Text scope=2:1..2:6 literal=\"second\" children=0\n",
+        "Document id=1:0 scope=1:1..2:7 children=1\n"
+        "└── Paragraph id=2:0 scope=1:1..2:7 children=1\n"
+        "    └── Emphasis id=2:1 scope=1:1..2:7 children=3\n"
+        "        ├── Text id=2:2 scope=1:2..1:6 literal=\"first\" children=0\n"
+        "        ├── SoftBreak id=2:3 scope=1:7..1:7 children=0\n"
+        "        └── Text id=2:4 scope=2:1..2:6 literal=\"second\" children=0\n",
         "multiline emphasis scopes are as expected"
     );
 }
@@ -1971,6 +1971,178 @@ static void association_accessor(test_batch_runner *runner) {
     markdown_core_document_free(document);
 }
 
+/* D4 through the facade: every node answers the identity accessor with the
+ * whole pair the dump prints as `id=`, and every reference names the FIRST
+ * definition of its label while later definitions stay in the tree. */
+static void identity_accessors(test_batch_runner *runner) {
+    /* Two definitions of one label, in document order, referenced once --
+     * plus a footnote pair, so all three reference kinds carry the edge. */
+    static const char markdown[] = "See [a] and ![a] and [^n].\n"
+                                   "\n"
+                                   "[a]: /first\n"
+                                   "\n"
+                                   "[a]: /second\n"
+                                   "\n"
+                                   "[^n]: note\n";
+    markdown_core_parse_options options;
+    markdown_core_document *document;
+    const markdown_core_node *root;
+    const markdown_core_node *paragraph;
+    const markdown_core_node *node;
+    markdown_core_identity identity;
+    markdown_core_identity winner = {0, 0};
+    markdown_core_identity loser = {0, 0};
+    markdown_core_identity definition = {0, 0};
+    int references = 0;
+
+    memset(&options, 0, sizeof(options));
+    options.footnotes = true;
+    document = markdown_core_document_parse((const uint8_t *)markdown, strlen(markdown), &options, NULL);
+    if (!document) {
+        OK(runner, 0, "identity corpus parses");
+        return;
+    }
+    root = markdown_core_document_semantic(document);
+
+    identity = markdown_core_node_identifier(root);
+    OK(runner, identity.block != 0 && identity.ordinal == 0, "the root is a block with a nonzero mint");
+    identity = markdown_core_node_identifier(NULL);
+    OK(runner, identity.block == 0 && identity.ordinal == 0, "a null node has no identity");
+    OK(runner, !markdown_core_node_reference_definition(root, &definition), "a document carries no definition edge");
+
+    /* The two ReferenceDefinition siblings, in document order. Mints are
+     * monotone in document order (D4), which is what lets the map's smallest
+     * identity BE the first definition. */
+    for (node = markdown_core_node_get_first_child(root); node; node = markdown_core_node_get_next_sibling(node)) {
+        if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_REFERENCE_DEFINITION) {
+            markdown_core_identity mint = markdown_core_node_identifier(node);
+            OK(runner, mint.block != 0 && mint.ordinal == 0, "a definition is a block with a nonzero mint");
+            if (!winner.block) {
+                winner = mint;
+            } else {
+                loser = mint;
+            }
+        }
+    }
+    OK(runner,
+        winner.block != 0 && loser.block != 0 && winner.block < loser.block,
+        "both definitions are in the tree and mints follow document order");
+
+    paragraph = markdown_core_node_get_first_child(root);
+    for (node = markdown_core_node_get_first_child(paragraph); node; node = markdown_core_node_get_next_sibling(node)) {
+        markdown_core_node_kind kind = markdown_core_node_get_kind(node);
+        if (kind == MARKDOWN_CORE_KIND_LINK_REFERENCE || kind == MARKDOWN_CORE_KIND_IMAGE_REFERENCE) {
+            markdown_core_identity paragraph_identity = markdown_core_node_identifier(paragraph);
+            references++;
+            identity = markdown_core_node_identifier(node);
+            OK(runner,
+                identity.block == paragraph_identity.block && identity.ordinal != 0,
+                "kind %d is an inline owned by its paragraph, with a nonzero ordinal",
+                (int)kind);
+            OK(runner,
+                markdown_core_node_reference_definition(node, &definition) && definition.block == winner.block &&
+                    definition.ordinal == 0,
+                "kind %d names the first definition of its label",
+                (int)kind);
+        }
+        if (kind == MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE) {
+            references++;
+            OK(runner,
+                markdown_core_node_reference_definition(node, &definition) && definition.block != 0 &&
+                    definition.block != winner.block && definition.block != loser.block,
+                "a footnote call names its own definition");
+        }
+    }
+    INT_EQ(runner, references, 3, "all three reference kinds resolved");
+    markdown_core_document_free(document);
+}
+
+/* THE WIRE beside the dump: deterministic, partition-invariant, and refused
+ * without a document to serialize. The per-field truth of the layout is
+ * pinned by every binding's decoder against its own suites; what the C side
+ * owns is that the bytes are a function of the parse alone. */
+static void wire_serialization(test_batch_runner *runner) {
+    static const char markdown[] = "# Hi\n\nSee [a] and [^n].\n\n[a]: /u \"t\"\n\n[^n]: note\n";
+    markdown_core_parse_options options;
+    markdown_core_document *document;
+    markdown_core_session *session;
+    markdown_core_error *error = NULL;
+    uint8_t *whole = NULL;
+    uint8_t *again = NULL;
+    uint8_t *streamed = NULL;
+    size_t whole_length = 0;
+    size_t again_length = 0;
+    size_t streamed_length = 0;
+    size_t index;
+
+    markdown_core_parse_options_init(&options);
+    document = markdown_core_document_parse((const uint8_t *)markdown, strlen(markdown), &options, NULL);
+    if (!document) {
+        OK(runner, 0, "wire corpus parses");
+        return;
+    }
+    OK(runner,
+        markdown_core_document_wire(document, 0, &whole, &whole_length, &error) && whole != NULL && whole_length > 0,
+        "the wire serializes a parsed document");
+    OK(runner,
+        markdown_core_document_wire(document, 0, &again, &again_length, &error) && again_length == whole_length &&
+            memcmp(whole, again, whole_length) == 0,
+        "two serializations of one document are byte-identical");
+    markdown_core_wire_free(again);
+
+    /* THE ENVELOPE ROOM: a transport's prefix rides in the one allocation,
+     * zeroed, ahead of the same payload bytes. */
+    OK(runner,
+        markdown_core_document_wire(document, 5, &again, &again_length, &error) && again_length == whole_length + 5 &&
+            again[0] == 0 && again[4] == 0 && memcmp(again + 5, whole, whole_length) == 0,
+        "a prefixed serialization reserves zeroed envelope room ahead of the payload");
+    markdown_core_wire_free(again);
+    again = NULL;
+
+    OK(runner,
+        !markdown_core_document_wire(NULL, 0, &again, &again_length, &error),
+        "the wire refuses a null document");
+    OK(runner,
+        error != NULL && markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+        "the refusal names its reason");
+    markdown_core_error_free(error);
+    error = NULL;
+
+    /* Partition invariance rides through: the sealed stream's wire equals the
+     * whole-text parse's, byte for byte, however the bytes were fed. */
+    /* Partition invariance rides through `advance` exactly as through `feed`:
+     * an advance takes the bytes and answers nothing -- no projection, no
+     * document -- which is the discarded-read lifecycle the bindings'
+     * `Document(markdown)` constructor documents. */
+    session = markdown_core_session_new(&options, NULL);
+    if (session) {
+        markdown_core_document *sealed;
+        for (index = 0; index < strlen(markdown); index += 3) {
+            size_t length = strlen(markdown) - index < 3 ? strlen(markdown) - index : 3;
+            const uint8_t *chunk = (const uint8_t *)markdown + index;
+            OK(runner, markdown_core_session_advance(session, chunk, length, NULL), "an advance takes its bytes");
+        }
+        sealed = markdown_core_session_finish(session, NULL);
+        OK(runner,
+            sealed != NULL && markdown_core_document_wire(sealed, 0, &streamed, &streamed_length, NULL) &&
+                streamed_length == whole_length && memcmp(streamed, whole, whole_length) == 0,
+            "the stream sealed after advances equals the whole-text parse");
+        markdown_core_wire_free(streamed);
+        markdown_core_document_free(sealed);
+        OK(runner,
+            !markdown_core_session_advance(session, (const uint8_t *)"x", 1, &error) && error != NULL &&
+                markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+            "an advance after finish is refused with the finished-session error");
+        markdown_core_error_free(error);
+        error = NULL;
+        markdown_core_session_free(session);
+    } else {
+        OK(runner, 0, "wire session opens");
+    }
+    markdown_core_wire_free(whole);
+    markdown_core_document_free(document);
+}
+
 static void ref_source_pos(test_batch_runner *runner) {
     static const char markdown[] = "Let's try [reference] links.\n"
                                    "\n"
@@ -1980,14 +2152,14 @@ static void ref_source_pos(test_batch_runner *runner) {
         runner,
         markdown,
         0,
-        "Document scope=1:1..3:40 children=2\n"
-        "├── Paragraph scope=1:1..1:28 children=3\n"
-        "│   ├── Text scope=1:1..1:10 literal=\"Let's try \" children=0\n"
-        "│   ├── LinkReference scope=1:11..1:21 label=\"reference\" "
-        "identifier=\"reference\" form=shortcut children=1\n"
-        "│   │   └── Text scope=1:12..1:20 literal=\"reference\" children=0\n"
-        "│   └── Text scope=1:22..1:28 literal=\" links.\" children=0\n"
-        "└── ReferenceDefinition scope=3:1..3:40 label=\"reference\" identifier=\"reference\" "
+        "Document id=1:0 scope=1:1..3:40 children=2\n"
+        "├── Paragraph id=2:0 scope=1:1..1:28 children=3\n"
+        "│   ├── Text id=2:1 scope=1:1..1:10 literal=\"Let's try \" children=0\n"
+        "│   ├── LinkReference id=2:2 scope=1:11..1:21 label=\"reference\" "
+        "form=shortcut definition=3:0 children=1\n"
+        "│   │   └── Text id=2:3 scope=1:12..1:20 literal=\"reference\" children=0\n"
+        "│   └── Text id=2:4 scope=1:22..1:28 literal=\" links.\" children=0\n"
+        "└── ReferenceDefinition id=3:0 scope=3:1..3:40 label=\"reference\" norm=\"reference\" "
         "destination=\"https://github.com\" title=\"GitHub\" children=0\n",
         "reference link scopes are as expected"
     );
@@ -1998,26 +2170,26 @@ static void autolink_source_pos(test_batch_runner *runner) {
         runner,
         "See www.example.com.\n",
         1,
-        "Document scope=1:1..1:20 children=1\n"
-        "└── Paragraph scope=1:1..1:20 children=3\n"
-        "    ├── Text scope=1:1..1:4 literal=\"See \" children=0\n"
-        "    ├── Link scope=1:5..1:19 destination=\"http://www.example.com\" "
+        "Document id=1:0 scope=1:1..1:20 children=1\n"
+        "└── Paragraph id=2:0 scope=1:1..1:20 children=3\n"
+        "    ├── Text id=2:1 scope=1:1..1:4 literal=\"See \" children=0\n"
+        "    ├── Link id=2:2 scope=1:5..1:19 destination=\"http://www.example.com\" "
         "title=null children=1\n"
-        "    │   └── Text scope=1:5..1:19 literal=\"www.example.com\" children=0\n"
-        "    └── Text scope=1:20..1:20 literal=\".\" children=0\n",
+        "    │   └── Text id=2:3 scope=1:5..1:19 literal=\"www.example.com\" children=0\n"
+        "    └── Text id=2:4 scope=1:20..1:20 literal=\".\" children=0\n",
         "www autolink scopes are as expected"
     );
     test_facade_dump(
         runner,
         "See http://example.com.\n",
         1,
-        "Document scope=1:1..1:23 children=1\n"
-        "└── Paragraph scope=1:1..1:23 children=3\n"
-        "    ├── Text scope=1:1..1:4 literal=\"See \" children=0\n"
-        "    ├── Link scope=1:5..1:22 destination=\"http://example.com\" title=null "
+        "Document id=1:0 scope=1:1..1:23 children=1\n"
+        "└── Paragraph id=2:0 scope=1:1..1:23 children=3\n"
+        "    ├── Text id=2:1 scope=1:1..1:4 literal=\"See \" children=0\n"
+        "    ├── Link id=2:2 scope=1:5..1:22 destination=\"http://example.com\" title=null "
         "children=1\n"
-        "    │   └── Text scope=1:5..1:22 literal=\"http://example.com\" children=0\n"
-        "    └── Text scope=1:23..1:23 literal=\".\" children=0\n",
+        "    │   └── Text id=2:3 scope=1:5..1:22 literal=\"http://example.com\" children=0\n"
+        "    └── Text id=2:4 scope=1:23..1:23 literal=\".\" children=0\n",
         "scheme autolink scopes are as expected"
     );
     /* An autolink at column one leaves NO prefix. This assertion used to pin the
@@ -2030,24 +2202,24 @@ static void autolink_source_pos(test_batch_runner *runner) {
         runner,
         "http://example.com\n",
         1,
-        "Document scope=1:1..1:18 children=1\n"
-        "└── Paragraph scope=1:1..1:18 children=1\n"
-        "    └── Link scope=1:1..1:18 destination=\"http://example.com\" title=null "
+        "Document id=1:0 scope=1:1..1:18 children=1\n"
+        "└── Paragraph id=2:0 scope=1:1..1:18 children=1\n"
+        "    └── Link id=2:1 scope=1:1..1:18 destination=\"http://example.com\" title=null "
         "children=1\n"
-        "        └── Text scope=1:1..1:18 literal=\"http://example.com\" children=0\n",
+        "        └── Text id=2:2 scope=1:1..1:18 literal=\"http://example.com\" children=0\n",
         "scheme autolink at column one scopes are as expected"
     );
     test_facade_dump(
         runner,
         "Mail user@example.com now.\n",
         1,
-        "Document scope=1:1..1:26 children=1\n"
-        "└── Paragraph scope=1:1..1:26 children=3\n"
-        "    ├── Text scope=1:1..1:5 literal=\"Mail \" children=0\n"
-        "    ├── Link scope=1:6..1:21 destination=\"mailto:user@example.com\" "
+        "Document id=1:0 scope=1:1..1:26 children=1\n"
+        "└── Paragraph id=2:0 scope=1:1..1:26 children=3\n"
+        "    ├── Text id=2:1 scope=1:1..1:5 literal=\"Mail \" children=0\n"
+        "    ├── Link id=2:2 scope=1:6..1:21 destination=\"mailto:user@example.com\" "
         "title=null children=1\n"
-        "    │   └── Text scope=1:6..1:21 literal=\"user@example.com\" children=0\n"
-        "    └── Text scope=1:22..1:26 literal=\" now.\" children=0\n",
+        "    │   └── Text id=2:3 scope=1:6..1:21 literal=\"user@example.com\" children=0\n"
+        "    └── Text id=2:4 scope=1:22..1:26 literal=\" now.\" children=0\n",
         "email autolink scopes are as expected"
     );
 }
@@ -2080,6 +2252,8 @@ int main(void) {
     source_pos_inlines(runner);
     ref_source_pos(runner);
     association_accessor(runner);
+    identity_accessors(runner);
+    wire_serialization(runner);
     autolink_source_pos(runner);
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
