@@ -2,6 +2,9 @@ import MarkdownCoreC
 
 /// A fenced or indented code block.
 public struct CodeBlock: Markup {
+    /// The node's identity: the name a consumer tracks this element by across
+    /// a stream's feeds — the render key. See ``Identity``.
+    public let id: Identity
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
     /// The complete raw info string, or `nil` when the source wrote none. A
@@ -24,7 +27,8 @@ public struct CodeBlock: Markup {
 }
 
 extension CodeBlock {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, owner: UInt32) {
+        let id = Self.identity(from: node, owner: owner)
         var info = markdown_core_optional_string()
         var language = markdown_core_optional_string()
         var literal = markdown_core_string()
@@ -39,6 +43,7 @@ extension CodeBlock {
             &closed
         )
         self.init(
+            id: id,
             scope: Self.scope(from: node),
             info: info.string,
             language: language.string,

@@ -41,6 +41,30 @@ public struct Scope: Sendable, Hashable {
     }
 }
 
+/// A node's identity: the name a consumer tracks an element by across a
+/// stream's feeds — the render key (docs/STREAMING.md §4 D4).
+///
+/// ``block`` is the owning block's document-unique mint — the block is the
+/// minimal update unit, so it alone names the region an incremental consumer
+/// re-renders — and ``ordinal`` is the node's pre-order ordinal among that
+/// block's inline descendants, 0 for the block itself. The pair is unique
+/// within one document and never reused within a parse; it is not stable
+/// across documents. The halves are opaque values: compare them, key
+/// dictionaries by them, and derive nothing else from them.
+public struct Identity: Sendable, Hashable {
+    /// The owning block's document-unique mint; a block's own.
+    public let block: UInt32
+    /// The pre-order ordinal within the owning block; 0 for the block itself.
+    public let ordinal: UInt32
+
+    /// Creates an identity from its two halves. Neither is validated; the
+    /// parser is what produces meaningful pairs.
+    public init(block: UInt32, ordinal: UInt32) {
+        self.block = block
+        self.ordinal = ordinal
+    }
+}
+
 /// One node of the parsed document.
 ///
 /// Every kind is a value type and every kind is `Sendable`: the native parse
@@ -50,6 +74,9 @@ public struct Scope: Sendable, Hashable {
 /// The set of conforming kinds is closed. ``Visitor`` names all of them,
 /// which is what makes a visitor exhaustive at compile time.
 public protocol Markup: Sendable {
+    /// The node's identity: the name a consumer tracks this element by across
+    /// a stream's feeds — the render key. See ``Identity``.
+    var id: Identity { get }
     /// Where this element is, as a pair of boundaries. See ``Scope`` for what
     /// those boundaries are and are not.
     var scope: Scope { get }
@@ -81,17 +108,39 @@ extension Markup {
         Scope(from: markdown_core_node_scope(node))
     }
 
-    /// Every child, in source order, as the C tree holds them.
-    static func children(from node: OpaquePointer) -> [any Markup] {
+    /// The identity the copy-in composes. The C accessor reports the field a
+    /// node carries and the scope it is minted in; the pair needs the nearest
+    /// block ancestor, which only the walk knows — `owner` is that ancestor's
+    /// mint, and a block opens the namespace its descendants ride in.
+    static func identity(from node: OpaquePointer, owner: UInt32) -> Identity {
+        var identifier: UInt32 = 0
+        var block = false
+        markdown_core_node_identifier(node, &identifier, &block)
+        return block ? Identity(block: identifier, ordinal: 0) : Identity(block: owner, ordinal: identifier)
+    }
+
+    /// Every child, in source order, as the C tree holds them. `owner` is the
+    /// caller's `id.block`: its own mint when the caller is a block, its
+    /// owning block's otherwise.
+    static func children(from node: OpaquePointer, owner: UInt32) -> [any Markup] {
         var result: [any Markup] = []
         result.reserveCapacity(markdown_core_node_child_count(node))
         var child = markdown_core_node_get_first_child(node)
         while let current = child {
-            result.append(markup(from: current))
+            result.append(markup(from: current, owner: owner))
             child = markdown_core_node_get_next_sibling(current)
         }
         return result
     }
+}
+
+/// The definition edge a reference carries: the identity of the definition it
+/// resolved to — the first definition of its label in document order. The
+/// target is a block, so its ordinal is 0 by construction.
+func referenceDefinition(from node: OpaquePointer) -> Identity {
+    var definition: UInt32 = 0
+    markdown_core_node_reference_definition(node, &definition)
+    return Identity(block: definition, ordinal: 0)
 }
 
 extension Markup {
@@ -100,8 +149,8 @@ extension Markup {
     /// A `List` owns `ListItem`s and a `TableRow` owns `TableCell`s; the C tree
     /// cannot say so and the typed model can, so the narrowing happens once,
     /// here, instead of at every use site.
-    static func typedChildren<T: Markup>(from node: OpaquePointer) -> [T] {
-        children(from: node).map { child in
+    static func typedChildren<T: Markup>(from node: OpaquePointer, owner: UInt32) -> [T] {
+        children(from: node, owner: owner).map { child in
             guard let typed = child as? T else {
                 preconditionFailure("\(type(of: child)) is not a \(T.self)")
             }
@@ -115,22 +164,22 @@ extension Markup {
     /// look, not a search. Until Step 7 the C facade spliced the label node
     /// out of the child list and named its count on the parent, and this
     /// walked a run of children with no container; the node is visible now.
-    static func directiveLabel(from node: OpaquePointer) -> DirectiveLabel? {
+    static func directiveLabel(from node: OpaquePointer, owner: UInt32) -> DirectiveLabel? {
         guard let first = markdown_core_node_get_first_child(node),
             markdown_core_node_get_kind(first) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL
         else { return nil }
-        return DirectiveLabel(from: first)
+        return DirectiveLabel(from: first, owner: owner)
     }
 
     /// A directive block's content: every child after the label.
-    static func directiveContent(from node: OpaquePointer) -> [any Markup] {
+    static func directiveContent(from node: OpaquePointer, owner: UInt32) -> [any Markup] {
         var result: [any Markup] = []
         var child = markdown_core_node_get_first_child(node)
         if let first = child, markdown_core_node_get_kind(first) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL {
             child = markdown_core_node_get_next_sibling(first)
         }
         while let current = child {
-            result.append(markup(from: current))
+            result.append(markup(from: current, owner: owner))
             child = markdown_core_node_get_next_sibling(current)
         }
         return result

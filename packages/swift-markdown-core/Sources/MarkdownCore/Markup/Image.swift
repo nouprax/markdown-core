@@ -5,6 +5,9 @@ import MarkdownCoreC
 /// Its content is PARSED alt text: `![a *b*](s)` has an ``Emphasis`` in it, and
 /// flattening it to a string is the consumer's decision, not the parser's.
 public struct Image: Markup {
+    /// The node's identity: the name a consumer tracks this element by across
+    /// a stream's feeds — the render key. See ``Identity``.
+    public let id: Identity
     /// Where it is, `![` through the closing parenthesis. See ``Scope``.
     public let scope: Scope
     /// The alt text, as parsed inline content.
@@ -19,13 +22,15 @@ public struct Image: Markup {
 }
 
 extension Image {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, owner: UInt32) {
+        let id = Self.identity(from: node, owner: owner)
         var source = markdown_core_string()
         var title = markdown_core_optional_string()
         markdown_core_node_image_properties(node, &source, &title)
         self.init(
+            id: id,
             scope: Self.scope(from: node),
-            content: Self.children(from: node),
+            content: Self.children(from: node, owner: id.block),
             source: source.requiredString,
             title: title.string
         )

@@ -20,7 +20,8 @@ struct DirectiveValues {
     let name: String
     let attributes: [DirectiveAttribute]?
 
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, owner: UInt32) {
+        let id = Self.identity(from: node, owner: owner)
         var nativeName = markdown_core_string()
         var hasAttributes = false
         var count = 0

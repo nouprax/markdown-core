@@ -4,6 +4,9 @@ import MarkdownCoreC
 ///
 /// A leaf: it has no content, and its scope is all there is to read.
 public struct SoftBreak: Markup {
+    /// The node's identity: the name a consumer tracks this element by across
+    /// a stream's feeds — the render key. See ``Identity``.
+    public let id: Identity
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
 
@@ -12,7 +15,8 @@ public struct SoftBreak: Markup {
 }
 
 extension SoftBreak {
-    init(from node: OpaquePointer) {
-        self.init(scope: Self.scope(from: node))
+    init(from node: OpaquePointer, owner: UInt32) {
+        let id = Self.identity(from: node, owner: owner)
+        self.init(id: id, scope: Self.scope(from: node))
     }
 }

@@ -12,18 +12,23 @@ public enum ReferenceForm: Sendable {
 
 /// A link reference.
 ///
-/// It carries no destination: the destination is stated once, at the definition,
-/// and `identifier` is what names it. All three forms resolve identically, so
+/// It carries no destination: the destination is stated once, at the
+/// definition, and ``definition`` names it — the identity of the
+/// ``ReferenceDefinition`` this reference resolved to, the first definition of
+/// its label in document order. All three forms resolve identically, so
 /// nothing else on the node recovers which one the author wrote.
 public struct LinkReference: Markup {
+    /// The node's identity: the name a consumer tracks this element by across
+    /// a stream's feeds — the render key. See ``Identity``.
+    public let id: Identity
     /// The source range, from the opening bracket to the closing one.
     public let scope: Scope
     /// The label as written, delimiters excluded.
     public let label: String
-    /// The match key. Compare it by bytes, never by `String ==`.
-    public let identifier: String
     /// The spelling the source used.
     public let form: ReferenceForm
+    /// The identity of the definition this reference resolved to.
+    public let definition: Identity
     /// The reference's inline content.
     public let content: [any Markup]
 
@@ -33,14 +38,17 @@ public struct LinkReference: Markup {
 
 /// An image reference. As ``LinkReference``; the content is parsed alt text.
 public struct ImageReference: Markup {
+    /// The node's identity: the name a consumer tracks this element by across
+    /// a stream's feeds — the render key. See ``Identity``.
+    public let id: Identity
     /// The source range, from the opening bracket to the closing one.
     public let scope: Scope
     /// The label as written, delimiters excluded.
     public let label: String
-    /// The match key. Compare it by bytes, never by `String ==`.
-    public let identifier: String
     /// The spelling the source used.
     public let form: ReferenceForm
+    /// The identity of the definition this reference resolved to.
+    public let definition: Identity
     /// The parsed alt text.
     public let content: [any Markup]
 
@@ -59,31 +67,35 @@ func referenceForm(from node: OpaquePointer) -> ReferenceForm {
 }
 
 extension LinkReference {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, owner: UInt32) {
+        let id = Self.identity(from: node, owner: owner)
         var label = markdown_core_string()
         var identifier = markdown_core_string()
         markdown_core_node_association(node, &label, &identifier)
         self.init(
+            id: id,
             scope: Self.scope(from: node),
             label: label.requiredString,
-            identifier: identifier.requiredString,
             form: referenceForm(from: node),
-            content: Self.children(from: node)
+            definition: referenceDefinition(from: node),
+            content: Self.children(from: node, owner: id.block)
         )
     }
 }
 
 extension ImageReference {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, owner: UInt32) {
+        let id = Self.identity(from: node, owner: owner)
         var label = markdown_core_string()
         var identifier = markdown_core_string()
         markdown_core_node_association(node, &label, &identifier)
         self.init(
+            id: id,
             scope: Self.scope(from: node),
             label: label.requiredString,
-            identifier: identifier.requiredString,
             form: referenceForm(from: node),
-            content: Self.children(from: node)
+            definition: referenceDefinition(from: node),
+            content: Self.children(from: node, owner: id.block)
         )
     }
 }
