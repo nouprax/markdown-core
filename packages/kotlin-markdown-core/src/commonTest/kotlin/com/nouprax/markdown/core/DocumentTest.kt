@@ -152,6 +152,39 @@ class DocumentTest {
     }
 
     @Test
+    fun aBlockKeepsItsIdentityAcrossFeedsAndAReferenceNamesTheFirstDefinition() {
+        Document().use { document ->
+            // The heading is the element a consumer renders; later feeds and
+            // the seal must keep calling it by the same name (D4).
+            val first = document.feed("# Title\n\nsee [a] and [^n].\n\n")
+            val heading = first.semantic.content.first()
+            assertIs<Heading>(heading)
+            val second = document.feed("[a]: /first\n\n[a]: /second\n\n[^n]: note\n")
+            assertEquals(heading.id, second.semantic.content.first().id)
+            val sealed = document.seal()
+            assertEquals(heading.id, sealed.semantic.content.first().id)
+
+            // Duplicate definitions: both stay in the tree, and the reference
+            // names the FIRST by identity -- its own match key is the winning
+            // definition's norm.
+            val definitions = sealed.semantic.content.filterIsInstance<ReferenceDefinition>()
+            assertEquals(2, definitions.size)
+            val paragraph = assertIs<Paragraph>(sealed.semantic.content[1])
+            val reference = paragraph.content.filterIsInstance<LinkReference>().single()
+            assertEquals(definitions[0].id, reference.definition)
+            assertEquals("a", definitions[0].norm)
+            val footnote = sealed.semantic.content.filterIsInstance<FootnoteDefinition>().single()
+            assertEquals(footnote.id, paragraph.content.filterIsInstance<FootnoteReference>().single().definition)
+            assertEquals("^n", footnote.norm)
+
+            // An inline's identity is (owning block, ordinal): unique within
+            // its paragraph, owned by it.
+            paragraph.content.forEach { assertEquals(paragraph.id.block, it.id.block) }
+            assertEquals(paragraph.content.size, paragraph.content.map { it.id }.toSet().size)
+        }
+    }
+
+    @Test
     fun aClosedDocumentRefusesEveryCallAndCloseIsIdempotent() {
         val document = Document()
         document.close()

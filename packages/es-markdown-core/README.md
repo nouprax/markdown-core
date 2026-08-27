@@ -37,6 +37,10 @@ override.
 
 `semantic` is a discriminated `Markup` union with source scopes and recursively
 readonly TypeScript properties; the JavaScript objects are not runtime-frozen.
+Every node carries `id: Identity` — `{ block, ordinal }`, the name a consumer
+tracks the element by across a stream's feeds: the render key. References
+carry `definition: Identity`, the identity of the first definition of their
+label, and definitions carry `norm`, the match key their label folds to.
 `concrete` carries the normalized source bytes with `lines` and `offset(line)`.
 The package exposes parsing and AST traversal, not rendering or AST mutation.
 

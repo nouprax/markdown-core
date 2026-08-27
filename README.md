@@ -31,9 +31,16 @@ the document itself is gone. The streaming model is specified in
 
 A `Read` is the parse under its two total views, and the pair is closed over
 its own coordinate system. **`semantic`** (the root type `Semantic`, an
-ordinary `Markup` node) is the tree with policy applied; every node carries a
-**`scope`** — the pair of `(line, column)` **boundaries** the element
-occupies, not a byte range, and no substring is taken with it. **`concrete`**
+ordinary `Markup` node) is the tree with policy applied; every node carries an
+**`id`** — an `Identity`, the pair `(block, ordinal)` naming the element
+across a stream's feeds: the render key, with `block` alone naming the region
+an incremental consumer re-renders — and a **`scope`** — the pair of
+`(line, column)` **boundaries** the element occupies, not a byte range, and
+no substring is taken with it. A reference (`LinkReference`,
+`ImageReference`, `FootnoteReference`) also carries **`definition`**: the
+identity of the first definition of its label in document order, while a
+definition carries its label as written beside **`norm`**, the match key the
+label folds to. **`concrete`**
 is what those numbers are counted against: the **normalized source** — UTF-8
 as fed, every NUL replaced by the three bytes of U+FFFD, every line ending a
 single `\n` and every line having one — with its line index (`lines`,

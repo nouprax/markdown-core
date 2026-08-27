@@ -322,6 +322,43 @@ test("api: the constructor's initial chunk is bytes as much as text", () => {
     assert.equal(read.dump(), new Document("# Bytes\n").seal().dump());
 });
 
+test("api: a block keeps its identity across feeds and a reference names the first definition", () => {
+    const document = new Document();
+    try {
+        // The heading is the element a consumer renders; later feeds and the
+        // seal must keep calling it by the same name (D4) -- the render key.
+        const first = document.feed("# Title\n\nsee [a] and [^n].\n\n");
+        const heading = first.semantic.content[0];
+        assert.equal(heading.kind, "heading");
+        const second = document.feed("[a]: /first\n\n[a]: /second\n\n[^n]: note\n");
+        assert.deepEqual(second.semantic.content[0].id, heading.id);
+        const sealed = document.seal();
+        assert.deepEqual(sealed.semantic.content[0].id, heading.id);
+
+        // Duplicate definitions: both stay in the tree, and the reference
+        // names the FIRST by identity -- its own match key is the winning
+        // definition's norm.
+        const definitions = sealed.semantic.content.filter((node) => node.kind === "referenceDefinition");
+        assert.equal(definitions.length, 2);
+        const paragraph = sealed.semantic.content[1];
+        const reference = paragraph.content.find((node) => node.kind === "linkReference");
+        assert.deepEqual(reference.definition, definitions[0].id);
+        assert.equal(definitions[0].norm, "a");
+        const footnote = sealed.semantic.content.find((node) => node.kind === "footnoteDefinition");
+        const call = paragraph.content.find((node) => node.kind === "footnoteReference");
+        assert.deepEqual(call.definition, footnote.id);
+        assert.equal(footnote.norm, "^n");
+
+        // An inline's identity is (owning block, ordinal): unique within its
+        // paragraph, owned by it.
+        for (const node of paragraph.content) assert.equal(node.id.block, paragraph.id.block);
+        const ids = new Set(paragraph.content.map((node) => `${node.id.block}:${node.id.ordinal}`));
+        assert.equal(ids.size, paragraph.content.length);
+    } finally {
+        document.dispose();
+    }
+});
+
 test("errors: ParseError carries its code, name, and message", () => {
     // No text a caller can write produces one -- a parse failure is an
     // allocation failure -- so the exported class is pinned directly: it is
@@ -403,7 +440,9 @@ test("errors: every out-of-range value inside a node payload is refused", () => 
         for (const part of parts) {
             if (typeof part === "string") out.push(...new TextEncoder().encode(part));
             else if (typeof part === "number") out.push(part & 0xff);
-            else if ("long" in part) for (let shift = 0; shift < 8; shift += 1) out.push(Number((BigInt(part.long) >> BigInt(shift * 8)) & 0xffn));
+            else if ("long" in part)
+                for (let shift = 0; shift < 8; shift += 1)
+                    out.push(Number((BigInt(part.long) >> BigInt(shift * 8)) & 0xffn));
             else for (let shift = 0; shift < 4; shift += 1) out.push((part.int >> (shift * 8)) & 0xff);
         }
         return out;
@@ -412,13 +451,7 @@ test("errors: every out-of-range value inside a node payload is refused", () => 
     const scope = () => bytes(int(1), int(1), int(1), int(1));
     // A document root carrying exactly one child, which is the malformed node.
     const wrap = (...node) =>
-        Uint8Array.from([
-            ...bytes("MKC6", 0, 1),
-            ...identity(1, 0),
-            ...scope(),
-            ...bytes(int(1)),
-            ...bytes(...node)
-        ]);
+        Uint8Array.from([...bytes("MKC6", 0, 1), ...identity(1, 0), ...scope(), ...bytes(int(1)), ...bytes(...node)]);
     const child = (kind, ...fields) => wrap(kind, ...identity(2, 0), ...scope(), ...fields);
 
     assert.throws(() => decodeRead(child(99)), /unknown node kind 99/u);
@@ -441,10 +474,7 @@ test("errors: every out-of-range value inside a node payload is refused", () => 
     assert.throws(() => decodeRead(child(11, int(0), int(1), ...paragraph())), /table contains a non-row node/u);
     const headerlessRow = () => bytes(27, ...identity(3, 0), ...scope(), 0, int(0));
     assert.throws(() => decodeRead(child(11, int(0), int(1), ...headerlessRow())), /contains 0 header rows/u);
-    assert.throws(
-        () => decodeRead(child(27, 0, int(1), ...paragraph())),
-        /table row contains a non-cell node/u
-    );
+    assert.throws(() => decodeRead(child(27, 0, int(1), ...paragraph())), /table row contains a non-cell node/u);
     assert.throws(
         () => decodeRead(child(25, int(0), 0, int(1))),
         /an absent directive attribute container cannot hold attributes/u

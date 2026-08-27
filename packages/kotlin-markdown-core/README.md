@@ -40,7 +40,11 @@ println(read.dump())
 All parse options default to `true`: smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas (dollar and
 LaTeX delimiters included), and directives. `semantic` is an immutable value
-tree with source scopes; `concrete` carries the normalized source bytes with
+tree with source scopes, and every node carries `id: Identity` — the pair
+`(block, ordinal)` naming the element across a stream's feeds, the render
+key; references carry `definition: Identity`, the identity of the first
+definition of their label, and definitions carry `norm`, the match key their
+label folds to. `concrete` carries the normalized source bytes with
 `lines` and `offset(line)`. The package exposes parsing and read-only AST
 traversal, not rendering or mutation.
 
