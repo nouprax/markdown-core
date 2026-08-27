@@ -45,7 +45,7 @@ longer exists. 3.0.0 ships a different streaming surface, described below.
   consumer re-renders — and `ordinal` is the node's pre-order ordinal among
   that block's inline descendants, 0 for the block itself. A block keeps its
   identity across feeds however the bytes arrive; the halves are opaque
-  values. The C facade answers it whole (`markdown_core_node_identity`), and
+  values. The C facade answers it whole (`markdown_core_node_identifier`), and
   the canonical dump leads every line with `id=block:ordinal`.
 - A reference names the definition it resolved to: `LinkReference`,
   `ImageReference` and `FootnoteReference` carry **`definition: Identity`**,

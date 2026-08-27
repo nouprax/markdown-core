@@ -118,7 +118,7 @@ extension Markup {
     /// — the engine stamps an inline's owner in the same pass that assigns
     /// its ordinal, so no walk here composes anything.
     static func identity(from node: OpaquePointer) -> Identity {
-        Identity(from: markdown_core_node_identity(node))
+        Identity(from: markdown_core_node_identifier(node))
     }
 
     /// Every child, in source order, as the C tree holds them.

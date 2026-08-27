@@ -2004,9 +2004,9 @@ static void identity_accessors(test_batch_runner *runner) {
     }
     root = markdown_core_document_semantic(document);
 
-    identity = markdown_core_node_identity(root);
+    identity = markdown_core_node_identifier(root);
     OK(runner, identity.block != 0 && identity.ordinal == 0, "the root is a block with a nonzero mint");
-    identity = markdown_core_node_identity(NULL);
+    identity = markdown_core_node_identifier(NULL);
     OK(runner, identity.block == 0 && identity.ordinal == 0, "a null node has no identity");
     OK(runner, !markdown_core_node_reference_definition(root, &definition), "a document carries no definition edge");
 
@@ -2015,7 +2015,7 @@ static void identity_accessors(test_batch_runner *runner) {
      * identity BE the first definition. */
     for (node = markdown_core_node_get_first_child(root); node; node = markdown_core_node_get_next_sibling(node)) {
         if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_REFERENCE_DEFINITION) {
-            markdown_core_identity mint = markdown_core_node_identity(node);
+            markdown_core_identity mint = markdown_core_node_identifier(node);
             OK(runner, mint.block != 0 && mint.ordinal == 0, "a definition is a block with a nonzero mint");
             if (!winner.block) {
                 winner = mint;
@@ -2032,9 +2032,9 @@ static void identity_accessors(test_batch_runner *runner) {
     for (node = markdown_core_node_get_first_child(paragraph); node; node = markdown_core_node_get_next_sibling(node)) {
         markdown_core_node_kind kind = markdown_core_node_get_kind(node);
         if (kind == MARKDOWN_CORE_KIND_LINK_REFERENCE || kind == MARKDOWN_CORE_KIND_IMAGE_REFERENCE) {
-            markdown_core_identity paragraph_identity = markdown_core_node_identity(paragraph);
+            markdown_core_identity paragraph_identity = markdown_core_node_identifier(paragraph);
             references++;
-            identity = markdown_core_node_identity(node);
+            identity = markdown_core_node_identifier(node);
             OK(runner,
                 identity.block == paragraph_identity.block && identity.ordinal != 0,
                 "kind %d is an inline owned by its paragraph, with a nonzero ordinal",

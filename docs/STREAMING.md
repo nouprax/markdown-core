@@ -1594,7 +1594,7 @@ back in the vocabulary that produced them.
   assigns an inline's ordinal stamps the owning block's mint into a second
   field (`owner`, meaningful only on inline-class nodes — a block is its own
   owner — at a further 8 bytes on the node), so
-  `markdown_core_node_identity` returns the pair from a lone node the way
+  `markdown_core_node_identifier` returns the pair from a lone node the way
   `_scope` returns a scope, and no binding composes anything. Every binding
   `Markup` carries it as **`id: Identity`** — `(block, ordinal)`, the render
   key — and the dump leads every line with `id=block:ordinal`. The

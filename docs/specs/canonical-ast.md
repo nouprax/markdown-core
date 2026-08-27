@@ -55,7 +55,7 @@ is the node's pre-order ordinal among that block's inline descendants, 0 for
 the block itself. The pair is unique within one document and never reused
 within a parse; it is not stable across documents. The halves are opaque
 values: compare them, key maps by them, and derive nothing else from them.
-Bindings copy both halves from `markdown_core_node_identity` without
+Bindings copy both halves from `markdown_core_node_identifier` without
 composing, offsetting, or reinterpreting them.
 
 The three reference kinds also carry `definition: Identity`: the identity of

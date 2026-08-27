@@ -951,7 +951,7 @@ bool markdown_core_node_reference_form(const markdown_core_node *node, markdown_
  * inline learned its owner from the numbering pass -- the one moment anything
  * stood inside the block and beside the inline at once, which matters because
  * a shared child list carries no parent link to climb (T19). */
-markdown_core_identity markdown_core_node_identity(const markdown_core_node *node) {
+markdown_core_identity markdown_core_node_identifier(const markdown_core_node *node) {
     markdown_core_identity identity = {0, 0};
     if (!node) {
         return identity;
@@ -1345,7 +1345,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     const markdown_core_node *child;
     size_t count = markdown_core_node_child_count(node);
     size_t i;
-    markdown_core_identity identity = markdown_core_node_identity(node);
+    markdown_core_identity identity = markdown_core_node_identifier(node);
     if (kind == MARKDOWN_CORE_KIND_NONE) {
         buffer->failed = true;
         return;
@@ -1491,7 +1491,7 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
     markdown_core_identity definition = {0, 0};
 
     wire_u8(buffer, (uint8_t)kind);
-    wire_identity(buffer, markdown_core_node_identity(node));
+    wire_identity(buffer, markdown_core_node_identifier(node));
     wire_i32(buffer, scope.start.line);
     wire_i32(buffer, scope.start.column);
     wire_i32(buffer, scope.end.line);

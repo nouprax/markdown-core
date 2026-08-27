@@ -518,12 +518,13 @@ typedef struct markdown_core_identity {
     uint32_t ordinal;
 } markdown_core_identity;
 
-/** A node's identity, answered whole from the node alone -- like
- * `markdown_core_node_scope`, by value, `{0, 0}` for NULL. A block's is
- * `(its mint, 0)`; an inline's is `(owning block's mint, its ordinal)`, the
- * owner stamped by the same pass that assigns the ordinal, so no caller ever
- * composes the pair itself. */
-MARKDOWN_CORE_API markdown_core_identity markdown_core_node_identity(const markdown_core_node *node);
+/** THE NODE'S IDENTIFIER: the value that carries its identity (D4's own
+ * words -- the identity is the concept, the identifier is the value), answered
+ * whole from the node alone like `markdown_core_node_scope`, by value,
+ * `{0, 0}` for NULL. A block's is `(its mint, 0)`; an inline's is
+ * `(owning block's mint, its ordinal)`, the owner stamped by the same pass
+ * that assigns the ordinal, so no caller ever composes the pair itself. */
+MARKDOWN_CORE_API markdown_core_identity markdown_core_node_identifier(const markdown_core_node *node);
 
 /** THE DEFINITION EDGE (docs/STREAMING.md §4 D4): the identity of the
  * definition a reference resolved to. Answers for `LinkReference`,
