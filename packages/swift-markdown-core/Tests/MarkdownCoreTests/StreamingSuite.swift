@@ -72,7 +72,7 @@ import Testing
         for node in paragraph.content {
             #expect(node.id.block == paragraph.id.block)
         }
-        #expect(Set(paragraph.content.map(\.id)).count == paragraph.content.count)
+        #expect(Set(paragraph.content.map { $0.id }).count == paragraph.content.count)
     }
 
     @Test("sealing releases the shell and a sealed document refuses every call")

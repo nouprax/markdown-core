@@ -21,7 +21,6 @@ struct DirectiveValues {
     let attributes: [DirectiveAttribute]?
 
     init(from node: OpaquePointer) {
-        let id = Self.identity(from: node)
         var nativeName = markdown_core_string()
         var hasAttributes = false
         var count = 0
