@@ -417,6 +417,7 @@ if(MARKDOWN_CORE_STATIC)
         reference_sorted_fallback
         reference_identifier_adoption
         directive_sorted_fallback
+        directive_attribute_order
         key_index_probe_growth
         map_prepare_oom
         definition_after_lookup
@@ -537,6 +538,7 @@ set(MARKDOWN_CORE_COMPLEXITY_CASES
     unclosed_long_quoted_value
     unclosed_backslash_value
     many_unique_attributes
+    many_prefixed_attributes
     many_duplicate_attributes
     many_unique_references
     many_duplicate_references

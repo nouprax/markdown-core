@@ -114,6 +114,33 @@ static char *cc_attributes(size_t size, size_t *length, int duplicates) {
 
 static char *cc_unique_attributes(size_t size, size_t *length) { return cc_attributes(size, length, 0); }
 
+/* Unique names behind a long shared prefix (#123): the qsort comparator
+ * memcmp's the prefix on every one of its u log u comparisons, so in
+ * principle finalization scales with key length as well as key count.
+ * MEASURED, the whole ordering step is ~2.5% of this parse (vectorized
+ * memcmp beat a byte-at-a-time multikey quicksort 0.18s to 0.29s on a
+ * million of exactly these names), so the qsort stays; this gate exists
+ * to catch the day that stops being true. */
+static char *cc_prefixed_attributes(size_t size, size_t *length) {
+    static const char stem[] = "verylongsharedattributeprefixcarryingnoinformation";
+    size_t per_attribute = sizeof(stem) + 24;
+    size_t attribute_count = size / per_attribute ? size / per_attribute : 1;
+    size_t capacity = attribute_count * per_attribute + 16;
+    char *input = (char *)malloc(capacity);
+    size_t written = 0;
+    size_t index;
+    if (!input) {
+        return NULL;
+    }
+    written += (size_t)snprintf(input + written, capacity - written, ":x{");
+    for (index = 0; index < attribute_count; index++) {
+        written += (size_t)snprintf(input + written, capacity - written, "%s%s%zu=v", index ? " " : "", stem, index);
+    }
+    written += (size_t)snprintf(input + written, capacity - written, "}");
+    *length = written;
+    return input;
+}
+
 static char *cc_duplicate_attributes(size_t size, size_t *length) { return cc_attributes(size, length, 1); }
 
 static char *cc_references(size_t size, size_t *length, int duplicates) {
@@ -307,6 +334,7 @@ static const cc_case_entry CC_CASES[] = {
     {"unclosed_long_quoted_value", cc_unclosed_quoted, 0, "directive"},
     {"unclosed_backslash_value", cc_unclosed_backslashes, 0, "directive"},
     {"many_unique_attributes", cc_unique_attributes, 0, "directive"},
+    {"many_prefixed_attributes", cc_prefixed_attributes, 0, "directive"},
     {"many_duplicate_attributes", cc_duplicate_attributes, 0, "directive"},
     {"many_unique_references", cc_unique_references, 0, "directive"},
     {"many_duplicate_references", cc_duplicate_references, 0, "directive"},

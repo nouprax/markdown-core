@@ -510,6 +510,80 @@ static int case_directive_sorted_fallback(void) {
     return result;
 }
 
+/* #123's semantics pins for the canonical ordering: reverse-canonical
+ * insertion order, names sharing a long prefix with the shorter name
+ * sorting first, and last-value-wins plus class accumulation riding
+ * through the reorder -- checked on the hash path and the injected
+ * sorted fallback alike, against a literally spelled expectation. */
+static int case_directive_attribute_order(void) {
+    enum { FB_PREFIXED_KEYS = 200 };
+    static const char stem[] = "verylongsharedattributeprefixcarryingnoinformation";
+    char *input;
+    char *expected;
+    size_t input_length = 0;
+    size_t expected_length = 0;
+    size_t i;
+    int result = -1;
+
+    if (fb_compare_directive_paths(":x{zz=1 mm=2 aa=3}\n", "aa=3 mm=2 zz=1", "reverse order") != 0) {
+        return -1;
+    }
+    if (fb_compare_directive_paths(
+            ":x{prefixlonger=1 prefixlong=2 prefix=3}\n",
+            "prefix=3 prefixlong=2 prefixlonger=1",
+            "shared prefix, shorter first"
+        ) != 0) {
+        return -1;
+    }
+    if (fb_compare_directive_paths(
+            ":x{zz=1 class=a zz=2 class=b aa=3}\n",
+            "aa=3 class=a b zz=2",
+            "last-wins and class accumulation across the reorder"
+        ) != 0) {
+        return -1;
+    }
+
+    /* Two hundred names sharing a long prefix, inserted in strictly reverse
+     * canonical order; the fixed-width suffix makes lexicographic order the
+     * numeric one, so the expectation is spelled by a plain loop. */
+    input = (char *)malloc(FB_PREFIXED_KEYS * (sizeof(stem) + 16) + 16);
+    expected = (char *)malloc(FB_PREFIXED_KEYS * (sizeof(stem) + 16) + 16);
+    if (!input || !expected) {
+        free(input);
+        free(expected);
+        return -1;
+    }
+    input_length += (size_t)snprintf(input + input_length, 8, ":x{");
+    for (i = 0; i < FB_PREFIXED_KEYS; i++) {
+        input_length += (size_t)snprintf(
+            input + input_length,
+            sizeof(stem) + 16,
+            "%s%s%03zu=v%zu",
+            i ? " " : "",
+            stem,
+            FB_PREFIXED_KEYS - 1 - i,
+            i
+        );
+    }
+    input_length += (size_t)snprintf(input + input_length, 8, "}\n");
+    for (i = 0; i < FB_PREFIXED_KEYS; i++) {
+        expected_length += (size_t)snprintf(
+            expected + expected_length,
+            sizeof(stem) + 16,
+            "%s%s%03zu=v%zu",
+            i ? " " : "",
+            stem,
+            i,
+            FB_PREFIXED_KEYS - 1 - i
+        );
+    }
+
+    result = fb_compare_directive_paths(input, expected, "long shared prefix, reverse insertion");
+    free(input);
+    free(expected);
+    return result;
+}
+
 /* Mirrors hash_key in core/map.c.  If that hash ever changes, the keys found
  * below stop clustering, the capacity assertions fail loudly, and this case
  * must be retuned together with the hash. */
@@ -1297,6 +1371,7 @@ static const fb_case_entry FB_CASES[] = {
     {"reference_sorted_fallback", case_reference_sorted_fallback},
     {"reference_identifier_adoption", case_reference_identifier_adoption},
     {"directive_sorted_fallback", case_directive_sorted_fallback},
+    {"directive_attribute_order", case_directive_attribute_order},
     {"key_index_probe_growth", case_key_index_probe_growth},
     {"map_prepare_oom", case_map_prepare_oom},
     {"definition_after_lookup", case_definition_after_lookup},
