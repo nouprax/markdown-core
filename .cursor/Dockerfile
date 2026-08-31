@@ -9,8 +9,8 @@
 # left to the `install` phase in environment.json, where it can see the
 # checked-out source and stay in lockstep with the repository.
 #
-# The pins below mirror docs/toolchains.md and scripts/init-environment.sh.
-# Keep them in sync when those files change.
+# The pins below mirror scripts/init-environment.sh. Keep them in sync when
+# that script changes.
 FROM ubuntu:24.04
 
 ARG NODE_VERSION=26.5.0
@@ -85,8 +85,8 @@ ENV PATH=/usr/local/bin:/opt/jdk-26/bin:/opt/android-sdk/cmdline-tools/latest/bi
 # Android Gradle Plugin target and its four-ABI JNI runtime. The Android
 # Gradle Plugin refuses to configure the Kotlin Multiplatform module without an
 # SDK location, so even the JVM tests need these present. The emulator and
-# system images are intentionally omitted: device tests require KVM and are
-# CI-only per docs/toolchains.md.
+# system images are intentionally omitted: device tests require KVM and run
+# in CI only.
 RUN mkdir -p "${ANDROID_HOME}/cmdline-tools" \
     && curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_CMDLINE_TOOLS}_latest.zip" \
         -o /tmp/cmdline-tools.zip \
