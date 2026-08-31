@@ -2005,9 +2005,7 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
         /* Nothing is lost: the tree keeps its own children. */
         return;
     }
-    if (!markdown_core_holder_take_children(holder, node)) {
-        parser->oom = true;
-    }
+    markdown_core_holder_take_children(holder, node);
     holder->stamp = origin->stamp;
     holder->refgen = parser->refmap->generation;
     holder->footgen = parser->footnote_defs->generation;

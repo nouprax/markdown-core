@@ -181,7 +181,6 @@ markdown_core_node_new_with_ext
 markdown_core_node_new_with_mem
 markdown_core_node_new_with_mem_and_ext
 markdown_core_node_next
-markdown_core_node_own
 markdown_core_node_parent
 markdown_core_node_prepend_child
 markdown_core_node_previous

@@ -304,7 +304,7 @@ void markdown_core_holder_release(markdown_core_holder *holder);
  * dangle once the block is freed under a holder that outlives it -- F12
  * counted 7.6% of inline chunks borrowed. Returns 0 when a copy could not be
  * allocated; the chunk is then emptied rather than left borrowing. */
-int markdown_core_holder_take_children(markdown_core_holder *holder, markdown_core_node *block);
+void markdown_core_holder_take_children(markdown_core_holder *holder, markdown_core_node *block);
 /* Alias the holder's list under a childless `block`, which takes one hold. */
 void markdown_core_node_borrow_children(markdown_core_node *block, markdown_core_holder *holder);
 

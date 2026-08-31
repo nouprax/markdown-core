@@ -247,9 +247,12 @@ void markdown_core_holder_release(markdown_core_holder *holder) {
     holder->mem->free(holder);
 }
 
-int markdown_core_holder_take_children(markdown_core_holder *holder, markdown_core_node *block) {
+/* Pure pointer moves: every chunk in the list already holds its bytes --
+ * a retained slice of frozen content or a private allocation -- so the
+ * store that used to copy (T19's own-at-the-boundary rule, via node_own)
+ * now moves and cannot fail (#153). */
+void markdown_core_holder_take_children(markdown_core_holder *holder, markdown_core_node *block) {
     markdown_core_node *child;
-    int ok = markdown_core_node_own(block);
     for (child = block->first_child; child; child = child->next) {
         child->parent = NULL;
     }
@@ -257,7 +260,6 @@ int markdown_core_holder_take_children(markdown_core_holder *holder, markdown_co
     holder->last_child = block->last_child;
     block->first_child = NULL;
     block->last_child = NULL;
-    return ok;
 }
 
 void markdown_core_node_borrow_children(markdown_core_node *block, markdown_core_holder *holder) {

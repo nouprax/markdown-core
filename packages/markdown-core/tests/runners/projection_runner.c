@@ -675,14 +675,9 @@ static int pr_borrow_boundary(markdown_core_parser *parser, pr_generation *prev,
                 failed = 1;
                 break;
             }
-            if (!markdown_core_holder_take_children(cur.holders[i], leaf)) {
-                /* The release DESTROYS a fresh holder (no hold yet); the slot
-                 * must not keep the dangling pointer (landing review). */
-                markdown_core_holder_release(cur.holders[i]);
-                cur.holders[i] = NULL;
-                failed = 1;
-                break;
-            }
+            /* Pure pointer moves since #153 retired the store-time copy;
+             * nothing can fail here. */
+            markdown_core_holder_take_children(cur.holders[i], leaf);
             markdown_core_holder_hold(cur.holders[i]);
         }
         markdown_core_node_borrow_children(leaf, cur.holders[i]);

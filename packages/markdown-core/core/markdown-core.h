@@ -463,13 +463,6 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_append_child(markdown_core_node *nod
  *  materialized because an allocation failed; the tree stays valid. */
 MARKDOWN_CORE_EXPORT int markdown_core_consolidate_text_nodes(markdown_core_node *root);
 
-/** Ensures a node and all its children own their own chunk memory.
- */
-/** Converts borrowed string chunks into owned copies.  Returns 0 when a
- *  copy could not be allocated; the affected chunk is emptied rather than
- *  left borrowing the source buffer. */
-MARKDOWN_CORE_EXPORT int markdown_core_node_own(markdown_core_node *root);
-
 /**
  * ## Parsing
  *

@@ -284,6 +284,16 @@ static markdown_core_node *www_match(
         return NULL;
     }
     text->as.literal = markdown_core_chunk_dup(chunk, (bufsize_t)max_rewind, (bufsize_t)link_end);
+    /* The literal comes to rest here, so it must hold its bytes: a private
+     * copy, exactly as the email split below owns every piece it stores.
+     * The store-time shield (node_own) that used to own borrows like this
+     * one is gone (#153). */
+    if (!markdown_core_chunk_to_cstr(parser->mem, &text->as.literal)) {
+        parser->oom = true;
+        markdown_core_node_free(text);
+        markdown_core_node_free(node);
+        return NULL;
+    }
     markdown_core_node_append_child(node, text);
 
     node->start_line = text->start_line = node->end_line = text->end_line =
@@ -350,8 +360,15 @@ static markdown_core_node *url_match(
         return NULL;
     }
 
-    markdown_core_chunk url = markdown_core_chunk_dup(chunk, max_rewind - rewind, (bufsize_t)(link_end + rewind));
-    node->as.link.url = url;
+    /* Two rest positions need two holds: the one chunk value that used to
+     * be stored in both left a double free waiting behind the store-time
+     * shield. Each takes its own private copy now (#153). */
+    node->as.link.url = markdown_core_chunk_dup(chunk, max_rewind - rewind, (bufsize_t)(link_end + rewind));
+    if (!markdown_core_chunk_to_cstr(parser->mem, &node->as.link.url)) {
+        parser->oom = true;
+        markdown_core_node_free(node);
+        return NULL;
+    }
 
     markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
     if (!text) {
@@ -359,7 +376,13 @@ static markdown_core_node *url_match(
         markdown_core_node_free(node);
         return NULL;
     }
-    text->as.literal = url;
+    text->as.literal = markdown_core_chunk_dup(chunk, max_rewind - rewind, (bufsize_t)(link_end + rewind));
+    if (!markdown_core_chunk_to_cstr(parser->mem, &text->as.literal)) {
+        parser->oom = true;
+        markdown_core_node_free(text);
+        markdown_core_node_free(node);
+        return NULL;
+    }
     markdown_core_node_append_child(node, text);
 
     node->start_line = text->start_line = node->end_line = text->end_line =
