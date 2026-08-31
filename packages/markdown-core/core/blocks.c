@@ -1074,7 +1074,7 @@ static markdown_core_node *S_new_reference_definition(
 static bool resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
     bufsize_t pos;
     markdown_core_strbuf *node_content = &b->content;
-    markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
+    markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0, NULL};
     markdown_core_reference_parts parts;
     markdown_core_node *first_definition = NULL;
     markdown_core_node *registered;
@@ -1879,6 +1879,7 @@ static int S_chunk_copy(markdown_core_mem *mem, markdown_core_chunk *dst, const 
     dst->data = copy;
     dst->len = src->len;
     dst->alloc = 1;
+    dst->owner = NULL;
     return 1;
 }
 
@@ -2035,6 +2036,7 @@ static markdown_core_node *S_clone_block_node(
         dst->as.code.literal.data = NULL;
         dst->as.code.literal.len = 0;
         dst->as.code.literal.alloc = 0;
+        dst->as.code.literal.owner = NULL;
         if (!S_chunk_copy(mem, &dst->as.code.literal, &src->as.code.literal) ||
             !S_optional_chunk_copy(mem, &dst->as.code.info, &src->as.code.info)) {
             goto lost;
@@ -3192,6 +3194,7 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     input.data = parser->curline.ptr;
     input.len = parser->curline.size;
     input.alloc = 0;
+    input.owner = NULL;
 
     // Skip UTF-8 BOM.
     if (parser->line_number == 0 && input.len >= 3 && memcmp(input.data, "\xef\xbb\xbf", 3) == 0) {

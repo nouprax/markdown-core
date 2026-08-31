@@ -1350,7 +1350,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
                 bufsize_t output_len = (end - start) / 2;
                 unsigned char *output = (unsigned char *)subj->mem->calloc((size_t)output_len + 1, 1);
                 if (output) {
-                    markdown_core_chunk contents = {output, output_len, 1};
+                    markdown_core_chunk contents = {output, output_len, 1, NULL};
                     markdown_core_node *run;
                     memset(output, '\\', (size_t)output_len);
                     subj->pos = end;
@@ -1647,7 +1647,7 @@ static bufsize_t manual_scan_link_url_2(markdown_core_chunk *input, bufsize_t of
     }
 
     {
-        markdown_core_chunk result = {input->data + offset, i - offset, 0};
+        markdown_core_chunk result = {input->data + offset, i - offset, 0, NULL};
         *output = result;
     }
     return i - offset;
@@ -1679,7 +1679,7 @@ static bufsize_t manual_scan_link_url(markdown_core_chunk *input, bufsize_t offs
     }
 
     {
-        markdown_core_chunk result = {input->data + offset + 1, i - 2 - offset, 0};
+        markdown_core_chunk result = {input->data + offset + 1, i - 2 - offset, 0, NULL};
         *output = result;
     }
     return i - offset;
@@ -2675,7 +2675,7 @@ void markdown_core_parse_inlines(
     int options
 ) {
     subject subj;
-    markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
+    markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0, NULL};
     /* EVERY content-bearing block has a map by the time its inlines are parsed.
      * One the parser fed line by line already does; one whose content was SET
      * -- a table cell, a directive's label -- gets one mark here, derived from

@@ -41,6 +41,9 @@ houdini_unescape_html
 houdini_unescape_html_f
 markdown_core_association_free
 markdown_core_association_init
+markdown_core_buf_freeze
+markdown_core_buf_release
+markdown_core_buf_retain
 markdown_core_byte_set_has
 markdown_core_clean_title
 markdown_core_clean_url

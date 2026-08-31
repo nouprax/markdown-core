@@ -18,6 +18,7 @@ int markdown_core_association_init(
     out->label.data = NULL;
     out->label.len = 0;
     out->label.alloc = 0;
+    out->label.owner = NULL;
     out->identifier = out->label;
 
     /* The label OWNS its bytes: it is read out of a block's content buffer,
