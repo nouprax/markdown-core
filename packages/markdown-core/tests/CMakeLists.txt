@@ -541,6 +541,7 @@ set(MARKDOWN_CORE_COMPLEXITY_CASES
     many_unique_references
     many_duplicate_references
     many_unicode_references
+    many_autolink_emails
     read_unique_attributes
     read_duplicate_attributes
     reference_expansion_bound)

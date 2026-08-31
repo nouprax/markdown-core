@@ -138,6 +138,21 @@ static char *cc_unique_references(size_t size, size_t *length) { return cc_refer
 
 static char *cc_duplicate_references(size_t size, size_t *length) { return cc_references(size, length, 1); }
 
+/* Repeated short emails in prose: the autolink postprocess used to recount
+ * the whole run from byte zero for every node it placed (#136), Θ(k·n) for
+ * k mailto links -- 20.4s for 400KB. The filler keeps link density
+ * realistic so the 128MiB endpoint's node volume stays comparable to the
+ * reference cases while the byte count still exposes any rescan. */
+static char *cc_autolink_emails(size_t size, size_t *length) {
+    static const char unit[] = "a@b.cd lorem ipsum dolor sit amet consetetur sadipscing elitr "
+                               "sed diam nonumy eirmod tempor invidunt ut labore et dolore magna "
+                               "aliquyam erat sed diam voluptua at vero eos et accusam et justo "
+                               "duo dolores et ea rebum stet clita kasd gubergren no sea takimata ";
+    size_t unit_length = sizeof(unit) - 1;
+    size_t count = size / unit_length ? size / unit_length : 1;
+    return ts_repeat(unit, count, length);
+}
+
 /* Long Unicode labels: case folding is the dominant per-label cost of the one
  * key construction (#125), and folding rewrites these bytes for real -- 'ß'
  * widens to "ss" -- so the doubling gate watches the fold-heavy path stay
@@ -281,20 +296,24 @@ typedef struct cc_case_entry {
      * index, and a 6.8 MB directive took 269 s to dump while `many_unique_
      * attributes` passed. Parsing is not the only thing that has to scale. */
     int reads_attributes;
+    /* The one extension the case's input exercises; every case still runs
+     * through the same measurement loop. */
+    const char *extension;
 } cc_case_entry;
 
 static const cc_case_entry CC_CASES[] = {
-    {"valid_long_quoted_value", cc_quoted_value, 0},
-    {"valid_consecutive_backslashes", cc_backslashes, 0},
-    {"unclosed_long_quoted_value", cc_unclosed_quoted, 0},
-    {"unclosed_backslash_value", cc_unclosed_backslashes, 0},
-    {"many_unique_attributes", cc_unique_attributes, 0},
-    {"many_duplicate_attributes", cc_duplicate_attributes, 0},
-    {"many_unique_references", cc_unique_references, 0},
-    {"many_duplicate_references", cc_duplicate_references, 0},
-    {"many_unicode_references", cc_unicode_references, 0},
-    {"read_unique_attributes", cc_unique_attributes, 1},
-    {"read_duplicate_attributes", cc_duplicate_attributes, 1},
+    {"valid_long_quoted_value", cc_quoted_value, 0, "directive"},
+    {"valid_consecutive_backslashes", cc_backslashes, 0, "directive"},
+    {"unclosed_long_quoted_value", cc_unclosed_quoted, 0, "directive"},
+    {"unclosed_backslash_value", cc_unclosed_backslashes, 0, "directive"},
+    {"many_unique_attributes", cc_unique_attributes, 0, "directive"},
+    {"many_duplicate_attributes", cc_duplicate_attributes, 0, "directive"},
+    {"many_unique_references", cc_unique_references, 0, "directive"},
+    {"many_duplicate_references", cc_duplicate_references, 0, "directive"},
+    {"many_unicode_references", cc_unicode_references, 0, "directive"},
+    {"many_autolink_emails", cc_autolink_emails, 0, "autolink"},
+    {"read_unique_attributes", cc_unique_attributes, 1, "directive"},
+    {"read_duplicate_attributes", cc_duplicate_attributes, 1, "directive"},
 };
 
 /* Cases measured by output size rather than by time. */
@@ -326,12 +345,12 @@ static void cc_read_attributes(markdown_core_document *document) {
     }
 }
 
-static int cc_measure(const char *input, size_t length, double *seconds, int reads_attributes) {
+static int cc_measure(const char *input, size_t length, double *seconds, int reads_attributes, const char *extension) {
     double samples[SCALING_REPEATS];
     int repeat;
     markdown_core_parse_options options;
     ts_ast_options_none(&options);
-    if (ts_ast_enable(&options, "directive") != 0) {
+    if (ts_ast_enable(&options, extension) != 0) {
         return -1;
     }
     for (repeat = 0; repeat < SCALING_REPEATS; repeat++) {
@@ -382,7 +401,7 @@ static int cc_run(const cc_case_entry *entry) {
             fprintf(stderr, "cannot build input for %s\n", entry->name);
             return -1;
         }
-        if (cc_measure(input, length, &timings[step], entry->reads_attributes) != 0) {
+        if (cc_measure(input, length, &timings[step], entry->reads_attributes, entry->extension) != 0) {
             fprintf(stderr, "conversion failed for %s\n", entry->name);
             free(input);
             return -1;
