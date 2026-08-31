@@ -268,17 +268,23 @@ struct markdown_core_node {
 };
 
 /* A HOLDER owns a child list that borrowers alias (docs/STREAMING.md T19).
- * One count per LIST, not one per node: `refs` is the number of holds,
- * `release` drops one and destroys the list with the last. A fresh holder has
- * no hold, so its first `release` destroys it -- the rule an ordinary node
- * already lives under. The list is one level deep: a node in it is never
- * itself a borrower, which is what lets the iterator remember one borrower
- * rather than a stack of them. */
+ * One count per LIST, not one per node: `refs` is the number of holds, a
+ * holder is BORN WITH ITS CREATOR'S HOLD (#153: the same create-at-one rule
+ * as markdown_core_buf), and `release` drops one and destroys the list with
+ * the last. The count is C11-atomic, and that is the THREADING CONTRACT for
+ * everything a derivation shares: a derived document may be freed on any
+ * thread, concurrently with the session that produced it and with other
+ * documents derived from it -- the atomic counts on holders and frozen
+ * buffers are the synchronization. Access to ONE document is still the
+ * caller's to order (include/markdown_core.h states the facade form of the
+ * same rule). The list is one level deep: a node in it is never itself a
+ * borrower, which is what lets the iterator remember one borrower rather
+ * than a stack of them. */
 struct markdown_core_holder {
     markdown_core_mem *mem;
     markdown_core_node *first_child;
     markdown_core_node *last_child;
-    uint32_t refs;
+    markdown_core_atomic_u32 refs;
     /* THE KEY the list was projected under (T9): the origin's write stamp
      * (T3), both map generations (T4), and the extension set's generation. A
      * reading that agrees on all four says the list is what projecting the

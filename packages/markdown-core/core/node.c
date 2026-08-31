@@ -230,15 +230,16 @@ markdown_core_holder *markdown_core_holder_new(markdown_core_mem *mem) {
     markdown_core_holder *holder = (markdown_core_holder *)mem->calloc(1, sizeof(*holder));
     if (holder) {
         holder->mem = mem;
+        /* Born with the creator's hold, like a frozen buffer (#153). */
+        markdown_core_atomic_init(&holder->refs, 1);
     }
     return holder;
 }
 
-void markdown_core_holder_hold(markdown_core_holder *holder) { holder->refs++; }
+void markdown_core_holder_hold(markdown_core_holder *holder) { markdown_core_atomic_increment(&holder->refs); }
 
 void markdown_core_holder_release(markdown_core_holder *holder) {
-    if (holder->refs > 1) {
-        holder->refs--;
+    if (markdown_core_atomic_decrement(&holder->refs) != 0) {
         return;
     }
     /* The list's `next` chain is exactly what `S_free_nodes` walks; the
@@ -267,7 +268,7 @@ void markdown_core_node_borrow_children(markdown_core_node *block, markdown_core
     block->last_child = holder->last_child;
     block->link.holder = holder;
     block->flags &= ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN);
-    holder->refs++;
+    markdown_core_holder_hold(holder);
 }
 
 markdown_core_node_type markdown_core_node_get_type(markdown_core_node *node) {

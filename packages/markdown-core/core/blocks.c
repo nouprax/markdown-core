@@ -2010,7 +2010,7 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
     holder->refgen = parser->refmap->generation;
     holder->footgen = parser->footnote_defs->generation;
     holder->extgen = parser->extension_generation;
-    markdown_core_holder_hold(holder);
+    /* The creation hold is the cache's hold (holders are born held). */
     if (origin->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) {
         markdown_core_holder_release(origin->link.holder);
     }

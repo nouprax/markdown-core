@@ -29,6 +29,14 @@
  * afterwards. Node handles and `markdown_core_string`s borrow from the owning document
  * and end with it.
  *
+ * Shared immutable state: a document may share reference-counted immutable
+ * state (cached inline lists, frozen content buffers) with the session that
+ * produced it and with other documents. That sharing is internal and its
+ * counts are atomic, so freeing a document requires no synchronization
+ * against the session or against other documents -- only the per-document
+ * rule above. A session's own entry points remain single-caller: two threads
+ * must not drive one session concurrently.
+ *
  * Errors: a markdown_core_error returned through an out-parameter is owned by
  * the caller of that call and is not shared with any other thread; release it
  * with markdown_core_error_free (NULL is allowed). Dump buffers are owned by
