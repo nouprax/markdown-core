@@ -100,15 +100,6 @@ markdown_core_event_type markdown_core_iter_get_event_type(markdown_core_iter *i
 markdown_core_node *markdown_core_iter_get_root(markdown_core_iter *iter) { return iter->root; }
 
 int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
-    return markdown_core_consolidate_text_nodes_with_parser(NULL, root);
-}
-
-/* Consolidation frees every text node but the first of each run, and since
- * requirement 11b those nodes OWN REGIONS. `parser` is how the survivor takes
- * them: one node replacing another, roles kept, bounded by the freed node's own
- * lines. NULL is the public entry point's answer -- a caller outside a parse
- * has no region set to keep. */
-int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parser, markdown_core_node *root) {
     if (root == NULL) {
         return 1;
     }
@@ -154,8 +145,6 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
                     cur->end_column = tmp->end_column;
                 }
                 next = tmp->next;
-                if (parser) {
-                }
                 markdown_core_node_free(tmp);
                 tmp = next;
             }

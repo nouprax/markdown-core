@@ -39,7 +39,6 @@ typedef struct bracket {
     markdown_core_node *inl_text;
     bufsize_t position;
     bool image;
-    bool active;
     bool bracket_after;
     bool in_bracket_image0;
     bool in_bracket_image1;
@@ -983,7 +982,6 @@ static void push_bracket(subject *subj, bool image, markdown_core_node *inl_text
         b->in_bracket_image1 = subj->last_bracket->in_bracket_image1;
     }
     b->image = image;
-    b->active = true;
     b->inl_text = inl_text;
     b->previous = subj->last_bracket;
     b->position = subj->pos;
@@ -1360,8 +1358,6 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
                     /* One escape per PAIR: the first backslash of each is the
                      * escape and reaches no literal, the second is the byte the
                      * literal is made of. */
-                    for (bufsize_t at = start; run && at + 1 < end; at += 2) {
-                    }
                     return run;
                 }
             }
@@ -2608,18 +2604,12 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
          * its own literal -- and `S_insert_emph` re-claims the bytes it uses.
          * A smart quote is a SUBSTITUTION: the literal is a curly quote, which
          * is not the byte the source wrote. */
-        if ((c == '\'' || c == '"') && (options & MARKDOWN_CORE_OPT_SMART) != 0) {
-        }
         new_inl = handle_delim(subj, c, (options & MARKDOWN_CORE_OPT_SMART) != 0);
         break;
     case '-':
-        if ((options & MARKDOWN_CORE_OPT_SMART) != 0) {
-        }
         new_inl = handle_hyphen(subj, (options & MARKDOWN_CORE_OPT_SMART) != 0);
         break;
     case '.':
-        if ((options & MARKDOWN_CORE_OPT_SMART) != 0) {
-        }
         new_inl = handle_period(subj, (options & MARKDOWN_CORE_OPT_SMART) != 0);
         break;
     case '[':

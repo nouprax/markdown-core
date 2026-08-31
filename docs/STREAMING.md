@@ -614,7 +614,7 @@ the document one line at a time and deriving after every line:
 ```
 
 **So the whole-tree tail is 38.4 ms — 74% of what a feed costs once the
-re-parse is cached away.** `markdown_core_consolidate_text_nodes_with_parser`,
+re-parse is cached away.** `markdown_core_consolidate_text_nodes`,
 every extension `postprocess_func` and `S_strip_html_comments` run over the
 **entire projected tree on every projection**
 ([blocks.c:1687-1700](../packages/markdown-core/core/blocks.c#L1687-L1700)). In a stream it runs
@@ -1009,7 +1009,7 @@ subtree into the returned tree while the tail still walks the whole tree is not
 a wrong tree — it is a **use-after-free**:
 
 ```
-freed by   markdown_core_consolidate_text_nodes_with_parser  (iterator.c:151)
+freed by   markdown_core_consolidate_text_nodes  (iterator.c:151)
            <- the whole-tree consolidation, merging adjacent TEXT nodes
 use after  the cache store
 ```

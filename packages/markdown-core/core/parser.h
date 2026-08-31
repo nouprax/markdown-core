@@ -248,7 +248,6 @@ struct markdown_core_parser {
      * instead of returning a silently truncated document. */
     bool oom;
     bool last_buffer_ended_with_cr;
-    size_t total_size;
     markdown_core_llist *syntax_extensions;
     markdown_core_llist *inline_syntax_extensions;
     /* THE EXTENSION SET's generation (T9 amendment): advanced by every

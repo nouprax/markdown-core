@@ -398,7 +398,8 @@ static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
  *
  * It is the concrete record set's shape with no difference at all, and the
  * sameness is the point: A GROWTH THIS LIST CANNOT AFFORD ABANDONS THE PARSE,
- * exactly as `S_claim_region`'s does.
+ * exactly as the line-start and diagnostic record growth sites do
+ * (`S_record_line_start`, `markdown_core_parser_diagnose`).
  *
  * OWNER RULING, 2026-08-24: "we do not want fallback when OOM happens; the
  * parser should return an error rather than return a fallback." So there is no
@@ -1566,7 +1567,7 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
     bool children_own = !MARKDOWN_CORE_NODE_BORROWED_P(node);
 
     if (children_own && contains_inlines(node)) {
-        if (!markdown_core_consolidate_text_nodes_with_parser(parser, node)) {
+        if (!markdown_core_consolidate_text_nodes(node)) {
             parser->oom = true;
         }
     }
@@ -1615,7 +1616,7 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
             if (MARKDOWN_CORE_NODE_BLOCK_P(child) || !contains_inlines(child)) {
                 continue;
             }
-            if (!markdown_core_consolidate_text_nodes_with_parser(parser, child)) {
+            if (!markdown_core_consolidate_text_nodes(child)) {
                 parser->oom = true;
             }
             for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
@@ -2262,12 +2263,6 @@ static bool S_linebuf_reserve(markdown_core_parser *parser, int64_t add) {
 static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buffer, size_t len, bool eof) {
     const unsigned char *end = buffer + len;
     static const uint8_t repl[] = {239, 191, 189};
-
-    if (len > UINT_MAX - parser->total_size) {
-        parser->total_size = UINT_MAX;
-    } else {
-        parser->total_size += len;
-    }
 
     if (parser->last_buffer_ended_with_cr && *buffer == '\n') {
         // skip NL if last buffer ended with CR ; see #117

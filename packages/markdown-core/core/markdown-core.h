@@ -582,16 +582,13 @@ markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len,
  */
 #define MARKDOWN_CORE_OPT_DEFAULT 0
 
-/** Track multiline inline source positions while parsing. */
-#define MARKDOWN_CORE_OPT_SOURCEPOS (1 << 1)
+/* Bits (1 << 1) and (1 << 8) were MARKDOWN_CORE_OPT_SOURCEPOS and
+ * MARKDOWN_CORE_OPT_NORMALIZE. Neither changed behavior - position tracking
+ * is unconditional in the 3.0 scope model, and NORMALIZE was inherited as a
+ * no-op - so both are deleted; the bits stay unassigned.
 
-/**
  * ### Options affecting parsing
  */
-
-/** Legacy option (no effect).
- */
-#define MARKDOWN_CORE_OPT_NORMALIZE (1 << 8)
 
 /** Validate UTF-8 in the input before parsing, replacing illegal
  * sequences with the replacement character U+FFFD.
