@@ -204,20 +204,23 @@ int markdown_core_node_own(markdown_core_node *root) {
         case MARKDOWN_CORE_NODE_HTML:
         case MARKDOWN_CORE_NODE_CODE:
         case MARKDOWN_CORE_NODE_HTML_BLOCK:
-            if (!markdown_core_chunk_to_cstr(mem, &cur->as.literal)) {
+            /* A slice that holds its frozen buffer is already durable
+             * (#153); only a bare borrow still needs the private copy. */
+            if (!cur->as.literal.owner && !markdown_core_chunk_to_cstr(mem, &cur->as.literal)) {
                 markdown_core_chunk_set_cstr(mem, &cur->as.literal, NULL);
                 ok = 0;
             }
             break;
         case MARKDOWN_CORE_NODE_LINK:
-            if (!markdown_core_chunk_to_cstr(mem, &cur->as.link.url)) {
+            if (!cur->as.link.url.owner && !markdown_core_chunk_to_cstr(mem, &cur->as.link.url)) {
                 markdown_core_chunk_set_cstr(mem, &cur->as.link.url, NULL);
                 ok = 0;
             }
             /* Only a title the source WROTE has bytes to own; an absent one
              * has nothing to copy and losing the copy makes it absent, which
              * would be indistinguishable from the source having written none. */
-            if (cur->as.link.title.has_value && !markdown_core_chunk_to_cstr(mem, &cur->as.link.title.value)) {
+            if (cur->as.link.title.has_value && !cur->as.link.title.value.owner &&
+                !markdown_core_chunk_to_cstr(mem, &cur->as.link.title.value)) {
                 markdown_core_optional_chunk_free(mem, &cur->as.link.title);
                 ok = 0;
             }

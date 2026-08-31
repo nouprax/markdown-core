@@ -195,7 +195,13 @@ static void S_free_nodes(markdown_core_node *e) {
             markdown_core_holder_release(holder);
         }
 
-        markdown_core_strbuf_free(&e->content);
+        if (e->frozen_content) {
+            /* `content.ptr` aliases the frozen bytes; only the reference is
+             * this node's to give up. */
+            markdown_core_buf_release(e->frozen_content);
+        } else {
+            markdown_core_strbuf_free(&e->content);
+        }
 
         if (e->as.opaque && e->extension && e->extension->opaque_free_func) {
             e->extension->opaque_free_func(e->extension, NODE_MEM(e), e);
@@ -955,13 +961,18 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
 
     cur = node;
     for (;;) {
-        /* #152 Stage 1's invariant: a block that borrows its list carries no
-         * content -- content is the arena backing an OWNED inline list, and
-         * a borrowed list is backed by its holder (whose chunks the store
-         * owned). Reported but not repaired: freeing here would assert an
-         * ownership claim this walk cannot verify. */
-        if (MARKDOWN_CORE_NODE_BORROWED_P(cur) && cur->content.size != 0) {
+        /* #152/#153's invariant: a block that borrows its list owns no
+         * mutable content arena -- its bytes, if any, alias a frozen buffer
+         * the block holds a reference to (`asize == 0` marks the alias),
+         * and the borrowed list is backed by its holder. Reported but not
+         * repaired: freeing here would assert an ownership claim this walk
+         * cannot verify. */
+        if (MARKDOWN_CORE_NODE_BORROWED_P(cur) && cur->content.asize != 0) {
             S_print_error(out, cur, "borrowed content");
+            ++errors;
+        }
+        if (cur->frozen_content && cur->content.asize != 0) {
+            S_print_error(out, cur, "frozen content");
             ++errors;
         }
         if (cur->first_child) {

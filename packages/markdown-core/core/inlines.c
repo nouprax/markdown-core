@@ -52,6 +52,13 @@ typedef struct bracket {
 typedef struct subject {
     markdown_core_mem *mem;
     markdown_core_chunk input;
+    /* The frozen buffer `input` slices, when the owning block has one
+     * (#153): a literal minted from the input then comes to rest as a
+     * retained slice instead of a borrow. NULL for a subject over bytes
+     * with no frozen owner -- the reference-definition parser, a
+     * CST-resident label's content -- where literals keep the pre-#153
+     * discipline. */
+    markdown_core_buf *owner_buf;
     unsigned flags;
     int line;
     bufsize_t pos;
@@ -453,6 +460,16 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_literal(
     markdown_core_strbuf_init(subj->mem, &e->content, 0);
     e->type = (uint16_t)t;
     e->as.literal = s;
+    /* THE LITERAL COMES TO REST HERE (#153): a view into the subject's
+     * frozen buffer takes a reference so the bytes outlive any one tree.
+     * The window test is one subtraction: only a pointer inside the frozen
+     * bytes can satisfy it, so alloc'd chunks (entities, unescapes) and
+     * static literals pass through untouched. */
+    if (subj->owner_buf && !s.alloc && s.owner == NULL &&
+        (uintptr_t)s.data - (uintptr_t)subj->owner_buf->bytes <= (uintptr_t)subj->owner_buf->size) {
+        e->as.literal.owner = subj->owner_buf;
+        markdown_core_buf_retain(subj->owner_buf);
+    }
     S_place_inline(subj, e, start_column, end_column);
     return e;
 }
@@ -581,6 +598,7 @@ static void subject_from_buf(
     e->skip_chars = parser ? parser->skip_chars : BASE_SKIP_CHARS;
     e->mem = mem;
     e->input = *chunk;
+    e->owner_buf = NULL;
     e->flags = 0;
     e->line = line_number;
     e->pos = 0;
@@ -2693,6 +2711,10 @@ void markdown_core_parse_inlines(
     }
     subject_from_buf(parser, parser->mem, parent->start_line, &subj, &content, refmap);
     subj.owner = parent;
+    /* Literals slice the block's frozen content when it has one (#153); a
+     * block parsed before its freeze -- a CST-resident label's content --
+     * leaves this NULL and keeps the borrow-then-own discipline. */
+    subj.owner_buf = parent->frozen_content;
     markdown_core_chunk_rtrim(&subj.input);
 
     while (!is_eof(&subj) && parse_inline(parser, &subj, parent, options))

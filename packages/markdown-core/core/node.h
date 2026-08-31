@@ -162,6 +162,17 @@ typedef struct markdown_core_holder markdown_core_holder;
 
 struct markdown_core_node {
     markdown_core_strbuf content;
+    /* THE FROZEN CONTENT (#153). NULL while the block is open and `content`
+     * is the mutable accumulator; set at the end of `finalize`, when the
+     * strbuf's allocation moves into a reference-counted immutable buffer
+     * and `content.ptr/size` are repointed at the same bytes with
+     * `asize == 0` -- readers keep working verbatim, and nothing moved, so
+     * every view taken before the freeze stays valid. A derived block
+     * retains its origin's buffer instead of copying the bytes; inline
+     * literals hold retained slices of it (chunk.h), so the bytes outlive
+     * any one tree. When set, the node's free path releases this and must
+     * not free `content.ptr`. */
+    markdown_core_buf *frozen_content;
 
     struct markdown_core_node *next;
     struct markdown_core_node *prev;

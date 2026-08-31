@@ -85,6 +85,7 @@ static markdown_core_chunk fb_chunk(const char *text) {
     chunk.data = (unsigned char *)text;
     chunk.len = (bufsize_t)strlen(text);
     chunk.alloc = 0;
+    chunk.owner = NULL;
     return chunk;
 }
 

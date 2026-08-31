@@ -1203,6 +1203,7 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
         if (!has_content) {
             // remove blank node (former reference def)
             markdown_core_node_free(b);
+            b = NULL;
         }
         break;
     }
@@ -1306,6 +1307,26 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
         break;
     }
 
+    /* THE FREEZE (#153): whatever content survives finalize -- the harvest
+     * above was its final writer -- moves into a reference-counted immutable
+     * buffer, allocation and bytes untouched, and `content.ptr/size` are
+     * repointed at the same bytes so every reader and every view taken
+     * before this line keeps working. From here derivations retain instead
+     * of copying, and the parse's literals hold slices. Code and HTML
+     * blocks detached their content into literals above and freeze
+     * nothing. */
+    if (b && b->content.size > 0) {
+        b->frozen_content = markdown_core_buf_freeze(&b->content);
+        if (b->frozen_content) {
+            b->content.ptr = b->frozen_content->bytes;
+            b->content.size = b->frozen_content->size;
+            b->content.asize = 0;
+        } else {
+            /* The bytes are gone with the failed freeze; no fallback. */
+            parser->oom = true;
+        }
+    }
+
     return parent;
 }
 
@@ -1322,6 +1343,19 @@ static markdown_core_node *add_child(
     // then back up til we hit a node that can.
     while (!markdown_core_node_can_contain_type(parent, block_type)) {
         parent = finalize(parser, parent);
+    }
+    /* The climb can close `parser->current` (a leaf container -- a
+     * paragraph -- being interrupted IS the current block). In normal flow
+     * `add_text_to_container` re-anchors it at the end of the line, and its
+     * identity comparisons need the stale pointer, so it must not be
+     * touched here. But since #153 `finalize` allocates (the content
+     * freeze), an OOM raised inside the climb makes `S_process_line` bail
+     * before that tail runs -- leaving `current` on a closed block for the
+     * finish walk to re-finalize. Only then anchor it at the still-open
+     * ancestor the climb stopped at, exactly as the make_block failure
+     * below does. */
+    if (parser->oom && !(parser->current->flags & MARKDOWN_CORE_NODE__OPEN)) {
+        parser->current = parent;
     }
 
     markdown_core_node *child = make_block(parser->mem, block_type, parser->line_number, start_column);
@@ -1962,12 +1996,11 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
     origin->link.holder = holder;
     origin->flags |= MARKDOWN_CORE_NODE__CACHE_OWNER;
     markdown_core_node_borrow_children(node, holder);
-    /* #152 Stage 1's other half: `take_children` owned every chunk in the
-     * stored list, so the arena the parsed literals used to alias backs
-     * nothing now -- and this block just became a borrower, whose invariant
-     * is that its holder backs the list, not a private arena. Freeing keeps
-     * `content.mem` (NODE_MEM reads it) and only drops the bytes. */
-    markdown_core_strbuf_free(&node->content);
+    /* Under #153 the stored list's literals hold retained slices of the
+     * frozen content, so the block that just became a borrower keeps only
+     * its own reference (released at node free) -- there is no private
+     * arena left to drop, which is what #152 Stage 1's free here used to
+     * do for the copied one. */
 }
 
 static markdown_core_node *S_clone_block_node(
@@ -1997,11 +2030,31 @@ static markdown_core_node *S_clone_block_node(
     hit = enrolled && S_cache_fresh(parser, src, refmap);
     markdown_core_strbuf_init(mem, &dst->content, 0);
     if (!hit && src->content.size) {
-        markdown_core_strbuf_put(&dst->content, src->content.ptr, src->content.size);
-        if (dst->content.oom) {
-            markdown_core_strbuf_free(&dst->content);
-            mem->free(dst);
-            return NULL;
+        if (src->frozen_content) {
+            /* Closed content is frozen (#153): the derivation shares the
+             * bytes, never copies them. */
+            markdown_core_buf_retain(src->frozen_content);
+            dst->frozen_content = src->frozen_content;
+            dst->content.ptr = src->content.ptr;
+            dst->content.size = src->content.size;
+        } else {
+            /* An open block's tail is still a live accumulator; copy the
+             * tail-sized bytes and freeze the private copy, so the parse's
+             * literals hold slices here too and every derived block is one
+             * shape. */
+            markdown_core_strbuf_put(&dst->content, src->content.ptr, src->content.size);
+            if (dst->content.oom) {
+                markdown_core_strbuf_free(&dst->content);
+                mem->free(dst);
+                return NULL;
+            }
+            dst->frozen_content = markdown_core_buf_freeze(&dst->content);
+            if (!dst->frozen_content) {
+                mem->free(dst);
+                return NULL;
+            }
+            dst->content.ptr = dst->frozen_content->bytes;
+            dst->content.size = dst->frozen_content->size;
         }
     }
     dst->start_line = src->start_line;
