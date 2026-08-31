@@ -54,7 +54,7 @@ target_compile_options(
             $<$<OR:$<C_COMPILER_ID:Clang>,$<C_COMPILER_ID:GNU>>:-pedantic>)
 set_target_properties(
     markdown_core_kotlin
-    PROPERTIES C_STANDARD 99
+    PROPERTIES C_STANDARD 11
                C_STANDARD_REQUIRED YES
                C_EXTENSIONS NO
                C_VISIBILITY_PRESET hidden

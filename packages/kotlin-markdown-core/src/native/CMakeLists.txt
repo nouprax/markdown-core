@@ -10,7 +10,7 @@ if(MARKDOWN_CORE_KOTLIN_JNI)
     set_target_properties(
         markdown_core_kotlin_jni
         PROPERTIES OUTPUT_NAME markdown_core_kotlin
-                   C_STANDARD 99
+                   C_STANDARD 11
                    C_STANDARD_REQUIRED YES
                    C_EXTENSIONS NO
                    C_VISIBILITY_PRESET hidden
@@ -36,7 +36,7 @@ if(MARKDOWN_CORE_KOTLIN_NATIVE)
     set_target_properties(
         markdown_core_kotlin_native
         PROPERTIES OUTPUT_NAME markdown_core_kotlin
-                   C_STANDARD 99
+                   C_STANDARD 11
                    C_STANDARD_REQUIRED YES
                    C_EXTENSIONS NO
                    POSITION_INDEPENDENT_CODE ON)
