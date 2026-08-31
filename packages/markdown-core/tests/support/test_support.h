@@ -108,6 +108,17 @@ char *ts_repeat(const char *unit, size_t count, size_t *length);
 /* Monotonic clock in nanoseconds for relative benchmark measurements. */
 uint64_t ts_monotonic_ns(void);
 
+/* Pins the C library's arena policy so benchmarks measure the engine, not
+ * the allocator's heuristics.  glibc adapts its trim threshold at runtime,
+ * and the adaptation is bistable: an irrelevant nudge to an allocation size
+ * class can flip a parse/free loop between keeping its arena warm and
+ * returning it to the kernel after every document -- the refault storm then
+ * reads as a ±50% wall-clock swing on a diff whose instruction count is
+ * identical (measured on deep_nesting@32768: +54% wall, +0.1% Ir, 3.4x the
+ * minor faults; pinning the threshold restored parity).  Call once at the
+ * top of a benchmark entry point.  No-op off glibc. */
+void ts_bench_pin_allocator(void);
+
 #ifdef __cplusplus
 }
 #endif

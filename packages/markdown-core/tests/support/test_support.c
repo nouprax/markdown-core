@@ -9,6 +9,10 @@
 #include <time.h>
 #endif
 
+#if defined(__GLIBC__)
+#include <malloc.h>
+#endif
+
 /* File IO -------------------------------------------------------------- */
 
 uint8_t *ts_read_file(const char *path, size_t *length) {
@@ -495,6 +499,14 @@ char *ts_repeat(const char *unit, size_t count, size_t *length) {
         *length = total;
     }
     return buffer;
+}
+
+void ts_bench_pin_allocator(void) {
+#if defined(__GLIBC__)
+    /* A fixed threshold larger than any workload's arena; setting it also
+     * turns off glibc's dynamic threshold adjustment, which is the point. */
+    mallopt(M_TRIM_THRESHOLD, 128 * 1024 * 1024);
+#endif
 }
 
 uint64_t ts_monotonic_ns(void) {

@@ -388,6 +388,8 @@ int main(int argc, char **argv) {
     int list_only = 0;
     size_t i;
 
+    ts_bench_pin_allocator();
+
     options.samples_dir = NULL;
     options.repeats = BENCH_DEFAULT_REPEATS;
     options.warmup = BENCH_DEFAULT_WARMUP;

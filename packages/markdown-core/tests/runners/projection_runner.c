@@ -967,6 +967,7 @@ static int case_feed_loop(const ts_spec_file *file) {
     size_t total_bytes = 0;
     size_t boundaries = 0;
     size_t hits = 0, misses = 0;
+    ts_bench_pin_allocator();
     repeat_ns = (uint64_t *)calloc((size_t)pr_repeats, sizeof(uint64_t));
     if (!repeat_ns) {
         fputs("feed loop: cannot allocate repeat samples\n", stderr);
