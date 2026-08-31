@@ -1728,7 +1728,33 @@ static void process_inlines(
             }
             if (!MARKDOWN_CORE_NODE_BORROWED_P(cur) && S_cache_fresh(parser, cur, refmap)) {
                 /* `finish` projects the CST in place (T1): the block IS its
-                 * own origin, and the cache's hold becomes the borrow's. */
+                 * own origin, and the cache's hold becomes the borrow's.
+                 * The content settles FIRST (#153): a borrower's bytes alias
+                 * a frozen buffer (node_check), and a block whose recording
+                 * projection ran while it was still open -- a setext
+                 * heading's, say -- reaches this hit with a live arena the
+                 * lazy freeze never saw. Finalize has run, so the arena is
+                 * settled and the freeze is the usual O(1) detach; a failed
+                 * freeze loses the bytes and poisons the parse, and finish
+                 * answers NULL for it below -- no fallback persists. */
+                if (!cur->frozen_content && !(cur->flags & MARKDOWN_CORE_NODE__OPEN)) {
+                    if (cur->content.size) {
+                        cur->frozen_content = markdown_core_buf_freeze(&cur->content);
+                        if (cur->frozen_content) {
+                            cur->content.ptr = cur->frozen_content->bytes;
+                            cur->content.size = cur->frozen_content->size;
+                            cur->content.asize = 0;
+                        } else {
+                            parser->oom = true;
+                        }
+                    } else if (cur->content.asize) {
+                        /* An EMPTY heading's trim left an allocated scratch
+                         * arena behind; a borrower owns no arena, and the
+                         * reset points the strbuf at the static empty
+                         * buffer, so readers still see "". */
+                        markdown_core_strbuf_free(&cur->content);
+                    }
+                }
                 cur->first_child = cur->link.holder->first_child;
                 cur->last_child = cur->link.holder->last_child;
                 cur->flags &= ~MARKDOWN_CORE_NODE__CACHE_OWNER;
@@ -2049,18 +2075,22 @@ static markdown_core_node *S_clone_block_node(
     /* THE HIT IS DECIDED FIRST (#152 Stage 1). Content is the arena backing
      * an OWNED inline list -- `parse_inlines` reads its subject off
      * `content.ptr` -- and a hit block borrows its list from the holder, so
-     * a hit block's content copy would be read by nothing. Copy it only
-     * when this clone will parse. The predicate reads `src`, which is
-     * whole; `dst` is still half-built here (an extension's
-     * `contains_inlines_func` may read state the copy below has not
-     * reached yet). `S_cache_fresh` is pure: it reads parser state and
-     * `src`, and nothing between here and the borrow at the bottom writes
-     * either. */
+     * a hit skips the parse. It does NOT skip the content: name-selected
+     * postprocess hooks run on borrowed blocks too (F15 rule 2) and may
+     * read the block's bytes, so a hit clone that dropped them would show a
+     * hook authored bytes on the recording projection and nothing on the
+     * next (review finding on this series). The bytes ride along below as a
+     * RETAIN of the frozen buffer -- the elision #152 keeps is the byte
+     * copy, not the content. The predicate reads `src`, which is whole;
+     * `dst` is still half-built here (an extension's `contains_inlines_func`
+     * may read state the copy below has not reached yet). `S_cache_fresh`
+     * is pure: it reads parser state and `src`, and nothing between here
+     * and the borrow at the bottom writes either. */
     enrolled = MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src) && contains_inlines((markdown_core_node *)src) &&
                refmap == parser->refmap && !parser->no_projection_cache;
     hit = enrolled && S_cache_fresh(parser, src, refmap);
     markdown_core_strbuf_init(mem, &dst->content, 0);
-    if (!hit && src->content.size) {
+    if (src->content.size) {
         /* THE LAZY FREEZE (#153): a closed block's content freezes on the
          * first derivation that shares it -- allocation and bytes
          * untouched, `content.ptr/size` repointed at the same bytes -- so
