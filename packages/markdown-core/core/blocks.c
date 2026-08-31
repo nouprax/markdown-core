@@ -1152,6 +1152,29 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
     return has_content;
 }
 
+/* Freeze a strbuf and hand its one reference to the returned whole-buffer
+ * slice (#153): the detach that used to move the allocation into an alloc'd
+ * chunk now moves it into a frozen buffer, so a derivation's copy of the
+ * literal becomes a retain. Loss reporting matches chunk_buf_detach: NULL
+ * data is the poisoned case, and an empty unpoisoned buffer detaches the
+ * old way (an allocated empty string) so emptiness stays distinct from
+ * loss. */
+static markdown_core_chunk S_freeze_to_chunk(markdown_core_strbuf *buf) {
+    markdown_core_chunk c = MARKDOWN_CORE_CHUNK_EMPTY;
+    markdown_core_buf *frozen;
+    if (buf->size == 0) {
+        return markdown_core_chunk_buf_detach(buf);
+    }
+    frozen = markdown_core_buf_freeze(buf);
+    if (!frozen) {
+        return c;
+    }
+    c.data = frozen->bytes;
+    c.len = frozen->size;
+    c.owner = frozen;
+    return c;
+}
+
 static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_node *b) {
     bufsize_t pos;
     markdown_core_node *item;
@@ -1247,7 +1270,7 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
                 markdown_core_strbuf_free(&tmp);
                 b->as.code.info = markdown_core_optional_chunk_absent();
             } else {
-                markdown_core_chunk info = markdown_core_chunk_buf_detach(&tmp);
+                markdown_core_chunk info = S_freeze_to_chunk(&tmp);
                 if (!info.data) {
                     parser->oom = true;
                 }
@@ -1262,14 +1285,14 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
             }
             markdown_core_strbuf_drop(node_content, pos);
         }
-        b->as.code.literal = markdown_core_chunk_buf_detach(node_content);
+        b->as.code.literal = S_freeze_to_chunk(node_content);
         if (!b->as.code.literal.data) {
             parser->oom = true;
         }
         break;
 
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
-        b->as.literal = markdown_core_chunk_buf_detach(node_content);
+        b->as.literal = S_freeze_to_chunk(node_content);
         if (!b->as.literal.data) {
             parser->oom = true;
         }
@@ -2003,6 +2026,33 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
      * do for the copied one. */
 }
 
+/* A chunk coming to rest in a clone: an owner-backed source shares by
+ * retaining (#153); an alloc'd or borrowed one keeps the byte copy. */
+static int S_chunk_share(markdown_core_mem *mem, markdown_core_chunk *dst, const markdown_core_chunk *src) {
+    if (src->owner) {
+        *dst = markdown_core_chunk_retain_copy(src);
+        return 1;
+    }
+    return S_chunk_copy(mem, dst, src);
+}
+
+static int S_optional_chunk_share(
+    markdown_core_mem *mem,
+    markdown_core_optional_chunk *dst,
+    const markdown_core_optional_chunk *src
+) {
+    if (!src->has_value) {
+        *dst = markdown_core_optional_chunk_absent();
+        return 1;
+    }
+    if (src->value.owner) {
+        dst->value = markdown_core_chunk_retain_copy(&src->value);
+        dst->has_value = true;
+        return 1;
+    }
+    return S_optional_chunk_copy(mem, dst, src);
+}
+
 static markdown_core_node *S_clone_block_node(
     markdown_core_parser *parser,
     const markdown_core_node *src,
@@ -2090,8 +2140,8 @@ static markdown_core_node *S_clone_block_node(
         dst->as.code.literal.len = 0;
         dst->as.code.literal.alloc = 0;
         dst->as.code.literal.owner = NULL;
-        if (!S_chunk_copy(mem, &dst->as.code.literal, &src->as.code.literal) ||
-            !S_optional_chunk_copy(mem, &dst->as.code.info, &src->as.code.info)) {
+        if (!S_chunk_share(mem, &dst->as.code.literal, &src->as.code.literal) ||
+            !S_optional_chunk_share(mem, &dst->as.code.info, &src->as.code.info)) {
             goto lost;
         }
         break;
@@ -2101,7 +2151,7 @@ static markdown_core_node *S_clone_block_node(
          * literal. The flag this engine now maintains says which (§12.8 Q3). */
         if (dst->flags & MARKDOWN_CORE_NODE__OPEN) {
             dst->as.html_block_type = src->as.html_block_type;
-        } else if (!S_chunk_copy(mem, &dst->as.literal, &src->as.literal)) {
+        } else if (!S_chunk_share(mem, &dst->as.literal, &src->as.literal)) {
             goto lost;
         }
         break;
