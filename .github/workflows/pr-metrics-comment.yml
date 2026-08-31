@@ -273,6 +273,15 @@ jobs:
                           ]);
                       }
 
+                      function workloadLabel(metric) {
+                          // The boundary column was dropped for width (owner ask):
+                          // beyond the runtime it only distinguished the one-shot
+                          // path from the streaming feed loop, so feed-loop rows
+                          // say so here instead.
+                          const suffix = metric.boundary.endsWith("_feed_loop") ? " · feed loop" : "";
+                          return `${metric.workload}${suffix} (v${metric.workloadVersion})`;
+                      }
+
                       function inputLabel(metric) {
                           const fields = [`${metric.bytes.toLocaleString("en-US")} B`];
                           if (metric.depth !== null) {
@@ -344,8 +353,8 @@ jobs:
                           lines.push(
                               "### Performance",
                               "",
-                              "| Platform | Runtime | Boundary | Workload | Input | Median | Perf diff | Memory | Memory diff |",
-                              "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
+                              "| Platform | Runtime | Workload | Input | Median | Perf diff | Memory | Memory diff |",
+                              "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
                           );
                           for (const [key, metric] of benchmarkRows) {
                               const candidate = base.benchmarks.get(key);
@@ -364,7 +373,7 @@ jobs:
                                       ? "n/a"
                                       : memoryDelta(metric.memoryKiB, baseline?.memoryKiB);
                               lines.push(
-                                  `| ${metric.platform} | ${metric.runtime} | ${metric.boundary} | ${metric.workload} (v${metric.workloadVersion}) | ${inputLabel(metric)} | ${milliseconds} ms | ${latencyDelta(metric.medianNs, baseline?.medianNs)} | ${memory} | ${memoryDiff} |`,
+                                  `| ${metric.platform} | ${metric.runtime} | ${workloadLabel(metric)} | ${inputLabel(metric)} | ${milliseconds} ms | ${latencyDelta(metric.medianNs, baseline?.medianNs)} | ${memory} | ${memoryDiff} |`,
                               );
                           }
                           lines.push("");
