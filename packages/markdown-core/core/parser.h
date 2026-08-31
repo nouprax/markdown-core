@@ -318,13 +318,18 @@ struct markdown_core_parser {
  * the comment strip applied. The CST is not written; the caller owns and
  * frees the result. NULL on allocation loss, with `parser->oom` set.
  *
- * `record_diagnostics` gates the rows the projection itself raises: a
- * diagnostic speaks when its construct COMPLETES (§12.8 Q4), so only the
- * final projection -- `finish`'s, over a fully closed CST -- passes 1.
+ * `record_diagnostics` says whether THIS derivation records the rows a
+ * projection itself raises: a diagnostic speaks when its construct COMPLETES
+ * (§12.8 Q4), so every mid-stream derivation passes 0 and stays silent. The
+ * flag is combined with retention into one effective recording state that
+ * the whole derivation reads -- the clone takes cache hits exactly when the
+ * derivation does not record, because a hit skips the inline parse those
+ * rows speak from (`S_cache_fresh`).
  * Internal: this is the RE-projection, what a snapshot accessor calls while
  * the parser lives on. `finish` shares its body but not its clone -- the last
  * projection is taken in place on the CST (T1), because nothing can observe
- * the CST afterwards. Not part of the public surface. */
+ * the CST afterwards, and it records whenever diagnostics were retained.
+ * Not part of the public surface. */
 /* Stamp `node` with the next reading of the write clock (T3). Called by the
  * core at every write it makes to a CST block and by an extension at a
  * retype, and by the line loop over the whole open spine. */

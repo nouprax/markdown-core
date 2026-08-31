@@ -2284,10 +2284,52 @@ static int case_diagnostics_after_derive(const ts_spec_file *file) {
         fprintf(stderr, "diagnostics after derive: %zu rows without a derivation, %zu with one\n", control, probe);
         failures++;
     }
+
+    /* The invariant's other half: RETENTION ALONE MUST NOT REFUSE THE CACHE.
+     * Recording is a property of one derivation (the sealing one), not of the
+     * parser's life -- but retention raises `diagnostics_on` at the first
+     * byte, which is also the flag the clone's hit check reads, so a window
+     * that does not carry the derivation's own answer makes every session
+     * feed re-parse the whole document (a session retains from birth,
+     * Requirement 13). Two derivations of an unwritten CST: the second must
+     * serve its closed blocks from the cache even with diagnostics retained.
+     * Skipped under --no-cache, where there is nothing to hit. */
+    if (!failures && !pr_no_cache) {
+        markdown_core_parser *parser = pr_parser_new();
+        markdown_core_diagnostics diagnostics;
+        markdown_core_node *first = NULL;
+        markdown_core_node *second = NULL;
+        size_t hits_between = 0;
+        if (!parser) {
+            free(text);
+            return -1;
+        }
+        markdown_core_parser_retain_diagnostics(parser, &diagnostics);
+        markdown_core_parser_feed(parser, text, length);
+        first = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        hits_between = parser->cache_hits;
+        second = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        if (!first || !second) {
+            fputs("diagnostics after derive: retained derivation failed\n", stderr);
+            failures++;
+        } else if (parser->cache_hits <= hits_between) {
+            fprintf(
+                stderr,
+                "diagnostics after derive: retention refused the cache (%zu hits, %zu misses over two derivations)\n",
+                parser->cache_hits,
+                parser->cache_misses
+            );
+            failures++;
+        }
+        markdown_core_node_free(first);
+        markdown_core_node_free(second);
+        markdown_core_diagnostics_dispose(&diagnostics);
+        markdown_core_parser_free(parser);
+    }
     free(text);
     printf(
         "diagnostics after derive: %s (%zu rows either way)\n",
-        failures ? "a derivation silenced finish" : "finish keeps its rows",
+        failures ? "rows lost or the cache refused" : "finish keeps its rows and feeds keep the cache",
         control
     );
     return failures ? -1 : 0;

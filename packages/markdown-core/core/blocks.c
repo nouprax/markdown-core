@@ -1979,14 +1979,16 @@ static int S_optional_chunk_copy(
  * definitions, and `refmap_independence` projects against another. */
 static bool S_cache_fresh(markdown_core_parser *parser, const markdown_core_node *block, markdown_core_map *refmap) {
     const markdown_core_holder *holder = block->link.holder;
-    /* `diagnostics_on` here is the RECORDING projection (S_project raised it
-     * for exactly this walk): a hit skips the inline parse, and the inline
-     * parse is where every record-gated row speaks (label-too-long, the
-     * directive codes) -- so the recording projection re-parses instead of
+    /* `diagnostics_on` here is the derivation's EFFECTIVE recording state --
+     * `derive_tree` lowers it across a derivation that does not record, and
+     * `finish` leaves retention standing because the sealing projection is
+     * the one that records (§12.8 Q4). A hit skips the inline parse, and the
+     * inline parse is where every record-gated row speaks (label-too-long,
+     * the directive codes) -- so a RECORDING projection re-parses instead of
      * hitting. T10's rule extended to Requirement 13: correctness must never
      * depend on the cache, and the diagnostic list is part of the model. Paid
-     * only when diagnostics were retained, and `finish` without them still
-     * hits in place. */
+     * only at the seal, and only when diagnostics were retained; a session's
+     * mid-stream feeds record nothing and reuse freely. */
     return refmap == parser->refmap && !parser->no_projection_cache && !parser->diagnostics_on &&
            (block->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) && holder->stamp == block->stamp &&
            holder->refgen == parser->refmap->generation && holder->footgen == parser->footnote_defs->generation &&
@@ -2308,19 +2310,21 @@ static markdown_core_node *S_clone_block_tree(
  * answer. That is why a re-projection hands in a clone and `finish` hands in
  * the CST itself.
  *
- * `record_diagnostics` gates the rows the projection itself raises (after
- * §12.9 that is `label-too-long` and the directive attribute/label codes).
- * They are CST facts read off the construct's own bytes, but the rule is that
- * a diagnostic speaks when its construct COMPLETES (§12.8 Q4) -- so only the
- * final projection, over a fully closed CST, records; one taken mid-parse
- * stays silent rather than describing an open block's prefix. */
+ * Whether the projection RECORDS is not decided here. `diagnostics_on` is
+ * the derivation's effective recording state when this runs: `derive_tree`
+ * lowers it across the whole derivation it does not record, and `finish`
+ * leaves it as retention set it, because the sealing projection is the one
+ * that records (after §12.9 its rows are `label-too-long` and the directive
+ * attribute/label codes; a diagnostic speaks when its construct COMPLETES,
+ * §12.8 Q4, so a mid-parse projection stays silent rather than describing an
+ * open block's prefix). Every one of those rows speaks from the inline parse
+ * below, which is also exactly what a cache hit skips -- so the one flag
+ * decides recording and reuse together; see `S_cache_fresh`. */
 static markdown_core_node *S_project(
     markdown_core_parser *parser,
     markdown_core_node *skeleton,
-    markdown_core_map *refmap,
-    int record_diagnostics
+    markdown_core_map *refmap
 ) {
-    bool recording = parser->diagnostics_on;
     /* A PROJECTION READS THE CST AND LEAVES NOTHING BEHIND THAT THE PARSE
      * WILL READ BACK (docs/STREAMING.md F21, correcting F10). `parse_inlines`
      * mints a mark for a block that has none -- an empty ATX heading, a
@@ -2333,9 +2337,7 @@ static markdown_core_node *S_project(
      * parse left it. */
     bufsize_t marks_before = parser->line_marks_size;
 
-    parser->diagnostics_on = recording && record_diagnostics != 0;
     process_inlines(parser, skeleton, refmap, parser->options);
-    parser->diagnostics_on = recording;
 
     S_run_block_tails(parser, &skeleton);
 
@@ -2353,6 +2355,7 @@ markdown_core_node *markdown_core_parser_derive_tree(
     markdown_core_map *refmap,
     int record_diagnostics
 ) {
+    bool recording = parser->diagnostics_on;
     markdown_core_node *derived;
 
     /* A parse that lost an allocation may hold a tree that is not all there --
@@ -2363,13 +2366,31 @@ markdown_core_node *markdown_core_parser_derive_tree(
         return NULL;
     }
 
+    /* THE DERIVATION IS ONE UNIT, and whether it records is decided here for
+     * both of its halves at once. The clone is where the cache hits are taken
+     * (`S_clone_block_node` asks `S_cache_fresh`, which reads
+     * `diagnostics_on`) and the projection is where every record-gated row
+     * speaks -- so the flag the two halves read must be the same answer, the
+     * EFFECTIVE one: retention AND this derivation asking to record. Left at
+     * retention alone, the clone of every non-recording derivation read
+     * "recording" and refused every hit -- a session retains its diagnostics
+     * from the first byte (Requirement 13), so the whole projection cache
+     * read as stale through the public surface and every `feed` re-parsed
+     * the document Phase B exists to keep parsed. `finish` takes no part in
+     * this window: its in-place projection records whenever diagnostics were
+     * retained, and `S_cache_fresh` refusing its hits while it does is the
+     * F20 amendment working as ruled. */
+    parser->diagnostics_on = recording && record_diagnostics != 0;
     derived = S_clone_block_tree(parser, parser->root, refmap);
     if (!derived) {
+        parser->diagnostics_on = recording;
         parser->oom = true;
         return NULL;
     }
 
-    return S_project(parser, derived, refmap, record_diagnostics);
+    derived = S_project(parser, derived, refmap);
+    parser->diagnostics_on = recording;
+    return derived;
 }
 
 markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len, int options) {
@@ -3416,7 +3437,7 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
     if (parser->oom) {
         res = NULL;
     } else {
-        res = S_project(parser, parser->root, parser->refmap, 1);
+        res = S_project(parser, parser->root, parser->refmap);
         parser->root = NULL;
         parser->current = NULL;
     }

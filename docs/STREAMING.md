@@ -1369,6 +1369,29 @@ gates are `projection_attach_invalidation` and
 probe text must differ un-autolinked, and the control must raise rows to
 lose.
 
+**Amended 2026-08-31: the recording guard read the wrong flag and the cache
+never hit through the public surface.** "Answers stale while `diagnostics_on`
+is raised" conflated two states: RETENTION (a session raises the flag at its
+first byte, Requirement 13, and it stays up for the session's life) and the
+RECORDING projection (the sealing one — every `derive_tree` caller passes
+`record_diagnostics=0`). `S_project` computed the effective state, but the
+clone — where every hit is taken — runs *before* `S_project` and read the
+retention flag bare, so for every session each feed's clone refused every
+hit and re-parsed the whole document: hit rate 0 on the exact path Phase B
+was built for, invisible to every gate because the runners never retain
+diagnostics. Witness: 315 line-feeds of a 12 KB document made 160,800
+`parse_inlines` calls; a 488 KB document fed line by line cost 56.7 s
+against a one-shot's 8 ms. The fix moves the effective-state window to the
+derivation's own boundary — `derive_tree` lowers `diagnostics_on` across
+clone *and* projection when the derivation does not record, `finish` keeps
+retention standing so the sealing projection still re-parses and its rows
+still speak. Line-fed streams: 12 KB 30.5 → 2.9 ms, 98 KB 1,907 → 104 ms,
+488 KB 56,663 → 2,727 ms (10.5× / 18× / 21×); the wire feed 5.9×.
+`projection_diagnostics_after_derive` now carries the other half of the
+invariant — retention alone must not refuse the cache: two derivations of
+an unwritten CST under retained diagnostics must hit, asserted on
+`parser->cache_hits` and red on the unfixed engine (0 hits, 4 misses).
+
 ### F21 — F10 was wrong: a projection minted marks into the parser's vector, and positions after it were wrong  · VERIFIED, FIXED (`e34cf20`)
 
 F10 recorded that `markdown_core_parse_inlines` mints a content mark for a
