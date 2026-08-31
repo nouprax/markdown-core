@@ -38,6 +38,28 @@ export function withHeapBytes<Result>(bytes: Uint8Array, action: (pointer: numbe
     }
 }
 
+const utf8Encoder = new TextEncoder();
+
+/**
+ * Encodes `text` straight into WASM memory for the duration of `action`
+ * (#147): `TextEncoder.encodeInto` writes into a view over the allocation,
+ * so the string crosses in its one mandatory copy instead of being encoded
+ * into a throwaway array that a second copy then moves. The allocation is
+ * sized for the worst case -- three bytes per UTF-16 code unit covers every
+ * code point, since an astral character spends two units on its four bytes
+ * -- and `action` is told the length actually written.
+ */
+export function withHeapText<Result>(text: string, action: (pointer: number, length: number) => Result): Result {
+    const capacity = Math.max(text.length * 3, 1);
+    const pointer = allocate(capacity);
+    try {
+        const { written } = utf8Encoder.encodeInto(text, new Uint8Array(native.memory.buffer, pointer, capacity));
+        return action(pointer, written);
+    } finally {
+        native.free(pointer);
+    }
+}
+
 /**
  * THE ONE WAY A READ LEAVES WASM. `invoke` runs a native call that writes an
  * MKC6 payload behind the given output slot -- a document's `feed` and its
@@ -46,7 +68,7 @@ export function withHeapBytes<Result>(bytes: Uint8Array, action: (pointer: numbe
  * or the `ParseError` the payload carried. Nothing native survives the call.
  */
 export function copyOut(invoke: (output: number) => number): Read {
-    const { semantic, concrete } = decodeRead(takePayload(invoke));
+    const { semantic, concrete } = decodePayload(invoke, decodeRead);
     return makeRead(semantic, concrete);
 }
 
@@ -56,13 +78,19 @@ export function copyOut(invoke: (output: number) => number): Read {
  * decoded just to be thrown away. Only the payload's envelope is read.
  */
 export function discardOut(invoke: (output: number) => number): void {
-    decodeDiscarded(takePayload(invoke));
+    decodePayload(invoke, decodeDiscarded);
 }
 
-/** Runs the native call and copies its payload out of WASM memory, freeing
- * the native buffer on the way. A zero return is the one failure with no
- * payload to decode: the buffer itself could not be built. */
-function takePayload(invoke: (output: number) => number): Uint8Array {
+/** Runs the native call and DECODES its payload off a view over WASM memory,
+ * freeing the native buffer only after the decode returns (#147). The old
+ * shape `.slice()`d the whole payload first, purely because the free ran
+ * before the decode -- but the decoder is pure JS, nothing re-enters WASM
+ * mid-decode to grow or detach the buffer, and everything it returns owns
+ * its bytes (strings, plain values, and the Concrete source's one necessary
+ * owning copy), so the full-payload copy bought nothing. A zero return from
+ * `invoke` is the one failure with no payload to decode: the buffer itself
+ * could not be built. */
+function decodePayload<Result>(invoke: (output: number) => number, decode: (payload: Uint8Array) => Result): Result {
     const output = allocate(2 * Uint32Array.BYTES_PER_ELEMENT);
     let payloadPointer = 0;
     try {
@@ -75,7 +103,7 @@ function takePayload(invoke: (output: number) => number): Uint8Array {
         const after = dataView();
         payloadPointer = after.getUint32(output, true);
         const payloadLength = after.getUint32(output + 4, true);
-        return new Uint8Array(native.memory.buffer, payloadPointer, payloadLength).slice();
+        return decode(new Uint8Array(native.memory.buffer, payloadPointer, payloadLength));
     } finally {
         if (payloadPointer) native.es_wire_free(payloadPointer);
         native.free(output);

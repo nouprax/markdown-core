@@ -53,7 +53,14 @@ JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_sessionFee
      * zero-length array buys nothing and some JVMs answer it with NULL. */
     chunk_length = (*environment)->GetArrayLength(environment, chunk);
     if (chunk_length != 0) {
-        chunk_bytes = (*environment)->GetByteArrayElements(environment, chunk, NULL);
+        /* A read-only view for the duration of the native call (#147):
+         * GetByteArrayElements typically copies on compacting collectors
+         * even though the access is read-only and released with JNI_ABORT.
+         * The critical view is the case that API exists for, at the
+         * documented price that the critical section spans the parse --
+         * during which this thread makes no other JNI call; the payload
+         * array is built after the release. */
+        chunk_bytes = (*environment)->GetPrimitiveArrayCritical(environment, chunk, NULL);
         if (chunk_bytes == NULL) {
             return NULL;
         }
@@ -66,7 +73,7 @@ JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_sessionFee
         &output_length
     );
     if (chunk_bytes != NULL) {
-        (*environment)->ReleaseByteArrayElements(environment, chunk, chunk_bytes, JNI_ABORT);
+        (*environment)->ReleasePrimitiveArrayCritical(environment, chunk, chunk_bytes, JNI_ABORT);
     }
     return S_payload_to_array(environment, succeeded, output, output_length);
 }
@@ -86,7 +93,8 @@ JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_sessionAdv
 
     chunk_length = (*environment)->GetArrayLength(environment, chunk);
     if (chunk_length != 0) {
-        chunk_bytes = (*environment)->GetByteArrayElements(environment, chunk, NULL);
+        /* The same read-only critical view the feed path takes (#147). */
+        chunk_bytes = (*environment)->GetPrimitiveArrayCritical(environment, chunk, NULL);
         if (chunk_bytes == NULL) {
             return NULL;
         }
@@ -99,7 +107,7 @@ JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_sessionAdv
         &output_length
     );
     if (chunk_bytes != NULL) {
-        (*environment)->ReleaseByteArrayElements(environment, chunk, chunk_bytes, JNI_ABORT);
+        (*environment)->ReleasePrimitiveArrayCritical(environment, chunk, chunk_bytes, JNI_ABORT);
     }
     return S_payload_to_array(environment, succeeded, output, output_length);
 }

@@ -140,14 +140,17 @@ public final class Document {
     public convenience init(markdown: String, options: ParseOptions = .init()) throws {
         try self.init(options: options)
         var nativeError: OpaquePointer?
-        let bytes = Array(markdown.utf8)
         // The read this feed would produce is discarded by this very
         // contract, so the bytes go through `advance`, which takes them and
         // answers nothing — `session_feed` derived, copied, and returned a
         // whole document just to be freed unread (#144). ES and Kotlin
         // construct through their advance entries the same way, and the C
         // header names this constructor as advance's one legitimate caller.
-        let advanced = bytes.withUnsafeBufferPointer { buffer in
+        // `withUTF8` hands the string's own contiguous storage to C (#147):
+        // `Array(markdown.utf8)` allocated and copied first, for bytes read
+        // once and never kept.
+        var text = markdown
+        let advanced = text.withUTF8 { buffer in
             markdown_core_session_advance(native, buffer.baseAddress, buffer.count, &nativeError)
         }
         guard advanced else { throw ParseError.take(nativeError) }
@@ -171,28 +174,33 @@ public final class Document {
     ///   ended the stream, `.allocationFailed` when the projection could not
     ///   be built. Text is never a failure: it produces a read.
     public func feed(chunk: [UInt8]) throws -> Read {
-        let session = try live()
-        var nativeError: OpaquePointer?
-        let nativeDocument = chunk.withUnsafeBufferPointer { buffer in
-            markdown_core_session_feed(session, buffer.baseAddress, buffer.count, &nativeError)
-        }
-        guard let nativeDocument else {
-            throw ParseError.take(nativeError)
-        }
-        defer { markdown_core_document_free(nativeDocument) }
-        return try Read(copiedFrom: nativeDocument)
+        try chunk.withUnsafeBufferPointer { buffer in try feed(buffer: buffer) }
     }
 
     /// Feeds a chunk that is whole text — its UTF-8 bytes, exactly as the byte
     /// form takes them. A producer of `String` pieces never splits a scalar,
     /// so the byte form's one extra power is not needed here; everything else
-    /// is the same call.
+    /// is the same call. `withUTF8` hands the string's own contiguous storage
+    /// to the same core the byte form uses (#147), where `Array(chunk.utf8)`
+    /// allocated and copied first.
     ///
     /// - Parameter chunk: the next piece of the stream.
     /// - Returns: the read after those bytes, as a value the caller keeps.
     /// - Throws: ``ParseError``, exactly as the byte form throws it.
     public func feed(chunk: String) throws -> Read {
-        try feed(chunk: Array(chunk.utf8))
+        var text = chunk
+        return try text.withUTF8 { buffer in try feed(buffer: buffer) }
+    }
+
+    private func feed(buffer: UnsafeBufferPointer<UInt8>) throws -> Read {
+        let session = try live()
+        var nativeError: OpaquePointer?
+        let nativeDocument = markdown_core_session_feed(session, buffer.baseAddress, buffer.count, &nativeError)
+        guard let nativeDocument else {
+            throw ParseError.take(nativeError)
+        }
+        defer { markdown_core_document_free(nativeDocument) }
+        return try Read(copiedFrom: nativeDocument)
     }
 
     /// Ends the stream, returns the sealed read, and releases the native
