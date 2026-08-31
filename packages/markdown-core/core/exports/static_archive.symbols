@@ -10,10 +10,7 @@ _scan_atx_heading_start
 _scan_autolink_email
 _scan_autolink_uri
 _scan_close_code_fence
-_scan_dangerous_url
-_scan_entity
 _scan_footnote_definition
-_scan_formula_dollar_backtick_open
 _scan_formula_dollar_display_open
 _scan_formula_dollar_inline_open
 _scan_formula_latex_backslash_display_open
@@ -30,10 +27,8 @@ _scan_html_comment
 _scan_html_declaration
 _scan_html_pi
 _scan_html_tag
-_scan_liberal_html_tag
 _scan_link_title
 _scan_open_code_fence
-_scan_scheme
 _scan_setext_heading_line
 _scan_spacechars
 _scan_table_cell
