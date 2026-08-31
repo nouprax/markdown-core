@@ -9,9 +9,8 @@
 # re2c is provisioned by `scripts/init-environment.sh --install re2c`; there
 # a missing or mismatched re2c is a hard failure. Without --require the
 # check reports an explicit SKIP instead (it must not be read as a verified
-# pass). ext_scanners.c is not covered: its committed copy predates the
-# raw-output policy and carries hand formatting on top of the generated
-# code.
+# pass). ext_scanners.c is covered since its #131 regeneration replaced the
+# old hand-formatted copy with raw generator output.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -62,4 +61,15 @@ if ! cmp "$temp_dir/scanners.c" "$root/packages/markdown-core/core/scanners.c"; 
         "output of scanners.re with the Makefile flags" >&2
     exit 1
 fi
-echo "committed scanners.c is reproducible from scanners.re with $expected_re2c"
+
+# Exactly the Makefile maintenance rule for $(EXTDIR)/ext_scanners.c.
+"$re2c_bin" -W -Werror --case-insensitive -b -i --no-generation-date -8 \
+    --encoding-policy substitute \
+    -o "$temp_dir/ext_scanners.c" \
+    "$root/packages/markdown-core/extensions/ext_scanners.re"
+if ! cmp "$temp_dir/ext_scanners.c" "$root/packages/markdown-core/extensions/ext_scanners.c"; then
+    echo "committed packages/markdown-core/extensions/ext_scanners.c is not the" \
+        "$expected_re2c output of ext_scanners.re with the Makefile flags" >&2
+    exit 1
+fi
+echo "committed scanners.c and ext_scanners.c are reproducible with $expected_re2c"

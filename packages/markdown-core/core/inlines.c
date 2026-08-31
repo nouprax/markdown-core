@@ -1476,7 +1476,7 @@ markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, m
 
 // Parse an autolink or HTML tag.
 // Assumes the subject has a '<' character at the current position.
-static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
+static markdown_core_node *handle_pointy_brace(subject *subj) {
     bufsize_t matchlen = 0;
     markdown_core_chunk contents;
 
@@ -1562,16 +1562,6 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
         subj->pos += matchlen;
         markdown_core_node *node = make_raw_html(subj, subj->pos - matchlen - 1, subj->pos - 1, contents);
         return node;
-    }
-
-    if (options & MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG) {
-        matchlen = scan_liberal_html_tag(&subj->input, subj->pos);
-        if (matchlen > 0) {
-            contents = markdown_core_chunk_dup(&subj->input, subj->pos - 1, matchlen + 1);
-            subj->pos += matchlen;
-            markdown_core_node *node = make_raw_html(subj, subj->pos - matchlen - 1, subj->pos - 1, contents);
-            return node;
-        }
     }
 
     // if nothing matches, just return the opening <:
@@ -2594,7 +2584,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         new_inl = handle_entity(subj);
         break;
     case '<':
-        new_inl = handle_pointy_brace(subj, options);
+        new_inl = handle_pointy_brace(subj);
         break;
     case '*':
     case '_':
