@@ -13,7 +13,7 @@ function benchmark(workload, source) {
     const medianNanoseconds = Math.round(timings[2] * 1e6);
     console.log(
         `benchmark runtime=es boundary=wasm_feed_seal_and_value_copy workload=${workload} ` +
-            `bytes=${Buffer.byteLength(source)} warmup=1 repeats=5 median_ns=${medianNanoseconds} ` +
+            `workload_version=1 bytes=${Buffer.byteLength(source)} warmup=1 repeats=5 median_ns=${medianNanoseconds} ` +
             `peak_rss_kib=${process.resourceUsage().maxRSS} rss_kib=${Math.round(process.memoryUsage().rss / 1024)}`
     );
 }

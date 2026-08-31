@@ -35,7 +35,7 @@ private fun benchmark(
     val heapCommittedKiB = runtime.totalMemory() / 1024
     println(
         "benchmark runtime=kotlin boundary=jni_feed_seal_and_value_copy workload=$workload " +
-            "bytes=${source.encodeToByteArray().size} warmup=1 repeats=5 " +
+            "workload_version=1 bytes=${source.encodeToByteArray().size} warmup=1 repeats=5 " +
             "median_ns=${samples[samples.size / 2]} heap_used_kib=$heapUsedKiB " +
             "heap_committed_kib=$heapCommittedKiB rss_kib=${residentSetKiB()}",
     )

@@ -225,8 +225,13 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
   级)、deep nesting、extensions 与 adversarial size-doubling cases。
 - 输入全部离线且确定:tracked samples(`packages/markdown-core/benchmarks/samples/`)
   或进程内确定性生成;运行时禁止 clone/download,禁止把生成输入写入源码树。
-- CI 通过独立 workflow(schedule + 手动触发)调度 benchmark,不进入 PR/push
-  correctness 检查。
+- CI 在 `ci.yml` 内与 correctness 分离的独立 benchmark job 中执行 benchmark:
+  correctness CTest preset 仍排除 `benchmark` label,benchmark job 的**执行**由
+  `benchmarks-ready` 必需门禁要求,而时间/内存数值仅作 informational,经
+  `pr-metrics-comment.yml` 以 PR 评论报告(hosted-runner 计时不阻塞任何检查)。
+  手动运行经 `pnpm benchmark:<platform>` 或 `ci.yml` 的 `workflow_dispatch`;
+  不再保留单独的 scheduled benchmark workflow——它重复执行同一批 workloads 且
+  产物无任何消费者。
 - 外部 corpus 只能按 `packages/markdown-core/tests/corpora/README.md` 的
   manifest/license/hash 政策一次性导入;
   `packaging_corpus_guard`/`benchmark_corpus_guard` CTest tests 与

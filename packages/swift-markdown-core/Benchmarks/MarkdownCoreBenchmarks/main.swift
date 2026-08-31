@@ -31,7 +31,7 @@ func benchmark(_ workload: String, source: String) throws {
     #endif
     print(
         "benchmark runtime=swift boundary=native_feed_seal_and_value_copy workload=\(workload) "
-            + "bytes=\(source.utf8.count) warmup=\(warmupCount) repeats=\(repeatCount) "
+            + "workload_version=1 bytes=\(source.utf8.count) warmup=\(warmupCount) repeats=\(repeatCount) "
             + "median_ns=\(Int64(medianNanoseconds)) peak_rss_kib=\(peakRSSKiB)"
     )
 }
