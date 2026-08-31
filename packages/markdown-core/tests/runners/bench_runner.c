@@ -333,6 +333,35 @@ static int workload_deep_nesting(const bench_options *options) {
     return bench_doubling("deep_nesting", options, build_deep_nesting, scales, 3);
 }
 
+/* A header, its delimiter, and `scale` four-column body rows: every body
+ * line runs the table extension's `last_block_matches` and then the real
+ * row build, which is the per-line hot path #137 stopped double-parsing. */
+static char *build_table_rows(const bench_options *options, size_t scale, size_t *length) {
+    static const char header[] = "| one | two | three | four |\n| --- | --- | --- | --- |\n";
+    static const char row[] = "| aaa | bbb | ccc | dddd |\n";
+    size_t header_length = sizeof(header) - 1;
+    size_t row_length = sizeof(row) - 1;
+    char *input;
+    size_t i;
+    (void)options;
+    input = (char *)malloc(header_length + row_length * scale + 1);
+    if (!input) {
+        return NULL;
+    }
+    memcpy(input, header, header_length);
+    for (i = 0; i < scale; i++) {
+        memcpy(input + header_length + i * row_length, row, row_length);
+    }
+    *length = header_length + row_length * scale;
+    input[*length] = 0;
+    return input;
+}
+
+static int workload_tables(const bench_options *options) {
+    static const size_t scales[] = {8192, 16384, 32768};
+    return bench_doubling("tables", options, build_table_rows, scales, 3);
+}
+
 static char *build_extension_document(const bench_options *options, size_t scale, size_t *length) {
     size_t sample_length = 0;
     char *sample = load_sample(options, "directive.md", &sample_length);
@@ -378,6 +407,7 @@ static const bench_workload WORKLOADS[] = {
     {"representative", workload_representative},
     {"large_document", workload_large_document},
     {"deep_nesting", workload_deep_nesting},
+    {"tables", workload_tables},
     {"extensions", workload_extensions},
     {"adversarial", workload_adversarial},
 };

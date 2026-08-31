@@ -582,7 +582,8 @@ markdown_core_add_test(benchmark_corpus_guard benchmark 60 corpus_guard --root "
 
 # benchmark: independently scheduled performance workloads; serial, offline,
 # deterministic inputs, relative-scaling assertions only.
-set(MARKDOWN_CORE_BENCH_WORKLOADS binding_baseline representative large_document deep_nesting extensions adversarial)
+set(MARKDOWN_CORE_BENCH_WORKLOADS binding_baseline representative large_document deep_nesting tables extensions
+                                  adversarial)
 foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
     markdown_core_add_test(
         benchmark_${workload}

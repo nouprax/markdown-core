@@ -831,6 +831,60 @@ static markdown_core_node *try_opening_table_block(
     return NULL;
 }
 
+/* The accept/reject half of `row_from_string`, with nothing materialized
+ * (#137): `matches` runs on EVERY line inside an open table and used to
+ * build a full row -- a calloc'd strbuf per cell, filled by
+ * `unescape_pipes` -- only to free it all and answer a boolean, then
+ * `try_opening_table_row` immediately reparsed the same bytes for real.
+ * The decision never reads a cell's bytes: it is the scanners' walk, the
+ * column count, the paragraph-offset reset, and the end-of-input test, and
+ * this function is that walk verbatim -- same scans in the same order,
+ * same UINT16_MAX column cap, same rejects -- so accept/reject stays
+ * byte-identical while the builder stays the one place a row is made.
+ * (The builder's allocation-failure aborts have no counterpart here: this
+ * walk allocates nothing, and a lost allocation still poisons the parse at
+ * the build that follows a match.) */
+static int row_matches(unsigned char *string, int len) {
+    bufsize_t cell_matched = 1, pipe_matched = 1, offset;
+    int expect_more_cells = 1;
+    int row_end_offset = 0;
+    uint32_t n_columns = 0;
+
+    // Scan past the (optional) leading pipe.
+    offset = scan_table_cell_end(string, len, 0);
+
+    while (offset < len && expect_more_cells) {
+        cell_matched = scan_table_cell(string, len, offset);
+        pipe_matched = scan_table_cell_end(string, len, offset + cell_matched);
+
+        if (cell_matched || pipe_matched) {
+            if (n_columns + 1 > UINT16_MAX) {
+                return 0;
+            }
+            n_columns++;
+        }
+
+        offset += cell_matched + pipe_matched;
+
+        if (pipe_matched) {
+            expect_more_cells = 1;
+        } else {
+            row_end_offset = scan_table_row_end(string, len, offset);
+            offset += row_end_offset;
+
+            if (row_end_offset && offset != len) {
+                n_columns = 0;
+                offset += scan_table_cell_end(string, len, offset);
+                expect_more_cells = 1;
+            } else {
+                expect_more_cells = 0;
+            }
+        }
+    }
+
+    return offset == len && n_columns != 0;
+}
+
 static int matches(
     const markdown_core_syntax_extension *self,
     markdown_core_parser *parser,
@@ -839,18 +893,13 @@ static int matches(
     markdown_core_node *parent_container
 ) {
     int res = 0;
+    (void)self;
 
     if (markdown_core_node_get_type(parent_container) == MARKDOWN_CORE_NODE_TABLE) {
-        table_row *new_row = row_from_string(
-            self,
-            parser,
+        res = row_matches(
             input + markdown_core_parser_get_first_nonspace(parser),
             len - markdown_core_parser_get_first_nonspace(parser)
         );
-        if (new_row && new_row->n_columns) {
-            res = 1;
-        }
-        free_table_row(parser->mem, new_row);
     }
 
     return res;
