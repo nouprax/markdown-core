@@ -891,18 +891,6 @@ static int contains_inlines(const markdown_core_syntax_extension *extension, mar
     return node->type == MARKDOWN_CORE_NODE_TABLE_CELL;
 }
 
-static void opaque_alloc(const markdown_core_syntax_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
-    /* A NULL payload is tolerated by every table property helper; the node
-     * then reports zero columns/alignments. */
-    if (node->type == MARKDOWN_CORE_NODE_TABLE) {
-        node->as.opaque = mem->calloc(1, sizeof(node_table));
-    } else if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
-        node->as.opaque = mem->calloc(1, sizeof(node_table_row));
-    } else if (node->type == MARKDOWN_CORE_NODE_TABLE_CELL) {
-        node->as.opaque = mem->calloc(1, sizeof(node_cell));
-    }
-}
-
 static void opaque_free(const markdown_core_syntax_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
     if (node->type == MARKDOWN_CORE_NODE_TABLE) {
         free_node_table(mem, node->as.opaque);
@@ -969,7 +957,6 @@ const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_TABLE = {
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,
     .contains_inlines_func = contains_inlines,
-    .opaque_alloc_func = opaque_alloc,
     .opaque_free_func = opaque_free,
     .opaque_copy_func = opaque_copy,
 };

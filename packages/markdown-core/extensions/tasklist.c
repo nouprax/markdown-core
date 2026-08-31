@@ -4,11 +4,6 @@
 #include <parser.h>
 #include "ext_scanners.h"
 
-typedef enum {
-    MARKDOWN_CORE_TASKLIST_NOCHECKED,
-    MARKDOWN_CORE_TASKLIST_CHECKED,
-} markdown_core_tasklist_type;
-
 // Local constants
 static const char *TYPE_STRING = "tasklist";
 
