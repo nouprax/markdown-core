@@ -456,6 +456,21 @@ int markdown_core_node_set_literal(markdown_core_node *node, const char *content
 const char *markdown_core_node_get_string_content(markdown_core_node *node) { return (char *)node->content.ptr; }
 
 int markdown_core_node_set_string_content(markdown_core_node *node, const char *content) {
+    /* THE THAW (#153): frozen content is shared and immutable, so a write
+     * starts a fresh private arena and drops this node's reference --
+     * sharers keep theirs, and the retained slices inline literals hold
+     * stay valid through their own references. Without it the setter grew
+     * a replacement arena while `frozen_content` still claimed the bytes:
+     * the free path released only the buffer and leaked the replacement,
+     * and node_check rejects the half-thawed shape. The strbuf is reset
+     * BEFORE the release: the release may free the very bytes
+     * `content.ptr` aliases. */
+    if (node->frozen_content) {
+        markdown_core_buf *frozen = node->frozen_content;
+        node->frozen_content = NULL;
+        markdown_core_strbuf_init(node->content.mem, &node->content, 0);
+        markdown_core_buf_release(frozen);
+    }
     markdown_core_strbuf_sets(&node->content, content);
     return true;
 }
