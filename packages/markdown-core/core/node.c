@@ -197,10 +197,6 @@ static void S_free_nodes(markdown_core_node *e) {
 
         markdown_core_strbuf_free(&e->content);
 
-        if (e->user_data && e->user_data_free_func) {
-            e->user_data_free_func(NODE_MEM(e), e->user_data);
-        }
-
         if (e->as.opaque && e->extension && e->extension->opaque_free_func) {
             e->extension->opaque_free_func(e->extension, NODE_MEM(e), e);
         }
@@ -404,30 +400,6 @@ markdown_core_node *markdown_core_node_last_child(markdown_core_node *node) {
     }
 }
 
-void *markdown_core_node_get_user_data(markdown_core_node *node) {
-    if (node == NULL) {
-        return NULL;
-    } else {
-        return node->user_data;
-    }
-}
-
-int markdown_core_node_set_user_data(markdown_core_node *node, void *user_data) {
-    if (node == NULL) {
-        return 0;
-    }
-    node->user_data = user_data;
-    return 1;
-}
-
-int markdown_core_node_set_user_data_free_func(markdown_core_node *node, markdown_core_free_func free_func) {
-    if (node == NULL) {
-        return 0;
-    }
-    node->user_data_free_func = free_func;
-    return 1;
-}
-
 const char *markdown_core_node_get_literal(markdown_core_node *node) {
     if (node == NULL) {
         return NULL;
@@ -620,31 +592,6 @@ int markdown_core_node_set_list_tight(markdown_core_node *node, int tight) {
     }
 }
 
-int markdown_core_node_get_list_item_index(markdown_core_node *node) {
-    if (node == NULL) {
-        return 0;
-    }
-
-    if (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) {
-        return node->as.list.start;
-    } else {
-        return 0;
-    }
-}
-
-int markdown_core_node_set_list_item_index(markdown_core_node *node, int idx) {
-    if (node == NULL || idx < 0) {
-        return 0;
-    }
-
-    if (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) {
-        node->as.list.start = idx;
-        return 1;
-    } else {
-        return 0;
-    }
-}
-
 const char *markdown_core_node_get_fence_info(markdown_core_node *node) {
     if (node == NULL) {
         return NULL;
@@ -688,37 +635,6 @@ int markdown_core_node_get_fence_closed(markdown_core_node *node) {
 
     if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
         return node->as.code.fenced && node->as.code.fence_closed;
-    } else {
-        return 0;
-    }
-}
-
-int markdown_core_node_get_fenced(markdown_core_node *node, int *length, int *offset, char *character) {
-    if (node == NULL) {
-        return 0;
-    }
-
-    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
-        *length = node->as.code.fence_length;
-        *offset = node->as.code.fence_offset;
-        *character = node->as.code.fence_char;
-        return node->as.code.fenced;
-    } else {
-        return 0;
-    }
-}
-
-int markdown_core_node_set_fenced(markdown_core_node *node, int fenced, int length, int offset, char character) {
-    if (node == NULL) {
-        return 0;
-    }
-
-    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
-        node->as.code.fenced = (int8_t)fenced;
-        node->as.code.fence_length = (uint8_t)length;
-        node->as.code.fence_offset = (uint8_t)offset;
-        node->as.code.fence_char = character;
-        return 1;
     } else {
         return 0;
     }
@@ -794,14 +710,6 @@ int markdown_core_node_set_title(markdown_core_node *node, const char *title) {
     }
 
     return 0;
-}
-
-const markdown_core_syntax_extension *markdown_core_node_get_syntax_extension(markdown_core_node *node) {
-    if (node == NULL) {
-        return NULL;
-    }
-
-    return node->extension;
 }
 
 int markdown_core_node_set_syntax_extension(markdown_core_node *node, const markdown_core_syntax_extension *extension) {

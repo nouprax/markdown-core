@@ -728,10 +728,6 @@ static int can_contain(
     markdown_core_node *node,
     markdown_core_node_type child_type
 ) {
-    if (is_formula_node(node)) {
-        return 0;
-    }
-
     return 0;
 }
 

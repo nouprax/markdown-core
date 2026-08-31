@@ -35,7 +35,7 @@ test("api: options gate extensions", () => {
     assert.equal(parse(markdown, { tables: false }).content[0].kind, "paragraph");
 });
 
-test("ast: typed fields are copied from direct WASM accessors", () => {
+test("ast: typed fields are decoded from the wire payload", () => {
     const document = parse("3. item\n\n| a |\n| :-: |\n| b |\n");
     assert.equal(document.content[0].flavor, "ordered");
     assert.equal(document.content[0].start, 3);

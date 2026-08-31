@@ -51,7 +51,6 @@ typedef struct {
     int fence_length;
     int closed;
     int consume_line;
-    int has_label;
     int has_attributes;
 } node_directive;
 
@@ -561,11 +560,6 @@ const char *markdown_core_extensions_get_directive_name(markdown_core_node *node
     return markdown_core_chunk_to_cstr(markdown_core_node_mem(node), &directive->name);
 }
 
-int markdown_core_directive_has_label(markdown_core_node *node) {
-    node_directive *directive = get_directive(node);
-    return directive ? directive->has_label : 0;
-}
-
 static int directive_name_is_valid(markdown_core_mem *mem, const char *name) {
     size_t raw_len;
     unsigned char *copy;
@@ -692,7 +686,6 @@ static int directive_opaque_copy(
     to->fence_length = from->fence_length;
     to->closed = from->closed;
     to->consume_line = from->consume_line;
-    to->has_label = from->has_label;
     to->has_attributes = from->has_attributes;
     if (!replace_chunk_bytes(mem, &to->name, from->name.data, from->name.len)) {
         mem->free(to);
@@ -994,7 +987,6 @@ static int apply_parsed_directive(
     if (!set_chunk_bytes(mem, &directive->name, data + parsed->name_start, parsed->name_len)) {
         return 0;
     }
-    directive->has_label = parsed->has_label;
     directive->has_attributes = parsed->has_attributes;
 
     if (parsed->has_attributes) {
@@ -1252,7 +1244,6 @@ static markdown_core_node *match_colon_directive(
     directive = get_directive(node);
     directive->attributes = attributes;
     directive->has_attributes = has_attributes;
-    directive->has_label = has_label;
 
     if (has_label) {
         /* Consume to the `]` first and read the label's end back from the
@@ -1590,9 +1581,10 @@ static void close_directive_block(
     );
 }
 
-/* `:` opens a directive. `]` is in the dispatch set for the `]` arbitration
- * `bracket_takes_close_bracket` performs, not because it terminates a text run --
- * `is_core_special_character` refuses it there. */
+/* `:` alone opens a directive; the dispatch set is exactly ":". The `]`
+ * entry it once carried was removed with the delimiter-based label design --
+ * the label is scanned from the `:` -- so no byte this matcher cannot
+ * consume is registered. */
 const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE = {
     .name = "directive",
     .match_inline = match,

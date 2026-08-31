@@ -15,7 +15,6 @@ Makefile
 # Documentation and byte-exact fixtures/goldens
 **/*.md
 packages/markdown-core/tests/fixtures/
-packages/markdown-core/tests/canonical-ast/
 
 # Generated, copied, and package-manager content
 packages/markdown-core/core/case_fold_switch.inc

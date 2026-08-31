@@ -39,7 +39,6 @@ typedef struct bracket {
     markdown_core_node *inl_text;
     bufsize_t position;
     bool image;
-    bool active;
     bool bracket_after;
     bool in_bracket_image0;
     bool in_bracket_image1;
@@ -983,7 +982,6 @@ static void push_bracket(subject *subj, bool image, markdown_core_node *inl_text
         b->in_bracket_image1 = subj->last_bracket->in_bracket_image1;
     }
     b->image = image;
-    b->active = true;
     b->inl_text = inl_text;
     b->previous = subj->last_bracket;
     b->position = subj->pos;
@@ -1342,7 +1340,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
      * reason, and the two arms must not merely look symmetric. */
     advance(subj);
     unsigned char nextchar = peek_char(subj);
-    if ((parser->backslash_ispunct ? parser->backslash_ispunct : markdown_core_ispunct)(nextchar)) {
+    if (markdown_core_ispunct(nextchar)) {
         if (nextchar == '\\' && !any_extension_dispatches(parser, '\\')) {
             bufsize_t end = start;
             while (end + 1 < subj->input.len && subj->input.data[end] == '\\' && subj->input.data[end + 1] == '\\') {
@@ -1360,8 +1358,6 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
                     /* One escape per PAIR: the first backslash of each is the
                      * escape and reaches no literal, the second is the byte the
                      * literal is made of. */
-                    for (bufsize_t at = start; run && at + 1 < end; at += 2) {
-                    }
                     return run;
                 }
             }
@@ -2608,18 +2604,12 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
          * its own literal -- and `S_insert_emph` re-claims the bytes it uses.
          * A smart quote is a SUBSTITUTION: the literal is a curly quote, which
          * is not the byte the source wrote. */
-        if ((c == '\'' || c == '"') && (options & MARKDOWN_CORE_OPT_SMART) != 0) {
-        }
         new_inl = handle_delim(subj, c, (options & MARKDOWN_CORE_OPT_SMART) != 0);
         break;
     case '-':
-        if ((options & MARKDOWN_CORE_OPT_SMART) != 0) {
-        }
         new_inl = handle_hyphen(subj, (options & MARKDOWN_CORE_OPT_SMART) != 0);
         break;
     case '.':
-        if ((options & MARKDOWN_CORE_OPT_SMART) != 0) {
-        }
         new_inl = handle_period(subj, (options & MARKDOWN_CORE_OPT_SMART) != 0);
         break;
     case '[':
@@ -2831,44 +2821,6 @@ bufsize_t markdown_core_parse_reference_inline(
     return subj.pos;
 }
 
-unsigned char markdown_core_inline_parser_peek_char(markdown_core_inline_parser *parser) { return peek_char(parser); }
-
-unsigned char markdown_core_inline_parser_peek_at(markdown_core_inline_parser *parser, bufsize_t pos) {
-    return peek_at(parser, pos);
-}
-
-int markdown_core_inline_parser_is_eof(markdown_core_inline_parser *parser) { return is_eof(parser); }
-
-static char *my_strndup(const char *s, size_t n) {
-    char *result;
-    size_t len = strlen(s);
-
-    if (n < len) {
-        len = n;
-    }
-
-    result = (char *)malloc(len + 1);
-    if (!result) {
-        return 0;
-    }
-
-    result[len] = '\0';
-    return (char *)memcpy(result, s, len);
-}
-
-char *markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser, markdown_core_inline_predicate pred) {
-    unsigned char c;
-    bufsize_t startpos = parser->pos;
-    bufsize_t len = 0;
-
-    while ((c = peek_char(parser)) && (*pred)(c)) {
-        advance(parser);
-        len++;
-    }
-
-    return my_strndup((const char *)parser->input.data + startpos, len);
-}
-
 void markdown_core_inline_parser_push_delimiter(
     markdown_core_inline_parser *parser,
     const markdown_core_syntax_extension *owner,
@@ -3044,10 +2996,6 @@ void markdown_core_node_unput(markdown_core_node *node, int n) {
     }
 }
 
-delimiter *markdown_core_inline_parser_get_last_delimiter(markdown_core_inline_parser *parser) {
-    return parser->last_delim;
-}
-
 int markdown_core_inline_parser_get_line(markdown_core_inline_parser *parser) {
     int line, column;
     if (markdown_core_parser_content_place(parser->owner_parser, parser->owner, parser->pos, &line, &column)) {
@@ -3067,7 +3015,3 @@ markdown_core_delimiter_rule markdown_core_delimiter_rule_of(const delimiter *de
 bufsize_t markdown_core_delimiter_position(const delimiter *delim) { return delim->position; }
 
 bufsize_t markdown_core_delimiter_length(const delimiter *delim) { return delim->length; }
-
-int markdown_core_delimiter_can_open(const delimiter *delim) { return delim->can_open; }
-
-int markdown_core_delimiter_can_close(const delimiter *delim) { return delim->can_close; }

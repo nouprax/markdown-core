@@ -163,8 +163,8 @@ void markdown_core_parser_mint_block_id(markdown_core_parser *parser, markdown_c
     node->identifier = ++parser->block_ids_minted;
 }
 
-/* Appends and reports failure directly instead of relying on llist_append's
- * silent-drop behavior.
+/* Appends and reports failure directly: a silent drop on allocation failure
+ * would leave an attach that claims success while the extension is missing.
  *
  * Both extension lists hold pointers to the `static const` descriptors that
  * Step 3b made read-only, and every reader casts `data` straight back to a
@@ -398,7 +398,8 @@ static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
  *
  * It is the concrete record set's shape with no difference at all, and the
  * sameness is the point: A GROWTH THIS LIST CANNOT AFFORD ABANDONS THE PARSE,
- * exactly as `S_claim_region`'s does.
+ * exactly as the line-start and diagnostic record growth sites do
+ * (`S_record_line_start`, `markdown_core_parser_diagnose`).
  *
  * OWNER RULING, 2026-08-24: "we do not want fallback when OOM happens; the
  * parser should return an error rather than return a fallback." So there is no
@@ -1566,7 +1567,7 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
     bool children_own = !MARKDOWN_CORE_NODE_BORROWED_P(node);
 
     if (children_own && contains_inlines(node)) {
-        if (!markdown_core_consolidate_text_nodes_with_parser(parser, node)) {
+        if (!markdown_core_consolidate_text_nodes(node)) {
             parser->oom = true;
         }
     }
@@ -1615,7 +1616,7 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
             if (MARKDOWN_CORE_NODE_BLOCK_P(child) || !contains_inlines(child)) {
                 continue;
             }
-            if (!markdown_core_consolidate_text_nodes_with_parser(parser, child)) {
+            if (!markdown_core_consolidate_text_nodes(child)) {
                 parser->oom = true;
             }
             for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
@@ -1900,9 +1901,7 @@ static int S_optional_chunk_copy(
 /* One cloned block. Everything the CST states about a block is copied: its
  * content bytes, its place, its flags, its `as` arm, its extension payload,
  * and its run in the content-to-source map (the map itself stays on the
- * parser, which outlives the derivation). `user_data` is deliberately not
- * copied -- it is caller-owned decoration on a returned tree, and the parse's
- * own CST never carries any. */
+ * parser, which outlives the derivation). */
 /* THE PROJECTION CACHE (docs/STREAMING.md T9). A CST block with inline
  * content keeps the list its last projection produced, on a holder hung
  * from the block (`link.holder`, CACHE_OWNER) and keyed by the block's write
@@ -2215,25 +2214,6 @@ markdown_core_node *markdown_core_parser_derive_tree(
     return S_project(parser, derived, refmap, record_diagnostics);
 }
 
-markdown_core_node *markdown_core_parse_file(FILE *f, int options) {
-    unsigned char buffer[4096];
-    markdown_core_parser *parser = markdown_core_parser_new(options);
-    size_t bytes;
-    markdown_core_node *document;
-
-    while ((bytes = fread(buffer, 1, sizeof(buffer), f)) > 0) {
-        bool eof = bytes < sizeof(buffer);
-        S_parser_feed(parser, buffer, bytes, eof);
-        if (eof) {
-            break;
-        }
-    }
-
-    document = markdown_core_parser_finish(parser);
-    markdown_core_parser_free(parser);
-    return document;
-}
-
 markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len, int options) {
     markdown_core_parser *parser = markdown_core_parser_new(options);
     markdown_core_node *document;
@@ -2247,19 +2227,6 @@ markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len,
 
 void markdown_core_parser_feed(markdown_core_parser *parser, const char *buffer, size_t len) {
     S_parser_feed(parser, (const unsigned char *)buffer, len, false);
-}
-
-void markdown_core_parser_feed_reentrant(markdown_core_parser *parser, const char *buffer, size_t len) {
-    markdown_core_strbuf saved_linebuf;
-
-    markdown_core_strbuf_init(parser->mem, &saved_linebuf, 0);
-    markdown_core_strbuf_puts(&saved_linebuf, markdown_core_strbuf_cstr(&parser->linebuf));
-    markdown_core_strbuf_clear(&parser->linebuf);
-
-    S_parser_feed(parser, (const unsigned char *)buffer, len, true);
-
-    markdown_core_strbuf_sets(&parser->linebuf, markdown_core_strbuf_cstr(&saved_linebuf));
-    markdown_core_strbuf_free(&saved_linebuf);
 }
 
 /* One reservation for the whole of this chunk's contribution to the held
@@ -2294,12 +2261,6 @@ static bool S_linebuf_reserve(markdown_core_parser *parser, int64_t add) {
 static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buffer, size_t len, bool eof) {
     const unsigned char *end = buffer + len;
     static const uint8_t repl[] = {239, 191, 189};
-
-    if (len > UINT_MAX - parser->total_size) {
-        parser->total_size = UINT_MAX;
-    } else {
-        parser->total_size += len;
-    }
 
     if (parser->last_buffer_ended_with_cr && *buffer == '\n') {
         // skip NL if last buffer ended with CR ; see #117
@@ -3156,7 +3117,6 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     bool all_matched = true;
     markdown_core_node *container;
     markdown_core_chunk input;
-    markdown_core_node *current;
 
     if (parser->oom || parser->root == NULL) {
         return;
@@ -3223,18 +3183,13 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
 
     container = last_matched_container;
 
-    current = parser->current;
-
     open_new_blocks(parser, &container, &input, all_matched);
 
     if (container == NULL || parser->oom) {
         goto finished;
     }
 
-    /* parser->current might have changed if feed_reentrant was called */
-    if (current == parser->current) {
-        add_text_to_container(parser, container, last_matched_container, &input);
-    }
+    add_text_to_container(parser, container, last_matched_container, &input);
 
 finished:
     parser->last_line_length = input.len;
@@ -3382,23 +3337,11 @@ int markdown_core_parser_get_line_number(markdown_core_parser *parser) { return 
 
 bufsize_t markdown_core_parser_get_offset(markdown_core_parser *parser) { return parser->offset; }
 
-bufsize_t markdown_core_parser_get_column(markdown_core_parser *parser) { return parser->column; }
-
 int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser) { return parser->first_nonspace; }
-
-int markdown_core_parser_get_first_nonspace_column(markdown_core_parser *parser) {
-    return parser->first_nonspace_column;
-}
 
 int markdown_core_parser_get_indent(markdown_core_parser *parser) { return parser->indent; }
 
 int markdown_core_parser_is_blank(markdown_core_parser *parser) { return parser->blank; }
-
-int markdown_core_parser_has_partially_consumed_tab(markdown_core_parser *parser) {
-    return parser->partially_consumed_tab;
-}
-
-int markdown_core_parser_get_last_line_length(markdown_core_parser *parser) { return parser->last_line_length; }
 
 void markdown_core_parser_retain_concrete(markdown_core_parser *parser, markdown_core_concrete *out) {
     if (!parser || !out) {
@@ -3430,12 +3373,4 @@ void markdown_core_parser_advance_offset(markdown_core_parser *parser, const cha
     markdown_core_chunk input_chunk = markdown_core_chunk_literal(input);
 
     S_advance_offset(parser, &input_chunk, count, columns != 0);
-}
-
-void markdown_core_parser_set_backslash_ispunct_func(markdown_core_parser *parser, markdown_core_ispunct_func func) {
-    parser->backslash_ispunct = func;
-}
-
-markdown_core_llist *markdown_core_parser_get_syntax_extensions(markdown_core_parser *parser) {
-    return parser->syntax_extensions;
 }

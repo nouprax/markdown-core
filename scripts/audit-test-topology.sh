@@ -115,6 +115,15 @@ else
 fi
 
 runner_dir="$BUILD_DIR/packages/markdown-core/tests"
+# A MISSING runner is a failure, not a skip: `$(missing --list)` is the empty
+# string, the loop body never runs, and the check passes while checking
+# nothing. A runner sat in a list like this for many commits after it was
+# deleted, doing exactly that.
+for runner in pathological_runner complexity_runner stress_runner fallback_runner bench_runner; do
+    if [ ! -x "$runner_dir/$runner" ]; then
+        fail "$runner is in the discovery list but was not built; add it back or drop it from this list"
+    fi
+done
 for case_name in $("$runner_dir/pathological_runner" --list); do
     echo "$tests_all" | grep -q "^pathological_${case_name}$" \
         || fail "pathological case '$case_name' is not registered in CTest"

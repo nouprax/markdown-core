@@ -115,7 +115,7 @@ markdown_core_mem *markdown_core_get_default_mem_allocator(void);
 
 /** Callback for freeing user data with a 'markdown_core_mem' context.
  */
-typedef void (*markdown_core_free_func)(markdown_core_mem *mem, void *user_data);
+typedef void (*markdown_core_free_func)(markdown_core_mem *mem, void *data);
 
 /*
  * ## Basic data structures
@@ -134,12 +134,6 @@ typedef struct _markdown_core_llist {
     struct _markdown_core_llist *next;
     void *data;
 } markdown_core_llist;
-
-/** Append an element to the linked list, return the possibly modified
- * head of the list.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_llist *markdown_core_llist_append(markdown_core_mem *mem, markdown_core_llist *head, void *data);
 
 /** Free the list starting with 'head', calling 'free_func' with the
  *  data pointer of each of its elements
@@ -243,20 +237,13 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_last_child(markdown_
  *         markdown_core_iter_free(iter);
  *     }
  *
- * Iterators will never return `EXIT` events for leaf nodes, which are nodes
- * of type:
+ * The event contract is total: every node in the subtree yields exactly one
+ * `ENTER` and exactly one `EXIT`, whatever its type -- a childless node's
+ * `EXIT` follows its `ENTER` directly.
  *
- * * MARKDOWN_CORE_NODE_HTML_BLOCK
- * * MARKDOWN_CORE_NODE_THEMATIC_BREAK
- * * MARKDOWN_CORE_NODE_CODE_BLOCK
- * * MARKDOWN_CORE_NODE_TEXT
- * * MARKDOWN_CORE_NODE_SOFT_BREAK
- * * MARKDOWN_CORE_NODE_LINE_BREAK
- * * MARKDOWN_CORE_NODE_CODE
- * * MARKDOWN_CORE_NODE_HTML
- *
- * Nodes must only be modified after an `EXIT` event, or an `ENTER` event for
- * leaf nodes.
+ * Nodes must only be modified after an `EXIT` event; the only node that may
+ * be freed is the one whose `EXIT` is current.  (See `markdown_core_iter_new`
+ * below for the full contract and its history.)
  */
 
 typedef enum {
@@ -306,16 +293,6 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter);
 MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter);
 
-/** Returns the current event type.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_event_type markdown_core_iter_get_event_type(markdown_core_iter *iter);
-
-/** Returns the root node.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_iter_get_root(markdown_core_iter *iter);
-
 /** Resets the iterator so that the current node is 'current' and
  * the event type is 'event_type'.  The new current node must be a
  * descendant of the root node or the root node itself.
@@ -330,19 +307,6 @@ void markdown_core_iter_reset(
 /**
  * ## Accessors
  */
-
-/** Returns the user data of 'node'.
- */
-MARKDOWN_CORE_EXPORT void *markdown_core_node_get_user_data(markdown_core_node *node);
-
-/** Sets arbitrary user data for 'node'.  Returns 1 on success,
- * 0 on failure.
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_user_data(markdown_core_node *node, void *user_data);
-
-/** Set free function for user data */
-MARKDOWN_CORE_EXPORT
-int markdown_core_node_set_user_data_free_func(markdown_core_node *node, markdown_core_free_func free_func);
 
 /** Returns the type of 'node', or `MARKDOWN_CORE_NODE_NONE` on error.
  */
@@ -409,13 +373,6 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_get_list_tight(markdown_core_node *n
  */
 MARKDOWN_CORE_EXPORT int markdown_core_node_set_list_tight(markdown_core_node *node, int tight);
 
-/** Returns the source-order item index of 'node'. */
-MARKDOWN_CORE_EXPORT int markdown_core_node_get_list_item_index(markdown_core_node *node);
-
-/** Sets item index of 'node'. Returns 1 on success, 0 on failure.
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_list_item_index(markdown_core_node *node, int idx);
-
 /** Returns the info string from a fenced code block.
  */
 MARKDOWN_CORE_EXPORT const char *markdown_core_node_get_fence_info(markdown_core_node *node);
@@ -428,25 +385,6 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_set_fence_info(markdown_core_node *n
 /** Returns 1 if a fenced code block has a closing fence, 0 otherwise.
  */
 MARKDOWN_CORE_EXPORT int markdown_core_node_get_fence_closed(markdown_core_node *node);
-
-/** Sets code blocks fencing details
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_fenced(
-    markdown_core_node *node,
-    int fenced,
-    int length,
-    int offset,
-    char character
-);
-
-/** Returns code blocks fencing details
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_get_fenced(
-    markdown_core_node *node,
-    int *length,
-    int *offset,
-    char *character
-);
 
 /** Returns the URL of a link or image 'node', or an empty string
     if no URL is set.  Returns NULL if called on a node that is
@@ -587,13 +525,6 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser);
 MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len, int options);
 
-/** Parse a CommonMark document in file 'f', returning a pointer to
- * a tree of nodes.  The memory allocated for the node tree should be
- * released using 'markdown_core_node_free' when it is no longer needed.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_parse_file(FILE *f, int options);
-
 /**
  * ## Options
  */
@@ -602,16 +533,13 @@ markdown_core_node *markdown_core_parse_file(FILE *f, int options);
  */
 #define MARKDOWN_CORE_OPT_DEFAULT 0
 
-/** Track multiline inline source positions while parsing. */
-#define MARKDOWN_CORE_OPT_SOURCEPOS (1 << 1)
+/* Bits (1 << 1) and (1 << 8) were MARKDOWN_CORE_OPT_SOURCEPOS and
+ * MARKDOWN_CORE_OPT_NORMALIZE. Neither changed behavior - position tracking
+ * is unconditional in the 3.0 scope model, and NORMALIZE was inherited as a
+ * no-op - so both are deleted; the bits stay unassigned.
 
-/**
  * ### Options affecting parsing
  */
-
-/** Legacy option (no effect).
- */
-#define MARKDOWN_CORE_OPT_NORMALIZE (1 << 8)
 
 /** Validate UTF-8 in the input before parsing, replacing illegal
  * sequences with the replacement character U+FFFD.

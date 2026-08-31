@@ -23,7 +23,6 @@ include_directories(${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_BINARY
 include_directories(. ${CMAKE_CURRENT_BINARY_DIR})
 
 set(CMAKE_C_FLAGS_PROFILE "${CMAKE_C_FLAGS_RELEASE} -pg")
-set(CMAKE_LINKER_PROFILE "${CMAKE_LINKER_FLAGS_RELEASE} -pg")
 
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     set_source_files_properties(ext_scanners.c PROPERTIES COMPILE_FLAGS "-Wno-unused-variable")
@@ -135,18 +134,8 @@ if(MARKDOWN_CORE_SHARED OR MARKDOWN_CORE_STATIC)
 endif()
 
 # Feature tests
-include(CheckIncludeFile)
-include(CheckCSourceCompiles)
-include(CheckCSourceRuns)
-include(CheckSymbolExists)
-check_include_file(stdbool.h HAVE_STDBOOL_H)
-check_c_source_compiles("int main() { __builtin_expect(0,0); return 0; }" HAVE___BUILTIN_EXPECT)
-check_c_source_compiles(
-    "
-  int f(void) __attribute__ (());
-  int main() { return 0; }
-"
-    HAVE___ATTRIBUTE__)
+# The feature tests live in core/CMakeLists.txt, whose configure_file is the
+# one consumer of their results; nothing in this directory reads them.
 
 # Always compile with warnings
 if(MSVC)

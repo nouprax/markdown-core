@@ -341,6 +341,27 @@ while IFS= read -r archive; do
     fi
 done <"$temp_dir/c-static-archives.txt"
 
+# The static archive has no version-script boundary: any global it defines is
+# linkable by a consumer that declares it. Its surface is therefore pinned by
+# an explicit allowlist, symmetric to the shared facade's export-map check
+# above. The canonical surface is audited on the ELF lane; Mach-O nm reports
+# private-extern symbols differently, so the Darwin run skips this check
+# rather than encode a second normalization.
+if [ "$(uname -s)" != "Darwin" ]; then
+    archive_allowlist="packages/markdown-core/core/exports/static_archive.symbols"
+    while IFS= read -r archive; do
+        "$nm_tool" --defined-only -g "$archive" 2>/dev/null \
+            | awk 'NF >= 3 && $2 ~ /^[TDRuVW]$/ { print $3 }' \
+            | sort -u >"$temp_dir/c-archive-actual.txt"
+        sort -u "$archive_allowlist" >"$temp_dir/c-archive-expected.txt"
+        if ! cmp -s "$temp_dir/c-archive-expected.txt" "$temp_dir/c-archive-actual.txt"; then
+            echo "Static archive global symbols differ from $archive_allowlist" >&2
+            diff -u "$temp_dir/c-archive-expected.txt" "$temp_dir/c-archive-actual.txt" >&2 || true
+            exit 1
+        fi
+    done <"$temp_dir/c-static-archives.txt"
+fi
+
 scripts/gradle.sh :packages:kotlin-markdown-core:verifyKotlinNativePackaging >/dev/null
 kotlin_jvm_jar=$(find packages/kotlin-markdown-core/build/libs -maxdepth 1 -type f \
     -name '*-jvm-*.jar' ! -name '*-sources.jar' | head -n 1)

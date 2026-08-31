@@ -33,16 +33,14 @@ fi
     -p packages/kotlin-markdown-core/consumers/kmp jvmTest
 "$gradle" --warning-mode=fail "$property" "-PconsumerRepository=$repository" \
     -p packages/kotlin-markdown-core/consumers/jvm-gradle run
-# ASSEMBLE THE DEBUG VARIANT, WHICH IS WHAT THIS CONSUMER PROJECT HAS. `main`'s
-# copy of this script drives a release-shrinking audit -- `assembleRelease
-# assembleUnused`, an AAR/mapping/dex comparison and
-# scripts/verify-android-jni-shrinking.mjs -- and NONE of the build-side half
-# exists here: consumers/android/build.gradle.kts declares no `buildTypes` and
-# therefore no `unused` variant, and packages/kotlin-markdown-core/consumer-rules.pro
-# is not in the repository. Step 0 restored scripts/ from main, so this arrived
-# asserting a build the 1.0 baseline has not got -- section 0's "scripts/ IS NOT
-# ONE THING" rule, fourth instance. Restoring the audit is a DECISION about what
-# the Android artifact promises, not a repair, and it belongs to the release step.
+# ASSEMBLE THE DEBUG VARIANT, WHICH IS WHAT THIS CONSUMER PROJECT HAS. An
+# earlier line carried a release-shrinking audit (assembleRelease, an
+# AAR/mapping/dex comparison, verify-android-jni-shrinking.mjs); its build
+# side never existed in this tree, and the orphaned script was deleted after
+# the owner ruled the release does not need it (#142): the JNI bridge's only
+# FindClass names java/lang/OutOfMemoryError, so the default Android keep
+# rules for native methods already protect every entry a consumer's R8 could
+# otherwise strip.
 "$gradle" --warning-mode=fail "$property" "-PconsumerRepository=$repository" \
     -p packages/kotlin-markdown-core/consumers/android assembleDebug
 

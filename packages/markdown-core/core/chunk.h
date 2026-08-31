@@ -186,30 +186,4 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_buf_detach(m
     return c;
 }
 
-/* trim_new variants are to be used when the source chunk may or may not be
- * allocated; forces a newly allocated chunk. */
-static MARKDOWN_CORE_INLINE markdown_core_chunk
-markdown_core_chunk_ltrim_new(markdown_core_mem *mem, markdown_core_chunk *c) {
-    markdown_core_chunk r = markdown_core_chunk_dup(c, 0, c->len);
-    markdown_core_chunk_ltrim(&r);
-    if (!markdown_core_chunk_to_cstr(mem, &r)) {
-        /* Callers rely on an owned copy; report the loss as empty instead of
-         * handing back a borrowed pointer. */
-        markdown_core_chunk empty = MARKDOWN_CORE_CHUNK_EMPTY;
-        return empty;
-    }
-    return r;
-}
-
-static MARKDOWN_CORE_INLINE markdown_core_chunk
-markdown_core_chunk_rtrim_new(markdown_core_mem *mem, markdown_core_chunk *c) {
-    markdown_core_chunk r = markdown_core_chunk_dup(c, 0, c->len);
-    markdown_core_chunk_rtrim(&r);
-    if (!markdown_core_chunk_to_cstr(mem, &r)) {
-        markdown_core_chunk empty = MARKDOWN_CORE_CHUNK_EMPTY;
-        return empty;
-    }
-    return r;
-}
-
 #endif

@@ -261,9 +261,7 @@ private fun WireReader.readTable(
     return Table(
         alignments,
         rows[headerIndex],
-        rows
-            .filterIndexed { index, _ -> index != headerIndex }
-            .immutableMap { it },
+        rows.filterIndexed { index, _ -> index != headerIndex }.asImmutable(),
         id,
         scope,
     )

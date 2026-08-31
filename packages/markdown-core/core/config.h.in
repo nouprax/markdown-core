@@ -15,14 +15,6 @@ extern "C" {
 
 #cmakedefine HAVE___BUILTIN_EXPECT
 
-#cmakedefine HAVE___ATTRIBUTE__
-
-#ifdef HAVE___ATTRIBUTE__
-  #define MARKDOWN_CORE_ATTRIBUTE(list) __attribute__ (list)
-#else
-  #define MARKDOWN_CORE_ATTRIBUTE(list)
-#endif
-
 #ifndef MARKDOWN_CORE_INLINE
   #if defined(_MSC_VER) && !defined(__cplusplus)
     #define MARKDOWN_CORE_INLINE __inline

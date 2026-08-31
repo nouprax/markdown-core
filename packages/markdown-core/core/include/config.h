@@ -15,24 +15,10 @@ extern "C" {
 #define HAVE___BUILTIN_EXPECT
 #endif
 
-#if defined(__has_attribute)
-#if __has_attribute(__unused__)
-#define HAVE___ATTRIBUTE__
-#endif
-#elif defined(__GNUC__)
-#define HAVE___ATTRIBUTE__
-#endif
-
 #ifdef HAVE_STDBOOL_H
 #include <stdbool.h>
 #elif !defined(__cplusplus)
 typedef char bool;
-#endif
-
-#ifdef HAVE___ATTRIBUTE__
-#define MARKDOWN_CORE_ATTRIBUTE(list) __attribute__(list)
-#else
-#define MARKDOWN_CORE_ATTRIBUTE(list)
 #endif
 
 #ifndef MARKDOWN_CORE_INLINE

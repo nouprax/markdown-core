@@ -20,14 +20,6 @@
 #endif
 #endif
 
-#if defined(__OpenBSD__)
-#include <sys/param.h>
-#if OpenBSD >= 201605
-#define USE_PLEDGE
-#include <unistd.h>
-#endif
-#endif
-
 #if defined(_WIN32) && !defined(__CYGWIN__)
 #include <io.h>
 #include <fcntl.h>
@@ -102,13 +94,6 @@ int main(int argc, char *argv[]) {
     int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS |
                   MARKDOWN_CORE_OPT_VALIDATE_UTF8;
     int res = 1;
-
-#ifdef USE_PLEDGE
-    if (pledge("stdio rpath", NULL) != 0) {
-        perror("pledge");
-        return 1;
-    }
-#endif
 
 #ifdef USE_PLEDGE
     if (pledge("stdio rpath", NULL) != 0) {
