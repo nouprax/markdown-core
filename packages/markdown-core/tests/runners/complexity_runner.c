@@ -381,6 +381,19 @@ static int cc_measure(const char *input, size_t length, double *seconds, int rea
     if (ts_ast_enable(&options, extension) != 0) {
         return -1;
     }
+    /* One untimed conversion first, at every size (#122): the small endpoint
+     * is warm anyway through the repeat loop, and without this the large
+     * endpoint's one sample charges the engine for every first-touch page
+     * fault of a cold multi-gigabyte arena -- a property of the host's
+     * memory system, not of the parser's scaling, and the single biggest
+     * source of run-to-run swing in these gates. */
+    {
+        markdown_core_document *document = ts_ast_parse((const uint8_t *)input, length, &options);
+        if (!document) {
+            return -1;
+        }
+        markdown_core_document_free(document);
+    }
     for (repeat = 0; repeat < SCALING_REPEATS; repeat++) {
         uint64_t started;
         uint64_t elapsed;
@@ -458,6 +471,11 @@ int main(int argc, char **argv) {
     const char *case_name = NULL;
     int list_only = 0;
     size_t i;
+
+    /* These are wall-clock scaling gates: hold the C library's arena policy
+     * fixed so a ratio measures the parser, not glibc's bistable trim
+     * heuristic (#122; the mechanism is documented at the helper). */
+    ts_bench_pin_allocator();
 
     for (i = 1; i < (size_t)argc; i++) {
         if (strcmp(argv[i], "--list") == 0) {
