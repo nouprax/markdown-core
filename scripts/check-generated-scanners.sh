@@ -5,34 +5,55 @@
 # runs during normal build or test, so drift between scanners.re and
 # scanners.c is otherwise invisible until the next manual regeneration.
 #
-# The check runs only when the pinned re2c is available; otherwise it reports
-# an explicit SKIP (it must not be read as a verified pass). ext_scanners.c is
-# not covered: its committed copy predates the raw-output policy and carries
-# hand formatting on top of the generated code. That used to cite
-# docs/deprecated/specs/c-naming.md, WHICH IS NOT IN THIS REPOSITORY -- the
-# citation outlived the document, and Step 15A found it while making sure no
-# executable file points into docs/deprecated/.
+# CI runs this in the Health Check - C job with --require, where the pinned
+# re2c is provisioned by `scripts/init-environment.sh --install re2c`; there
+# a missing or mismatched re2c is a hard failure. Without --require the
+# check reports an explicit SKIP instead (it must not be read as a verified
+# pass). ext_scanners.c is not covered: its committed copy predates the
+# raw-output policy and carries hand formatting on top of the generated
+# code.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-expected_re2c="re2c 4.5.1"
+expected_version="4.5.1"
+expected_re2c="re2c $expected_version"
 
-if ! command -v re2c >/dev/null 2>&1; then
-    echo "SKIP: re2c is not installed; committed scanners.c was NOT re-verified" >&2
+require=false
+case "${1:-}" in
+    --require) require=true ;;
+    "") ;;
+    *)
+        echo "usage: scripts/check-generated-scanners.sh [--require]" >&2
+        exit 2
+        ;;
+esac
+
+skip() {
+    if [ "$require" = true ]; then
+        echo "FAIL: $1" >&2
+        exit 1
+    fi
+    echo "SKIP: $1" >&2
     exit 0
+}
+
+re2c_bin="$root/.tools/re2c/$expected_version/bin/re2c"
+if [ ! -x "$re2c_bin" ]; then
+    re2c_bin=$(command -v re2c 2>/dev/null || true)
 fi
-actual_re2c=$(re2c --version)
+if [ -z "$re2c_bin" ]; then
+    skip "re2c is not installed (scripts/init-environment.sh --install re2c); committed scanners.c was NOT re-verified"
+fi
+actual_re2c=$("$re2c_bin" --version)
 if [ "$actual_re2c" != "$expected_re2c" ]; then
-    echo "SKIP: found '$actual_re2c' but the committed output is pinned to" \
-        "'$expected_re2c'; committed scanners.c was NOT re-verified" >&2
-    exit 0
+    skip "found '$actual_re2c' but the committed output is pinned to '$expected_re2c'; committed scanners.c was NOT re-verified"
 fi
 
 temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
 
 # Exactly the Makefile maintenance rule for $(SRCDIR)/scanners.c.
-re2c -W -Werror --case-insensitive -b -i --no-generation-date -8 \
+"$re2c_bin" -W -Werror --case-insensitive -b -i --no-generation-date -8 \
     --encoding-policy substitute \
     -o "$temp_dir/scanners.c" \
     "$root/packages/markdown-core/core/scanners.re"

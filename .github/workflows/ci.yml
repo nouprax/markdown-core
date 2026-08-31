@@ -78,6 +78,18 @@ jobs:
                   pnpm format:cmake:check
             - name: Lint C
               run: pnpm lint:c
+            - name: Cache repository-managed re2c
+              uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+              with:
+                  path: .tools/re2c
+                  key: re2c-4.5.1-${{ runner.os }}
+            - name: Install pinned re2c
+              run: scripts/init-environment.sh --install re2c
+            - name: Check committed scanners.c is reproducible
+              # --require turns the local-run SKIP (no re2c) into a hard
+              # failure: in CI the pinned generator is provisioned above, so
+              # a skip here could only hide drift (#132).
+              run: bash scripts/check-generated-scanners.sh --require
 
     health-check-es:
         name: Health Check - ES

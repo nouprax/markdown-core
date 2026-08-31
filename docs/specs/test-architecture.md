@@ -248,6 +248,12 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
 labels 非空且没有 disabled test，correctness/conformance/benchmark selection 互斥，runner
 discovery 与 CTest registration 一致，Swift suite discovery 非空。
 
+`scripts/check-generated-scanners.sh`（CI 的 Health Check - C 以 `--require`
+执行）验证提交的 `scanners.c` 可由 `scanners.re` 用 pinned 的 re2c
+（`scripts/init-environment.sh --install re2c`）逐字节复现；本地无 re2c 时报告
+SKIP，CI 中 SKIP 即失败。`scripts/audit-format-neutrality.sh` 是测量工具而非
+常设 gate：它需要一个对比 REV，格式 gate 是 `scripts/format-c.sh --check`。
+
 源码目录、文件合并方式、pnpm script 的具体实现文本、router/alias 命名、Android managed
 device 的内部编排方式，以及维护时选择的 GitHub Action major 都不是 CI 合同。这些内容可在
 设计或维护文档中记录，但不得作为 required gate 的静态字符串 policy。
