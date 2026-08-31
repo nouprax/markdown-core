@@ -83,7 +83,8 @@ func feedLoopBenchmark(_ workload: String, unit: String, units: Int) throws {
         if ratio > feedStepRatioMax {
             throw FeedLoopScalingViolation(
                 description: "feed-loop scaling ratio \(String(format: "%.2f", ratio)) "
-                    + "exceeds \(feedStepRatioMax) at \(chunkCounts[step]) chunks")
+                    + "exceeds \(feedStepRatioMax) at \(chunkCounts[step]) chunks"
+            )
         }
     }
     #if canImport(Darwin)
@@ -96,7 +97,8 @@ func feedLoopBenchmark(_ workload: String, unit: String, units: Int) throws {
     print(
         "benchmark runtime=swift boundary=native_feed_loop workload=\(workload) "
             + "workload_version=1 bytes=\(unit.utf8.count * units) warmup=\(warmupCount) repeats=\(repeatCount) "
-            + "median_ns=\(Int64(medians[medians.count - 1])) peak_rss_kib=\(peakRSSKiB)")
+            + "median_ns=\(Int64(medians[medians.count - 1])) peak_rss_kib=\(peakRSSKiB)"
+    )
 }
 
 let unit = "## Section\n\nParagraph with **strong**, [link](https://example.com), and 🚀.\n\n"
