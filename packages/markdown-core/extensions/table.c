@@ -206,42 +206,40 @@ static node_cell *append_row_cell(markdown_core_mem *mem, table_row *row, int *o
     return &row->cells[n_columns - 1];
 }
 
-static table_row *row_from_string(
-    const markdown_core_syntax_extension *self,
-    markdown_core_parser *parser,
-    unsigned char *string,
-    int len
-) {
-    // Parses a single table row. It has the following form:
-    // `delim? table_cell (delim table_cell)* delim? newline`
-    // Note that cells are allowed to be empty.
-    //
-    // From the GitHub-flavored Markdown specification:
-    //
-    // > Each row consists of cells containing arbitrary text, in which inlines
-    // > are parsed, separated by pipes (|). A leading and trailing pipe is also
-    // > recommended for clarity of reading, and if there’s otherwise parsing
-    // > ambiguity.
-
-    table_row *row = NULL;
+/* The one scanner a table row has. It walks
+ * `delim? table_cell (delim table_cell)* delim? newline` -- cells are allowed
+ * to be empty -- and answers whether `string` is a row at all: the scanners'
+ * walk, the column cap, the paragraph-offset reset, and the end-of-input test.
+ *
+ * From the GitHub-flavored Markdown specification:
+ *
+ * > Each row consists of cells containing arbitrary text, in which inlines
+ * > are parsed, separated by pipes (|). A leading and trailing pipe is also
+ * > recommended for clarity of reading, and if there's otherwise parsing
+ * > ambiguity.
+ *
+ * `row` is the materialization switch (#137): with a row the walk also builds
+ * it -- a calloc'd strbuf per cell, filled by `unescape_pipes`, with the
+ * walk-back that stamps each cell's offsets -- and with NULL it builds
+ * nothing, because `matches` runs on EVERY line inside an open table and the
+ * decision never reads a cell's bytes. One walk instead of a builder and a
+ * separate "verbatim" copy of it, so accept/reject cannot drift from what the
+ * builder accepts. Building allocates, and a lost allocation aborts the walk
+ * with `parser->oom` raised -- the parse fails rather than degrading the
+ * table to a paragraph; the NULL mode allocates nothing and touches no
+ * parser state. */
+static int S_row_walk(markdown_core_parser *parser, unsigned char *string, int len, table_row *row) {
     bufsize_t cell_matched = 1, pipe_matched = 1, offset;
     int expect_more_cells = 1;
     int row_end_offset = 0;
-    int int_overflow_abort = 0;
-
-    row = (table_row *)parser->mem->calloc(1, sizeof(table_row));
-    if (!row) {
-        parser->oom = true;
-        return NULL;
-    }
-    row->n_columns = 0;
-    row->cells = NULL;
+    int aborted = 0;
+    uint32_t n_columns = 0;
 
     // Scan past the (optional) leading pipe.
     offset = scan_table_cell_end(string, len, 0);
 
-    // Parse the cells of the row. Stop if we reach the end of the input, or if we
-    // cannot detect any more cells.
+    // Walk the cells of the row. Stop if we reach the end of the input, or if
+    // we cannot detect any more cells.
     while (offset < len && expect_more_cells) {
         cell_matched = scan_table_cell(string, len, offset);
         pipe_matched = scan_table_cell_end(string, len, offset + cell_matched);
@@ -250,29 +248,41 @@ static table_row *row_from_string(
             // We are guaranteed to have a cell, since (1) either we found some
             // content and cell_matched, or (2) we found an empty cell followed by a
             // pipe.
-            markdown_core_strbuf *cell_buf = unescape_pipes(parser->mem, string + offset, cell_matched);
-            if (!cell_buf) {
-                parser->oom = true;
-                int_overflow_abort = 1;
+            //
+            // The cap is where `row->n_columns` saturates, checked by the walk
+            // itself before anything is built, so both modes reject the
+            // overflowing row at the same cell.
+            if (n_columns + 1 > UINT16_MAX) {
+                aborted = 1;
                 break;
             }
-            if (cell_buf->oom) {
-                parser->oom = true;
-                int_overflow_abort = 1;
-                markdown_core_strbuf_free(cell_buf);
-                parser->mem->free(cell_buf);
-                break;
-            }
-            markdown_core_strbuf_trim(cell_buf);
+            n_columns++;
 
-            {
+            if (row) {
+                markdown_core_strbuf *cell_buf = unescape_pipes(parser->mem, string + offset, cell_matched);
                 int cell_oom = 0;
-                node_cell *cell = append_row_cell(parser->mem, row, &cell_oom);
+                node_cell *cell = NULL;
+
+                if (!cell_buf) {
+                    parser->oom = true;
+                    aborted = 1;
+                    break;
+                }
+                if (cell_buf->oom) {
+                    parser->oom = true;
+                    aborted = 1;
+                    markdown_core_strbuf_free(cell_buf);
+                    parser->mem->free(cell_buf);
+                    break;
+                }
+                markdown_core_strbuf_trim(cell_buf);
+
+                cell = append_row_cell(parser->mem, row, &cell_oom);
                 if (cell_oom) {
                     parser->oom = true;
                 }
                 if (!cell) {
-                    int_overflow_abort = 1;
+                    aborted = 1;
                     markdown_core_strbuf_free(cell_buf);
                     parser->mem->free(cell_buf);
                     break;
@@ -302,9 +312,13 @@ static table_row *row_from_string(
             // the row is not a real row but potentially part of the paragraph
             // preceding the table.
             if (row_end_offset && offset != len) {
-                row->paragraph_offset = offset;
-
-                free_row_cells(parser->mem, row);
+                // `free_row_cells` zeroes `row->n_columns`, so the walk's own
+                // count and the row's stay in step across the reset.
+                n_columns = 0;
+                if (row) {
+                    row->paragraph_offset = offset;
+                    free_row_cells(parser->mem, row);
+                }
 
                 // Scan past the (optional) leading pipe.
                 offset += scan_table_cell_end(string, len, offset);
@@ -316,9 +330,26 @@ static table_row *row_from_string(
         }
     }
 
-    if (offset != len || row->n_columns == 0 || int_overflow_abort) {
+    return !aborted && offset == len && n_columns != 0;
+}
+
+static table_row *row_from_string(
+    const markdown_core_syntax_extension *self,
+    markdown_core_parser *parser,
+    unsigned char *string,
+    int len
+) {
+    table_row *row = (table_row *)parser->mem->calloc(1, sizeof(table_row));
+    if (!row) {
+        parser->oom = true;
+        return NULL;
+    }
+    row->n_columns = 0;
+    row->cells = NULL;
+
+    if (!S_row_walk(parser, string, len, row)) {
         free_table_row(parser->mem, row);
-        row = NULL;
+        return NULL;
     }
 
     return row;
@@ -839,18 +870,19 @@ static int matches(
     markdown_core_node *parent_container
 ) {
     int res = 0;
+    (void)self;
 
     if (markdown_core_node_get_type(parent_container) == MARKDOWN_CORE_NODE_TABLE) {
-        table_row *new_row = row_from_string(
-            self,
+        /* The walk without the row (#137): this runs on EVERY line inside an
+         * open table, and building a full row here -- as it once did -- only
+         * freed it all to answer a boolean, then `try_opening_table_row`
+         * immediately reparsed the same bytes for real. */
+        res = S_row_walk(
             parser,
             input + markdown_core_parser_get_first_nonspace(parser),
-            len - markdown_core_parser_get_first_nonspace(parser)
+            len - markdown_core_parser_get_first_nonspace(parser),
+            NULL
         );
-        if (new_row && new_row->n_columns) {
-            res = 1;
-        }
-        free_table_row(parser->mem, new_row);
     }
 
     return res;

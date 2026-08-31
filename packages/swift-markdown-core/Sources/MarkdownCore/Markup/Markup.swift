@@ -143,19 +143,40 @@ func referenceDefinition(from node: OpaquePointer) -> Identity {
     return Identity(from: definition)
 }
 
+/// The kinds a typed child walk constructs directly (#145): each carries the
+/// same internal node initializer `markup(from:)` dispatches to, named as a
+/// requirement so `typedChildren` can call it without boxing the child in an
+/// existential first.
+protocol NodeConstructible {
+    init(from node: OpaquePointer)
+}
+
+extension ListItem: NodeConstructible {}
+extension TableRow: NodeConstructible {}
+extension TableCell: NodeConstructible {}
+
 extension Markup {
     /// Every child, required to be one kind.
     ///
     /// A `List` owns `ListItem`s and a `TableRow` owns `TableCell`s; the C tree
     /// cannot say so and the typed model can, so the narrowing happens once,
     /// here, instead of at every use site.
-    static func typedChildren<T: Markup>(from node: OpaquePointer) -> [T] {
-        children(from: node).map { child in
-            guard let typed = child as? T else {
-                preconditionFailure("\(type(of: child)) is not a \(T.self)")
-            }
-            return typed
+    ///
+    /// One pass, constructing `T` directly (#145): the walk used to build the
+    /// full `[any Markup]` — every `ListItem`, `TableRow`, and `TableCell`
+    /// outgrows the inline existential buffer, so each child was a heap box —
+    /// and then map that finished array into a second, downcast copy. The
+    /// engine guarantees the child kind (`can_contain_type`), which is what
+    /// the retired downcast re-checked per element.
+    static func typedChildren<T: Markup & NodeConstructible>(from node: OpaquePointer) -> [T] {
+        var result: [T] = []
+        result.reserveCapacity(markdown_core_node_child_count(node))
+        var child = markdown_core_node_get_first_child(node)
+        while let current = child {
+            result.append(T(from: current))
+            child = markdown_core_node_get_next_sibling(current)
         }
+        return result
     }
 
     /// A directive's label, or `nil` when the source wrote none.

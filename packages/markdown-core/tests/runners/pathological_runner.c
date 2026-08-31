@@ -185,6 +185,18 @@ static int case_mismatched_openers_closers(pc_context *context) {
     return pc_expect_count(context, MARKDOWN_CORE_KIND_STRONG, 0, "Strong");
 }
 
+static int case_emph_openers_link_closers(pc_context *context) {
+    /* `_a]` repeated (#134): unmatched emphasis openers accumulate on the
+     * delimiter stack for the whole paragraph -- pairing happens later, in
+     * `process_emphasis` -- while every lone `]` used to walk ALL of them
+     * probing for an extension opener no shipped extension registers.
+     * Quadratic on plain CommonMark prose; the case's timeout is the gate. */
+    if (pc_literal_case(context, "_a] ", 120000, MARKDOWN_CORE_KIND_EMPHASIS, "Emphasis") != 0) {
+        return -1;
+    }
+    return pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, 0, "Link");
+}
+
 static int case_openers_closers_multiple_of_3(pc_context *context) {
     if (pc_build(context, "a**b", "c* ", 50000, NULL) != 0) {
         return -1;
@@ -801,6 +813,7 @@ static const pc_case_entry PC_CASES[] = {
     {"many_link_closers", case_link_closers},
     {"many_link_openers", case_link_openers},
     {"mismatched_openers_closers", case_mismatched_openers_closers},
+    {"emph_openers_link_closers", case_emph_openers_link_closers},
     {"openers_closers_multiple_of_3", case_openers_closers_multiple_of_3},
     {"link_openers_emph_closers", case_link_openers_emph_closers},
     {"pattern_bracket_paren", case_pattern_bracket_paren},

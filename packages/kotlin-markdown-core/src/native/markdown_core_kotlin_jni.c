@@ -53,6 +53,15 @@ JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_sessionFee
      * zero-length array buys nothing and some JVMs answer it with NULL. */
     chunk_length = (*environment)->GetArrayLength(environment, chunk);
     if (chunk_length != 0) {
+        /* Elements, DELIBERATELY not the critical view (#147): a critical
+         * region must stay brief, and this one would span the whole parse,
+         * whose duration is set by the input's shape -- an adversarial
+         * chunk takes seconds. A collector that implements the critical
+         * view by pinning holds up every thread's GC for as long as the
+         * region is open: an application-wide stall traded for one input
+         * copy. So the JVM binding pays the copy where the collector
+         * charges one; JNI_ABORT releases the read-only view without
+         * writing anything back. */
         chunk_bytes = (*environment)->GetByteArrayElements(environment, chunk, NULL);
         if (chunk_bytes == NULL) {
             return NULL;
@@ -86,6 +95,8 @@ JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_sessionAdv
 
     chunk_length = (*environment)->GetArrayLength(environment, chunk);
     if (chunk_length != 0) {
+        /* The same read-only elements view the feed path takes, for the
+         * same reason (#147). */
         chunk_bytes = (*environment)->GetByteArrayElements(environment, chunk, NULL);
         if (chunk_bytes == NULL) {
             return NULL;

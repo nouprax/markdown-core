@@ -28,11 +28,16 @@ public struct DirectiveBlock: Markup {
 extension DirectiveBlock {
     init(from node: OpaquePointer) {
         let id = Self.identity(from: node)
+        // One decode (#145): each `DirectiveValues(from:)` walks every
+        // attribute through the C accessor and allocates two Strings per
+        // entry, so naming it twice decoded the whole set twice and threw
+        // one away. The inline `Directive` already binds it once.
+        let values = DirectiveValues(from: node)
         self.init(
             id: id,
             scope: Self.scope(from: node),
-            name: DirectiveValues(from: node).name,
-            attributes: DirectiveValues(from: node).attributes,
+            name: values.name,
+            attributes: values.attributes,
             label: Self.directiveLabel(from: node),
             content: Self.directiveContent(from: node)
         )

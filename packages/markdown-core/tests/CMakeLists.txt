@@ -417,6 +417,7 @@ if(MARKDOWN_CORE_STATIC)
         reference_sorted_fallback
         reference_identifier_adoption
         directive_sorted_fallback
+        directive_attribute_order
         key_index_probe_growth
         map_prepare_oom
         definition_after_lookup
@@ -502,6 +503,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     many_link_closers
     many_link_openers
     mismatched_openers_closers
+    emph_openers_link_closers
     openers_closers_multiple_of_3
     link_openers_emph_closers
     pattern_bracket_paren
@@ -536,10 +538,12 @@ set(MARKDOWN_CORE_COMPLEXITY_CASES
     unclosed_long_quoted_value
     unclosed_backslash_value
     many_unique_attributes
+    many_prefixed_attributes
     many_duplicate_attributes
     many_unique_references
     many_duplicate_references
     many_unicode_references
+    many_autolink_emails
     read_unique_attributes
     read_duplicate_attributes
     reference_expansion_bound)
@@ -580,7 +584,14 @@ markdown_core_add_test(benchmark_corpus_guard benchmark 60 corpus_guard --root "
 
 # benchmark: independently scheduled performance workloads; serial, offline,
 # deterministic inputs, relative-scaling assertions only.
-set(MARKDOWN_CORE_BENCH_WORKLOADS binding_baseline representative large_document deep_nesting extensions adversarial)
+set(MARKDOWN_CORE_BENCH_WORKLOADS
+    binding_baseline
+    representative
+    large_document
+    deep_nesting
+    tables
+    extensions
+    adversarial)
 foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
     markdown_core_add_test(
         benchmark_${workload}

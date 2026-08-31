@@ -114,6 +114,33 @@ static char *cc_attributes(size_t size, size_t *length, int duplicates) {
 
 static char *cc_unique_attributes(size_t size, size_t *length) { return cc_attributes(size, length, 0); }
 
+/* Unique names behind a long shared prefix (#123): the qsort comparator
+ * memcmp's the prefix on every one of its u log u comparisons, so in
+ * principle finalization scales with key length as well as key count.
+ * MEASURED, the whole ordering step is ~2.5% of this parse (vectorized
+ * memcmp beat a byte-at-a-time multikey quicksort 0.18s to 0.29s on a
+ * million of exactly these names), so the qsort stays; this gate exists
+ * to catch the day that stops being true. */
+static char *cc_prefixed_attributes(size_t size, size_t *length) {
+    static const char stem[] = "verylongsharedattributeprefixcarryingnoinformation";
+    size_t per_attribute = sizeof(stem) + 24;
+    size_t attribute_count = size / per_attribute ? size / per_attribute : 1;
+    size_t capacity = attribute_count * per_attribute + 16;
+    char *input = (char *)malloc(capacity);
+    size_t written = 0;
+    size_t index;
+    if (!input) {
+        return NULL;
+    }
+    written += (size_t)snprintf(input + written, capacity - written, ":x{");
+    for (index = 0; index < attribute_count; index++) {
+        written += (size_t)snprintf(input + written, capacity - written, "%s%s%zu=v", index ? " " : "", stem, index);
+    }
+    written += (size_t)snprintf(input + written, capacity - written, "}");
+    *length = written;
+    return input;
+}
+
 static char *cc_duplicate_attributes(size_t size, size_t *length) { return cc_attributes(size, length, 1); }
 
 static char *cc_references(size_t size, size_t *length, int duplicates) {
@@ -137,6 +164,21 @@ static char *cc_references(size_t size, size_t *length, int duplicates) {
 static char *cc_unique_references(size_t size, size_t *length) { return cc_references(size, length, 0); }
 
 static char *cc_duplicate_references(size_t size, size_t *length) { return cc_references(size, length, 1); }
+
+/* Repeated short emails in prose: the autolink postprocess used to recount
+ * the whole run from byte zero for every node it placed (#136), Θ(k·n) for
+ * k mailto links -- 20.4s for 400KB. The filler keeps link density
+ * realistic so the 128MiB endpoint's node volume stays comparable to the
+ * reference cases while the byte count still exposes any rescan. */
+static char *cc_autolink_emails(size_t size, size_t *length) {
+    static const char unit[] = "a@b.cd lorem ipsum dolor sit amet consetetur sadipscing elitr "
+                               "sed diam nonumy eirmod tempor invidunt ut labore et dolore magna "
+                               "aliquyam erat sed diam voluptua at vero eos et accusam et justo "
+                               "duo dolores et ea rebum stet clita kasd gubergren no sea takimata ";
+    size_t unit_length = sizeof(unit) - 1;
+    size_t count = size / unit_length ? size / unit_length : 1;
+    return ts_repeat(unit, count, length);
+}
 
 /* Long Unicode labels: case folding is the dominant per-label cost of the one
  * key construction (#125), and folding rewrites these bytes for real -- 'ß'
@@ -281,20 +323,25 @@ typedef struct cc_case_entry {
      * index, and a 6.8 MB directive took 269 s to dump while `many_unique_
      * attributes` passed. Parsing is not the only thing that has to scale. */
     int reads_attributes;
+    /* The one extension the case's input exercises; every case still runs
+     * through the same measurement loop. */
+    const char *extension;
 } cc_case_entry;
 
 static const cc_case_entry CC_CASES[] = {
-    {"valid_long_quoted_value", cc_quoted_value, 0},
-    {"valid_consecutive_backslashes", cc_backslashes, 0},
-    {"unclosed_long_quoted_value", cc_unclosed_quoted, 0},
-    {"unclosed_backslash_value", cc_unclosed_backslashes, 0},
-    {"many_unique_attributes", cc_unique_attributes, 0},
-    {"many_duplicate_attributes", cc_duplicate_attributes, 0},
-    {"many_unique_references", cc_unique_references, 0},
-    {"many_duplicate_references", cc_duplicate_references, 0},
-    {"many_unicode_references", cc_unicode_references, 0},
-    {"read_unique_attributes", cc_unique_attributes, 1},
-    {"read_duplicate_attributes", cc_duplicate_attributes, 1},
+    {"valid_long_quoted_value", cc_quoted_value, 0, "directive"},
+    {"valid_consecutive_backslashes", cc_backslashes, 0, "directive"},
+    {"unclosed_long_quoted_value", cc_unclosed_quoted, 0, "directive"},
+    {"unclosed_backslash_value", cc_unclosed_backslashes, 0, "directive"},
+    {"many_unique_attributes", cc_unique_attributes, 0, "directive"},
+    {"many_prefixed_attributes", cc_prefixed_attributes, 0, "directive"},
+    {"many_duplicate_attributes", cc_duplicate_attributes, 0, "directive"},
+    {"many_unique_references", cc_unique_references, 0, "directive"},
+    {"many_duplicate_references", cc_duplicate_references, 0, "directive"},
+    {"many_unicode_references", cc_unicode_references, 0, "directive"},
+    {"many_autolink_emails", cc_autolink_emails, 0, "autolink"},
+    {"read_unique_attributes", cc_unique_attributes, 1, "directive"},
+    {"read_duplicate_attributes", cc_duplicate_attributes, 1, "directive"},
 };
 
 /* Cases measured by output size rather than by time. */
@@ -326,13 +373,26 @@ static void cc_read_attributes(markdown_core_document *document) {
     }
 }
 
-static int cc_measure(const char *input, size_t length, double *seconds, int reads_attributes) {
+static int cc_measure(const char *input, size_t length, double *seconds, int reads_attributes, const char *extension) {
     double samples[SCALING_REPEATS];
     int repeat;
     markdown_core_parse_options options;
     ts_ast_options_none(&options);
-    if (ts_ast_enable(&options, "directive") != 0) {
+    if (ts_ast_enable(&options, extension) != 0) {
         return -1;
+    }
+    /* One untimed conversion first, at every size (#122): the small endpoint
+     * is warm anyway through the repeat loop, and without this the large
+     * endpoint's one sample charges the engine for every first-touch page
+     * fault of a cold multi-gigabyte arena -- a property of the host's
+     * memory system, not of the parser's scaling, and the single biggest
+     * source of run-to-run swing in these gates. */
+    {
+        markdown_core_document *document = ts_ast_parse((const uint8_t *)input, length, &options);
+        if (!document) {
+            return -1;
+        }
+        markdown_core_document_free(document);
     }
     for (repeat = 0; repeat < SCALING_REPEATS; repeat++) {
         uint64_t started;
@@ -382,7 +442,7 @@ static int cc_run(const cc_case_entry *entry) {
             fprintf(stderr, "cannot build input for %s\n", entry->name);
             return -1;
         }
-        if (cc_measure(input, length, &timings[step], entry->reads_attributes) != 0) {
+        if (cc_measure(input, length, &timings[step], entry->reads_attributes, entry->extension) != 0) {
             fprintf(stderr, "conversion failed for %s\n", entry->name);
             free(input);
             return -1;
@@ -411,6 +471,11 @@ int main(int argc, char **argv) {
     const char *case_name = NULL;
     int list_only = 0;
     size_t i;
+
+    /* These are wall-clock scaling gates: hold the C library's arena policy
+     * fixed so a ratio measures the parser, not glibc's bistable trim
+     * heuristic (#122; the mechanism is documented at the helper). */
+    ts_bench_pin_allocator();
 
     for (i = 1; i < (size_t)argc; i++) {
         if (strcmp(argv[i], "--list") == 0) {

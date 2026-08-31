@@ -180,36 +180,53 @@ static void clear_sourcepos(markdown_core_node *node) {
     node->end_column = 0;
 }
 
+/* THE FORWARD CURSOR (#136). Every position this pass assigns is derived
+ * from the run's start by counting bytes, and every span it assigns one to
+ * begins at or after the previous span's start -- the split walks the run
+ * left to right. The cursor carries (line, column) forward across the
+ * whole `postprocess_text` call, so the run is counted ONCE; recounting
+ * from byte zero for every node made a run with k mailto links cost
+ * Θ(k·n), which is denial-of-service-shaped for k ~ n/8. `line == 0`
+ * means the parent carried no position and every derived node stays
+ * cleared, exactly as before. */
+typedef struct autolink_cursor {
+    size_t offset;
+    int line;
+    int column;
+} autolink_cursor;
+
+static void cursor_advance(autolink_cursor *cursor, const markdown_core_chunk *source, size_t target) {
+    while (cursor->offset < target) {
+        if (source->data[cursor->offset] == '\n') {
+            cursor->line++;
+            cursor->column = 1;
+        } else {
+            cursor->column++;
+        }
+        cursor->offset++;
+    }
+}
+
 static void set_sourcepos_from_range(
     markdown_core_node *node,
-    int source_start_line,
-    int source_start_column,
+    autolink_cursor *cursor,
     markdown_core_chunk *source,
     size_t start,
     size_t len
 ) {
     clear_sourcepos(node);
 
-    if (source_start_line == 0 || len == 0) {
+    if (cursor->line == 0 || len == 0) {
         return;
     }
 
-    int line = source_start_line;
-    int column = source_start_column;
-    for (size_t i = 0; i < start; i++) {
-        if (source->data[i] == '\n') {
-            line++;
-            column = 1;
-        } else {
-            column++;
-        }
-    }
+    cursor_advance(cursor, source, start);
 
-    node->start_line = line;
-    node->start_column = column;
+    node->start_line = cursor->line;
+    node->start_column = cursor->column;
 
-    int end_line = line;
-    int end_column = column - 1;
+    int end_line = cursor->line;
+    int end_column = cursor->column - 1;
     for (size_t i = start; i < start + len; i++) {
         if (source->data[i] == '\n') {
             end_line++;
@@ -448,8 +465,11 @@ static bool validate_protocol(const char protocol[], uint8_t *data, size_t rewin
 static void postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
     size_t start = 0;
     size_t offset = 0;
-    int source_start_line = text->start_line;
-    int source_start_column = text->start_column;
+    /* One forward-only walk of the run for every position assigned (#136);
+     * `line == 0` disables positioning for the whole call, as the parent's
+     * missing position always did. */
+    autolink_cursor cursor = {0, text->start_line, text->start_column};
+    bool split_ran = false;
     // `text` is going to be split into a list of nodes containing shorter segments
     // of text, so we detach the memory buffer from text and use `markdown_core_chunk_dup` to
     // create references to it. Later, `markdown_core_chunk_to_cstr` is used to convert
@@ -563,6 +583,11 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         size_t link_len = link_end + rewind;
         size_t post_start = start + offset + max_rewind + link_end;
         size_t post_len = remaining - offset - max_rewind - link_end;
+        /* The prefix's position is taken FIRST: the cursor only moves
+         * forward, and the prefix is the earliest of this match's spans.
+         * The values are the same ones the node was assigned after the
+         * splice below; only the counting moved. */
+        set_sourcepos_from_range(text, &cursor, &detached_chunk, prefix_start, prefix_len);
         markdown_core_strbuf buf;
         markdown_core_strbuf_init(parser->mem, &buf, 10);
         if (auto_mailto) {
@@ -573,14 +598,7 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         if (!link_node->as.link.url.data) {
             parser->oom = true;
         }
-        set_sourcepos_from_range(
-            link_node,
-            source_start_line,
-            source_start_column,
-            &detached_chunk,
-            link_start,
-            link_len
-        );
+        set_sourcepos_from_range(link_node, &cursor, &detached_chunk, link_start, link_len);
 
         markdown_core_node *link_text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
         if (!link_text) {
@@ -599,14 +617,7 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
             markdown_core_chunk_set_cstr(parser->mem, &email, NULL);
         }
         link_text->as.literal = email;
-        set_sourcepos_from_range(
-            link_text,
-            source_start_line,
-            source_start_column,
-            &detached_chunk,
-            link_start,
-            link_len
-        );
+        set_sourcepos_from_range(link_text, &cursor, &detached_chunk, link_start, link_len);
         markdown_core_node_append_child(link_node, link_text);
 
         markdown_core_node_insert_after(text, link_node);
@@ -617,7 +628,16 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
             break;
         }
         post->as.literal = markdown_core_chunk_dup(&detached_chunk, (bufsize_t)post_start, (bufsize_t)post_len);
-        set_sourcepos_from_range(post, source_start_line, source_start_column, &detached_chunk, post_start, post_len);
+        /* The tail gets its START here and its end ONCE, after the loop:
+         * every intermediate tail is re-split by the next match and all
+         * four of its coordinates overwritten, and walking the whole
+         * remaining tail per match was the pass's second quadratic. */
+        clear_sourcepos(post);
+        if (cursor.line != 0 && post_len != 0) {
+            cursor_advance(&cursor, &detached_chunk, post_start);
+            post->start_line = cursor.line;
+            post->start_column = cursor.column;
+        }
 
         markdown_core_node_insert_after(link_node, post);
 
@@ -626,14 +646,6 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
             parser->oom = true;
             markdown_core_chunk_set_cstr(parser->mem, &text->as.literal, NULL);
         }
-        set_sourcepos_from_range(
-            text,
-            source_start_line,
-            source_start_column,
-            &detached_chunk,
-            prefix_start,
-            prefix_len
-        );
 
         // A link at the very start of the run leaves a prefix with no bytes.
         // `set_sourcepos_from_range` has already zeroed all four coordinates and
@@ -651,6 +663,7 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         start += offset + max_rewind + link_end;
         remaining -= offset + max_rewind + link_end;
         offset = 0;
+        split_ran = true;
     }
 
     // The same for the tail: a link that ends the run leaves it with no bytes.
@@ -661,6 +674,12 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         markdown_core_node_free(text);
         markdown_core_chunk_free(parser->mem, &detached_chunk);
         return;
+    }
+
+    /* The surviving tail's deferred end (#136), counted exactly once. The
+     * untouched no-match run keeps the position the parser gave it. */
+    if (split_ran) {
+        set_sourcepos_from_range(text, &cursor, &detached_chunk, start, remaining);
     }
 
     // Convert the reference to allocated memory.

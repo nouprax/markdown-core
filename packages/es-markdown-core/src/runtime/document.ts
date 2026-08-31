@@ -2,9 +2,7 @@ import { ParseError } from "../parse-error.js";
 import type { ParseOptions } from "../parse-options.js";
 import type { Read } from "../read.js";
 import { native } from "./native.js";
-import { copyOut, discardOut, optionsMask, withHeapBytes } from "./parser.js";
-
-const utf8Encoder = new TextEncoder();
+import { copyOut, discardOut, optionsMask, withHeapBytes, withHeapText } from "./parser.js";
 
 // The well-known symbol `using` disposes through. Runtimes that predate
 // `Symbol.dispose` (Node 20 before 20.5, older browsers) get the same
@@ -74,10 +72,17 @@ export class Document {
         this.#native = native.es_session_new(optionsMask(parseOptions));
         if (!this.#native) throw new ParseError("allocationFailed", "failed to allocate a native session");
         if (initial === undefined) return;
-        const bytes = typeof initial === "string" ? utf8Encoder.encode(initial) : initial;
         const session = this.#native;
-        withHeapBytes(bytes, (chunkPointer) =>
-            discardOut((output) => native.es_session_advance(session, chunkPointer, bytes.length, output, output + 4))
+        /* A string crosses through `withHeapText` in its one mandatory copy
+         * (#147); a Uint8Array was always single-copy. */
+        if (typeof initial === "string") {
+            withHeapText(initial, (chunkPointer, length) =>
+                discardOut((output) => native.es_session_advance(session, chunkPointer, length, output, output + 4))
+            );
+            return;
+        }
+        withHeapBytes(initial, (chunkPointer) =>
+            discardOut((output) => native.es_session_advance(session, chunkPointer, initial.length, output, output + 4))
         );
     }
 
@@ -99,11 +104,16 @@ export class Document {
      * be built. Text is never a failure: it produces a read.
      */
     feed(chunk: string | Uint8Array): Read {
-        const bytes = typeof chunk === "string" ? utf8Encoder.encode(chunk) : chunk;
-        if (!(bytes instanceof Uint8Array)) throw new TypeError("chunk must be a string or a Uint8Array");
+        if (typeof chunk === "string") {
+            const session = this.#live();
+            return withHeapText(chunk, (chunkPointer, length) =>
+                copyOut((output) => native.es_session_feed(session, chunkPointer, length, output, output + 4))
+            );
+        }
+        if (!(chunk instanceof Uint8Array)) throw new TypeError("chunk must be a string or a Uint8Array");
         const session = this.#live();
-        return withHeapBytes(bytes, (chunkPointer) =>
-            copyOut((output) => native.es_session_feed(session, chunkPointer, bytes.length, output, output + 4))
+        return withHeapBytes(chunk, (chunkPointer) =>
+            copyOut((output) => native.es_session_feed(session, chunkPointer, chunk.length, output, output + 4))
         );
     }
 
