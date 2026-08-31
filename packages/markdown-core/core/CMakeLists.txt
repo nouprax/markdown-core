@@ -4,7 +4,6 @@ endif()
 
 include(GNUInstallDirs)
 
-set(LIBRARY "libmarkdown-core")
 set(STATICLIBRARY "libmarkdown-core_static")
 set(HEADERS
     markdown-core.h
@@ -84,10 +83,10 @@ set_target_properties(${PROGRAM} PROPERTIES COMPILE_FLAGS
 
 # Check integrity of node structure when compiled as debug:
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DMARKDOWN_CORE_DEBUG_NODES -DDEBUG")
-set(CMAKE_LINKER_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG}")
 
+# Profile builds reach the link line through the compile flags CMake places
+# in the link command; no CMAKE_LINKER_* variable exists to set.
 set(CMAKE_C_FLAGS_PROFILE "${CMAKE_C_FLAGS_RELEASE} -pg")
-set(CMAKE_LINKER_PROFILE "${CMAKE_LINKER_FLAGS_RELEASE} -pg")
 
 # -fvisibility=hidden
 set(CMAKE_C_VISIBILITY_PRESET hidden)

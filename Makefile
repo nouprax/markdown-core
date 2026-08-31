@@ -12,11 +12,10 @@ TSAN_BUILDDIR=build/tsan
 MARKDOWN_CORE=$(BUILDDIR)/packages/markdown-core/core/markdown-core
 MARKDOWN_CORE_FUZZ=$(BUILDDIR)/packages/markdown-core/core/markdown-core-fuzz
 SPEC=packages/markdown-core/tests/fixtures/spec.txt
-CLANG_CHECK?=clang-check
 AFL_PATH?=/usr/local/bin
 
-.PHONY: all build test bench asan-test ubsan-test tsan-test install clean distclean \
-	afl libFuzzer clang-check archive update-spec
+.PHONY: all build test bench asan-test ubsan-test tsan-test install clean \
+	afl libFuzzer update-spec
 
 all: build
 
@@ -72,19 +71,8 @@ libFuzzer:
 	cmake --build --preset default --parallel --target markdown-core-fuzz
 	packages/markdown-core/tests/core/run-markdown-core-fuzz $(MARKDOWN_CORE_FUZZ)
 
-clang-check: all
-	${CLANG_CHECK} -p $(BUILDDIR) -analyze $(SRCDIR)/*.c
-
-archive:
-	git archive --prefix=markdown-core/ -o markdown-core.tar.gz HEAD
-	git archive --prefix=markdown-core/ -o markdown-core.zip HEAD
-
 clean:
 	rm -rf build
-
-distclean: clean
-	-rm -rf *.dSYM
-	-rm -f README.html
 
 # Maintenance-only source generation; the generated files are tracked, so
 # these never run during normal build or test.
