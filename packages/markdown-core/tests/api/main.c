@@ -2139,6 +2139,59 @@ static void wire_serialization(test_batch_runner *runner) {
     } else {
         OK(runner, 0, "wire session opens");
     }
+
+    /* THE MANAGED FEED's equivalence (#146): `session_feed_wire` answers the
+     * same bytes as feed + wire + free -- prefix room included -- at every
+     * boundary of a chunked stream, and again for a zero-length feed. Two
+     * sessions run the same chunks side by side, one through each path. */
+    {
+        markdown_core_session *composed = markdown_core_session_new(&options, NULL);
+        markdown_core_session *direct = markdown_core_session_new(&options, NULL);
+        int equal = composed != NULL && direct != NULL;
+        size_t offset = 0;
+        size_t rounds = 0;
+
+        while (equal && offset <= strlen(markdown)) {
+            size_t chunk_length = strlen(markdown) - offset < 7 ? strlen(markdown) - offset : 7;
+            const uint8_t *chunk = chunk_length ? (const uint8_t *)markdown + offset : NULL;
+            markdown_core_document *stepped;
+            uint8_t *composed_wire = NULL;
+            uint8_t *direct_wire = NULL;
+            size_t composed_length = 0;
+            size_t direct_length = 0;
+
+            stepped = markdown_core_session_feed(composed, chunk, chunk_length, NULL);
+            equal = stepped != NULL && markdown_core_document_wire(stepped, 3, &composed_wire, &composed_length, NULL);
+            markdown_core_document_free(stepped);
+            equal = equal &&
+                    markdown_core_session_feed_wire(direct, chunk, chunk_length, 3, &direct_wire, &direct_length, NULL);
+            equal = equal && composed_length == direct_length &&
+                    memcmp(composed_wire, direct_wire, composed_length) == 0 && direct_wire[0] == 0 &&
+                    direct_wire[2] == 0;
+            markdown_core_wire_free(composed_wire);
+            markdown_core_wire_free(direct_wire);
+            rounds++;
+            if (chunk_length == 0) {
+                break;
+            }
+            offset += chunk_length;
+        }
+        OK(runner,
+            equal && rounds > 2,
+            "the managed feed's wire equals feed + wire + free at every boundary, zero-length feed included");
+        markdown_core_session_free(composed);
+        markdown_core_session_free(direct);
+    }
+    {
+        uint8_t *refused = NULL;
+        size_t refused_length = 0;
+        OK(runner,
+            !markdown_core_session_feed_wire(NULL, NULL, 0, 0, &refused, &refused_length, &error) && error != NULL &&
+                markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+            "the managed feed wire refuses a null session with the finished-session error");
+        markdown_core_error_free(error);
+        error = NULL;
+    }
     markdown_core_wire_free(whole);
     markdown_core_document_free(document);
 }

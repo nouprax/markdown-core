@@ -92,10 +92,12 @@ static void stamp_envelope(uint8_t *buffer, uint8_t status) {
     buffer[sizeof(envelope_magic)] = status;
 }
 
-/* THE ONE PAYLOAD WRITER. A session's `feed`, its `advance` and its `finish`
- * all answer through here, so the wire has a single contract and a streamed
- * document crosses on exactly one path. Takes ownership of both `document`
- * and `error`; the caller keeps neither. `document == NULL` with no error is
+/* THE ONE PAYLOAD WRITER for every answer that carries a DOCUMENT it owns
+ * (`finish`), an ERROR, or an advance's healthy nothing. A `feed` serializes
+ * through `markdown_core_session_feed_wire` instead (#146) -- same envelope,
+ * same payload bytes, gated by the facade's equivalence test -- and comes
+ * here only to report its errors. Takes ownership of both `document` and
+ * `error`; the caller keeps neither. `document == NULL` with no error is
  * an ADVANCE's healthy answer: the envelope alone, nothing behind it. */
 static bool deliver(
     markdown_core_document *document,
@@ -161,15 +163,33 @@ bool es_session_feed(
     size_t *output_length
 ) {
     markdown_core_error *error = NULL;
-    markdown_core_document *document;
+    uint8_t *wire = NULL;
+    size_t wire_length = 0;
 
     *output = 0;
     *output_length = 0;
-    document = markdown_core_session_feed(session, chunk, length, &error);
-    if (document == NULL && error == NULL) {
+    /* THE DIRECT WIRE (#146): the document a feed used to build never escaped
+     * `deliver`, so the facade serializes the session's live state instead --
+     * the same envelope and payload bytes, without the intermediate document's
+     * two source copies and unread diagnostics. */
+    if (markdown_core_session_feed_wire(
+            session,
+            chunk,
+            length,
+            sizeof(envelope_magic) + 1,
+            &wire,
+            &wire_length,
+            &error
+        )) {
+        stamp_envelope((uint8_t *)wire, 0);
+        *output = (uintptr_t)wire;
+        *output_length = wire_length;
+        return true;
+    }
+    if (error == NULL) {
         return false;
     }
-    return deliver(document, error, output, output_length);
+    return deliver(NULL, error, output, output_length);
 }
 
 bool es_session_finish(markdown_core_session *session, uintptr_t *output, size_t *output_length) {

@@ -240,6 +240,7 @@ markdown_core_reference_create
 markdown_core_reference_map_new
 markdown_core_session_advance
 markdown_core_session_feed
+markdown_core_session_feed_wire
 markdown_core_session_finish
 markdown_core_session_free
 markdown_core_session_new
