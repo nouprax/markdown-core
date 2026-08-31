@@ -107,7 +107,15 @@ static char *fb_strdup(const char *text) {
  * label must not resolve at all. */
 static int fb_expect_record(markdown_core_map *map, const char *label, long expected, const char *context) {
     markdown_core_chunk chunk = fb_chunk(label);
-    markdown_core_map_record *record = markdown_core_map_lookup(map, &chunk);
+    markdown_core_map_key key;
+    markdown_core_map_record *record;
+    int lost = 0;
+    if (!markdown_core_map_key_init(map->mem, &key, &chunk, 0, &lost)) {
+        fprintf(stderr, "%s: label '%s' derives no key\n", context, label);
+        return -1;
+    }
+    record = markdown_core_map_lookup(map, &key);
+    markdown_core_map_key_free(map->mem, &key);
     if (expected < 0) {
         if (record) {
             fprintf(stderr, "%s: label '%s' unexpectedly resolved\n", context, label);
@@ -133,9 +141,32 @@ static int fb_expect_record(markdown_core_map *map, const char *label, long expe
     return 0;
 }
 
-static void fb_create_reference(markdown_core_map *map, const char *label, uint32_t definition) {
+/* Registration mimics the engine's shape (#125): one key construction, the
+ * identifier chunk handed to the map, the key freed after the map's copy. */
+static void fb_create_with(
+    void (*create)(markdown_core_map *, const markdown_core_chunk *, uint32_t),
+    markdown_core_map *map,
+    const char *label,
+    uint32_t definition
+) {
+    markdown_core_mem *mem = map ? map->mem : markdown_core_get_default_mem_allocator();
     markdown_core_chunk label_chunk = fb_chunk(label);
-    markdown_core_reference_create(map, &label_chunk, definition);
+    markdown_core_map_key key;
+    markdown_core_chunk identifier;
+    int lost = 0;
+    if (!markdown_core_map_key_init(mem, &key, &label_chunk, 0, &lost)) {
+        return;
+    }
+    identifier.data = key.bytes;
+    identifier.len = key.len;
+    identifier.alloc = 0;
+    identifier.owner = NULL;
+    create(map, &identifier, definition);
+    markdown_core_map_key_free(mem, &key);
+}
+
+static void fb_create_reference(markdown_core_map *map, const char *label, uint32_t definition) {
+    fb_create_with(markdown_core_reference_create, map, label, definition);
 }
 
 enum { FB_UNIQUE_REFERENCES = 40 };
@@ -270,9 +301,20 @@ static int case_constructor_oom(void) {
     }
 
     fb_create_reference(NULL, "ref", 1);
-    if (markdown_core_map_lookup(NULL, &label) != NULL) {
-        fputs("NULL map lookup unexpectedly resolved\n", stderr);
-        return -1;
+    {
+        markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+        markdown_core_map_key key;
+        int lost = 0;
+        if (!markdown_core_map_key_init(mem, &key, &label, 0, &lost)) {
+            fputs("key construction failed for a plain label\n", stderr);
+            return -1;
+        }
+        if (markdown_core_map_lookup(NULL, &key) != NULL) {
+            fputs("NULL map lookup unexpectedly resolved\n", stderr);
+            markdown_core_map_key_free(mem, &key);
+            return -1;
+        }
+        markdown_core_map_key_free(mem, &key);
     }
     result = 0;
     return result;
@@ -1027,7 +1069,6 @@ done:
 static int case_definition_after_lookup(void) {
     markdown_core_map *map = markdown_core_reference_map_new(&fb_failing_mem);
     markdown_core_map *footnotes = markdown_core_footnote_definition_map_new(markdown_core_get_default_mem_allocator());
-    markdown_core_chunk label;
     int result = -1;
 
     /* Identities 1..3: "a", then two definitions of "dup" -- the smaller must
@@ -1099,15 +1140,11 @@ static int case_definition_after_lookup(void) {
     fb_block_slot_tables = 0;
 
     /* The footnote set is the same map and is owed the same behaviour. */
-    label = fb_chunk("fn");
-    markdown_core_footnote_definition_create(footnotes, &label, 1);
-    label = fb_chunk("fn");
-    if (markdown_core_map_lookup(footnotes, &label) == NULL) {
-        fputs("footnote label did not resolve\n", stderr);
+    fb_create_with(markdown_core_footnote_definition_create, footnotes, "fn", 1);
+    if (fb_expect_record(footnotes, "fn", 1, "footnote definition") != 0) {
         goto done;
     }
-    label = fb_chunk("fn2");
-    markdown_core_footnote_definition_create(footnotes, &label, 2);
+    fb_create_with(markdown_core_footnote_definition_create, footnotes, "fn2", 2);
     if (fb_expect_record(footnotes, "fn2", 2, "footnote definition after lookup") != 0) {
         goto done;
     }
@@ -1119,6 +1156,92 @@ done:
     return result;
 }
 
+/* #125's acceptance: resolving a reference performs ONE normalization, and
+ * the association's identifier IS the allocation the lookup probed with --
+ * proven by pointer identity, and by counting: between a successful lookup
+ * and the finished association, exactly one allocation happens (the owned
+ * copy of the label as written), never a second normalization pipeline. */
+static int case_reference_identifier_adoption(void) {
+    markdown_core_mem mem = {fb_sweep_calloc, fb_sweep_realloc, fb_free};
+    markdown_core_map *map = markdown_core_reference_map_new(&mem);
+    /* Folding, trimming, and collapsing all have work to do, so a shortcut
+     * that skipped any of them could not pass off byte equality. */
+    markdown_core_chunk label = fb_chunk(
+        "  Gr\xc3\xbc\xc3\x9f"
+        "e   VOM   Meer  "
+    );
+    markdown_core_map_key key;
+    const unsigned char *probe_bytes;
+    markdown_core_map_record *record;
+    markdown_core_association association;
+    unsigned long allocations_before;
+    int lost = 0;
+    int result = -1;
+
+    fb_sweep_count = 0;
+    fb_sweep_fail_at = 0;
+    fb_sweep_fired = 0;
+
+    if (!map) {
+        fputs("map constructor failed\n", stderr);
+        return -1;
+    }
+    fb_create_with(
+        markdown_core_reference_create,
+        map,
+        "Gr\xc3\xbc\xc3\x9f"
+        "e vom MEER",
+        7
+    );
+
+    if (!markdown_core_map_key_init(&mem, &key, &label, 0, &lost)) {
+        fputs("key construction failed\n", stderr);
+        goto done;
+    }
+    probe_bytes = key.bytes;
+    record = markdown_core_map_lookup(map, &key);
+    if (!record || record->definition != 7) {
+        fputs("the reference did not resolve to its definition\n", stderr);
+        markdown_core_map_key_free(&mem, &key);
+        goto done;
+    }
+
+    allocations_before = fb_sweep_count;
+    if (!markdown_core_association_init(&mem, &association, &label, &key)) {
+        fputs("association construction failed\n", stderr);
+        goto done;
+    }
+    if (association.identifier.data != probe_bytes) {
+        fputs("the association re-derived the identifier instead of adopting the key\n", stderr);
+        markdown_core_association_free(&mem, &association);
+        goto done;
+    }
+    if (key.bytes != NULL) {
+        fputs("the association did not consume the key\n", stderr);
+        markdown_core_association_free(&mem, &association);
+        goto done;
+    }
+    if (fb_sweep_count - allocations_before != 1) {
+        fprintf(
+            stderr,
+            "association construction performed %lu allocations, expected exactly the label copy\n",
+            fb_sweep_count - allocations_before
+        );
+        markdown_core_association_free(&mem, &association);
+        goto done;
+    }
+    if (association.label.len != label.len || memcmp(association.label.data, label.data, (size_t)label.len) != 0) {
+        fputs("the association lost the label as written\n", stderr);
+        markdown_core_association_free(&mem, &association);
+        goto done;
+    }
+    markdown_core_association_free(&mem, &association);
+    result = 0;
+done:
+    markdown_core_map_free(map);
+    return result;
+}
+
 typedef struct fb_case_entry {
     const char *name;
     int (*run)(void);
@@ -1126,6 +1249,7 @@ typedef struct fb_case_entry {
 
 static const fb_case_entry FB_CASES[] = {
     {"reference_sorted_fallback", case_reference_sorted_fallback},
+    {"reference_identifier_adoption", case_reference_identifier_adoption},
     {"directive_sorted_fallback", case_directive_sorted_fallback},
     {"key_index_probe_growth", case_key_index_probe_growth},
     {"map_prepare_oom", case_map_prepare_oom},

@@ -1716,18 +1716,45 @@ static markdown_core_map_record *S_footnote_definition_for(
     markdown_core_parser *parser,
     subject *subj,
     bufsize_t label_start,
-    bufsize_t after_close
+    bufsize_t after_close,
+    markdown_core_map_key *key_out
 ) {
     markdown_core_chunk label;
+    markdown_core_map_record *record;
+    bufsize_t raw_len;
+    int lost = 0;
+
+    key_out->bytes = NULL;
+    key_out->len = 0;
 
     if (after_close - label_start < 2) {
         return NULL;
     }
+    raw_len = after_close - label_start - 2;
+    /* The same cap and empty-map cheap-out the lookup used to apply. */
+    if (raw_len < 1 || raw_len > MAX_LINK_LABEL_LENGTH) {
+        return NULL;
+    }
+    if (parser->footnote_defs == NULL || !parser->footnote_defs->size) {
+        return NULL;
+    }
     /* A borrowed slice of the block's own content: `markdown_core_chunk_dup`
-     * aliases, so the only allocation in here is the map's own normalization,
-     * and that one reports itself through the map's sticky flag. */
-    label = markdown_core_chunk_dup(&subj->input, label_start + 1, after_close - label_start - 2);
-    return markdown_core_map_lookup(parser->footnote_defs, &label);
+     * aliases, so the only allocation in here is the key's one normalization
+     * (#125) -- caret-prefixed, because the definition set's records carry
+     * the namespace caret too. A MATCH keeps the key: the reference node's
+     * association adopts the same bytes. */
+    label = markdown_core_chunk_dup(&subj->input, label_start + 1, raw_len);
+    if (!markdown_core_map_key_init(subj->mem, key_out, &label, '^', &lost)) {
+        if (lost) {
+            parser->footnote_defs->oom = 1;
+        }
+        return NULL;
+    }
+    record = markdown_core_map_lookup(parser->footnote_defs, key_out);
+    if (record == NULL) {
+        markdown_core_map_key_free(subj->mem, key_out);
+    }
+    return record;
 }
 
 // Return a link, an image, or a literal close bracket.
@@ -1750,6 +1777,9 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     bracket *opener;
     markdown_core_node *inl;
     markdown_core_chunk raw_label;
+    /* The reference label's one normalized identifier (#125): built for the
+     * lookup, alive across the `match` jump, adopted by the association. */
+    markdown_core_map_key label_key = {NULL, 0};
     int found_label;
     markdown_core_node *tmp, *tmpnext;
     bool is_image;
@@ -1860,9 +1890,23 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
             raw_label.len
         );
     }
-    if (found_label && (matched_definition = markdown_core_map_lookup(subj->refmap, &raw_label)) != NULL) {
-        matched_reference = 1;
-        goto match;
+    /* ONE KEY (#125): the cap and the empty-map cheap-out come first, as the
+     * lookup itself used to order them, and the label normalizes ONCE. A
+     * match keeps the key alive to `match:`, where the association adopts
+     * the very bytes the probe used. */
+    if (found_label && raw_label.len >= 1 && raw_label.len <= MAX_LINK_LABEL_LENGTH && subj->refmap &&
+        subj->refmap->size) {
+        int lost = 0;
+        if (markdown_core_map_key_init(subj->mem, &label_key, &raw_label, 0, &lost)) {
+            matched_definition = markdown_core_map_lookup(subj->refmap, &label_key);
+            if (matched_definition != NULL) {
+                matched_reference = 1;
+                goto match;
+            }
+            markdown_core_map_key_free(subj->mem, &label_key);
+        } else if (lost) {
+            subj->refmap->oom = 1;
+        }
     }
     markdown_core_chunk_free(subj->mem, &raw_label);
     goto noMatch;
@@ -1916,8 +1960,12 @@ noMatch:
          * who writes it and gets prose has no other way to find out. */
         bool caret_written = opener->position < subj->input.len && subj->input.data[opener->position] == '^' &&
                              (literal->len > 1 || opener->inl_text->next->next);
+        /* The call's one normalized identifier (#125): built for the lookup,
+         * caret included, adopted by the association below on a match. */
+        markdown_core_map_key footnote_key = {NULL, 0};
         markdown_core_map_record *footnote_definition =
-            caret_written ? S_footnote_definition_for(parser, subj, opener->position, initial_pos) : NULL;
+            caret_written ? S_footnote_definition_for(parser, subj, opener->position, initial_pos, &footnote_key)
+                          : NULL;
         if (footnote_definition != NULL) {
 
             // Before we got this far, the `handle_close_bracket` function may have
@@ -1929,6 +1977,7 @@ noMatch:
             markdown_core_node *fnref = make_simple(subj->mem, MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE);
             if (!fnref) {
                 subj->oom = 1;
+                markdown_core_map_key_free(subj->mem, &footnote_key);
                 pop_bracket(subj);
                 return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
             }
@@ -1963,9 +2012,10 @@ noMatch:
                     markdown_core_chunk_dup(&subj->input, opener->position + 1, initial_pos - opener->position - 2);
                 /* The identifier KEEPS the caret the label does not carry, so a
                  * footnote and a link definition of one name cannot collide in
-                 * a consumer's single map (markdown_core_association). */
+                 * a consumer's single map (markdown_core_association) -- the
+                 * adopted key carries it from its construction. */
                 markdown_core_association *association = &fnref->as.footnote_reference.association;
-                if (!markdown_core_association_init(subj->mem, association, &label, '^')) {
+                if (!markdown_core_association_init(subj->mem, association, &label, &footnote_key)) {
                     subj->oom = 1;
                     markdown_core_node_free(fnref);
                     pop_bracket(subj);
@@ -2051,7 +2101,7 @@ match:
          * reference resolves depend on how many resolved before it (D9). With
          * nothing copied there is nothing to bound. */
         markdown_core_association association;
-        if (!markdown_core_association_init(subj->mem, &association, &raw_label, 0)) {
+        if (!markdown_core_association_init(subj->mem, &association, &raw_label, &label_key)) {
             subj->oom = 1;
             markdown_core_chunk_free(subj->mem, &raw_label);
             pop_bracket(subj);

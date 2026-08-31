@@ -999,6 +999,7 @@ static markdown_core_node *S_new_reference_definition(
     markdown_core_definition *definition;
     markdown_core_chunk url = parts->url;
     markdown_core_chunk title = parts->title;
+    markdown_core_map_key label_key = {NULL, 0};
     int start_line, start_column, end_line, end_column;
     bufsize_t last = upto;
     int lost = 0;
@@ -1048,7 +1049,11 @@ static markdown_core_node *S_new_reference_definition(
     node->end_line = end_line;
     node->end_column = end_column;
 
-    if (!markdown_core_association_init(parser->mem, &definition->association, &parts->label, 0)) {
+    /* The one key construction (#125): normalized here, adopted by the
+     * association, and the map registration below copies the association's
+     * identifier -- nothing normalizes twice. */
+    if (!markdown_core_map_key_init(parser->mem, &label_key, &parts->label, 0, &lost) ||
+        !markdown_core_association_init(parser->mem, &definition->association, &parts->label, &label_key)) {
         /* The label would keep borrowing the content buffer the harvest drops. */
         parser->oom = true;
         markdown_core_node_free(node);
@@ -1145,7 +1150,7 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
     for (registered = first_definition; registered && registered != b; registered = registered->next) {
         markdown_core_reference_create(
             parser->refmap,
-            &registered->as.definition->association.label,
+            &registered->as.definition->association.identifier,
             registered->identifier
         );
     }
@@ -2975,11 +2980,18 @@ static void open_new_blocks(
                 return;
             }
             /* The identifier KEEPS the caret the label does not carry
-             * (markdown_core_association). */
-            if (!markdown_core_association_init(parser->mem, &(*container)->as.association, &c, '^')) {
-                parser->oom = true;
-                markdown_core_chunk_free(parser->mem, &c);
-                return;
+             * (markdown_core_association): one key construction carries it,
+             * the association adopts it, and the map registration below
+             * copies the association's identifier (#125). */
+            {
+                markdown_core_map_key label_key = {NULL, 0};
+                int label_lost = 0;
+                if (!markdown_core_map_key_init(parser->mem, &label_key, &c, '^', &label_lost) ||
+                    !markdown_core_association_init(parser->mem, &(*container)->as.association, &c, &label_key)) {
+                    parser->oom = true;
+                    markdown_core_chunk_free(parser->mem, &c);
+                    return;
+                }
             }
             markdown_core_chunk_free(parser->mem, &c);
 
@@ -3003,7 +3015,7 @@ static void open_new_blocks(
              * this is the id the block keeps. */
             markdown_core_footnote_definition_create(
                 parser->footnote_defs,
-                &(*container)->as.association.label,
+                &(*container)->as.association.identifier,
                 (*container)->identifier
             );
 

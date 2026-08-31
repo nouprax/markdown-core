@@ -415,6 +415,7 @@ markdown_core_add_test(regression_commonmark regression 120 spec_runner --spec
 if(MARKDOWN_CORE_STATIC)
     set(MARKDOWN_CORE_FALLBACK_CASES
         reference_sorted_fallback
+        reference_identifier_adoption
         directive_sorted_fallback
         key_index_probe_growth
         map_prepare_oom
@@ -538,6 +539,7 @@ set(MARKDOWN_CORE_COMPLEXITY_CASES
     many_duplicate_attributes
     many_unique_references
     many_duplicate_references
+    many_unicode_references
     read_unique_attributes
     read_duplicate_attributes
     reference_expansion_bound)

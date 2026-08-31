@@ -21,19 +21,21 @@ typedef struct {
     markdown_core_chunk title;
 } markdown_core_reference_parts;
 
-/* Build the association a reference or a definition carries, from the label AS
- * WRITTEN. `prefix` is prepended to the IDENTIFIER and not to the label: it is
- * `^` for the two footnote kinds and 0 for the other three, which is how a
- * footnote and a link definition of the same name stay apart in a consumer's
- * single map (see markdown_core_association in node.h).
+/* Build the association a reference or a definition carries: the label AS
+ * WRITTEN, duplicated, and the IDENTIFIER adopted from the prepared key --
+ * the one normalization (#125, markdown_core_map_key_init), whose `prefix`
+ * is `^` for the two footnote kinds and 0 for the other three, which is how
+ * a footnote and a link definition of the same name stay apart in a
+ * consumer's single map (see markdown_core_association in node.h). The key
+ * is CONSUMED on success and on failure alike.
  *
- * Returns 0 having allocated nothing on failure -- an association with half a
+ * Returns 0 having kept nothing on failure -- an association with half a
  * value is a node that lies, and there is no honest partial state. */
 int markdown_core_association_init(
     markdown_core_mem *mem,
     markdown_core_association *out,
     const markdown_core_chunk *label,
-    unsigned char prefix
+    markdown_core_map_key *key
 );
 void markdown_core_association_free(markdown_core_mem *mem, markdown_core_association *association);
 
@@ -62,11 +64,21 @@ void markdown_core_association_free(markdown_core_mem *mem, markdown_core_associ
  * `definition` on both `_create` calls is the registering definition block's
  * identity; the caller reads it AFTER any identity handoff the harvest
  * performs (§4 D4 fork 3), so the map carries the id the tree keeps -- and the
- * handoff hands the firstborn an EARLIER mint, so monotonicity survives it. */
+ * handoff hands the firstborn an EARLIER mint, so monotonicity survives it.
+ *
+ * `identifier` on both `_create` calls is the definition node's association
+ * identifier -- ALREADY NORMALIZED by the one key construction (#125), the
+ * footnote namespace caret included -- so registration copies bytes and
+ * re-derives nothing, and the footnote map's stored labels carry the same
+ * caret its lookups probe with. */
 markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem);
-void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label, uint32_t definition);
+void markdown_core_reference_create(markdown_core_map *map, const markdown_core_chunk *identifier, uint32_t definition);
 markdown_core_map *markdown_core_footnote_definition_map_new(markdown_core_mem *mem);
-void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label, uint32_t definition);
+void markdown_core_footnote_definition_create(
+    markdown_core_map *map,
+    const markdown_core_chunk *identifier,
+    uint32_t definition
+);
 
 #ifdef __cplusplus
 }

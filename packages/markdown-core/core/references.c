@@ -8,13 +8,8 @@ int markdown_core_association_init(
     markdown_core_mem *mem,
     markdown_core_association *out,
     const markdown_core_chunk *label,
-    unsigned char prefix
+    markdown_core_map_key *key
 ) {
-    markdown_core_chunk raw = *label;
-    unsigned char *key;
-    bufsize_t length;
-    int lost = 0;
-
     out->label.data = NULL;
     out->label.len = 0;
     out->label.alloc = 0;
@@ -30,31 +25,18 @@ int markdown_core_association_init(
          * the AST derivation was the witness -- walks into the freed buffer.
          * `chunk_free` on a borrow only clears the fields. */
         markdown_core_chunk_free(mem, &out->label);
+        markdown_core_map_key_free(mem, key);
         return 0;
     }
 
-    key = normalize_map_label(mem, &raw, &lost);
-    if (key == NULL) {
-        markdown_core_chunk_free(mem, &out->label);
-        return 0;
-    }
-    length = (bufsize_t)strlen((char *)key);
-    if (prefix) {
-        unsigned char *prefixed = (unsigned char *)mem->calloc((size_t)length + 2, 1);
-        if (!prefixed) {
-            mem->free(key);
-            markdown_core_chunk_free(mem, &out->label);
-            return 0;
-        }
-        prefixed[0] = prefix;
-        memcpy(prefixed + 1, key, (size_t)length);
-        mem->free(key);
-        key = prefixed;
-        length += 1;
-    }
-    out->identifier.data = key;
-    out->identifier.len = length;
+    /* THE ADOPTION (#125): the identifier IS the prepared key's bytes -- the
+     * same allocation the lookup probed with, moved, not re-derived. The key
+     * is consumed on both outcomes, so ownership never forks. */
+    out->identifier.data = key->bytes;
+    out->identifier.len = key->len;
     out->identifier.alloc = 1;
+    key->bytes = NULL;
+    key->len = 0;
     return 1;
 }
 
@@ -71,10 +53,13 @@ static void definition_free(markdown_core_map *map, markdown_core_map_record *re
     }
 }
 
-static void definition_create(markdown_core_map *map, markdown_core_chunk *label, uint32_t definition) {
+/* The identifier arrives ALREADY NORMALIZED (#125): it is the association's
+ * identifier, built by the one key construction, so registration copies
+ * bytes and derives nothing. The record still owns its copy -- a map and
+ * the node whose association fed it have independent lifetimes. */
+static void definition_create(markdown_core_map *map, const markdown_core_chunk *identifier, uint32_t definition) {
     markdown_core_map_record *record;
     unsigned char *reflabel;
-    int lost = 0;
 
     /* The parser tolerates a missing map (map_new failure under a
      * NULL-returning allocator); definitions are then dropped. */
@@ -82,14 +67,18 @@ static void definition_create(markdown_core_map *map, markdown_core_chunk *label
         return;
     }
 
-    reflabel = normalize_map_label(map->mem, label, &lost);
-    /* An empty label, or one that is all whitespace, defines nothing. */
-    if (reflabel == NULL) {
-        if (lost) {
-            map->oom = 1;
-        }
+    /* An association that failed to construct has no identifier; there is
+     * nothing to define. */
+    if (identifier->data == NULL || identifier->len == 0) {
         return;
     }
+
+    reflabel = (unsigned char *)map->mem->calloc((size_t)identifier->len + 1, 1);
+    if (!reflabel) {
+        map->oom = 1;
+        return;
+    }
+    memcpy(reflabel, identifier->data, (size_t)identifier->len);
 
     record = (markdown_core_map_record *)map->mem->calloc(1, sizeof(*record));
     if (!record) {
@@ -120,14 +109,22 @@ markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem) {
     return markdown_core_map_new(mem, definition_free);
 }
 
-void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label, uint32_t definition) {
-    definition_create(map, label, definition);
+void markdown_core_reference_create(
+    markdown_core_map *map,
+    const markdown_core_chunk *identifier,
+    uint32_t definition
+) {
+    definition_create(map, identifier, definition);
 }
 
 markdown_core_map *markdown_core_footnote_definition_map_new(markdown_core_mem *mem) {
     return markdown_core_map_new(mem, definition_free);
 }
 
-void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label, uint32_t definition) {
-    definition_create(map, label, definition);
+void markdown_core_footnote_definition_create(
+    markdown_core_map *map,
+    const markdown_core_chunk *identifier,
+    uint32_t definition
+) {
+    definition_create(map, identifier, definition);
 }

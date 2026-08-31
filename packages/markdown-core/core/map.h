@@ -76,7 +76,33 @@ struct markdown_core_map {
 
 typedef struct markdown_core_map markdown_core_map;
 
-unsigned char *normalize_map_label(markdown_core_mem *mem, markdown_core_chunk *ref, int *lost);
+/* THE PREPARED KEY (#125): one normalized identifier per semantic label,
+ * constructed once and carried through every consumer. The lookup probes
+ * with it, and on a match the node's association takes ownership of the
+ * very same bytes -- resolution and association are two results of ONE
+ * operation, so nothing re-derives the identifier and the OOM boundary is
+ * one construction instead of two. The optional namespace prefix (the
+ * footnote '^') is a parameter of this construction, not a second
+ * algorithm, and it is applied AFTER normalization so the label's own
+ * leading whitespace still trims. */
+typedef struct markdown_core_map_key {
+    unsigned char *bytes; /* owned, NUL-terminated */
+    bufsize_t len;
+} markdown_core_map_key;
+
+/* Fold, trim, collapse -- once -- then the optional prefix. Returns 1 with
+ * an owned key. Returns 0 with `key` zeroed when no identifier can exist:
+ * a label that is empty (or all whitespace) derives none, and `*lost` says
+ * whether the miss was instead allocation loss. */
+int markdown_core_map_key_init(
+    markdown_core_mem *mem,
+    markdown_core_map_key *key,
+    const markdown_core_chunk *label,
+    unsigned char prefix,
+    int *lost
+);
+void markdown_core_map_key_free(markdown_core_mem *mem, markdown_core_map_key *key);
+
 int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_mem *mem, size_t expected_size);
 void markdown_core_key_index_free(markdown_core_key_index *index);
 int markdown_core_key_index_insert(
@@ -90,7 +116,12 @@ int markdown_core_key_index_insert(
 void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len);
 markdown_core_map *markdown_core_map_new(markdown_core_mem *mem, markdown_core_map_free_f free);
 void markdown_core_map_free(markdown_core_map *map);
-markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label);
+/* Probe with a prepared key: no normalization, no allocation, no length
+ * recomputation. The caller keeps the key -- on a match its bytes are what
+ * the association construction adopts. A NULL or empty map misses; a map
+ * whose preparation cannot allocate marks its sticky `oom`, misses, and
+ * stays unprepared so a later lookup can retry. */
+markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, const markdown_core_map_key *key);
 
 #ifdef __cplusplus
 }
