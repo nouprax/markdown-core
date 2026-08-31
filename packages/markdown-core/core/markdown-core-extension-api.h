@@ -286,8 +286,12 @@ typedef void (*markdown_core_postprocess_block_func)(
  * is a field every projection carries, an extension block's close state lives
  * in its opaque payload and reaches no view. This is the only moment at which
  * the extension can still say so, and saying so is a diagnostic, not a rewrite
- * -- a close hook that changed the tree would be a second `postprocess` with a
- * worse name. */
+ * -- a close hook that changed the TREE would be a second `postprocess` with
+ * a worse name. Settling the block's OWN payload is different: the core
+ * detaches code and html literals from content at this same moment in
+ * `finalize`, and a close hook may do the same for a literal that lives in
+ * its opaque state (#153: formula freezes its content here and the literal
+ * slices it). */
 typedef void (*markdown_core_close_block_func)(
     const markdown_core_syntax_extension *extension,
     markdown_core_parser *parser,

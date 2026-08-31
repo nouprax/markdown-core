@@ -85,6 +85,7 @@ static markdown_core_chunk fb_chunk(const char *text) {
     chunk.data = (unsigned char *)text;
     chunk.len = (bufsize_t)strlen(text);
     chunk.alloc = 0;
+    chunk.owner = NULL;
     return chunk;
 }
 
@@ -106,7 +107,15 @@ static char *fb_strdup(const char *text) {
  * label must not resolve at all. */
 static int fb_expect_record(markdown_core_map *map, const char *label, long expected, const char *context) {
     markdown_core_chunk chunk = fb_chunk(label);
-    markdown_core_map_record *record = markdown_core_map_lookup(map, &chunk);
+    markdown_core_map_key key;
+    markdown_core_map_record *record;
+    int lost = 0;
+    if (!markdown_core_map_key_init(map->mem, &key, &chunk, 0, &lost)) {
+        fprintf(stderr, "%s: label '%s' derives no key\n", context, label);
+        return -1;
+    }
+    record = markdown_core_map_lookup(map, &key);
+    markdown_core_map_key_free(map->mem, &key);
     if (expected < 0) {
         if (record) {
             fprintf(stderr, "%s: label '%s' unexpectedly resolved\n", context, label);
@@ -132,9 +141,32 @@ static int fb_expect_record(markdown_core_map *map, const char *label, long expe
     return 0;
 }
 
-static void fb_create_reference(markdown_core_map *map, const char *label, uint32_t definition) {
+/* Registration mimics the engine's shape (#125): one key construction, the
+ * identifier chunk handed to the map, the key freed after the map's copy. */
+static void fb_create_with(
+    void (*create)(markdown_core_map *, const markdown_core_chunk *, uint32_t),
+    markdown_core_map *map,
+    const char *label,
+    uint32_t definition
+) {
+    markdown_core_mem *mem = map ? map->mem : markdown_core_get_default_mem_allocator();
     markdown_core_chunk label_chunk = fb_chunk(label);
-    markdown_core_reference_create(map, &label_chunk, definition);
+    markdown_core_map_key key;
+    markdown_core_chunk identifier;
+    int lost = 0;
+    if (!markdown_core_map_key_init(mem, &key, &label_chunk, 0, &lost)) {
+        return;
+    }
+    identifier.data = key.bytes;
+    identifier.len = key.len;
+    identifier.alloc = 0;
+    identifier.owner = NULL;
+    create(map, &identifier, definition);
+    markdown_core_map_key_free(mem, &key);
+}
+
+static void fb_create_reference(markdown_core_map *map, const char *label, uint32_t definition) {
+    fb_create_with(markdown_core_reference_create, map, label, definition);
 }
 
 enum { FB_UNIQUE_REFERENCES = 40 };
@@ -269,9 +301,20 @@ static int case_constructor_oom(void) {
     }
 
     fb_create_reference(NULL, "ref", 1);
-    if (markdown_core_map_lookup(NULL, &label) != NULL) {
-        fputs("NULL map lookup unexpectedly resolved\n", stderr);
-        return -1;
+    {
+        markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+        markdown_core_map_key key;
+        int lost = 0;
+        if (!markdown_core_map_key_init(mem, &key, &label, 0, &lost)) {
+            fputs("key construction failed for a plain label\n", stderr);
+            return -1;
+        }
+        if (markdown_core_map_lookup(NULL, &key) != NULL) {
+            fputs("NULL map lookup unexpectedly resolved\n", stderr);
+            markdown_core_map_key_free(mem, &key);
+            return -1;
+        }
+        markdown_core_map_key_free(mem, &key);
     }
     result = 0;
     return result;
@@ -1016,17 +1059,19 @@ done:
 }
 
 /* A definition arriving AFTER a lookup has prepared the map is found by the
- * next lookup, and first-definition-wins survives the re-preparation. This is
+ * next lookup, and first-definition-wins survives however it lands. This is
  * §12.4's contract: every mid-stream projection interleaves the two, and
  * before it the interleaving tripped an assert in debug builds and silently
- * poisoned the map under -DNDEBUG. Exercised on the hash path, across the
+ * poisoned the map under -DNDEBUG. On the hash path the live index absorbs
+ * the late arrival in place (#124) -- proven by inserting and resolving with
+ * every preparation allocation refused -- while the sorted representation
+ * keeps its inherited rebuild-on-next-lookup contract, exercised across the
  * switch onto the pointer-sort fallback and back, and on the footnote set,
  * which is the same map. The re-preparation leaks are covered here too: the
  * sanitizer run owns the check, this case makes it reachable. */
 static int case_definition_after_lookup(void) {
     markdown_core_map *map = markdown_core_reference_map_new(&fb_failing_mem);
     markdown_core_map *footnotes = markdown_core_footnote_definition_map_new(markdown_core_get_default_mem_allocator());
-    markdown_core_chunk label;
     int result = -1;
 
     /* Identities 1..3: "a", then two definitions of "dup" -- the smaller must
@@ -1043,23 +1088,28 @@ static int case_definition_after_lookup(void) {
         goto done;
     }
 
-    /* Identities 4..5, inserted after the map was prepared. */
+    /* Identities 4..5, inserted after the map was prepared: the live hash
+     * index absorbs a late arrival in place (#124), so nothing reopens the
+     * preparation and first-wins holds through the incremental upsert. */
     fb_create_reference(map, "late", 4);
     fb_create_reference(map, "dup", 5);
-    if (map->prepared) {
-        fputs("an insert after a lookup must reopen preparation\n", stderr);
+    if (!map->prepared || !map->indexed) {
+        fputs("a late insert on the hash path must maintain the index, not reopen preparation\n", stderr);
         goto done;
     }
 
     if (fb_expect_record(map, "late", 4, "definition after lookup") != 0) {
         goto done;
     }
-    if (fb_expect_record(map, "dup", 2, "first-wins across re-preparation") != 0) {
+    if (fb_expect_record(map, "dup", 2, "first-wins across the incremental insert") != 0) {
         goto done;
     }
 
-    /* Identity 6, and the rebuild it forces is sent down the pointer-sort path. */
+    /* Identity 6. The SORTED representation keeps rebuild-on-next-lookup:
+     * force a fresh preparation with slot tables refused, so the rebuild is
+     * sent down the pointer-sort path. */
     fb_create_reference(map, "later", 6);
+    map->prepared = 0;
     fb_block_slot_tables = 1;
     if (fb_expect_record(map, "later", 6, "sorted re-preparation") != 0) {
         goto done;
@@ -1073,8 +1123,14 @@ static int case_definition_after_lookup(void) {
     }
     fb_block_slot_tables = 0;
 
-    /* Identity 7, and the rebuild goes back to the hash path. */
+    /* Identity 7 arrives while the map stands on the sorted path, which
+     * keeps the inherited contract: the insert reopens preparation, and the
+     * rebuild with allocation restored goes back to the hash. */
     fb_create_reference(map, "last", 7);
+    if (map->prepared) {
+        fputs("an insert on the sorted representation must reopen preparation\n", stderr);
+        goto done;
+    }
     if (fb_expect_record(map, "last", 7, "hash re-preparation") != 0) {
         goto done;
     }
@@ -1084,37 +1140,151 @@ static int case_definition_after_lookup(void) {
     }
     /* AND OUT OF ORDER: a smaller identity registered LAST must still win,
      * on both preparation paths -- the winner is stated as a comparison, not
-     * left to traversal or registration order. */
+     * left to traversal or registration order. On the hash path this is now
+     * the incremental upsert's own comparison, live in the prepared index. */
     fb_create_reference(map, "dup", 1);
     if (fb_expect_record(map, "dup", 1, "smallest-wins registered last, hash path") != 0) {
         goto done;
     }
     fb_create_reference(map, "shuffle", 9);
     fb_create_reference(map, "shuffle", 8);
+    map->prepared = 0;
     fb_block_slot_tables = 1;
     if (fb_expect_record(map, "shuffle", 8, "smallest-wins registered last, sorted path") != 0) {
         goto done;
     }
     fb_block_slot_tables = 0;
 
-    /* The footnote set is the same map and is owed the same behaviour. */
-    label = fb_chunk("fn");
-    markdown_core_footnote_definition_create(footnotes, &label, 1);
-    label = fb_chunk("fn");
-    if (markdown_core_map_lookup(footnotes, &label) == NULL) {
-        fputs("footnote label did not resolve\n", stderr);
+    /* THE PROOF OF INCREMENTALITY (#124): stand the map back on the hash
+     * path, then refuse EVERY preparation allocation. A late definition
+     * still lands and resolves, and the map stays prepared -- possible only
+     * because the live index absorbed it without any rebuild. */
+    fb_create_reference(map, "reopen", 11);
+    if (fb_expect_record(map, "reopen", 11, "hash re-preparation for the refused window") != 0) {
         goto done;
     }
-    label = fb_chunk("fn2");
-    markdown_core_footnote_definition_create(footnotes, &label, 2);
+    if (!map->indexed) {
+        fputs("re-preparation for the refused window did not take the hash path\n", stderr);
+        goto done;
+    }
+    fb_block_slot_tables = 1;
+    fb_block_pointer_arrays = 1;
+    fb_create_reference(map, "blocked", 12);
+    if (fb_expect_record(map, "blocked", 12, "late insert with preparation refused") != 0) {
+        goto done;
+    }
+    if (!map->prepared || !map->indexed) {
+        fputs("the refused window forced a rebuild the incremental index should have avoided\n", stderr);
+        goto done;
+    }
+    if (map->oom) {
+        fputs("the refused window marked oom although nothing was lost\n", stderr);
+        goto done;
+    }
+    fb_block_slot_tables = 0;
+    fb_block_pointer_arrays = 0;
+
+    /* The footnote set is the same map and is owed the same behaviour. */
+    fb_create_with(markdown_core_footnote_definition_create, footnotes, "fn", 1);
+    if (fb_expect_record(footnotes, "fn", 1, "footnote definition") != 0) {
+        goto done;
+    }
+    fb_create_with(markdown_core_footnote_definition_create, footnotes, "fn2", 2);
     if (fb_expect_record(footnotes, "fn2", 2, "footnote definition after lookup") != 0) {
         goto done;
     }
     result = 0;
 done:
     fb_block_slot_tables = 0;
+    fb_block_pointer_arrays = 0;
     markdown_core_map_free(map);
     markdown_core_map_free(footnotes);
+    return result;
+}
+
+/* #125's acceptance: resolving a reference performs ONE normalization, and
+ * the association's identifier IS the allocation the lookup probed with --
+ * proven by pointer identity, and by counting: between a successful lookup
+ * and the finished association, exactly one allocation happens (the owned
+ * copy of the label as written), never a second normalization pipeline. */
+static int case_reference_identifier_adoption(void) {
+    markdown_core_mem mem = {fb_sweep_calloc, fb_sweep_realloc, fb_free};
+    markdown_core_map *map = markdown_core_reference_map_new(&mem);
+    /* Folding, trimming, and collapsing all have work to do, so a shortcut
+     * that skipped any of them could not pass off byte equality. */
+    markdown_core_chunk label = fb_chunk(
+        "  Gr\xc3\xbc\xc3\x9f"
+        "e   VOM   Meer  "
+    );
+    markdown_core_map_key key;
+    const unsigned char *probe_bytes;
+    markdown_core_map_record *record;
+    markdown_core_association association;
+    unsigned long allocations_before;
+    int lost = 0;
+    int result = -1;
+
+    fb_sweep_count = 0;
+    fb_sweep_fail_at = 0;
+    fb_sweep_fired = 0;
+
+    if (!map) {
+        fputs("map constructor failed\n", stderr);
+        return -1;
+    }
+    fb_create_with(
+        markdown_core_reference_create,
+        map,
+        "Gr\xc3\xbc\xc3\x9f"
+        "e vom MEER",
+        7
+    );
+
+    if (!markdown_core_map_key_init(&mem, &key, &label, 0, &lost)) {
+        fputs("key construction failed\n", stderr);
+        goto done;
+    }
+    probe_bytes = key.bytes;
+    record = markdown_core_map_lookup(map, &key);
+    if (!record || record->definition != 7) {
+        fputs("the reference did not resolve to its definition\n", stderr);
+        markdown_core_map_key_free(&mem, &key);
+        goto done;
+    }
+
+    allocations_before = fb_sweep_count;
+    if (!markdown_core_association_init(&mem, &association, &label, &key)) {
+        fputs("association construction failed\n", stderr);
+        goto done;
+    }
+    if (association.identifier.data != probe_bytes) {
+        fputs("the association re-derived the identifier instead of adopting the key\n", stderr);
+        markdown_core_association_free(&mem, &association);
+        goto done;
+    }
+    if (key.bytes != NULL) {
+        fputs("the association did not consume the key\n", stderr);
+        markdown_core_association_free(&mem, &association);
+        goto done;
+    }
+    if (fb_sweep_count - allocations_before != 1) {
+        fprintf(
+            stderr,
+            "association construction performed %lu allocations, expected exactly the label copy\n",
+            fb_sweep_count - allocations_before
+        );
+        markdown_core_association_free(&mem, &association);
+        goto done;
+    }
+    if (association.label.len != label.len || memcmp(association.label.data, label.data, (size_t)label.len) != 0) {
+        fputs("the association lost the label as written\n", stderr);
+        markdown_core_association_free(&mem, &association);
+        goto done;
+    }
+    markdown_core_association_free(&mem, &association);
+    result = 0;
+done:
+    markdown_core_map_free(map);
     return result;
 }
 
@@ -1125,6 +1295,7 @@ typedef struct fb_case_entry {
 
 static const fb_case_entry FB_CASES[] = {
     {"reference_sorted_fallback", case_reference_sorted_fallback},
+    {"reference_identifier_adoption", case_reference_identifier_adoption},
     {"directive_sorted_fallback", case_directive_sorted_fallback},
     {"key_index_probe_growth", case_key_index_probe_growth},
     {"map_prepare_oom", case_map_prepare_oom},

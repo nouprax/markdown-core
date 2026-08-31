@@ -53,7 +53,7 @@ const result = spawnSync(
         ...extensions,
         path.join(packageDirectory, "src/bridge.c"),
         "-O3",
-        "-std=c99",
+        "-std=c11",
         "-sSTANDALONE_WASM=1",
         // A FIXED HEAP ONLY MOVES THE CLIFF. Without this the heap is
         // pinned at the 16 MiB default and a document over about 1.6 MiB

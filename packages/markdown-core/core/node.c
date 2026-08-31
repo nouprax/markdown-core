@@ -195,7 +195,13 @@ static void S_free_nodes(markdown_core_node *e) {
             markdown_core_holder_release(holder);
         }
 
-        markdown_core_strbuf_free(&e->content);
+        if (e->frozen_content) {
+            /* `content.ptr` aliases the frozen bytes; only the reference is
+             * this node's to give up. */
+            markdown_core_buf_release(e->frozen_content);
+        } else {
+            markdown_core_strbuf_free(&e->content);
+        }
 
         if (e->as.opaque && e->extension && e->extension->opaque_free_func) {
             e->extension->opaque_free_func(e->extension, NODE_MEM(e), e);
@@ -224,15 +230,16 @@ markdown_core_holder *markdown_core_holder_new(markdown_core_mem *mem) {
     markdown_core_holder *holder = (markdown_core_holder *)mem->calloc(1, sizeof(*holder));
     if (holder) {
         holder->mem = mem;
+        /* Born with the creator's hold, like a frozen buffer (#153). */
+        markdown_core_atomic_init(&holder->refs, 1);
     }
     return holder;
 }
 
-void markdown_core_holder_hold(markdown_core_holder *holder) { holder->refs++; }
+void markdown_core_holder_hold(markdown_core_holder *holder) { markdown_core_atomic_increment(&holder->refs); }
 
 void markdown_core_holder_release(markdown_core_holder *holder) {
-    if (holder->refs > 1) {
-        holder->refs--;
+    if (markdown_core_atomic_decrement(&holder->refs) != 0) {
         return;
     }
     /* The list's `next` chain is exactly what `S_free_nodes` walks; the
@@ -241,9 +248,12 @@ void markdown_core_holder_release(markdown_core_holder *holder) {
     holder->mem->free(holder);
 }
 
-int markdown_core_holder_take_children(markdown_core_holder *holder, markdown_core_node *block) {
+/* Pure pointer moves: every chunk in the list already holds its bytes --
+ * a retained slice of frozen content or a private allocation -- so the
+ * store that used to copy (T19's own-at-the-boundary rule, via node_own)
+ * now moves and cannot fail (#153). */
+void markdown_core_holder_take_children(markdown_core_holder *holder, markdown_core_node *block) {
     markdown_core_node *child;
-    int ok = markdown_core_node_own(block);
     for (child = block->first_child; child; child = child->next) {
         child->parent = NULL;
     }
@@ -251,7 +261,6 @@ int markdown_core_holder_take_children(markdown_core_holder *holder, markdown_co
     holder->last_child = block->last_child;
     block->first_child = NULL;
     block->last_child = NULL;
-    return ok;
 }
 
 void markdown_core_node_borrow_children(markdown_core_node *block, markdown_core_holder *holder) {
@@ -259,7 +268,7 @@ void markdown_core_node_borrow_children(markdown_core_node *block, markdown_core
     block->last_child = holder->last_child;
     block->link.holder = holder;
     block->flags &= ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN);
-    holder->refs++;
+    markdown_core_holder_hold(holder);
 }
 
 markdown_core_node_type markdown_core_node_get_type(markdown_core_node *node) {
@@ -447,6 +456,21 @@ int markdown_core_node_set_literal(markdown_core_node *node, const char *content
 const char *markdown_core_node_get_string_content(markdown_core_node *node) { return (char *)node->content.ptr; }
 
 int markdown_core_node_set_string_content(markdown_core_node *node, const char *content) {
+    /* THE THAW (#153): frozen content is shared and immutable, so a write
+     * starts a fresh private arena and drops this node's reference --
+     * sharers keep theirs, and the retained slices inline literals hold
+     * stay valid through their own references. Without it the setter grew
+     * a replacement arena while `frozen_content` still claimed the bytes:
+     * the free path released only the buffer and leaked the replacement,
+     * and node_check rejects the half-thawed shape. The strbuf is reset
+     * BEFORE the release: the release may free the very bytes
+     * `content.ptr` aliases. */
+    if (node->frozen_content) {
+        markdown_core_buf *frozen = node->frozen_content;
+        node->frozen_content = NULL;
+        markdown_core_strbuf_init(node->content.mem, &node->content, 0);
+        markdown_core_buf_release(frozen);
+    }
     markdown_core_strbuf_sets(&node->content, content);
     return true;
 }
@@ -955,6 +979,20 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
 
     cur = node;
     for (;;) {
+        /* #152/#153's invariant: a block that borrows its list owns no
+         * mutable content arena -- its bytes, if any, alias a frozen buffer
+         * the block holds a reference to (`asize == 0` marks the alias),
+         * and the borrowed list is backed by its holder. Reported but not
+         * repaired: freeing here would assert an ownership claim this walk
+         * cannot verify. */
+        if (MARKDOWN_CORE_NODE_BORROWED_P(cur) && cur->content.asize != 0) {
+            S_print_error(out, cur, "borrowed content");
+            ++errors;
+        }
+        if (cur->frozen_content && cur->content.asize != 0) {
+            S_print_error(out, cur, "frozen content");
+            ++errors;
+        }
         if (cur->first_child) {
             if (cur->first_child->prev != NULL) {
                 S_print_error(out, cur->first_child, "prev");

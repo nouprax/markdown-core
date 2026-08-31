@@ -66,5 +66,5 @@ let package = Package(
             path: "packages/swift-markdown-core/Benchmarks/MarkdownCoreBenchmarks"
         ),
     ],
-    cLanguageStandard: .c99
+    cLanguageStandard: .c11
 )

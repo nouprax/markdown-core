@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include "config.h"
 #include "markdown-core.h"
+#include "markdown_core_atomic.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,6 +33,41 @@ typedef struct {
 extern const unsigned char markdown_core_strbuf__initbuf[];
 
 #define MARKDOWN_CORE_BUF_INIT(mem) {mem, (unsigned char *)markdown_core_strbuf__initbuf, 0, 0, 0}
+
+/* THE FROZEN BUFFER (#153). A reference-counted, immutable run of bytes:
+ * the shape every ownership wound in this repository shares is "immutable
+ * bytes shared across lifetimes", and this is the one type that answers it.
+ * It is a leaf object -- it points at nothing that points back, so there
+ * are no cycles and no weak edges, and freezing is the last write: after
+ * `markdown_core_buf_freeze` the bytes never change, only the count does.
+ * A `markdown_core_chunk` whose `owner` names one of these keeps it alive
+ * (chunk.h); the count is C11-atomic (markdown_core_atomic.h) so a
+ * document freed on another thread releases safely. */
+typedef struct markdown_core_buf {
+    markdown_core_mem *mem;
+    markdown_core_atomic_u32 refs;
+    unsigned char *bytes;
+    bufsize_t size;
+} markdown_core_buf;
+
+/* Freeze a strbuf's bytes into a new buffer with one reference. The strbuf
+ * is reset to empty either way. Returns NULL when the strbuf was poisoned
+ * or the header cannot be allocated -- the caller reports OOM exactly as it
+ * would for a failed detach. The bytes keep the strbuf's trailing NUL. */
+MARKDOWN_CORE_EXPORT
+markdown_core_buf *markdown_core_buf_freeze(markdown_core_strbuf *buf);
+
+/* Wrap an existing allocation (an alloc'd chunk's bytes being promoted to
+ * shared) in a buffer with one reference. On failure the bytes are NOT
+ * freed -- they still belong to the caller -- and NULL reports it. */
+MARKDOWN_CORE_EXPORT
+markdown_core_buf *markdown_core_buf_adopt(markdown_core_mem *mem, unsigned char *bytes, bufsize_t size);
+
+MARKDOWN_CORE_EXPORT
+void markdown_core_buf_retain(markdown_core_buf *buf);
+
+MARKDOWN_CORE_EXPORT
+void markdown_core_buf_release(markdown_core_buf *buf);
 
 /**
  * Initialize a markdown_core_strbuf structure.

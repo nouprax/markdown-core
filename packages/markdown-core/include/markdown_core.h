@@ -29,6 +29,16 @@
  * afterwards. Node handles and `markdown_core_string`s borrow from the owning document
  * and end with it.
  *
+ * Shared immutable state: a document may share reference-counted immutable
+ * state (cached inline lists, frozen content buffers) with the session that
+ * produced it and with other documents. That sharing is internal and its
+ * counts are atomic, so freeing a document requires no synchronization
+ * against the session or against other documents -- only the per-document
+ * rule above. Every accessor in this header is a non-mutating read, so the
+ * read-only promises hold even for the nodes documents share. A session's
+ * own entry points remain single-caller: two threads must not drive one
+ * session concurrently.
+ *
  * Errors: a markdown_core_error returned through an out-parameter is owned by
  * the caller of that call and is not shared with any other thread; release it
  * with markdown_core_error_free (NULL is allowed). Dump buffers are owned by
@@ -323,6 +333,26 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_session_feed(
     markdown_core_session *session,
     const uint8_t *chunk,
     size_t length,
+    markdown_core_error **error
+);
+/** Feeds exactly `length` UTF-8 bytes and answers the WIRE for the current
+ * document state directly -- the same bytes `markdown_core_session_feed`
+ * followed by `markdown_core_document_wire` would produce, without building
+ * the owned document in between. For a bridge whose document never escapes
+ * the delivering call, that intermediate copies the source twice and the
+ * diagnostics once for a serializer that reads neither; here the wire reads
+ * the session's live state during the synchronous call. `prefix` reserves
+ * zeroed envelope room ahead of the payload, in the one allocation, exactly
+ * as `markdown_core_document_wire` does; release the buffer with
+ * `markdown_core_wire_free`. C consumers that read the document through
+ * accessors keep using `markdown_core_session_feed`. */
+MARKDOWN_CORE_API bool markdown_core_session_feed_wire(
+    markdown_core_session *session,
+    const uint8_t *chunk,
+    size_t length,
+    size_t prefix,
+    uint8_t **output,
+    size_t *output_length,
     markdown_core_error **error
 );
 /** Ends the stream and returns the sealed document. */

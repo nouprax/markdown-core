@@ -272,3 +272,53 @@ extern void markdown_core_strbuf_unescape(markdown_core_strbuf *buf) {
 
     markdown_core_strbuf_truncate(buf, w);
 }
+
+/* The frozen buffer (#153); the contract lives at the declaration. Freeze
+ * reuses the strbuf's allocation -- the header wraps the detached bytes, so
+ * freezing is O(1) and copies nothing. */
+markdown_core_buf *markdown_core_buf_freeze(markdown_core_strbuf *buf) {
+    markdown_core_mem *mem = buf->mem;
+    unsigned char *bytes;
+    bufsize_t size = buf->size;
+    markdown_core_buf *frozen;
+
+    bytes = markdown_core_strbuf_detach(buf);
+    if (!bytes) {
+        return NULL;
+    }
+    frozen = (markdown_core_buf *)mem->calloc(1, sizeof(*frozen));
+    if (!frozen) {
+        mem->free(bytes);
+        return NULL;
+    }
+    frozen->mem = mem;
+    frozen->bytes = bytes;
+    frozen->size = size;
+    markdown_core_atomic_init(&frozen->refs, 1);
+    return frozen;
+}
+
+markdown_core_buf *markdown_core_buf_adopt(markdown_core_mem *mem, unsigned char *bytes, bufsize_t size) {
+    markdown_core_buf *frozen = (markdown_core_buf *)mem->calloc(1, sizeof(*frozen));
+    if (!frozen) {
+        return NULL;
+    }
+    frozen->mem = mem;
+    frozen->bytes = bytes;
+    frozen->size = size;
+    markdown_core_atomic_init(&frozen->refs, 1);
+    return frozen;
+}
+
+void markdown_core_buf_retain(markdown_core_buf *buf) {
+    if (buf) {
+        markdown_core_atomic_increment(&buf->refs);
+    }
+}
+
+void markdown_core_buf_release(markdown_core_buf *buf) {
+    if (buf && markdown_core_atomic_decrement(&buf->refs) == 0) {
+        buf->mem->free(buf->bytes);
+        buf->mem->free(buf);
+    }
+}

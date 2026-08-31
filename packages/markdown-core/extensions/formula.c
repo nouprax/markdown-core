@@ -68,6 +68,21 @@ const char *markdown_core_extensions_get_formula_literal(markdown_core_node *nod
     return markdown_core_chunk_to_cstr(markdown_core_node_mem(node), &formula->literal);
 }
 
+int markdown_core_extensions_formula_literal_view(const markdown_core_node *node, const char **data, size_t *length) {
+    /* No write anywhere on this path (#153): shared inline lists make the
+     * node reachable from several documents at once, and the facade reads
+     * it under the cross-document concurrency contract. The chunk's bytes
+     * are a view, an owned copy, or a retained slice of a frozen buffer --
+     * all stable for the owning document's life. */
+    node_formula *formula = get_formula((markdown_core_node *)node);
+    if (!formula || !data || !length) {
+        return 0;
+    }
+    *data = (const char *)formula->literal.data;
+    *length = formula->literal.len < 0 ? 0 : (size_t)formula->literal.len;
+    return 1;
+}
+
 int markdown_core_extensions_set_formula_literal(markdown_core_node *node, const char *literal) {
     node_formula *formula = get_formula(node);
     if (!formula) {
@@ -131,9 +146,10 @@ static void formula_opaque_free(
     mem->free(formula);
 }
 
-/* The AST derivation clones the block skeleton (§12.5); the literal is an
- * OWNED chunk (`set_formula_literal_bytes` never leaves it borrowing), so the
- * copy owns its own. */
+/* The AST derivation clones the block skeleton (§12.5); the literal either
+ * holds its frozen buffer (settled at close, #153) and the copy retains it,
+ * or it is an OWNED chunk (`set_formula_literal_bytes` never leaves it
+ * borrowing) and the copy owns its own. */
 static int formula_opaque_copy(
     const markdown_core_syntax_extension *extension,
     markdown_core_mem *mem,
@@ -152,7 +168,9 @@ static int formula_opaque_copy(
     to->mode = from->mode;
     to->block_delim = from->block_delim;
     to->closed = from->closed;
-    if (from->literal.data) {
+    if (from->literal.owner) {
+        to->literal = markdown_core_chunk_retain_copy(&from->literal);
+    } else if (from->literal.data) {
         unsigned char *copy = (unsigned char *)mem->calloc((size_t)from->literal.len + 1, 1);
         if (!copy) {
             mem->free(to);
@@ -796,6 +814,57 @@ static markdown_core_node *replace_with_formula_block(
     return NULL;
 }
 
+/* The literal settles at CLOSE (#152/#153), beside the core's own code and
+ * html detaches in `finalize`: the block's content freezes and the trimmed
+ * literal is a slice carrying the freeze's one reference, so no projection
+ * ever copies formula bytes again -- the clone retains, and the
+ * `postprocess` arm below finds the literal already set and leaves it
+ * alone. An empty formula keeps the old copy path so emptiness stays an
+ * allocated empty string, distinct from loss. */
+static void close_formula_block(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node *node
+) {
+    node_formula *formula;
+    markdown_core_buf *frozen;
+    unsigned char *data;
+    bufsize_t len;
+
+    if (node->type != MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
+        return;
+    }
+    formula = get_formula(node);
+    if (!formula || formula->literal.data) {
+        return;
+    }
+    if (node->content.size == 0) {
+        if (!set_formula_literal_trimmed(node, node->content.ptr, node->content.size)) {
+            parser->oom = true;
+        }
+        markdown_core_strbuf_clear(&node->content);
+        return;
+    }
+    frozen = markdown_core_buf_freeze(&node->content);
+    if (!frozen) {
+        parser->oom = true;
+        return;
+    }
+    data = frozen->bytes;
+    len = frozen->size;
+    while (len > 0 && markdown_core_isspace(data[0])) {
+        data++;
+        len--;
+    }
+    while (len > 0 && markdown_core_isspace(data[len - 1])) {
+        len--;
+    }
+    formula->literal.data = data;
+    formula->literal.len = len;
+    formula->literal.alloc = 0;
+    formula->literal.owner = frozen;
+}
+
 /* THREE ARMS, one per declared name, and the core hands each block over
  * exactly once, so there is no walk here (docs/STREAMING.md F14). Arms 1 and
  * 2 read no inlines; arm 3 is the semantics of a display formula written on
@@ -862,6 +931,7 @@ const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_FORMULA = {
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,
     .accepts_lines_func = accepts_lines,
+    .close_block_func = close_formula_block,
     .opaque_alloc_func = formula_opaque_alloc,
     .opaque_free_func = formula_opaque_free,
     .opaque_copy_func = formula_opaque_copy,

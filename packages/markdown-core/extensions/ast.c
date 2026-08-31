@@ -763,7 +763,8 @@ bool markdown_core_node_formula_properties(
     markdown_core_placement_mode *mode,
     markdown_core_string *literal
 ) {
-    const char *value;
+    const char *value = NULL;
+    size_t value_length = 0;
     markdown_core_formula_mode native_mode;
     if (!node || !mode || !literal ||
         (node->type != MARKDOWN_CORE_NODE_FORMULA && node->type != MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
@@ -772,9 +773,13 @@ bool markdown_core_node_formula_properties(
     native_mode = markdown_core_extensions_get_formula_mode((markdown_core_node *)node);
     *mode = native_mode == MARKDOWN_CORE_FORMULA_MODE_EMBEDDED ? MARKDOWN_CORE_PLACEMENT_EMBEDDED
                                                                : MARKDOWN_CORE_PLACEMENT_STANDALONE;
-    value = markdown_core_extensions_get_formula_literal((markdown_core_node *)node);
+    /* The VIEW, not the cstr materialization (#153): the cstr getter writes
+     * the chunk it reads, and this node may sit in an inline list shared by
+     * several derived documents read concurrently. The facade mutates
+     * nothing it reads. */
+    markdown_core_extensions_formula_literal_view(node, &value, &value_length);
     literal->data = (const uint8_t *)value;
-    literal->length = value ? strlen(value) : 0;
+    literal->length = value_length;
     return true;
 }
 
@@ -1729,6 +1734,99 @@ static void wire_concrete(dump_buffer *buffer, const markdown_core_document *doc
         }
         wire_u32(buffer, (uint32_t)offset);
     }
+}
+
+/* The same bytes `wire_concrete` writes, read off the LIVE parser: the
+ * source and line starts it serializes are exactly the fields the owned
+ * document's concrete copy duplicates (#146). */
+static void wire_concrete_live(dump_buffer *buffer, const markdown_core_parser *parser) {
+    size_t lines = (size_t)parser->line_starts_size;
+    size_t source_length = (size_t)parser->source.size;
+    size_t index;
+
+    if (source_length > INT32_MAX || lines > INT32_MAX) {
+        buffer->failed = true;
+        return;
+    }
+    wire_i32(buffer, (int32_t)source_length);
+    buffer_bytes(buffer, parser->source.ptr, source_length);
+    wire_i32(buffer, (int32_t)lines);
+    for (index = 0; index < lines; index++) {
+        if ((size_t)parser->line_starts[index] > INT32_MAX) {
+            buffer->failed = true;
+            return;
+        }
+        wire_u32(buffer, (uint32_t)parser->line_starts[index]);
+    }
+}
+
+/* THE MANAGED FEED (#146): feed, derive, and serialize in one synchronous
+ * call, with the concrete view read off the live parser. The composed path
+ * -- `markdown_core_session_feed` then `markdown_core_document_wire` then
+ * `markdown_core_document_free` -- builds a fully-owned document whose only
+ * reader is the serializer: the source is copied into the document and then
+ * AGAIN into the wire, the diagnostics are copied and read by nothing (the
+ * wire carries none), and the document dies before the call returns. Here
+ * the wire reads `parser->source` and `parser->line_starts` directly and
+ * the derived tree is freed before returning, so one full-source copy, the
+ * diagnostics copy, and the owned document's lifecycle drop out of every
+ * managed feed. The bytes are the composed path's, gated byte-for-byte by
+ * the equivalence test. C consumers keep `markdown_core_session_feed`'s
+ * owned document; this entry is for bridges whose document never escapes
+ * the delivering call. */
+bool markdown_core_session_feed_wire(
+    markdown_core_session *session,
+    const uint8_t *chunk,
+    size_t length,
+    size_t prefix,
+    uint8_t **output,
+    size_t *output_length,
+    markdown_core_error **error
+) {
+    markdown_core_parser *parser;
+    markdown_core_node *root;
+    dump_buffer buffer = {0};
+
+    clear_error(error);
+    if (!output || !output_length) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "output and length must not be null");
+        return false;
+    }
+    *output = NULL;
+    *output_length = 0;
+    if (!session || !session->parser) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "the session is finished or null");
+        return false;
+    }
+    if (!chunk && length != 0) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "chunk must not be null when length is nonzero");
+        return false;
+    }
+    parser = session->parser;
+    if (length) {
+        markdown_core_parser_feed(parser, (const char *)chunk, length);
+    }
+    root = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+    if (!root) {
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
+        return false;
+    }
+    buffer_reserve(&buffer, prefix);
+    if (!buffer.failed && prefix != 0) {
+        memset(buffer.data, 0, prefix);
+        buffer.size = prefix;
+    }
+    wire_node(&buffer, root);
+    wire_concrete_live(&buffer, parser);
+    markdown_core_node_free(root);
+    if (buffer.failed) {
+        free(buffer.data);
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not serialize the document");
+        return false;
+    }
+    *output = buffer.data;
+    *output_length = buffer.size;
+    return true;
 }
 
 bool markdown_core_document_wire(

@@ -138,6 +138,30 @@ static char *cc_unique_references(size_t size, size_t *length) { return cc_refer
 
 static char *cc_duplicate_references(size_t size, size_t *length) { return cc_references(size, length, 1); }
 
+/* Long Unicode labels: case folding is the dominant per-label cost of the one
+ * key construction (#125), and folding rewrites these bytes for real -- 'ß'
+ * widens to "ss" -- so the doubling gate watches the fold-heavy path stay
+ * linear rather than timing an ASCII shortcut. */
+static char *cc_unicode_references(size_t size, size_t *length) {
+    static const char unicode_stem[] = "\xc3\x84\xc3\x96\xc3\x9c\xc3\x9f-\xc3\x84\xc3\x96\xc3\x9c\xc3\x9f-"
+                                       "\xc3\x84\xc3\x96\xc3\x9c\xc3\x9f-\xc3\x84\xc3\x96\xc3\x9c\xc3\x9f-"
+                                       "\xc3\x84\xc3\x96\xc3\x9c\xc3\x9f-\xc3\x84\xc3\x96\xc3\x9c\xc3\x9f";
+    size_t reference_count = size / 96 ? size / 96 : 1;
+    size_t capacity = reference_count * 96 + sizeof(unicode_stem) + 32;
+    char *input = (char *)malloc(capacity);
+    size_t written = 0;
+    size_t index;
+    if (!input) {
+        return NULL;
+    }
+    for (index = 0; index < reference_count; index++) {
+        written += (size_t)snprintf(input + written, capacity - written, "[%s-k%zu]: /u\n", unicode_stem, index);
+    }
+    written += (size_t)snprintf(input + written, capacity - written, "\n[%s-k0]\n", unicode_stem);
+    *length = written;
+    return input;
+}
+
 /* D9's second gate, and it is what Step 9b.2 was not allowed to give up.
  *
  * Resolving a reference USED TO COPY the definition's destination and title
@@ -268,6 +292,7 @@ static const cc_case_entry CC_CASES[] = {
     {"many_duplicate_attributes", cc_duplicate_attributes, 0},
     {"many_unique_references", cc_unique_references, 0},
     {"many_duplicate_references", cc_duplicate_references, 0},
+    {"many_unicode_references", cc_unicode_references, 0},
     {"read_unique_attributes", cc_unique_attributes, 1},
     {"read_duplicate_attributes", cc_duplicate_attributes, 1},
 };

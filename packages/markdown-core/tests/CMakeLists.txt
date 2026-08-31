@@ -144,6 +144,12 @@ if(MARKDOWN_CORE_STATIC)
                 "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include")
     target_link_libraries(projection_runner libmarkdown-core-extensions_static libmarkdown-core_static)
+    if(NOT WIN32)
+        # The session_documents case frees derived documents on a second
+        # thread (#153's threading contract); Win32 threads need no extra
+        # library.
+        target_link_libraries(projection_runner Threads::Threads)
+    endif()
 endif()
 
 # fallback_runner drives core-private map symbols directly, so it links the
@@ -359,6 +365,11 @@ if(MARKDOWN_CORE_STATIC)
     # finish on the block identity, over every extension corpus.
     markdown_core_add_test(projection_label_tail "streaming" 120 projection_runner --case label_tail)
     markdown_core_add_test(projection_feed_bound "streaming" 120 projection_runner --case feed_bound)
+    # The #153 threading contract: a session's derived documents freed on
+    # another thread, concurrently with further feeds and the session's own
+    # death; the TSan lane is the judge.
+    markdown_core_add_test(projection_session_documents_cross_thread "streaming" 240 projection_runner --case
+                           session_documents)
     markdown_core_add_test(pathological_complexity_resident_memory "pathological;complexity" 240 projection_runner
                            --case resident_memory)
     set_tests_properties(pathological_complexity_resident_memory PROPERTIES RUN_SERIAL TRUE)
@@ -404,6 +415,7 @@ markdown_core_add_test(regression_commonmark regression 120 spec_runner --spec
 if(MARKDOWN_CORE_STATIC)
     set(MARKDOWN_CORE_FALLBACK_CASES
         reference_sorted_fallback
+        reference_identifier_adoption
         directive_sorted_fallback
         key_index_probe_growth
         map_prepare_oom
@@ -527,6 +539,7 @@ set(MARKDOWN_CORE_COMPLEXITY_CASES
     many_duplicate_attributes
     many_unique_references
     many_duplicate_references
+    many_unicode_references
     read_unique_attributes
     read_duplicate_attributes
     reference_expansion_bound)

@@ -9,12 +9,22 @@
 #include "buffer.h"
 #include "markdown_core_ctype.h"
 
-#define MARKDOWN_CORE_CHUNK_EMPTY {NULL, 0, 0}
+#define MARKDOWN_CORE_CHUNK_EMPTY {NULL, 0, 0, NULL}
 
+/* OWNERSHIP IS AT REST (#153). A chunk VALUE is a view: slicing, trimming
+ * and passing one around counts nothing. A chunk stored into a place that
+ * outlives the current frame -- a node field, a holder's list, a map entry
+ * -- must hold its bytes, in exactly one of two ways: `owner` names the
+ * frozen buffer the bytes live in and the chunk's reference keeps it alive
+ * (`markdown_core_chunk_slice` / `markdown_core_chunk_retain_copy` mint
+ * these), or `alloc` says the chunk privately owns a NUL-terminated
+ * allocation (the pre-#153 model, being retired). Never both: chunk_free
+ * asserts it. */
 typedef struct markdown_core_chunk {
     unsigned char *data;
     bufsize_t len;
     bufsize_t alloc; // also implies a NULL-terminated string
+    markdown_core_buf *owner;
 } markdown_core_chunk;
 
 /* AN OPTIONAL CHUNK, and it is a DIFFERENT TYPE from a chunk on purpose.
@@ -46,6 +56,7 @@ static MARKDOWN_CORE_INLINE markdown_core_optional_chunk markdown_core_optional_
     o.value.data = NULL;
     o.value.len = 0;
     o.value.alloc = 0;
+    o.value.owner = NULL;
     o.has_value = false;
     return o;
 }
@@ -60,13 +71,35 @@ static MARKDOWN_CORE_INLINE markdown_core_optional_chunk markdown_core_optional_
 }
 
 static MARKDOWN_CORE_INLINE void markdown_core_chunk_free(markdown_core_mem *mem, markdown_core_chunk *c) {
-    if (c->alloc) {
+    assert(!(c->alloc && c->owner));
+    if (c->owner) {
+        markdown_core_buf_release(c->owner);
+    } else if (c->alloc) {
         mem->free(c->data);
     }
 
     c->data = NULL;
     c->alloc = 0;
     c->len = 0;
+    c->owner = NULL;
+}
+
+/* A RETAINED slice of a frozen buffer, for a chunk coming to rest. */
+static MARKDOWN_CORE_INLINE markdown_core_chunk
+markdown_core_chunk_slice(markdown_core_buf *buf, bufsize_t pos, bufsize_t len) {
+    markdown_core_chunk c = {buf->bytes + pos, len, 0, buf};
+    markdown_core_buf_retain(buf);
+    return c;
+}
+
+/* A second rest position for bytes already at rest: an owner-backed chunk
+ * copies as a retain; an alloc-backed or borrowed one cannot be duplicated
+ * this way (the callers that need that keep S_chunk_copy's byte copy). */
+static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_retain_copy(const markdown_core_chunk *ch) {
+    markdown_core_chunk c = *ch;
+    assert(!c.alloc);
+    markdown_core_buf_retain(c.owner);
+    return c;
 }
 
 static MARKDOWN_CORE_INLINE void markdown_core_optional_chunk_free(
@@ -115,7 +148,7 @@ static MARKDOWN_CORE_INLINE const char *markdown_core_chunk_to_cstr(markdown_cor
         return (char *)c->data;
     }
     str = (unsigned char *)mem->calloc(c->len + 1, 1);
-    /* NULL reports allocation failure; the chunk keeps its borrowed bytes. */
+    /* NULL reports allocation failure; the chunk keeps its previous bytes. */
     if (!str) {
         return NULL;
     }
@@ -123,6 +156,11 @@ static MARKDOWN_CORE_INLINE const char *markdown_core_chunk_to_cstr(markdown_cor
         memcpy(str, c->data, c->len);
     }
     str[c->len] = 0;
+    /* The private copy replaces whatever backed the view. */
+    if (c->owner) {
+        markdown_core_buf_release(c->owner);
+        c->owner = NULL;
+    }
     c->data = str;
     c->alloc = 1;
 
@@ -137,6 +175,7 @@ static MARKDOWN_CORE_INLINE int markdown_core_chunk_set_cstr(
     const char *str
 ) {
     unsigned char *old = c->alloc ? c->data : NULL;
+    markdown_core_buf *old_owner = c->owner;
     if (str == NULL) {
         c->len = 0;
         c->data = NULL;
@@ -152,21 +191,26 @@ static MARKDOWN_CORE_INLINE int markdown_core_chunk_set_cstr(
         c->alloc = 1;
         memcpy(c->data, str, (size_t)len + 1);
     }
+    c->owner = NULL;
     if (old != NULL) {
         mem->free(old);
     }
+    markdown_core_buf_release(old_owner);
     return 1;
 }
 
 static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_literal(const char *data) {
     bufsize_t len = data ? (bufsize_t)strlen(data) : 0;
-    markdown_core_chunk c = {(unsigned char *)data, len, 0};
+    markdown_core_chunk c = {(unsigned char *)data, len, 0, NULL};
     return c;
 }
 
+/* A VIEW of `ch`'s bytes: no owner rides along, so the result borrows even
+ * when `ch` holds. A dup that must outlive `ch` goes through
+ * `markdown_core_chunk_retain_copy` or `markdown_core_chunk_to_cstr`. */
 static MARKDOWN_CORE_INLINE markdown_core_chunk
 markdown_core_chunk_dup(const markdown_core_chunk *ch, bufsize_t pos, bufsize_t len) {
-    markdown_core_chunk c = {ch->data ? ch->data + pos : NULL, len, 0};
+    markdown_core_chunk c = {ch->data ? ch->data + pos : NULL, len, 0, NULL};
     return c;
 }
 
@@ -176,6 +220,7 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_buf_detach(m
     c.len = buf->size;
     c.data = markdown_core_strbuf_detach(buf);
     c.alloc = 1;
+    c.owner = NULL;
     /* A poisoned or empty-and-unallocatable buffer detaches to NULL; the
      * chunk reports the loss as empty with NULL data. */
     if (!c.data) {

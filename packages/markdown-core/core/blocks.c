@@ -999,6 +999,7 @@ static markdown_core_node *S_new_reference_definition(
     markdown_core_definition *definition;
     markdown_core_chunk url = parts->url;
     markdown_core_chunk title = parts->title;
+    markdown_core_map_key label_key = {NULL, 0};
     int start_line, start_column, end_line, end_column;
     bufsize_t last = upto;
     int lost = 0;
@@ -1048,7 +1049,11 @@ static markdown_core_node *S_new_reference_definition(
     node->end_line = end_line;
     node->end_column = end_column;
 
-    if (!markdown_core_association_init(parser->mem, &definition->association, &parts->label, 0)) {
+    /* The one key construction (#125): normalized here, adopted by the
+     * association, and the map registration below copies the association's
+     * identifier -- nothing normalizes twice. */
+    if (!markdown_core_map_key_init(parser->mem, &label_key, &parts->label, 0, &lost) ||
+        !markdown_core_association_init(parser->mem, &definition->association, &parts->label, &label_key)) {
         /* The label would keep borrowing the content buffer the harvest drops. */
         parser->oom = true;
         markdown_core_node_free(node);
@@ -1074,7 +1079,7 @@ static markdown_core_node *S_new_reference_definition(
 static bool resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
     bufsize_t pos;
     markdown_core_strbuf *node_content = &b->content;
-    markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
+    markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0, NULL};
     markdown_core_reference_parts parts;
     markdown_core_node *first_definition = NULL;
     markdown_core_node *registered;
@@ -1145,7 +1150,7 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
     for (registered = first_definition; registered && registered != b; registered = registered->next) {
         markdown_core_reference_create(
             parser->refmap,
-            &registered->as.definition->association.label,
+            &registered->as.definition->association.identifier,
             registered->identifier
         );
     }
@@ -1203,6 +1208,7 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
         if (!has_content) {
             // remove blank node (former reference def)
             markdown_core_node_free(b);
+            b = NULL;
         }
         break;
     }
@@ -1306,6 +1312,17 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
         break;
     }
 
+    /* No freeze here (#153, revised by measurement): freezing every block at
+     * finalize taxed the one-shot path a header allocation per block and an
+     * atomic per literal for a benefit only derivations see -- about +1.5%
+     * on deep_nesting@32768 with the allocator's arena policy held fixed.
+     * (The +54% wall-clock spike that first flagged this line was glibc's
+     * dynamic trim heuristic refaulting the arena, not the freeze; see
+     * ts_bench_pin_allocator.) The freeze is LAZY instead: the first
+     * derivation that clones a closed block freezes its content there, so a
+     * session pays exactly when it shares and `finish` parses in place over
+     * plain strbufs, as it always did. */
+
     return parent;
 }
 
@@ -1322,6 +1339,19 @@ static markdown_core_node *add_child(
     // then back up til we hit a node that can.
     while (!markdown_core_node_can_contain_type(parent, block_type)) {
         parent = finalize(parser, parent);
+    }
+    /* The climb can close `parser->current` (a leaf container -- a
+     * paragraph -- being interrupted IS the current block). In normal flow
+     * `add_text_to_container` re-anchors it at the end of the line, and its
+     * identity comparisons need the stale pointer, so it must not be
+     * touched here. But since #153 `finalize` allocates (the content
+     * freeze), an OOM raised inside the climb makes `S_process_line` bail
+     * before that tail runs -- leaving `current` on a closed block for the
+     * finish walk to re-finalize. Only then anchor it at the still-open
+     * ancestor the climb stopped at, exactly as the make_block failure
+     * below does. */
+    if (parser->oom && !(parser->current->flags & MARKDOWN_CORE_NODE__OPEN)) {
+        parser->current = parent;
     }
 
     markdown_core_node *child = make_block(parser->mem, block_type, parser->line_number, start_column);
@@ -1698,7 +1728,33 @@ static void process_inlines(
             }
             if (!MARKDOWN_CORE_NODE_BORROWED_P(cur) && S_cache_fresh(parser, cur, refmap)) {
                 /* `finish` projects the CST in place (T1): the block IS its
-                 * own origin, and the cache's hold becomes the borrow's. */
+                 * own origin, and the cache's hold becomes the borrow's.
+                 * The content settles FIRST (#153): a borrower's bytes alias
+                 * a frozen buffer (node_check), and a block whose recording
+                 * projection ran while it was still open -- a setext
+                 * heading's, say -- reaches this hit with a live arena the
+                 * lazy freeze never saw. Finalize has run, so the arena is
+                 * settled and the freeze is the usual O(1) detach; a failed
+                 * freeze loses the bytes and poisons the parse, and finish
+                 * answers NULL for it below -- no fallback persists. */
+                if (!cur->frozen_content && !(cur->flags & MARKDOWN_CORE_NODE__OPEN)) {
+                    if (cur->content.size) {
+                        cur->frozen_content = markdown_core_buf_freeze(&cur->content);
+                        if (cur->frozen_content) {
+                            cur->content.ptr = cur->frozen_content->bytes;
+                            cur->content.size = cur->frozen_content->size;
+                            cur->content.asize = 0;
+                        } else {
+                            parser->oom = true;
+                        }
+                    } else if (cur->content.asize) {
+                        /* An EMPTY heading's trim left an allocated scratch
+                         * arena behind; a borrower owns no arena, and the
+                         * reset points the strbuf at the static empty
+                         * buffer, so readers still see "". */
+                        markdown_core_strbuf_free(&cur->content);
+                    }
+                }
                 cur->first_child = cur->link.holder->first_child;
                 cur->last_child = cur->link.holder->last_child;
                 cur->flags &= ~MARKDOWN_CORE_NODE__CACHE_OWNER;
@@ -1879,6 +1935,7 @@ static int S_chunk_copy(markdown_core_mem *mem, markdown_core_chunk *dst, const 
     dst->data = copy;
     dst->len = src->len;
     dst->alloc = 1;
+    dst->owner = NULL;
     return 1;
 }
 
@@ -1909,7 +1966,11 @@ static int S_optional_chunk_copy(
  * -- an attach re-projects every block. A projection that finds the key
  * unchanged aliases the list into the derived block -- shares it, never
  * copies it (F12: copying costs more than the parse it replaces) -- and the
- * per-block tail (T18) leaves an aliased list alone. A projection that finds
+ * per-block tail (T18) leaves an aliased list alone. A hit also skips the
+ * block-content copy, and the store frees a miss's arena once its chunks
+ * are owned: content exists to back an owned inline list, and a borrowed
+ * list is backed by its holder (#152 Stage 1; `markdown_core_node_check`
+ * asserts exactly that). A projection that finds
  * it stale or absent parses, runs the block's tail, and then MOVES the
  * children into a fresh holder and borrows them straight back: with the tail
  * per block nothing touches them after the store, which is what the PoC's
@@ -1943,20 +2004,60 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
         /* Nothing is lost: the tree keeps its own children. */
         return;
     }
-    if (!markdown_core_holder_take_children(holder, node)) {
-        parser->oom = true;
-    }
+    markdown_core_holder_take_children(holder, node);
     holder->stamp = origin->stamp;
     holder->refgen = parser->refmap->generation;
     holder->footgen = parser->footnote_defs->generation;
     holder->extgen = parser->extension_generation;
-    markdown_core_holder_hold(holder);
+    /* The creation hold is the cache's hold (holders are born held). */
     if (origin->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) {
         markdown_core_holder_release(origin->link.holder);
     }
     origin->link.holder = holder;
     origin->flags |= MARKDOWN_CORE_NODE__CACHE_OWNER;
     markdown_core_node_borrow_children(node, holder);
+    /* Under #153 the stored list's literals hold retained slices of the
+     * frozen content, so the block that just became a borrower keeps only
+     * its own reference (released at node free) -- there is no private
+     * arena left to drop, which is what #152 Stage 1's free here used to
+     * do for the copied one. */
+}
+
+/* A chunk coming to rest in a clone: an owner-backed source shares by
+ * retaining, and an alloc'd source is PROMOTED first -- its allocation is
+ * wrapped in a buffer once, on the first derivation that copies it, so the
+ * one-shot path that never clones never pays the header (#153, lazy
+ * freeze). A promotion that cannot allocate falls back to the byte copy:
+ * the source keeps its private allocation either way. */
+static int S_chunk_share(markdown_core_mem *mem, markdown_core_chunk *dst, markdown_core_chunk *src) {
+    if (!src->owner && src->alloc && src->data) {
+        markdown_core_buf *adopted = markdown_core_buf_adopt(mem, src->data, src->len);
+        if (adopted) {
+            src->alloc = 0;
+            src->owner = adopted;
+        }
+    }
+    if (src->owner) {
+        *dst = markdown_core_chunk_retain_copy(src);
+        return 1;
+    }
+    return S_chunk_copy(mem, dst, src);
+}
+
+static int S_optional_chunk_share(
+    markdown_core_mem *mem,
+    markdown_core_optional_chunk *dst,
+    markdown_core_optional_chunk *src
+) {
+    if (!src->has_value) {
+        *dst = markdown_core_optional_chunk_absent();
+        return 1;
+    }
+    if (S_chunk_share(mem, &dst->value, &src->value)) {
+        dst->has_value = true;
+        return 1;
+    }
+    return 0;
 }
 
 static markdown_core_node *S_clone_block_node(
@@ -1966,16 +2067,72 @@ static markdown_core_node *S_clone_block_node(
 ) {
     markdown_core_mem *mem = parser->mem;
     markdown_core_node *dst = (markdown_core_node *)mem->calloc(1, sizeof(*dst));
+    bool enrolled;
+    bool hit;
     if (!dst) {
         return NULL;
     }
+    /* THE HIT IS DECIDED FIRST (#152 Stage 1). Content is the arena backing
+     * an OWNED inline list -- `parse_inlines` reads its subject off
+     * `content.ptr` -- and a hit block borrows its list from the holder, so
+     * a hit skips the parse. It does NOT skip the content: name-selected
+     * postprocess hooks run on borrowed blocks too (F15 rule 2) and may
+     * read the block's bytes, so a hit clone that dropped them would show a
+     * hook authored bytes on the recording projection and nothing on the
+     * next (review finding on this series). The bytes ride along below as a
+     * RETAIN of the frozen buffer -- the elision #152 keeps is the byte
+     * copy, not the content. The predicate reads `src`, which is whole;
+     * `dst` is still half-built here (an extension's `contains_inlines_func`
+     * may read state the copy below has not reached yet). `S_cache_fresh`
+     * is pure: it reads parser state and `src`, and nothing between here
+     * and the borrow at the bottom writes either. */
+    enrolled = MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src) && contains_inlines((markdown_core_node *)src) &&
+               refmap == parser->refmap && !parser->no_projection_cache;
+    hit = enrolled && S_cache_fresh(parser, src, refmap);
     markdown_core_strbuf_init(mem, &dst->content, 0);
     if (src->content.size) {
-        markdown_core_strbuf_put(&dst->content, src->content.ptr, src->content.size);
-        if (dst->content.oom) {
-            markdown_core_strbuf_free(&dst->content);
-            mem->free(dst);
-            return NULL;
+        /* THE LAZY FREEZE (#153): a closed block's content freezes on the
+         * first derivation that shares it -- allocation and bytes
+         * untouched, `content.ptr/size` repointed at the same bytes -- so
+         * the one-shot path never pays for sharing it never does. A failed
+         * freeze loses the bytes with the strbuf; no fallback. */
+        if (!src->frozen_content && !(src->flags & MARKDOWN_CORE_NODE__OPEN)) {
+            markdown_core_node *cst = (markdown_core_node *)src;
+            cst->frozen_content = markdown_core_buf_freeze(&cst->content);
+            if (!cst->frozen_content) {
+                parser->oom = true;
+                mem->free(dst);
+                return NULL;
+            }
+            cst->content.ptr = cst->frozen_content->bytes;
+            cst->content.size = cst->frozen_content->size;
+            cst->content.asize = 0;
+        }
+        if (src->frozen_content) {
+            /* Closed content is frozen: the derivation shares the bytes,
+             * never copies them. */
+            markdown_core_buf_retain(src->frozen_content);
+            dst->frozen_content = src->frozen_content;
+            dst->content.ptr = src->content.ptr;
+            dst->content.size = src->content.size;
+        } else {
+            /* An open block's tail is still a live accumulator; copy the
+             * tail-sized bytes and freeze the private copy, so the parse's
+             * literals hold slices here too and every derived block is one
+             * shape. */
+            markdown_core_strbuf_put(&dst->content, src->content.ptr, src->content.size);
+            if (dst->content.oom) {
+                markdown_core_strbuf_free(&dst->content);
+                mem->free(dst);
+                return NULL;
+            }
+            dst->frozen_content = markdown_core_buf_freeze(&dst->content);
+            if (!dst->frozen_content) {
+                mem->free(dst);
+                return NULL;
+            }
+            dst->content.ptr = dst->frozen_content->bytes;
+            dst->content.size = dst->frozen_content->size;
         }
     }
     dst->start_line = src->start_line;
@@ -2010,8 +2167,9 @@ static markdown_core_node *S_clone_block_node(
         dst->as.code.literal.data = NULL;
         dst->as.code.literal.len = 0;
         dst->as.code.literal.alloc = 0;
-        if (!S_chunk_copy(mem, &dst->as.code.literal, &src->as.code.literal) ||
-            !S_optional_chunk_copy(mem, &dst->as.code.info, &src->as.code.info)) {
+        dst->as.code.literal.owner = NULL;
+        if (!S_chunk_share(mem, &dst->as.code.literal, &((markdown_core_node *)src)->as.code.literal) ||
+            !S_optional_chunk_share(mem, &dst->as.code.info, &((markdown_core_node *)src)->as.code.info)) {
             goto lost;
         }
         break;
@@ -2021,7 +2179,7 @@ static markdown_core_node *S_clone_block_node(
          * literal. The flag this engine now maintains says which (§12.8 Q3). */
         if (dst->flags & MARKDOWN_CORE_NODE__OPEN) {
             dst->as.html_block_type = src->as.html_block_type;
-        } else if (!S_chunk_copy(mem, &dst->as.literal, &src->as.literal)) {
+        } else if (!S_chunk_share(mem, &dst->as.literal, &((markdown_core_node *)src)->as.literal)) {
             goto lost;
         }
         break;
@@ -2067,16 +2225,16 @@ static markdown_core_node *S_clone_block_node(
     }
 
     /* THE HIT IS TAKEN HERE, where the origin is in hand, so the derived
-     * block never needs to find it again. A miss remembers the origin for
-     * the store at the end of its tail. Only BLOCK-class nodes with inline
-     * content take part: they are the ones the re-parse costs, and they are
-     * the ones the walk queues -- a CST-resident inline construct (a
-     * directive's label) is never queued, so enrolling it left ORIGIN and a
-     * CST pointer on a node the caller holds (found on the landing review).
-     * Its passes run from the block that owns it instead. */
-    if (MARKDOWN_CORE_NODE_BLOCK_P(dst) && contains_inlines(dst) && refmap == parser->refmap &&
-        !parser->no_projection_cache) {
-        if (S_cache_fresh(parser, src, refmap)) {
+     * block never needs to find it again (the decision itself was taken at
+     * the top, where it governs the content copy). A miss remembers the
+     * origin for the store at the end of its tail. Only BLOCK-class nodes
+     * with inline content take part: they are the ones the re-parse costs,
+     * and they are the ones the walk queues -- a CST-resident inline
+     * construct (a directive's label) is never queued, so enrolling it left
+     * ORIGIN and a CST pointer on a node the caller holds (found on the
+     * landing review). Its passes run from the block that owns it instead. */
+    if (enrolled) {
+        if (hit) {
             markdown_core_node_borrow_children(dst, src->link.holder);
             parser->cache_hits++;
         } else {
@@ -2852,11 +3010,18 @@ static void open_new_blocks(
                 return;
             }
             /* The identifier KEEPS the caret the label does not carry
-             * (markdown_core_association). */
-            if (!markdown_core_association_init(parser->mem, &(*container)->as.association, &c, '^')) {
-                parser->oom = true;
-                markdown_core_chunk_free(parser->mem, &c);
-                return;
+             * (markdown_core_association): one key construction carries it,
+             * the association adopts it, and the map registration below
+             * copies the association's identifier (#125). */
+            {
+                markdown_core_map_key label_key = {NULL, 0};
+                int label_lost = 0;
+                if (!markdown_core_map_key_init(parser->mem, &label_key, &c, '^', &label_lost) ||
+                    !markdown_core_association_init(parser->mem, &(*container)->as.association, &c, &label_key)) {
+                    parser->oom = true;
+                    markdown_core_chunk_free(parser->mem, &c);
+                    return;
+                }
             }
             markdown_core_chunk_free(parser->mem, &c);
 
@@ -2880,7 +3045,7 @@ static void open_new_blocks(
              * this is the id the block keeps. */
             markdown_core_footnote_definition_create(
                 parser->footnote_defs,
-                &(*container)->as.association.label,
+                &(*container)->as.association.identifier,
                 (*container)->identifier
             );
 
@@ -3167,6 +3332,7 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     input.data = parser->curline.ptr;
     input.len = parser->curline.size;
     input.alloc = 0;
+    input.owner = NULL;
 
     // Skip UTF-8 BOM.
     if (parser->line_number == 0 && input.len >= 3 && memcmp(input.data, "\xef\xbb\xbf", 3) == 0) {

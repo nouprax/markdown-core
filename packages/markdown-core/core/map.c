@@ -158,6 +158,45 @@ int markdown_core_key_index_insert(
     return 1;
 }
 
+markdown_core_key_index_slot *markdown_core_key_index_upsert(
+    markdown_core_key_index *index,
+    const unsigned char *key,
+    bufsize_t key_len
+) {
+    uint64_t hash = hash_key(key, key_len);
+    markdown_core_key_index_slot *slot;
+    slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
+    if (!slot) {
+        /* Same contract as insert: one growth disperses honest clusters;
+         * engineered identical hashes still fail and callers degrade. */
+        if (!grow_key_index(index)) {
+            return NULL;
+        }
+        slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
+        if (!slot) {
+            return NULL;
+        }
+    }
+    if (slot->key) {
+        return slot;
+    }
+    if (index->size + 1 > index->capacity / 2) {
+        if (!grow_key_index(index)) {
+            return NULL;
+        }
+        slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
+        if (!slot) {
+            return NULL;
+        }
+    }
+    slot->hash = hash;
+    slot->key = key;
+    slot->key_len = key_len;
+    slot->value = NULL;
+    index->size++;
+    return slot;
+}
+
 void *markdown_core_key_index_lookup(
     const markdown_core_key_index *index,
     const unsigned char *key,
@@ -181,39 +220,65 @@ void *markdown_core_key_index_lookup(
 
 // normalize map label:  collapse internal whitespace to single space,
 // remove leading/trailing whitespace, case fold
-// Return NULL if the label is actually empty (i.e. composed solely from
-// whitespace)
-unsigned char *normalize_map_label(markdown_core_mem *mem, markdown_core_chunk *ref, int *lost) {
+int markdown_core_map_key_init(
+    markdown_core_mem *mem,
+    markdown_core_map_key *key,
+    const markdown_core_chunk *label,
+    unsigned char prefix,
+    int *lost
+) {
     markdown_core_strbuf normalized = MARKDOWN_CORE_BUF_INIT(mem);
+    bufsize_t length;
     unsigned char *result;
 
-    if (ref == NULL) {
-        return NULL;
+    key->bytes = NULL;
+    key->len = 0;
+
+    if (label == NULL || label->len == 0) {
+        return 0;
     }
 
-    if (ref->len == 0) {
-        return NULL;
-    }
-
-    markdown_core_utf8proc_case_fold(&normalized, ref->data, ref->len);
+    markdown_core_utf8proc_case_fold(&normalized, label->data, label->len);
     markdown_core_strbuf_trim(&normalized);
     markdown_core_strbuf_normalize_whitespace(&normalized);
 
+    /* A label of nothing but whitespace names nothing; the prefix cannot
+     * rescue it, so the test comes before the prefix does. */
+    if (normalized.size == 0 && !normalized.oom) {
+        markdown_core_strbuf_free(&normalized);
+        return 0;
+    }
+
+    if (prefix) {
+        /* In the same allocation: grow by one, shift, write the namespace
+         * byte. After normalization, so the label's own edges trimmed. */
+        markdown_core_strbuf_grow(&normalized, normalized.size + 1);
+        if (!normalized.oom) {
+            memmove(normalized.ptr + 1, normalized.ptr, (size_t)normalized.size + 1);
+            normalized.ptr[0] = prefix;
+            normalized.size += 1;
+        }
+    }
+
+    length = normalized.size;
     result = markdown_core_strbuf_detach(&normalized);
     /* NULL distinguishes allocation loss from a legitimately empty label. */
     if (!result) {
         if (lost) {
             *lost = 1;
         }
-        return NULL;
+        return 0;
     }
 
-    if (result[0] == '\0') {
-        mem->free(result);
-        return NULL;
-    }
+    key->bytes = result;
+    key->len = length;
+    return 1;
+}
 
-    return result;
+void markdown_core_map_key_free(markdown_core_mem *mem, markdown_core_map_key *key) {
+    mem->free(key->bytes);
+    key->bytes = NULL;
+    key->len = 0;
 }
 
 static int labelcmp(const unsigned char *a, const unsigned char *b) { return strcmp((const char *)a, (const char *)b); }
@@ -292,7 +357,7 @@ static size_t map_index_expected_size(markdown_core_map *map) {
         return map->size;
     }
     for (ref = map->refs; ref && sampled < sample_limit; ref = ref->next, sampled++) {
-        if (!markdown_core_key_index_insert(&sample, ref->label, (bufsize_t)strlen((char *)ref->label), ref, 0, NULL)) {
+        if (!markdown_core_key_index_insert(&sample, ref->label, ref->label_len, ref, 0, NULL)) {
             markdown_core_key_index_free(&sample);
             return map->size;
         }
@@ -313,32 +378,17 @@ static int index_map(markdown_core_map *map) {
     /* The smallest identity wins each slot -- first in document order, by
      * D4's monotone mints -- stated as a comparison rather than left to
      * traversal order, so both preparation paths answer identically whatever
-     * order the records arrived in. */
+     * order the records arrived in. One probe walk per record (#124): the
+     * upsert hands back the slot and the comparison swaps in place, where a
+     * losing duplicate used to pay a second full hash-and-probe to replace. */
     for (ref = map->refs; ref; ref = ref->next) {
-        void *existing = NULL;
-        if (!markdown_core_key_index_insert(
-                &map->index,
-                ref->label,
-                (bufsize_t)strlen((char *)ref->label),
-                ref,
-                0,
-                &existing
-            )) {
+        markdown_core_key_index_slot *slot = markdown_core_key_index_upsert(&map->index, ref->label, ref->label_len);
+        if (!slot) {
             markdown_core_key_index_free(&map->index);
             return 0;
         }
-        if (existing != NULL && ((markdown_core_map_record *)existing)->definition > ref->definition) {
-            if (!markdown_core_key_index_insert(
-                    &map->index,
-                    ref->label,
-                    (bufsize_t)strlen((char *)ref->label),
-                    ref,
-                    1,
-                    NULL
-                )) {
-                markdown_core_key_index_free(&map->index);
-                return 0;
-            }
+        if (slot->value == NULL || ((markdown_core_map_record *)slot->value)->definition > ref->definition) {
+            slot->value = ref;
         }
     }
     map->prepared = 1;
@@ -346,46 +396,27 @@ static int index_map(markdown_core_map *map) {
     return 1;
 }
 
-markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label) {
+markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, const markdown_core_map_key *key) {
     markdown_core_map_record **ref = NULL;
     markdown_core_map_record *r = NULL;
-    unsigned char *norm;
 
-    if (label->len < 1 || label->len > MAX_LINK_LABEL_LENGTH) {
+    if (map == NULL || !map->size || key->bytes == NULL) {
         return NULL;
-    }
-
-    if (map == NULL || !map->size) {
-        return NULL;
-    }
-
-    {
-        int lost = 0;
-        norm = normalize_map_label(map->mem, label, &lost);
-        if (norm == NULL) {
-            if (lost) {
-                map->oom = 1;
-            }
-            return NULL;
-        }
     }
 
     if (!map->prepared && !index_map(map) && !sort_map(map)) {
         /* Neither preparation path could allocate; report a miss and leave
          * the map unprepared so a later lookup can retry. */
         map->oom = 1;
-        map->mem->free(norm);
         return NULL;
     }
 
     if (map->indexed) {
-        r = (markdown_core_map_record *)
-            markdown_core_key_index_lookup(&map->index, norm, (bufsize_t)strlen((char *)norm));
+        r = (markdown_core_map_record *)markdown_core_key_index_lookup(&map->index, key->bytes, key->len);
     } else {
         ref = (markdown_core_map_record **)
-            bsearch(norm, map->sorted, map->sorted_size, sizeof(markdown_core_map_record *), refsearch);
+            bsearch(key->bytes, map->sorted, map->sorted_size, sizeof(markdown_core_map_record *), refsearch);
     }
-    map->mem->free(norm);
 
     if (r == NULL && ref != NULL) {
         r = ref[0];

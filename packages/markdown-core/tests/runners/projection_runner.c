@@ -675,15 +675,9 @@ static int pr_borrow_boundary(markdown_core_parser *parser, pr_generation *prev,
                 failed = 1;
                 break;
             }
-            if (!markdown_core_holder_take_children(cur.holders[i], leaf)) {
-                /* The release DESTROYS a fresh holder (no hold yet); the slot
-                 * must not keep the dangling pointer (landing review). */
-                markdown_core_holder_release(cur.holders[i]);
-                cur.holders[i] = NULL;
-                failed = 1;
-                break;
-            }
-            markdown_core_holder_hold(cur.holders[i]);
+            /* Pure pointer moves since #153 retired the store-time copy;
+             * nothing can fail here, and the creation hold is the slot's. */
+            markdown_core_holder_take_children(cur.holders[i], leaf);
         }
         markdown_core_node_borrow_children(leaf, cur.holders[i]);
     }
@@ -973,6 +967,7 @@ static int case_feed_loop(const ts_spec_file *file) {
     size_t total_bytes = 0;
     size_t boundaries = 0;
     size_t hits = 0, misses = 0;
+    ts_bench_pin_allocator();
     repeat_ns = (uint64_t *)calloc((size_t)pr_repeats, sizeof(uint64_t));
     if (!repeat_ns) {
         fputs("feed loop: cannot allocate repeat samples\n", stderr);
@@ -2774,6 +2769,188 @@ static int case_carried_state(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+/* One session on this thread, its documents freed on another: the #153
+ * threading contract. The producer feeds line by line and derives after
+ * every line -- holders store and hit, frozen buffers are retained across
+ * trees, a late definition re-stamps the maps and forces re-stores -- and
+ * hands each derived tree to a consumer through a small bounded queue. The
+ * consumer walks every text literal (reading the shared frozen bytes) and
+ * frees the tree, concurrently with the producer's next feeds and with the
+ * session's own death. The TSan lane is the judge; the byte sum only keeps
+ * the reads alive. Raw native threads on purpose, as concurrency_runner's
+ * comment explains for the facade cases. */
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <process.h>
+typedef HANDLE pr_thread;
+typedef CRITICAL_SECTION pr_mutex;
+typedef CONDITION_VARIABLE pr_cond;
+#define PR_THREAD_RETURN unsigned __stdcall
+#define PR_THREAD_RESULT 0u
+static int pr_thread_spawn(pr_thread *handle, unsigned(__stdcall *entry)(void *), void *argument) {
+    uintptr_t raw = _beginthreadex(NULL, 0, entry, argument, 0, NULL);
+    if (!raw) {
+        return 1;
+    }
+    *handle = (HANDLE)raw;
+    return 0;
+}
+static void pr_thread_join(pr_thread handle) {
+    WaitForSingleObject(handle, INFINITE);
+    CloseHandle(handle);
+}
+static void pr_mutex_init(pr_mutex *m) { InitializeCriticalSection(m); }
+static void pr_cond_init(pr_cond *c) { InitializeConditionVariable(c); }
+static void pr_lock(pr_mutex *m) { EnterCriticalSection(m); }
+static void pr_unlock(pr_mutex *m) { LeaveCriticalSection(m); }
+static void pr_signal(pr_cond *c) { WakeAllConditionVariable(c); }
+static void pr_wait(pr_cond *c, pr_mutex *m) { SleepConditionVariableCS(c, m, INFINITE); }
+#else
+#include <pthread.h>
+typedef pthread_t pr_thread;
+typedef pthread_mutex_t pr_mutex;
+typedef pthread_cond_t pr_cond;
+#define PR_THREAD_RETURN void *
+#define PR_THREAD_RESULT NULL
+static int pr_thread_spawn(pr_thread *handle, void *(*entry)(void *), void *argument) {
+    return pthread_create(handle, NULL, entry, argument) != 0;
+}
+static void pr_thread_join(pr_thread handle) { pthread_join(handle, NULL); }
+static void pr_mutex_init(pr_mutex *m) { pthread_mutex_init(m, NULL); }
+static void pr_cond_init(pr_cond *c) { pthread_cond_init(c, NULL); }
+static void pr_lock(pr_mutex *m) { pthread_mutex_lock(m); }
+static void pr_unlock(pr_mutex *m) { pthread_mutex_unlock(m); }
+static void pr_signal(pr_cond *c) { pthread_cond_broadcast(c); }
+static void pr_wait(pr_cond *c, pr_mutex *m) { pthread_cond_wait(c, m); }
+#endif
+
+enum { SDQ_CAPACITY = 4, SDQ_ROUNDS = 6 };
+
+typedef struct {
+    pr_mutex lock;
+    pr_cond changed;
+    markdown_core_node *slots[SDQ_CAPACITY];
+    int head, count;
+    int done;
+    unsigned long long consumed;
+} sd_queue;
+
+static void sd_push(sd_queue *q, markdown_core_node *tree) {
+    pr_lock(&q->lock);
+    while (q->count == SDQ_CAPACITY) {
+        pr_wait(&q->changed, &q->lock);
+    }
+    q->slots[(q->head + q->count) % SDQ_CAPACITY] = tree;
+    q->count++;
+    pr_signal(&q->changed);
+    pr_unlock(&q->lock);
+}
+
+static PR_THREAD_RETURN sd_consumer(void *argument) {
+    sd_queue *q = (sd_queue *)argument;
+    for (;;) {
+        markdown_core_node *tree;
+        markdown_core_iter walk;
+        markdown_core_event_type ev;
+        unsigned long long sum = 0;
+        pr_lock(&q->lock);
+        while (q->count == 0 && !q->done) {
+            pr_wait(&q->changed, &q->lock);
+        }
+        if (q->count == 0) {
+            pr_unlock(&q->lock);
+            break;
+        }
+        tree = q->slots[q->head];
+        q->head = (q->head + 1) % SDQ_CAPACITY;
+        q->count--;
+        pr_signal(&q->changed);
+        pr_unlock(&q->lock);
+
+        markdown_core_iter_init(&walk, tree);
+        while ((ev = markdown_core_iter_next(&walk)) != MARKDOWN_CORE_EVENT_DONE) {
+            markdown_core_node *cur = markdown_core_iter_get_node(&walk);
+            if (ev == MARKDOWN_CORE_EVENT_ENTER && cur->type == MARKDOWN_CORE_NODE_TEXT && cur->as.literal.len > 0) {
+                sum += (unsigned long long)cur->as.literal.data[0] + (unsigned long long)cur->as.literal.len;
+            }
+        }
+        markdown_core_node_free(tree);
+        pr_lock(&q->lock);
+        q->consumed += sum;
+        pr_unlock(&q->lock);
+    }
+    return PR_THREAD_RESULT;
+}
+
+static int case_session_documents(const ts_spec_file *file) {
+    static const char *const SD_LINES[] = {
+        "# Shared *heading* with `code`\n",
+        "\n",
+        "A paragraph with [ref][label] and a footnote[^fn] plus **strong**.\n",
+        "\n",
+        "Another paragraph, plain but long enough to carry several words.\n",
+        "\n",
+        "[label]: /url \"title\"\n",
+        "\n",
+        "[^fn]: the footnote body arrives late.\n",
+        "\n",
+    };
+    enum { SD_LINE_COUNT = sizeof(SD_LINES) / sizeof(SD_LINES[0]) };
+    sd_queue queue;
+    pr_thread consumer;
+    int failures = 0;
+    int round;
+    (void)file;
+
+    memset(&queue, 0, sizeof(queue));
+    pr_mutex_init(&queue.lock);
+    pr_cond_init(&queue.changed);
+    if (pr_thread_spawn(&consumer, sd_consumer, &queue)) {
+        fputs("session_documents: could not spawn the consumer\n", stderr);
+        return -1;
+    }
+
+    for (round = 0; round < SDQ_ROUNDS && !failures; round++) {
+        markdown_core_parser *parser = pr_parser_new();
+        markdown_core_node *tree;
+        size_t i;
+        if (!parser) {
+            failures = 1;
+            break;
+        }
+        for (i = 0; i < SD_LINE_COUNT; i++) {
+            markdown_core_parser_feed(parser, SD_LINES[i], strlen(SD_LINES[i]));
+            tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+            if (!tree) {
+                failures = 1;
+                break;
+            }
+            sd_push(&queue, tree);
+        }
+        tree = markdown_core_parser_finish(parser);
+        if (tree) {
+            sd_push(&queue, tree);
+        } else {
+            failures = 1;
+        }
+        /* The session dies while the consumer may still hold its documents:
+         * this free racing those frees is the contract under test. */
+        markdown_core_parser_free(parser);
+    }
+
+    pr_lock(&queue.lock);
+    queue.done = 1;
+    pr_signal(&queue.changed);
+    pr_unlock(&queue.lock);
+    pr_thread_join(consumer);
+    if (queue.consumed == 0) {
+        fputs("session_documents: the consumer read nothing\n", stderr);
+        failures = 1;
+    }
+    return failures ? -1 : 0;
+}
+
 typedef struct pr_case_entry {
     const char *name;
     int (*run)(const ts_spec_file *file);
@@ -2796,6 +2973,7 @@ static const pr_case_entry PR_CASES[] = {
     {"carried_state", case_carried_state, 1},
     {"dump_boundaries", case_dump_boundaries, 1},
     {"feed_loop", case_feed_loop, 1},
+    {"session_documents", case_session_documents, 0},
     {"projection_slope", case_projection_slope, 0},
 };
 

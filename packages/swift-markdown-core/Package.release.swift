@@ -55,5 +55,5 @@ let package = Package(
             path: "packages/swift-markdown-core/Sources/MarkdownCore"
         ),
     ],
-    cLanguageStandard: .c99
+    cLanguageStandard: .c11
 )
