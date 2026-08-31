@@ -22,6 +22,15 @@ import { kinds, type NativeKind } from "./kinds.js";
 type MarkupValue = Markup extends infer Node ? (Node extends Markup ? Omit<Node, "dump"> : never) : never;
 type MarkupValueOf<Kind extends Markup["kind"]> = Extract<MarkupValue, { readonly kind: Kind }>;
 
+/* The one `dump` every decoded node shares (#139): reached through the
+ * prototype `WireReader.base` creates nodes on, so no node pays its own
+ * closure or descriptor and `Object.keys` still excludes it. */
+const MARKUP_PROTOTYPE = {
+    dump(this: Markup): string {
+        return TreeDumper.dump(this);
+    }
+};
+
 interface DirectiveFields {
     readonly name: string;
     readonly attributes: readonly DirectiveAttribute[] | null;
@@ -90,7 +99,7 @@ class WireReader {
         const content = this.markupList();
         const concrete = this.concrete();
         if (!this.finished) throw new Error("native bridge returned a truncated payload");
-        const semantic = this.markup({ kind: "document", id, scope, content }) as Semantic;
+        const semantic = this.markup(Object.assign(this.base(id, scope, "document"), { content })) as Semantic;
         return { semantic, concrete };
     }
 
@@ -214,14 +223,9 @@ class WireReader {
         return this.markup(this.value(kind, id, scope));
     }
 
-    /** Seals a decoded value with its non-enumerable `dump`. */
+    /** A decoded value already carries its `dump` through the shared
+     * prototype `base` builds on (#139); nothing is defined per node. */
     markup(value: MarkupValue): Markup {
-        Object.defineProperty(value, "dump", {
-            enumerable: false,
-            value(this: Markup): string {
-                return TreeDumper.dump(this);
-            }
-        });
         return value as Markup;
     }
 
@@ -230,15 +234,15 @@ class WireReader {
             case "document":
                 throw new Error("a document node cannot be a child");
             case "blockQuote":
-                return { ...this.base(id, scope, kind), content: this.markupList() };
+                return Object.assign(this.base(id, scope, kind), { content: this.markupList() });
             case "paragraph":
-                return { ...this.base(id, scope, kind), content: this.markupList() };
+                return Object.assign(this.base(id, scope, kind), { content: this.markupList() });
             case "heading": {
                 const level = this.int();
                 if (!Number.isInteger(level) || level < 1 || level > 6) {
                     throw new Error(`native parser returned an invalid heading level ${level}`);
                 }
-                return { ...this.base(id, scope, kind), level, content: this.markupList() };
+                return Object.assign(this.base(id, scope, kind), { level, content: this.markupList() });
             }
             case "thematicBreak":
                 return this.base(id, scope, kind);
@@ -246,109 +250,100 @@ class WireReader {
                 return this.list(id, scope);
             case "listItem": {
                 const checked = this.nullableBoolean("list item checked state");
-                return { ...this.base(id, scope, kind), checked, content: this.markupList() };
+                return Object.assign(this.base(id, scope, kind), { checked, content: this.markupList() });
             }
             case "codeBlock":
-                return {
-                    ...this.base(id, scope, kind),
+                return Object.assign(this.base(id, scope, kind), {
                     info: this.string(),
                     language: this.string(),
                     literal: this.requiredString(),
                     fenced: this.boolean("code fenced state"),
                     closed: this.boolean("code closed state")
-                };
+                });
             case "htmlBlock":
-                return { ...this.base(id, scope, kind), literal: this.requiredString() };
+                return Object.assign(this.base(id, scope, kind), { literal: this.requiredString() });
             case "formulaBlock":
                 // No `mode`: a formula block is always standalone -- the wire
                 // stopped carrying the byte at Q29.
-                return { ...this.base(id, scope, kind), literal: this.requiredString() };
+                return Object.assign(this.base(id, scope, kind), { literal: this.requiredString() });
             case "table":
                 return this.table(id, scope);
             case "directiveBlock":
-                return { ...this.base(id, scope, kind), ...this.directiveFields() };
+                return Object.assign(this.base(id, scope, kind), this.directiveFields());
             case "footnoteDefinition":
-                return {
-                    ...this.base(id, scope, kind),
+                return Object.assign(this.base(id, scope, kind), {
                     label: this.requiredString(),
                     norm: this.requiredString(),
                     content: this.markupList()
-                };
+                });
             case "referenceDefinition":
-                return {
-                    ...this.base(id, scope, kind),
+                return Object.assign(this.base(id, scope, kind), {
                     label: this.requiredString(),
                     norm: this.requiredString(),
                     destination: this.requiredString(),
                     title: this.string()
-                };
+                });
             case "text":
-                return { ...this.base(id, scope, kind), literal: this.requiredString() };
+                return Object.assign(this.base(id, scope, kind), { literal: this.requiredString() });
             case "softBreak":
                 return this.base(id, scope, kind);
             case "lineBreak":
                 return this.base(id, scope, kind);
             case "code":
-                return { ...this.base(id, scope, kind), literal: this.requiredString() };
+                return Object.assign(this.base(id, scope, kind), { literal: this.requiredString() });
             case "html":
-                return { ...this.base(id, scope, kind), literal: this.requiredString() };
+                return Object.assign(this.base(id, scope, kind), { literal: this.requiredString() });
             case "formula":
-                return {
-                    ...this.base(id, scope, kind),
+                return Object.assign(this.base(id, scope, kind), {
                     mode: this.placement(),
                     literal: this.requiredString()
-                };
+                });
             case "emphasis":
-                return { ...this.base(id, scope, kind), content: this.markupList() };
+                return Object.assign(this.base(id, scope, kind), { content: this.markupList() });
             case "strong":
-                return { ...this.base(id, scope, kind), content: this.markupList() };
+                return Object.assign(this.base(id, scope, kind), { content: this.markupList() });
             case "strikethrough":
-                return { ...this.base(id, scope, kind), content: this.markupList() };
+                return Object.assign(this.base(id, scope, kind), { content: this.markupList() });
             case "link":
-                return {
-                    ...this.base(id, scope, kind),
+                return Object.assign(this.base(id, scope, kind), {
                     destination: this.requiredString(),
                     title: this.string(),
                     content: this.markupList()
-                };
+                });
             case "image":
-                return {
-                    ...this.base(id, scope, kind),
+                return Object.assign(this.base(id, scope, kind), {
                     source: this.requiredString(),
                     title: this.string(),
                     content: this.markupList()
-                };
+                });
             case "directive": {
                 const fields = this.directiveFields();
                 if (fields.content.length !== 0) throw new Error("inline directive contains block content");
-                return {
-                    ...this.base(id, scope, kind),
+                return Object.assign(this.base(id, scope, kind), {
                     name: fields.name,
                     attributes: fields.attributes,
                     label: fields.label
-                };
+                });
             }
             case "footnoteReference":
-                return {
-                    ...this.base(id, scope, kind),
+                return Object.assign(this.base(id, scope, kind), {
                     label: this.requiredString(),
                     definition: this.identity()
-                };
+                });
             case "linkReference":
             case "imageReference":
-                return {
-                    ...this.base(id, scope, kind),
+                return Object.assign(this.base(id, scope, kind), {
                     label: this.requiredString(),
                     form: this.referenceForm(),
                     definition: this.identity(),
                     content: this.markupList()
-                };
+                });
             case "tableRow":
                 return this.tableRow(id, scope);
             case "tableCell":
-                return { ...this.base(id, scope, "tableCell"), content: this.markupList() };
+                return Object.assign(this.base(id, scope, "tableCell"), { content: this.markupList() });
             case "directiveLabel":
-                return { ...this.base(id, scope, kind), content: this.markupList() };
+                return Object.assign(this.base(id, scope, kind), { content: this.markupList() });
         }
         return unreachable(kind);
     }
@@ -368,7 +363,7 @@ class WireReader {
             if (item.kind !== "listItem") throw new Error("list contains a non-item node");
             items.push(item);
         }
-        return { ...this.base(id, scope, "list"), flavor, start, tight, items };
+        return Object.assign(this.base(id, scope, "list"), { flavor, start, tight, items });
     }
 
     table(id: Identity, scope: Scope): MarkupValueOf<"table"> {
@@ -386,12 +381,11 @@ class WireReader {
         }
         const headers = rows.filter((row) => row.isHeader);
         if (headers.length !== 1) throw new Error(`table contains ${headers.length} header rows`);
-        return {
-            ...this.base(id, scope, "table"),
+        return Object.assign(this.base(id, scope, "table"), {
             alignments,
             header: headers[0]!,
             rows: rows.filter((row) => !row.isHeader)
-        };
+        });
     }
 
     tableRow(id: Identity, scope: Scope): Omit<TableRow, "dump"> {
@@ -403,7 +397,7 @@ class WireReader {
             if (cell.kind !== "tableCell") throw new Error("table row contains a non-cell node");
             cells.push(cell);
         }
-        return { ...this.base(id, scope, "tableRow"), isHeader, cells };
+        return Object.assign(this.base(id, scope, "tableRow"), { isHeader, cells });
     }
 
     directiveFields(): DirectiveFields {
@@ -451,8 +445,21 @@ class WireReader {
         return new Concrete(source, lineStarts);
     }
 
+    /** Every node starts on the shared prototype that carries `dump`
+     * (#139): a prototype method is not an own enumerable property, so the
+     * pinned contract (`Object.keys` excludes `dump`) holds without the
+     * per-node `defineProperty` -- which allocated a descriptor and a fresh
+     * closure per node and forced the slow-path definition, ~20% of the
+     * whole decode. The `value()` cases assign their fields onto this one
+     * object instead of spreading it into a second. (The retired own
+     * property was non-writable; a prototype method is shadowable -- the
+     * public promise is the enumerability, which the tests pin.) */
     base<Kind extends Markup["kind"]>(id: Identity, scope: Scope, kind: Kind): Omit<MarkupBase<Kind>, "dump"> {
-        return { kind, id, scope };
+        const value = Object.create(MARKUP_PROTOTYPE) as { kind: Kind; id: Identity; scope: Scope };
+        value.kind = kind;
+        value.id = id;
+        value.scope = scope;
+        return value;
     }
 
     placement(): PlacementMode {
