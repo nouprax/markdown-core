@@ -169,9 +169,6 @@ struct markdown_core_node {
     struct markdown_core_node *first_child;
     struct markdown_core_node *last_child;
 
-    void *user_data;
-    markdown_core_free_func user_data_free_func;
-
     int start_line;
     int start_column;
     int end_line;

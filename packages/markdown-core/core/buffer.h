@@ -52,25 +52,11 @@ MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_free(markdown_core_strbuf *buf);
 
 MARKDOWN_CORE_EXPORT
-void markdown_core_strbuf_swap(markdown_core_strbuf *buf_a, markdown_core_strbuf *buf_b);
-
-MARKDOWN_CORE_EXPORT
-bufsize_t markdown_core_strbuf_len(const markdown_core_strbuf *buf);
-
-MARKDOWN_CORE_EXPORT
-int markdown_core_strbuf_cmp(const markdown_core_strbuf *a, const markdown_core_strbuf *b);
-
-MARKDOWN_CORE_EXPORT
 unsigned char *markdown_core_strbuf_detach(markdown_core_strbuf *buf);
-
-MARKDOWN_CORE_EXPORT
-void markdown_core_strbuf_copy_cstr(char *data, bufsize_t datasize, const markdown_core_strbuf *buf);
 
 static MARKDOWN_CORE_INLINE const char *markdown_core_strbuf_cstr(const markdown_core_strbuf *buf) {
     return (char *)buf->ptr;
 }
-
-#define markdown_core_strbuf_at(buf, n) ((buf)->ptr[n])
 
 MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len);
@@ -91,19 +77,10 @@ MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_clear(markdown_core_strbuf *buf);
 
 MARKDOWN_CORE_EXPORT
-bufsize_t markdown_core_strbuf_strchr(const markdown_core_strbuf *buf, int c, bufsize_t pos);
-
-MARKDOWN_CORE_EXPORT
-bufsize_t markdown_core_strbuf_strrchr(const markdown_core_strbuf *buf, int c, bufsize_t pos);
-
-MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_drop(markdown_core_strbuf *buf, bufsize_t n);
 
 MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_truncate(markdown_core_strbuf *buf, bufsize_t len);
-
-MARKDOWN_CORE_EXPORT
-void markdown_core_strbuf_rtrim(markdown_core_strbuf *buf);
 
 MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_trim(markdown_core_strbuf *buf);

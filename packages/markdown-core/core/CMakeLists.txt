@@ -142,12 +142,6 @@ include(CheckCSourceRuns)
 include(CheckSymbolExists)
 check_include_file(stdbool.h HAVE_STDBOOL_H)
 check_c_source_compiles("int main() { __builtin_expect(0,0); return 0; }" HAVE___BUILTIN_EXPECT)
-check_c_source_compiles(
-    "
-  int f(void) __attribute__ (());
-  int main() { return 0; }
-"
-    HAVE___ATTRIBUTE__)
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 

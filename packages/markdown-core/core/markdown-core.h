@@ -115,7 +115,7 @@ markdown_core_mem *markdown_core_get_default_mem_allocator(void);
 
 /** Callback for freeing user data with a 'markdown_core_mem' context.
  */
-typedef void (*markdown_core_free_func)(markdown_core_mem *mem, void *user_data);
+typedef void (*markdown_core_free_func)(markdown_core_mem *mem, void *data);
 
 /*
  * ## Basic data structures
@@ -318,19 +318,6 @@ void markdown_core_iter_reset(
  * ## Accessors
  */
 
-/** Returns the user data of 'node'.
- */
-MARKDOWN_CORE_EXPORT void *markdown_core_node_get_user_data(markdown_core_node *node);
-
-/** Sets arbitrary user data for 'node'.  Returns 1 on success,
- * 0 on failure.
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_user_data(markdown_core_node *node, void *user_data);
-
-/** Set free function for user data */
-MARKDOWN_CORE_EXPORT
-int markdown_core_node_set_user_data_free_func(markdown_core_node *node, markdown_core_free_func free_func);
-
 /** Returns the type of 'node', or `MARKDOWN_CORE_NODE_NONE` on error.
  */
 MARKDOWN_CORE_EXPORT markdown_core_node_type markdown_core_node_get_type(markdown_core_node *node);
@@ -396,13 +383,6 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_get_list_tight(markdown_core_node *n
  */
 MARKDOWN_CORE_EXPORT int markdown_core_node_set_list_tight(markdown_core_node *node, int tight);
 
-/** Returns the source-order item index of 'node'. */
-MARKDOWN_CORE_EXPORT int markdown_core_node_get_list_item_index(markdown_core_node *node);
-
-/** Sets item index of 'node'. Returns 1 on success, 0 on failure.
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_list_item_index(markdown_core_node *node, int idx);
-
 /** Returns the info string from a fenced code block.
  */
 MARKDOWN_CORE_EXPORT const char *markdown_core_node_get_fence_info(markdown_core_node *node);
@@ -415,25 +395,6 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_set_fence_info(markdown_core_node *n
 /** Returns 1 if a fenced code block has a closing fence, 0 otherwise.
  */
 MARKDOWN_CORE_EXPORT int markdown_core_node_get_fence_closed(markdown_core_node *node);
-
-/** Sets code blocks fencing details
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_fenced(
-    markdown_core_node *node,
-    int fenced,
-    int length,
-    int offset,
-    char character
-);
-
-/** Returns code blocks fencing details
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_get_fenced(
-    markdown_core_node *node,
-    int *length,
-    int *offset,
-    char *character
-);
 
 /** Returns the URL of a link or image 'node', or an empty string
     if no URL is set.  Returns NULL if called on a node that is

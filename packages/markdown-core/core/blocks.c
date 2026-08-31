@@ -1901,9 +1901,7 @@ static int S_optional_chunk_copy(
 /* One cloned block. Everything the CST states about a block is copied: its
  * content bytes, its place, its flags, its `as` arm, its extension payload,
  * and its run in the content-to-source map (the map itself stays on the
- * parser, which outlives the derivation). `user_data` is deliberately not
- * copied -- it is caller-owned decoration on a returned tree, and the parse's
- * own CST never carries any. */
+ * parser, which outlives the derivation). */
 /* THE PROJECTION CACHE (docs/STREAMING.md T9). A CST block with inline
  * content keeps the list its last projection produced, on a holder hung
  * from the block (`link.holder`, CACHE_OWNER) and keyed by the block's write
