@@ -3374,4 +3374,3 @@ void markdown_core_parser_advance_offset(markdown_core_parser *parser, const cha
 
     S_advance_offset(parser, &input_chunk, count, columns != 0);
 }
-

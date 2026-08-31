@@ -984,4 +984,3 @@ int markdown_core_extensions_get_table_row_is_header(markdown_core_node *node) {
 
     return ((node_table_row *)node->as.opaque)->is_header;
 }
-

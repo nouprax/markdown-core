@@ -35,7 +35,6 @@ struct markdown_core_chunk;
  * desirable.
  */
 
-
 /** A syntax extension that can be attached to a markdown_core_parser
  * with markdown_core_parser_attach_syntax_extension().
  *
@@ -181,7 +180,6 @@ bufsize_t markdown_core_delimiter_position(const delimiter *delim);
 /** How many bytes the delimiter run owns. */
 MARKDOWN_CORE_EXPORT
 bufsize_t markdown_core_delimiter_length(const delimiter *delim);
-
 
 /** Should create and add a new open block to 'parent_container' if
  * 'input' matches a syntax rule for that block type. It is allowed

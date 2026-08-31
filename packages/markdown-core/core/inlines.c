@@ -3015,4 +3015,3 @@ markdown_core_delimiter_rule markdown_core_delimiter_rule_of(const delimiter *de
 bufsize_t markdown_core_delimiter_position(const delimiter *delim) { return delim->position; }
 
 bufsize_t markdown_core_delimiter_length(const delimiter *delim) { return delim->length; }
-
