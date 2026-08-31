@@ -502,6 +502,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     many_link_closers
     many_link_openers
     mismatched_openers_closers
+    emph_openers_link_closers
     openers_closers_multiple_of_3
     link_openers_emph_closers
     pattern_bracket_paren

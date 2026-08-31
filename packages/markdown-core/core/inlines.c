@@ -2611,9 +2611,27 @@ static delimiter *find_extension_opener_for_special_char(markdown_core_parser *p
 }
 
 static int bracket_takes_close_bracket(markdown_core_parser *parser, subject *subj) {
-    delimiter *extension_opener = find_extension_opener_for_special_char(parser, subj, ']');
+    delimiter *extension_opener;
 
-    return subj->last_bracket && (!extension_opener || subj->last_bracket->position > extension_opener->position);
+    /* Both cheap answers come before any walk (#134). A `]` with no open
+     * bracket takes nothing; and unless some attached extension actually
+     * dispatches `]` -- none of the shipped ones does, the unconditional
+     * probe was a leftover of the withdrawn delimiter-based directive
+     * label -- the walk can only ever answer NULL. Without these guards
+     * every lone `]` walked the ENTIRE delimiter stack, where unmatched
+     * emphasis openers accumulate until `process_emphasis`, so `_a]`
+     * repeated went quadratic on the plain CommonMark path. The walk
+     * itself is the deliberate ownership arbitration and stays, for any
+     * extension that does claim `]`. */
+    if (subj->last_bracket == NULL) {
+        return 0;
+    }
+    if (!any_extension_dispatches(parser, ']')) {
+        return 1;
+    }
+    extension_opener = find_extension_opener_for_special_char(parser, subj, ']');
+
+    return !extension_opener || subj->last_bracket->position > extension_opener->position;
 }
 
 // Parse an inline, advancing subject, and add it as a child of parent.
