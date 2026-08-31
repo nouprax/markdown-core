@@ -955,6 +955,15 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
 
     cur = node;
     for (;;) {
+        /* #152 Stage 1's invariant: a block that borrows its list carries no
+         * content -- content is the arena backing an OWNED inline list, and
+         * a borrowed list is backed by its holder (whose chunks the store
+         * owned). Reported but not repaired: freeing here would assert an
+         * ownership claim this walk cannot verify. */
+        if (MARKDOWN_CORE_NODE_BORROWED_P(cur) && cur->content.size != 0) {
+            S_print_error(out, cur, "borrowed content");
+            ++errors;
+        }
         if (cur->first_child) {
             if (cur->first_child->prev != NULL) {
                 S_print_error(out, cur->first_child, "prev");

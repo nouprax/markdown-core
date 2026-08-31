@@ -1909,7 +1909,11 @@ static int S_optional_chunk_copy(
  * -- an attach re-projects every block. A projection that finds the key
  * unchanged aliases the list into the derived block -- shares it, never
  * copies it (F12: copying costs more than the parse it replaces) -- and the
- * per-block tail (T18) leaves an aliased list alone. A projection that finds
+ * per-block tail (T18) leaves an aliased list alone. A hit also skips the
+ * block-content copy, and the store frees a miss's arena once its chunks
+ * are owned: content exists to back an owned inline list, and a borrowed
+ * list is backed by its holder (#152 Stage 1; `markdown_core_node_check`
+ * asserts exactly that). A projection that finds
  * it stale or absent parses, runs the block's tail, and then MOVES the
  * children into a fresh holder and borrows them straight back: with the tail
  * per block nothing touches them after the store, which is what the PoC's
@@ -1957,6 +1961,12 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
     origin->link.holder = holder;
     origin->flags |= MARKDOWN_CORE_NODE__CACHE_OWNER;
     markdown_core_node_borrow_children(node, holder);
+    /* #152 Stage 1's other half: `take_children` owned every chunk in the
+     * stored list, so the arena the parsed literals used to alias backs
+     * nothing now -- and this block just became a borrower, whose invariant
+     * is that its holder backs the list, not a private arena. Freeing keeps
+     * `content.mem` (NODE_MEM reads it) and only drops the bytes. */
+    markdown_core_strbuf_free(&node->content);
 }
 
 static markdown_core_node *S_clone_block_node(
@@ -1966,11 +1976,26 @@ static markdown_core_node *S_clone_block_node(
 ) {
     markdown_core_mem *mem = parser->mem;
     markdown_core_node *dst = (markdown_core_node *)mem->calloc(1, sizeof(*dst));
+    bool enrolled;
+    bool hit;
     if (!dst) {
         return NULL;
     }
+    /* THE HIT IS DECIDED FIRST (#152 Stage 1). Content is the arena backing
+     * an OWNED inline list -- `parse_inlines` reads its subject off
+     * `content.ptr` -- and a hit block borrows its list from the holder, so
+     * a hit block's content copy would be read by nothing. Copy it only
+     * when this clone will parse. The predicate reads `src`, which is
+     * whole; `dst` is still half-built here (an extension's
+     * `contains_inlines_func` may read state the copy below has not
+     * reached yet). `S_cache_fresh` is pure: it reads parser state and
+     * `src`, and nothing between here and the borrow at the bottom writes
+     * either. */
+    enrolled = MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src) && contains_inlines((markdown_core_node *)src) &&
+               refmap == parser->refmap && !parser->no_projection_cache;
+    hit = enrolled && S_cache_fresh(parser, src, refmap);
     markdown_core_strbuf_init(mem, &dst->content, 0);
-    if (src->content.size) {
+    if (!hit && src->content.size) {
         markdown_core_strbuf_put(&dst->content, src->content.ptr, src->content.size);
         if (dst->content.oom) {
             markdown_core_strbuf_free(&dst->content);
@@ -2067,16 +2092,16 @@ static markdown_core_node *S_clone_block_node(
     }
 
     /* THE HIT IS TAKEN HERE, where the origin is in hand, so the derived
-     * block never needs to find it again. A miss remembers the origin for
-     * the store at the end of its tail. Only BLOCK-class nodes with inline
-     * content take part: they are the ones the re-parse costs, and they are
-     * the ones the walk queues -- a CST-resident inline construct (a
-     * directive's label) is never queued, so enrolling it left ORIGIN and a
-     * CST pointer on a node the caller holds (found on the landing review).
-     * Its passes run from the block that owns it instead. */
-    if (MARKDOWN_CORE_NODE_BLOCK_P(dst) && contains_inlines(dst) && refmap == parser->refmap &&
-        !parser->no_projection_cache) {
-        if (S_cache_fresh(parser, src, refmap)) {
+     * block never needs to find it again (the decision itself was taken at
+     * the top, where it governs the content copy). A miss remembers the
+     * origin for the store at the end of its tail. Only BLOCK-class nodes
+     * with inline content take part: they are the ones the re-parse costs,
+     * and they are the ones the walk queues -- a CST-resident inline
+     * construct (a directive's label) is never queued, so enrolling it left
+     * ORIGIN and a CST pointer on a node the caller holds (found on the
+     * landing review). Its passes run from the block that owns it instead. */
+    if (enrolled) {
+        if (hit) {
             markdown_core_node_borrow_children(dst, src->link.holder);
             parser->cache_hits++;
         } else {
