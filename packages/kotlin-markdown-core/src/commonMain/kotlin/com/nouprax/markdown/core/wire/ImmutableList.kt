@@ -4,10 +4,10 @@ private class ReadOnlyList<out Element> private constructor(
     private val snapshot: kotlin.collections.List<Element>,
 ) : AbstractList<Element>() {
     companion object {
-        fun <Element, Result> mapped(
-            elements: kotlin.collections.List<Element>,
-            transform: (Element) -> Result,
-        ): ReadOnlyList<Result> = ReadOnlyList(elements.map(transform))
+        /* Wraps WITHOUT copying, so the argument must be a freshly built list
+         * no other holder aliases - the guarantee the private constructor used
+         * to buy with a copy. Every call site passes a list it just built. */
+        fun <Element> wrapping(fresh: kotlin.collections.List<Element>): ReadOnlyList<Element> = ReadOnlyList(fresh)
 
         fun <Element> generated(
             size: Int,
@@ -21,9 +21,8 @@ private class ReadOnlyList<out Element> private constructor(
     override fun get(index: Int): Element = snapshot[index]
 }
 
-internal fun <Element, Result> kotlin.collections.List<Element>.immutableMap(
-    transform: (Element) -> Result,
-): kotlin.collections.List<Result> = ReadOnlyList.mapped(this, transform)
+internal fun <Element> kotlin.collections.List<Element>.asImmutable(): kotlin.collections.List<Element> =
+    ReadOnlyList.wrapping(this)
 
 internal fun <Element> immutableList(
     size: Int,

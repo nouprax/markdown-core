@@ -46,7 +46,7 @@ val javadocJar =
     tasks.register<Jar>("javadocJar") {
         archiveClassifier.set("javadoc")
         from(project(":packages:kotlin-markdown-core").file("README.md"))
-        from(rootProject.file("docs/deprecated/migration/2026-07-12-phase-12-kotlin-binding.md"))
+        from(rootProject.file("docs/specs/canonical-ast.md"))
     }
 
 android {
