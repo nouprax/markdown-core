@@ -763,7 +763,8 @@ bool markdown_core_node_formula_properties(
     markdown_core_placement_mode *mode,
     markdown_core_string *literal
 ) {
-    const char *value;
+    const char *value = NULL;
+    size_t value_length = 0;
     markdown_core_formula_mode native_mode;
     if (!node || !mode || !literal ||
         (node->type != MARKDOWN_CORE_NODE_FORMULA && node->type != MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
@@ -772,9 +773,13 @@ bool markdown_core_node_formula_properties(
     native_mode = markdown_core_extensions_get_formula_mode((markdown_core_node *)node);
     *mode = native_mode == MARKDOWN_CORE_FORMULA_MODE_EMBEDDED ? MARKDOWN_CORE_PLACEMENT_EMBEDDED
                                                                : MARKDOWN_CORE_PLACEMENT_STANDALONE;
-    value = markdown_core_extensions_get_formula_literal((markdown_core_node *)node);
+    /* The VIEW, not the cstr materialization (#153): the cstr getter writes
+     * the chunk it reads, and this node may sit in an inline list shared by
+     * several derived documents read concurrently. The facade mutates
+     * nothing it reads. */
+    markdown_core_extensions_formula_literal_view(node, &value, &value_length);
     literal->data = (const uint8_t *)value;
-    literal->length = value ? strlen(value) : 0;
+    literal->length = value_length;
     return true;
 }
 

@@ -105,9 +105,21 @@ MARKDOWN_CORE_EXPORT
 int markdown_core_extensions_get_table_row_is_header(markdown_core_node *node);
 
 /** Returns the literal formula payload for formula extension nodes, or NULL on error.
+ * MATERIALIZES a NUL-terminated private copy on first call, writing the node:
+ * order access to the document around it. The facade reads the view below
+ * instead, which mutates nothing.
  */
 MARKDOWN_CORE_EXPORT
 const char *markdown_core_extensions_get_formula_literal(markdown_core_node *node);
+
+/** The formula literal as a VIEW -- bytes and length, no NUL materialization
+ * and NO write to the node (#153): derived documents may share their inline
+ * lists across threads, and a getter that rewrites the chunk it reads races
+ * with itself on the shared node. Returns 0 for a node without a formula
+ * payload; the bytes stay valid for the life of the owning document and are
+ * not NUL-terminated at `*length`. */
+MARKDOWN_CORE_EXPORT
+int markdown_core_extensions_formula_literal_view(const markdown_core_node *node, const char **data, size_t *length);
 
 /** Sets the literal formula payload for formula extension nodes, returning 1 on success and 0 on
  * error.

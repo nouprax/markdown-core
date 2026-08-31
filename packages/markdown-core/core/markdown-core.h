@@ -321,6 +321,13 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node);
 /** Returns the string contents of 'node', or an empty
     string if none is set.  Returns NULL if called on a
     node that does not have string content.
+
+    MATERIALIZES a NUL-terminated private copy on first call, WRITING the
+    node (#153): an inline list can be shared by several derived documents,
+    so this call needs the caller to order access across every document
+    that can reach the node -- the cross-thread freedom the facade contract
+    grants applies to the facade's own accessors, which read views and
+    mutate nothing.
  */
 MARKDOWN_CORE_EXPORT const char *markdown_core_node_get_literal(markdown_core_node *node);
 

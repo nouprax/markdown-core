@@ -68,6 +68,21 @@ const char *markdown_core_extensions_get_formula_literal(markdown_core_node *nod
     return markdown_core_chunk_to_cstr(markdown_core_node_mem(node), &formula->literal);
 }
 
+int markdown_core_extensions_formula_literal_view(const markdown_core_node *node, const char **data, size_t *length) {
+    /* No write anywhere on this path (#153): shared inline lists make the
+     * node reachable from several documents at once, and the facade reads
+     * it under the cross-document concurrency contract. The chunk's bytes
+     * are a view, an owned copy, or a retained slice of a frozen buffer --
+     * all stable for the owning document's life. */
+    node_formula *formula = get_formula((markdown_core_node *)node);
+    if (!formula || !data || !length) {
+        return 0;
+    }
+    *data = (const char *)formula->literal.data;
+    *length = formula->literal.len < 0 ? 0 : (size_t)formula->literal.len;
+    return 1;
+}
+
 int markdown_core_extensions_set_formula_literal(markdown_core_node *node, const char *literal) {
     node_formula *formula = get_formula(node);
     if (!formula) {
