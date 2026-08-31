@@ -59,6 +59,7 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
     return (await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: wasi, env })).instance;
 }
 
-// Top-level initialization keeps Document.parse synchronous in Node and browsers.
+// Top-level initialization keeps the Document constructor, feed, and seal
+// synchronous in Node and browsers.
 const instance = await loadWasm();
 export const native = instance.exports as NativeExports;

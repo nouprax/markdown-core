@@ -243,20 +243,13 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_last_child(markdown_
  *         markdown_core_iter_free(iter);
  *     }
  *
- * Iterators will never return `EXIT` events for leaf nodes, which are nodes
- * of type:
+ * The event contract is total: every node in the subtree yields exactly one
+ * `ENTER` and exactly one `EXIT`, whatever its type -- a childless node's
+ * `EXIT` follows its `ENTER` directly.
  *
- * * MARKDOWN_CORE_NODE_HTML_BLOCK
- * * MARKDOWN_CORE_NODE_THEMATIC_BREAK
- * * MARKDOWN_CORE_NODE_CODE_BLOCK
- * * MARKDOWN_CORE_NODE_TEXT
- * * MARKDOWN_CORE_NODE_SOFT_BREAK
- * * MARKDOWN_CORE_NODE_LINE_BREAK
- * * MARKDOWN_CORE_NODE_CODE
- * * MARKDOWN_CORE_NODE_HTML
- *
- * Nodes must only be modified after an `EXIT` event, or an `ENTER` event for
- * leaf nodes.
+ * Nodes must only be modified after an `EXIT` event; the only node that may
+ * be freed is the one whose `EXIT` is current.  (See `markdown_core_iter_new`
+ * below for the full contract and its history.)
  */
 
 typedef enum {
