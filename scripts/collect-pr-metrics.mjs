@@ -24,18 +24,12 @@ if (!new Set(["linux", "macos"]).has(platform)) {
 }
 
 const allowedRuntimes = new Set(["c", "swift", "kotlin", "es"]);
-const allowedWorkloads = new Set([
-    "representative_large",
-    "large_document",
-    "deep_nesting",
-    "deep_one_shot_parse",
-    "deep_document_build"
-]);
+const allowedWorkloads = new Set(["representative_large", "large_document", "deep_nesting"]);
 const allowedBoundaries = new Map([
     ["c", new Set(["native_parse"])],
-    ["swift", new Set(["native_parse_and_value_copy"])],
-    ["kotlin", new Set(["jni_parse_and_value_copy", "jni_append_and_reuse_decode"])],
-    ["es", new Set(["wasm_parse_and_value_copy", "wasm_append_and_reuse_decode"])]
+    ["swift", new Set(["native_feed_seal_and_value_copy"])],
+    ["kotlin", new Set(["jni_feed_seal_and_value_copy"])],
+    ["es", new Set(["wasm_feed_seal_and_value_copy"])]
 ]);
 
 async function filesBelow(root) {
