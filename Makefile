@@ -93,7 +93,7 @@ $(EXTDIR)/ext_scanners.c: $(EXTDIR)/ext_scanners.re
 		false; \
 		;; \
 	esac
-	re2c --case-insensitive -b -i --no-generation-date -8 \
+	re2c -W -Werror --case-insensitive -b -i --no-generation-date -8 \
 		--encoding-policy substitute -o $@ $<
 
 # Explicit maintenance command; normal test and bench runs never touch the

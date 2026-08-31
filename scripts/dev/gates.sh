@@ -45,6 +45,10 @@ echo "position-places   : $(node scripts/audit-position-places.mjs 2>&1 | tail -
 echo "diagnostics       : $(node scripts/audit-diagnostics.mjs 2>&1 | tail -1)"
 echo "reference-order   : $(node scripts/audit-reference-order-independence.mjs 2>&1 | tail -1)"
 echo "test-topology     : $(bash scripts/audit-test-topology.sh 2>&1 | tail -1)"
+# Byte-for-byte reproducibility of the committed re2c output. Prints SKIP
+# unless the pinned re2c is present (scripts/init-environment.sh --install
+# re2c); CI runs the same script with --require in Health Check - C.
+echo "scanners-gen      : $(bash scripts/check-generated-scanners.sh 2>&1 | tail -1)"
 # THE REPOSITORY AUDIT WAS IN NEITHER THIS SCRIPT NOR SECTION 0'S LIST, and it
 # is the only gate that reads a tracked file's MODE. Six scripts this branch
 # added carry a shebang without the executable bit, which nothing else can see

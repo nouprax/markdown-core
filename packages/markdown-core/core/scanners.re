@@ -27,11 +27,7 @@ bufsize_t _scan_at(bufsize_t (*scanner)(const unsigned char *), markdown_core_ch
   re2c:define:YYCTXMARKER = marker;
   re2c:yyfill:enable = 0;
 
-  wordchar = [^\x00-\x20];
-
   spacechar = [ \t\v\f\r\n];
-
-  reg_char     = [^\\()\x00-\x20];
 
   escaped_char = [\\][!"#$%&'()*+,./:;<=>?@[\\\]^_`{|}~-];
 
@@ -64,25 +60,8 @@ bufsize_t _scan_at(bufsize_t (*scanner)(const unsigned char *), markdown_core_ch
 
   htmltag = opentag | closetag;
 
-  in_parens_nosp   = [(] (reg_char|escaped_char|[\\])* [)];
-
-  in_double_quotes = ["] (escaped_char|[^"\x00])* ["];
-  in_single_quotes = ['] (escaped_char|[^'\x00])* ['];
-  in_parens        = [(] (escaped_char|[^)\x00])* [)];
-
   scheme           = [A-Za-z][A-Za-z0-9.+-]{1,31};
 */
-
-// Try to match a scheme including colon.
-bufsize_t _scan_scheme(const unsigned char *p)
-{
-  const unsigned char *marker = NULL;
-  const unsigned char *start = p;
-/*!re2c
-  scheme [:] { return (bufsize_t)(p - start); }
-  * { return 0; }
-*/
-}
 
 // Try to match URI autolink after first <, returning number of chars matched.
 bufsize_t _scan_autolink_uri(const unsigned char *p)
@@ -117,17 +96,6 @@ bufsize_t _scan_html_tag(const unsigned char *p)
   const unsigned char *start = p;
 /*!re2c
   htmltag { return (bufsize_t)(p - start); }
-  * { return 0; }
-*/
-}
-
-// Try to (liberally) match an HTML tag after first <, returning num of chars matched.
-bufsize_t _scan_liberal_html_tag(const unsigned char *p)
-{
-  const unsigned char *marker = NULL;
-  const unsigned char *start = p;
-/*!re2c
-  [^\n\x00]+ [>] { return (bufsize_t)(p - start); }
   * { return 0; }
 */
 }
@@ -323,32 +291,6 @@ bufsize_t _scan_close_code_fence(const unsigned char *p)
 /*!re2c
   [`]{3,} / [ \t]*[\r\n] { return (bufsize_t)(p - start); }
   [~]{3,} / [ \t]*[\r\n] { return (bufsize_t)(p - start); }
-  * { return 0; }
-*/
-}
-
-// Scans an entity.
-// Returns number of chars matched.
-bufsize_t _scan_entity(const unsigned char *p)
-{
-  const unsigned char *marker = NULL;
-  const unsigned char *start = p;
-/*!re2c
-  [&] ([#] ([Xx][A-Fa-f0-9]{1,6}|[0-9]{1,7}) |[A-Za-z][A-Za-z0-9]{1,31} ) [;]
-     { return (bufsize_t)(p - start); }
-  * { return 0; }
-*/
-}
-
-// Returns positive value if a URL begins in a way that is potentially
-// dangerous, with javascript:, vbscript:, file:, or data:, otherwise 0.
-bufsize_t _scan_dangerous_url(const unsigned char *p)
-{
-  const unsigned char *marker = NULL;
-  const unsigned char *start = p;
-/*!re2c
-  'data:image/' ('png'|'gif'|'jpeg'|'webp') { return 0; }
-  'javascript:' | 'vbscript:' | 'file:' | 'data:' { return (bufsize_t)(p - start); }
   * { return 0; }
 */
 }

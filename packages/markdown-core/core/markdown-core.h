@@ -533,10 +533,13 @@ markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len,
  */
 #define MARKDOWN_CORE_OPT_DEFAULT 0
 
-/* Bits (1 << 1) and (1 << 8) were MARKDOWN_CORE_OPT_SOURCEPOS and
- * MARKDOWN_CORE_OPT_NORMALIZE. Neither changed behavior - position tracking
- * is unconditional in the 3.0 scope model, and NORMALIZE was inherited as a
- * no-op - so both are deleted; the bits stay unassigned.
+/* Bits (1 << 1), (1 << 8) and (1 << 12) were MARKDOWN_CORE_OPT_SOURCEPOS,
+ * MARKDOWN_CORE_OPT_NORMALIZE and MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG.
+ * The first two changed no behavior - position tracking is unconditional
+ * in the 3.0 scope model, and NORMALIZE was inherited as a no-op. The
+ * liberal-tag scan was unreachable from the frozen 3.0 facade and its
+ * scanner rescanned to end of line for every '<' (quadratic); it is
+ * deleted rather than memoized. All three bits stay unassigned.
 
  * ### Options affecting parsing
  */
@@ -549,10 +552,6 @@ markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len,
 /** Convert straight quotes to curly, --- to em dashes, -- to en dashes.
  */
 #define MARKDOWN_CORE_OPT_SMART (1 << 10)
-
-/** Be liberal in interpreting inline HTML tags.
- */
-#define MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG (1 << 12)
 
 /** Strip HTML comment nodes from the parsed AST.
  */

@@ -20,6 +20,12 @@ CMARK_GFM_VERSION=0.29.0.gfm.13
 CMARK_GFM_COMMIT=587a12bb54d95ac37241377e6ddc93ea0e45439b
 CLANG_FORMAT_VERSION=22.1.8
 CMAKE_FORMAT_VERSION=0.6.13
+# The generator of the committed scanners.c (see
+# scripts/check-generated-scanners.sh). The release tarball is pinned by
+# content hash for the same reason emsdk and cmark-gfm pin commits: a
+# re-tagged release must never change the bytes this installer builds.
+RE2C_VERSION=4.5.1
+RE2C_SHA256=ffea067c11aa668bcb42885be6e6cd000302000b7747d2bb213299ec66b7864e
 SWIFTLINT_VERSION=0.65.0
 ANDROID_PLATFORM=android-36
 ANDROID_CMAKE_VERSION=3.22.1
@@ -33,7 +39,7 @@ Usage: scripts/init-environment.sh --check [component ...]
        scripts/init-environment.sh --install [component ...]
 
 Components: core node java wrappers android android-emulator swift emscripten
-            upstream-cmark dependencies tools
+            upstream-cmark re2c dependencies tools
 
 With no components, the command checks or installs the complete environment
 supported by the current host. --check never installs or downloads anything.
@@ -65,7 +71,7 @@ fi
 
 for component do
     case "$component" in
-        core | node | java | wrappers | android | android-emulator | swift | emscripten | upstream-cmark | dependencies | tools) ;;
+        core | node | java | wrappers | android | android-emulator | swift | emscripten | upstream-cmark | re2c | dependencies | tools) ;;
         *)
             echo "Unknown environment component: $component" >&2
             usage >&2
@@ -319,6 +325,14 @@ cmark_gfm_path() {
     printf '%s\n' "$root/.tools/cmark-gfm/$CMARK_GFM_VERSION/build/src/cmark-gfm"
 }
 
+re2c_path() {
+    if [ -x "$root/.tools/re2c/$RE2C_VERSION/bin/re2c" ]; then
+        printf '%s\n' "$root/.tools/re2c/$RE2C_VERSION/bin/re2c"
+    else
+        command -v re2c 2>/dev/null || true
+    fi
+}
+
 check_upstream_cmark() {
     binary=$(cmark_gfm_path)
     if [ ! -x "$binary" ]; then
@@ -326,6 +340,18 @@ check_upstream_cmark() {
         return
     fi
     ok "upstream cmark-gfm $CMARK_GFM_VERSION"
+    return 0
+}
+
+check_re2c() {
+    binary=$(re2c_path)
+    if [ -z "$binary" ]; then
+        fail "re2c $RE2C_VERSION is not available"
+        return
+    fi
+    actual=$("$binary" --version)
+    [ "$actual" = "re2c $RE2C_VERSION" ] || fail "re2c $RE2C_VERSION is required; found ${actual:-unknown}"
+    [ "$actual" != "re2c $RE2C_VERSION" ] || ok "re2c $RE2C_VERSION"
     return 0
 }
 
@@ -504,6 +530,41 @@ install_upstream_cmark() {
     [ -x "$(cmark_gfm_path)" ] || fail "cmark-gfm build produced no binary"
 }
 
+install_re2c() {
+    directory="$root/.tools/re2c/$RE2C_VERSION"
+    binary="$directory/bin/re2c"
+    if [ -x "$binary" ] && [ "$("$binary" --version)" = "re2c $RE2C_VERSION" ]; then
+        return
+    fi
+    require_command cmake || return
+    mkdir -p "$directory"
+    tarball="$directory/re2c-$RE2C_VERSION.tar.xz"
+    [ -f "$tarball" ] || curl -fsSL -o "$tarball" \
+        "https://github.com/skvadrik/re2c/releases/download/$RE2C_VERSION/re2c-$RE2C_VERSION.tar.xz"
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual_sha256=$(sha256sum "$tarball" | awk '{print $1}')
+    else
+        actual_sha256=$(shasum -a 256 "$tarball" | awk '{print $1}')
+    fi
+    [ "$actual_sha256" = "$RE2C_SHA256" ] || {
+        rm -f "$tarball"
+        fail "re2c tarball hash is $actual_sha256, expected $RE2C_SHA256"
+        return
+    }
+    tar -xf "$tarball" -C "$directory"
+    # Build ONLY the re2c binary: the default target set adds every
+    # code-generation sub-backend (re2go, re2java, re2d, ...) plus the test
+    # binaries, and `--parallel` with no count becomes an unbounded `make -j`
+    # that can wedge a memory-limited container.
+    jobs=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+    cmake -S "$directory/re2c-$RE2C_VERSION" -B "$directory/build" \
+        -DCMAKE_BUILD_TYPE=Release >/dev/null
+    cmake --build "$directory/build" --parallel "$jobs" --target re2c >/dev/null
+    mkdir -p "$directory/bin"
+    cp "$directory/build/re2c" "$binary"
+    [ -x "$binary" ] || fail "re2c build produced no binary"
+}
+
 install_tools() {
     require_command python3 || return
     clang_directory="$root/.tools/clang-format/$CLANG_FORMAT_VERSION"
@@ -528,6 +589,7 @@ if [ "$mode" = --install ]; then
     has_component swift "$@" && check_swift
     has_component emscripten "$@" && install_emscripten
     has_component upstream-cmark "$@" && install_upstream_cmark
+    has_component re2c "$@" && install_re2c
     has_component dependencies "$@" \
         && npx --yes "pnpm@$PNPM_VERSION" install --frozen-lockfile
     has_component tools "$@" && install_tools
@@ -544,6 +606,7 @@ has_component android-emulator "$@" && check_android_emulator
 has_component swift "$@" && check_swift
 has_component emscripten "$@" && check_emscripten
 has_component upstream-cmark "$@" && check_upstream_cmark
+has_component re2c "$@" && check_re2c
 has_component dependencies "$@" && check_dependencies
 has_component tools "$@" && check_tools
 

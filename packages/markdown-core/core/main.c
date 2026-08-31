@@ -174,8 +174,6 @@ int main(int argc, char *argv[]) {
             options |= MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
         } else if (strcmp(argv[i], "--validate-utf8") == 0) {
             options |= MARKDOWN_CORE_OPT_VALIDATE_UTF8;
-        } else if (strcmp(argv[i], "--liberal-html-tag") == 0) {
-            options |= MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG;
         } else if ((strcmp(argv[i], "--help") == 0) || (strcmp(argv[i], "-h") == 0)) {
             print_usage();
             goto success;

@@ -794,10 +794,10 @@ tasks.register<JacocoReport>("jvmCoverageReport") {
         correctness.map { it.extensions.getByType<JacocoTaskExtension>().destinationFile!! },
         conformance.map { it.extensions.getByType<JacocoTaskExtension>().destinationFile!! },
     )
-    // Every source set that compiles into the measured classes, jvmSharedMain
-    // included: it holds the JNI entry points and the loader.
+    // Every source set that compiles into the measured classes; jvmMain
+    // holds the JNI entry points and the loader.
     sourceDirectories.setFrom(
-        files("src/commonMain/kotlin", "src/jvmSharedMain/kotlin", "src/jvmMain/kotlin"),
+        files("src/commonMain/kotlin", "src/jvmMain/kotlin"),
     )
     classDirectories.setFrom(jvmMainCompilation.output.classesDirs)
     reports {

@@ -6,9 +6,10 @@
 #
 # The JVM target is the measured one because every other Kotlin target compiles
 # the same commonMain sources: instrumenting one run measures the shared
-# binding logic once instead of reporting each common file four times. Sources
-# that exist only for Android, Native, or the JNI layer are gated by their own
-# platform suites, not by this report.
+# binding logic once instead of reporting each common file four times. jvmMain
+# (the JNI entry points and the loader) is measured here too; sources that
+# exist only for Android or Native are gated by their own platform suites, not
+# by this report.
 #
 # Pass --update-ledger through to record an improvement.
 set -eu
@@ -33,6 +34,5 @@ exec node scripts/check-coverage.mjs \
     --format jacoco \
     --input "$report" \
     --source-root packages/kotlin-markdown-core/src/commonMain/kotlin \
-    --source-root packages/kotlin-markdown-core/src/jvmSharedMain/kotlin \
     --source-root packages/kotlin-markdown-core/src/jvmMain/kotlin \
     "$@"

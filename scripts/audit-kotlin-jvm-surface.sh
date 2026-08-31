@@ -54,15 +54,19 @@ if ! added=$(comm -23 "$work/leaked.txt" "$work/pinned.txt") || [ -n "$added" ];
     exit 1
 fi
 
-# THE ONE THAT WAS CLOSED RATHER THAN PINNED, and the claim is mechanised: the
-# JNI entry point must stay hidden from javac. JNI resolves by name and
-# descriptor and ignores ACC_SYNTHETIC, so this costs the binding nothing.
-if ! "$javap" -v -cp "$classes" com.nouprax.markdown.core.JvmNative 2>/dev/null |
-    grep -A3 'native byte\[\] parse' | grep -q ACC_SYNTHETIC; then
-    echo "Kotlin JVM surface audit failed: JvmNative.parse is resolvable from Java." >&2
-    echo "It needs @JvmSynthetic: internal is public on the JVM." >&2
-    exit 1
-fi
+# THE ONES THAT WERE CLOSED RATHER THAN PINNED, and the claim is mechanised:
+# every JNI entry point must stay hidden from javac. JNI resolves by name and
+# descriptor and ignores ACC_SYNTHETIC, so this costs the binding nothing. A
+# missing method fails too - if the session surface changes, this list is
+# part of the change.
+"$javap" -v -cp "$classes" com.nouprax.markdown.core.JvmNative >"$work/jvmnative.txt" 2>/dev/null
+for entry in sessionNew sessionFeed sessionAdvance sessionFinish sessionFree; do
+    if ! grep -A3 -E "native .*\b$entry\(" "$work/jvmnative.txt" | grep -q ACC_SYNTHETIC; then
+        echo "Kotlin JVM surface audit failed: JvmNative.$entry is resolvable from Java." >&2
+        echo "It needs @JvmSynthetic: internal is public on the JVM." >&2
+        exit 1
+    fi
+done
 
 printf 'Kotlin JVM surface audit passed: %s Java-visible classes, %s in the Kotlin API, %s pinned as unreachable-by-intent.\n' \
     "$(wc -l <"$work/jvm-public.txt" | tr -d ' ')" \
