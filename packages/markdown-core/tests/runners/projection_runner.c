@@ -936,15 +936,48 @@ static int case_dump_boundaries(const ts_spec_file *file) {
  * time with a derivation after every line and a finish at the end, nothing
  * dumped. `--repeats N` runs the whole corpus N times and reports the
  * fastest, which is the aggregation F1 and F11 use; the boundary count is
- * printed so two runs can be seen to have done the same work. */
+ * printed so two runs can be seen to have done the same work. The benchmark
+ * ctest registration also collects the median of the repeats as a
+ * pr-metrics row (#148), so the engine-side feed clock is tracked alongside
+ * the bindings' feed loops. */
 static int pr_repeats = 1;
+
+static long pr_peak_rss_kib(void) {
+#if defined(_WIN32)
+    return -1;
+#else
+    struct rusage usage;
+    if (getrusage(RUSAGE_SELF, &usage) != 0) {
+        return -1;
+    }
+#ifdef __APPLE__
+    return usage.ru_maxrss / 1024;
+#else
+    return usage.ru_maxrss;
+#endif
+#endif
+}
+
+static int pr_compare_u64(const void *left, const void *right) {
+    uint64_t a = *(const uint64_t *)left;
+    uint64_t b = *(const uint64_t *)right;
+    return a < b ? -1 : (a > b ? 1 : 0);
+}
 
 static int case_feed_loop(const ts_spec_file *file) {
     size_t index;
     int repeat;
     uint64_t best_ns = 0;
+    uint64_t *repeat_ns;
+    uint64_t median_ns;
+    size_t total_bytes = 0;
     size_t boundaries = 0;
     size_t hits = 0, misses = 0;
+    repeat_ns = (uint64_t *)calloc((size_t)pr_repeats, sizeof(uint64_t));
+    if (!repeat_ns) {
+        fputs("feed loop: cannot allocate repeat samples\n", stderr);
+        return -1;
+    }
     for (repeat = 0; repeat < pr_repeats; repeat++) {
         uint64_t started = ts_monotonic_ns();
         uint64_t elapsed;
@@ -958,6 +991,7 @@ static int case_feed_loop(const ts_spec_file *file) {
             markdown_core_node *tree;
             if (!parser) {
                 fprintf(stderr, "example %d: parser allocation failed\n", test_case->example);
+                free(repeat_ns);
                 return -1;
             }
             for (i = 0; i <= length; i++) {
@@ -980,6 +1014,7 @@ static int case_feed_loop(const ts_spec_file *file) {
             if (repeat == 0) {
                 hits += parser->cache_hits;
                 misses += parser->cache_misses;
+                total_bytes += length;
             }
             tree = markdown_core_parser_finish(parser);
             if (tree) {
@@ -988,6 +1023,7 @@ static int case_feed_loop(const ts_spec_file *file) {
             markdown_core_parser_free(parser);
         }
         elapsed = ts_monotonic_ns() - started;
+        repeat_ns[repeat] = elapsed;
         if (repeat == 0 || elapsed < best_ns) {
             best_ns = elapsed;
         }
@@ -1002,6 +1038,19 @@ static int case_feed_loop(const ts_spec_file *file) {
         hits,
         misses,
         hits + misses ? 100.0 * (double)hits / (double)(hits + misses) : 0.0
+    );
+    qsort(repeat_ns, (size_t)pr_repeats, sizeof(repeat_ns[0]), pr_compare_u64);
+    median_ns = repeat_ns[pr_repeats / 2];
+    free(repeat_ns);
+    /* The human line above keeps the min the F-gates aggregate; the metrics
+     * row carries the median like every other collected benchmark. */
+    printf(
+        "baseline runtime=c boundary=native_feed_loop workload=spec_corpus"
+        " workload_version=1 bytes=%zu warmup=0 repeats=%d median_ns=%llu peak_rss_kib=%ld\n",
+        total_bytes,
+        pr_repeats,
+        (unsigned long long)median_ns,
+        pr_peak_rss_kib()
     );
     return 0;
 }

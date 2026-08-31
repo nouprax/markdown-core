@@ -41,8 +41,59 @@ private fun benchmark(
     )
 }
 
+// The streaming path: the same input fed in N chunks, N multiplying by 16
+// per step. Per-feed cost that is independent of the chunk count keeps each
+// step under ~16x. The cap is twice that ceiling -- the same construction
+// as bench_runner.c's BENCH_MAX_DOUBLING_RATIO (4.0 for a 2x step) -- so it
+// tolerates today's per-feed full decode while catching a super-linear
+// blowup; tightening it is part of fixing the per-feed costs, loosening it
+// is not an option (#148).
+private const val FEED_STEP_RATIO_MAX = 32.0
+
+private fun feedLoopBenchmark(
+    workload: String,
+    unit: String,
+    units: Int,
+) {
+    val chunkCounts = listOf(1, 16, 256)
+    val medians = mutableListOf<Long>()
+    for (chunks in chunkCounts) {
+        val chunk = unit.repeat(units / chunks)
+        val run = {
+            val document = Document()
+            repeat(chunks) { document.feed(chunk) }
+            document.seal()
+        }
+        run()
+        val samples = List(5) { measureNanoTime { run() } }.sorted()
+        medians.add(samples[samples.size / 2])
+        println("feed-loop step chunks=$chunks median_ms=${"%.3f".format(samples[samples.size / 2] / 1e6)}")
+    }
+    for (step in 1 until medians.size) {
+        // The same 500 ns floor bench_runner.c uses before taking a ratio.
+        val floor = maxOf(medians[step - 1], 500L)
+        val ratio = medians[step].toDouble() / floor
+        check(ratio <= FEED_STEP_RATIO_MAX) {
+            "feed-loop scaling ratio ${"%.2f".format(ratio)} exceeds $FEED_STEP_RATIO_MAX " +
+                "at ${chunkCounts[step]} chunks"
+        }
+    }
+    val runtime = Runtime.getRuntime()
+    val heapUsedKiB = (runtime.totalMemory() - runtime.freeMemory()) / 1024
+    val heapCommittedKiB = runtime.totalMemory() / 1024
+    println(
+        "benchmark runtime=kotlin boundary=jni_feed_loop workload=$workload " +
+            "workload_version=1 bytes=${unit.encodeToByteArray().size * units} warmup=1 repeats=5 " +
+            "median_ns=${medians.last()} heap_used_kib=$heapUsedKiB " +
+            "heap_committed_kib=$heapCommittedKiB rss_kib=${residentSetKiB()}",
+    )
+}
+
 fun main() {
     val unit = "## Section\n\nParagraph with **strong**, [link](https://example.com), and 🚀.\n\n"
     benchmark("large_document", unit.repeat(2_000))
     benchmark("deep_nesting", "> ".repeat(128) + "leaf\n")
+    // 2048 units (not the one-shot's 2000) so every chunk count divides into
+    // whole repetitions of the unit and every chunk stays valid UTF-8.
+    feedLoopBenchmark("large_document", unit, 2_048)
 }

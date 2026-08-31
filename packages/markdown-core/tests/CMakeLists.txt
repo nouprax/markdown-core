@@ -581,6 +581,23 @@ foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
     set_tests_properties(benchmark_${workload} PROPERTIES RUN_SERIAL TRUE)
 endforeach()
 
+# The engine-side clock for the streaming feed loop (#148): every spec case
+# fed one line at a time with a derivation per line. Registered under the
+# benchmark label so its median lands in the pr-metrics logs; the
+# doubling-gated binding feed loops live in the binding harnesses.
+markdown_core_add_test(
+    benchmark_feed_loop
+    benchmark
+    240
+    projection_runner
+    --case
+    feed_loop
+    --spec
+    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt"
+    --repeats
+    5)
+set_tests_properties(benchmark_feed_loop PROPERTIES RUN_SERIAL TRUE)
+
 if(WIN32 AND MARKDOWN_CORE_SHARED)
     file(TO_NATIVE_PATH ${MARKDOWN_CORE_CORE_BINARY_DIR} WIN_SRC_DLL_DIR)
     file(TO_NATIVE_PATH ${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR} WIN_EXTENSIONS_DLL_DIR)
