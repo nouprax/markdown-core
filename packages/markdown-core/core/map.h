@@ -24,6 +24,10 @@ extern "C" {
 struct markdown_core_map_record {
     struct markdown_core_map_record *next;
     unsigned char *label;
+    /* The label's byte length, carried by the record (#124): registration
+     * knows it from the identifier it copies, so no preparation ever runs
+     * strlen over the record list again. */
+    bufsize_t label_len;
     uint32_t definition;
 };
 
@@ -114,6 +118,17 @@ int markdown_core_key_index_insert(
     void **existing
 );
 void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len);
+/* Insert-or-find in ONE probe walk (#124): the returned slot either already
+ * carries the key's entry (`value` non-NULL, caller compares and swaps in
+ * place) or was claimed for it here (`value` NULL, key fields filled,
+ * caller stores). Growth on probe exhaustion and on the load-factor bound
+ * follows the insert path's contract exactly; NULL reports that growth
+ * failed and nothing changed. */
+markdown_core_key_index_slot *markdown_core_key_index_upsert(
+    markdown_core_key_index *index,
+    const unsigned char *key,
+    bufsize_t key_len
+);
 markdown_core_map *markdown_core_map_new(markdown_core_mem *mem, markdown_core_map_free_f free);
 void markdown_core_map_free(markdown_core_map *map);
 /* Probe with a prepared key: no normalization, no allocation, no length

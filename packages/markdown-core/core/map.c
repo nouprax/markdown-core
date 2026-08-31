@@ -158,6 +158,45 @@ int markdown_core_key_index_insert(
     return 1;
 }
 
+markdown_core_key_index_slot *markdown_core_key_index_upsert(
+    markdown_core_key_index *index,
+    const unsigned char *key,
+    bufsize_t key_len
+) {
+    uint64_t hash = hash_key(key, key_len);
+    markdown_core_key_index_slot *slot;
+    slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
+    if (!slot) {
+        /* Same contract as insert: one growth disperses honest clusters;
+         * engineered identical hashes still fail and callers degrade. */
+        if (!grow_key_index(index)) {
+            return NULL;
+        }
+        slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
+        if (!slot) {
+            return NULL;
+        }
+    }
+    if (slot->key) {
+        return slot;
+    }
+    if (index->size + 1 > index->capacity / 2) {
+        if (!grow_key_index(index)) {
+            return NULL;
+        }
+        slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
+        if (!slot) {
+            return NULL;
+        }
+    }
+    slot->hash = hash;
+    slot->key = key;
+    slot->key_len = key_len;
+    slot->value = NULL;
+    index->size++;
+    return slot;
+}
+
 void *markdown_core_key_index_lookup(
     const markdown_core_key_index *index,
     const unsigned char *key,
@@ -318,7 +357,7 @@ static size_t map_index_expected_size(markdown_core_map *map) {
         return map->size;
     }
     for (ref = map->refs; ref && sampled < sample_limit; ref = ref->next, sampled++) {
-        if (!markdown_core_key_index_insert(&sample, ref->label, (bufsize_t)strlen((char *)ref->label), ref, 0, NULL)) {
+        if (!markdown_core_key_index_insert(&sample, ref->label, ref->label_len, ref, 0, NULL)) {
             markdown_core_key_index_free(&sample);
             return map->size;
         }
@@ -339,32 +378,17 @@ static int index_map(markdown_core_map *map) {
     /* The smallest identity wins each slot -- first in document order, by
      * D4's monotone mints -- stated as a comparison rather than left to
      * traversal order, so both preparation paths answer identically whatever
-     * order the records arrived in. */
+     * order the records arrived in. One probe walk per record (#124): the
+     * upsert hands back the slot and the comparison swaps in place, where a
+     * losing duplicate used to pay a second full hash-and-probe to replace. */
     for (ref = map->refs; ref; ref = ref->next) {
-        void *existing = NULL;
-        if (!markdown_core_key_index_insert(
-                &map->index,
-                ref->label,
-                (bufsize_t)strlen((char *)ref->label),
-                ref,
-                0,
-                &existing
-            )) {
+        markdown_core_key_index_slot *slot = markdown_core_key_index_upsert(&map->index, ref->label, ref->label_len);
+        if (!slot) {
             markdown_core_key_index_free(&map->index);
             return 0;
         }
-        if (existing != NULL && ((markdown_core_map_record *)existing)->definition > ref->definition) {
-            if (!markdown_core_key_index_insert(
-                    &map->index,
-                    ref->label,
-                    (bufsize_t)strlen((char *)ref->label),
-                    ref,
-                    1,
-                    NULL
-                )) {
-                markdown_core_key_index_free(&map->index);
-                return 0;
-            }
+        if (slot->value == NULL || ((markdown_core_map_record *)slot->value)->definition > ref->definition) {
+            slot->value = ref;
         }
     }
     map->prepared = 1;

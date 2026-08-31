@@ -1059,10 +1059,13 @@ done:
 }
 
 /* A definition arriving AFTER a lookup has prepared the map is found by the
- * next lookup, and first-definition-wins survives the re-preparation. This is
+ * next lookup, and first-definition-wins survives however it lands. This is
  * §12.4's contract: every mid-stream projection interleaves the two, and
  * before it the interleaving tripped an assert in debug builds and silently
- * poisoned the map under -DNDEBUG. Exercised on the hash path, across the
+ * poisoned the map under -DNDEBUG. On the hash path the live index absorbs
+ * the late arrival in place (#124) -- proven by inserting and resolving with
+ * every preparation allocation refused -- while the sorted representation
+ * keeps its inherited rebuild-on-next-lookup contract, exercised across the
  * switch onto the pointer-sort fallback and back, and on the footnote set,
  * which is the same map. The re-preparation leaks are covered here too: the
  * sanitizer run owns the check, this case makes it reachable. */
@@ -1085,23 +1088,28 @@ static int case_definition_after_lookup(void) {
         goto done;
     }
 
-    /* Identities 4..5, inserted after the map was prepared. */
+    /* Identities 4..5, inserted after the map was prepared: the live hash
+     * index absorbs a late arrival in place (#124), so nothing reopens the
+     * preparation and first-wins holds through the incremental upsert. */
     fb_create_reference(map, "late", 4);
     fb_create_reference(map, "dup", 5);
-    if (map->prepared) {
-        fputs("an insert after a lookup must reopen preparation\n", stderr);
+    if (!map->prepared || !map->indexed) {
+        fputs("a late insert on the hash path must maintain the index, not reopen preparation\n", stderr);
         goto done;
     }
 
     if (fb_expect_record(map, "late", 4, "definition after lookup") != 0) {
         goto done;
     }
-    if (fb_expect_record(map, "dup", 2, "first-wins across re-preparation") != 0) {
+    if (fb_expect_record(map, "dup", 2, "first-wins across the incremental insert") != 0) {
         goto done;
     }
 
-    /* Identity 6, and the rebuild it forces is sent down the pointer-sort path. */
+    /* Identity 6. The SORTED representation keeps rebuild-on-next-lookup:
+     * force a fresh preparation with slot tables refused, so the rebuild is
+     * sent down the pointer-sort path. */
     fb_create_reference(map, "later", 6);
+    map->prepared = 0;
     fb_block_slot_tables = 1;
     if (fb_expect_record(map, "later", 6, "sorted re-preparation") != 0) {
         goto done;
@@ -1115,8 +1123,14 @@ static int case_definition_after_lookup(void) {
     }
     fb_block_slot_tables = 0;
 
-    /* Identity 7, and the rebuild goes back to the hash path. */
+    /* Identity 7 arrives while the map stands on the sorted path, which
+     * keeps the inherited contract: the insert reopens preparation, and the
+     * rebuild with allocation restored goes back to the hash. */
     fb_create_reference(map, "last", 7);
+    if (map->prepared) {
+        fputs("an insert on the sorted representation must reopen preparation\n", stderr);
+        goto done;
+    }
     if (fb_expect_record(map, "last", 7, "hash re-preparation") != 0) {
         goto done;
     }
@@ -1126,18 +1140,49 @@ static int case_definition_after_lookup(void) {
     }
     /* AND OUT OF ORDER: a smaller identity registered LAST must still win,
      * on both preparation paths -- the winner is stated as a comparison, not
-     * left to traversal or registration order. */
+     * left to traversal or registration order. On the hash path this is now
+     * the incremental upsert's own comparison, live in the prepared index. */
     fb_create_reference(map, "dup", 1);
     if (fb_expect_record(map, "dup", 1, "smallest-wins registered last, hash path") != 0) {
         goto done;
     }
     fb_create_reference(map, "shuffle", 9);
     fb_create_reference(map, "shuffle", 8);
+    map->prepared = 0;
     fb_block_slot_tables = 1;
     if (fb_expect_record(map, "shuffle", 8, "smallest-wins registered last, sorted path") != 0) {
         goto done;
     }
     fb_block_slot_tables = 0;
+
+    /* THE PROOF OF INCREMENTALITY (#124): stand the map back on the hash
+     * path, then refuse EVERY preparation allocation. A late definition
+     * still lands and resolves, and the map stays prepared -- possible only
+     * because the live index absorbed it without any rebuild. */
+    fb_create_reference(map, "reopen", 11);
+    if (fb_expect_record(map, "reopen", 11, "hash re-preparation for the refused window") != 0) {
+        goto done;
+    }
+    if (!map->indexed) {
+        fputs("re-preparation for the refused window did not take the hash path\n", stderr);
+        goto done;
+    }
+    fb_block_slot_tables = 1;
+    fb_block_pointer_arrays = 1;
+    fb_create_reference(map, "blocked", 12);
+    if (fb_expect_record(map, "blocked", 12, "late insert with preparation refused") != 0) {
+        goto done;
+    }
+    if (!map->prepared || !map->indexed) {
+        fputs("the refused window forced a rebuild the incremental index should have avoided\n", stderr);
+        goto done;
+    }
+    if (map->oom) {
+        fputs("the refused window marked oom although nothing was lost\n", stderr);
+        goto done;
+    }
+    fb_block_slot_tables = 0;
+    fb_block_pointer_arrays = 0;
 
     /* The footnote set is the same map and is owed the same behaviour. */
     fb_create_with(markdown_core_footnote_definition_create, footnotes, "fn", 1);
@@ -1151,6 +1196,7 @@ static int case_definition_after_lookup(void) {
     result = 0;
 done:
     fb_block_slot_tables = 0;
+    fb_block_pointer_arrays = 0;
     markdown_core_map_free(map);
     markdown_core_map_free(footnotes);
     return result;

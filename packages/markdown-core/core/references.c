@@ -87,6 +87,7 @@ static void definition_create(markdown_core_map *map, const markdown_core_chunk 
         return;
     }
     record->label = reflabel;
+    record->label_len = identifier->len;
     /* The registering definition block's identity (D4). Mints are monotone in
      * document order, so the value itself says which of two definitions of one
      * label came first; the preparation folds duplicates to the smallest, and
@@ -96,13 +97,35 @@ static void definition_create(markdown_core_map *map, const markdown_core_chunk 
 
     map->refs = record;
     map->size++;
+    /* Every insert advances the generation, a duplicate label included: the
+     * projection cache keys on it (T4), and a spurious invalidation is a
+     * slow feed where a missed one would be a wrong tree. */
     map->generation++;
     /* A definition may arrive after a lookup has prepared the map: every
-     * mid-stream projection interleaves the two (§12.4). Reopening the
-     * preparation is the whole mechanism -- the next lookup rebuilds, and
-     * first-wins survives because `age` above is stamped from a count no
-     * preparation rewrites. */
-    map->prepared = 0;
+     * mid-stream projection interleaves the two (§12.4). A prepared HASH
+     * index absorbs the late arrival in place (#124) -- one upsert, the
+     * smallest identity keeping the slot -- where reopening the preparation
+     * used to rebuild the whole index from scratch on the next lookup, an
+     * O(feeds x definitions) shape under block-unit streaming. The sorted
+     * representation stays rebuild-on-next-lookup: it is the degraded path,
+     * and its cost model is the one it always had. A failed upsert (the one
+     * growth refused) degrades the same way -- the record is in the list
+     * either way, so nothing is lost and the rebuild can still succeed
+     * later; first-wins survives every path because the identity beside the
+     * label is stamped from a count no preparation rewrites. */
+    if (map->prepared && map->indexed) {
+        markdown_core_key_index_slot *slot =
+            markdown_core_key_index_upsert(&map->index, record->label, record->label_len);
+        if (slot) {
+            if (slot->value == NULL || ((markdown_core_map_record *)slot->value)->definition > record->definition) {
+                slot->value = record;
+            }
+        } else {
+            map->prepared = 0;
+        }
+    } else {
+        map->prepared = 0;
+    }
 }
 
 markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem) {
