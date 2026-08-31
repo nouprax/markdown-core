@@ -293,16 +293,6 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter);
 MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter);
 
-/** Returns the current event type.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_event_type markdown_core_iter_get_event_type(markdown_core_iter *iter);
-
-/** Returns the root node.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_iter_get_root(markdown_core_iter *iter);
-
 /** Resets the iterator so that the current node is 'current' and
  * the event type is 'event_type'.  The new current node must be a
  * descendant of the root node or the root node itself.

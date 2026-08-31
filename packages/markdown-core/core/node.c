@@ -712,14 +712,6 @@ int markdown_core_node_set_title(markdown_core_node *node, const char *title) {
     return 0;
 }
 
-const markdown_core_syntax_extension *markdown_core_node_get_syntax_extension(markdown_core_node *node) {
-    if (node == NULL) {
-        return NULL;
-    }
-
-    return node->extension;
-}
-
 int markdown_core_node_set_syntax_extension(markdown_core_node *node, const markdown_core_syntax_extension *extension) {
     if (node == NULL) {
         return 0;

@@ -977,19 +977,6 @@ uint8_t *markdown_core_extensions_get_table_alignments(markdown_core_node *node)
     return ((node_table *)node->as.opaque)->alignments;
 }
 
-int markdown_core_extensions_set_table_columns(markdown_core_node *node, uint16_t n_columns) {
-    return set_n_table_columns(node, n_columns);
-}
-
-int markdown_core_extensions_set_table_alignments(markdown_core_node *node, uint16_t ncols, uint8_t *alignments) {
-    uint8_t *a = (uint8_t *)markdown_core_node_mem(node)->calloc(1, ncols);
-    if (!a) {
-        return 0;
-    }
-    memcpy(a, alignments, ncols);
-    return set_table_alignments(node, a);
-}
-
 int markdown_core_extensions_get_table_row_is_header(markdown_core_node *node) {
     if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_ROW || !node->as.opaque) {
         return 0;
@@ -998,11 +985,3 @@ int markdown_core_extensions_get_table_row_is_header(markdown_core_node *node) {
     return ((node_table_row *)node->as.opaque)->is_header;
 }
 
-int markdown_core_extensions_set_table_row_is_header(markdown_core_node *node, int is_header) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_ROW || !node->as.opaque) {
-        return 0;
-    }
-
-    ((node_table_row *)node->as.opaque)->is_header = (is_header != 0);
-    return 1;
-}

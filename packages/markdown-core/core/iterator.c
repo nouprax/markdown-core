@@ -95,10 +95,6 @@ void markdown_core_iter_reset(
 
 markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter) { return iter->cur.node; }
 
-markdown_core_event_type markdown_core_iter_get_event_type(markdown_core_iter *iter) { return iter->cur.ev_type; }
-
-markdown_core_node *markdown_core_iter_get_root(markdown_core_iter *iter) { return iter->root; }
-
 int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
     if (root == NULL) {
         return 1;
