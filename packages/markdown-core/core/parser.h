@@ -179,20 +179,19 @@ struct markdown_core_parser {
     int line_number;
     /* See the documentation for markdown_core_parser_get_offset() in markdown_core.h */
     bufsize_t offset;
-    /* See the documentation for markdown_core_parser_get_column() in markdown_core.h */
+    /* The offset in columns: differs from `offset` inside a tab, which
+     * expands to the next multiple of 4 columns. */
     bufsize_t column;
     /* See the documentation for markdown_core_parser_get_first_nonspace() in markdown_core.h */
     bufsize_t first_nonspace;
-    /* See the documentation for markdown_core_parser_get_first_nonspace_column() in markdown_core.h
-     */
+    /* `first_nonspace` measured in columns, tabs expanded. */
     bufsize_t first_nonspace_column;
     bufsize_t thematic_break_kill_pos;
     /* See the documentation for markdown_core_parser_get_indent() in markdown_core.h */
     int indent;
     /* See the documentation for markdown_core_parser_is_blank() in markdown_core.h */
     bool blank;
-    /* See the documentation for markdown_core_parser_has_partially_consumed_tab() in
-     * markdown_core.h */
+    /* Whether `offset` sits inside an expanded tab. */
     bool partially_consumed_tab;
     /* Contains the currently processed line */
     markdown_core_strbuf curline;
@@ -236,7 +235,8 @@ struct markdown_core_parser {
      * document keeps the concrete view, and until then the CLI's `--concrete`
      * and the gate that drives it are the only consumers. */
     FILE *concrete_out;
-    /* See the documentation for markdown_core_parser_get_last_line_length() in markdown_core.h */
+    /* Length in bytes of the previously processed line, excluding the
+     * trailing newline and carriage return. */
     bufsize_t last_line_length;
     /* Accumulates partial feed chunks until a complete line is available;
      * curline holds the normalized line currently being parsed. */
@@ -259,7 +259,6 @@ struct markdown_core_parser {
      * fails half-way still counts: a spurious invalidation is a slow feed
      * where a missed one is a wrong tree. */
     size_t extension_generation;
-    markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
      * the special/emphasis-skip characters of the attached inline extensions.
      * Parser-local so concurrent parsers with different extension sets never

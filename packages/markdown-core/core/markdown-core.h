@@ -135,12 +135,6 @@ typedef struct _markdown_core_llist {
     void *data;
 } markdown_core_llist;
 
-/** Append an element to the linked list, return the possibly modified
- * head of the list.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_llist *markdown_core_llist_append(markdown_core_mem *mem, markdown_core_llist *head, void *data);
-
 /** Free the list starting with 'head', calling 'free_func' with the
  *  data pointer of each of its elements
  */
@@ -579,13 +573,6 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser);
  */
 MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len, int options);
-
-/** Parse a CommonMark document in file 'f', returning a pointer to
- * a tree of nodes.  The memory allocated for the node tree should be
- * released using 'markdown_core_node_free' when it is no longer needed.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_parse_file(FILE *f, int options);
 
 /**
  * ## Options

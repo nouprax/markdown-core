@@ -163,8 +163,8 @@ void markdown_core_parser_mint_block_id(markdown_core_parser *parser, markdown_c
     node->identifier = ++parser->block_ids_minted;
 }
 
-/* Appends and reports failure directly instead of relying on llist_append's
- * silent-drop behavior.
+/* Appends and reports failure directly: a silent drop on allocation failure
+ * would leave an attach that claims success while the extension is missing.
  *
  * Both extension lists hold pointers to the `static const` descriptors that
  * Step 3b made read-only, and every reader casts `data` straight back to a
@@ -2215,25 +2215,6 @@ markdown_core_node *markdown_core_parser_derive_tree(
     return S_project(parser, derived, refmap, record_diagnostics);
 }
 
-markdown_core_node *markdown_core_parse_file(FILE *f, int options) {
-    unsigned char buffer[4096];
-    markdown_core_parser *parser = markdown_core_parser_new(options);
-    size_t bytes;
-    markdown_core_node *document;
-
-    while ((bytes = fread(buffer, 1, sizeof(buffer), f)) > 0) {
-        bool eof = bytes < sizeof(buffer);
-        S_parser_feed(parser, buffer, bytes, eof);
-        if (eof) {
-            break;
-        }
-    }
-
-    document = markdown_core_parser_finish(parser);
-    markdown_core_parser_free(parser);
-    return document;
-}
-
 markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len, int options) {
     markdown_core_parser *parser = markdown_core_parser_new(options);
     markdown_core_node *document;
@@ -2247,19 +2228,6 @@ markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len,
 
 void markdown_core_parser_feed(markdown_core_parser *parser, const char *buffer, size_t len) {
     S_parser_feed(parser, (const unsigned char *)buffer, len, false);
-}
-
-void markdown_core_parser_feed_reentrant(markdown_core_parser *parser, const char *buffer, size_t len) {
-    markdown_core_strbuf saved_linebuf;
-
-    markdown_core_strbuf_init(parser->mem, &saved_linebuf, 0);
-    markdown_core_strbuf_puts(&saved_linebuf, markdown_core_strbuf_cstr(&parser->linebuf));
-    markdown_core_strbuf_clear(&parser->linebuf);
-
-    S_parser_feed(parser, (const unsigned char *)buffer, len, true);
-
-    markdown_core_strbuf_sets(&parser->linebuf, markdown_core_strbuf_cstr(&saved_linebuf));
-    markdown_core_strbuf_free(&saved_linebuf);
 }
 
 /* One reservation for the whole of this chunk's contribution to the held
@@ -3156,7 +3124,6 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     bool all_matched = true;
     markdown_core_node *container;
     markdown_core_chunk input;
-    markdown_core_node *current;
 
     if (parser->oom || parser->root == NULL) {
         return;
@@ -3223,18 +3190,13 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
 
     container = last_matched_container;
 
-    current = parser->current;
-
     open_new_blocks(parser, &container, &input, all_matched);
 
     if (container == NULL || parser->oom) {
         goto finished;
     }
 
-    /* parser->current might have changed if feed_reentrant was called */
-    if (current == parser->current) {
-        add_text_to_container(parser, container, last_matched_container, &input);
-    }
+    add_text_to_container(parser, container, last_matched_container, &input);
 
 finished:
     parser->last_line_length = input.len;
@@ -3382,23 +3344,11 @@ int markdown_core_parser_get_line_number(markdown_core_parser *parser) { return 
 
 bufsize_t markdown_core_parser_get_offset(markdown_core_parser *parser) { return parser->offset; }
 
-bufsize_t markdown_core_parser_get_column(markdown_core_parser *parser) { return parser->column; }
-
 int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser) { return parser->first_nonspace; }
-
-int markdown_core_parser_get_first_nonspace_column(markdown_core_parser *parser) {
-    return parser->first_nonspace_column;
-}
 
 int markdown_core_parser_get_indent(markdown_core_parser *parser) { return parser->indent; }
 
 int markdown_core_parser_is_blank(markdown_core_parser *parser) { return parser->blank; }
-
-int markdown_core_parser_has_partially_consumed_tab(markdown_core_parser *parser) {
-    return parser->partially_consumed_tab;
-}
-
-int markdown_core_parser_get_last_line_length(markdown_core_parser *parser) { return parser->last_line_length; }
 
 void markdown_core_parser_retain_concrete(markdown_core_parser *parser, markdown_core_concrete *out) {
     if (!parser || !out) {
@@ -3432,10 +3382,3 @@ void markdown_core_parser_advance_offset(markdown_core_parser *parser, const cha
     S_advance_offset(parser, &input_chunk, count, columns != 0);
 }
 
-void markdown_core_parser_set_backslash_ispunct_func(markdown_core_parser *parser, markdown_core_ispunct_func func) {
-    parser->backslash_ispunct = func;
-}
-
-markdown_core_llist *markdown_core_parser_get_syntax_extensions(markdown_core_parser *parser) {
-    return parser->syntax_extensions;
-}
