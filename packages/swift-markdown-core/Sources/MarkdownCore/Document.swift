@@ -141,11 +141,16 @@ public final class Document {
         try self.init(options: options)
         var nativeError: OpaquePointer?
         let bytes = Array(markdown.utf8)
-        let nativeDocument = bytes.withUnsafeBufferPointer { buffer in
-            markdown_core_session_feed(native, buffer.baseAddress, buffer.count, &nativeError)
+        // The read this feed would produce is discarded by this very
+        // contract, so the bytes go through `advance`, which takes them and
+        // answers nothing — `session_feed` derived, copied, and returned a
+        // whole document just to be freed unread (#144). ES and Kotlin
+        // construct through their advance entries the same way, and the C
+        // header names this constructor as advance's one legitimate caller.
+        let advanced = bytes.withUnsafeBufferPointer { buffer in
+            markdown_core_session_advance(native, buffer.baseAddress, buffer.count, &nativeError)
         }
-        guard let nativeDocument else { throw ParseError.take(nativeError) }
-        markdown_core_document_free(nativeDocument)
+        guard advanced else { throw ParseError.take(nativeError) }
     }
 
     deinit {
