@@ -298,6 +298,18 @@ markdown_core_buf *markdown_core_buf_freeze(markdown_core_strbuf *buf) {
     return frozen;
 }
 
+markdown_core_buf *markdown_core_buf_adopt(markdown_core_mem *mem, unsigned char *bytes, bufsize_t size) {
+    markdown_core_buf *frozen = (markdown_core_buf *)mem->calloc(1, sizeof(*frozen));
+    if (!frozen) {
+        return NULL;
+    }
+    frozen->mem = mem;
+    frozen->bytes = bytes;
+    frozen->size = size;
+    markdown_core_atomic_init(&frozen->refs, 1);
+    return frozen;
+}
+
 void markdown_core_buf_retain(markdown_core_buf *buf) {
     if (buf) {
         markdown_core_atomic_increment(&buf->refs);

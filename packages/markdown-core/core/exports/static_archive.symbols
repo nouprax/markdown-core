@@ -41,6 +41,7 @@ houdini_unescape_html
 houdini_unescape_html_f
 markdown_core_association_free
 markdown_core_association_init
+markdown_core_buf_adopt
 markdown_core_buf_freeze
 markdown_core_buf_release
 markdown_core_buf_retain

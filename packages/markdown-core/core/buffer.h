@@ -57,6 +57,12 @@ typedef struct markdown_core_buf {
 MARKDOWN_CORE_EXPORT
 markdown_core_buf *markdown_core_buf_freeze(markdown_core_strbuf *buf);
 
+/* Wrap an existing allocation (an alloc'd chunk's bytes being promoted to
+ * shared) in a buffer with one reference. On failure the bytes are NOT
+ * freed -- they still belong to the caller -- and NULL reports it. */
+MARKDOWN_CORE_EXPORT
+markdown_core_buf *markdown_core_buf_adopt(markdown_core_mem *mem, unsigned char *bytes, bufsize_t size);
+
 MARKDOWN_CORE_EXPORT
 void markdown_core_buf_retain(markdown_core_buf *buf);
 
