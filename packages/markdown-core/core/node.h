@@ -200,7 +200,11 @@ enum markdown_core_node__internal_flags {
      * memo once. The extension-owned `as.opaque` is NOT touched
      * (review-found): a document-selected name hook legitimately receives
      * this node, and the attach path trusts any non-NULL payload it finds
-     * there. Only the derived document node carries this flag today. */
+     * there. An insertion below the boundary DISSOLVES the run (node.c,
+     * S_vec_place): the tree takes per-entry holder holds and gives back
+     * its one memo hold, so the free walk's accounting survives any edit
+     * the public surface allows. Only the derived document node carries
+     * this flag today. */
     MARKDOWN_CORE_NODE__MEMO_PREFIX = (1 << 11),
 
     // The first bit an extension may claim. Extension flags are compile-time

@@ -2670,6 +2670,48 @@ static int case_child_memo(const ts_spec_file *file) {
         t2 = NULL;
     }
 
+    /* Act 2b: an edit below the boundary DISSOLVES the tree's memo hold
+     * into the per-entry holds it stood in for (review-found): a prepend
+     * shifts the run, and a fixed boundary would make the free walk skip
+     * the new child and release a shifted entry the tree never held. The
+     * PARSER's memo must ride through untouched: the next derivation
+     * still consumes it whole. */
+    if (!failures) {
+        markdown_core_node *edited = markdown_core_parser_derive_tree(parser, parser->refmap);
+        markdown_core_node *fresh = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node *after = NULL;
+        if (!edited || !fresh) {
+            fputs("child memo: the dissolve act could not build its pieces\n", stderr);
+            failures++;
+        } else if (!markdown_core_node_prepend_child(edited, fresh)) {
+            fputs("child memo: the derived document refused a prepend\n", stderr);
+            failures++;
+        } else {
+            fresh = NULL;
+            if ((edited->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || edited->children.count != 5 ||
+                !(edited->children.vec[1]->flags & MARKDOWN_CORE_NODE__SHARED)) {
+                fputs("child memo: the edit below the boundary did not dissolve the run\n", stderr);
+                failures++;
+            }
+        }
+        if (fresh) {
+            markdown_core_node_free(fresh);
+        }
+        if (edited) {
+            markdown_core_node_free(edited);
+        }
+        if (!failures) {
+            after = markdown_core_parser_derive_tree(parser, parser->refmap);
+            if (!after || !(after->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || after->link.memo_ref->boundary != 4) {
+                fputs("child memo: the dissolve reached the parser's memo\n", stderr);
+                failures++;
+            }
+            if (after) {
+                markdown_core_node_free(after);
+            }
+        }
+    }
+
     /* Act 3: an OPEN block never enters the run. */
     if (!failures) {
         markdown_core_parser_feed(parser, CM_OPEN, sizeof(CM_OPEN) - 1);

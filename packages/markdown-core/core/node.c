@@ -1343,7 +1343,29 @@ static int S_vec_reserve(markdown_core_node *parent) {
     return 1;
 }
 
+/* THE MEMO HOLD DISSOLVES AT THE FIRST EDIT BELOW ITS BOUNDARY
+ * (review-found): an insertion at `at < boundary` shifts the recorded run,
+ * and a boundary cannot say "these entries minus the one at 2" -- the free
+ * walk would skip the new child and release a shifted entry the tree never
+ * held individually. So the tree stops speaking in runs: it takes the
+ * per-entry holder holds the boundary stood in for -- exactly what the
+ * per-child walk would have taken -- and gives back its one memo hold.
+ * Infallible, so the placement below cannot be left half-done. An edit at
+ * or above the boundary moves no recorded index and dissolves nothing;
+ * a removal below the boundary cannot happen (a SHARED entry refuses
+ * unlink and replace). The PARSER's memo is untouched: later derivations
+ * keep consuming it. */
 static void S_vec_place(markdown_core_node *parent, size_t at, markdown_core_node *child) {
+    if ((parent->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) && at < parent->link.memo_ref->boundary) {
+        markdown_core_memo_ref *ref = parent->link.memo_ref;
+        size_t i;
+        for (i = 0; i < ref->boundary; i++) {
+            markdown_core_holder_hold(parent->children.vec[i]->link.holder);
+        }
+        markdown_core_child_memo_release(ref->memo);
+        parent->link.memo_ref = NULL;
+        parent->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__MEMO_PREFIX;
+    }
     memmove(
         &parent->children.vec[at + 1],
         &parent->children.vec[at],
