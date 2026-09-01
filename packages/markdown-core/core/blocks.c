@@ -1655,13 +1655,25 @@ static void process_inlines(
                 continue;
             }
             markdown_core_parse_inlines(parser, cur, refmap, options);
-        } else if (MARKDOWN_CORE_NODE_BLOCK_P(cur) && S_block_has_tail_work(parser, cur)) {
+        } else if (MARKDOWN_CORE_NODE_BLOCK_P(cur) && !(cur->flags & MARKDOWN_CORE_NODE__SHARED) &&
+                   S_block_has_tail_work(parser, cur)) {
             /* COLLECTED, NOT ACTED ON: a hook may replace or remove the block
              * and the walk is standing on it (F13 requirement 2). The walk
              * never descends into a block's own inlines -- its lookahead was
              * taken before they were parsed -- and is reset past a borrowed
              * list above, so this EXIT follows the ENTER directly and the
-             * queue is the blocks in post-order. */
+             * queue is the blocks in post-order.
+             *
+             * A SHARED block never queues (measured, 2026-09-01): the ENTER
+             * skip above still delivers this EXIT, and without the flag test
+             * every retained block re-answered the name rows and re-ran its
+             * hooks as no-ops on every feed -- half the Ir of a width-heavy
+             * stream -- against both F24's "no tail on a hit" and the
+             * syntax_extension.h contract. The no-op is provable, not
+             * incidental: a block a name hook would have replaced was never
+             * stored (the replacement carries no ORIGIN), so a stored
+             * block's hooks have nothing to say, and a hook that would
+             * write anyway meets the frozen-projection surface. */
             if (!S_tail_queue_push(parser, cur)) {
                 parser->oom = true;
             }
