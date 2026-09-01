@@ -545,26 +545,9 @@ static markdown_core_node *try_opening_table_header(
     parent_string = markdown_core_node_get_string_content(parent_container);
     header_row = row_from_string(self, parser, (unsigned char *)parent_string, (int)strlen(parent_string));
     if (!header_row || header_row->n_columns != delimiter_row->n_columns) {
-        /* A DELIMITER ROW WAS FOUND AND THE HEADER ABOVE IT DOES NOT MATCH, so
-         * the paragraph stays a paragraph and reads exactly like prose that
-         * happens to contain pipes. The delimiter row is the evidence -- it is
-         * a row of nothing but `-`, `:` and `|`, which nobody writes by
-         * accident -- and it is also the line the table would have opened on,
-         * so it is the place a reader is sent to.
-         *
-         * `MARKDOWN_CORE_NODE__TABLE_VISITED` below is what keeps this to one
-         * report per paragraph rather than one per line of it. */
-        markdown_core_parser_diagnose_line(
-            parser,
-            MARKDOWN_CORE_DIAGNOSTIC_WARNING,
-            MARKDOWN_CORE_DIAGNOSTIC_TABLE_REJECTED,
-            input,
-            (bufsize_t)len,
-            (bufsize_t)markdown_core_parser_get_first_nonspace(parser),
-            "the delimiter row's column count does not match the header row's",
-            NULL,
-            0
-        );
+        /* A delimiter row was found and the header above it does not match, so
+         * the paragraph stays a paragraph. `MARKDOWN_CORE_NODE__TABLE_VISITED`
+         * keeps the retry to one per paragraph rather than one per line. */
         free_table_row(parser->mem, delimiter_row);
         free_table_row(parser->mem, header_row);
         parent_container->flags |= MARKDOWN_CORE_NODE__TABLE_VISITED;

@@ -85,7 +85,7 @@ static uint8_t *dump_fed(const char *text, size_t length, enum feed_mode mode, s
         return NULL;
     }
     /* The CLI's own `print_document` does exactly this: the dump reads the
-     * root, and the concrete view and diagnostics are printed elsewhere. */
+     * root, and the concrete view is printed elsewhere. */
     memset(&facade, 0, sizeof(facade));
     facade.root = root;
     if (!markdown_core_document_dump(&facade, &dump, dump_length, &error)) {

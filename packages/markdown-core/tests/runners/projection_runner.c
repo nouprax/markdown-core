@@ -237,11 +237,11 @@ static int case_double_projection(const ts_spec_file *file) {
          * the end let a second derivation that wrote into the list the two
          * trees share (T9, F22) change both dumps alike, and the gate agreed
          * with itself while the tree was wrong. */
-        first = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        first = markdown_core_parser_derive_tree(parser, parser->refmap);
         if (first) {
             first_dump = pr_dump(first, &first_length);
         }
-        second = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        second = markdown_core_parser_derive_tree(parser, parser->refmap);
         if (second) {
             second_dump = pr_dump(second, &second_length);
         }
@@ -315,12 +315,12 @@ static int case_refmap_independence(const ts_spec_file *file) {
          * F22 forced on `projection_double` -- a later derivation that wrote
          * into a shared list would otherwise change both dumps alike and the
          * gate would agree with itself (landing review). */
-        first = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        first = markdown_core_parser_derive_tree(parser, parser->refmap);
         if (first) {
             first_dump = pr_dump(first, &first_length);
         }
-        other = markdown_core_parser_derive_tree(parser, empty_map, 0);
-        again = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        other = markdown_core_parser_derive_tree(parser, empty_map);
+        again = markdown_core_parser_derive_tree(parser, parser->refmap);
         if (again) {
             again_dump = pr_dump(again, &again_length);
         }
@@ -426,7 +426,7 @@ static int pr_slope_measure(const char *input, size_t length, double *seconds) {
         unsigned iterations = 0;
         started = ts_monotonic_ns();
         do {
-            markdown_core_node *derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+            markdown_core_node *derived = markdown_core_parser_derive_tree(parser, parser->refmap);
             if (!derived) {
                 markdown_core_parser_free(parser);
                 return -1;
@@ -630,7 +630,7 @@ static int pr_borrow_boundary(markdown_core_parser *parser, pr_generation *prev,
     int failed = 0;
 
     memset(&cur, 0, sizeof(cur));
-    cur.tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+    cur.tree = markdown_core_parser_derive_tree(parser, parser->refmap);
     if (!cur.tree) {
         fprintf(stderr, "example %d boundary %d: derivation failed\n", example, boundary);
         return -1;
@@ -879,7 +879,7 @@ static int pr_dump_boundaries_with(const ts_spec_case *test_case, int options, c
         markdown_core_parser_feed(parser, text + start, (i < length ? i + 1 : length) - start);
         start = i + 1;
         boundary++;
-        tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        tree = markdown_core_parser_derive_tree(parser, parser->refmap);
         dump = tree ? pr_dump(tree, &dump_length) : NULL;
         printf("== example %d %s boundary %d\n", test_case->example, label, boundary);
         if (dump) {
@@ -999,7 +999,7 @@ static int case_feed_loop(const ts_spec_file *file) {
                 markdown_core_parser_feed(parser, text + start, (i < length ? i + 1 : length) - start);
                 start = i + 1;
                 seen++;
-                tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+                tree = markdown_core_parser_derive_tree(parser, parser->refmap);
                 if (tree) {
                     markdown_core_node_free(tree);
                 }
@@ -1293,7 +1293,7 @@ static int pr_key_boundary(
     int boundary
 ) {
     bufsize_t marks_before = parser->line_marks_size;
-    markdown_core_node *tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+    markdown_core_node *tree = markdown_core_parser_derive_tree(parser, parser->refmap);
     markdown_core_node **cst = NULL, **derived = NULL;
     size_t cst_count = 0, derived_count = 0, i;
     pr_key_set cur;
@@ -1652,7 +1652,7 @@ static int pr_identity_boundary(
     if (!failed && parser) {
         bool cache_was_off = parser->no_projection_cache;
         parser->no_projection_cache = true;
-        second = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        second = markdown_core_parser_derive_tree(parser, parser->refmap);
         parser->no_projection_cache = cache_was_off;
         if (!second || pr_collect_all(second, &all_again, &all_again_count) != 0) {
             fprintf(stderr, "example %d %s: second derivation failed\n", example, boundary);
@@ -1762,7 +1762,7 @@ static int case_block_identity(const ts_spec_file *file) {
             markdown_core_parser_feed(parser, text + start, (i < length ? i + 1 : length) - start);
             start = i + 1;
             snprintf(label, sizeof(label), "boundary %d", ++boundary);
-            tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+            tree = markdown_core_parser_derive_tree(parser, parser->refmap);
             if (!tree) {
                 fprintf(stderr, "example %d %s: derivation failed\n", test_case->example, label);
                 failed = 1;
@@ -1854,7 +1854,7 @@ static int ti_run(const char *text, ti_record *records, size_t *count) {
         }
         markdown_core_parser_feed(parser, text + start, (i < length ? i + 1 : length) - start);
         start = i + 1;
-        tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        tree = markdown_core_parser_derive_tree(parser, parser->refmap);
         if (!tree || *count == TI_MAX_RECORDS || ti_snapshot(tree, &records[*count]) != 0) {
             failed = 1;
         } else {
@@ -2044,7 +2044,7 @@ static int case_block_identity_transitions(const ts_spec_file *file) {
         int ok = parser != NULL;
         if (ok) {
             markdown_core_parser_feed(parser, "x [a](u) y [a](u)\n", 18);
-            tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+            tree = markdown_core_parser_derive_tree(parser, parser->refmap);
             ok = tree != NULL;
             if (ok) {
                 markdown_core_node **nodes = NULL;
@@ -2160,7 +2160,7 @@ static int case_attach_invalidation(const ts_spec_file *file) {
         goto done;
     }
     markdown_core_parser_feed(probe_parser, PR_ATTACH_TEXT, sizeof(PR_ATTACH_TEXT) - 1);
-    derived = markdown_core_parser_derive_tree(probe_parser, probe_parser->refmap, 0);
+    derived = markdown_core_parser_derive_tree(probe_parser, probe_parser->refmap);
     if (!derived || !(derived_dump = pr_dump(derived, &derived_length))) {
         fputs("attach invalidation: derivation failed\n", stderr);
         goto done;
@@ -2209,129 +2209,6 @@ done:
         markdown_core_parser_free(probe_parser);
     }
     printf("attach invalidation: %s\n", failures ? "stale list served" : "attach re-projects");
-    return failures ? -1 : 0;
-}
-
-/* THE RECORDING PROJECTION TAKES NO HITS (T9, amended on the same review):
- * the record-gated rows speak from the inline parse a hit skips, so a
- * derivation that filled the cache must not silence `finish`. One
- * label-too-long reference sits in a paragraph the feed closes; the control
- * finishes without any intermediate derivation, the probe derives first, and
- * both must retain the same rows -- with the control's count asserted
- * nonzero, because two empty lists agreeing would prove nothing. */
-static int pr_retained_rows(const char *text, size_t length, int derive_first, size_t *entries) {
-    markdown_core_parser *parser = pr_parser_new();
-    markdown_core_diagnostics diagnostics;
-    markdown_core_node *root;
-    if (!parser) {
-        return -1;
-    }
-    markdown_core_parser_retain_diagnostics(parser, &diagnostics);
-    markdown_core_parser_feed(parser, text, length);
-    if (derive_first) {
-        markdown_core_node *derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
-        if (!derived) {
-            markdown_core_diagnostics_dispose(&diagnostics);
-            markdown_core_parser_free(parser);
-            return -1;
-        }
-        markdown_core_node_free(derived);
-    }
-    root = markdown_core_parser_finish(parser);
-    if (!root) {
-        markdown_core_diagnostics_dispose(&diagnostics);
-        markdown_core_parser_free(parser);
-        return -1;
-    }
-    *entries = (size_t)diagnostics.entries_size;
-    markdown_core_diagnostics_dispose(&diagnostics);
-    markdown_core_node_free(root);
-    markdown_core_parser_free(parser);
-    return 0;
-}
-
-static int case_diagnostics_after_derive(const ts_spec_file *file) {
-    /* The COLLAPSED form, because it is the one an over-long label reaches:
-     * `link_label` refuses to parse a second bracket past the cap, so
-     * `[text][longlabel]` falls back to prose, while `[text][]` adopts the
-     * link TEXT as its label after the cap check has already passed the empty
-     * brackets. */
-    static const char head[] = "see [";
-    static const char tail[] = "][]\n\nsecond paragraph\n";
-    size_t label_length = MAX_LINK_LABEL_LENGTH + 100;
-    size_t length = sizeof(head) - 1 + label_length + sizeof(tail) - 1;
-    char *text = (char *)malloc(length + 1);
-    size_t control = 0;
-    size_t probe = 0;
-    int failures = 0;
-    (void)file;
-
-    if (!text) {
-        fputs("diagnostics after derive: allocation failed\n", stderr);
-        return -1;
-    }
-    memcpy(text, head, sizeof(head) - 1);
-    memset(text + sizeof(head) - 1, 'a', label_length);
-    memcpy(text + sizeof(head) - 1 + label_length, tail, sizeof(tail));
-
-    if (pr_retained_rows(text, length, 0, &control) != 0 || pr_retained_rows(text, length, 1, &probe) != 0) {
-        fputs("diagnostics after derive: run failed\n", stderr);
-        failures++;
-    } else if (control == 0) {
-        fputs("diagnostics after derive: the control raised nothing to lose\n", stderr);
-        failures++;
-    } else if (probe != control) {
-        fprintf(stderr, "diagnostics after derive: %zu rows without a derivation, %zu with one\n", control, probe);
-        failures++;
-    }
-
-    /* The invariant's other half: RETENTION ALONE MUST NOT REFUSE THE CACHE.
-     * Recording is a property of one derivation (the sealing one), not of the
-     * parser's life -- but retention raises `diagnostics_on` at the first
-     * byte, which is also the flag the clone's hit check reads, so a window
-     * that does not carry the derivation's own answer makes every session
-     * feed re-parse the whole document (a session retains from birth,
-     * Requirement 13). Two derivations of an unwritten CST: the second must
-     * serve its closed blocks from the cache even with diagnostics retained.
-     * Skipped under --no-cache, where there is nothing to hit. */
-    if (!failures && !pr_no_cache) {
-        markdown_core_parser *parser = pr_parser_new();
-        markdown_core_diagnostics diagnostics;
-        markdown_core_node *first = NULL;
-        markdown_core_node *second = NULL;
-        size_t hits_between = 0;
-        if (!parser) {
-            free(text);
-            return -1;
-        }
-        markdown_core_parser_retain_diagnostics(parser, &diagnostics);
-        markdown_core_parser_feed(parser, text, length);
-        first = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
-        hits_between = parser->cache_hits;
-        second = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
-        if (!first || !second) {
-            fputs("diagnostics after derive: retained derivation failed\n", stderr);
-            failures++;
-        } else if (parser->cache_hits <= hits_between) {
-            fprintf(
-                stderr,
-                "diagnostics after derive: retention refused the cache (%zu hits, %zu misses over two derivations)\n",
-                parser->cache_hits,
-                parser->cache_misses
-            );
-            failures++;
-        }
-        markdown_core_node_free(first);
-        markdown_core_node_free(second);
-        markdown_core_diagnostics_dispose(&diagnostics);
-        markdown_core_parser_free(parser);
-    }
-    free(text);
-    printf(
-        "diagnostics after derive: %s (%zu rows either way)\n",
-        failures ? "rows lost or the cache refused" : "finish keeps its rows and feeds keep the cache",
-        control
-    );
     return failures ? -1 : 0;
 }
 
@@ -2393,8 +2270,8 @@ static int case_label_tail(const ts_spec_file *file) {
         return -1;
     }
     markdown_core_parser_feed(parser, LT_TEXT, sizeof(LT_TEXT) - 1);
-    first = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
-    second = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+    first = markdown_core_parser_derive_tree(parser, parser->refmap);
+    second = markdown_core_parser_derive_tree(parser, parser->refmap);
     if (!first || !second) {
         fputs("label tail: derivation failed\n", stderr);
         failures++;
@@ -2452,7 +2329,7 @@ static int case_feed_bound(const ts_spec_file *file) {
         markdown_core_parser_feed(parser, line, strlen(line));
         misses_before = parser->cache_misses;
         hits_before = parser->cache_hits;
-        derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        derived = markdown_core_parser_derive_tree(parser, parser->refmap);
         if (!derived) {
             fputs("feed bound: derivation failed\n", stderr);
             markdown_core_parser_free(parser);
@@ -2497,7 +2374,7 @@ static int case_feed_bound(const ts_spec_file *file) {
         size_t misses;
         markdown_core_parser_feed(parser, DEF, sizeof(DEF) - 1);
         misses_before = parser->cache_misses;
-        derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+        derived = markdown_core_parser_derive_tree(parser, parser->refmap);
         if (!derived) {
             fputs("feed bound: derivation failed\n", stderr);
             markdown_core_parser_free(parser);
@@ -2567,7 +2444,7 @@ static int case_resident_memory(const ts_spec_file *file) {
         markdown_core_parser_feed(parser, line, (size_t)n);
         fed += (size_t)n;
         if (i % RM_DERIVE_EVERY == RM_DERIVE_EVERY - 1) {
-            markdown_core_node *derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+            markdown_core_node *derived = markdown_core_parser_derive_tree(parser, parser->refmap);
             if (!derived) {
                 fputs("resident memory: derivation failed\n", stderr);
                 markdown_core_parser_free(parser);
@@ -2720,7 +2597,7 @@ static int case_carried_state(const ts_spec_file *file) {
             parser->no_projection_cache = cache_off || pr_no_cache;
             documents++;
             markdown_core_parser_feed(parser, test_case->markdown, test_case->markdown_length);
-            derived = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+            derived = markdown_core_parser_derive_tree(parser, parser->refmap);
             if (!derived || cs_collect(derived, 1, &at_boundary, &boundary_count) != 0) {
                 fprintf(stderr, "example %d: boundary derivation failed\n", test_case->example);
                 cs_free(at_boundary, boundary_count);
@@ -2963,7 +2840,7 @@ static int case_session_documents(const ts_spec_file *file) {
         }
         for (i = 0; i < SD_LINE_COUNT; i++) {
             markdown_core_parser_feed(parser, SD_LINES[i], strlen(SD_LINES[i]));
-            tree = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+            tree = markdown_core_parser_derive_tree(parser, parser->refmap);
             if (!tree) {
                 failures = 1;
                 break;
@@ -3008,7 +2885,6 @@ static const pr_case_entry PR_CASES[] = {
     {"block_identity", case_block_identity, 1},
     {"block_identity_transitions", case_block_identity_transitions, 0},
     {"attach_invalidation", case_attach_invalidation, 0},
-    {"diagnostics_after_derive", case_diagnostics_after_derive, 0},
     {"label_tail", case_label_tail, 0},
     {"feed_bound", case_feed_bound, 0},
     {"resident_memory", case_resident_memory, 0},

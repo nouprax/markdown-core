@@ -351,13 +351,9 @@ if(MARKDOWN_CORE_STATIC)
     endforeach()
     markdown_core_add_test(projection_identity_transitions "streaming" 120 projection_runner --case
                            block_identity_transitions)
-    # The cache key's two review-found axes (T9 amendments): an attach between
-    # a derivation and the next projection reads every cached list as stale,
-    # and the recording projection takes no hits -- a hit skips the inline
-    # parse the record-gated diagnostic rows speak from.
+    # The cache key's review-found axis (T9 amendment): an attach between
+    # a derivation and the next projection reads every cached list as stale.
     markdown_core_add_test(projection_attach_invalidation "streaming" 120 projection_runner --case attach_invalidation)
-    markdown_core_add_test(projection_diagnostics_after_derive "streaming" 120 projection_runner --case
-                           diagnostics_after_derive)
     # Phase F's gates (T15, T16, T17). feed_bound is counter-based and
     # deterministic; resident_memory reads ru_maxrss, so like the wall-clock
     # gates it carries the complexity label the sanitizer presets exclude;

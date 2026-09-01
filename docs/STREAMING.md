@@ -1667,6 +1667,20 @@ back in the vocabulary that produced them.
   is the semantic canon. Each binding's conformance entry already exists
   (`conformance:swift-macos`, `conformance:kotlin-jvm`, `conformance:es-node`)
   and T14 extends the corpora rather than adding a channel.
+- **D7 — the diagnostics requirement is DELETED · owner ruling, 2026-09-01.**
+  Per-feed throughput is the goal and everything else is means (the owner's
+  restatement of F12's constraint), and the diagnostic list was a self-imposed
+  product requirement — no CommonMark or micromark obligation — whose recording
+  rule was the one reason the sealing projection refused cache hits. Deleted
+  whole: the list, both severity/code vocabularies, the recording flag and
+  retention, every diagnose site (the parse behavior at each — the label cap,
+  the directive fallbacks, the table rejection — is UNCHANGED; only the row
+  emission goes), the three public accessors, the CLI's `--diagnostics`, the
+  census and its audit, and `projection_diagnostics_after_derive` (whose
+  invariant is vacuous with no retention to refuse the cache; reuse stays
+  pinned by the key, borrow and boundary A/B gates). With retention gone,
+  `derive_tree` loses its recording window and `finish` takes in-place hits
+  like any projection.
 
 ---
 

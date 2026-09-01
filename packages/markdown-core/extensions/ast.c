@@ -16,8 +16,7 @@
 #include <node.h>
 #include <parser.h>
 
-/* A parse failure, and NOTHING ELSE. Requirement 13's converse is that a parse
- * failure is not a diagnostic: `markdown_core_error` means there is no
+/* A parse failure, and NOTHING ELSE. `markdown_core_error` means there is no
  * document, and an input the parser could not turn into a document has no
  * extent to point at. There is therefore no scope here to offer, and no
  * accessor to offer one -- the two fields that used to be here were never
@@ -150,7 +149,6 @@ markdown_core_document *markdown_core_document_parse(
 ) {
     markdown_core_document *document;
     markdown_core_parser *parser;
-    markdown_core_diagnostics pending_diagnostics;
 
     clear_error(error);
     if (!source && length != 0) {
@@ -161,14 +159,6 @@ markdown_core_document *markdown_core_document_parse(
     if (!parser) {
         return NULL;
     }
-
-    /* REQUIREMENT 13, and it is asked for BEFORE the first byte is fed because
-     * recording happens as the lines are read. Diagnostics are not optional
-     * here for the same reason the concrete view is not (Q24): they are part of
-     * the model, and the switch exists so the LAW can be checked -- the tree
-     * and the records must be byte-identical either way -- not so that a
-     * consumer can choose a different engine. */
-    markdown_core_parser_retain_diagnostics(parser, &pending_diagnostics);
 
     if (length) {
         markdown_core_parser_feed(parser, (const char *)source, length);
@@ -184,7 +174,6 @@ markdown_core_document *markdown_core_document_parse(
     markdown_core_parser_free(parser);
     if (!document->root) {
         markdown_core_concrete_dispose(&document->concrete);
-        markdown_core_diagnostics_dispose(&pending_diagnostics);
         free(document);
         /* A3, carried here from 3a: A FAILURE IS A RETURNED STATUS, and this is
          * the vocabulary the surface has for it. `finish` returns NULL for
@@ -196,7 +185,6 @@ markdown_core_document *markdown_core_document_parse(
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
         return NULL;
     }
-    document->diagnostics = pending_diagnostics;
     return document;
 }
 
@@ -205,7 +193,6 @@ void markdown_core_document_free(markdown_core_document *document) {
         return;
     }
     markdown_core_concrete_dispose(&document->concrete);
-    markdown_core_diagnostics_dispose(&document->diagnostics);
     markdown_core_node_free(document->root);
     free(document);
 }
@@ -215,15 +202,11 @@ void markdown_core_document_free(markdown_core_document *document) {
  * DERIVED document -- `markdown_core_parser_derive_tree`, the clone-and-
  * project re-projection, whose closed blocks borrow the projection cache's
  * lists (T9) under the holder count that lets a borrow outlive the parser
- * itself (T19). The two total views are COPIES -- the copy-out is the price
+ * itself (T19). The concrete view is a COPY -- the copy-out is the price
  * a feed pays to return a value (§6), and it is the only copying here; the
- * tree shares. `recorded` is the retain target `finish` moves the diagnostic
- * list into; a mid-stream document copies the live list instead, so it
- * carries the rows the parse has recorded so far and none of the rows the
- * final projection raises (§12.8 Q4). */
+ * tree shares. */
 struct markdown_core_session {
     markdown_core_parser *parser;
-    markdown_core_diagnostics recorded;
 };
 
 static int S_concrete_copy(markdown_core_parser *parser, markdown_core_concrete *out) {
@@ -247,30 +230,6 @@ static int S_concrete_copy(markdown_core_parser *parser, markdown_core_concrete 
     return 1;
 }
 
-static int S_diagnostics_copy(markdown_core_parser *parser, markdown_core_diagnostics *out) {
-    const markdown_core_diagnostics *live = &parser->diagnostics;
-    memset(out, 0, sizeof(*out));
-    if (!live->mem || live->entries_size == 0) {
-        /* Nothing recorded yet: a zeroed list reads as empty and disposes as
-         * one. */
-        return 1;
-    }
-    out->mem = parser->mem;
-    markdown_core_strbuf_init(parser->mem, &out->messages, live->messages.size);
-    markdown_core_strbuf_put(&out->messages, live->messages.ptr, live->messages.size);
-    out->entries = (markdown_core_diagnostic_record *)parser->mem->calloc(live->entries_size, sizeof(*out->entries));
-    if (out->messages.oom || !out->entries) {
-        markdown_core_diagnostics_dispose(out);
-        return 0;
-    }
-    /* The records carry offsets into the message pool, so they survive the
-     * copy verbatim. */
-    memcpy(out->entries, live->entries, (size_t)live->entries_size * sizeof(*out->entries));
-    out->entries_size = live->entries_size;
-    out->entries_alloc = live->entries_size;
-    return 1;
-}
-
 markdown_core_session *markdown_core_session_new(
     const markdown_core_parse_options *options,
     markdown_core_error **error
@@ -288,9 +247,6 @@ markdown_core_session *markdown_core_session_new(
         free(session);
         return NULL;
     }
-    /* Requirement 13, asked for before the first byte exactly as the one-shot
-     * parse asks it: recording happens as the lines are read. */
-    markdown_core_parser_retain_diagnostics(session->parser, &session->recorded);
     return session;
 }
 
@@ -319,14 +275,13 @@ markdown_core_document *markdown_core_session_feed(
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
         return NULL;
     }
-    document->root = markdown_core_parser_derive_tree(session->parser, session->parser->refmap, 0);
+    document->root = markdown_core_parser_derive_tree(session->parser, session->parser->refmap);
     if (!document->root) {
         free(document);
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
         return NULL;
     }
-    if (!S_concrete_copy(session->parser, &document->concrete) ||
-        !S_diagnostics_copy(session->parser, &document->diagnostics)) {
+    if (!S_concrete_copy(session->parser, &document->concrete)) {
         markdown_core_document_free(document);
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not copy the document's views");
         return NULL;
@@ -353,13 +308,10 @@ markdown_core_document *markdown_core_session_finish(markdown_core_session *sess
     session->parser = NULL;
     if (!document->root) {
         markdown_core_concrete_dispose(&document->concrete);
-        markdown_core_diagnostics_dispose(&session->recorded);
         free(document);
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
         return NULL;
     }
-    document->diagnostics = session->recorded;
-    memset(&session->recorded, 0, sizeof(session->recorded));
     return document;
 }
 
@@ -398,7 +350,6 @@ void markdown_core_session_free(markdown_core_session *session) {
     if (session->parser) {
         markdown_core_parser_free(session->parser);
     }
-    markdown_core_diagnostics_dispose(&session->recorded);
     free(session);
 }
 
@@ -425,35 +376,6 @@ bool markdown_core_document_line_start(const markdown_core_document *document, s
     }
     *offset = (size_t)document->concrete.line_starts[line - 1];
     return true;
-}
-
-size_t markdown_core_document_diagnostic_count(const markdown_core_document *document) {
-    return document ? (size_t)document->diagnostics.entries_size : 0;
-}
-
-bool markdown_core_document_diagnostic_at(
-    const markdown_core_document *document,
-    size_t index,
-    markdown_core_diagnostic *diagnostic
-) {
-    const markdown_core_diagnostic_record *entry;
-    if (!document || !diagnostic || index >= (size_t)document->diagnostics.entries_size) {
-        return false;
-    }
-    entry = &document->diagnostics.entries[index];
-    diagnostic->severity = (markdown_core_diagnostic_severity)entry->severity;
-    diagnostic->code = (markdown_core_diagnostic_code)entry->code;
-    diagnostic->scope.start.line = entry->start_line;
-    diagnostic->scope.start.column = entry->start_column;
-    diagnostic->scope.end.line = entry->end_line;
-    diagnostic->scope.end.column = entry->end_column;
-    diagnostic->message.data = document->diagnostics.messages.ptr + entry->message_start;
-    diagnostic->message.length = (size_t)entry->message_length;
-    return true;
-}
-
-const char *markdown_core_diagnostic_code_name(markdown_core_diagnostic_code code) {
-    return markdown_core_diagnostic_code_string(code);
 }
 
 markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error) {
@@ -1765,11 +1687,10 @@ static void wire_concrete_live(dump_buffer *buffer, const markdown_core_parser *
  * -- `markdown_core_session_feed` then `markdown_core_document_wire` then
  * `markdown_core_document_free` -- builds a fully-owned document whose only
  * reader is the serializer: the source is copied into the document and then
- * AGAIN into the wire, the diagnostics are copied and read by nothing (the
- * wire carries none), and the document dies before the call returns. Here
+ * AGAIN into the wire, and the document dies before the call returns. Here
  * the wire reads `parser->source` and `parser->line_starts` directly and
- * the derived tree is freed before returning, so one full-source copy, the
- * diagnostics copy, and the owned document's lifecycle drop out of every
+ * the derived tree is freed before returning, so one full-source copy and
+ * the owned document's lifecycle drop out of every
  * managed feed. The bytes are the composed path's, gated byte-for-byte by
  * the equivalence test. C consumers keep `markdown_core_session_feed`'s
  * owned document; this entry is for bridges whose document never escapes
@@ -1806,7 +1727,7 @@ bool markdown_core_session_feed_wire(
     if (length) {
         markdown_core_parser_feed(parser, (const char *)chunk, length);
     }
-    root = markdown_core_parser_derive_tree(parser, parser->refmap, 0);
+    root = markdown_core_parser_derive_tree(parser, parser->refmap);
     if (!root) {
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
         return false;

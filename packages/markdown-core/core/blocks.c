@@ -253,11 +253,6 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     parser->tail_queue = NULL;
     parser->tail_queue_size = 0;
     parser->tail_queue_alloc = 0;
-
-    /* Requirement 13's list. Released here whether or not it was retained: a
-     * parse that FAILED never reaches the move, and the requirement's converse
-     * says a failure carries no diagnostics. */
-    markdown_core_diagnostics_dispose(&parser->diagnostics);
 }
 
 static void markdown_core_parser_reset(markdown_core_parser *parser) {
@@ -392,230 +387,6 @@ static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
     }
 
     return (node->type == MARKDOWN_CORE_NODE_PARAGRAPH || node->type == MARKDOWN_CORE_NODE_HEADING);
-}
-
-/* REQUIREMENT 13 -- the diagnostic list.
- *
- * It is the concrete record set's shape with no difference at all, and the
- * sameness is the point: A GROWTH THIS LIST CANNOT AFFORD ABANDONS THE PARSE,
- * exactly as the line-start and diagnostic record growth sites do
- * (`S_record_line_start`, `markdown_core_parser_diagnose`).
- *
- * OWNER RULING, 2026-08-24: "we do not want fallback when OOM happens; the
- * parser should return an error rather than return a fallback." So there is no
- * truncation marker and no short list: either the parse produced its complete
- * diagnostics, or there is no document. A degraded success is a document that
- * lies about how much the engine had to say about it, and this repository has
- * spent four defects (D27, D30, and both halves of A1) learning that a lossy
- * result reported as a success is worse than no result. */
-
-/* The message pool cap. A diagnostic says what the tree cannot; it does not
- * quote the document back. Cutting at a code-point boundary is not tidiness:
- * `message` is published as a UTF-8 `markdown_core_string`, and a cut through a
- * continuation byte would hand a consumer a sequence the engine itself would
- * have replaced on input. */
-#define MARKDOWN_CORE_DIAGNOSTIC_SUBJECT_MAX 40
-
-static bufsize_t S_diagnostic_subject_fit(const unsigned char *subject, bufsize_t length) {
-    if (length <= MARKDOWN_CORE_DIAGNOSTIC_SUBJECT_MAX) {
-        return length;
-    }
-    length = MARKDOWN_CORE_DIAGNOSTIC_SUBJECT_MAX;
-    while (length > 0 && (subject[length] & 0xC0) == 0x80) {
-        length--;
-    }
-    return length;
-}
-
-const char *markdown_core_diagnostic_code_string(markdown_core_diagnostic_code code) {
-    switch (code) {
-    case MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_LABEL_REJECTED:
-        return "directive-label-rejected";
-    case MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES_REJECTED:
-        return "directive-attributes-rejected";
-    case MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_REJECTED:
-        return "directive-rejected";
-    case MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_UNCLOSED:
-        return "directive-unclosed";
-    case MARKDOWN_CORE_DIAGNOSTIC_TABLE_REJECTED:
-        return "table-rejected";
-    case MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG:
-        return "label-too-long";
-    }
-    return NULL;
-}
-
-/* Record one diagnostic, at the place `start` .. `end`, with `message` and an
- * optional excerpt of the source it is about.
- *
- * NOTHING HERE MAY TOUCH `parser->oom`, and nothing here may change what the
- * parse builds. Both are the law. The three failure paths -- recording is off,
- * the entry array cannot grow, the message pool cannot grow -- all leave the
- * document exactly as it would have been, and the last two say so on the list.
- *
- * The message pool is written BEFORE the entry is committed, so a pool that
- * failed leaves no entry naming a slice of it. */
-void markdown_core_parser_diagnose(
-    markdown_core_parser *parser,
-    markdown_core_diagnostic_severity severity,
-    markdown_core_diagnostic_code code,
-    int start_line,
-    int start_column,
-    int end_line,
-    int end_column,
-    const char *message,
-    const unsigned char *subject,
-    bufsize_t subject_length
-) {
-    markdown_core_diagnostics *list;
-    markdown_core_diagnostic_record *entry;
-    bufsize_t pool_start;
-
-    if (!parser || !parser->diagnostics_on || !message) {
-        return;
-    }
-    list = &parser->diagnostics;
-
-    if (list->entries_size == list->entries_alloc) {
-        bufsize_t alloc;
-        markdown_core_diagnostic_record *grown;
-        if (list->entries_alloc > (bufsize_t)(INT32_MAX / 2)) {
-            parser->oom = true;
-            return;
-        }
-        alloc = list->entries_alloc ? list->entries_alloc * 2 : 16;
-        grown = (markdown_core_diagnostic_record *)parser->mem->realloc(list->entries, (size_t)alloc * sizeof(*grown));
-        if (!grown) {
-            parser->oom = true;
-            return;
-        }
-        list->entries = grown;
-        list->entries_alloc = alloc;
-    }
-
-    pool_start = list->messages.size;
-    markdown_core_strbuf_puts(&list->messages, message);
-    if (subject && subject_length > 0) {
-        bufsize_t fit = S_diagnostic_subject_fit(subject, subject_length);
-        unsigned char excerpt[MARKDOWN_CORE_DIAGNOSTIC_SUBJECT_MAX];
-        bufsize_t i;
-        /* A CONTROL BYTE BECOMES A SPACE, and this is the wire format's
-         * requirement rather than tidiness: an excerpt is cut out of the
-         * source, a label or an attribute list may span a line ending, and one
-         * `\n` inside a message turns one diagnostic row into two. Found by the
-         * neutrality gate on `spec.txt`, which is the only reason it is a
-         * one-line fix rather than a corrupt oracle. */
-        for (i = 0; i < fit; i++) {
-            excerpt[i] = subject[i] < 0x20 || subject[i] == 0x7F ? (unsigned char)' ' : subject[i];
-        }
-        markdown_core_strbuf_puts(&list->messages, ": \"");
-        markdown_core_strbuf_put(&list->messages, excerpt, fit);
-        markdown_core_strbuf_puts(&list->messages, fit < subject_length ? "...\"" : "\"");
-    }
-    if (list->messages.oom) {
-        /* The pool is a strbuf and its failure is sticky, so the partial write
-         * above cannot be trusted -- and an entry naming a slice of it would
-         * name a message that is a prefix of what it meant to say. */
-        parser->oom = true;
-        return;
-    }
-
-    entry = &list->entries[list->entries_size++];
-    entry->start_line = (int32_t)start_line;
-    entry->start_column = (int32_t)start_column;
-    entry->end_line = (int32_t)end_line;
-    entry->end_column = (int32_t)end_column;
-    entry->message_start = pool_start;
-    entry->message_length = list->messages.size - pool_start;
-    entry->severity = (uint8_t)severity;
-    entry->code = (uint8_t)code;
-}
-
-/* The same, over the LINE IN HAND, from `from` to its last non-space byte.
- *
- * The block phase needs no projection: a line offset IS a column, and the line
- * is the one being processed. This exists because two extensions want it and a
- * second copy of the rtrim is how the two would drift. */
-void markdown_core_parser_diagnose_line(
-    markdown_core_parser *parser,
-    markdown_core_diagnostic_severity severity,
-    markdown_core_diagnostic_code code,
-    const unsigned char *input,
-    bufsize_t len,
-    bufsize_t from,
-    const char *message,
-    const unsigned char *subject,
-    bufsize_t subject_length
-) {
-    bufsize_t to = len;
-
-    if (!parser || !parser->diagnostics_on || !input) {
-        return;
-    }
-    while (to > from &&
-           (input[to - 1] == '\n' || input[to - 1] == '\r' || input[to - 1] == ' ' || input[to - 1] == '\t')) {
-        to--;
-    }
-    if (to <= from) {
-        return;
-    }
-    markdown_core_parser_diagnose(
-        parser,
-        severity,
-        code,
-        parser->line_number,
-        (int)from + 1,
-        parser->line_number,
-        (int)to,
-        message,
-        subject,
-        subject_length
-    );
-}
-
-void markdown_core_parser_retain_diagnostics(markdown_core_parser *parser, markdown_core_diagnostics *out) {
-    if (!parser || !out) {
-        return;
-    }
-    memset(out, 0, sizeof(*out));
-    parser->diagnostics_on = true;
-    parser->diagnostics_retain = out;
-    if (!parser->diagnostics.mem) {
-        parser->diagnostics.mem = parser->mem;
-        markdown_core_strbuf_init(parser->mem, &parser->diagnostics.messages, 0);
-    }
-}
-
-void markdown_core_diagnostics_dispose(markdown_core_diagnostics *diagnostics) {
-    if (!diagnostics || !diagnostics->mem) {
-        return;
-    }
-    markdown_core_strbuf_free(&diagnostics->messages);
-    diagnostics->mem->free(diagnostics->entries);
-    memset(diagnostics, 0, sizeof(*diagnostics));
-}
-
-void markdown_core_diagnostics_write(const markdown_core_diagnostics *diagnostics, FILE *out) {
-    bufsize_t i;
-    bufsize_t count = diagnostics ? diagnostics->entries_size : 0;
-
-    fprintf(out, "diagnostics count=%ld\n", (long)count);
-    for (i = 0; i < count; i++) {
-        const markdown_core_diagnostic_record *entry = &diagnostics->entries[i];
-        const char *name = markdown_core_diagnostic_code_string((markdown_core_diagnostic_code)entry->code);
-        fprintf(
-            out,
-            "diagnostic %s %s %d:%d..%d:%d %.*s\n",
-            entry->severity == (uint8_t)MARKDOWN_CORE_DIAGNOSTIC_ERROR ? "ERROR" : "WARNING",
-            name ? name : "unknown",
-            entry->start_line,
-            entry->start_column,
-            entry->end_line,
-            entry->end_column,
-            (int)entry->message_length,
-            diagnostics->messages.ptr + entry->message_start
-        );
-    }
 }
 
 /* THE NORMALIZED SOURCE AND ITS LINE INDEX, in the form the gate reads.
@@ -1979,17 +1750,7 @@ static int S_optional_chunk_copy(
  * definitions, and `refmap_independence` projects against another. */
 static bool S_cache_fresh(markdown_core_parser *parser, const markdown_core_node *block, markdown_core_map *refmap) {
     const markdown_core_holder *holder = block->link.holder;
-    /* `diagnostics_on` here is the derivation's EFFECTIVE recording state --
-     * `derive_tree` lowers it across a derivation that does not record, and
-     * `finish` leaves retention standing because the sealing projection is
-     * the one that records (§12.8 Q4). A hit skips the inline parse, and the
-     * inline parse is where every record-gated row speaks (label-too-long,
-     * the directive codes) -- so a RECORDING projection re-parses instead of
-     * hitting. T10's rule extended to Requirement 13: correctness must never
-     * depend on the cache, and the diagnostic list is part of the model. Paid
-     * only at the seal, and only when diagnostics were retained; a session's
-     * mid-stream feeds record nothing and reuse freely. */
-    return refmap == parser->refmap && !parser->no_projection_cache && !parser->diagnostics_on &&
+    return refmap == parser->refmap && !parser->no_projection_cache &&
            (block->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) && holder->stamp == block->stamp &&
            holder->refgen == parser->refmap->generation && holder->footgen == parser->footnote_defs->generation &&
            holder->extgen == parser->extension_generation;
@@ -2308,18 +2069,7 @@ static markdown_core_node *S_clone_block_tree(
  * projected root, which a hook may have replaced. The skeleton is CONSUMED:
  * after this it is an AST, and projecting it again would not give the same
  * answer. That is why a re-projection hands in a clone and `finish` hands in
- * the CST itself.
- *
- * Whether the projection RECORDS is not decided here. `diagnostics_on` is
- * the derivation's effective recording state when this runs: `derive_tree`
- * lowers it across the whole derivation it does not record, and `finish`
- * leaves it as retention set it, because the sealing projection is the one
- * that records (after §12.9 its rows are `label-too-long` and the directive
- * attribute/label codes; a diagnostic speaks when its construct COMPLETES,
- * §12.8 Q4, so a mid-parse projection stays silent rather than describing an
- * open block's prefix). Every one of those rows speaks from the inline parse
- * below, which is also exactly what a cache hit skips -- so the one flag
- * decides recording and reuse together; see `S_cache_fresh`. */
+ * the CST itself. */
 static markdown_core_node *S_project(
     markdown_core_parser *parser,
     markdown_core_node *skeleton,
@@ -2350,12 +2100,7 @@ static markdown_core_node *S_project(
  * later derivation, against this map or another, starts from the same bytes.
  * This is the RE-projection path -- `finish`, whose CST has no later, skips
  * the clone and projects in place (T1). */
-markdown_core_node *markdown_core_parser_derive_tree(
-    markdown_core_parser *parser,
-    markdown_core_map *refmap,
-    int record_diagnostics
-) {
-    bool recording = parser->diagnostics_on;
+markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parser, markdown_core_map *refmap) {
     markdown_core_node *derived;
 
     /* A parse that lost an allocation may hold a tree that is not all there --
@@ -2366,31 +2111,13 @@ markdown_core_node *markdown_core_parser_derive_tree(
         return NULL;
     }
 
-    /* THE DERIVATION IS ONE UNIT, and whether it records is decided here for
-     * both of its halves at once. The clone is where the cache hits are taken
-     * (`S_clone_block_node` asks `S_cache_fresh`, which reads
-     * `diagnostics_on`) and the projection is where every record-gated row
-     * speaks -- so the flag the two halves read must be the same answer, the
-     * EFFECTIVE one: retention AND this derivation asking to record. Left at
-     * retention alone, the clone of every non-recording derivation read
-     * "recording" and refused every hit -- a session retains its diagnostics
-     * from the first byte (Requirement 13), so the whole projection cache
-     * read as stale through the public surface and every `feed` re-parsed
-     * the document Phase B exists to keep parsed. `finish` takes no part in
-     * this window: its in-place projection records whenever diagnostics were
-     * retained, and `S_cache_fresh` refusing its hits while it does is the
-     * F20 amendment working as ruled. */
-    parser->diagnostics_on = recording && record_diagnostics != 0;
     derived = S_clone_block_tree(parser, parser->root, refmap);
     if (!derived) {
-        parser->diagnostics_on = recording;
         parser->oom = true;
         return NULL;
     }
 
-    derived = S_project(parser, derived, refmap);
-    parser->diagnostics_on = recording;
-    return derived;
+    return S_project(parser, derived, refmap);
 }
 
 markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len, int options) {
@@ -3498,17 +3225,6 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
         parser->line_starts = NULL;
         parser->line_starts_size = 0;
         parser->line_starts_alloc = 0;
-    }
-
-    /* REQUIREMENT 13: the document keeps the diagnostic list, moved at the
-     * same moment and for the same reason as the concrete view -- and, like
-     * it, only on the success path. Everything above this line has already
-     * decided that there IS a document; a parse failure falls out at the `oom`
-     * test and leaves the caller's list empty, which is the requirement's
-     * converse said in code. */
-    if (parser->diagnostics_retain) {
-        *parser->diagnostics_retain = parser->diagnostics;
-        memset(&parser->diagnostics, 0, sizeof(parser->diagnostics));
     }
 
     /* The parser's life ends here (ruling A): the reset disposes what is

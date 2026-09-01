@@ -183,77 +183,6 @@ typedef enum markdown_core_table_alignment {
     MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT = 3
 } markdown_core_table_alignment;
 
-/** A PARSE PRODUCES AN ORDERED LIST OF DIAGNOSTICS, and one law governs it:
- *
- *   RECORDING THE LIST CHANGES NOTHING THE PARSE BUILDS.
- *
- * For every input the semantic tree and the concrete records are byte-identical
- * whether or not diagnostics were recorded. THERE IS NO PARTIAL LIST: an
- * allocation the list cannot make abandons the parse, so either a document
- * carries every diagnostic its input earned or there is no document. The
- * converse is equally normative: A PARSE FAILURE IS NOT A DIAGNOSTIC --
- * `markdown_core_error` means there is no document at all, and it carries no
- * scope.
- *
- * WHAT EARNS A DIAGNOSTIC is a fact about the two views rather than a list of
- * syntax rules: A DIAGNOSTIC EXISTS EXACTLY WHERE THE TWO TOTAL VIEWS CANNOT
- * SAY WHAT HAPPENED. Neither view omits a byte, so what is missing is never a
- * byte -- it is why a byte that looks like a construct is not one. So an
- * unclosed fence is NOT diagnosed (`closed` on the node already says it) and a
- * duplicate definition is not (both are nodes, and first-in-document-order is
- * derivable), while a directive whose attribute list was rejected is: that
- * directive and one written with no braces at all are the same tree.
- */
-#ifndef MARKDOWN_CORE_DIAGNOSTIC_TYPEDEFS
-#define MARKDOWN_CORE_DIAGNOSTIC_TYPEDEFS
-typedef enum markdown_core_diagnostic_severity {
-    /** The author wrote something the engine did not read the way they meant,
-     * and the bytes stand as prose. */
-    MARKDOWN_CORE_DIAGNOSTIC_WARNING = 1,
-    /** The ENGINE refused a well-formed construct -- its own cap, not the
-     * grammar. */
-    MARKDOWN_CORE_DIAGNOSTIC_ERROR = 2
-} markdown_core_diagnostic_severity;
-
-/** Why a diagnostic was recorded. The ordinal is the wire value every binding
- * decodes, so a code is appended and never inserted. */
-typedef enum markdown_core_diagnostic_code {
-    /** A directive stands and the `[` after its name did not become a label. */
-    MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_LABEL_REJECTED = 1,
-    /** A directive stands and the `{` after it did not become an attribute
-     * list, so `attributes` is null -- which is also what a directive with no
-     * braces at all reports. */
-    MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES_REJECTED = 2,
-    /** A `::name`/`:::name` line did not open a directive block at all: the
-     * block form has no partial fallback, so the whole line is a paragraph. */
-    MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_REJECTED = 3,
-    /** A container directive was closed by the end of the input rather than by
-     * a fence. */
-    MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_UNCLOSED = 4,
-    /** A delimiter row was found and the header row above it has a different
-     * number of columns, so the paragraph is not a table. */
-    MARKDOWN_CORE_DIAGNOSTIC_TABLE_REJECTED = 5,
-    /** A label the ENGINE refused as too long. The author's label is well
-     * formed; the cap is the engine's, which is why the repair is not
-     * "define it". (This was 8: values 6 and 7 reported a well-formed
-     * reference or footnote call that resolved to nothing -- an outcome
-     * CommonMark defines as text, so nothing failed and there was nothing to
-     * report; 3.0.0 renumbers rather than keeping holes.) */
-    MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG = 6
-} markdown_core_diagnostic_code;
-#endif
-
-/** One diagnostic. `scope` is a place in `markdown_core_document_source` and is
- * resolvable without a node handle, which is what the concrete view is for.
- * `message` borrows from the document and ends with it; it is UTF-8, one line,
- * and never empty. */
-typedef struct markdown_core_diagnostic {
-    markdown_core_diagnostic_severity severity;
-    markdown_core_diagnostic_code code;
-    markdown_core_scope scope;
-    markdown_core_string message;
-} markdown_core_diagnostic;
-
 typedef struct markdown_core_optional_i64 {
     bool has_value;
     int64_t value;
@@ -306,15 +235,13 @@ MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *docum
  * only answer there is.
  *
  * What a mid-stream document is: the projection of the parse as it stands.
- * A trailing line whose ending has not arrived is not yet in it, an open
+ * A trailing line whose ending has not arrived is not yet in it, and an open
  * construct is projected as it stands (a list still open has not settled
- * its tightness), and its diagnostics are the rows the parse has recorded
- * so far -- the rows the final projection itself raises (`label-too-long`,
- * the directive codes) speak only over the fully closed document (§12.8 Q4).
+ * its tightness).
  *
  * `finish` ends the stream: the pending line is processed, every construct
- * closes, and the SEALED document comes back -- byte-identical, diagnostics
- * included, to what `markdown_core_document_parse` returns for the same
+ * closes, and the SEALED document comes back -- byte-identical to what
+ * `markdown_core_document_parse` returns for the same
  * bytes. It also ends the session's parse: `feed` and `finish` after it
  * report MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, and only
  * `markdown_core_session_free` remains to take the shell back.
@@ -339,8 +266,8 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_session_feed(
  * document state directly -- the same bytes `markdown_core_session_feed`
  * followed by `markdown_core_document_wire` would produce, without building
  * the owned document in between. For a bridge whose document never escapes
- * the delivering call, that intermediate copies the source twice and the
- * diagnostics once for a serializer that reads neither; here the wire reads
+ * the delivering call, that intermediate copies the source twice for a
+ * serializer that reads neither copy; here the wire reads
  * the session's live state during the synchronous call. `prefix` reserves
  * zeroed envelope room ahead of the payload, in the one allocation, exactly
  * as `markdown_core_document_wire` does; release the buffer with
@@ -412,23 +339,8 @@ MARKDOWN_CORE_API bool markdown_core_document_line_start(
     size_t line,
     size_t *offset
 );
-/** How many diagnostics the parse recorded. They are in the order they were
- * recorded, which is source order for everything the block phase reports and
- * block-then-inline order otherwise. */
-MARKDOWN_CORE_API size_t markdown_core_document_diagnostic_count(const markdown_core_document *document);
-/** The diagnostic at `index`, counting from 0. */
-MARKDOWN_CORE_API bool markdown_core_document_diagnostic_at(
-    const markdown_core_document *document,
-    size_t index,
-    markdown_core_diagnostic *diagnostic
-);
-/** The stable spelling of a code, for a consumer that would otherwise keep its
- * own table. NULL for a value no version of this library defines. */
-MARKDOWN_CORE_API const char *markdown_core_diagnostic_code_name(markdown_core_diagnostic_code code);
-
 /** A parse failure. There is NO document, and there is no scope: an input the
- * parser could not turn into a document has no extent to point at, and a
- * failure the author could act on would have been a diagnostic instead. */
+ * parser could not turn into a document has no extent to point at. */
 MARKDOWN_CORE_API markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error);
 MARKDOWN_CORE_API markdown_core_string markdown_core_error_get_message(const markdown_core_error *error);
 MARKDOWN_CORE_API void markdown_core_error_free(markdown_core_error *error);

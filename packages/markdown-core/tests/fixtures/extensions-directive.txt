@@ -923,9 +923,8 @@ Document id=1:0 scope=1:1..4:7 children=1
 THE BLOCK FORM OF A DIRECTIVE HAS NO PARTIAL FALLBACK. The inline form keeps
 the directive and gives up only the label or the attribute list; here one bad
 attribute, or one byte of content after a good one, costs the whole line, and
-what is left is a paragraph indistinguishable from prose. Requirement 13's
-`directive-rejected` is the only thing that says so, and these two examples
-are what exercise it — `scripts/audit-diagnostics.mjs` pins both.
+what is left is a paragraph indistinguishable from prose. These two examples
+pin that fallback.
 
 ```````````````````````````````` example
 ::note{=value}

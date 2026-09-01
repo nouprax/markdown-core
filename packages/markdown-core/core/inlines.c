@@ -400,48 +400,6 @@ static MARKDOWN_CORE_INLINE void S_place_inline(subject *subj, markdown_core_nod
     }
 }
 
-/* REQUIREMENT 13: say what the tree cannot, about the content bytes
- * [`from`, `to`].
- *
- * The place is the same projection `S_place_inline` gives a node, for the same
- * reason: a bracket span may cross a line ending, and a column derived by
- * addition then names a place in the wrong line's frame. A span the map cannot
- * place is not reported -- an invented position is worse than a missing
- * diagnostic. */
-static void S_diagnose_span(
-    markdown_core_parser *parser,
-    subject *subj,
-    markdown_core_diagnostic_severity severity,
-    markdown_core_diagnostic_code code,
-    bufsize_t from,
-    bufsize_t to,
-    const char *message,
-    const unsigned char *label,
-    bufsize_t label_length
-) {
-    int start_line;
-    int start_column;
-    int end_line;
-    int end_column;
-
-    if (!markdown_core_parser_content_place(subj->owner_parser, subj->owner, from, &start_line, &start_column) ||
-        !markdown_core_parser_content_place(subj->owner_parser, subj->owner, to, &end_line, &end_column)) {
-        return;
-    }
-    markdown_core_parser_diagnose(
-        parser,
-        severity,
-        code,
-        start_line,
-        start_column,
-        end_line,
-        end_column,
-        message,
-        label,
-        label_length
-    );
-}
-
 // Create an inline with a literal string value.
 static MARKDOWN_CORE_INLINE markdown_core_node *make_literal(
     subject *subj,
@@ -1867,29 +1825,6 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
         found_label = true;
     }
 
-    /* HOISTED out of the failed-lookup branch (§12.9): the lookup rejects an
-     * over-long label before consulting anything, so this depends on nothing
-     * but the construct's own bytes -- the label is well formed and the
-     * engine's own cap refused it, which is why the repair is not "define it".
-     * The failed-lookup diagnostic that used to share this branch is deleted
-     * with its code: a well-formed reference that resolves to nothing is
-     * PROSE, not an error -- CommonMark defines the outcome -- and only these
-     * bytes can say whether the cap was hit, while no bytes can say what the
-     * author meant. Still only the full and collapsed forms: `[a]` is also how
-     * anyone writes a bracketed aside. */
-    if (found_label && form != MARKDOWN_CORE_REFERENCE_SHORTCUT && raw_label.len > MAX_LINK_LABEL_LENGTH) {
-        S_diagnose_span(
-            parser,
-            subj,
-            MARKDOWN_CORE_DIAGNOSTIC_ERROR,
-            MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG,
-            opener->position - 1,
-            subj->pos - 1,
-            "reference label too long to resolve",
-            raw_label.data,
-            raw_label.len
-        );
-    }
     /* ONE KEY (#125): the cap and the empty-map cheap-out come first, as the
      * lookup itself used to order them, and the label normalizes ONCE. A
      * match keeps the key alive to `match:`, where the association adopts
@@ -2066,25 +2001,6 @@ noMatch:
 
             pop_bracket(subj);
             return NULL;
-        }
-        /* The cap check depends on nothing but the construct's own bytes
-         * (§12.9): an over-long label can never be defined, so the resolved
-         * branch above cannot have consumed it. The unresolved-call diagnostic
-         * that used to share this arm is deleted with its code -- `[^label]`
-         * naming nothing is an unmatched `[`, which CommonMark specifies. */
-        if (caret_written && initial_pos - opener->position - 2 > MAX_LINK_LABEL_LENGTH) {
-            bufsize_t label_length = initial_pos - opener->position - 2;
-            S_diagnose_span(
-                parser,
-                subj,
-                MARKDOWN_CORE_DIAGNOSTIC_ERROR,
-                MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG,
-                opener->position - 1,
-                initial_pos - 1,
-                "footnote label too long to resolve",
-                subj->input.data + opener->position + 1,
-                label_length
-            );
         }
     }
 
