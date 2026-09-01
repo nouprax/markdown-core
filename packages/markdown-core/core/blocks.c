@@ -1604,9 +1604,7 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
      * standing while KEEPING children: its list is no longer the shape the
      * store's move honors. */
     if (node && (node->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
-        if (children_own && (contains_inlines(node) || node->first_child == NULL)) {
-            S_cache_store(parser, node);
-        } else if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
+        if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
             /* A TAILED CONTAINER retains too (review-found): an extension
              * that declares a container name queues it here, and
              * un-enrolling it made every later derivation reclone the
@@ -1615,8 +1613,14 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
              * projection of the origin under the stored key, exactly as
              * a declined promotion is, and the container store's own
              * all-SHARED proof fails closed on anything they changed
-             * that cannot share -- an appended fresh child included. */
+             * that cannot share -- an appended fresh child included. The
+             * ARRAY arm is asked FIRST (review-found): a vector container
+             * emptied by its own hook answers `first_child == NULL`
+             * through the union, and the leaf store would clear its
+             * ORIGIN only to refuse the shape. */
             S_container_store(parser, node);
+        } else if (children_own && (contains_inlines(node) || node->first_child == NULL)) {
+            S_cache_store(parser, node);
         } else {
             node->link.origin = NULL;
             node->flags &= ~MARKDOWN_CORE_NODE__ORIGIN;
@@ -2082,6 +2086,21 @@ static void S_container_store(markdown_core_parser *parser, markdown_core_node *
     }
     for (i = 0; i < node->children.count; i++) {
         markdown_core_node *entry = node->children.vec[i];
+        if (!(entry->flags & MARKDOWN_CORE_NODE__SHARED) && (entry->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
+            /* AN UNSWEPT DESCENDANT STORES AT ITS ANCESTOR'S TAIL
+             * (review-found): the sweep must not read a node an ancestor
+             * hook may have freed, so a candidate under a hooked ancestor
+             * is excluded there -- but HERE the subtree is provably
+             * alive, since this container survived to its own store.
+             * Bottom-up through the recursion, mirroring the sweep's
+             * child-first order; a child that still cannot share fails
+             * the whole container closed below, as ever. */
+            if (MARKDOWN_CORE_NODE_ARRAY_P(entry)) {
+                S_container_store(parser, entry);
+            } else if (entry->first_child == NULL) {
+                S_cache_store(parser, entry);
+            }
+        }
         if (!(entry->flags & MARKDOWN_CORE_NODE__SHARED)) {
             return;
         }
@@ -2685,8 +2704,23 @@ static void S_project_fresh(markdown_core_parser *parser, markdown_core_map *ref
         size_t kept = 0;
         for (i = 0; i < parser->fresh_queue_size; i++) {
             markdown_core_node *block = parser->fresh_queue[i];
-            if ((block->flags & MARKDOWN_CORE_NODE__ORIGIN) &&
-                !(MARKDOWN_CORE_NODE_BLOCK_P(block) && S_block_has_tail_work(parser, block))) {
+            const markdown_core_node *ancestor;
+            bool reachable_by_a_hook = MARKDOWN_CORE_NODE_BLOCK_P(block) && S_block_has_tail_work(parser, block);
+            /* An ANCESTOR's hook can free this block too (review-found):
+             * a hook may remove or replace the block it is handed, and
+             * that takes the whole subtree -- so a candidate is safe only
+             * when NO node on its parent chain will be handed to one.
+             * Every fresh ancestor passed the same tail-work question on
+             * this very list, so re-asking it up the chain is exactly
+             * queue membership, without disturbing the drain's order. A
+             * candidate under a hooked ancestor is merely unswept: its
+             * subtree stays per-derivation while the hook stays -- slow,
+             * never a dangling read. */
+            for (ancestor = block->parent; !reachable_by_a_hook && ancestor; ancestor = ancestor->parent) {
+                reachable_by_a_hook = MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)ancestor) &&
+                                      S_block_has_tail_work(parser, (markdown_core_node *)ancestor);
+            }
+            if ((block->flags & MARKDOWN_CORE_NODE__ORIGIN) && !reachable_by_a_hook) {
                 parser->fresh_queue[kept++] = block;
             }
         }
