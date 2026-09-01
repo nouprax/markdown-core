@@ -219,6 +219,12 @@ struct markdown_core_node {
      * child's NODE can be shared between trees. The vector's memory follows
      * the node's own: an arena node's vector is arena-bumped and dies with
      * the pages, a malloc'd node's is malloc'd and freed with it. */
+    /* The anonymous member is C11 (6.7.2.1p13); MSVC accepts it in its C
+     * mode but files it under C4201, which /WX promotes. */
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4201)
+#endif
     union {
         struct {
             struct markdown_core_node *first_child;
@@ -229,6 +235,9 @@ struct markdown_core_node {
             size_t count;
         } children;
     };
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
     int start_line;
     int start_column;

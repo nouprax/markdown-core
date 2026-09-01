@@ -2265,10 +2265,14 @@ static markdown_core_node *S_clone_block_tree(
         }
         S_vec_append(dst_parent, dst);
 
-        if (src->first_child) {
+        if (src->first_child && !(dst->flags & MARKDOWN_CORE_NODE__SHARED)) {
             /* An enrolled parent stays INTRUSIVE (S_vec_append) and its
              * whole subtree takes malloc shells: the store will move these
-             * nodes into a holder that outlives this tree's arena. */
+             * nodes into a holder that outlives this tree's arena. A HIT
+             * never reaches this branch (review-found): the retained node
+             * IS the projection of the source's whole subtree, and
+             * descending would clone raw CST children over the shared
+             * projection every other live tree is reading. */
             if (dst->flags & MARKDOWN_CORE_NODE__ORIGIN) {
                 parser->derive_malloc_depth++;
             } else if (!S_vec_open(parser, dst, src)) {
@@ -2379,6 +2383,13 @@ markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parse
     derived = S_project(parser, derived, refmap);
     if (arena) {
         markdown_core_node_arena_release(arena);
+    }
+    if (derived && parser->oom) {
+        /* Poisoned mid-projection (review-found): a lost mask pool or a
+         * refused spill left hooks unrun or blocks unvisited, and a tree
+         * that LOOKS whole must not outlive the flag that says it is not. */
+        markdown_core_node_free(derived);
+        return NULL;
     }
     return derived;
 }

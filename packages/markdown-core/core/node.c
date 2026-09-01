@@ -1034,10 +1034,13 @@ static void S_node_unlink(markdown_core_node *node) {
         return;
     }
 
-    if (node->prev) {
+    /* A SHARED neighbor is never written (review-found, #161): its sibling
+     * fields belong to every tree at once, and under a vector parent the
+     * vector alone carries this tree's order. */
+    if (node->prev && !(node->prev->flags & MARKDOWN_CORE_NODE__SHARED)) {
         node->prev->next = node->next;
     }
-    if (node->next) {
+    if (node->next && !(node->next->flags & MARKDOWN_CORE_NODE__SHARED)) {
         node->next->prev = node->prev;
     }
 
@@ -1161,13 +1164,17 @@ int markdown_core_node_insert_before(markdown_core_node *node, markdown_core_nod
 
     markdown_core_node *old_prev = node->prev;
 
-    // Insert 'sibling' between 'old_prev' and 'node'.
-    if (old_prev) {
+    /* Insert 'sibling' between 'old_prev' and 'node'. A SHARED neighbor is
+     * never written (review-found): its sibling fields belong to every tree
+     * at once, and the vector already carries this tree's order. */
+    if (old_prev && !(old_prev->flags & MARKDOWN_CORE_NODE__SHARED)) {
         old_prev->next = sibling;
     }
     sibling->prev = old_prev;
     sibling->next = node;
-    node->prev = sibling;
+    if (!(node->flags & MARKDOWN_CORE_NODE__SHARED)) {
+        node->prev = sibling;
+    }
 
     sibling->parent = parent;
 
@@ -1211,13 +1218,16 @@ int markdown_core_node_insert_after(markdown_core_node *node, markdown_core_node
 
     markdown_core_node *old_next = node->next;
 
-    // Insert 'sibling' between 'node' and 'old_next'.
-    if (old_next) {
+    /* A SHARED neighbor is never written (review-found); the vector
+     * carries this tree's order. */
+    if (old_next && !(old_next->flags & MARKDOWN_CORE_NODE__SHARED)) {
         old_next->prev = sibling;
     }
     sibling->next = old_next;
     sibling->prev = node;
-    node->next = sibling;
+    if (!(node->flags & MARKDOWN_CORE_NODE__SHARED)) {
+        node->next = sibling;
+    }
 
     sibling->parent = parent;
 
@@ -1253,10 +1263,12 @@ int markdown_core_node_replace(markdown_core_node *oldnode, markdown_core_node *
         newnode->parent = parent;
         newnode->prev = oldnode->prev;
         newnode->next = oldnode->next;
-        if (newnode->prev) {
+        /* A SHARED neighbor is never written (review-found); the vector
+         * carries this tree's order. */
+        if (newnode->prev && !(newnode->prev->flags & MARKDOWN_CORE_NODE__SHARED)) {
             newnode->prev->next = newnode;
         }
-        if (newnode->next) {
+        if (newnode->next && !(newnode->next->flags & MARKDOWN_CORE_NODE__SHARED)) {
             newnode->next->prev = newnode;
         }
         oldnode->next = NULL;
@@ -1287,7 +1299,8 @@ int markdown_core_node_prepend_child(markdown_core_node *node, markdown_core_nod
         child->next = old_first;
         child->prev = NULL;
         child->parent = node;
-        if (old_first) {
+        /* A SHARED neighbor is never written (review-found). */
+        if (old_first && !(old_first->flags & MARKDOWN_CORE_NODE__SHARED)) {
             old_first->prev = child;
         }
         return 1;
@@ -1328,7 +1341,8 @@ int markdown_core_node_append_child(markdown_core_node *node, markdown_core_node
         child->next = NULL;
         child->prev = back;
         child->parent = node;
-        if (back) {
+        /* A SHARED neighbor is never written (review-found). */
+        if (back && !(back->flags & MARKDOWN_CORE_NODE__SHARED)) {
             back->next = child;
         }
         return 1;
