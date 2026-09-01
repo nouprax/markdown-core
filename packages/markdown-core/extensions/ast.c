@@ -1070,15 +1070,19 @@ static const char *mode_name(markdown_core_placement_mode mode) {
 static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, markdown_core_node_kind kind) {
     markdown_core_string a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0};
     markdown_core_optional_string oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
-    markdown_core_optional_i64 start;
-    markdown_core_optional_bool checked;
-    markdown_core_list_flavor flavor;
-    markdown_core_placement_mode mode;
+    /* Every accessor below fills its out-parameters before this reads them
+     * -- the kinds match by construction -- but the initializers keep that
+     * fact out of the compiler's hands: -Werror builds cannot see through
+     * the switch, and dump output must never depend on what they guess. */
+    markdown_core_optional_i64 start = {false, 0};
+    markdown_core_optional_bool checked = {false, false};
+    markdown_core_list_flavor flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET;
+    markdown_core_placement_mode mode = MARKDOWN_CORE_PLACEMENT_EMBEDDED;
     markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
     markdown_core_identity definition = {0, 0};
-    bool x, y, has_attributes;
-    size_t count, i;
-    int32_t level;
+    bool x = false, y = false, has_attributes = false;
+    size_t count = 0, i;
+    int32_t level = 0;
     switch (kind) {
     case MARKDOWN_CORE_KIND_HEADING:
         markdown_core_node_heading_level(node, &level);
@@ -1265,7 +1269,6 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
 static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_scope scope = markdown_core_node_scope(node);
-    const markdown_core_node *child;
     size_t count = markdown_core_node_child_count(node);
     size_t i;
     markdown_core_identity identity = markdown_core_node_identifier(node);
@@ -1462,8 +1465,8 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
     case MARKDOWN_CORE_KIND_LINE_BREAK:
         break;
     case MARKDOWN_CORE_KIND_LIST: {
-        markdown_core_list_flavor flavor;
-        markdown_core_optional_i64 start;
+        markdown_core_list_flavor flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET;
+        markdown_core_optional_i64 start = {false, 0};
         bool tight = false;
         markdown_core_node_list_properties(node, &flavor, &start, &tight);
         wire_i32(buffer, (int32_t)flavor);
@@ -1474,7 +1477,7 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
         break;
     }
     case MARKDOWN_CORE_KIND_LIST_ITEM: {
-        markdown_core_optional_bool checked;
+        markdown_core_optional_bool checked = {false, false};
         markdown_core_node_list_item_checked(node, &checked);
         wire_u8(buffer, checked.has_value ? (checked.value ? 1 : 0) : UINT8_MAX);
         wire_children(buffer, node);
@@ -1501,14 +1504,14 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
     case MARKDOWN_CORE_KIND_FORMULA: {
         /* The one kind whose mode is a fact about the source rather than about
          * the kind; the other five stopped carrying it at Q29. */
-        markdown_core_placement_mode mode;
+        markdown_core_placement_mode mode = MARKDOWN_CORE_PLACEMENT_EMBEDDED;
         markdown_core_node_formula_properties(node, &mode, &first);
         wire_i32(buffer, (int32_t)mode);
         wire_string(buffer, first);
         break;
     }
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK: {
-        markdown_core_placement_mode mode;
+        markdown_core_placement_mode mode = MARKDOWN_CORE_PLACEMENT_EMBEDDED;
         markdown_core_node_formula_properties(node, &mode, &first);
         wire_string(buffer, first);
         break;
