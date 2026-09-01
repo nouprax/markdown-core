@@ -41,9 +41,13 @@ static int traverse(const markdown_core_node *node) {
     (void)markdown_core_node_heading_level(node, &level);
     (void)markdown_core_node_list_item_checked(node, &checked);
     (void)markdown_core_node_table_row_is_header(node, &flag);
-    for (child = markdown_core_node_get_first_child(node); child; child = markdown_core_node_get_next_sibling(child)) {
-        if (traverse(child) != 0) {
-            return -1;
+    {
+        markdown_core_children cursor;
+        for (cursor = markdown_core_node_children(node); (child = cursor.child) != NULL;
+            cursor = markdown_core_children_next(cursor)) {
+            if (traverse(child) != 0) {
+                return -1;
+            }
         }
     }
     return 0;

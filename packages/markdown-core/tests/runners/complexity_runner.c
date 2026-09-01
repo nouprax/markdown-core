@@ -352,10 +352,10 @@ static const char *const CC_EXPANSION_CASES[] = {"reference_expansion_bound"};
  * is that reading n of them costs O(n) and not O(n^2). */
 static void cc_read_attributes(markdown_core_document *document) {
     const markdown_core_node *root = markdown_core_document_semantic(document);
-    const markdown_core_node *paragraph = root ? markdown_core_node_get_first_child(root) : NULL;
+    const markdown_core_node *paragraph = root ? markdown_core_node_children(root).child : NULL;
     const markdown_core_node *node;
-    for (node = paragraph ? markdown_core_node_get_first_child(paragraph) : NULL; node;
-        node = markdown_core_node_get_next_sibling(node)) {
+    markdown_core_children cursor = markdown_core_node_children(paragraph);
+    for (; (node = cursor.child) != NULL; cursor = markdown_core_children_next(cursor)) {
         markdown_core_string directive_name;
         bool has_attributes = false;
         size_t count = 0;

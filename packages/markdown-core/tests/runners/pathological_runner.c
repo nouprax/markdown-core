@@ -267,19 +267,24 @@ static int case_hard_link_emph(pc_context *context) {
     }
 
     root = markdown_core_document_semantic(context->document);
-    paragraph = markdown_core_node_get_first_child(root);
-    text = markdown_core_node_get_first_child(paragraph);
-    if (!markdown_core_node_literal(text, &value) || value.length != 4 || memcmp(value.data, "**x ", 4) != 0) {
-        fprintf(stderr, "leading text is not the literal '**x '\n");
-        return -1;
+    paragraph = markdown_core_node_children(root).child;
+    {
+        markdown_core_children para_children = markdown_core_node_children(paragraph);
+        markdown_core_children link_children;
+        text = para_children.child;
+        if (!markdown_core_node_literal(text, &value) || value.length != 4 || memcmp(value.data, "**x ", 4) != 0) {
+            fprintf(stderr, "leading text is not the literal '**x '\n");
+            return -1;
+        }
+        link = markdown_core_children_next(para_children).child;
+        if (markdown_core_node_get_kind(link) != MARKDOWN_CORE_KIND_LINK ||
+            !markdown_core_node_link_properties(link, &value, &title) || value.length != 1 || value.data[0] != 'd') {
+            fprintf(stderr, "link destination is not 'd'\n");
+            return -1;
+        }
+        link_children = markdown_core_node_children(link);
+        emphasis = markdown_core_children_next(link_children).child;
     }
-    link = markdown_core_node_get_next_sibling(text);
-    if (markdown_core_node_get_kind(link) != MARKDOWN_CORE_KIND_LINK ||
-        !markdown_core_node_link_properties(link, &value, &title) || value.length != 1 || value.data[0] != 'd') {
-        fprintf(stderr, "link destination is not 'd'\n");
-        return -1;
-    }
-    emphasis = markdown_core_node_get_next_sibling(markdown_core_node_get_first_child(link));
     if (markdown_core_node_get_kind(emphasis) != MARKDOWN_CORE_KIND_EMPHASIS) {
         fprintf(stderr, "emphasis is not inside the link\n");
         return -1;
@@ -447,9 +452,9 @@ static int case_tables(pc_context *context) {
         return -1;
     }
     root = markdown_core_document_semantic(context->document);
-    paragraph = markdown_core_node_get_first_child(root);
+    paragraph = markdown_core_node_children(root).child;
     if (markdown_core_node_get_kind(paragraph) != MARKDOWN_CORE_KIND_PARAGRAPH ||
-        !markdown_core_node_literal(markdown_core_node_get_first_child(paragraph), &value) || value.length != 3 ||
+        !markdown_core_node_literal(markdown_core_node_children(paragraph).child, &value) || value.length != 3 ||
         memcmp(value.data, "aaa", 3) != 0) {
         fprintf(stderr, "leading paragraph is not the literal 'aaa'\n");
         return -1;
@@ -635,8 +640,8 @@ static int case_directive_colon_pairs(pc_context *context) { return pc_directive
 
 static const markdown_core_node *pc_first_directive(const pc_context *context) {
     const markdown_core_node *root = markdown_core_document_semantic(context->document);
-    const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
-    return markdown_core_node_get_first_child(paragraph);
+    const markdown_core_node *paragraph = markdown_core_node_children(root).child;
+    return markdown_core_node_children(paragraph).child;
 }
 
 static int case_directive_long_label(pc_context *context) {
@@ -667,12 +672,12 @@ static int case_directive_long_label(pc_context *context) {
     }
     /* The label is a NODE now, not a count on the parent: it is the
      * directive's only child and the text is its child. */
-    label = markdown_core_node_get_first_child(directive);
+    label = markdown_core_node_children(directive).child;
     if (markdown_core_node_get_kind(label) != MARKDOWN_CORE_KIND_DIRECTIVE_LABEL) {
         fprintf(stderr, "a labelled directive's first child is its label\n");
         return -1;
     }
-    label = markdown_core_node_get_first_child(label);
+    label = markdown_core_node_children(label).child;
     expected = ts_repeat("a", 1500, NULL);
     if (!expected) {
         return -1;
@@ -753,8 +758,8 @@ static int pc_formula_case(
     }
     if (expected_literal) {
         const markdown_core_node *root = markdown_core_document_semantic(context->document);
-        const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
-        const markdown_core_node *formula = markdown_core_node_get_first_child(paragraph);
+        const markdown_core_node *paragraph = markdown_core_node_children(root).child;
+        const markdown_core_node *formula = markdown_core_node_children(paragraph).child;
         markdown_core_placement_mode mode;
         markdown_core_string literal;
         size_t expected_length = strlen(expected_literal);

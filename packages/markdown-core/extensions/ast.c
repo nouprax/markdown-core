@@ -503,28 +503,44 @@ markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
  * its brackets, and `label=` is gone from the dump because the node is there
  * to be seen. The two accessors that existed only to name where the label's
  * children began and ended went with it. */
-const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node) {
-    if (!node) {
-        return NULL;
+markdown_core_children markdown_core_node_children(const markdown_core_node *node) {
+    markdown_core_children cursor = {node, NULL, 0};
+    markdown_core_child_cursor inner;
+    if (node) {
+        cursor.child = markdown_core_child_first(node, &inner);
+        cursor.index = inner.index;
     }
-    if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
-        return node->children.count ? node->children.vec[0] : NULL;
-    }
-    return node->first_child;
+    return cursor;
 }
 
-const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node) {
-    return node ? node->next : NULL;
+markdown_core_children markdown_core_children_next(markdown_core_children cursor) {
+    markdown_core_child_cursor inner;
+    if (!cursor.parent || !cursor.child) {
+        cursor.child = NULL;
+        return cursor;
+    }
+    inner.index = cursor.index;
+    cursor.child = markdown_core_child_after(cursor.parent, cursor.child, &inner);
+    cursor.index = inner.index;
+    return cursor;
 }
 
 size_t markdown_core_node_child_count(const markdown_core_node *node) {
-    const markdown_core_node *child = markdown_core_node_get_first_child(node);
-    size_t count = 0;
-    while (child) {
-        count++;
-        child = markdown_core_node_get_next_sibling(child);
+    if (!node) {
+        return 0;
     }
-    return count;
+    if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
+        return node->children.count;
+    }
+    {
+        size_t count = 0;
+        const markdown_core_node *child = node->first_child;
+        while (child) {
+            count++;
+            child = child->next;
+        }
+        return count;
+    }
 }
 
 bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level) {
@@ -1279,15 +1295,17 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     buffer_i64(buffer, (int64_t)count);
     buffer_cstr(buffer, "\n");
 
-    child = markdown_core_node_get_first_child(node);
-    while (child) {
-        const markdown_core_node *next = markdown_core_node_get_next_sibling(child);
-        if (!ensure_more(buffer, depth)) {
-            return;
+    {
+        markdown_core_children cursor = markdown_core_node_children(node);
+        while (cursor.child) {
+            markdown_core_children next = markdown_core_children_next(cursor);
+            if (!ensure_more(buffer, depth)) {
+                return;
+            }
+            buffer->more[depth] = next.child != NULL;
+            dump_node(buffer, cursor.child, depth + 1);
+            cursor = next;
         }
-        buffer->more[depth] = next != NULL;
-        dump_node(buffer, child, depth + 1);
-        child = next;
     }
 }
 
@@ -1392,15 +1410,15 @@ static void wire_identity(dump_buffer *buffer, markdown_core_identity identity) 
 static void wire_node(dump_buffer *buffer, const markdown_core_node *node);
 
 static void wire_children(dump_buffer *buffer, const markdown_core_node *node) {
-    const markdown_core_node *child = markdown_core_node_get_first_child(node);
+    markdown_core_children cursor;
     size_t count = markdown_core_node_child_count(node);
     if (count > INT32_MAX) {
         buffer->failed = true;
         return;
     }
     wire_i32(buffer, (int32_t)count);
-    for (; child; child = markdown_core_node_get_next_sibling(child)) {
-        wire_node(buffer, child);
+    for (cursor = markdown_core_node_children(node); cursor.child; cursor = markdown_core_children_next(cursor)) {
+        wire_node(buffer, cursor.child);
     }
 }
 

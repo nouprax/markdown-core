@@ -366,28 +366,34 @@ int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *con
     stack[depth++] = root;
     while (depth > 0) {
         const markdown_core_node *node = stack[--depth];
-        const markdown_core_node *sibling = markdown_core_node_get_next_sibling(node);
-        const markdown_core_node *child = markdown_core_node_get_first_child(node);
+        markdown_core_children cursor;
+        size_t first = depth;
+        size_t tail;
         result = visit(node, context);
         if (result != 0) {
             break;
         }
-        if (depth + 2 > capacity) {
-            const markdown_core_node **grown;
-            capacity *= 2;
-            grown = (const markdown_core_node **)realloc((void *)stack, capacity * sizeof(*stack));
-            if (!grown) {
-                result = -1;
-                break;
+        for (cursor = markdown_core_node_children(node); cursor.child; cursor = markdown_core_children_next(cursor)) {
+            if (depth == capacity) {
+                const markdown_core_node **grown;
+                capacity *= 2;
+                grown = (const markdown_core_node **)realloc((void *)stack, capacity * sizeof(*stack));
+                if (!grown) {
+                    result = -1;
+                    break;
+                }
+                stack = grown;
             }
-            stack = grown;
+            stack[depth++] = cursor.child;
         }
-        /* Push the sibling first so the child is visited before it. */
-        if (sibling) {
-            stack[depth++] = sibling;
+        if (result != 0) {
+            break;
         }
-        if (child) {
-            stack[depth++] = child;
+        /* Reverse the run so the first child pops first: pre-order kept. */
+        for (tail = depth; first + 1 < tail; first++, tail--) {
+            const markdown_core_node *swap = stack[first];
+            stack[first] = stack[tail - 1];
+            stack[tail - 1] = swap;
         }
     }
     free((void *)stack);

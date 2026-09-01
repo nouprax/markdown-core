@@ -200,8 +200,9 @@ static size_t traverse(const markdown_core_node *node) {
     markdown_core_node_formula_properties(node, &mode, &value);
 
     size_t children = 0;
-    const markdown_core_node *child = markdown_core_node_get_first_child(node);
-    for (; child; child = markdown_core_node_get_next_sibling(child)) {
+    markdown_core_children cursor = markdown_core_node_children(node);
+    const markdown_core_node *child;
+    for (; (child = cursor.child) != NULL; cursor = markdown_core_children_next(cursor)) {
         size_t below = traverse(child);
         if (!below) {
             return 0;

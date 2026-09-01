@@ -250,9 +250,9 @@ static void check_null_and_empty(void) {
             check(false, "requirement 14 case parses");
             continue;
         }
-        node = markdown_core_node_get_first_child(markdown_core_document_semantic(document));
+        node = markdown_core_node_children(markdown_core_document_semantic(document)).child;
         if (CASES[index].kind != MARKDOWN_CORE_KIND_REFERENCE_DEFINITION) {
-            node = markdown_core_node_get_first_child(node);
+            node = markdown_core_node_children(node).child;
         }
         check(markdown_core_node_get_kind(node) == CASES[index].kind, "requirement 14 case has the expected kind");
         read = CASES[index].kind == MARKDOWN_CORE_KIND_LINK
@@ -297,7 +297,7 @@ static void check_null_and_empty(void) {
             check(false, "requirement 14 info case parses");
             continue;
         }
-        node = markdown_core_node_get_first_child(markdown_core_document_semantic(document));
+        node = markdown_core_node_children(markdown_core_document_semantic(document)).child;
         check(
             markdown_core_node_code_block_properties(node, &info, &language, &literal, &fenced, &closed),
             "the code-block accessor answers"
@@ -340,7 +340,7 @@ static void check_api(void) {
     check(document != NULL && error == NULL, "typed-options parse succeeds");
     if (document) {
         root = markdown_core_document_semantic(document);
-        heading = markdown_core_node_get_first_child(root);
+        heading = markdown_core_node_children(root).child;
         check(markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT, "document root kind is typed");
         check(
             markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING,

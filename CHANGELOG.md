@@ -74,6 +74,16 @@ longer exists. 3.0.0 ships a different streaming surface, described below.
   ECMAScript coverage ledger's unpinned surface shrinks with the walk it
   covered: the retired decoder's 22-line allowance becomes the wire
   decoder's 4-line, statically unreachable remainder.
+- The C facade's child navigation is a BY-VALUE cursor:
+  `markdown_core_node_children` opens one and `markdown_core_children_next`
+  steps it, each step O(1), no allocation. The pair replaces
+  `markdown_core_node_get_first_child`/`markdown_core_node_get_next_sibling`
+  (D9): sibling order is the parent's fact, so the cursor carries the parent
+  and the position, and asking a bare node what follows it — the one
+  question a node shared between two reads of a stream cannot answer — is no
+  longer asked. The bindings' surfaces are unchanged: ECMAScript and Kotlin
+  read the wire, and Swift's `Markup` builders moved to the cursor
+  internally.
 - The ECMAScript `Document` also implements `Symbol.dispose`, so
   `using document = new Document()` releases an abandoned stream at scope
   exit; `dispose()` remains, is idempotent, and is only owed for a stream
