@@ -3151,6 +3151,82 @@ static int case_feed_bound(const ts_spec_file *file) {
         }
     }
     markdown_core_parser_free(parser);
+    /* THE SAME BOUND ON THE SHAPE THE MEMO CANNOT SERVE (F26, review-asked):
+     * one tight list fed an item per line keeps the document's only child
+     * OPEN for the whole stream, so the stable-prefix memo records nothing
+     * and every derivation still walks the accumulated skeleton -- the
+     * carved-out clone term stated above, and #161's still-open remainder
+     * for container prefixes. What must hold on this shape TODAY is T15's
+     * bound on the projection side: an item already fed is never re-parsed,
+     * so misses per feed sit flat -- the open spine's constant, not a term
+     * in the list -- while hits grow with it. */
+    {
+        enum { NB_ITEMS = 128, NB_WARMUP = 16 };
+        size_t nested_min = (size_t)-1;
+        size_t nested_max = 0;
+        size_t nested_first_hits = 0;
+        size_t nested_last_hits = 0;
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        for (i = 0; i < NB_ITEMS; i++) {
+            markdown_core_node *derived;
+            snprintf(line, sizeof(line), "- item %d with some text\n", i);
+            markdown_core_parser_feed(parser, line, strlen(line));
+            misses_before = parser->cache_misses;
+            hits_before = parser->cache_hits;
+            derived = markdown_core_parser_derive_tree(parser, parser->refmap);
+            if (!derived) {
+                fputs("feed bound: nested derivation failed\n", stderr);
+                markdown_core_parser_free(parser);
+                return -1;
+            }
+            markdown_core_node_free(derived);
+            if (i >= NB_WARMUP) {
+                size_t misses = parser->cache_misses - misses_before;
+                if (misses < nested_min) {
+                    nested_min = misses;
+                }
+                if (misses > nested_max) {
+                    nested_max = misses;
+                }
+                if (i == NB_WARMUP) {
+                    nested_first_hits = parser->cache_hits - hits_before;
+                }
+                nested_last_hits = parser->cache_hits - hits_before;
+            }
+        }
+        markdown_core_parser_free(parser);
+        if (nested_max != nested_min) {
+            fprintf(
+                stderr,
+                "feed bound: nested misses per feed moved %zu..%zu -- an open container's fed items are being "
+                "re-parsed\n",
+                nested_min,
+                nested_max
+            );
+            failures++;
+        }
+        if (nested_last_hits <= nested_first_hits) {
+            fprintf(
+                stderr,
+                "feed bound: nested hits per feed did not grow (%zu -> %zu) -- the cache is not serving under an "
+                "open container\n",
+                nested_first_hits,
+                nested_last_hits
+            );
+            failures++;
+        }
+        printf(
+            "feed bound: nested holds -- misses/feed flat at %zu under one open list over %d feeds, hits/feed %zu "
+            "-> %zu\n",
+            nested_min,
+            NB_ITEMS - NB_WARMUP,
+            nested_first_hits,
+            nested_last_hits
+        );
+    }
     printf(
         "feed bound: %s -- misses/feed flat at %zu over %d feeds, hits/feed %zu -> %zu; carved out and accepted "
         "(§6): the whole-CST clone per feed and the binding copy-out\n",
