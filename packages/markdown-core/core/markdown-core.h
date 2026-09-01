@@ -206,6 +206,12 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_previous(markdown_co
  * first child and seeds '*cursor'; step answers the one after 'child'.
  * O(1) a step, no allocation. The cursor is meaningful only to these two.
  *
+ * A child in a derived container may be SHARED between reads of one
+ * stream. Reading it is always safe; the mutation surface knows the
+ * difference and fails closed: unlink is a no-op, insert/append/replace
+ * refuse it, and free releases this tree's hold rather than destroying
+ * what other reads still show.
+ *
  *     size_t cursor;
  *     markdown_core_node *child = markdown_core_node_child_begin(node, &cursor);
  *     for (; child; child = markdown_core_node_child_step(node, child, &cursor)) { ... }

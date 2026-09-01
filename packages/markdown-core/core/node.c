@@ -248,6 +248,12 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
     if (node == NULL || child == NULL) {
         return false;
     }
+    /* A SHARED node cannot be adopted (review-found): a tree references it
+     * only under a holder hold the engine takes at the clone, and a splice
+     * would create an uncounted reference. */
+    if (child->flags & MARKDOWN_CORE_NODE__SHARED) {
+        return false;
+    }
     if (NODE_MEM(node) != NODE_MEM(child)) {
         return 0;
     }
@@ -464,6 +470,16 @@ static void S_free_nodes(markdown_core_node *e) {
 }
 
 void markdown_core_node_free(markdown_core_node *node) {
+    /* Freeing a SHARED reference IS one release (review-found): the node
+     * belongs to its holder and to every tree at once, so a consumer's
+     * free gives up this tree's hold and nothing else -- exactly what the
+     * tree's own free walk does for a shared entry. The holder frees the
+     * shell and the list when the last hold goes (it clears the flag
+     * first, so that final free takes the path below). */
+    if (node->flags & MARKDOWN_CORE_NODE__SHARED) {
+        markdown_core_holder_release(node->link.holder);
+        return;
+    }
     S_node_unlink(node);
     node->next = NULL;
     S_free_nodes(node);
@@ -1149,6 +1165,12 @@ static size_t S_vec_index_of(const markdown_core_node *parent, const markdown_co
 }
 
 void markdown_core_node_unlink(markdown_core_node *node) {
+    /* A SHARED node carries no per-tree links to unlink and is never
+     * written (review-found): the call is a whole no-op, and removing a
+     * shared entry from a tree is the engine's own business (F22). */
+    if (node == NULL || (node->flags & MARKDOWN_CORE_NODE__SHARED)) {
+        return;
+    }
     S_node_unlink(node);
 
     node->next = NULL;
@@ -1268,8 +1290,14 @@ int markdown_core_node_replace(markdown_core_node *oldnode, markdown_core_node *
     if (!oldnode || !newnode || oldnode == newnode) {
         return 0;
     }
+    if (oldnode->flags & MARKDOWN_CORE_NODE__SHARED) {
+        /* The engine alone reseats shared entries (review-found): a
+         * consumer's replace would write another tree's vector slot out
+         * from under its holder hold. */
+        return 0;
+    }
     parent = oldnode->parent;
-    if (MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
+    if (parent && MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
         /* IN PLACE (review-found): a replacement neither grows nor shifts
          * the vector, so the slot is swapped where it stands -- the mass
          * path (a promotion per formula paragraph) stays O(1) per swap
