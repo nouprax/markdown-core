@@ -4,6 +4,7 @@
 
 #include "config.h"
 #include "node.h"
+#include "iterator.h"
 #include "references.h"
 #include "syntax_extension.h"
 
@@ -49,11 +50,24 @@ typedef struct markdown_core_node_arena_page {
     markdown_core_node nodes[];
 } markdown_core_node_arena_page;
 
+/* Byte pages carry the derivation's VECTORS (#161, D9): no alignment and no
+ * masking, because a vector is never handed back one by one -- it dies with
+ * the pages -- and an oversize request simply sizes its own page. */
+typedef struct markdown_core_node_arena_bpage {
+    struct markdown_core_node_arena_bpage *next;
+    size_t used;
+    size_t cap;
+    unsigned char bytes[];
+} markdown_core_node_arena_bpage;
+
 struct markdown_core_node_arena {
     markdown_core_mem *mem;
     markdown_core_node_arena_page *pages;
+    markdown_core_node_arena_bpage *bpages;
     size_t live;
 };
+
+#define MARKDOWN_CORE_ARENA_BPAGE_BYTES ((size_t)32768)
 
 #define MARKDOWN_CORE_ARENA_MAX_NODES                                                                                  \
     (((size_t)MARKDOWN_CORE_ARENA_ALIGN - sizeof(markdown_core_node_arena_page)) / sizeof(markdown_core_node))
@@ -128,6 +142,7 @@ markdown_core_node *markdown_core_node_arena_calloc(markdown_core_node_arena *ar
 static void S_arena_drop(markdown_core_node_arena *arena) {
     markdown_core_mem *mem = arena->mem;
     markdown_core_node_arena_page *page = arena->pages;
+    markdown_core_node_arena_bpage *bpage = arena->bpages;
     while (page) {
         markdown_core_node_arena_page *next = page->next;
         void *raw = page->raw;
@@ -135,7 +150,43 @@ static void S_arena_drop(markdown_core_node_arena *arena) {
         mem->free(raw);
         page = next;
     }
+    while (bpage) {
+        markdown_core_node_arena_bpage *next = bpage->next;
+        mem->free(bpage);
+        bpage = next;
+    }
     mem->free(arena);
+}
+
+/* Bump `size` bytes with the vectors' lifetime -- the arena's own. 16-aligned;
+ * NULL when the allocator refuses a page. */
+void *markdown_core_node_arena_bytes(markdown_core_node_arena *arena, size_t size) {
+    markdown_core_node_arena_bpage *bpage = arena->bpages;
+    void *out;
+    size = (size + 15) & ~(size_t)15;
+    if (!bpage || bpage->cap - bpage->used < size) {
+        size_t cap = size > MARKDOWN_CORE_ARENA_BPAGE_BYTES ? size : MARKDOWN_CORE_ARENA_BPAGE_BYTES;
+        bpage = (markdown_core_node_arena_bpage *)arena->mem->realloc(NULL, sizeof(*bpage) + cap);
+        if (!bpage) {
+            return NULL;
+        }
+        bpage->next = arena->bpages;
+        bpage->used = 0;
+        bpage->cap = cap;
+        arena->bpages = bpage;
+    }
+    out = bpage->bytes + bpage->used;
+    bpage->used += size;
+    return out;
+}
+
+/* The arena an ARENA-flagged node lives in, by the same masking `forget`
+ * uses: for the one caller (vector growth under a hook) that must allocate
+ * beside a node it did not derive. */
+markdown_core_node_arena *markdown_core_node_arena_of(markdown_core_node *node) {
+    markdown_core_node_arena_page *page =
+        (markdown_core_node_arena_page *)((uintptr_t)node & ~(MARKDOWN_CORE_ARENA_ALIGN - 1));
+    return page->arena;
 }
 
 void markdown_core_node_arena_release(markdown_core_node_arena *arena) {
@@ -356,12 +407,35 @@ static void S_free_nodes(markdown_core_node *e) {
 
         free_node_as(e);
 
-        if (e->last_child) {
-            // Splice children into list
-            e->last_child->next = e->next;
-            e->next = e->first_child;
+        if (MARKDOWN_CORE_NODE_ARRAY_P(e)) {
+            /* A container's vector joins the walk the way an intrusive list
+             * always has: the entries are chained through their own `next`
+             * fields -- every entry here is this tree's to write -- and the
+             * vector itself goes back to the allocator. The splice stays
+             * allocation-free, which a free path must be. */
+            size_t i;
+            for (i = 0; i + 1 < e->children.count; i++) {
+                e->children.vec[i]->next = e->children.vec[i + 1];
+            }
+            if (e->children.count) {
+                e->children.vec[e->children.count - 1]->next = e->next;
+                next = e->children.vec[0];
+            } else {
+                next = e->next;
+            }
+            if (e->children.vec && !(e->flags & MARKDOWN_CORE_NODE__ARENA)) {
+                /* An arena shell's vector is arena memory; it goes with the
+                 * pages, not through free(). */
+                NODE_MEM(e)->free(e->children.vec);
+            }
+        } else {
+            if (e->last_child) {
+                // Splice children into list
+                e->last_child->next = e->next;
+                e->next = e->first_child;
+            }
+            next = e->next;
         }
-        next = e->next;
         /* An arena node's memory is the arena's to take back (#161): the
          * releases above are done, and `forget` frees the pages once the
          * last node is handed in. */
@@ -929,6 +1003,7 @@ int markdown_core_node_get_end_column(markdown_core_node *node) {
 
 // Unlink a node without adjusting its next, prev, and parent pointers.
 static void S_node_unlink(markdown_core_node *node) {
+    markdown_core_node *parent;
     if (node == NULL) {
         return;
     }
@@ -940,16 +1015,74 @@ static void S_node_unlink(markdown_core_node *node) {
         node->next->prev = node->prev;
     }
 
-    // Adjust first_child and last_child of parent.
-    markdown_core_node *parent = node->parent;
-    if (parent) {
-        if (parent->first_child == node) {
-            parent->first_child = node->next;
-        }
-        if (parent->last_child == node) {
-            parent->last_child = node->prev;
-        }
+    parent = node->parent;
+    if (parent == NULL) {
+        return;
     }
+    if (MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
+        /* The vector is the parent's sibling order (#161): close the gap.
+         * The dual links above already spliced the neighbors. */
+        size_t i;
+        for (i = 0; i < parent->children.count; i++) {
+            if (parent->children.vec[i] == node) {
+                memmove(
+                    &parent->children.vec[i],
+                    &parent->children.vec[i + 1],
+                    (parent->children.count - i - 1) * sizeof(*parent->children.vec)
+                );
+                parent->children.count--;
+                break;
+            }
+        }
+        return;
+    }
+    // Adjust first_child and last_child of parent.
+    if (parent->first_child == node) {
+        parent->first_child = node->next;
+    }
+    if (parent->last_child == node) {
+        parent->last_child = node->prev;
+    }
+}
+
+/* Grow the parent's vector by one at `at`. Fallible, so every splice runs it
+ * FIRST: a refused insert leaves both the vector and the links untouched. An
+ * arena parent's vector is arena memory (never realloc'd): growth takes a
+ * fresh bump and the old bytes ride out with the pages. */
+static int S_vec_insert(markdown_core_node *parent, size_t at, markdown_core_node *child) {
+    markdown_core_node **grown;
+    if (parent->flags & MARKDOWN_CORE_NODE__ARENA) {
+        grown = (markdown_core_node **)markdown_core_node_arena_bytes(
+            markdown_core_node_arena_of(parent),
+            (parent->children.count + 1) * sizeof(*grown)
+        );
+        if (!grown) {
+            return 0;
+        }
+        memcpy(grown, parent->children.vec, at * sizeof(*grown));
+        memcpy(&grown[at + 1], &parent->children.vec[at], (parent->children.count - at) * sizeof(*grown));
+    } else {
+        grown = (markdown_core_node **)NODE_MEM(parent)->realloc(
+            parent->children.vec,
+            (parent->children.count + 1) * sizeof(*grown)
+        );
+        if (!grown) {
+            return 0;
+        }
+        memmove(&grown[at + 1], &grown[at], (parent->children.count - at) * sizeof(*grown));
+    }
+    grown[at] = child;
+    parent->children.vec = grown;
+    parent->children.count++;
+    return 1;
+}
+
+static size_t S_vec_index_of(const markdown_core_node *parent, const markdown_core_node *child) {
+    size_t i = 0;
+    while (i < parent->children.count && parent->children.vec[i] != child) {
+        i++;
+    }
+    return i;
 }
 
 void markdown_core_node_unlink(markdown_core_node *node) {
@@ -982,6 +1115,14 @@ int markdown_core_node_insert_before(markdown_core_node *node, markdown_core_nod
 
     S_node_unlink(sibling);
 
+    markdown_core_node *parent = node->parent;
+    if (MARKDOWN_CORE_NODE_ARRAY_P(parent) && !S_vec_insert(parent, S_vec_index_of(parent, node), sibling)) {
+        sibling->next = NULL;
+        sibling->prev = NULL;
+        sibling->parent = NULL;
+        return 0;
+    }
+
     markdown_core_node *old_prev = node->prev;
 
     // Insert 'sibling' between 'old_prev' and 'node'.
@@ -992,12 +1133,10 @@ int markdown_core_node_insert_before(markdown_core_node *node, markdown_core_nod
     sibling->next = node;
     node->prev = sibling;
 
-    // Set new parent.
-    markdown_core_node *parent = node->parent;
     sibling->parent = parent;
 
     // Adjust first_child of parent if inserted as first child.
-    if (parent && !old_prev) {
+    if (parent && !MARKDOWN_CORE_NODE_ARRAY_P(parent) && !old_prev) {
         parent->first_child = sibling;
     }
 
@@ -1026,6 +1165,14 @@ int markdown_core_node_insert_after(markdown_core_node *node, markdown_core_node
 
     S_node_unlink(sibling);
 
+    markdown_core_node *parent = node->parent;
+    if (MARKDOWN_CORE_NODE_ARRAY_P(parent) && !S_vec_insert(parent, S_vec_index_of(parent, node) + 1, sibling)) {
+        sibling->next = NULL;
+        sibling->prev = NULL;
+        sibling->parent = NULL;
+        return 0;
+    }
+
     markdown_core_node *old_next = node->next;
 
     // Insert 'sibling' between 'node' and 'old_next'.
@@ -1036,12 +1183,10 @@ int markdown_core_node_insert_after(markdown_core_node *node, markdown_core_node
     sibling->prev = node;
     node->next = sibling;
 
-    // Set new parent.
-    markdown_core_node *parent = node->parent;
     sibling->parent = parent;
 
     // Adjust last_child of parent if inserted as last child.
-    if (parent && !old_next) {
+    if (parent && !MARKDOWN_CORE_NODE_ARRAY_P(parent) && !old_next) {
         parent->last_child = sibling;
     }
 
@@ -1062,6 +1207,20 @@ int markdown_core_node_prepend_child(markdown_core_node *node, markdown_core_nod
     }
 
     S_node_unlink(child);
+
+    if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
+        markdown_core_node *old_first = node->children.count ? node->children.vec[0] : NULL;
+        if (!S_vec_insert(node, 0, child)) {
+            return 0;
+        }
+        child->next = old_first;
+        child->prev = NULL;
+        child->parent = node;
+        if (old_first) {
+            old_first->prev = child;
+        }
+        return 1;
+    }
 
     markdown_core_node *old_first_child = node->first_child;
 
@@ -1086,6 +1245,20 @@ int markdown_core_node_append_child(markdown_core_node *node, markdown_core_node
     }
 
     S_node_unlink(child);
+
+    if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
+        markdown_core_node *back = node->children.count ? node->children.vec[node->children.count - 1] : NULL;
+        if (!S_vec_insert(node, node->children.count, child)) {
+            return 0;
+        }
+        child->next = NULL;
+        child->prev = back;
+        child->parent = node;
+        if (back) {
+            back->next = child;
+        }
+        return 1;
+    }
 
     markdown_core_node *old_last_child = node->last_child;
 
@@ -1119,20 +1292,34 @@ static void S_print_error(FILE *out, markdown_core_node *node, const char *elem)
 }
 
 int markdown_core_node_check(markdown_core_node *node, FILE *out) {
-    markdown_core_node *cur;
-    /* A borrowed list's nodes have no parent by contract (node.h), so the
+    /* Iterator-driven since #161/D9: the walk itself understands both child
+     * shapes, and the checker asks per parent what its shape promises. A
+     * borrowed list's nodes have no parent by contract (node.h), so the
      * parent check is not applied to them -- "repairing" it would hand the
-     * list to whichever borrower was checked last -- and the climb out of the
-     * list goes to the borrower, as the iterator's does. */
-    markdown_core_node *borrower = NULL;
+     * list to whichever borrower was checked last. */
+    markdown_core_iter walk;
+    markdown_core_event_type ev_type;
     int errors = 0;
 
     if (!node) {
         return 0;
     }
 
-    cur = node;
-    for (;;) {
+    markdown_core_iter_init(&walk, node);
+    while ((ev_type = markdown_core_iter_next(&walk)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *cur = markdown_core_iter_get_node(&walk);
+        markdown_core_node *parent = NULL;
+        if (ev_type != MARKDOWN_CORE_EVENT_ENTER) {
+            continue;
+        }
+        /* The frame the ENTER just pushed is `cur` itself when it has
+         * children; the parent context sits one below. */
+        if (walk.depth > 0 && walk.frames[walk.depth - 1].node == cur) {
+            parent = walk.depth > 1 ? walk.frames[walk.depth - 2].node : NULL;
+        } else if (walk.depth > 0) {
+            parent = walk.frames[walk.depth - 1].node;
+        }
+
         /* #152/#153's invariant: a block that borrows its list owns no
          * mutable content arena -- its bytes, if any, alias a frozen buffer
          * the block holds a reference to (`asize == 0` marks the alias),
@@ -1147,52 +1334,39 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
             S_print_error(out, cur, "frozen content");
             ++errors;
         }
-        if (cur->first_child) {
-            if (cur->first_child->prev != NULL) {
-                S_print_error(out, cur->first_child, "prev");
-                cur->first_child->prev = NULL;
-                ++errors;
-            }
-            if (MARKDOWN_CORE_NODE_BORROWED_P(cur)) {
-                borrower = cur;
-            } else if (cur->first_child->parent != cur) {
-                S_print_error(out, cur->first_child, "parent");
-                cur->first_child->parent = cur;
-                ++errors;
-            }
-            cur = cur->first_child;
+        if (parent == NULL) {
             continue;
         }
-
-    next_sibling:
-        if (cur == node) {
-            break;
-        }
-        if (cur->next) {
-            if (cur->next->prev != cur) {
-                S_print_error(out, cur->next, "prev");
-                cur->next->prev = cur;
+        if (MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
+            /* The vector is the order; a child may say this parent or, once
+             * it is shared (#161), no parent at all -- never another tree's. */
+            if (cur->parent != NULL && cur->parent != parent) {
+                S_print_error(out, cur, "parent");
                 ++errors;
             }
-            if (cur->next->parent != cur->parent) {
-                S_print_error(out, cur->next, "parent");
-                cur->next->parent = cur->parent;
+        } else if (MARKDOWN_CORE_NODE_BORROWED_P(parent)) {
+            /* Parentless by contract; nothing to repair. */
+        } else {
+            if (cur->parent != parent) {
+                S_print_error(out, cur, "parent");
+                cur->parent = parent;
                 ++errors;
             }
-            cur = cur->next;
-            continue;
-        }
-
-        {
-            markdown_core_node *parent = cur->parent ? cur->parent : borrower;
-            if (parent->last_child != cur) {
+            if (cur->prev == NULL && parent->first_child != cur) {
+                S_print_error(out, parent, "first_child");
+                ++errors;
+            }
+            if (cur->next == NULL && parent->last_child != cur) {
                 S_print_error(out, parent, "last_child");
                 parent->last_child = cur;
                 ++errors;
             }
-            cur = parent;
+            if (cur->next && cur->next->prev != cur) {
+                S_print_error(out, cur->next, "prev");
+                cur->next->prev = cur;
+                ++errors;
+            }
         }
-        goto next_sibling;
     }
 
     return errors;

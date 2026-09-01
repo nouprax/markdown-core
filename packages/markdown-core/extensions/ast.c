@@ -504,7 +504,13 @@ markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
  * to be seen. The two accessors that existed only to name where the label's
  * children began and ended went with it. */
 const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node) {
-    return node ? node->first_child : NULL;
+    if (!node) {
+        return NULL;
+    }
+    if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
+        return node->children.count ? node->children.vec[0] : NULL;
+    }
+    return node->first_child;
 }
 
 const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node) {

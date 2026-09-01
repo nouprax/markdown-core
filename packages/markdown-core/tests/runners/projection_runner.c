@@ -567,11 +567,13 @@ static void pr_generation_clear(pr_generation *generation) {
 /* A block whose children are all inline -- vacuously so for a block with
  * none, which is what puts the empty list under test as well. */
 static int pr_is_leaf_block(markdown_core_node *node) {
+    markdown_core_child_cursor cursor;
     markdown_core_node *child;
     if (!MARKDOWN_CORE_NODE_BLOCK_P(node)) {
         return 0;
     }
-    for (child = node->first_child; child; child = child->next) {
+    for (child = markdown_core_child_first(node, &cursor); child;
+        child = markdown_core_child_after(node, child, &cursor)) {
         if (!MARKDOWN_CORE_NODE_INLINE_P(child)) {
             return 0;
         }
@@ -1227,50 +1229,31 @@ static const pr_key_entry *pr_key_find(const pr_key_set *set, const markdown_cor
 static int pr_collect_blocks(markdown_core_node *root, markdown_core_node ***out, size_t *count) {
     markdown_core_node **items = NULL;
     size_t n = 0, cap = 0;
-    markdown_core_node *cur = root;
-    while (cur) {
+    markdown_core_iter walk;
+    markdown_core_event_type ev_type;
+    markdown_core_iter_init(&walk, root);
+    while ((ev_type = markdown_core_iter_next(&walk)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *cur = markdown_core_iter_get_node(&walk);
+        if (ev_type != MARKDOWN_CORE_EVENT_ENTER) {
+            continue;
+        }
+        if (!MARKDOWN_CORE_NODE_BLOCK_P(cur)) {
+            /* An inline-class child (a directive's label) roots no blocks. */
+            markdown_core_iter_skip_children(&walk);
+            continue;
+        }
         if (n == cap) {
             markdown_core_node **grown;
             cap = cap ? cap * 2 : 32;
             grown = (markdown_core_node **)realloc(items, cap * sizeof(*items));
             if (!grown) {
                 free(items);
+                markdown_core_iter_deinit(&walk);
                 return -1;
             }
             items = grown;
         }
         items[n++] = cur;
-        /* Descend to the first BLOCK-class child and walk only block
-         * siblings. The one mixed-class container is a labeled directive
-         * block, whose FIRST child is the inline-class label with the block
-         * children after it -- a first-child class test walked past its
-         * whole interior (landing review). */
-        {
-            markdown_core_node *child = cur->first_child;
-            while (child && !MARKDOWN_CORE_NODE_BLOCK_P(child)) {
-                child = child->next;
-            }
-            if (child) {
-                cur = child;
-                continue;
-            }
-        }
-        for (;;) {
-            markdown_core_node *sibling;
-            if (cur == root) {
-                cur = NULL;
-                break;
-            }
-            sibling = cur->next;
-            while (sibling && !MARKDOWN_CORE_NODE_BLOCK_P(sibling)) {
-                sibling = sibling->next;
-            }
-            if (sibling) {
-                cur = sibling;
-                break;
-            }
-            cur = cur->parent;
-        }
     }
     *out = items;
     *count = n;
@@ -1604,8 +1587,13 @@ static int pr_identity_boundary(
             );
             failed = 1;
         }
-        for (first_sibling = all[i]->first_child; first_sibling && !failed; first_sibling = first_sibling->next) {
-            for (later_sibling = first_sibling->next; later_sibling && !failed; later_sibling = later_sibling->next) {
+        markdown_core_child_cursor first_cursor;
+        for (first_sibling = markdown_core_child_first(all[i], &first_cursor); first_sibling && !failed;
+            first_sibling = markdown_core_child_after(all[i], first_sibling, &first_cursor)) {
+            markdown_core_child_cursor later_cursor = first_cursor;
+            for (later_sibling = markdown_core_child_after(all[i], first_sibling, &later_cursor);
+                later_sibling && !failed;
+                later_sibling = markdown_core_child_after(all[i], later_sibling, &later_cursor)) {
                 if (first_sibling->identifier == later_sibling->identifier) {
                     fprintf(
                         stderr,
@@ -1821,9 +1809,11 @@ typedef struct ti_record {
 } ti_record;
 
 static int ti_snapshot(markdown_core_node *root, ti_record *out) {
+    markdown_core_child_cursor cursor;
     markdown_core_node *child;
     out->count = 0;
-    for (child = root->first_child; child; child = child->next) {
+    for (child = markdown_core_child_first(root, &cursor); child;
+        child = markdown_core_child_after(root, child, &cursor)) {
         if (out->count == TI_MAX_CHILDREN) {
             return -1;
         }
@@ -2602,7 +2592,7 @@ static int cs_collect(markdown_core_node *root, int exempt_tail, cs_entry **out,
     markdown_core_iter walk;
     markdown_core_iter *iter = &walk;
     markdown_core_event_type ev_type;
-    markdown_core_node *tail = exempt_tail ? root->last_child : NULL;
+    markdown_core_node *tail = exempt_tail ? markdown_core_child_back(root) : NULL;
     size_t cap = 0;
     *out = NULL;
     *count = 0;
@@ -2610,7 +2600,7 @@ static int cs_collect(markdown_core_node *root, int exempt_tail, cs_entry **out,
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node = markdown_core_iter_get_node(iter);
         if (ev_type == MARKDOWN_CORE_EVENT_ENTER && tail && node == tail) {
-            markdown_core_iter_reset(iter, node, MARKDOWN_CORE_EVENT_EXIT);
+            markdown_core_iter_skip_children(iter);
             continue;
         }
         if (ev_type != MARKDOWN_CORE_EVENT_ENTER || !MARKDOWN_CORE_NODE_BLOCK_P(node) ||
@@ -2699,7 +2689,7 @@ static int case_carried_state(const ts_spec_file *file) {
                 return -1;
             }
             boundary_definitions = cs_definition_count(derived);
-            if (derived->first_child && derived->first_child != derived->last_child) {
+            if (markdown_core_node_child_count(derived) > 1) {
                 multi_block++;
             }
             markdown_core_node_free(derived);

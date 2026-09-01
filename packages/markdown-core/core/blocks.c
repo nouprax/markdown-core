@@ -1318,7 +1318,8 @@ static bool S_tail_queue_push(markdown_core_parser *parser, markdown_core_node *
  * a write. Only an OWNED list is numbered -- a borrowed one already carries
  * its numbers and must not be written (F22). */
 static void S_number_inline_descendants(markdown_core_node *block) {
-    markdown_core_node *cur = block->first_child;
+    markdown_core_child_cursor cursor;
+    markdown_core_node *cur = markdown_core_child_first(block, &cursor);
     uint32_t ordinal = 0;
     while (cur) {
         /* A nested BLOCK owns its own namespace: its identity is its mint and
@@ -1339,10 +1340,16 @@ static void S_number_inline_descendants(markdown_core_node *block) {
                 continue;
             }
         }
-        while (cur != block && !cur->next) {
+        while (cur->parent != block && cur != block && !cur->next) {
             cur = cur->parent;
         }
-        cur = cur == block ? NULL : cur->next;
+        if (cur == block) {
+            cur = NULL;
+        } else if (cur->parent == block) {
+            cur = markdown_core_child_after(block, cur, &cursor);
+        } else {
+            cur = cur->next;
+        }
     }
 }
 
@@ -1350,8 +1357,10 @@ static void S_number_inline_descendants(markdown_core_node *block) {
  * list, or a CST-resident inline construct like a directive's label? This is
  * what obliges a tail: the inline ordinals above are assigned there. */
 static bool S_has_inline_child(markdown_core_node *block) {
+    markdown_core_child_cursor cursor;
     markdown_core_node *child;
-    for (child = block->first_child; child; child = child->next) {
+    for (child = markdown_core_child_first(block, &cursor); child;
+        child = markdown_core_child_after(block, child, &cursor)) {
         if (!MARKDOWN_CORE_NODE_BLOCK_P(child)) {
             return true;
         }
@@ -1431,8 +1440,10 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
      * never enrolled in the cache -- the clone leaves it unmarked -- so its
      * children are always its own. */
     if (node && children_own && !contains_inlines(node) && S_has_inline_child(node)) {
+        markdown_core_child_cursor label_cursor;
         markdown_core_node *child;
-        for (child = node->first_child; child; child = child->next) {
+        for (child = markdown_core_child_first(node, &label_cursor); child;
+            child = markdown_core_child_after(node, child, &label_cursor)) {
             markdown_core_node *content = child;
             if (MARKDOWN_CORE_NODE_BLOCK_P(child) || !contains_inlines(child)) {
                 continue;
@@ -1565,7 +1576,7 @@ static void process_inlines(
                 if (S_block_has_tail_work(parser, cur) && !S_tail_queue_push(parser, cur)) {
                     parser->oom = true;
                 }
-                markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
+                markdown_core_iter_skip_children(iter);
                 continue;
             }
             markdown_core_parse_inlines(parser, cur, refmap, options);
@@ -2082,6 +2093,48 @@ lost:
 
 /* Clone the block skeleton. Iterative, because block nesting is input-shaped.
  * Children are linked raw: the source tree already proved containment. */
+/* Turn a freshly cloned `parent` into a CHILD_ARRAY container sized for its
+ * origin's children (#161, D9): the vector is the parent's own statement of
+ * sibling order, so a closed child's NODE can later be shared between trees
+ * without carrying any per-tree fact. Zero children still flag the shape --
+ * an empty document is a container, not a leaf. */
+static bool S_vec_open(markdown_core_parser *parser, markdown_core_node *parent, const markdown_core_node *src) {
+    const markdown_core_node *child;
+    size_t total = 0;
+    for (child = src->first_child; child; child = child->next) {
+        total++;
+    }
+    parent->children.vec = NULL;
+    parent->children.count = 0;
+    if (total) {
+        parent->children.vec =
+            parser->derive_arena
+                ? (
+                      markdown_core_node **
+                  )markdown_core_node_arena_bytes(parser->derive_arena, total * sizeof(*parent->children.vec))
+                : (markdown_core_node **)parser->mem->realloc(NULL, total * sizeof(*parent->children.vec));
+        if (!parent->children.vec) {
+            return false;
+        }
+    }
+    parent->flags |= MARKDOWN_CORE_NODE__CHILD_ARRAY;
+    return true;
+}
+
+/* Append into the vector AND keep the child's own sibling links written: the
+ * public first/next accessors stay truthful until D9's walker replaces them,
+ * at no cost a fresh node minds. The links die with those accessors. */
+static void S_vec_append(markdown_core_node *parent, markdown_core_node *child) {
+    markdown_core_node *back = parent->children.count ? parent->children.vec[parent->children.count - 1] : NULL;
+    parent->children.vec[parent->children.count++] = child;
+    child->parent = parent;
+    child->prev = back;
+    child->next = NULL;
+    if (back) {
+        back->next = child;
+    }
+}
+
 static markdown_core_node *S_clone_block_tree(
     markdown_core_parser *parser,
     const markdown_core_node *src_root,
@@ -2094,22 +2147,23 @@ static markdown_core_node *S_clone_block_tree(
     if (!dst_root) {
         return NULL;
     }
+    if (!S_vec_open(parser, dst_root, src_root)) {
+        markdown_core_node_free(dst_root);
+        return NULL;
+    }
     while (src) {
         markdown_core_node *dst = S_clone_block_node(parser, src, refmap);
         if (!dst) {
             markdown_core_node_free(dst_root);
             return NULL;
         }
-        dst->parent = dst_parent;
-        dst->prev = dst_parent->last_child;
-        if (dst_parent->last_child) {
-            dst_parent->last_child->next = dst;
-        } else {
-            dst_parent->first_child = dst;
-        }
-        dst_parent->last_child = dst;
+        S_vec_append(dst_parent, dst);
 
         if (src->first_child) {
+            if (!S_vec_open(parser, dst, src)) {
+                markdown_core_node_free(dst_root);
+                return NULL;
+            }
             src = src->first_child;
             dst_parent = dst;
         } else {
