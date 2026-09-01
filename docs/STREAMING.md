@@ -1705,7 +1705,12 @@ block that dies); freshness is one comparison per axis for the whole run
 consulted that map (#163), OR-folded at push, unconsulted axes refreshed
 at each extension. Ownership is persistent structure by refcount: the
 memo holds each entry's holder; a tree holds the memo once and carries
-its **own** boundary (the memo's count keeps growing past it); the free
+its **own** boundary (the memo's count keeps growing past it) beside the
+hold in an arena-owned `memo_ref` — review-found: the boundary's first
+home was the extension-owned `as.opaque`, where a document-selected name
+hook's attach would have trusted the integer as a payload and the free
+would have handed it to `opaque_free_func`; the arm now stays NULL and
+the gate asserts it; the free
 walk skips the run and returns the one hold; invalidation releases the
 parser's hold and rebuilds while old trees keep the old memo — and the
 old answer — alive. Every failure is absorbed the way the store absorbs
@@ -2004,8 +2009,9 @@ back in the vocabulary that produced them.
   stores its misses — pair-proven (closed CST child, holder identity),
   anchored on the last recorded child, freshness one comparison per axis
   with #163's consulted gating OR-folded across the run — and the next
-  derivation memcpys the run under ONE memo hold, its own boundary in the
-  document node, per-child walk resumed after. Persistent structure by
+  derivation memcpys the run under ONE memo hold, its own boundary beside
+  it in an arena-owned `memo_ref` (the extension-owned `as.opaque` stays
+  NULL — review-found), per-child walk resumed after. Persistent structure by
   refcount: invalidation rebuilds while old trees keep the old memo and
   the old answer alive. The document's tail question then starts past the
   boundary (its O(width) inline-child scan was the next defect in the

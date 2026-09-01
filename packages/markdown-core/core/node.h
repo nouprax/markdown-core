@@ -194,10 +194,13 @@ enum markdown_core_node__internal_flags {
 
     /* THE MEMOIZED PREFIX (#161, F25): this container's vector begins with
      * a run copied from a child memo, whose entries the MEMO holds -- the
-     * tree's part in all of them is ONE hold on the memo itself. The free
-     * walk skips per-entry releases below the boundary (`as.opaque` on the
-     * DOCUMENT node carries it) and releases `link.memo` once. Only the
-     * derived document node carries this flag today. */
+     * tree's part in all of them is ONE hold on the memo itself.
+     * `link.memo_ref` carries the memo and THIS tree's boundary; the free
+     * walk skips per-entry releases below the boundary and releases the
+     * memo once. The extension-owned `as.opaque` is NOT touched
+     * (review-found): a document-selected name hook legitimately receives
+     * this node, and the attach path trusts any non-NULL payload it finds
+     * there. Only the derived document node carries this flag today. */
     MARKDOWN_CORE_NODE__MEMO_PREFIX = (1 << 11),
 
     // The first bit an extension may claim. Extension flags are compile-time
@@ -211,6 +214,20 @@ typedef uint16_t markdown_core_node_internal_flags;
 typedef struct markdown_core_holder markdown_core_holder;
 typedef struct markdown_core_node_arena markdown_core_node_arena;
 typedef struct markdown_core_child_memo markdown_core_child_memo;
+
+/* THE TREE'S OWN VIEW OF A CONSUMED MEMO (#161, F25, review-found): the
+ * boundary is a per-tree fact -- the memo's count keeps growing past it --
+ * and the extension-owned `as.opaque` arm is no place for it: a
+ * document-selected name hook legitimately receives the derived document,
+ * and an attach that finds a non-NULL payload there trusts it, so an
+ * integer in the arm would be dereferenced as a payload and handed to
+ * `opaque_free_func` at the free. The pair lives in the TREE'S derivation
+ * arena, exactly as long as the document node that points at it; the free
+ * walk only reads it and releases the memo hold it names. */
+typedef struct markdown_core_memo_ref {
+    markdown_core_child_memo *memo;
+    size_t boundary;
+} markdown_core_memo_ref;
 
 struct markdown_core_node {
     markdown_core_strbuf content;
@@ -327,13 +344,14 @@ struct markdown_core_node {
      * into BORROWED (a store) or clears it.
      *
      * MEMO_PREFIX -- a derived container whose vector begins with a memo's
-     * prefix: `memo` is the child memo this tree holds once, `as.opaque`
-     * carries the boundary index, and the free walk releases the memo
-     * instead of the entries below the boundary. */
+     * prefix: `memo_ref` is the tree's arena-owned pair of the child memo
+     * this tree holds once and THIS tree's boundary index, and the free
+     * walk releases the memo instead of the entries below the boundary.
+     * The extension-owned `as.opaque` stays untouched (review-found). */
     union {
         markdown_core_holder *holder;
         struct markdown_core_node *origin;
-        struct markdown_core_child_memo *memo;
+        struct markdown_core_memo_ref *memo_ref;
     } link;
 
     union {

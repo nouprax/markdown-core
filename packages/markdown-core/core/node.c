@@ -479,9 +479,10 @@ static void S_free_nodes(markdown_core_node *e) {
                 /* The prefix is the MEMO's (#161, F25): its entries were
                  * copied under one memo hold, never held per-tree, so the
                  * walk starts past the boundary and gives back that one
-                 * hold instead. */
-                i = (size_t)(uintptr_t)e->as.opaque;
-                markdown_core_child_memo_release(e->link.memo);
+                 * hold instead. The ref itself is the tree's arena's --
+                 * read, never freed. */
+                i = e->link.memo_ref->boundary;
+                markdown_core_child_memo_release(e->link.memo_ref->memo);
             }
             for (; i < e->children.count; i++) {
                 markdown_core_node *entry = e->children.vec[i];

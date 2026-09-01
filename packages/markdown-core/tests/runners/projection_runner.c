@@ -2576,9 +2576,18 @@ static int case_child_memo(const ts_spec_file *file) {
             failures++;
         } else {
             size_t i;
-            if (!(t2->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || (size_t)(uintptr_t)t2->as.opaque != 3 ||
-                t2->link.memo != parser->doc_memo) {
+            if (!(t2->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || t2->link.memo_ref->boundary != 3 ||
+                t2->link.memo_ref->memo != parser->doc_memo) {
                 fputs("child memo: the consumer does not carry the memo's boundary\n", stderr);
+                failures++;
+            }
+            /* The extension-owned payload arm stays NULL (review-found):
+             * a document-selected name hook receives this node, and the
+             * attach path trusts any non-NULL `as.opaque` as a payload --
+             * an integer boundary there would be dereferenced and later
+             * handed to `opaque_free_func`. */
+            if (t2->as.opaque != NULL) {
+                fputs("child memo: the consumer's document carries a fake extension payload\n", stderr);
                 failures++;
             }
             if (parser->cache_hits - hits_before != 3 || parser->cache_misses != misses_before) {
@@ -2620,8 +2629,9 @@ static int case_child_memo(const ts_spec_file *file) {
         if (!t3 || !t4) {
             fputs("child memo: extending derivations failed\n", stderr);
             failures++;
-        } else if ((size_t)(uintptr_t)t3->as.opaque != 3 || (size_t)(uintptr_t)t4->as.opaque != 4 ||
-                   t3->children.count != 4 || !parser->doc_memo || parser->doc_memo->count != 4) {
+        } else if (!(t3->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || !(t4->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) ||
+                   t3->link.memo_ref->boundary != 3 || t4->link.memo_ref->boundary != 4 || t3->children.count != 4 ||
+                   !parser->doc_memo || parser->doc_memo->count != 4) {
             fputs("child memo: the extension moved the boundaries with the count\n", stderr);
             failures++;
         } else if (t4->children.vec[0] != t3->children.vec[0] || t4->children.vec[3] != t3->children.vec[3]) {
@@ -2714,7 +2724,7 @@ static int case_child_memo(const ts_spec_file *file) {
     if (!failures) {
         markdown_core_parser_feed(parser, CM_REF, sizeof(CM_REF) - 1);
         t7 = markdown_core_parser_derive_tree(parser, parser->refmap);
-        if (!t7 || !(t7->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || t7->link.memo != parser->doc_memo ||
+        if (!t7 || !(t7->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || t7->link.memo_ref->memo != parser->doc_memo ||
             parser->doc_memo->count != 6) {
             fputs("child memo: the consulting block did not extend the run\n", stderr);
             failures++;
@@ -2736,7 +2746,7 @@ static int case_child_memo(const ts_spec_file *file) {
                     fputs("child memo: the fallback did not resolve the reference\n", stderr);
                     failures++;
                 }
-                if (!parser->doc_memo || parser->doc_memo == t7->link.memo || parser->doc_memo->count != 6) {
+                if (!parser->doc_memo || parser->doc_memo == t7->link.memo_ref->memo || parser->doc_memo->count != 6) {
                     fputs("child memo: the record did not rebuild after the move\n", stderr);
                     failures++;
                 }
@@ -2759,7 +2769,7 @@ static int case_child_memo(const ts_spec_file *file) {
      * memo, and through it every entry, alone. */
     if (!failures) {
         t9 = markdown_core_parser_derive_tree(parser, parser->refmap);
-        if (!t9 || !(t9->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || (size_t)(uintptr_t)t9->as.opaque != 6) {
+        if (!t9 || !(t9->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || t9->link.memo_ref->boundary != 6) {
             fputs("child memo: the rebuilt run did not serve\n", stderr);
             failures++;
         } else {

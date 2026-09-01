@@ -1474,7 +1474,7 @@ static bool S_has_inline_child(markdown_core_node *block) {
      * shape the clone can build. */
     if (block->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) {
         size_t i;
-        for (i = (size_t)(uintptr_t)block->as.opaque; i < block->children.count; i++) {
+        for (i = block->link.memo_ref->boundary; i < block->children.count; i++) {
             if (!MARKDOWN_CORE_NODE_BLOCK_P(block->children.vec[i])) {
                 return true;
             }
@@ -2413,24 +2413,35 @@ static markdown_core_node *S_clone_block_tree(
      * holds the walk below takes -- and the walk resumes at the first
      * child after the run. The entries are COPIED, never aliased: the
      * memo's array reallocates as it grows, and this tree's vector is its
-     * own. The boundary rides in the doc's `as.opaque` because the memo's
-     * own count keeps growing past it; the free walk reads the NODE's
-     * boundary (node.c). The `width` term is the fail-closed door: a memo
-     * somehow longer than the container it memoizes would overrun the
-     * vector, so it is merely not consumed -- a slow feed, never a
-     * corrupted tree. The hit ledger moves by the whole run: these are the
-     * same hits the per-child walk would have counted. */
+     * own. The boundary rides beside the memo hold in the tree's own
+     * `memo_ref` -- the memo's count keeps growing past it, and the
+     * extension-owned `as.opaque` is no place for it (review-found: a
+     * document-selected name hook receives this node, and the attach path
+     * trusts any non-NULL payload it finds there) -- allocated from the
+     * derivation arena, so it lives exactly as long as the document node
+     * that points at it and the free walk only reads it (node.c). The
+     * `width` term is the fail-closed door: a memo somehow longer than
+     * the container it memoizes would overrun the vector, so it is merely
+     * not consumed -- a slow feed, never a corrupted tree; a refused ref
+     * allocation is absorbed the same way. The hit ledger moves by the
+     * whole run: these are the same hits the per-child walk would have
+     * counted. */
     if (parser->doc_memo && parser->doc_memo->count > 0 && parser->doc_memo->count <= width &&
         S_memo_fresh(parser, parser->doc_memo, refmap)) {
-        markdown_core_child_memo *memo = parser->doc_memo;
-        memcpy(dst_root->children.vec, memo->entries, memo->count * sizeof(*memo->entries));
-        dst_root->children.count = memo->count;
-        markdown_core_child_memo_hold(memo);
-        dst_root->link.memo = memo;
-        dst_root->flags |= MARKDOWN_CORE_NODE__MEMO_PREFIX;
-        dst_root->as.opaque = (void *)(uintptr_t)memo->count;
-        parser->cache_hits += memo->count;
-        src = memo->src_last->next;
+        markdown_core_memo_ref *ref =
+            (markdown_core_memo_ref *)markdown_core_node_arena_bytes(parser->derive_arena, sizeof(*ref));
+        if (ref) {
+            markdown_core_child_memo *memo = parser->doc_memo;
+            ref->memo = memo;
+            ref->boundary = memo->count;
+            memcpy(dst_root->children.vec, memo->entries, memo->count * sizeof(*memo->entries));
+            dst_root->children.count = memo->count;
+            markdown_core_child_memo_hold(memo);
+            dst_root->link.memo_ref = ref;
+            dst_root->flags |= MARKDOWN_CORE_NODE__MEMO_PREFIX;
+            parser->cache_hits += memo->count;
+            src = memo->src_last->next;
+        }
     }
     while (src) {
         markdown_core_node *dst = S_clone_block_node(parser, src, refmap);
