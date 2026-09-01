@@ -2218,11 +2218,15 @@ done:
  * re-derive the block that held the reference -- the tree resolves, which is
  * the correctness half and holds on any engine -- and it must NOT re-key the
  * prose block beside it, asserted on `parser->cache_hits` advancing across
- * the arrival, which is the half only the refinement can pass. Skipped under
- * --no-cache, where there is nothing to hit. */
+ * the arrival, which is the half only the refinement can pass. A third block
+ * hides its reference inside an inline directive's label (review-found): the
+ * nested parse records candidacy on the label node, so the owning block must
+ * inherit it, or the block stays immune and serves the unresolved tree
+ * forever. Skipped under --no-cache, where there is nothing to hit. */
 static int case_map_immunity(const ts_spec_file *file) {
     static const char PROSE[] = "plain prose paragraph\n\n";
     static const char REF[] = "see [x] here\n\n";
+    static const char LABELED[] = "also :note[with [x] inside]\n\n";
     static const char DEF[] = "[x]: /url\n\n";
     markdown_core_parser *parser;
     markdown_core_node *first = NULL;
@@ -2230,7 +2234,7 @@ static int case_map_immunity(const ts_spec_file *file) {
     markdown_core_node *third = NULL;
     size_t hits_before_second;
     size_t hits_before_third;
-    bool resolved = false;
+    size_t resolved = 0;
     int failures = 0;
     (void)file;
 
@@ -2244,6 +2248,7 @@ static int case_map_immunity(const ts_spec_file *file) {
     }
     markdown_core_parser_feed(parser, PROSE, sizeof(PROSE) - 1);
     markdown_core_parser_feed(parser, REF, sizeof(REF) - 1);
+    markdown_core_parser_feed(parser, LABELED, sizeof(LABELED) - 1);
     first = markdown_core_parser_derive_tree(parser, parser->refmap);
     markdown_core_parser_feed(parser, DEF, sizeof(DEF) - 1);
     hits_before_second = parser->cache_hits;
@@ -2258,11 +2263,16 @@ static int case_map_immunity(const ts_spec_file *file) {
         while ((ev_type = markdown_core_iter_next(&walk)) != MARKDOWN_CORE_EVENT_DONE) {
             if (ev_type == MARKDOWN_CORE_EVENT_ENTER &&
                 markdown_core_iter_get_node(&walk)->type == MARKDOWN_CORE_NODE_LINK_REFERENCE) {
-                resolved = true;
+                resolved++;
             }
         }
-        if (!resolved) {
-            fputs("map immunity: the arriving definition did not re-derive the reference's block\n", stderr);
+        if (resolved < 2) {
+            fprintf(
+                stderr,
+                "map immunity: the arriving definition resolved %zu of 2 references -- %s\n",
+                resolved,
+                resolved ? "the directive label's block stayed immune" : "no block re-derived"
+            );
             failures++;
         }
         if (parser->cache_hits <= hits_before_second) {
@@ -2277,7 +2287,7 @@ static int case_map_immunity(const ts_spec_file *file) {
     }
     hits_before_third = parser->cache_hits;
     third = markdown_core_parser_derive_tree(parser, parser->refmap);
-    if (!failures && (!third || parser->cache_hits < hits_before_third + 2)) {
+    if (!failures && (!third || parser->cache_hits < hits_before_third + 3)) {
         fputs("map immunity: an unwritten CST did not serve its closed blocks\n", stderr);
         failures++;
     }

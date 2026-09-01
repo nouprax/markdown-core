@@ -1220,6 +1220,15 @@ static markdown_core_node *match_colon_directive(
          * link is the one `append_child` writes a moment later. */
         node->parent = parent;
         markdown_core_parse_inlines(parser, label_node, parser->refmap, parser->options);
+        /* The label asked ON THE PARENT'S BEHALF (#163, review-found): the
+         * nested parse's subject owner is the label, but the block whose
+         * store records the CONSULTED bits is `parent` -- without this OR,
+         * a paragraph holding `:note[sees [x]]` read as immune to the very
+         * definition its label asked about and was served stale. The OR
+         * runs after the nested parse returns, so a label inside a label
+         * propagates outward one level at a time. */
+        parent->flags |=
+            label_node->flags & (MARKDOWN_CORE_NODE__CONSULTED_REFMAP | MARKDOWN_CORE_NODE__CONSULTED_FOOTNOTES);
         /* The label's scope spans its brackets, so the brackets are the
          * label's markers (requirement 11b). They are claimed from HERE, in
          * the enclosing paragraph's claim run, because they are not part of
