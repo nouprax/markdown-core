@@ -1195,6 +1195,7 @@ static const char S_INLINES_MEMBER[] = "*inlines";
 /* The projection cache (T9), defined beside the clone that takes its hits. */
 static bool S_cache_fresh(markdown_core_parser *parser, const markdown_core_node *block, markdown_core_map *refmap);
 static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node);
+static void S_container_store(markdown_core_parser *parser, markdown_core_node *node);
 
 /* The inline ordinals (T2), defined beside the tail that assigns them. */
 static bool S_has_inline_child(markdown_core_node *block);
@@ -1605,6 +1606,17 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
     if (node && (node->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
         if (children_own && (contains_inlines(node) || node->first_child == NULL)) {
             S_cache_store(parser, node);
+        } else if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
+            /* A TAILED CONTAINER retains too (review-found): an extension
+             * that declares a container name queues it here, and
+             * un-enrolling it made every later derivation reclone the
+             * unchanged closed subtree -- the bound this round exists
+             * for. What the hooks left in place is the deterministic
+             * projection of the origin under the stored key, exactly as
+             * a declined promotion is, and the container store's own
+             * all-SHARED proof fails closed on anything they changed
+             * that cannot share -- an appended fresh child included. */
+            S_container_store(parser, node);
         } else {
             node->link.origin = NULL;
             node->flags &= ~MARKDOWN_CORE_NODE__ORIGIN;

@@ -2979,6 +2979,29 @@ static int case_child_memo(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+static size_t cr_list_hook_runs;
+
+/* Counts and leaves the node in place: a name hook on a CONTAINER must
+ * not cost the container its retention (review-found) -- the identity
+ * across derivations is the discriminator, the count proves the hit ran
+ * no tail. */
+static void cr_list_hook(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node **block
+) {
+    (void)extension;
+    (void)parser;
+    (void)block;
+    cr_list_hook_runs++;
+}
+
+static const markdown_core_syntax_extension CR_LIST_EXTENSION = {
+    .name = "container_retention_probe",
+    .postprocess_block_func = cr_list_hook,
+    .postprocess_blocks = "list\0",
+};
+
 /* CONTAINER RETENTION's gate (#161, F27): a CLOSED container is one
  * retainable value -- the hit is the retained ARRAY node itself, its
  * subtree never entered -- keyed on its stamp with the consulted bits OR'd
@@ -3218,6 +3241,62 @@ static int case_container_retention(const ts_spec_file *file) {
                 markdown_core_node_free(t2);
                 t2 = NULL;
             }
+        }
+        markdown_core_parser_free(parser);
+        parser = NULL;
+    }
+
+    /* Act 5: a name hook on the container does not cost it retention
+     * (review-found): the extension queues the closed list for tail
+     * work, and the tail's end now stores what the hook left in place.
+     * Convergence is one derivation later than a hookless container's:
+     * the first tail runs before the sweep has stored the list's items,
+     * so its all-SHARED proof declines; the second finds every item
+     * already retained, runs the hook once more, and stores; the third
+     * is the retained node itself -- no tail, the count frozen at two.
+     * The lag is a transition cost, never a term: the shape without this
+     * dispatch recloned the subtree on EVERY derivation, forever. */
+    if (!failures) {
+        markdown_core_node *t3 = NULL;
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        if (!markdown_core_parser_attach_syntax_extension(parser, &CR_LIST_EXTENSION)) {
+            fputs("container retention: could not attach the probe extension\n", stderr);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        cr_list_hook_runs = 0;
+        markdown_core_parser_feed(parser, CR_LIST, sizeof(CR_LIST) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        t3 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1 || !t2 || !t3) {
+            fputs("container retention: hooked derivations failed\n", stderr);
+            failures++;
+        } else if (t2->children.vec[0] != t3->children.vec[0] ||
+                   !(t3->children.vec[0]->flags & MARKDOWN_CORE_NODE__SHARED)) {
+            fputs("container retention: a name hook cost the list its retention\n", stderr);
+            failures++;
+        } else if (cr_list_hook_runs != 2) {
+            fprintf(
+                stderr,
+                "container retention: the list's hook ran %zu times over two storing misses and a hit\n",
+                cr_list_hook_runs
+            );
+            failures++;
+        }
+        if (t1) {
+            markdown_core_node_free(t1);
+            t1 = NULL;
+        }
+        if (t2) {
+            markdown_core_node_free(t2);
+            t2 = NULL;
+        }
+        if (t3) {
+            markdown_core_node_free(t3);
         }
         markdown_core_parser_free(parser);
         parser = NULL;
