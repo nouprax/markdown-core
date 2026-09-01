@@ -1701,9 +1701,19 @@ static int S_optional_chunk_copy(
  * definitions, and `refmap_independence` projects against another. */
 static bool S_cache_fresh(markdown_core_parser *parser, const markdown_core_node *block, markdown_core_map *refmap) {
     const markdown_core_holder *holder = block->link.holder;
+    /* A map's generation takes part only when the stored projection had
+     * something to ask that map (#163): a definition arriving anywhere used
+     * to re-key every block in the document, and F19 measured 86.2% of those
+     * key changes spurious. A block whose parse held no reference-form label
+     * and no footnote call cannot be changed by an insert, so its hit
+     * survives the bump; the failure direction is unchanged -- a bit set
+     * without a lookup is a slow feed, never a wrong tree. */
     return refmap == parser->refmap && !parser->no_projection_cache &&
            (block->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) && holder->stamp == block->stamp &&
-           holder->refgen == parser->refmap->generation && holder->footgen == parser->footnote_defs->generation &&
+           (!(holder->consulted & MARKDOWN_CORE_NODE__CONSULTED_REFMAP) ||
+               holder->refgen == parser->refmap->generation) &&
+           (!(holder->consulted & MARKDOWN_CORE_NODE__CONSULTED_FOOTNOTES) ||
+               holder->footgen == parser->footnote_defs->generation) &&
            holder->extgen == parser->extension_generation;
 }
 
@@ -1723,6 +1733,7 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
     holder->refgen = parser->refmap->generation;
     holder->footgen = parser->footnote_defs->generation;
     holder->extgen = parser->extension_generation;
+    holder->consulted = node->flags & (MARKDOWN_CORE_NODE__CONSULTED_REFMAP | MARKDOWN_CORE_NODE__CONSULTED_FOOTNOTES);
     /* The creation hold is the cache's hold (holders are born held). */
     if (origin->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) {
         markdown_core_holder_release(origin->link.holder);
@@ -1864,7 +1875,8 @@ static markdown_core_node *S_clone_block_node(
     dst->identifier = src->identifier;
     dst->owner = src->owner;
     dst->type = src->type;
-    dst->flags = src->flags & ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN);
+    dst->flags = src->flags & ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN |
+                                  MARKDOWN_CORE_NODE__CONSULTED_REFMAP | MARKDOWN_CORE_NODE__CONSULTED_FOOTNOTES);
     dst->extension = src->extension;
 
     switch (S_type(dst)) {

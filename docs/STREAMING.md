@@ -1248,6 +1248,21 @@ arriving bumps a generation and re-keys every block in the document (F6's
 crudeness, sized at 8.5 points in F12), and the spine stamp re-keys every
 open container on every line whether or not the line reached it.
 
+**Amended 2026-09-01 (#163): the definitional crudeness is closed.** A
+map's generation now takes part in the key only for a block whose stored
+projection HAD SOMETHING TO ASK that map: the block's inline parse sets a
+CONSULTED bit at the candidacy — a reference-form label in range of the
+cap, a footnote call — whether or not the map answered or was even
+non-empty when asked, the store copies the bits onto the holder, and
+`S_cache_fresh` compares a generation only behind its bit. This is not
+§1's dead label→sites index: no per-label state, no eager flipping, and
+the failure direction is unchanged (a bit set without a lookup is a slow
+feed, never a wrong tree). Isolated on a 2,000-paragraph stream with a
+definition arriving every 20 blocks: misses 104,100 → **4,100** (25×,
+hit rate 97.5% → 99.9%); the wall clock of that synthetic is
+clone-dominated, which is #161's case, not this one's. The gate is
+`projection_map_immunity`, mutation-verified red under a global key.
+
 **Cost.** `stamp` fills the four bytes before `type` and pads to the next
 eight: 184 → **192**. Same `bench_runner`, 41 cases, 5 rounds alternated,
 head against the T18 tree `4b43e3e`, min of `median_ms`:
@@ -2032,6 +2047,9 @@ expectation the owner never had, and it dies whole:
       two carved-out terms are stated in its output, and the third — a
       definition's arrival re-keys the whole document (F19) — is asserted AS
       that term, so a change in its shape fails the gate instead of hiding.
+      *It failed exactly so on 2026-09-01: #163 closed the term (F19's
+      amendment), and the gate now asserts the tighter shape — an arrival
+      re-keys no block that consulted no map.*
 - [x] **T16 — measure resident memory** across a long stream, and state the
       bound that comes with every block keeping its content buffer for life.
       F14's first draft claimed clearing a formula block's content at close would

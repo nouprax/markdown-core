@@ -2212,6 +2212,83 @@ done:
     return failures ? -1 : 0;
 }
 
+/* THE MAP-IMMUNITY REFINEMENT (#163): a map's generation takes part in the
+ * cache key only for a block whose stored projection had something to ask
+ * that map. Both halves are asserted: a definition arriving must still
+ * re-derive the block that held the reference -- the tree resolves, which is
+ * the correctness half and holds on any engine -- and it must NOT re-key the
+ * prose block beside it, asserted on `parser->cache_hits` advancing across
+ * the arrival, which is the half only the refinement can pass. Skipped under
+ * --no-cache, where there is nothing to hit. */
+static int case_map_immunity(const ts_spec_file *file) {
+    static const char PROSE[] = "plain prose paragraph\n\n";
+    static const char REF[] = "see [x] here\n\n";
+    static const char DEF[] = "[x]: /url\n\n";
+    markdown_core_parser *parser;
+    markdown_core_node *first = NULL;
+    markdown_core_node *second = NULL;
+    markdown_core_node *third = NULL;
+    size_t hits_before_second;
+    size_t hits_before_third;
+    bool resolved = false;
+    int failures = 0;
+    (void)file;
+
+    if (pr_no_cache) {
+        printf("map immunity: skipped under --no-cache\n");
+        return 0;
+    }
+    parser = pr_parser_new();
+    if (!parser) {
+        return -1;
+    }
+    markdown_core_parser_feed(parser, PROSE, sizeof(PROSE) - 1);
+    markdown_core_parser_feed(parser, REF, sizeof(REF) - 1);
+    first = markdown_core_parser_derive_tree(parser, parser->refmap);
+    markdown_core_parser_feed(parser, DEF, sizeof(DEF) - 1);
+    hits_before_second = parser->cache_hits;
+    second = markdown_core_parser_derive_tree(parser, parser->refmap);
+    if (!first || !second) {
+        fputs("map immunity: derivation failed\n", stderr);
+        failures++;
+    } else {
+        markdown_core_iter walk;
+        markdown_core_event_type ev_type;
+        markdown_core_iter_init(&walk, second);
+        while ((ev_type = markdown_core_iter_next(&walk)) != MARKDOWN_CORE_EVENT_DONE) {
+            if (ev_type == MARKDOWN_CORE_EVENT_ENTER &&
+                markdown_core_iter_get_node(&walk)->type == MARKDOWN_CORE_NODE_LINK_REFERENCE) {
+                resolved = true;
+            }
+        }
+        if (!resolved) {
+            fputs("map immunity: the arriving definition did not re-derive the reference's block\n", stderr);
+            failures++;
+        }
+        if (parser->cache_hits <= hits_before_second) {
+            fprintf(
+                stderr,
+                "map immunity: the definition re-keyed the prose block (%zu hits, %zu misses)\n",
+                parser->cache_hits,
+                parser->cache_misses
+            );
+            failures++;
+        }
+    }
+    hits_before_third = parser->cache_hits;
+    third = markdown_core_parser_derive_tree(parser, parser->refmap);
+    if (!failures && (!third || parser->cache_hits < hits_before_third + 2)) {
+        fputs("map immunity: an unwritten CST did not serve its closed blocks\n", stderr);
+        failures++;
+    }
+    markdown_core_node_free(first);
+    markdown_core_node_free(second);
+    markdown_core_node_free(third);
+    markdown_core_parser_free(parser);
+    printf("map immunity: %s\n", failures ? "the key is still global" : "only the asking block re-keys");
+    return failures ? -1 : 0;
+}
+
 /* THE LABEL'S TAIL (landing review, F18): a directive's CST-resident label is
  * inline-class, so the walk never queues it, and its list silently missed
  * every content pass -- an unmatched `*` stayed three TEXT nodes and a
@@ -2382,10 +2459,14 @@ static int case_feed_bound(const ts_spec_file *file) {
         }
         markdown_core_node_free(derived);
         misses = parser->cache_misses - misses_before;
-        if (misses < FB_BLOCKS) {
+        /* #163 closed F19's whole-document term: none of the 256 prose
+         * blocks consulted a map, so the arrival may re-key none of them.
+         * The other direction -- a block that DID ask re-keys -- is
+         * `map_immunity`'s to pin. */
+        if (misses >= FB_BLOCKS) {
             fprintf(
                 stderr,
-                "feed bound: a definition's arrival re-keyed %zu of %d blocks -- F19's accepted term changed shape\n",
+                "feed bound: a definition's arrival re-keyed %zu of %d blocks that consulted no map (#163)\n",
                 misses,
                 FB_BLOCKS
             );
@@ -2395,7 +2476,7 @@ static int case_feed_bound(const ts_spec_file *file) {
     markdown_core_parser_free(parser);
     printf(
         "feed bound: %s -- misses/feed flat at %zu over %d feeds, hits/feed %zu -> %zu; carved out and accepted "
-        "(§6): the whole-CST clone per feed, the binding copy-out, and the whole-document re-key per definition\n",
+        "(§6): the whole-CST clone per feed and the binding copy-out\n",
         failures ? "MOVED" : "holds",
         min_misses,
         FB_BLOCKS - FB_WARMUP,
@@ -2885,6 +2966,7 @@ static const pr_case_entry PR_CASES[] = {
     {"block_identity", case_block_identity, 1},
     {"block_identity_transitions", case_block_identity_transitions, 0},
     {"attach_invalidation", case_attach_invalidation, 0},
+    {"map_immunity", case_map_immunity, 0},
     {"label_tail", case_label_tail, 0},
     {"feed_bound", case_feed_bound, 0},
     {"resident_memory", case_resident_memory, 0},

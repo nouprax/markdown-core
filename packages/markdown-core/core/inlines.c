@@ -1825,6 +1825,13 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
         found_label = true;
     }
 
+    /* THE CANDIDACY, not the lookup, is what marks the block (#163): a label
+     * in range of the cap is a question a definition could answer, whether
+     * the map answered, or was even non-empty when it was asked -- an insert
+     * changes only a projection that had something to ask. */
+    if (found_label && raw_label.len >= 1 && raw_label.len <= MAX_LINK_LABEL_LENGTH) {
+        subj->owner->flags |= MARKDOWN_CORE_NODE__CONSULTED_REFMAP;
+    }
     /* ONE KEY (#125): the cap and the empty-map cheap-out come first, as the
      * lookup itself used to order them, and the label normalizes ONCE. A
      * match keeps the key alive to `match:`, where the association adopts
@@ -1895,6 +1902,12 @@ noMatch:
          * who writes it and gets prose has no other way to find out. */
         bool caret_written = opener->position < subj->input.len && subj->input.data[opener->position] == '^' &&
                              (literal->len > 1 || opener->inl_text->next->next);
+        /* The candidacy marks the block (#163), exactly as a reference
+         * label's does above: a footnote call is a question the footnote map
+         * could answer, whatever it answered. */
+        if (caret_written) {
+            subj->owner->flags |= MARKDOWN_CORE_NODE__CONSULTED_FOOTNOTES;
+        }
         /* The call's one normalized identifier (#125): built for the lookup,
          * caret included, adopted by the association below on a match. */
         markdown_core_map_key footnote_key = {NULL, 0};
