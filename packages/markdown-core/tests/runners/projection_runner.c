@@ -2262,6 +2262,48 @@ static int case_node_sharing(const ts_spec_file *file) {
             markdown_core_dump_free(first_dump);
             markdown_core_dump_free(second_dump);
         }
+        /* THE CONSUMER'S FREE IS NOT A RELEASE (review-found, P1): the
+         * tree's one hold belongs to the vector entry, so a direct free
+         * of the shared block -- and of a node inside it, and every
+         * structural mutation against either -- must be a refused no-op.
+         * Asserted the hard way: mutate, re-dump, then the frees below
+         * and a fresh derive must still serve the retained node. Before
+         * the fix the free here released the holder's hold a second
+         * time and the interior free destroyed a listed inline, so the
+         * re-dump or the teardown died under ASan. */
+        if (!failures) {
+            markdown_core_node *mut = (markdown_core_node *)first_shared;
+            markdown_core_node *interior = markdown_core_node_first_child(mut);
+            markdown_core_node *stray = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+            markdown_core_node_free(mut);
+            markdown_core_node_unlink(mut);
+            if (interior) {
+                markdown_core_node_free(interior);
+                markdown_core_node_unlink(interior);
+            }
+            if (stray) {
+                if (markdown_core_node_append_child(mut, stray) ||
+                    (interior && markdown_core_node_insert_after(interior, stray)) ||
+                    markdown_core_node_replace(interior ? interior : mut, stray)) {
+                    fputs("node sharing: a mutation reached the shared projection\n", stderr);
+                    failures++;
+                }
+                markdown_core_node_free(stray);
+            }
+            if (!failures) {
+                size_t first_length = 0;
+                size_t second_length = 0;
+                uint8_t *first_dump = pr_dump(first, &first_length);
+                uint8_t *second_dump = pr_dump(second, &second_length);
+                if (!first_dump || !second_dump || first_length != second_length ||
+                    memcmp(first_dump, second_dump, first_length) != 0) {
+                    fputs("node sharing: the trees dump differently after refused mutations\n", stderr);
+                    failures++;
+                }
+                markdown_core_dump_free(first_dump);
+                markdown_core_dump_free(second_dump);
+            }
+        }
     }
     /* Free in store order first, then the survivor must still read. */
     markdown_core_node_free(first);
@@ -2275,6 +2317,21 @@ static int case_node_sharing(const ts_spec_file *file) {
         markdown_core_dump_free(dump);
     }
     markdown_core_node_free(second);
+    /* Both consumers gone, the cache's own hold must still serve: a fresh
+     * derive hits the retained node. Before the fix the mutation block's
+     * stolen release left the holder destroyed by the frees above, and
+     * this derive read it freed. */
+    if (!failures) {
+        size_t hits_before = parser->cache_hits;
+        markdown_core_node *third = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!third || parser->cache_hits < hits_before + 1) {
+            fputs("node sharing: the cache's hold did not survive its consumers\n", stderr);
+            failures++;
+        }
+        if (third) {
+            markdown_core_node_free(third);
+        }
+    }
     markdown_core_parser_free(parser);
     printf("node sharing: %s\n", failures ? "the clone is back" : "a hit is the retained node itself");
     return failures ? -1 : 0;

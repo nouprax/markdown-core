@@ -1908,7 +1908,35 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
      * hold; later trees take their own at the clone. The shell is malloc's
      * (the clone gave every enrolled miss one), so it outlives any arena. */
     holder->node = node;
+    /* THE WHOLE PROJECTION FREEZES, not just its root (review-found): a
+     * consumer can walk from a fresh container into the retained block,
+     * and an interior node without the flag would answer free, unlink,
+     * and adoption as if it were one tree's alone. Every node under the
+     * stored block carries SHARED, so the node-local gates hold at any
+     * depth. Once per store, O(subtree), allocation-free: the list's top
+     * level chains through `next` (take_children left those parents
+     * NULL), and below it the intact `parent` pointers climb back. */
     node->flags |= MARKDOWN_CORE_NODE__SHARED;
+    {
+        markdown_core_node *top;
+        for (top = node->first_child; top; top = top->next) {
+            markdown_core_node *cur = top;
+            for (;;) {
+                cur->flags |= MARKDOWN_CORE_NODE__SHARED;
+                if (cur->first_child) {
+                    cur = cur->first_child;
+                    continue;
+                }
+                while (cur != top && !cur->next) {
+                    cur = cur->parent;
+                }
+                if (cur == top) {
+                    break;
+                }
+                cur = cur->next;
+            }
+        }
+    }
     node->parent = NULL;
     node->next = NULL;
     node->prev = NULL;

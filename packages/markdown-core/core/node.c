@@ -254,6 +254,13 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
     if (child->flags & MARKDOWN_CORE_NODE__SHARED) {
         return false;
     }
+    /* Nor can one adopt (review-found): every node of a retained
+     * projection carries the flag -- root and interior alike -- and a
+     * splice into any of them would show one consumer's edit to every
+     * tree at once. All insertion paths funnel through here. */
+    if (node->flags & MARKDOWN_CORE_NODE__SHARED) {
+        return false;
+    }
     if (NODE_MEM(node) != NODE_MEM(child)) {
         return 0;
     }
@@ -470,14 +477,15 @@ static void S_free_nodes(markdown_core_node *e) {
 }
 
 void markdown_core_node_free(markdown_core_node *node) {
-    /* Freeing a SHARED reference IS one release (review-found): the node
-     * belongs to its holder and to every tree at once, so a consumer's
-     * free gives up this tree's hold and nothing else -- exactly what the
-     * tree's own free walk does for a shared entry. The holder frees the
-     * shell and the list when the last hold goes (it clears the flag
-     * first, so that final free takes the path below). */
+    /* A SHARED node is never a consumer's to free (review-found, twice):
+     * the tree's one hold belongs to the VECTOR ENTRY, and a parentless
+     * shared node cannot name that vector to leave it, so the entry stays
+     * and the tree's own free walk releases the hold exactly once. The
+     * release that used to sit here was a second release of the same
+     * hold, killing the holder under the CST cache and every other live
+     * tree. Fail closed like unlink: no-op. The holder's own teardown
+     * clears the flag first, so the final free takes the path below. */
     if (node->flags & MARKDOWN_CORE_NODE__SHARED) {
-        markdown_core_holder_release(node->link.holder);
         return;
     }
     S_node_unlink(node);
