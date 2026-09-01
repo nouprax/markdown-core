@@ -35,7 +35,7 @@ typedef struct {
     int column;
 } markdown_core_line_mark;
 
-#define MARKDOWN_CORE_TAIL_MEMO 64
+#define MARKDOWN_CORE_TAIL_NAMES 32
 
 struct markdown_core_parser {
     struct markdown_core_mem *mem;
@@ -133,17 +133,28 @@ struct markdown_core_parser {
     markdown_core_node **tail_queue;
     size_t tail_queue_size;
     size_t tail_queue_alloc;
-    /* THE NAME MEMO (F15): whether extension `ext` declared type name `name`,
-     * keyed on the name's POINTER -- every `get_type_string` answers a literal,
-     * so the steady state is a pointer compare and the set is walked only to
-     * fill an entry. Per parser, so parsers on different threads share
-     * nothing. Full is not wrong: a pair that does not fit is walked again. */
+    /* THE NAME MASKS (F15, #161): which attached extensions declared a given
+     * answered name, as a bitmask in `syntax_extensions` list order, plus the
+     * fixed mask of `"*inlines"` declarers. One lookup per tail replaces the
+     * per-(block x extension) memo scan the old shape paid on every
+     * projection -- 14% of a hit-dominated feed, measured. Keyed on the
+     * name's POINTER -- every `get_type_string` answers a literal -- and per
+     * parser, so parsers on different threads share nothing. Rebuilt lazily
+     * when `extension_generation` moves (`tail_mask_generation` is that
+     * generation plus one, so zero means never built). The masks carry the
+     * first 64 extensions; a later one is asked directly, so the failure
+     * direction is a slow feed, never a missed hook. Full is not wrong: a
+     * name that does not fit is walked again. */
+    uint64_t tail_inlines_mask;
     struct {
-        const void *ext;
         const char *name;
-        bool wants;
-    } tail_memo[MARKDOWN_CORE_TAIL_MEMO];
-    size_t tail_memo_size;
+        uint64_t mask;
+    } tail_name_masks[MARKDOWN_CORE_TAIL_NAMES];
+    size_t tail_name_mask_size;
+    size_t tail_mask_generation;
+    /* Extensions past the 64th exist (never in practice): the tail walks the
+     * list's overflow with the direct predicate on top of the masks. */
+    bool tail_masks_overflow;
 };
 
 /* THE PROJECTION (§12.1): a new tree derived from the parser's CST -- the

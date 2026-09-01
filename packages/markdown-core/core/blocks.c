@@ -1173,56 +1173,84 @@ static bool S_set_names(const char *set, const char *name) {
     return false;
 }
 
-/* The memo is keyed on the name's POINTER, and the name is a function of the
- * NODE rather than of its type: a `LIST_ITEM` carrying tasklist answers
- * "tasklist" and a plain one "list_item"; a `TABLE_ROW` answers
- * "table_header" or "table_row". Keyed on the type both would be wrong; keyed
- * on the name there is nothing to special-case. A literal with the same bytes
- * at another address misses once and takes its own entry. */
-static bool S_extension_names(
-    markdown_core_parser *parser,
-    const markdown_core_syntax_extension *ext,
-    const char *name
-) {
-    size_t i;
-    bool wants;
-    for (i = 0; i < parser->tail_memo_size; i++) {
-        if (parser->tail_memo[i].ext == ext && parser->tail_memo[i].name == name) {
-            return parser->tail_memo[i].wants;
+/* Rebuild the tail filter's masks (parser.h) for the extension set as it now
+ * stands: bit `i` speaks for the `i`th attached extension, in list order --
+ * the order the tail offers blocks (F15 rule 1) -- so iterating mask bits
+ * ascending IS iterating the list. The name-keyed table is cleared and
+ * refilled lazily by `S_names_mask`; only the fixed `"*inlines"` mask is
+ * computed here. An extension with no hook or no declared set gets no bit
+ * anywhere: it is never offered, exactly as `S_set_names` never matched it. */
+static void S_tail_masks_rebuild(markdown_core_parser *parser) {
+    markdown_core_llist *extensions;
+    size_t idx = 0;
+    parser->tail_inlines_mask = 0;
+    parser->tail_name_mask_size = 0;
+    for (extensions = parser->syntax_extensions; extensions && idx < 64; extensions = extensions->next, idx++) {
+        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
+        if (ext->postprocess_block_func && ext->postprocess_blocks &&
+            S_set_names(ext->postprocess_blocks, S_INLINES_MEMBER)) {
+            parser->tail_inlines_mask |= (uint64_t)1 << idx;
         }
     }
-    wants = S_set_names(ext->postprocess_blocks, name);
-    if (parser->tail_memo_size < MARKDOWN_CORE_TAIL_MEMO) {
-        parser->tail_memo[parser->tail_memo_size].ext = ext;
-        parser->tail_memo[parser->tail_memo_size].name = name;
-        parser->tail_memo[parser->tail_memo_size].wants = wants;
-        parser->tail_memo_size++;
-    }
-    return wants;
+    parser->tail_masks_overflow = extensions != NULL;
+    parser->tail_mask_generation = parser->extension_generation + 1;
 }
 
-/* Is `block` offered to `ext` -- by its inline content, when the children are
- * the block's own, or by the name it answers NOW? "Now", because a hook that
- * ran before this one may have replaced it, and the next extension must be
- * matched against the node that stands there (F15 rule 1). */
-static bool S_extension_wants(
-    markdown_core_parser *parser,
-    const markdown_core_syntax_extension *ext,
-    markdown_core_node *block,
-    bool children_own
-) {
+static MARKDOWN_CORE_INLINE void S_tail_masks_fresh(markdown_core_parser *parser) {
+    if (parser->tail_mask_generation != parser->extension_generation + 1) {
+        S_tail_masks_rebuild(parser);
+    }
+}
+
+/* Which extensions declared `name`? The masks are keyed on the name's
+ * POINTER, and the name is a function of the NODE rather than of its type: a
+ * `LIST_ITEM` carrying tasklist answers "tasklist" and a plain one
+ * "list_item"; a `TABLE_ROW` answers "table_header" or "table_row". Keyed on
+ * the type both would be wrong; keyed on the name there is nothing to
+ * special-case. A literal with the same bytes at another address misses once
+ * and takes its own entry. */
+static uint64_t S_names_mask(markdown_core_parser *parser, const char *name) {
+    markdown_core_llist *extensions;
+    uint64_t mask = 0;
+    size_t idx = 0;
+    size_t i;
+    for (i = 0; i < parser->tail_name_mask_size; i++) {
+        if (parser->tail_name_masks[i].name == name) {
+            return parser->tail_name_masks[i].mask;
+        }
+    }
+    for (extensions = parser->syntax_extensions; extensions && idx < 64; extensions = extensions->next, idx++) {
+        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
+        if (ext->postprocess_block_func && ext->postprocess_blocks && S_set_names(ext->postprocess_blocks, name)) {
+            mask |= (uint64_t)1 << idx;
+        }
+    }
+    if (parser->tail_name_mask_size < MARKDOWN_CORE_TAIL_NAMES) {
+        parser->tail_name_masks[parser->tail_name_mask_size].name = name;
+        parser->tail_name_masks[parser->tail_name_mask_size].mask = mask;
+        parser->tail_name_mask_size++;
+    }
+    return mask;
+}
+
+/* The 65th extension and beyond live past the masks' reach and are asked
+ * directly -- the exact predicate the masks memoize, so an over-attached
+ * parser is slower, never wrong. */
+static bool S_tail_wants_slow(const markdown_core_syntax_extension *ext, const char *name, bool offer_inlines) {
     if (!ext->postprocess_block_func || !ext->postprocess_blocks) {
         return false;
     }
-    if (children_own && contains_inlines(block) && S_extension_names(parser, ext, S_INLINES_MEMBER)) {
+    if (offer_inlines && S_set_names(ext->postprocess_blocks, S_INLINES_MEMBER)) {
         return true;
     }
-    return S_extension_names(parser, ext, markdown_core_node_get_type_string(block));
+    return S_set_names(ext->postprocess_blocks, name);
 }
 
 /* Asked at the block's EXIT, so a block nothing will touch is never queued. */
 static bool S_block_has_tail_work(markdown_core_parser *parser, markdown_core_node *block) {
     markdown_core_llist *extensions;
+    size_t idx;
+    const char *name;
     if (contains_inlines(block)) {
         return true;
     }
@@ -1235,9 +1263,18 @@ static bool S_block_has_tail_work(markdown_core_parser *parser, markdown_core_no
     if ((parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) && S_type(block) == MARKDOWN_CORE_NODE_HTML_BLOCK) {
         return true;
     }
-    for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
-        if (S_extension_wants(parser, (const markdown_core_syntax_extension *)extensions->data, block, true)) {
-            return true;
+    /* Only the name clause is left to ask: the `"*inlines"` offer needs
+     * inline content, and a block with any already answered above. */
+    S_tail_masks_fresh(parser);
+    name = markdown_core_node_get_type_string(block);
+    if (S_names_mask(parser, name) != 0) {
+        return true;
+    }
+    if (parser->tail_masks_overflow) {
+        for (extensions = parser->syntax_extensions, idx = 0; extensions; extensions = extensions->next, idx++) {
+            if (idx >= 64 && S_tail_wants_slow((const markdown_core_syntax_extension *)extensions->data, name, false)) {
+                return true;
+            }
         }
     }
     return false;
@@ -1317,6 +1354,10 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
     markdown_core_llist *extensions;
     markdown_core_node *node = *block;
     bool children_own = !MARKDOWN_CORE_NODE_BORROWED_P(node);
+    uint64_t offered;
+    size_t idx;
+
+    S_tail_masks_fresh(parser);
 
     if (children_own && contains_inlines(node)) {
         if (!markdown_core_consolidate_text_nodes(node)) {
@@ -1324,9 +1365,22 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
         }
     }
 
-    for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
+    /* The offer set is a function of the node that STANDS there (F15 rule
+     * 1), so it is recomputed after every hook that ran -- a hook may
+     * replace the node -- and left alone across the extensions that were
+     * not offered, which touched nothing. */
+    offered = S_names_mask(parser, markdown_core_node_get_type_string(node));
+    if (children_own && contains_inlines(node)) {
+        offered |= parser->tail_inlines_mask;
+    }
+    for (extensions = parser->syntax_extensions, idx = 0; extensions; extensions = extensions->next, idx++) {
         const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
-        if (!S_extension_wants(parser, ext, node, children_own)) {
+        if (idx < 64 ? !(offered >> idx & 1)
+                     : !S_tail_wants_slow(
+                           ext,
+                           markdown_core_node_get_type_string(node),
+                           children_own && contains_inlines(node)
+                       )) {
             continue;
         }
         ext->postprocess_block_func(ext, parser, &node);
@@ -1335,6 +1389,10 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
             return;
         }
         children_own = !MARKDOWN_CORE_NODE_BORROWED_P(node);
+        offered = S_names_mask(parser, markdown_core_node_get_type_string(node));
+        if (children_own && contains_inlines(node)) {
+            offered |= parser->tail_inlines_mask;
+        }
     }
 
     if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
@@ -1371,10 +1429,11 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
             if (!markdown_core_consolidate_text_nodes(child)) {
                 parser->oom = true;
             }
-            for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
+            for (extensions = parser->syntax_extensions, idx = 0; extensions; extensions = extensions->next, idx++) {
                 const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
-                if (!ext->postprocess_block_func || !ext->postprocess_blocks ||
-                    !S_extension_names(parser, ext, S_INLINES_MEMBER)) {
+                if (idx < 64 ? !(parser->tail_inlines_mask >> idx & 1)
+                             : !(ext->postprocess_block_func && ext->postprocess_blocks &&
+                                   S_set_names(ext->postprocess_blocks, S_INLINES_MEMBER))) {
                     continue;
                 }
                 /* An "*inlines" pass rewrites CHILDREN and neither replaces
