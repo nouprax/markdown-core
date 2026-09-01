@@ -2477,6 +2477,18 @@ static int case_hook_once(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+/* The document's spine-memo entry (F27 generalized the doc memo into the
+ * per-container table); NULL when no run is recorded for the root. */
+static markdown_core_child_memo *cm_root_memo(markdown_core_parser *parser) {
+    size_t i;
+    for (i = 0; i < parser->spine_memo_size; i++) {
+        if (parser->spine_memos[i].container == parser->root) {
+            return parser->spine_memos[i].memo;
+        }
+    }
+    return NULL;
+}
+
 static int cm_dump_contains(const uint8_t *dump, size_t length, const char *needle) {
     size_t n = strlen(needle);
     size_t i;
@@ -2558,11 +2570,11 @@ static int case_child_memo(const ts_spec_file *file) {
             fputs("child memo: the recording tree claims a prefix no memo served\n", stderr);
             failures++;
         }
-        if (!parser->doc_memo || parser->doc_memo->count != 3) {
+        if (!cm_root_memo(parser) || cm_root_memo(parser)->count != 3) {
             fprintf(
                 stderr,
                 "child memo: the run recorded %zu of 3 closed blocks\n",
-                parser->doc_memo ? parser->doc_memo->count : (size_t)0
+                cm_root_memo(parser) ? cm_root_memo(parser)->count : (size_t)0
             );
             failures++;
         }
@@ -2577,7 +2589,7 @@ static int case_child_memo(const ts_spec_file *file) {
         } else {
             size_t i;
             if (!(t2->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || t2->link.memo_ref->boundary != 3 ||
-                t2->link.memo_ref->memo != parser->doc_memo) {
+                t2->link.memo_ref->memo != cm_root_memo(parser)) {
                 fputs("child memo: the consumer does not carry the memo's boundary\n", stderr);
                 failures++;
             }
@@ -2631,7 +2643,7 @@ static int case_child_memo(const ts_spec_file *file) {
             failures++;
         } else if (!(t3->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || !(t4->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) ||
                    t3->link.memo_ref->boundary != 3 || t4->link.memo_ref->boundary != 4 || t3->children.count != 4 ||
-                   !parser->doc_memo || parser->doc_memo->count != 4) {
+                   !cm_root_memo(parser) || cm_root_memo(parser)->count != 4) {
             fputs("child memo: the extension moved the boundaries with the count\n", stderr);
             failures++;
         } else if (t4->children.vec[0] != t3->children.vec[0] || t4->children.vec[3] != t3->children.vec[3]) {
@@ -2719,11 +2731,11 @@ static int case_child_memo(const ts_spec_file *file) {
         if (!t5) {
             fputs("child memo: open-block derivation failed\n", stderr);
             failures++;
-        } else if (!parser->doc_memo || parser->doc_memo->count != 4) {
+        } else if (!cm_root_memo(parser) || cm_root_memo(parser)->count != 4) {
             fprintf(
                 stderr,
                 "child memo: the open block was recorded (count %zu, not 4)\n",
-                parser->doc_memo ? parser->doc_memo->count : (size_t)0
+                cm_root_memo(parser) ? cm_root_memo(parser)->count : (size_t)0
             );
             failures++;
         } else if (t5->children.count != 5) {
@@ -2745,7 +2757,7 @@ static int case_child_memo(const ts_spec_file *file) {
             if (dump) {
                 markdown_core_dump_free(dump);
             }
-            if (!parser->doc_memo || parser->doc_memo->count != 5) {
+            if (!cm_root_memo(parser) || cm_root_memo(parser)->count != 5) {
                 fputs("child memo: the closed block did not extend the run\n", stderr);
                 failures++;
             }
@@ -2766,8 +2778,8 @@ static int case_child_memo(const ts_spec_file *file) {
     if (!failures) {
         markdown_core_parser_feed(parser, CM_REF, sizeof(CM_REF) - 1);
         t7 = markdown_core_parser_derive_tree(parser, parser->refmap);
-        if (!t7 || !(t7->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || t7->link.memo_ref->memo != parser->doc_memo ||
-            parser->doc_memo->count != 6) {
+        if (!t7 || !(t7->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || t7->link.memo_ref->memo != cm_root_memo(parser) ||
+            cm_root_memo(parser)->count != 6) {
             fputs("child memo: the consulting block did not extend the run\n", stderr);
             failures++;
         } else {
@@ -2794,7 +2806,8 @@ static int case_child_memo(const ts_spec_file *file) {
                  * that used to cap every run at its index and now
                  * enrolls with the bare leaves (F27), so the rebuild
                  * records it too. */
-                if (!parser->doc_memo || parser->doc_memo == t7->link.memo_ref->memo || parser->doc_memo->count != 7) {
+                if (!cm_root_memo(parser) || cm_root_memo(parser) == t7->link.memo_ref->memo ||
+                    cm_root_memo(parser)->count != 7) {
                     fputs("child memo: the record did not rebuild after the move\n", stderr);
                     failures++;
                 }
@@ -2877,7 +2890,7 @@ static int case_child_memo(const ts_spec_file *file) {
             if (only) {
                 markdown_core_node_free(only);
             }
-            if (bare->doc_memo) {
+            if (cm_root_memo(bare)) {
                 fputs("child memo: --no-cache still built a memo\n", stderr);
                 failures++;
             }
@@ -2904,8 +2917,8 @@ static int case_child_memo(const ts_spec_file *file) {
             first = markdown_core_parser_derive_tree(fenced, fenced->refmap);
             misses_before = fenced->cache_misses;
             second = markdown_core_parser_derive_tree(fenced, fenced->refmap);
-            if (!first || !second || fenced->cache_misses != misses_before || !fenced->doc_memo ||
-                fenced->doc_memo->count != 3 || !(second->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) ||
+            if (!first || !second || fenced->cache_misses != misses_before || !cm_root_memo(fenced) ||
+                cm_root_memo(fenced)->count != 3 || !(second->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) ||
                 second->link.memo_ref->boundary != 3) {
                 fputs("child memo: the hooked fence is not retained, and caps the run\n", stderr);
                 failures++;
@@ -3069,6 +3082,13 @@ static int case_container_retention(const ts_spec_file *file) {
             } else if (open2->children.vec[0] != open1->children.vec[0] ||
                        !(open1->children.vec[0]->flags & MARKDOWN_CORE_NODE__SHARED)) {
                 fputs("container retention: a closed item is not the same node across derivations\n", stderr);
+                failures++;
+            } else if (!(open2->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || open2->link.memo_ref->boundary != 1) {
+                /* The open LIST consumes its own spine memo (F27): the
+                 * first derivation recorded its one closed item, and the
+                 * second entered it as a memcpy under one hold -- the
+                 * boundary is the tree's own, not the memo's count. */
+                fputs("container retention: the open list did not consume its spine memo\n", stderr);
                 failures++;
             }
         }
