@@ -125,6 +125,10 @@ struct markdown_core_parser {
     bool no_projection_cache;
     size_t cache_hits;
     size_t cache_misses;
+    /* THE DERIVATION'S ARENA (#161), set only for the span of one
+     * `derive_tree` call so the clone can see it; the arena itself leaves on
+     * the derived root. NULL whenever the parser is at rest. */
+    markdown_core_node_arena *derive_arena;
     /* THE PER-BLOCK TAIL'S QUEUE (T18): the blocks a projection's walk found
      * tail work for, in EXIT order, acted on after the walk -- a hook may
      * replace or remove the block, and the walk must not be standing on it

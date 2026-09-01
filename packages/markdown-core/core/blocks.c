@@ -1216,6 +1216,17 @@ static uint64_t S_names_mask(markdown_core_parser *parser, const char *name) {
     size_t i;
     for (i = 0; i < parser->tail_name_mask_size; i++) {
         if (parser->tail_name_masks[i].name == name) {
+            /* Move-to-front: a projection asks about the same few names in
+             * runs (every paragraph in a feed, then every list item), so
+             * the answer's steady state is the first probe. */
+            if (i > 0) {
+                const char *swap_name = parser->tail_name_masks[i - 1].name;
+                uint64_t swap_mask = parser->tail_name_masks[i - 1].mask;
+                parser->tail_name_masks[i - 1] = parser->tail_name_masks[i];
+                parser->tail_name_masks[i].name = swap_name;
+                parser->tail_name_masks[i].mask = swap_mask;
+                i--;
+            }
             return parser->tail_name_masks[i].mask;
         }
     }
@@ -1850,12 +1861,27 @@ static markdown_core_node *S_clone_block_node(
     markdown_core_map *refmap
 ) {
     markdown_core_mem *mem = parser->mem;
-    markdown_core_node *dst = (markdown_core_node *)mem->calloc(1, sizeof(*dst));
+    /* Skeleton nodes live and die with the derived tree, so they come out of
+     * the derivation's arena (#161) -- zeroed, like the calloc this was. The
+     * flag is set at birth, before anything can fail, so every disposal path
+     * below can ask it; the content is init'd with the ARENA's mem -- the
+     * same three functions, at the address `forget` recovers the arena by. */
+    markdown_core_node *dst;
     bool enrolled;
     bool hit;
-    if (!dst) {
-        return NULL;
+    if (parser->derive_arena) {
+        dst = markdown_core_node_arena_calloc(parser->derive_arena);
+        if (!dst) {
+            return NULL;
+        }
+        dst->flags = MARKDOWN_CORE_NODE__ARENA;
+    } else {
+        dst = (markdown_core_node *)mem->calloc(1, sizeof(*dst));
+        if (!dst) {
+            return NULL;
+        }
     }
+    markdown_core_strbuf_init(mem, &dst->content, 0);
     /* THE HIT IS DECIDED FIRST (#152 Stage 1). Content is the arena backing
      * an OWNED inline list -- `parse_inlines` reads its subject off
      * `content.ptr` -- and a hit block borrows its list from the holder, so
@@ -1873,7 +1899,6 @@ static markdown_core_node *S_clone_block_node(
     enrolled = MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src) && contains_inlines((markdown_core_node *)src) &&
                refmap == parser->refmap && !parser->no_projection_cache;
     hit = enrolled && S_cache_fresh(parser, src, refmap);
-    markdown_core_strbuf_init(mem, &dst->content, 0);
     if (src->content.size) {
         /* THE LAZY FREEZE (#153): a closed block's content freezes on the
          * first derivation that shares it -- allocation and bytes
@@ -1885,7 +1910,11 @@ static markdown_core_node *S_clone_block_node(
             cst->frozen_content = markdown_core_buf_freeze(&cst->content);
             if (!cst->frozen_content) {
                 parser->oom = true;
-                mem->free(dst);
+                if (dst->flags & MARKDOWN_CORE_NODE__ARENA) {
+                    markdown_core_node_arena_forget(dst);
+                } else {
+                    mem->free(dst);
+                }
                 return NULL;
             }
             cst->content.ptr = cst->frozen_content->bytes;
@@ -1907,12 +1936,20 @@ static markdown_core_node *S_clone_block_node(
             markdown_core_strbuf_put(&dst->content, src->content.ptr, src->content.size);
             if (dst->content.oom) {
                 markdown_core_strbuf_free(&dst->content);
-                mem->free(dst);
+                if (dst->flags & MARKDOWN_CORE_NODE__ARENA) {
+                    markdown_core_node_arena_forget(dst);
+                } else {
+                    mem->free(dst);
+                }
                 return NULL;
             }
             dst->frozen_content = markdown_core_buf_freeze(&dst->content);
             if (!dst->frozen_content) {
-                mem->free(dst);
+                if (dst->flags & MARKDOWN_CORE_NODE__ARENA) {
+                    markdown_core_node_arena_forget(dst);
+                } else {
+                    mem->free(dst);
+                }
                 return NULL;
             }
             dst->content.ptr = dst->frozen_content->bytes;
@@ -1934,8 +1971,13 @@ static markdown_core_node *S_clone_block_node(
     dst->identifier = src->identifier;
     dst->owner = src->owner;
     dst->type = src->type;
+    /* The carry overwrites the birth flags, so the ARENA bit -- this
+     * clone's own fact, never the CST's -- is re-asserted after it (#161). */
     dst->flags = src->flags & ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN |
                                   MARKDOWN_CORE_NODE__CONSULTED_REFMAP | MARKDOWN_CORE_NODE__CONSULTED_FOOTNOTES);
+    if (parser->derive_arena) {
+        dst->flags |= MARKDOWN_CORE_NODE__ARENA;
+    }
     dst->extension = src->extension;
 
     switch (S_type(dst)) {
@@ -2124,6 +2166,7 @@ static markdown_core_node *S_project(
  * the clone and projects in place (T1). */
 markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parser, markdown_core_map *refmap) {
     markdown_core_node *derived;
+    markdown_core_node_arena *arena;
 
     /* A parse that lost an allocation may hold a tree that is not all there --
      * the sweep's witness is a footnote definition whose label still borrows a
@@ -2133,13 +2176,45 @@ markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parse
         return NULL;
     }
 
+    /* THE SKELETON'S ARENA (#161): every node the clone builds lives
+     * exactly as long as the derived tree, so they share one allocation,
+     * sized by the mint -- an upper bound on the CST's block count, so the
+     * one page covers the derivation. No handle rides out: the tree is
+     * self-contained (node.h), each node knowing its arena through
+     * `content.mem`, and this call's own hold is released before the return
+     * -- after the projection, whose hooks may free skeleton nodes -- so
+     * from here the nodes alone keep the pages alive, however the caller
+     * frees, borrows against, or replaces what it was handed. */
+    if ((size_t)parser->block_ids_minted + 2 <= MARKDOWN_CORE_ARENA_WORTH_NODES) {
+        /* A small document's skeleton is cheaper as its own allocations
+         * than as a page plus the alignment slop: measured on a 12 KB
+         * line-fed stream, the page regime cost half again as much wall
+         * time as the calloc it replaced. NULL here keeps the clone on the
+         * per-node path. */
+        arena = NULL;
+    } else {
+        arena = markdown_core_node_arena_new(parser->mem, (size_t)parser->block_ids_minted + 2);
+        if (!arena) {
+            parser->oom = true;
+            return NULL;
+        }
+    }
+    parser->derive_arena = arena;
     derived = S_clone_block_tree(parser, parser->root, refmap);
+    parser->derive_arena = NULL;
     if (!derived) {
+        if (arena) {
+            markdown_core_node_arena_release(arena);
+        }
         parser->oom = true;
         return NULL;
     }
 
-    return S_project(parser, derived, refmap);
+    derived = S_project(parser, derived, refmap);
+    if (arena) {
+        markdown_core_node_arena_release(arena);
+    }
+    return derived;
 }
 
 markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len, int options) {

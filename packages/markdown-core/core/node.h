@@ -158,16 +158,23 @@ enum markdown_core_node__internal_flags {
      * generation for a block that never consulted it. */
     MARKDOWN_CORE_NODE__CONSULTED_REFMAP = (1 << 5),
     MARKDOWN_CORE_NODE__CONSULTED_FOOTNOTES = (1 << 6),
+    /* The node's MEMORY is a derivation arena's (#161): the free walk still
+     * releases everything the node holds -- frozen content, holder holds,
+     * chunk retains, the boxed definition -- but hands the 192 bytes back to
+     * the arena (`markdown_core_node_arena_forget`) instead of the general
+     * allocator, and the arena's last node out drops the pages. */
+    MARKDOWN_CORE_NODE__ARENA = (1 << 7),
 
     // The first bit an extension may claim. Extension flags are compile-time
     // constants owned by the extension that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 7),
+    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 8),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
 
 typedef struct markdown_core_holder markdown_core_holder;
+typedef struct markdown_core_node_arena markdown_core_node_arena;
 
 struct markdown_core_node {
     markdown_core_strbuf content;
@@ -317,6 +324,50 @@ static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_BORROWED_P(const markdown_co
     return node->link.holder != NULL &&
            (node->flags & (MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN)) == 0;
 }
+
+/* THE DERIVATION ARENA (#161). A feed's derived skeleton is one node per CST
+ * block, all born in `derive_tree` and almost all dying with the tree -- a
+ * lifetime the general allocator re-proves node by node, at 25-39% of a
+ * hit-dominated feed. The arena states it once: `derive_tree` sizes one page
+ * off the parser's block mint, the clone bumps nodes out of it (zeroed, like
+ * the calloc they replace, flag `ARENA`), and the pages go back in one
+ * motion when the last node is forgotten.
+ *
+ * The tree stays SELF-CONTAINED: no root carries a handle -- a root is a
+ * node like any other, free to be borrowed against, replaced by a hook, or
+ * freed from inside a projection -- and no node carries a pointer, because
+ * pages are 64 KiB-ALIGNED and never outgrow their alignment window:
+ * masking a node's address recovers its page header, and the header names
+ * the arena (`forget`). Nothing else changes shape -- `content.mem` stays
+ * the parser's own mem, so no buffer, iterator, or chunk a projection
+ * builds can capture an address that dies with the arena. (The first build
+ * hung the handle on the returned root's link slot, which a borrow
+ * clobbers; the second hid the arena behind a mem wrapper in `content.mem`,
+ * which a frozen open block's buffer carried into a cache holder that
+ * outlived it. The masking has no address to lose and nothing to clobber.)
+ * The arena keeps a live count, born at ONE for the deriving call's own
+ * hold (#153's create-at-one rule) and one more per node handed out;
+ * `release` drops the creator's, `forget` a node's, and whoever reaches
+ * zero frees the pages. The count is NOT atomic, deliberately: an arena
+ * belongs to ONE derived document, access to one document is the caller's
+ * to order (include/markdown_core.h), and the creator's hold is gone
+ * before the caller ever sees the tree.
+ *
+ * Only skeleton nodes live here; everything a projection allocates that can
+ * OUTLIVE the tree -- an inline list moved into a cache holder, a hook's
+ * replacement node -- keeps the general allocator, so the arena never owns
+ * a byte another tree can reach. Under AddressSanitizer the unhanded
+ * remainder of a page and every forgotten node are poisoned, so the
+ * checking a per-node free() gave up is kept. */
+/* Below this many skeleton nodes the page and its alignment slop cost more
+ * than the callocs they replace (measured, derive_tree): a small document
+ * derives on the per-node path. */
+#define MARKDOWN_CORE_ARENA_WORTH_NODES 128
+
+markdown_core_node_arena *markdown_core_node_arena_new(markdown_core_mem *mem, size_t node_hint);
+markdown_core_node *markdown_core_node_arena_calloc(markdown_core_node_arena *arena);
+void markdown_core_node_arena_release(markdown_core_node_arena *arena);
+void markdown_core_node_arena_forget(markdown_core_node *node);
 
 markdown_core_holder *markdown_core_holder_new(markdown_core_mem *mem);
 void markdown_core_holder_hold(markdown_core_holder *holder);

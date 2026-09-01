@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -9,6 +10,152 @@
 static void S_node_unlink(markdown_core_node *node);
 
 #define NODE_MEM(node) markdown_core_node_mem(node)
+
+/* The arena keeps ASan's checking (#161): a page's unhanded remainder and
+ * every forgotten node are poisoned, so a read past the bump or a use after
+ * node_free reports exactly as it did when every node was its own
+ * allocation. */
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define MARKDOWN_CORE_ARENA_POISON 1
+#endif
+#elif defined(__SANITIZE_ADDRESS__)
+#define MARKDOWN_CORE_ARENA_POISON 1
+#endif
+#ifdef MARKDOWN_CORE_ARENA_POISON
+#include <sanitizer/asan_interface.h>
+#define S_arena_poison(ptr, len) __asan_poison_memory_region((ptr), (len))
+#define S_arena_unpoison(ptr, len) __asan_unpoison_memory_region((ptr), (len))
+#else
+#define S_arena_poison(ptr, len) ((void)0)
+#define S_arena_unpoison(ptr, len) ((void)0)
+#endif
+
+/* THE PAGE IS FOUND BY MASKING (node.h): every page lives inside one
+ * 64 KiB-aligned window and never outgrows it, so `forget` recovers the
+ * page header -- and the arena behind it -- from a node's address alone,
+ * and nothing else in the system carries arena identity. The allocation is
+ * over-sized by the alignment and the aligned window placed inside it
+ * (`raw` keeps what free() needs); the slop is never written, so it costs
+ * address space, not resident memory. */
+#define MARKDOWN_CORE_ARENA_ALIGN ((uintptr_t)65536)
+
+typedef struct markdown_core_node_arena_page {
+    markdown_core_node_arena *arena;
+    void *raw;
+    struct markdown_core_node_arena_page *next;
+    size_t used;
+    size_t cap;
+    markdown_core_node nodes[];
+} markdown_core_node_arena_page;
+
+struct markdown_core_node_arena {
+    markdown_core_mem *mem;
+    markdown_core_node_arena_page *pages;
+    size_t live;
+};
+
+#define MARKDOWN_CORE_ARENA_MAX_NODES                                                                                  \
+    (((size_t)MARKDOWN_CORE_ARENA_ALIGN - sizeof(markdown_core_node_arena_page)) / sizeof(markdown_core_node))
+#define MARKDOWN_CORE_ARENA_MIN_NODES 8
+
+static markdown_core_node_arena_page *S_arena_page_new(markdown_core_node_arena *arena, size_t cap) {
+    markdown_core_node_arena_page *page;
+    void *raw;
+    uintptr_t base;
+    if (cap > MARKDOWN_CORE_ARENA_MAX_NODES) {
+        cap = MARKDOWN_CORE_ARENA_MAX_NODES;
+    }
+    /* realloc(NULL), not calloc: calloc would WRITE every byte of the
+     * window and the slop -- 43% of a feed went to that memset when this
+     * was measured -- while the nodes are zeroed one by one as they are
+     * handed out, and the header's five fields are all assigned below. */
+    raw = arena->mem->realloc(
+        NULL,
+        sizeof(markdown_core_node_arena_page) + cap * sizeof(markdown_core_node) + MARKDOWN_CORE_ARENA_ALIGN - 1
+    );
+    if (!raw) {
+        return NULL;
+    }
+    base = ((uintptr_t)raw + MARKDOWN_CORE_ARENA_ALIGN - 1) & ~(MARKDOWN_CORE_ARENA_ALIGN - 1);
+    page = (markdown_core_node_arena_page *)base;
+    page->arena = arena;
+    page->raw = raw;
+    page->next = arena->pages;
+    page->used = 0;
+    page->cap = cap;
+    arena->pages = page;
+    S_arena_poison(page->nodes, cap * sizeof(markdown_core_node));
+    return page;
+}
+
+markdown_core_node_arena *markdown_core_node_arena_new(markdown_core_mem *mem, size_t node_hint) {
+    markdown_core_node_arena *arena = (markdown_core_node_arena *)mem->calloc(1, sizeof(*arena));
+    if (!arena) {
+        return NULL;
+    }
+    arena->mem = mem;
+    /* Born at one: the creator's hold (#153), released by `derive_tree` once
+     * the nodes carry their own. */
+    arena->live = 1;
+    if (!S_arena_page_new(
+            arena,
+            node_hint < MARKDOWN_CORE_ARENA_MIN_NODES ? MARKDOWN_CORE_ARENA_MIN_NODES : node_hint
+        )) {
+        mem->free(arena);
+        return NULL;
+    }
+    return arena;
+}
+
+/* Zeroed, exactly like the calloc it replaces -- per node, at hand-out. */
+markdown_core_node *markdown_core_node_arena_calloc(markdown_core_node_arena *arena) {
+    markdown_core_node_arena_page *page = arena->pages;
+    markdown_core_node *node;
+    if (page->used == page->cap) {
+        page = S_arena_page_new(arena, MARKDOWN_CORE_ARENA_MAX_NODES);
+        if (!page) {
+            return NULL;
+        }
+    }
+    node = &page->nodes[page->used++];
+    S_arena_unpoison(node, sizeof(*node));
+    memset(node, 0, sizeof(*node));
+    arena->live++;
+    return node;
+}
+
+static void S_arena_drop(markdown_core_node_arena *arena) {
+    markdown_core_mem *mem = arena->mem;
+    markdown_core_node_arena_page *page = arena->pages;
+    while (page) {
+        markdown_core_node_arena_page *next = page->next;
+        void *raw = page->raw;
+        S_arena_unpoison(page->nodes, page->cap * sizeof(markdown_core_node));
+        mem->free(raw);
+        page = next;
+    }
+    mem->free(arena);
+}
+
+void markdown_core_node_arena_release(markdown_core_node_arena *arena) {
+    if (--arena->live == 0) {
+        S_arena_drop(arena);
+    }
+}
+
+/* Hand one node back. Safe to be the drop that frees the pages mid-walk: a
+ * walk's saved `next` can only point at a node it has not visited, and an
+ * unvisited arena node means the count is still positive. */
+void markdown_core_node_arena_forget(markdown_core_node *node) {
+    markdown_core_node_arena_page *page =
+        (markdown_core_node_arena_page *)((uintptr_t)node & ~(MARKDOWN_CORE_ARENA_ALIGN - 1));
+    markdown_core_node_arena *arena = page->arena;
+    S_arena_poison(node, sizeof(*node));
+    if (--arena->live == 0) {
+        S_arena_drop(arena);
+    }
+}
 
 bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
     if (child_type == MARKDOWN_CORE_NODE_DOCUMENT) {
@@ -215,7 +362,14 @@ static void S_free_nodes(markdown_core_node *e) {
             e->next = e->first_child;
         }
         next = e->next;
-        NODE_MEM(e)->free(e);
+        /* An arena node's memory is the arena's to take back (#161): the
+         * releases above are done, and `forget` frees the pages once the
+         * last node is handed in. */
+        if (e->flags & MARKDOWN_CORE_NODE__ARENA) {
+            markdown_core_node_arena_forget(e);
+        } else {
+            NODE_MEM(e)->free(e);
+        }
         e = next;
     }
 }
