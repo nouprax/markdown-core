@@ -244,5 +244,11 @@ int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
     }
 
     markdown_core_strbuf_free(&buf);
+    if (iter->oom) {
+        /* A refused spill truncated the walk (iterator.h): runs past the
+         * truncation were never consolidated, and the caller treats this
+         * exactly as it treats a lost merge buffer. */
+        ok = 0;
+    }
     return ok;
 }

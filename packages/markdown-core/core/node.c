@@ -1071,11 +1071,15 @@ static void S_node_unlink(markdown_core_node *node) {
     }
 }
 
-/* Grow the parent's vector by one at `at`. Fallible, so every splice runs it
- * FIRST: a refused insert leaves both the vector and the links untouched. An
- * arena parent's vector is arena memory (never realloc'd): growth takes a
- * fresh bump and the old bytes ride out with the pages. */
-static int S_vec_insert(markdown_core_node *parent, size_t at, markdown_core_node *child) {
+/* THE FALLIBLE HALF FIRST (review-found): `reserve` makes room for one more
+ * child while the tree is still whole, so a refused allocation leaves the
+ * child in its ORIGINAL parent and every link intact -- the unlink runs
+ * only after room exists, and `place` below cannot fail. An arena parent's
+ * vector is arena memory (never realloc'd): reserve takes a fresh bump,
+ * copies, and lets the old bytes ride out with the pages. Growth is exact:
+ * `replace` never comes here (it swaps in place), so this path carries only
+ * an extension's genuine insert, which no per-feed walk repeats. */
+static int S_vec_reserve(markdown_core_node *parent) {
     markdown_core_node **grown;
     if (parent->flags & MARKDOWN_CORE_NODE__ARENA) {
         grown = (markdown_core_node **)markdown_core_node_arena_bytes(
@@ -1085,8 +1089,7 @@ static int S_vec_insert(markdown_core_node *parent, size_t at, markdown_core_nod
         if (!grown) {
             return 0;
         }
-        memcpy(grown, parent->children.vec, at * sizeof(*grown));
-        memcpy(&grown[at + 1], &parent->children.vec[at], (parent->children.count - at) * sizeof(*grown));
+        memcpy(grown, parent->children.vec, parent->children.count * sizeof(*grown));
     } else {
         grown = (markdown_core_node **)NODE_MEM(parent)->realloc(
             parent->children.vec,
@@ -1095,12 +1098,19 @@ static int S_vec_insert(markdown_core_node *parent, size_t at, markdown_core_nod
         if (!grown) {
             return 0;
         }
-        memmove(&grown[at + 1], &grown[at], (parent->children.count - at) * sizeof(*grown));
     }
-    grown[at] = child;
     parent->children.vec = grown;
-    parent->children.count++;
     return 1;
+}
+
+static void S_vec_place(markdown_core_node *parent, size_t at, markdown_core_node *child) {
+    memmove(
+        &parent->children.vec[at + 1],
+        &parent->children.vec[at],
+        (parent->children.count - at) * sizeof(*parent->children.vec)
+    );
+    parent->children.vec[at] = child;
+    parent->children.count++;
 }
 
 static size_t S_vec_index_of(const markdown_core_node *parent, const markdown_core_node *child) {
@@ -1139,14 +1149,14 @@ int markdown_core_node_insert_before(markdown_core_node *node, markdown_core_nod
         return 0;
     }
 
-    S_node_unlink(sibling);
-
     markdown_core_node *parent = node->parent;
-    if (MARKDOWN_CORE_NODE_ARRAY_P(parent) && !S_vec_insert(parent, S_vec_index_of(parent, node), sibling)) {
-        sibling->next = NULL;
-        sibling->prev = NULL;
-        sibling->parent = NULL;
+    if (MARKDOWN_CORE_NODE_ARRAY_P(parent) && !S_vec_reserve(parent)) {
         return 0;
+    }
+
+    S_node_unlink(sibling);
+    if (MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
+        S_vec_place(parent, S_vec_index_of(parent, node), sibling);
     }
 
     markdown_core_node *old_prev = node->prev;
@@ -1189,14 +1199,14 @@ int markdown_core_node_insert_after(markdown_core_node *node, markdown_core_node
         return 0;
     }
 
-    S_node_unlink(sibling);
-
     markdown_core_node *parent = node->parent;
-    if (MARKDOWN_CORE_NODE_ARRAY_P(parent) && !S_vec_insert(parent, S_vec_index_of(parent, node) + 1, sibling)) {
-        sibling->next = NULL;
-        sibling->prev = NULL;
-        sibling->parent = NULL;
+    if (MARKDOWN_CORE_NODE_ARRAY_P(parent) && !S_vec_reserve(parent)) {
         return 0;
+    }
+
+    S_node_unlink(sibling);
+    if (MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
+        S_vec_place(parent, S_vec_index_of(parent, node) + 1, sibling);
     }
 
     markdown_core_node *old_next = node->next;
@@ -1220,6 +1230,40 @@ int markdown_core_node_insert_after(markdown_core_node *node, markdown_core_node
 }
 
 int markdown_core_node_replace(markdown_core_node *oldnode, markdown_core_node *newnode) {
+    markdown_core_node *parent;
+    if (!oldnode || !newnode || oldnode == newnode) {
+        return 0;
+    }
+    parent = oldnode->parent;
+    if (MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
+        /* IN PLACE (review-found): a replacement neither grows nor shifts
+         * the vector, so the slot is swapped where it stands -- the mass
+         * path (a promotion per formula paragraph) stays O(1) per swap
+         * instead of re-copying the parent's vector each time. */
+        size_t at;
+        if (!S_can_contain(parent, newnode)) {
+            return 0;
+        }
+        at = S_vec_index_of(parent, oldnode);
+        if (at == parent->children.count) {
+            return 0;
+        }
+        S_node_unlink(newnode);
+        parent->children.vec[at] = newnode;
+        newnode->parent = parent;
+        newnode->prev = oldnode->prev;
+        newnode->next = oldnode->next;
+        if (newnode->prev) {
+            newnode->prev->next = newnode;
+        }
+        if (newnode->next) {
+            newnode->next->prev = newnode;
+        }
+        oldnode->next = NULL;
+        oldnode->prev = NULL;
+        oldnode->parent = NULL;
+        return 1;
+    }
     if (!markdown_core_node_insert_before(oldnode, newnode)) {
         return 0;
     }
@@ -1232,13 +1276,14 @@ int markdown_core_node_prepend_child(markdown_core_node *node, markdown_core_nod
         return 0;
     }
 
-    S_node_unlink(child);
-
     if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
-        markdown_core_node *old_first = node->children.count ? node->children.vec[0] : NULL;
-        if (!S_vec_insert(node, 0, child)) {
+        markdown_core_node *old_first;
+        if (!S_vec_reserve(node)) {
             return 0;
         }
+        S_node_unlink(child);
+        old_first = node->children.count ? node->children.vec[0] : NULL;
+        S_vec_place(node, 0, child);
         child->next = old_first;
         child->prev = NULL;
         child->parent = node;
@@ -1247,6 +1292,8 @@ int markdown_core_node_prepend_child(markdown_core_node *node, markdown_core_nod
         }
         return 1;
     }
+
+    S_node_unlink(child);
 
     markdown_core_node *old_first_child = node->first_child;
 
@@ -1270,13 +1317,14 @@ int markdown_core_node_append_child(markdown_core_node *node, markdown_core_node
         return 0;
     }
 
-    S_node_unlink(child);
-
     if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
-        markdown_core_node *back = node->children.count ? node->children.vec[node->children.count - 1] : NULL;
-        if (!S_vec_insert(node, node->children.count, child)) {
+        markdown_core_node *back;
+        if (!S_vec_reserve(node)) {
             return 0;
         }
+        S_node_unlink(child);
+        back = node->children.count ? node->children.vec[node->children.count - 1] : NULL;
+        S_vec_place(node, node->children.count, child);
         child->next = NULL;
         child->prev = back;
         child->parent = node;
@@ -1285,6 +1333,8 @@ int markdown_core_node_append_child(markdown_core_node *node, markdown_core_node
         }
         return 1;
     }
+
+    S_node_unlink(child);
 
     markdown_core_node *old_last_child = node->last_child;
 
@@ -1395,5 +1445,11 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
         }
     }
 
+    if (walk.oom) {
+        /* A truncated walk verified less than the tree: say so rather than
+         * vouching for what was never visited. */
+        S_print_error(out, node, "walk spill");
+        ++errors;
+    }
     return errors;
 }

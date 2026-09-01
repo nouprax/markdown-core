@@ -734,6 +734,12 @@ static void postprocess_block(
             postprocess_text(parser, node);
         }
     }
+    if (walk.oom) {
+        /* A refused spill truncated the walk (iterator.h): text past the
+         * truncation was never offered a link, so the parse answers as any
+         * lost allocation does. */
+        parser->oom = true;
+    }
 }
 
 const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_AUTOLINK = {

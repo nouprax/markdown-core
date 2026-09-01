@@ -91,6 +91,12 @@ static bool S_strip_inline_comments(markdown_core_node *block) {
         }
     }
 
+    if (walk.oom) {
+        /* A refused spill truncated the walk (iterator.h): the strip may
+         * have missed comments, so the parse answers as any lost
+         * allocation does. */
+        return false;
+    }
     if (stripped) {
         return markdown_core_consolidate_text_nodes(block) != 0;
     }
@@ -1661,6 +1667,12 @@ static void process_inlines(
         }
     }
 
+    if (walk.oom) {
+        /* A refused spill truncated the walk (iterator.h): blocks were
+         * skipped unparsed and unqueued, so the projection is not all
+         * there and the parse says so. */
+        parser->oom = true;
+    }
     markdown_core_manage_extensions_special_characters(parser, false);
 }
 
@@ -2178,8 +2190,13 @@ static bool S_vec_open(markdown_core_parser *parser, markdown_core_node *parent,
     parent->children.vec = NULL;
     parent->children.count = 0;
     if (total) {
+        /* The vector's allocator FOLLOWS THE SHELL'S (review-found), never
+         * the derivation's mood: a malloc-shelled parent inside an enrolled
+         * subtree outlives this tree's arena in a cache holder, and an
+         * arena vector under it would dangle there. The free walk and the
+         * holder both rely on this one rule. */
         parent->children.vec =
-            parser->derive_arena
+            (parent->flags & MARKDOWN_CORE_NODE__ARENA)
                 ? (
                       markdown_core_node **
                   )markdown_core_node_arena_bytes(parser->derive_arena, total * sizeof(*parent->children.vec))
