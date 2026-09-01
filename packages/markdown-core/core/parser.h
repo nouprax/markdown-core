@@ -127,14 +127,45 @@ struct markdown_core_parser {
      * `derive_tree` call so the clone can see it; the arena itself leaves on
      * the derived root. NULL whenever the parser is at rest. */
     markdown_core_node_arena *derive_arena;
-    /* THE DOCUMENT'S CHILD MEMO (#161, F25): the stable prefix of the
-     * top-level SHARED blocks, recorded after a derivation and consumed by
-     * the next for one memo hold and a memcpy instead of a freshness
-     * check, a hold and a release per closed block. This is the parser's
-     * own hold; NULL until a derivation records a run, and again after an
-     * invalidation lets the stale memo go (trees still holding it keep
-     * it alive). */
-    markdown_core_child_memo *doc_memo;
+    /* THE SPINE'S CHILD MEMOS (#161, F25, generalized by F27): one stable
+     * prefix of SHARED children per OPEN container on the spine -- the
+     * document always, an open list or quote while it grows -- recorded
+     * after a derivation and consumed by the next for one memo hold and a
+     * memcpy instead of a freshness check, a hold and a release per
+     * closed child. THE TABLE IS THE SPINE (review-found, round 3): slot k
+     * names the spine container at depth k, the document at 0, and holds
+     * the parser's own hold on that container's memo -- NULL while the
+     * level has no proved prefix. The clone asks for a container's run at
+     * the depth it counted on the way down, and the record retakes the
+     * table by the same walk down `last_child`, so both pay one index per
+     * level where a scan of the table per container was quadratic in the
+     * depth. A slot naming another container is a miss, never a wrong
+     * tree: the pointer is COMPARED, dereferenced only while its
+     * container is on the spine, and a CST container is freed only with
+     * the parse. Containers close leaf-first, so the levels that left the
+     * spine are always the table's suffix, released whole where the record
+     * stops (trees still holding a memo keep it alive). The table's length
+     * is the depth open at the last record. */
+    struct markdown_core_spine_memo {
+        const markdown_core_node *container;
+        markdown_core_child_memo *memo;
+    } *spine_memos;
+    size_t spine_memo_size;
+    size_t spine_memo_alloc;
+    /* THE STORE PASS's frames (F27): one per level of the fresh subtree
+     * being walked after the drain, so the pass is iterative at any
+     * nesting. Reused across the projections of one parse; released with
+     * the parse. */
+    struct markdown_core_store_frame {
+        markdown_core_node *node;
+        /* The resume position among the node's children: the index for a
+         * vector container, the next sibling pointer for an intrusive
+         * one. */
+        size_t next_index;
+        markdown_core_node *next_intrusive;
+    } *store_stack;
+    size_t store_stack_size;
+    size_t store_stack_alloc;
     /* THE PER-BLOCK TAIL'S QUEUE (T18): the blocks a projection's walk found
      * tail work for, in EXIT order, acted on after the walk -- a hook may
      * replace or remove the block, and the walk must not be standing on it

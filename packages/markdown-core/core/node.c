@@ -566,11 +566,26 @@ void markdown_core_holder_release(markdown_core_holder *holder) {
      * holder link is cleared so the walk cannot re-enter this release. */
     if (holder->node) {
         markdown_core_node *retained = holder->node;
-        retained->first_child = NULL;
-        retained->last_child = NULL;
-        retained->link.holder = NULL;
-        retained->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__SHARED;
-        markdown_core_node_free(retained);
+        if (MARKDOWN_CORE_NODE_ARRAY_P(retained)) {
+            /* A retained CONTAINER (F27) owns its children as a VECTOR of
+             * shared entries, each under the hold its store took; nothing
+             * aliases this holder's own (empty) list, so nothing detaches
+             * -- and the first/last writes of the other arm would tear
+             * the vector through the union. The link is cleared exactly
+             * as the other arm clears it, so the walk cannot re-enter
+             * this release through the borrowed-detach door. Then the
+             * free walk releases the entries and the vector, cascading
+             * into child holders as the last hold on each lets go. */
+            retained->link.holder = NULL;
+            retained->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__SHARED;
+            markdown_core_node_free(retained);
+        } else {
+            retained->first_child = NULL;
+            retained->last_child = NULL;
+            retained->link.holder = NULL;
+            retained->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__SHARED;
+            markdown_core_node_free(retained);
+        }
     }
     /* The list's `next` chain is exactly what `S_free_nodes` walks; the
      * `parent` it never reads is NULL on every node here. */

@@ -382,6 +382,15 @@ static int case_refmap_independence(const ts_spec_file *file) {
 #define PR_MIN_SAMPLE_NS 25000000ULL
 static const double PR_MAX_NORMALIZED_SLOWDOWN = 8.0;
 
+/* The slope gates each take PR_SLOPE_REPEATS samples and keep the median,
+ * so one preempted sample moves nothing. */
+static double pr_median_of_three(const double samples[PR_SLOPE_REPEATS]) {
+    double a = samples[0], b = samples[1], c = samples[2];
+    double high = a > b ? (a > c ? a : c) : (b > c ? b : c);
+    double low = a < b ? (a < c ? a : c) : (b < c ? b : c);
+    return a + b + c - high - low;
+}
+
 /* Representative prose: emphasis, an inline link, code, and a reference that
  * resolves against the map, so the projection does the work a real document
  * asks of it. */
@@ -444,12 +453,7 @@ static int pr_slope_measure(const char *input, size_t length, double *seconds) {
         }
     }
     markdown_core_parser_free(parser);
-    {
-        double a = samples[0], b = samples[1], c = samples[2];
-        double high = a > b ? (a > c ? a : c) : (b > c ? b : c);
-        double low = a < b ? (a < c ? a : c) : (b < c ? b : c);
-        *seconds = a + b + c - high - low;
-    }
+    *seconds = pr_median_of_three(samples);
     return 0;
 }
 
@@ -490,6 +494,258 @@ static int case_projection_slope(const ts_spec_file *file) {
             timings[1] * 1e9 / (double)lengths[1],
             normalized_slowdown,
             failed ? " [NON-FLAT]" : ""
+        );
+        return failed ? -1 : 0;
+    }
+}
+
+/* THE STORE PASS IS O(BUILT), AT ANY NESTING DEPTH (#161, F27,
+ * review-found P1). The pass's own bound is per-node work that does not
+ * depend on where the node sits, and the shape that defeats a version
+ * which climbs each node's ancestors is the one measured here: a document
+ * that is almost entirely DEPTH. Every one of the nested quotes closes and
+ * enrolls, so a per-node climb walks an average of half the nest per
+ * enrolled node -- quadratic -- while an answer carried down a walk that
+ * already stands on the chain (the clone's S_clone_mode) costs each level
+ * once.
+ *
+ * Only the FIRST derivation after the feed is timed: it is the one that
+ * clones and runs the pass, where the second is a single retained hit for
+ * the whole nest. So each iteration builds its own parser, and only the
+ * derivation is on the clock.
+ *
+ * The bound is the same two-endpoint normalized-slowdown shape as the byte
+ * slope above, over an EIGHTFOLD depth ratio because that is what
+ * separates the two curves by an order of magnitude: linear work reads
+ * about 1.5x normalized (memory hierarchy included), the quadratic it
+ * replaced reads about 8x. Wall-clock, so it carries the complexity label
+ * the sanitizer presets exclude, and it runs serial. */
+#define PR_DEPTH_SMALL 1000
+#define PR_DEPTH_LARGE 8000
+#define PR_DEPTH_MIN_SAMPLE_NS 20000000ULL
+#define PR_DEPTH_MAX_ITERATIONS 64
+static const double PR_MAX_DEPTH_SLOWDOWN = 3.0;
+
+static char *pr_depth_document(size_t depth, size_t *length) {
+    static const char leaf[] = "deep paragraph text\n\nclosing paragraph\n\n";
+    size_t total = depth * 2 + sizeof(leaf) - 1;
+    char *input = (char *)malloc(total + 1);
+    size_t i;
+    if (!input) {
+        return NULL;
+    }
+    for (i = 0; i < depth; i++) {
+        input[i * 2] = '>';
+        input[i * 2 + 1] = ' ';
+    }
+    memcpy(input + depth * 2, leaf, sizeof(leaf) - 1);
+    input[total] = '\0';
+    *length = total;
+    return input;
+}
+
+static int pr_depth_measure(size_t depth, double *seconds) {
+    double samples[PR_SLOPE_REPEATS];
+    size_t length = 0;
+    char *input = pr_depth_document(depth, &length);
+    int repeat;
+    if (!input) {
+        return -1;
+    }
+    for (repeat = 0; repeat < PR_SLOPE_REPEATS; repeat++) {
+        uint64_t elapsed = 0;
+        unsigned iterations = 0;
+        while (elapsed < PR_DEPTH_MIN_SAMPLE_NS && iterations < PR_DEPTH_MAX_ITERATIONS) {
+            markdown_core_parser *parser = pr_parser_new();
+            markdown_core_node *derived;
+            uint64_t started;
+            if (!parser) {
+                free(input);
+                return -1;
+            }
+            markdown_core_parser_feed(parser, input, length);
+            started = ts_monotonic_ns();
+            derived = markdown_core_parser_derive_tree(parser, parser->refmap);
+            elapsed += ts_monotonic_ns() - started;
+            if (!derived) {
+                markdown_core_parser_free(parser);
+                free(input);
+                return -1;
+            }
+            markdown_core_node_free(derived);
+            markdown_core_parser_free(parser);
+            iterations++;
+        }
+        samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
+    }
+    free(input);
+    *seconds = pr_median_of_three(samples);
+    return 0;
+}
+
+static int case_depth_slope(const ts_spec_file *file) {
+    static const size_t depths[] = {PR_DEPTH_SMALL, PR_DEPTH_LARGE};
+    double timings[2];
+    size_t step;
+    (void)file;
+    if (pr_no_cache) {
+        puts("depth slope: skipped under --no-cache (nothing enrolls, so no pass runs)");
+        return 0;
+    }
+    for (step = 0; step < 2; step++) {
+        if (pr_depth_measure(depths[step], &timings[step]) != 0) {
+            fputs("depth slope: derivation failed while measuring\n", stderr);
+            return -1;
+        }
+    }
+    {
+        double depth_growth = (double)depths[1] / (double)depths[0];
+        double time_growth = timings[1] / timings[0];
+        double normalized_slowdown = time_growth / depth_growth;
+        int failed = normalized_slowdown > PR_MAX_DEPTH_SLOWDOWN;
+        printf(
+            "depth slope: %zu deep: %.6fs, %zu deep: %.6fs, normalized slowdown %.3fx%s\n",
+            depths[0],
+            timings[0],
+            depths[1],
+            timings[1],
+            normalized_slowdown,
+            failed ? " [NON-LINEAR IN DEPTH]" : ""
+        );
+        return failed ? -1 : 0;
+    }
+}
+
+/* THE SPINE MEMO TABLE COSTS EACH OPEN LEVEL ONCE (#161, F27, review-found
+ * round 3). The depth gate above leaves ONE memo standing -- every quote
+ * of its nest is closed by the time it derives -- so it never meets the
+ * shape that defeats a table scanned per container: a STAIR, each open
+ * quote holding one closed paragraph before the next open quote, where
+ * every level of the spine records a run of its own and a lookup that
+ * scans the table for its container, or a sweep that climbs the spine per
+ * slot, pays depth x depth. The table indexed by spine depth pays one
+ * index per level, whichever way it is asked.
+ *
+ * The subject is the STEADY STATE, not the enrolling derivation: after one
+ * warm derivation records the runs, every further derivation of the same
+ * CST consumes the whole table and records it again, and that is what a
+ * consumer re-deriving between feeds pays. So each repeat feeds one
+ * parser, derives once off the clock, then times the derivations that
+ * follow. The document is quadratic in its depth by construction (line m
+ * carries m quote markers), so the feed is the expensive part of the
+ * repeat and stays off the clock -- and the depths are half the depth
+ * gate's, 4000 levels being a 16 MB document.
+ *
+ * The bound is the depth gate's: eightfold depth, normalized slowdown
+ * under 3x. The table scanned per container read 13-14x here (0.45 ms
+ * against 49 ms); the indexed one reads 1.5-1.9x, and its instruction
+ * count is flat to four digits (869 per level at 1000 and at 4000,
+ * callgrind) -- the remainder is the working set leaving the cache inside
+ * the ratio, which is why the bound is not tighter. Wall-clock,
+ * complexity-labelled, serial. */
+#define PR_STAIR_SMALL 500
+#define PR_STAIR_LARGE 4000
+
+static char *pr_stair_document(size_t depth, size_t *length) {
+    size_t total = 0;
+    size_t at = 0;
+    size_t m;
+    char *input;
+    for (m = 0; m < depth; m++) {
+        total += (m + 1) * 2 + (size_t)snprintf(NULL, 0, "p%zu\n", m);
+    }
+    input = (char *)malloc(total + 1);
+    if (!input) {
+        return NULL;
+    }
+    for (m = 0; m < depth; m++) {
+        size_t i;
+        for (i = 0; i <= m; i++) {
+            input[at++] = '>';
+            input[at++] = ' ';
+        }
+        at += (size_t)sprintf(input + at, "p%zu\n", m);
+    }
+    input[at] = '\0';
+    *length = at;
+    return input;
+}
+
+static int pr_stair_measure(size_t depth, double *seconds) {
+    double samples[PR_SLOPE_REPEATS];
+    size_t length = 0;
+    char *input = pr_stair_document(depth, &length);
+    int repeat;
+    if (!input) {
+        return -1;
+    }
+    for (repeat = 0; repeat < PR_SLOPE_REPEATS; repeat++) {
+        markdown_core_parser *parser = pr_parser_new();
+        markdown_core_node *derived;
+        uint64_t elapsed = 0;
+        unsigned iterations = 0;
+        if (!parser) {
+            free(input);
+            return -1;
+        }
+        markdown_core_parser_feed(parser, input, length);
+        /* The warm derivation: enrolls the closed paragraphs and records
+         * one run per open quote. */
+        derived = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!derived) {
+            markdown_core_parser_free(parser);
+            free(input);
+            return -1;
+        }
+        markdown_core_node_free(derived);
+        while (elapsed < PR_DEPTH_MIN_SAMPLE_NS && iterations < PR_DEPTH_MAX_ITERATIONS) {
+            uint64_t started = ts_monotonic_ns();
+            derived = markdown_core_parser_derive_tree(parser, parser->refmap);
+            elapsed += ts_monotonic_ns() - started;
+            if (!derived) {
+                markdown_core_parser_free(parser);
+                free(input);
+                return -1;
+            }
+            markdown_core_node_free(derived);
+            iterations++;
+        }
+        markdown_core_parser_free(parser);
+        samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
+    }
+    free(input);
+    *seconds = pr_median_of_three(samples);
+    return 0;
+}
+
+static int case_spine_depth_slope(const ts_spec_file *file) {
+    static const size_t depths[] = {PR_STAIR_SMALL, PR_STAIR_LARGE};
+    double timings[2];
+    size_t step;
+    (void)file;
+    if (pr_no_cache) {
+        puts("spine depth slope: skipped under --no-cache (nothing records, so no table is consulted)");
+        return 0;
+    }
+    for (step = 0; step < 2; step++) {
+        if (pr_stair_measure(depths[step], &timings[step]) != 0) {
+            fputs("spine depth slope: derivation failed while measuring\n", stderr);
+            return -1;
+        }
+    }
+    {
+        double depth_growth = (double)depths[1] / (double)depths[0];
+        double time_growth = timings[1] / timings[0];
+        double normalized_slowdown = time_growth / depth_growth;
+        int failed = normalized_slowdown > PR_MAX_DEPTH_SLOWDOWN;
+        printf(
+            "spine depth slope: %zu deep: %.6fs, %zu deep: %.6fs, normalized slowdown %.3fx%s\n",
+            depths[0],
+            timings[0],
+            depths[1],
+            timings[1],
+            normalized_slowdown,
+            failed ? " [NON-LINEAR IN DEPTH]" : ""
         );
         return failed ? -1 : 0;
     }
@@ -2477,6 +2733,16 @@ static int case_hook_once(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+/* The document's spine-memo entry (F27 generalized the doc memo into the
+ * per-container table, indexed by spine depth since review round 3, so the
+ * root's is slot 0 or nothing); NULL when no run is recorded for the root. */
+static markdown_core_child_memo *cm_root_memo(markdown_core_parser *parser) {
+    if (parser->spine_memo_size == 0 || parser->spine_memos[0].container != parser->root) {
+        return NULL;
+    }
+    return parser->spine_memos[0].memo;
+}
+
 static int cm_dump_contains(const uint8_t *dump, size_t length, const char *needle) {
     size_t n = strlen(needle);
     size_t i;
@@ -2558,11 +2824,11 @@ static int case_child_memo(const ts_spec_file *file) {
             fputs("child memo: the recording tree claims a prefix no memo served\n", stderr);
             failures++;
         }
-        if (!parser->doc_memo || parser->doc_memo->count != 3) {
+        if (!cm_root_memo(parser) || cm_root_memo(parser)->count != 3) {
             fprintf(
                 stderr,
                 "child memo: the run recorded %zu of 3 closed blocks\n",
-                parser->doc_memo ? parser->doc_memo->count : (size_t)0
+                cm_root_memo(parser) ? cm_root_memo(parser)->count : (size_t)0
             );
             failures++;
         }
@@ -2577,7 +2843,7 @@ static int case_child_memo(const ts_spec_file *file) {
         } else {
             size_t i;
             if (!(t2->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || t2->link.memo_ref->boundary != 3 ||
-                t2->link.memo_ref->memo != parser->doc_memo) {
+                t2->link.memo_ref->memo != cm_root_memo(parser)) {
                 fputs("child memo: the consumer does not carry the memo's boundary\n", stderr);
                 failures++;
             }
@@ -2631,7 +2897,7 @@ static int case_child_memo(const ts_spec_file *file) {
             failures++;
         } else if (!(t3->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || !(t4->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) ||
                    t3->link.memo_ref->boundary != 3 || t4->link.memo_ref->boundary != 4 || t3->children.count != 4 ||
-                   !parser->doc_memo || parser->doc_memo->count != 4) {
+                   !cm_root_memo(parser) || cm_root_memo(parser)->count != 4) {
             fputs("child memo: the extension moved the boundaries with the count\n", stderr);
             failures++;
         } else if (t4->children.vec[0] != t3->children.vec[0] || t4->children.vec[3] != t3->children.vec[3]) {
@@ -2719,11 +2985,11 @@ static int case_child_memo(const ts_spec_file *file) {
         if (!t5) {
             fputs("child memo: open-block derivation failed\n", stderr);
             failures++;
-        } else if (!parser->doc_memo || parser->doc_memo->count != 4) {
+        } else if (!cm_root_memo(parser) || cm_root_memo(parser)->count != 4) {
             fprintf(
                 stderr,
                 "child memo: the open block was recorded (count %zu, not 4)\n",
-                parser->doc_memo ? parser->doc_memo->count : (size_t)0
+                cm_root_memo(parser) ? cm_root_memo(parser)->count : (size_t)0
             );
             failures++;
         } else if (t5->children.count != 5) {
@@ -2745,7 +3011,7 @@ static int case_child_memo(const ts_spec_file *file) {
             if (dump) {
                 markdown_core_dump_free(dump);
             }
-            if (!parser->doc_memo || parser->doc_memo->count != 5) {
+            if (!cm_root_memo(parser) || cm_root_memo(parser)->count != 5) {
                 fputs("child memo: the closed block did not extend the run\n", stderr);
                 failures++;
             }
@@ -2766,8 +3032,8 @@ static int case_child_memo(const ts_spec_file *file) {
     if (!failures) {
         markdown_core_parser_feed(parser, CM_REF, sizeof(CM_REF) - 1);
         t7 = markdown_core_parser_derive_tree(parser, parser->refmap);
-        if (!t7 || !(t7->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || t7->link.memo_ref->memo != parser->doc_memo ||
-            parser->doc_memo->count != 6) {
+        if (!t7 || !(t7->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || t7->link.memo_ref->memo != cm_root_memo(parser) ||
+            cm_root_memo(parser)->count != 6) {
             fputs("child memo: the consulting block did not extend the run\n", stderr);
             failures++;
         } else {
@@ -2788,8 +3054,19 @@ static int case_child_memo(const ts_spec_file *file) {
                     fputs("child memo: the fallback did not resolve the reference\n", stderr);
                     failures++;
                 }
-                if (!parser->doc_memo || parser->doc_memo == t7->link.memo_ref->memo || parser->doc_memo->count != 6) {
+                /* The rebuilt run reaches 7, one PAST the prose: the
+                 * arrived definition lives on as a ReferenceDefinition
+                 * NODE (node.h -- the mdast model), an inline-less leaf
+                 * that used to cap every run at its index and now
+                 * enrolls with the bare leaves (F27), so the rebuild
+                 * records it too. */
+                if (!cm_root_memo(parser) || cm_root_memo(parser) == t7->link.memo_ref->memo ||
+                    cm_root_memo(parser)->count != 7) {
                     fputs("child memo: the record did not rebuild after the move\n", stderr);
+                    failures++;
+                }
+                if (t8->children.count != 7 || !(t8->children.vec[6]->flags & MARKDOWN_CORE_NODE__SHARED)) {
+                    fputs("child memo: the definition node did not enroll with the bare leaves\n", stderr);
                     failures++;
                 }
                 if (!failures && baseline7) {
@@ -2811,7 +3088,7 @@ static int case_child_memo(const ts_spec_file *file) {
      * memo, and through it every entry, alone. */
     if (!failures) {
         t9 = markdown_core_parser_derive_tree(parser, parser->refmap);
-        if (!t9 || !(t9->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || t9->link.memo_ref->boundary != 6) {
+        if (!t9 || !(t9->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || t9->link.memo_ref->boundary != 7) {
             fputs("child memo: the rebuilt run did not serve\n", stderr);
             failures++;
         } else {
@@ -2867,11 +3144,46 @@ static int case_child_memo(const ts_spec_file *file) {
             if (only) {
                 markdown_core_node_free(only);
             }
-            if (bare->doc_memo) {
+            if (cm_root_memo(bare)) {
                 fputs("child memo: --no-cache still built a memo\n", stderr);
                 failures++;
             }
             markdown_core_parser_free(bare);
+        }
+    }
+
+    /* Act 7: a bare leaf with a NAME HOOK is retained too (F27): the
+     * formula extension declares code_block for its promotion, so the
+     * fence runs a tail -- and the store at the tail's end now keeps what
+     * the hook declined to replace, the promotion-memo shape T9's
+     * amendment named. Without it the fence missed every derivation and
+     * capped every run at its index. */
+    if (!failures) {
+        static const char CM_FENCED[] = "before the fence\n\n```c\nint x;\n```\n\nafter the fence\n\n";
+        markdown_core_parser *fenced = pr_parser_new();
+        if (!fenced) {
+            failures++;
+        } else {
+            markdown_core_node *first = NULL;
+            markdown_core_node *second = NULL;
+            size_t misses_before;
+            markdown_core_parser_feed(fenced, CM_FENCED, sizeof(CM_FENCED) - 1);
+            first = markdown_core_parser_derive_tree(fenced, fenced->refmap);
+            misses_before = fenced->cache_misses;
+            second = markdown_core_parser_derive_tree(fenced, fenced->refmap);
+            if (!first || !second || fenced->cache_misses != misses_before || !cm_root_memo(fenced) ||
+                cm_root_memo(fenced)->count != 3 || !(second->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) ||
+                second->link.memo_ref->boundary != 3) {
+                fputs("child memo: the hooked fence is not retained, and caps the run\n", stderr);
+                failures++;
+            }
+            if (first) {
+                markdown_core_node_free(first);
+            }
+            if (second) {
+                markdown_core_node_free(second);
+            }
+            markdown_core_parser_free(fenced);
         }
     }
 
@@ -2918,6 +3230,1029 @@ static int case_child_memo(const ts_spec_file *file) {
         markdown_core_dump_free(baseline9);
     }
     printf("child memo: %s\n", failures ? "the run does not hold" : "one hold and a memcpy serve the closed prefix");
+    return failures ? -1 : 0;
+}
+
+static size_t cr_list_hook_runs;
+
+/* Counts and leaves the node in place: a name hook on a CONTAINER must
+ * not cost the container its retention (review-found) -- the identity
+ * across derivations is the discriminator, the count proves the hit ran
+ * no tail. */
+static void cr_list_hook(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node **block
+) {
+    (void)extension;
+    (void)parser;
+    (void)block;
+    cr_list_hook_runs++;
+}
+
+static const markdown_core_syntax_extension CR_LIST_EXTENSION = {
+    .name = "container_retention_probe",
+    .postprocess_block_func = cr_list_hook,
+    .postprocess_blocks = "list\0",
+};
+
+static size_t cr_prune_hook_runs;
+
+/* Edits INSIDE the block it is handed -- the contract's own words -- by
+ * removing any nested list from the handed list's items. Before the
+ * store moved off the tail, the inner list was already FROZEN when this
+ * ran on the outer one, and the removal was a silently refused no-op
+ * (review-found). */
+static void cr_pruning_hook(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node **block
+) {
+    markdown_core_children item = markdown_core_node_children(*block);
+    (void)extension;
+    (void)parser;
+    cr_prune_hook_runs++;
+    for (; item.child; item = markdown_core_children_next(item)) {
+        markdown_core_children inner = markdown_core_node_children(item.child);
+        for (; inner.child; inner = markdown_core_children_next(inner)) {
+            markdown_core_node *candidate = (markdown_core_node *)inner.child;
+            if (markdown_core_node_get_type(candidate) == MARKDOWN_CORE_NODE_LIST) {
+                markdown_core_node_unlink(candidate);
+                markdown_core_node_free(candidate);
+                break;
+            }
+        }
+    }
+}
+
+static const markdown_core_syntax_extension CR_PRUNING_EXTENSION = {
+    .name = "container_prune_probe",
+    .postprocess_block_func = cr_pruning_hook,
+    .postprocess_blocks = "list\0",
+};
+
+static size_t cr_third_hook_runs;
+
+/* Removes the FIRST item once three exist -- the cross-feed inside edit
+ * (review-found): while the list stays open its items must stay fresh,
+ * or the third feed's hook meets a frozen first item and the removal is
+ * a silently refused no-op. */
+static void cr_third_item_hook(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node **block
+) {
+    size_t count = 0;
+    markdown_core_children item = markdown_core_node_children(*block);
+    (void)extension;
+    (void)parser;
+    cr_third_hook_runs++;
+    for (; item.child; item = markdown_core_children_next(item)) {
+        count++;
+    }
+    if (count >= 3) {
+        markdown_core_node *first = (markdown_core_node *)markdown_core_node_children(*block).child;
+        markdown_core_node_unlink(first);
+        markdown_core_node_free(first);
+    }
+}
+
+static const markdown_core_syntax_extension CR_THIRD_EXTENSION = {
+    .name = "container_third_probe",
+    .postprocess_block_func = cr_third_item_hook,
+    .postprocess_blocks = "list\0",
+};
+
+/* Reaches PAST the closed first item to the paragraph inside it -- the
+ * deep cross-feed edit (review-found): the item closes on the second
+ * feed but the hooked list above it stays open, and a climb that
+ * stopped at the first closed ancestor stored the paragraph anyway,
+ * handing the third feed's removal a frozen target. */
+static void cr_deep_target_hook(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node **block
+) {
+    size_t count = 0;
+    markdown_core_children item = markdown_core_node_children(*block);
+    (void)extension;
+    (void)parser;
+    for (; item.child; item = markdown_core_children_next(item)) {
+        count++;
+    }
+    if (count >= 3) {
+        const markdown_core_node *first = markdown_core_node_children(*block).child;
+        markdown_core_node *inside = (markdown_core_node *)markdown_core_node_children(first).child;
+        if (inside) {
+            markdown_core_node_unlink(inside);
+            markdown_core_node_free(inside);
+        }
+    }
+}
+
+static const markdown_core_syntax_extension CR_DEEP_EXTENSION = {
+    .name = "container_deep_probe",
+    .postprocess_block_func = cr_deep_target_hook,
+    .postprocess_blocks = "list\0",
+};
+
+/* Moves the SECOND item to the front, which is the edit a retained item
+ * refuses in silence (F22: unlink is a no-op on SHARED). Whatever else a
+ * derivation does, the same CST must project the same order -- that is the
+ * assertion both cross-derivation acts make. */
+static void cr_reorder(markdown_core_node *list) {
+    markdown_core_children item = markdown_core_node_children(list);
+    markdown_core_node *second;
+    if (!item.child) {
+        return;
+    }
+    item = markdown_core_children_next(item);
+    if (!item.child) {
+        return;
+    }
+    second = (markdown_core_node *)item.child;
+    markdown_core_node_unlink(second);
+    markdown_core_node_prepend_child(list, second);
+}
+
+/* The order the hook is supposed to produce, read off a derived tree as
+ * block identities (T2), which are the one name a projection cannot
+ * renumber between derivations. */
+static int cr_item_order(markdown_core_node *tree, uint32_t *ids, int max) {
+    markdown_core_children top = markdown_core_node_children(tree);
+    int count = 0;
+    for (; top.child; top = markdown_core_children_next(top)) {
+        markdown_core_children item;
+        if (markdown_core_node_get_type((markdown_core_node *)top.child) != MARKDOWN_CORE_NODE_LIST) {
+            continue;
+        }
+        for (item = markdown_core_node_children(top.child); item.child && count < max;
+            item = markdown_core_children_next(item)) {
+            ids[count++] = markdown_core_node_identifier(item.child).block;
+        }
+        return count;
+    }
+    return count;
+}
+
+/* Reorders, and also appends a fresh item the store can never accept --
+ * so the list REFUSES its own retention, every derivation rebuilds it, and
+ * its hook runs again over items that must still be editable
+ * (review-found, P2). */
+static void cr_refusing_hook(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node **block
+) {
+    markdown_core_node *decoration = markdown_core_node_new(MARKDOWN_CORE_NODE_LIST_ITEM);
+    (void)extension;
+    (void)parser;
+    cr_reorder(*block);
+    if (decoration && !markdown_core_node_append_child(*block, decoration)) {
+        markdown_core_node_free(decoration);
+    }
+}
+
+static const markdown_core_syntax_extension CR_REFUSING_EXTENSION = {
+    .name = "container_refusing_probe",
+    .postprocess_block_func = cr_refusing_hook,
+    .postprocess_blocks = "list\0",
+};
+
+/* Reorders and nothing else: this list DOES retain, and the act around it
+ * invalidates that retention from underneath (review-found, P2). */
+static void cr_reordering_hook(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node **block
+) {
+    (void)extension;
+    (void)parser;
+    cr_reorder(*block);
+}
+
+static const markdown_core_syntax_extension CR_REORDERING_EXTENSION = {
+    .name = "container_reordering_probe",
+    .postprocess_block_func = cr_reordering_hook,
+    .postprocess_blocks = "list\0",
+};
+
+/* Removes the block it is handed -- the contract's other allowance, and
+ * the one that frees a whole subtree mid-drain: the sweep must never
+ * read what lived under it (review-found). */
+static void cr_removing_hook(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node **block
+) {
+    markdown_core_node *doomed = *block;
+    (void)extension;
+    (void)parser;
+    markdown_core_node_unlink(doomed);
+    markdown_core_node_free(doomed);
+    *block = NULL;
+}
+
+static const markdown_core_syntax_extension CR_REMOVING_EXTENSION = {
+    .name = "container_removal_probe",
+    .postprocess_block_func = cr_removing_hook,
+    .postprocess_blocks = "list\0",
+};
+
+/* CONTAINER RETENTION's gate (#161, F27): a CLOSED container is one
+ * retainable value -- the hit is the retained ARRAY node itself, its
+ * subtree never entered -- keyed on its stamp with the consulted bits OR'd
+ * up from its entries, so a definition's arrival re-derives exactly the
+ * containers whose subtrees asked while the rest keep serving by
+ * identity. The first four acts: a closed list serves pointer-identical
+ * across derivations; the closed ITEMS of a still-open list already serve
+ * while the list itself stays fresh; a consulted move re-derives the
+ * asking container per-child (the non-asking sibling still hits) and
+ * resolves; and every free order unwinds, the parser first included. The
+ * acts after them are review-found, each pinning one way a NAME hook on a
+ * container and the store can disagree about who edits the subtree. */
+static int case_container_retention(const ts_spec_file *file) {
+    static const char CR_LIST[] = "- alpha one\n- beta two\n- gamma three\n\nclosing paragraph\n\n";
+    static const char CR_ITEM1[] = "- first item here\n";
+    static const char CR_ITEM2[] = "- second item here\n";
+    static const char CR_ITEM3[] = "- third item here\n";
+    static const char CR_REFLIST[] = "- plain item text\n- see [x] label\n\nafter the list\n\n";
+    static const char CR_DEF[] = "[x]: /url\n\n";
+    markdown_core_parser *parser = NULL;
+    markdown_core_node *t1 = NULL;
+    markdown_core_node *t2 = NULL;
+    int failures = 0;
+    (void)file;
+
+    if (pr_no_cache) {
+        puts("container retention: skipped under --no-cache");
+        return 0;
+    }
+
+    /* Act 1: the closed list is ONE retained value. */
+    parser = pr_parser_new();
+    if (!parser) {
+        return -1;
+    }
+    markdown_core_parser_feed(parser, CR_LIST, sizeof(CR_LIST) - 1);
+    t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+    t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+    if (!t1 || !t2) {
+        fputs("container retention: derivations failed\n", stderr);
+        failures++;
+    } else {
+        markdown_core_node *first_list = t1->children.vec[0];
+        markdown_core_node *second_list = t2->children.vec[0];
+        if (first_list != second_list || !(second_list->flags & MARKDOWN_CORE_NODE__SHARED) ||
+            !MARKDOWN_CORE_NODE_ARRAY_P(second_list) || second_list->children.count != 3) {
+            fputs("container retention: two reads of a closed list are not the same node\n", stderr);
+            failures++;
+        }
+        if (!failures) {
+            size_t len1 = 0;
+            size_t len2 = 0;
+            uint8_t *d1 = pr_dump(t1, &len1);
+            uint8_t *d2 = pr_dump(t2, &len2);
+            if (!d1 || !d2 || len1 != len2 || memcmp(d1, d2, len1) != 0) {
+                fputs("container retention: the retained list dumps differently\n", stderr);
+                failures++;
+            }
+            if (d1) {
+                markdown_core_dump_free(d1);
+            }
+            if (d2) {
+                markdown_core_dump_free(d2);
+            }
+        }
+    }
+    /* Free order both ways, the parser last here. */
+    if (t1) {
+        markdown_core_node_free(t1);
+        t1 = NULL;
+    }
+    if (t2) {
+        markdown_core_node_free(t2);
+        t2 = NULL;
+    }
+    markdown_core_parser_free(parser);
+    parser = NULL;
+
+    /* Act 2: the still-open list's CLOSED items already serve. */
+    if (!failures) {
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        markdown_core_parser_feed(parser, CR_ITEM1, sizeof(CR_ITEM1) - 1);
+        markdown_core_parser_feed(parser, CR_ITEM2, sizeof(CR_ITEM2) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        markdown_core_parser_feed(parser, CR_ITEM3, sizeof(CR_ITEM3) - 1);
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1 || !t2) {
+            fputs("container retention: open-list derivations failed\n", stderr);
+            failures++;
+        } else {
+            markdown_core_node *open1 = t1->children.vec[0];
+            markdown_core_node *open2 = t2->children.vec[0];
+            if ((open1->flags & MARKDOWN_CORE_NODE__SHARED) || (open2->flags & MARKDOWN_CORE_NODE__SHARED)) {
+                fputs("container retention: an OPEN list was retained\n", stderr);
+                failures++;
+            } else if (!MARKDOWN_CORE_NODE_ARRAY_P(open1) || !MARKDOWN_CORE_NODE_ARRAY_P(open2) ||
+                       open1->children.count != 2 || open2->children.count != 3) {
+                fputs("container retention: the open lists lost their items\n", stderr);
+                failures++;
+            } else if (open2->children.vec[0] != open1->children.vec[0] ||
+                       !(open1->children.vec[0]->flags & MARKDOWN_CORE_NODE__SHARED)) {
+                fputs("container retention: a closed item is not the same node across derivations\n", stderr);
+                failures++;
+            } else if (!(open2->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || open2->link.memo_ref->boundary != 1) {
+                /* The open LIST consumes its own spine memo (F27): the
+                 * first derivation recorded its one closed item, and the
+                 * second entered it as a memcpy under one hold -- the
+                 * boundary is the tree's own, not the memo's count. */
+                fputs("container retention: the open list did not consume its spine memo\n", stderr);
+                failures++;
+            }
+        }
+        /* The PARSER dies first this time; the trees must keep reading. */
+        markdown_core_parser_free(parser);
+        parser = NULL;
+        if (!failures && t2) {
+            size_t len = 0;
+            uint8_t *dump = pr_dump(t2, &len);
+            if (!dump || len == 0) {
+                fputs("container retention: the tree stopped reading after the parser died\n", stderr);
+                failures++;
+            }
+            if (dump) {
+                markdown_core_dump_free(dump);
+            }
+        }
+        if (t2) {
+            markdown_core_node_free(t2);
+            t2 = NULL;
+        }
+        if (t1) {
+            markdown_core_node_free(t1);
+            t1 = NULL;
+        }
+    }
+
+    /* Act 3: a consulted move re-derives the asking container and
+     * resolves; the non-asking sibling still serves by identity. */
+    if (!failures) {
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        markdown_core_parser_feed(parser, CR_REFLIST, sizeof(CR_REFLIST) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        markdown_core_parser_feed(parser, CR_DEF, sizeof(CR_DEF) - 1);
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1 || !t2) {
+            fputs("container retention: consulted derivations failed\n", stderr);
+            failures++;
+        } else {
+            markdown_core_node *stale_list = t1->children.vec[0];
+            markdown_core_node *fresh_list = t2->children.vec[0];
+            markdown_core_node *closing1 = t1->children.vec[1];
+            markdown_core_node *closing2 = t2->children.vec[1];
+            size_t len1 = 0;
+            size_t len2 = 0;
+            uint8_t *d1 = pr_dump(t1, &len1);
+            uint8_t *d2 = pr_dump(t2, &len2);
+            if (stale_list == fresh_list) {
+                fputs("container retention: the asking list survived the definition's arrival\n", stderr);
+                failures++;
+            }
+            if (fresh_list->children.count != 2 || fresh_list->children.vec[0] != stale_list->children.vec[0]) {
+                fputs("container retention: the non-asking item did not serve by identity\n", stderr);
+                failures++;
+            }
+            if (closing1 != closing2) {
+                fputs("container retention: the non-asking sibling was re-derived\n", stderr);
+                failures++;
+            }
+            if (!d1 || !d2 || (len1 == len2 && memcmp(d1, d2, len1) == 0)) {
+                fputs("container retention: the definition's arrival resolved nothing\n", stderr);
+                failures++;
+            }
+            if (d1) {
+                markdown_core_dump_free(d1);
+            }
+            if (d2) {
+                markdown_core_dump_free(d2);
+            }
+        }
+        if (t1) {
+            markdown_core_node_free(t1);
+            t1 = NULL;
+        }
+        if (t2) {
+            markdown_core_node_free(t2);
+            t2 = NULL;
+        }
+        markdown_core_parser_free(parser);
+        parser = NULL;
+    }
+
+    /* Act 4: a container whose entry CANNOT be shared -- a directive
+     * block's CST-resident label rides the derivation arena -- is merely
+     * unstored, never a holder that references arena memory. The
+     * discriminating order: derive, FREE (that derivation's arena dies
+     * with the tree), derive again, and READ -- a store that ignored the
+     * unshared entry would now serve a pointer into the dead arena. */
+    if (!failures) {
+        static const char CR_DIRECTIVE[] = "::note[with a *label* here]{k=v}\n\nafter block\n\n";
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        markdown_core_parser_feed(parser, CR_DIRECTIVE, sizeof(CR_DIRECTIVE) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1) {
+            fputs("container retention: directive derivation failed\n", stderr);
+            failures++;
+        } else {
+            size_t len1 = 0;
+            uint8_t *baseline = pr_dump(t1, &len1);
+            markdown_core_node_free(t1);
+            t1 = NULL;
+            t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+            if (!t2 || !baseline) {
+                fputs("container retention: directive re-derivation failed\n", stderr);
+                failures++;
+            } else {
+                size_t len2 = 0;
+                uint8_t *dump = pr_dump(t2, &len2);
+                if (!dump || len1 != len2 || memcmp(baseline, dump, len1) != 0) {
+                    fputs("container retention: the directive lost its label to a dead arena\n", stderr);
+                    failures++;
+                }
+                if (dump) {
+                    markdown_core_dump_free(dump);
+                }
+            }
+            if (baseline) {
+                markdown_core_dump_free(baseline);
+            }
+            if (t2) {
+                markdown_core_node_free(t2);
+                t2 = NULL;
+            }
+        }
+        markdown_core_parser_free(parser);
+        parser = NULL;
+    }
+
+    /* Act 5: a name hook on the container does not cost it retention
+     * (review-found): the extension queues the closed list for tail
+     * work, and the tail's end stores what the hook left in place --
+     * its unswept items first, at the ancestor's own tail where the
+     * subtree is provably alive, then the list itself. The FIRST
+     * derivation is the storing miss; every later one is the retained
+     * node by identity, no tail, the count frozen at one. */
+    if (!failures) {
+        markdown_core_node *t3 = NULL;
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        if (!markdown_core_parser_attach_syntax_extension(parser, &CR_LIST_EXTENSION)) {
+            fputs("container retention: could not attach the probe extension\n", stderr);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        cr_list_hook_runs = 0;
+        markdown_core_parser_feed(parser, CR_LIST, sizeof(CR_LIST) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        t3 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1 || !t2 || !t3) {
+            fputs("container retention: hooked derivations failed\n", stderr);
+            failures++;
+        } else if (t1->children.vec[0] != t2->children.vec[0] || t2->children.vec[0] != t3->children.vec[0] ||
+                   !(t3->children.vec[0]->flags & MARKDOWN_CORE_NODE__SHARED)) {
+            fputs("container retention: a name hook cost the list its retention\n", stderr);
+            failures++;
+        } else if (cr_list_hook_runs != 1) {
+            fprintf(
+                stderr,
+                "container retention: the list's hook ran %zu times over one storing miss and two hits\n",
+                cr_list_hook_runs
+            );
+            failures++;
+        }
+        if (t1) {
+            markdown_core_node_free(t1);
+            t1 = NULL;
+        }
+        if (t2) {
+            markdown_core_node_free(t2);
+            t2 = NULL;
+        }
+        if (t3) {
+            markdown_core_node_free(t3);
+        }
+        markdown_core_parser_free(parser);
+        parser = NULL;
+    }
+
+    /* Act 6: a hook that REMOVES its container frees the whole subtree
+     * mid-drain, and the sweep must not have kept a pointer into it
+     * (review-found): the items were candidates with a hooked ancestor,
+     * excluded exactly because this can happen. The sanitizer is the
+     * judge; the dumps prove the removal itself projected cleanly. */
+    if (!failures) {
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        if (!markdown_core_parser_attach_syntax_extension(parser, &CR_REMOVING_EXTENSION)) {
+            fputs("container retention: could not attach the removal probe\n", stderr);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        markdown_core_parser_feed(parser, CR_LIST, sizeof(CR_LIST) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1 || !t2) {
+            fputs("container retention: removing derivations failed\n", stderr);
+            failures++;
+        } else if (t1->children.count != 1 || t2->children.count != 1) {
+            fputs("container retention: the removed list left the wrong tree behind\n", stderr);
+            failures++;
+        } else {
+            size_t len1 = 0;
+            size_t len2 = 0;
+            uint8_t *d1 = pr_dump(t1, &len1);
+            uint8_t *d2 = pr_dump(t2, &len2);
+            if (!d1 || !d2 || len1 != len2 || memcmp(d1, d2, len1) != 0) {
+                fputs("container retention: the removals dump differently\n", stderr);
+                failures++;
+            }
+            if (d1) {
+                markdown_core_dump_free(d1);
+            }
+            if (d2) {
+                markdown_core_dump_free(d2);
+            }
+        }
+        if (t1) {
+            markdown_core_node_free(t1);
+            t1 = NULL;
+        }
+        if (t2) {
+            markdown_core_node_free(t2);
+            t2 = NULL;
+        }
+        markdown_core_parser_free(parser);
+        parser = NULL;
+    }
+
+    /* Act 7: a hook EDITS INSIDE the block it is handed -- the
+     * contract's own words -- and the edit must land: the outer list's
+     * hook removes the nested list from its first item, which the old
+     * tail-time store had already frozen by the time the outer hook ran
+     * (review-found; the planted early pass reproduces the silent
+     * refusal). The edited container then stores WITH the edit and
+     * serves by identity, the hooks never re-run. */
+    if (!failures) {
+        static const char CR_NESTED[] = "- outer one\n  - inner a\n  - inner b\n- outer two\n\nclose\n\n";
+        markdown_core_node *t3 = NULL;
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        if (!markdown_core_parser_attach_syntax_extension(parser, &CR_PRUNING_EXTENSION)) {
+            fputs("container retention: could not attach the pruning probe\n", stderr);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        cr_prune_hook_runs = 0;
+        markdown_core_parser_feed(parser, CR_NESTED, sizeof(CR_NESTED) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        t3 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1 || !t2 || !t3) {
+            fputs("container retention: pruning derivations failed\n", stderr);
+            failures++;
+        } else {
+            markdown_core_node *outer = t1->children.vec[0];
+            markdown_core_children item = markdown_core_node_children(outer);
+            markdown_core_children inner;
+            int lists_inside = 0;
+            for (; item.child; item = markdown_core_children_next(item)) {
+                for (inner = markdown_core_node_children(item.child); inner.child;
+                    inner = markdown_core_children_next(inner)) {
+                    if (markdown_core_node_get_type((markdown_core_node *)inner.child) == MARKDOWN_CORE_NODE_LIST) {
+                        lists_inside++;
+                    }
+                }
+            }
+            if (lists_inside != 0) {
+                fputs("container retention: the inside edit was silently refused\n", stderr);
+                failures++;
+            }
+            if (t2->children.vec[0] != outer || t3->children.vec[0] != outer ||
+                !(outer->flags & MARKDOWN_CORE_NODE__SHARED)) {
+                fputs("container retention: the edited container did not serve by identity\n", stderr);
+                failures++;
+            }
+            if (cr_prune_hook_runs != 2) {
+                fprintf(
+                    stderr,
+                    "container retention: the pruning hook ran %zu times over one storing miss and two hits\n",
+                    cr_prune_hook_runs
+                );
+                failures++;
+            }
+        }
+        if (t1) {
+            markdown_core_node_free(t1);
+            t1 = NULL;
+        }
+        if (t2) {
+            markdown_core_node_free(t2);
+            t2 = NULL;
+        }
+        if (t3) {
+            markdown_core_node_free(t3);
+        }
+        markdown_core_parser_free(parser);
+        parser = NULL;
+    }
+
+    /* Act 8: the ancestor's future edit outranks retention
+     * (review-found): a list hook that removes the first item once three
+     * exist must find it EDITABLE on the third feed, so items under a
+     * hooked OPEN list stay fresh per feed; once the list closes, the
+     * hook's last word lands in the closing drain and the whole subtree
+     * stores with it, serving by identity after. */
+    if (!failures) {
+        static const char CR_ONE[] = "- item one\n";
+        static const char CR_TWO[] = "- item two\n";
+        static const char CR_THREE[] = "- item three\n";
+        static const char CR_CLOSER[] = "\nclosing paragraph\n\n";
+        markdown_core_node *t3 = NULL;
+        markdown_core_node *t4 = NULL;
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        if (!markdown_core_parser_attach_syntax_extension(parser, &CR_THIRD_EXTENSION)) {
+            fputs("container retention: could not attach the third-item probe\n", stderr);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        cr_third_hook_runs = 0;
+        markdown_core_parser_feed(parser, CR_ONE, sizeof(CR_ONE) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        markdown_core_parser_feed(parser, CR_TWO, sizeof(CR_TWO) - 1);
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        markdown_core_parser_feed(parser, CR_THREE, sizeof(CR_THREE) - 1);
+        t3 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1 || !t2 || !t3) {
+            fputs("container retention: incremental hooked derivations failed\n", stderr);
+            failures++;
+        } else {
+            markdown_core_node *open_list = t3->children.vec[0];
+            if (!MARKDOWN_CORE_NODE_ARRAY_P(open_list) || open_list->children.count != 2) {
+                fputs("container retention: the third feed's removal was silently refused\n", stderr);
+                failures++;
+            }
+        }
+        if (t1) {
+            markdown_core_node_free(t1);
+            t1 = NULL;
+        }
+        if (t2) {
+            markdown_core_node_free(t2);
+            t2 = NULL;
+        }
+        if (t3) {
+            markdown_core_node_free(t3);
+            t3 = NULL;
+        }
+        if (!failures) {
+            markdown_core_parser_feed(parser, CR_CLOSER, sizeof(CR_CLOSER) - 1);
+            t3 = markdown_core_parser_derive_tree(parser, parser->refmap);
+            t4 = markdown_core_parser_derive_tree(parser, parser->refmap);
+            if (!t3 || !t4) {
+                fputs("container retention: closing hooked derivations failed\n", stderr);
+                failures++;
+            } else if (t3->children.vec[0] != t4->children.vec[0] ||
+                       !(t4->children.vec[0]->flags & MARKDOWN_CORE_NODE__SHARED) ||
+                       t4->children.vec[0]->children.count != 2) {
+                fputs("container retention: the closed edited list did not serve by identity\n", stderr);
+                failures++;
+            }
+            if (t3) {
+                markdown_core_node_free(t3);
+                t3 = NULL;
+            }
+            if (t4) {
+                markdown_core_node_free(t4);
+            }
+        }
+        markdown_core_parser_free(parser);
+        parser = NULL;
+    }
+
+    /* Act 9: the climb past CLOSED intermediates (review-found): the
+     * paragraph inside the first item sits beneath a closed item under
+     * an open hooked list, and it must stay as editable as the item
+     * itself -- a climb that stopped at the first closed ancestor stored
+     * it on the second feed and silently refused the third feed's
+     * removal. Once the list closes, the subtree stores WITH the
+     * paragraph gone and serves by identity. */
+    if (!failures) {
+        static const char CR_ONE[] = "- item one\n";
+        static const char CR_TWO[] = "- item two\n";
+        static const char CR_THREE[] = "- item three\n";
+        static const char CR_CLOSER[] = "\nclosing paragraph\n\n";
+        markdown_core_node *t3 = NULL;
+        markdown_core_node *t4 = NULL;
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        if (!markdown_core_parser_attach_syntax_extension(parser, &CR_DEEP_EXTENSION)) {
+            fputs("container retention: could not attach the deep-target probe\n", stderr);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        markdown_core_parser_feed(parser, CR_ONE, sizeof(CR_ONE) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        markdown_core_parser_feed(parser, CR_TWO, sizeof(CR_TWO) - 1);
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        markdown_core_parser_feed(parser, CR_THREE, sizeof(CR_THREE) - 1);
+        t3 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1 || !t2 || !t3) {
+            fputs("container retention: deep-target derivations failed\n", stderr);
+            failures++;
+        } else {
+            markdown_core_node *open_list = t3->children.vec[0];
+            const markdown_core_node *first_item = markdown_core_node_children(open_list).child;
+            if (!MARKDOWN_CORE_NODE_ARRAY_P(open_list) || open_list->children.count != 3 || !first_item) {
+                fputs("container retention: the deep-target list lost its shape\n", stderr);
+                failures++;
+            } else if (markdown_core_node_children(first_item).child != NULL) {
+                fputs("container retention: the deep removal was silently refused\n", stderr);
+                failures++;
+            }
+        }
+        if (t1) {
+            markdown_core_node_free(t1);
+            t1 = NULL;
+        }
+        if (t2) {
+            markdown_core_node_free(t2);
+            t2 = NULL;
+        }
+        if (t3) {
+            markdown_core_node_free(t3);
+            t3 = NULL;
+        }
+        if (!failures) {
+            markdown_core_parser_feed(parser, CR_CLOSER, sizeof(CR_CLOSER) - 1);
+            t3 = markdown_core_parser_derive_tree(parser, parser->refmap);
+            t4 = markdown_core_parser_derive_tree(parser, parser->refmap);
+            if (!t3 || !t4) {
+                fputs("container retention: deep-target closing derivations failed\n", stderr);
+                failures++;
+            } else {
+                markdown_core_node *closed_list = t4->children.vec[0];
+                const markdown_core_node *first_item = markdown_core_node_children(closed_list).child;
+                if (t3->children.vec[0] != closed_list || !(closed_list->flags & MARKDOWN_CORE_NODE__SHARED) ||
+                    closed_list->children.count != 3 || !first_item ||
+                    markdown_core_node_children(first_item).child != NULL) {
+                    fputs("container retention: the deep-edited list did not serve by identity\n", stderr);
+                    failures++;
+                }
+            }
+            if (t3) {
+                markdown_core_node_free(t3);
+                t3 = NULL;
+            }
+            if (t4) {
+                markdown_core_node_free(t4);
+            }
+        }
+        markdown_core_parser_free(parser);
+        parser = NULL;
+    }
+
+    /* Act 10: a hooked container that REFUSES its own retention still
+     * projects the same CST the same way, every derivation (review-found,
+     * P2). The hook appends an item no store can accept, so the list is
+     * rebuilt for ever; on the second derivation its ITEMS would have been
+     * cache hits, and the reorder that landed the first time would have
+     * been refused in silence -- one CST with two projections. Inside a
+     * container whose hook is about to run, the cache now serves nothing,
+     * so the order is the hook's own both times. */
+    if (!failures) {
+        static const char CR_PAIR[] = "- alpha item\n- beta item\n\nclosing paragraph\n\n";
+        uint32_t first[8];
+        uint32_t second[8];
+        int n1;
+        int n2;
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        if (!markdown_core_parser_attach_syntax_extension(parser, &CR_REFUSING_EXTENSION)) {
+            fputs("container retention: could not attach the refusing probe\n", stderr);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        markdown_core_parser_feed(parser, CR_PAIR, sizeof(CR_PAIR) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1 || !t2) {
+            fputs("container retention: refusing derivations failed\n", stderr);
+            failures++;
+        } else {
+            n1 = cr_item_order(t1, first, 8);
+            n2 = cr_item_order(t2, second, 8);
+            if (n1 < 2 || n1 != n2 || first[0] != second[0] || first[1] != second[1]) {
+                fprintf(
+                    stderr,
+                    "container retention: the refused container projected twice differently (%d items %u,%u then %d "
+                    "items %u,%u)\n",
+                    n1,
+                    n1 > 0 ? first[0] : 0,
+                    n1 > 1 ? first[1] : 0,
+                    n2,
+                    n2 > 0 ? second[0] : 0,
+                    n2 > 1 ? second[1] : 0
+                );
+                failures++;
+            } else if (first[0] <= first[1]) {
+                fputs("container retention: the refusing hook's reorder never landed at all\n", stderr);
+                failures++;
+            }
+        }
+        if (t1) {
+            markdown_core_node_free(t1);
+            t1 = NULL;
+        }
+        if (t2) {
+            markdown_core_node_free(t2);
+            t2 = NULL;
+        }
+        markdown_core_parser_free(parser);
+        parser = NULL;
+    }
+
+    /* Act 11: retention INVALIDATED from underneath is the same hazard
+     * arriving by another road (review-found, P2, beyond the finding): this
+     * list retains cleanly, and then a definition arrives. The list's key
+     * carries the OR of its entries' consulted bits, so the entry that
+     * asked the map takes the whole container stale with it -- while the
+     * item that asked nothing is still a hit. The hook re-runs over a
+     * subtree that is half frozen, and its reorder must land as it did the
+     * first time. Measured before the fix: ids 5,3 then 3,5 -- the parse's
+     * own order back again, and for ever after. */
+    if (!failures) {
+        static const char CR_ASKING[] = "- see [x] here\n- plain item\n\nclosing paragraph\n\n";
+        static const char CR_DEF[] = "[x]: /url\n\n";
+        uint32_t before[8];
+        uint32_t after[8];
+        int n1;
+        int n2;
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        if (!markdown_core_parser_attach_syntax_extension(parser, &CR_REORDERING_EXTENSION)) {
+            fputs("container retention: could not attach the reordering probe\n", stderr);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        markdown_core_parser_feed(parser, CR_ASKING, sizeof(CR_ASKING) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        markdown_core_parser_feed(parser, CR_DEF, sizeof(CR_DEF) - 1);
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1 || !t2) {
+            fputs("container retention: invalidating derivations failed\n", stderr);
+            failures++;
+        } else {
+            n1 = cr_item_order(t1, before, 8);
+            n2 = cr_item_order(t2, after, 8);
+            if (n1 != 2 || n2 != 2 || before[0] != after[0] || before[1] != after[1]) {
+                fprintf(
+                    stderr,
+                    "container retention: the definition's arrival re-ordered a hooked list (%u,%u then %u,%u)\n",
+                    n1 > 0 ? before[0] : 0,
+                    n1 > 1 ? before[1] : 0,
+                    n2 > 0 ? after[0] : 0,
+                    n2 > 1 ? after[1] : 0
+                );
+                failures++;
+            } else if (before[0] <= before[1]) {
+                fputs("container retention: the reordering hook never landed at all\n", stderr);
+                failures++;
+            }
+        }
+        if (t1) {
+            markdown_core_node_free(t1);
+            t1 = NULL;
+        }
+        if (t2) {
+            markdown_core_node_free(t2);
+            t2 = NULL;
+        }
+        markdown_core_parser_free(parser);
+        parser = NULL;
+    }
+
+    /* Act 12: under an OPEN hooked container the cache neither serves nor
+     * stores (review-found, P1 and P2 together). The list is rebuilt at
+     * every feed and its hook re-runs over all of it, so a store beneath it
+     * would be thrown away at the next derivation and a hit beneath it
+     * would hand the hook a frozen block; nothing there is even enrolled.
+     * The ledger therefore stands still across three derivations of a
+     * growing list while the hook runs at each, and every item the hook
+     * meets is editable -- which is the whole of what left the store pass
+     * with no ancestor to ask about. Act 5 holds the other half: once the
+     * list CLOSES it is stored on its next derivation and served whole, by
+     * identity, after that. */
+    if (!failures) {
+        static const char CR_GROW1[] = "- item one\n";
+        static const char CR_GROW2[] = "- item two\n";
+        static const char CR_GROW3[] = "- item three\n";
+        markdown_core_node *t3 = NULL;
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        if (!markdown_core_parser_attach_syntax_extension(parser, &CR_LIST_EXTENSION)) {
+            fputs("container retention: could not attach the probe extension\n", stderr);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        cr_list_hook_runs = 0;
+        markdown_core_parser_feed(parser, CR_GROW1, sizeof(CR_GROW1) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        markdown_core_parser_feed(parser, CR_GROW2, sizeof(CR_GROW2) - 1);
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        markdown_core_parser_feed(parser, CR_GROW3, sizeof(CR_GROW3) - 1);
+        t3 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1 || !t2 || !t3) {
+            fputs("container retention: growing hooked derivations failed\n", stderr);
+            failures++;
+        } else {
+            markdown_core_node *list = t3->children.vec[0];
+            size_t i;
+            if (t3->children.count != 1 || markdown_core_node_get_type(list) != MARKDOWN_CORE_NODE_LIST ||
+                !MARKDOWN_CORE_NODE_ARRAY_P(list) || list->children.count != 3) {
+                fputs("container retention: the growing hooked list projected the wrong shape\n", stderr);
+                failures++;
+            }
+            for (i = 0; !failures && i < list->children.count; i++) {
+                if (list->children.vec[i]->flags & MARKDOWN_CORE_NODE__SHARED) {
+                    fprintf(stderr, "container retention: item %zu of an open hooked list is frozen\n", i + 1);
+                    failures++;
+                }
+            }
+            if (parser->cache_hits != 0 || parser->cache_misses != 0) {
+                fprintf(
+                    stderr,
+                    "container retention: the ledger moved under an open hooked list (%zu hits, %zu misses)\n",
+                    parser->cache_hits,
+                    parser->cache_misses
+                );
+                failures++;
+            }
+            if (cr_list_hook_runs != 3) {
+                fprintf(
+                    stderr,
+                    "container retention: the open list's hook ran %zu times over three derivations\n",
+                    cr_list_hook_runs
+                );
+                failures++;
+            }
+        }
+        if (t1) {
+            markdown_core_node_free(t1);
+            t1 = NULL;
+        }
+        if (t2) {
+            markdown_core_node_free(t2);
+            t2 = NULL;
+        }
+        if (t3) {
+            markdown_core_node_free(t3);
+        }
+        markdown_core_parser_free(parser);
+        parser = NULL;
+    }
+
+    printf(
+        "container retention: %s\n",
+        failures ? "a closed container is not one value" : "a closed container serves whole, by identity"
+    );
     return failures ? -1 : 0;
 }
 
@@ -3765,6 +5100,7 @@ static const pr_case_entry PR_CASES[] = {
     {"node_sharing", case_node_sharing, 0},
     {"hook_once", case_hook_once, 0},
     {"child_memo", case_child_memo, 0},
+    {"container_retention", case_container_retention, 0},
     {"label_tail", case_label_tail, 0},
     {"feed_bound", case_feed_bound, 0},
     {"resident_memory", case_resident_memory, 0},
@@ -3773,6 +5109,8 @@ static const pr_case_entry PR_CASES[] = {
     {"feed_loop", case_feed_loop, 1},
     {"session_documents", case_session_documents, 0},
     {"projection_slope", case_projection_slope, 0},
+    {"depth_slope", case_depth_slope, 0},
+    {"spine_depth_slope", case_spine_depth_slope, 0},
 };
 
 int main(int argc, char **argv) {

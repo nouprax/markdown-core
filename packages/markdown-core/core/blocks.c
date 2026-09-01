@@ -219,6 +219,22 @@ int markdown_core_parser_attach_syntax_extension(
     return 1;
 }
 
+/* CUT THE SPINE TABLE BACK TO `keep` LEVELS (F25, F27; parser.h): the
+ * table is a stack indexed by spine depth, so every level from `keep` up
+ * left the spine together -- containers close leaf-first -- and the
+ * parser's own hold on each level's memo ends here. A level whose prefix
+ * never proved holds no memo. Trees that consumed a released memo keep it,
+ * and through it every entry's holder, alive: persistent structure by
+ * plain refcount. */
+static void S_spine_memo_truncate(markdown_core_parser *parser, size_t keep) {
+    while (parser->spine_memo_size > keep) {
+        markdown_core_child_memo *memo = parser->spine_memos[--parser->spine_memo_size].memo;
+        if (memo) {
+            markdown_core_child_memo_release(memo);
+        }
+    }
+}
+
 static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     if (parser->root) {
         markdown_core_node_free(parser->root);
@@ -257,12 +273,16 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     parser->fresh_queue = NULL;
     parser->fresh_queue_size = 0;
     parser->fresh_queue_alloc = 0;
-    /* The parser's own hold on the child memo (F25); trees that consumed
-     * it keep it alive after this. */
-    if (parser->doc_memo) {
-        markdown_core_child_memo_release(parser->doc_memo);
-        parser->doc_memo = NULL;
-    }
+    parser->mem->free(parser->store_stack);
+    parser->store_stack = NULL;
+    parser->store_stack_size = 0;
+    parser->store_stack_alloc = 0;
+    /* The parser's own holds on the spine memos (F25, F27); trees that
+     * consumed one keep it alive after this. */
+    S_spine_memo_truncate(parser, 0);
+    parser->mem->free(parser->spine_memos);
+    parser->spine_memos = NULL;
+    parser->spine_memo_alloc = 0;
     parser->mem->free(parser->tail_mask_pool);
     parser->mem->free((void *)parser->tail_name_rows);
     parser->tail_mask_pool = NULL;
@@ -1189,6 +1209,7 @@ static const char S_INLINES_MEMBER[] = "*inlines";
 /* The projection cache (T9), defined beside the clone that takes its hits. */
 static bool S_cache_fresh(markdown_core_parser *parser, const markdown_core_node *block, markdown_core_map *refmap);
 static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node);
+static void S_container_store(markdown_core_parser *parser, markdown_core_node *node);
 
 /* The inline ordinals (T2), defined beside the tail that assigns them. */
 static bool S_has_inline_child(markdown_core_node *block);
@@ -1354,6 +1375,43 @@ static MARKDOWN_CORE_INLINE bool S_row_any(const markdown_core_parser *parser, c
     return false;
 }
 
+/* DOES A NAME HOOK ACT ON THIS BLOCK? The rows are keyed on the name the
+ * block answers, which is exactly what the tail asks before it offers the
+ * block (F15 rule 1), so this and the offer cannot disagree. A row the
+ * masks could not allocate reads as HOOKED: the parse is poisoned either
+ * way, and the fail-closed answer is the one that cannot hand a hook a
+ * frozen block. */
+static bool S_name_hooked(markdown_core_parser *parser, markdown_core_node *block) {
+    const uint64_t *row;
+    S_tail_masks_fresh(parser);
+    row = S_names_row(parser, markdown_core_node_get_type_string(block));
+    return !row || S_row_any(parser, row);
+}
+
+/* HOW MUCH OF THE CACHE A CLONE MAY USE (review-found, P1 and P2 together):
+ * decided once per region by the clone walk, which stands on the CST's own
+ * parent chain, and carried down it -- never re-derived from a node, and
+ * never asked again by the store pass, whose frames once climbed each
+ * enrolled node's ancestors to answer the same question. Outside any hooked
+ * container the cache serves and stores as it likes. Inside a container
+ * being REBUILT whose name a hook answers, that hook is about to run over
+ * everything below it, and an edit to a retained block is a silent no-op
+ * (F22), so nothing may HIT there. Whether anything may be STORED there is
+ * the container's OPEN bit: a closed one is rebuilt only because its own
+ * retention was refused or invalidated, its hook runs once in this drain,
+ * and the pass then stores the subtree with the edit baked in; an open one
+ * is rebuilt at every feed and its hook reruns at every feed, so a store
+ * under it would be thrown away at the next derivation, and the node is not
+ * even enrolled -- an arena shell, gone with its tree. */
+typedef enum { S_CLONE_RETAINS, S_CLONE_REBUILDS, S_CLONE_DISCARDS } S_clone_mode;
+
+static S_clone_mode S_region_mode(const markdown_core_node *region) {
+    if (!region) {
+        return S_CLONE_RETAINS;
+    }
+    return (region->flags & MARKDOWN_CORE_NODE__OPEN) ? S_CLONE_DISCARDS : S_CLONE_REBUILDS;
+}
+
 /* Asked at the block's EXIT, so a block nothing will touch is never queued. */
 static bool S_block_has_tail_work(markdown_core_parser *parser, markdown_core_node *block) {
     if (contains_inlines(block)) {
@@ -1369,7 +1427,13 @@ static bool S_block_has_tail_work(markdown_core_parser *parser, markdown_core_no
         return true;
     }
     /* Only the name clause is left to ask: the `"*inlines"` offer needs
-     * inline content, and a block with any already answered above. */
+     * inline content, and a block with any already answered above. A row
+     * the masks could not allocate reads as NO WORK here, the opposite of
+     * what `S_name_hooked` answers for the same row, and both are right:
+     * the lost allocation poisoned the parse, whose tree `derive_tree`
+     * frees unreturned, so the one thing still worth getting right is
+     * never to hand a hook a frozen block -- the clone's call, not this
+     * one's. */
     S_tail_masks_fresh(parser);
     return S_row_any(parser, S_names_row(parser, markdown_core_node_get_type_string(block)));
 }
@@ -1490,6 +1554,30 @@ static bool S_has_inline_child(markdown_core_node *block) {
     return false;
 }
 
+#ifndef NDEBUG
+/* THE UNFROZEN PROMISE, CHECKED WHERE IT IS SPENT (review-found, P2): no
+ * child of a block a NAME hook is about to be handed on the derive path is
+ * SHARED. The clone opened the region at the outermost hooked container
+ * before that container's memo was consumed or its first child cloned, so
+ * nothing retained can stand under it, and the hook's edit lands instead of
+ * silently missing (F22). Asked only of NAME offers: an inline offer's
+ * children are inlines, never stored on their own, and the seal path is
+ * exempt by contract -- there a hit IS the CST shell borrowing frozen
+ * children. The walk is the block's own width, once per offered hook, in a
+ * Debug build only. */
+static bool S_no_shared_child(markdown_core_node *block) {
+    markdown_core_child_cursor cursor;
+    markdown_core_node *child;
+    for (child = markdown_core_child_first(block, &cursor); child;
+        child = markdown_core_child_after(block, child, &cursor)) {
+        if (child->flags & MARKDOWN_CORE_NODE__SHARED) {
+            return false;
+        }
+    }
+    return true;
+}
+#endif
+
 /* One block's tail. `*block` comes back reseated or NULL exactly as a hook
  * leaves it, so the caller can tell a replaced root from a removed one. */
 static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **block) {
@@ -1519,6 +1607,7 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
         if (!S_row_test(name_row, idx) && !(offer_inlines && S_row_test(S_inlines_row(parser), idx))) {
             continue;
         }
+        assert(!parser->fresh_queue_armed || !S_row_test(name_row, idx) || S_no_shared_child(node));
         ext->postprocess_block_func(ext, parser, &node);
         if (!node) {
             *block = NULL;
@@ -1584,18 +1673,15 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
         S_number_inline_descendants(node);
     }
 
-    /* THE STORE, last, so the list the cache keeps is the one the tail
-     * finished with -- and the numbering above rides into it. A derived block
-     * that was replaced took its origin with it, and a block with no inline
-     * content never had one. */
-    if (node && (node->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
-        if (children_own && contains_inlines(node)) {
-            S_cache_store(parser, node);
-        } else {
-            node->link.origin = NULL;
-            node->flags &= ~MARKDOWN_CORE_NODE__ORIGIN;
-        }
-    }
+    /* THE STORE MOVED OFF THE TAIL (F27, review-found): a hook acts on
+     * the block it is handed AND INSIDE IT (the contract's own words), so
+     * nothing may freeze until every hook that can reach a node has run
+     * -- a child stored at its own tail was SHARED by the time its
+     * ancestor's hook tried to edit inside, and the edit was silently
+     * refused. Every store now happens in ONE post-order pass over the
+     * live tree after the whole drain (S_store_pass), which also ends the
+     * era of pre-hook queues read after hooks may have freed their
+     * entries. */
     *block = node;
 }
 
@@ -2030,6 +2116,70 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
      * do for the copied one. */
 }
 
+/* STORE A CONTAINER'S WHOLE PROJECTION (#161, F27): the vector of shared
+ * entries under one holder, keyed like a leaf's store on the origin's
+ * stamp -- a closed container is never written, the same fact the memo
+ * stands on -- with the consulted bits OR'd from the entries' own
+ * holders, so a definition's arrival re-keys exactly the containers whose
+ * subtrees asked (#163, one level up). A re-keyed container is served
+ * child by child on the next derivation -- unless a hook's name reaches
+ * it, when it is rebuilt whole (S_CLONE_REBUILDS): the hook's pass may
+ * edit anything under it, so nothing under it is served by identity.
+ * Every entry must already be SHARED: a child that is not -- a
+ * directive's CST-resident label, a hook's fresh replacement, a lost
+ * store -- leaves the container merely unstored, a slow feed, never a
+ * holder that references arena memory. The shell and vector must be
+ * malloc's for the same reason; the clone gave every enrolled miss
+ * exactly that. The tree's own hold mirrors the one `borrow_children`
+ * takes on the leaf path: the parent vector's entry releases it at the
+ * free. */
+static void S_container_store(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_node *origin = node->link.origin;
+    markdown_core_holder *holder;
+    markdown_core_node_internal_flags consulted = 0;
+    size_t i;
+
+    node->link.origin = NULL;
+    node->flags &= ~MARKDOWN_CORE_NODE__ORIGIN;
+    if (!MARKDOWN_CORE_NODE_ARRAY_P(node) || (node->flags & MARKDOWN_CORE_NODE__ARENA)) {
+        return;
+    }
+    for (i = 0; i < node->children.count; i++) {
+        markdown_core_node *entry = node->children.vec[i];
+        if (!(entry->flags & MARKDOWN_CORE_NODE__SHARED)) {
+            return;
+        }
+        consulted |= entry->link.holder->consulted;
+    }
+    holder = markdown_core_holder_new(parser->mem);
+    if (!holder) {
+        /* Nothing is lost: the tree keeps its own vector. */
+        return;
+    }
+    holder->stamp = origin->stamp;
+    holder->refgen = parser->refmap->generation;
+    holder->footgen = parser->footnote_defs->generation;
+    holder->extgen = parser->extension_generation;
+    holder->consulted = consulted;
+    holder->node = node;
+    /* Every consumer of a SHARED entry -- the free walk, the memo's push,
+     * the dissolve -- reaches the holder through the entry's own link,
+     * exactly as a leaf's borrow leaves it. */
+    node->link.holder = holder;
+    /* The creation hold is the cache's (holders are born held); this one
+     * is the TREE's. */
+    markdown_core_holder_hold(holder);
+    if (origin->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) {
+        markdown_core_holder_release(origin->link.holder);
+    }
+    origin->link.holder = holder;
+    origin->flags |= MARKDOWN_CORE_NODE__CACHE_OWNER;
+    node->flags |= MARKDOWN_CORE_NODE__SHARED;
+    node->parent = NULL;
+    node->next = NULL;
+    node->prev = NULL;
+}
+
 /* THE STABLE-PREFIX MEMO's freshness (#161, F25): the whole recorded run in
  * one comparison per axis instead of one per block. The per-block key
  * (S_cache_fresh) also compares the block's write stamp; the memo carries
@@ -2090,7 +2240,8 @@ static int S_optional_chunk_share(
 static markdown_core_node *S_clone_block_node(
     markdown_core_parser *parser,
     const markdown_core_node *src,
-    markdown_core_map *refmap
+    markdown_core_map *refmap,
+    S_clone_mode mode
 ) {
     markdown_core_mem *mem = parser->mem;
     markdown_core_node *dst;
@@ -2110,9 +2261,52 @@ static markdown_core_node *S_clone_block_node(
      * cannot carry skeleton children at all any more; this term is the
      * backstop that keeps a slipped shape merely uncached rather than
      * corrupting at the store. */
-    enrolled = MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src) && contains_inlines((markdown_core_node *)src) &&
-               src->first_child == NULL && refmap == parser->refmap && !parser->no_projection_cache;
-    hit = enrolled && S_cache_fresh(parser, src, refmap) && src->link.holder->node != NULL;
+    /* EVERY childless block enrolls, not just the inline-bearing (#161,
+     * F27): a code fence, a thematic break, an HTML block, an empty
+     * container -- each was recloned on every feed forever, and one at
+     * top level CAPPED the document's memo at its index, since its entry
+     * never turned SHARED. Their store moves an EMPTY list, which is the
+     * shape `take_children` trivially honors. The asymmetric OPEN term is
+     * a cost line, not a safety one: an inline leaf's store saves a whole
+     * inline parse, worth paying even for the still-open paragraph a
+     * double derivation re-reads, while a bare leaf's store saves only
+     * its clone -- storing one still taking lines would buy a holder per
+     * feed to save fifteen field copies. It also keeps the DOCUMENT out
+     * by construction: the root is open for every derivation that can
+     * ever see it. */
+    /* A CLOSED CONTAINER enrolls WITH its children (#161, F27): once its
+     * subtree stops changing -- closed blocks are never written, and the
+     * open spine is the rightmost path, so a closed container holds no
+     * open descendant -- its whole projection is one retainable value,
+     * keyed like a leaf's on its own stamp plus the OR of its entries'
+     * consulted bits. The hit skips the entire subtree; the miss clones,
+     * descends, and the sweep stores it once every entry has turned
+     * SHARED (its own children hit or were stored first), failing closed
+     * on any that has not -- a directive's CST-resident label, a hook's
+     * fresh replacement. */
+    /* UNDER AN OPEN HOOKED CONTAINER NOTHING ENROLLS (review-found, P1):
+     * its hook reruns at every feed over a subtree rebuilt at every feed,
+     * so a store there is thrown away at the next derivation -- and a
+     * block that will not be stored need not remember where it came from,
+     * nor outlive its tree. The store pass therefore has no ancestor to
+     * ask about, and the climb it once made per enrolled node (quadratic
+     * in nesting depth) has no question left to answer. */
+    enrolled = mode != S_CLONE_DISCARDS && MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src) &&
+               refmap == parser->refmap && !parser->no_projection_cache &&
+               (src->first_child == NULL
+                       ? (contains_inlines((markdown_core_node *)src) || !(src->flags & MARKDOWN_CORE_NODE__OPEN))
+                       : (!contains_inlines((markdown_core_node *)src) && !(src->flags & MARKDOWN_CORE_NODE__OPEN)));
+    /* A REBUILT HOOKED CONTAINER IS HANDED AN UNFROZEN SUBTREE
+     * (review-found, P2): its hook is about to run again, over everything
+     * inside it, and a retained descendant would refuse the unlink, the
+     * replacement, the adoption the contract promises -- silently, since
+     * removing a shared entry from a tree is the engine's own business
+     * (F22). So inside such a container the cache serves NOTHING: every
+     * block is built fresh this derivation, and every edit lands. Under a
+     * CLOSED one the block still enrolls, so the pass that follows stores
+     * it again with the hook's new word baked in, and the container's own
+     * next hit serves the whole subtree by identity. */
+    hit = enrolled && mode == S_CLONE_RETAINS && S_cache_fresh(parser, src, refmap) && src->link.holder->node != NULL;
     if (hit) {
         markdown_core_holder *holder = src->link.holder;
         markdown_core_holder_hold(holder);
@@ -2390,15 +2584,135 @@ static void S_vec_append(markdown_core_node *parent, markdown_core_node *child) 
     }
 }
 
+/* CONSUME A SPINE MEMO (#161, F25; per-container since F27): the recorded
+ * run of a container's closed children enters the new tree as one memcpy
+ * and ONE memo hold -- the memo's per-entry holder holds stand in for the
+ * per-entry holds the walk takes -- and the caller resumes its walk at
+ * the first child after the run, or skips the descent entirely when the
+ * run reaches the end. The entries are COPIED, never aliased: the memo's
+ * array reallocates as it grows, and each tree's vector is its own. The
+ * boundary rides beside the memo hold in the tree's own `memo_ref`
+ * (review-found: the extension-owned `as.opaque` is no place for it),
+ * allocated from the derivation arena so it lives exactly as long as the
+ * node that points at it. The `width` term is the fail-closed door: a
+ * memo somehow longer than the container it memoizes would overrun the
+ * vector, so it is merely not consumed -- a slow feed, never a corrupted
+ * tree; a refused ref allocation is absorbed the same way. The hit
+ * ledger moves by the whole run: the same hits the per-child walk would
+ * have counted. */
+static const markdown_core_node *S_spine_consume(
+    markdown_core_parser *parser,
+    markdown_core_node *dst,
+    const markdown_core_node *src,
+    size_t width,
+    markdown_core_map *refmap,
+    S_clone_mode mode,
+    size_t depth
+) {
+    markdown_core_child_memo *memo;
+    markdown_core_memo_ref *ref;
+    /* The memo is the OTHER door retention comes through, and it opens
+     * without asking a single node (review-found, P2): inside a rebuilt
+     * hooked container every block must be built fresh, so the run is not
+     * consumed there and the walk goes per-child. Nothing is lost but the
+     * memcpy -- the entries the memo holds are still held by it. A
+     * container hooked since before its children closed never recorded a
+     * run at all (nothing under it was stored), but the rule cannot rest
+     * on that: the memo's freshness asks generations, never names, so a
+     * run recorded while the container answered an unhooked name would
+     * still read fresh after the block phase retyped it in place onto a
+     * hooked one -- the way table.c retypes an open paragraph, which as a
+     * leaf has no run to keep. No shipped extension builds the shape; the
+     * compare is what keeps that a fact about today's extensions rather
+     * than a rule the cache leans on. */
+    if (mode != S_CLONE_RETAINS) {
+        return src->first_child;
+    }
+    /* A container that JUST closed can be both things at once: its spine
+     * memo still stands (the record, after this clone, is what retires
+     * it) while the clone has already marked it a container-enrolled MISS
+     * -- and ORIGIN and memo_ref are one union slot. The store wins the
+     * transition derive: this build walks per-child once, retains the
+     * whole container, and the next derivation hits it wholesale while
+     * the record cuts the dead memo away. */
+    if (dst->flags & MARKDOWN_CORE_NODE__ORIGIN) {
+        return src->first_child;
+    }
+    /* THE LOOKUP IS ONE INDEX (review-found, round 3): the table IS the
+     * spine (parser.h), so a container's run stands at its own depth or
+     * nowhere, and the pointer compare makes a slot that names some other
+     * container -- a level the record has not retaken yet -- a plain miss,
+     * never a wrong tree. The scan this replaces asked every slot for
+     * every open container, and a nest of open quotes each holding a
+     * closed paragraph before the next has as many slots as levels:
+     * quadratic in the depth, 178x slower for 16x the depth. */
+    if (depth >= parser->spine_memo_size || parser->spine_memos[depth].container != src) {
+        return src->first_child;
+    }
+    memo = parser->spine_memos[depth].memo;
+    if (!memo || memo->count == 0 || memo->count > width || !S_memo_fresh(parser, memo, refmap)) {
+        return src->first_child;
+    }
+    ref = (markdown_core_memo_ref *)markdown_core_node_arena_bytes(parser->derive_arena, sizeof(*ref));
+    if (!ref) {
+        return src->first_child;
+    }
+    ref->memo = memo;
+    ref->boundary = memo->count;
+    memcpy(dst->children.vec, memo->entries, memo->count * sizeof(*memo->entries));
+    dst->children.count = memo->count;
+    markdown_core_child_memo_hold(memo);
+    dst->link.memo_ref = ref;
+    dst->flags |= MARKDOWN_CORE_NODE__MEMO_PREFIX;
+    parser->cache_hits += memo->count;
+    return memo->src_last->next;
+}
+
 static markdown_core_node *S_clone_block_tree(
     markdown_core_parser *parser,
     const markdown_core_node *src_root,
     markdown_core_map *refmap
 ) {
-    markdown_core_node *dst_root = S_clone_block_node(parser, src_root, refmap);
+    markdown_core_node *dst_root = S_clone_block_node(parser, src_root, refmap, S_CLONE_RETAINS);
     markdown_core_node *dst_parent = dst_root;
-    const markdown_core_node *src = src_root->first_child;
+    const markdown_core_node *src;
     size_t width = 0;
+    /* THE UNFROZEN REGION (review-found, P2): the outermost container being
+     * rebuilt whose name a hook answers. Everything inside it is built
+     * fresh -- no per-node hit, no memo run -- because that hook is about
+     * to run over all of it and an edit to a retained block is a silent
+     * no-op (F22). The OUTERMOST one is the whole answer: a hooked
+     * container nested inside another is already in the region, and the
+     * region ends where the walk climbs back out of it. NULL whenever the
+     * walk is anywhere else, which is nearly always. Its OPEN bit is the
+     * whole of the store question too (S_clone_mode): an open region holds
+     * every open hooked container the walk can meet, since a closed
+     * container holds nothing open, and a closed region holds none.
+     *
+     * The region opens on the CLONE's reading of the name -- asked of `dst`
+     * once its type, extension and payload are copied and before any child
+     * exists -- and the tail will ask the same node the same question
+     * before it offers it: every shipped `get_type_string` is a function of
+     * exactly those copied fields (a list item's tasklist standing, a table
+     * row's header bit), never of the children. The drain cannot open a gap
+     * either: a hook retypes only the block it was offered or one inside
+     * it, so a block that changes its name mid-drain already stood inside
+     * a region, and an inline hook restructures no block at all (F15 rule
+     * 2). */
+    const markdown_core_node *unfrozen = NULL;
+    S_clone_mode mode = S_CLONE_RETAINS;
+    /* THE SPINE DEPTH (review-found, round 3): the open blocks are the
+     * rightmost path, root to `current`, each the last child of the one
+     * above, and a pre-order walk meets them top-down -- so the OPEN
+     * containers this walk has descended into count the depth of the one
+     * it stands in, which is the slot its run stands at in the spine
+     * table. Never decremented: past the deepest open container the walk
+     * only climbs, every open container being its parent's last child.
+     * Counted in every mode, since the region refuses the run and not
+     * the depth; and the record builds the table by the same walk down
+     * `last_child`, so the two sides agree by construction and a slip
+     * would cost a missed run, never a wrong tree (the lookup compares). */
+    size_t spine_depth = 0;
 
     if (!dst_root) {
         return NULL;
@@ -2407,44 +2721,13 @@ static markdown_core_node *S_clone_block_tree(
         markdown_core_node_free(dst_root);
         return NULL;
     }
-    /* THE MEMO IS CONSUMED FIRST (#161, F25): the recorded run of closed
-     * top-level blocks enters the new tree as one memcpy and ONE memo hold
-     * -- the memo's per-entry holder holds stand in for the per-entry
-     * holds the walk below takes -- and the walk resumes at the first
-     * child after the run. The entries are COPIED, never aliased: the
-     * memo's array reallocates as it grows, and this tree's vector is its
-     * own. The boundary rides beside the memo hold in the tree's own
-     * `memo_ref` -- the memo's count keeps growing past it, and the
-     * extension-owned `as.opaque` is no place for it (review-found: a
-     * document-selected name hook receives this node, and the attach path
-     * trusts any non-NULL payload it finds there) -- allocated from the
-     * derivation arena, so it lives exactly as long as the document node
-     * that points at it and the free walk only reads it (node.c). The
-     * `width` term is the fail-closed door: a memo somehow longer than
-     * the container it memoizes would overrun the vector, so it is merely
-     * not consumed -- a slow feed, never a corrupted tree; a refused ref
-     * allocation is absorbed the same way. The hit ledger moves by the
-     * whole run: these are the same hits the per-child walk would have
-     * counted. */
-    if (parser->doc_memo && parser->doc_memo->count > 0 && parser->doc_memo->count <= width &&
-        S_memo_fresh(parser, parser->doc_memo, refmap)) {
-        markdown_core_memo_ref *ref =
-            (markdown_core_memo_ref *)markdown_core_node_arena_bytes(parser->derive_arena, sizeof(*ref));
-        if (ref) {
-            markdown_core_child_memo *memo = parser->doc_memo;
-            ref->memo = memo;
-            ref->boundary = memo->count;
-            memcpy(dst_root->children.vec, memo->entries, memo->count * sizeof(*memo->entries));
-            dst_root->children.count = memo->count;
-            markdown_core_child_memo_hold(memo);
-            dst_root->link.memo_ref = ref;
-            dst_root->flags |= MARKDOWN_CORE_NODE__MEMO_PREFIX;
-            parser->cache_hits += memo->count;
-            src = memo->src_last->next;
-        }
+    if (S_name_hooked(parser, dst_root)) {
+        unfrozen = src_root;
+        mode = S_region_mode(unfrozen);
     }
+    src = S_spine_consume(parser, dst_root, src_root, width, refmap, mode, spine_depth);
     while (src) {
-        markdown_core_node *dst = S_clone_block_node(parser, src, refmap);
+        markdown_core_node *dst = S_clone_block_node(parser, src, refmap, mode);
         if (!dst) {
             markdown_core_node_free(dst_root);
             return NULL;
@@ -2455,28 +2738,55 @@ static markdown_core_node *S_clone_block_tree(
             /* A HIT never reaches this branch (review-found): the retained
              * node IS the projection of the source's whole subtree, and
              * descending would clone raw CST children over the shared
-             * projection every other live tree is reading. An enrolled
-             * MISS never reaches it either, by the enrolled predicate
-             * itself now -- a block with skeleton children never enrolls
-             * -- so ORIGIN here is provably impossible, and the assert
-             * holds the door on the predicate ever loosening. */
-            assert(!(dst->flags & MARKDOWN_CORE_NODE__ORIGIN));
-            if (!S_vec_open(parser, dst, src, NULL)) {
+             * projection every other live tree is reading. An INLINE
+             * enrolled miss never reaches it either -- childless by the
+             * predicate -- while a container-enrolled miss (F27) descends
+             * exactly here, carrying ORIGIN for the sweep's store; the
+             * assert keeps the inline door shut. */
+            assert(!(dst->flags & MARKDOWN_CORE_NODE__ORIGIN) || !contains_inlines(dst));
+            const markdown_core_node *resume;
+            size_t inner_width = 0;
+            if (!S_vec_open(parser, dst, src, &inner_width)) {
                 markdown_core_node_free(dst_root);
                 return NULL;
             }
-            src = src->first_child;
-            dst_parent = dst;
-        } else {
-            while (!src->next && src != src_root) {
-                src = src->parent;
-                dst_parent = dst_parent->parent;
+            /* An OPEN container on the spine consumes its own memo (F27)
+             * exactly as the document consumes its own: a growing list's
+             * closed items enter as one memcpy. A run that reaches the
+             * end of the child list skips the descent entirely and falls
+             * through to the climb, `src` still the container. */
+            /* The container being descended into is the one whose hook
+             * will be handed everything below it, so the region opens
+             * BEFORE its own memo is asked and before its first child is
+             * cloned. */
+            if (!unfrozen && S_name_hooked(parser, dst)) {
+                unfrozen = src;
+                mode = S_region_mode(unfrozen);
             }
-            if (src == src_root) {
-                break;
+            if (src->flags & MARKDOWN_CORE_NODE__OPEN) {
+                spine_depth++;
             }
-            src = src->next;
+            resume = S_spine_consume(parser, dst, src, inner_width, refmap, mode, spine_depth);
+            if (resume) {
+                src = resume;
+                dst_parent = dst;
+                continue;
+            }
         }
+        while (!src->next && src != src_root) {
+            src = src->parent;
+            dst_parent = dst_parent->parent;
+            /* Climbing onto the region's own container is leaving it: the
+             * next step is its sibling, which no hook of its owns. */
+            if (src == unfrozen) {
+                unfrozen = NULL;
+                mode = S_CLONE_RETAINS;
+            }
+        }
+        if (src == src_root) {
+            break;
+        }
+        src = src->next;
     }
     return dst_root;
 }
@@ -2529,6 +2839,138 @@ static void S_project_fresh(markdown_core_parser *parser, markdown_core_map *ref
     markdown_core_manage_extensions_special_characters(parser, false);
 }
 
+/* THE STORE PASS (#161, F27, review-shaped three times over): one
+ * post-order walk of the LIVE tree, after the whole drain, storing every
+ * ORIGIN node whose shape a store honors. After-the-drain is the
+ * contract's own requirement -- a hook acts on the block it is handed AND
+ * INSIDE IT, so a child frozen at its own tail turned an ancestor's later
+ * edit into a silently refused no-op. The live tree is the liveness proof
+ * a pre-hook queue never had: what a hook freed is simply not here. And
+ * post-order is the container store's all-SHARED proof arriving in the
+ * right order. The walk skips retained subtrees whole (nothing fresh
+ * lives under SHARED), never descends past inline content, and starts a
+ * memoized container at its own boundary, so it is O(built) with a flag
+ * test per skipped entry. Iterative on an explicit frame stack: nesting
+ * is input-shaped and the C stack is not. Any refused allocation ends the
+ * pass early -- unstored is a slow feed, never a wrong tree.
+ *
+ * THE PASS ASKS NOTHING ABOUT ANCESTORS (review-found, P1). It once climbed
+ * each enrolled node's parent chain to learn whether a hooked OPEN
+ * container stood above it -- a store under one is thrown away at the next
+ * feed -- and that climb re-walked what the frames already held:
+ * Theta(depth^2) over a nested document, measured at 0.62/2.49/10.39/38.71
+ * ms for two derivations of 500/1000/2000/4000 nested quotes, with no
+ * extension attached at all. The question is answered once per region by
+ * the clone walk instead (S_clone_mode), which stands on the CST's own
+ * chain: nothing under an open hooked container enrolls, so nothing there
+ * reaches a store. What the pass meets enrolled, it stores. */
+static bool S_store_frame_push(markdown_core_parser *parser, markdown_core_node *node) {
+    if (parser->store_stack_size == parser->store_stack_alloc) {
+        size_t grown = parser->store_stack_alloc ? parser->store_stack_alloc * 2 : 16;
+        struct markdown_core_store_frame *stack =
+            (struct markdown_core_store_frame *)parser->mem->realloc(parser->store_stack, grown * sizeof(*stack));
+        if (!stack) {
+            return false;
+        }
+        parser->store_stack = stack;
+        parser->store_stack_alloc = grown;
+    }
+    parser->store_stack[parser->store_stack_size].node = node;
+    parser->store_stack[parser->store_stack_size].next_index =
+        (node->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) ? node->link.memo_ref->boundary : 0;
+    parser->store_stack[parser->store_stack_size].next_intrusive =
+        MARKDOWN_CORE_NODE_ARRAY_P(node) ? NULL : node->first_child;
+    parser->store_stack_size++;
+    return true;
+}
+
+/* AN ANCESTOR'S FUTURE EDIT OUTRANKS RETENTION (review-found): a child
+ * stored under a hooked OPEN container would be frozen by the time that
+ * container's hook re-ran on the next feed, and the edit the contract
+ * promises -- remove an item once three exist -- would silently miss. Such
+ * a child stays fresh, re-projected per feed exactly as before this round,
+ * until the ancestor closes; the closing derivation runs the hook's last
+ * word in its drain and THEN stores the whole subtree, edit baked in. The
+ * clone enforces it by never enrolling such a child (S_CLONE_DISCARDS), so
+ * none arrives here; this dispatch only sorts the enrolled by shape. */
+static void S_store_dispatch(markdown_core_parser *parser, markdown_core_node *node) {
+    if (!(node->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
+        return;
+    }
+    if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
+        S_container_store(parser, node);
+    } else if (contains_inlines(node) || node->first_child == NULL) {
+        S_cache_store(parser, node);
+    } else {
+        /* Retyped out of its inline standing while keeping children: no
+         * store honors the shape, so it merely un-enrolls. */
+        node->link.origin = NULL;
+        node->flags &= ~MARKDOWN_CORE_NODE__ORIGIN;
+    }
+}
+
+/* Does the pass need to look INSIDE this fresh block? A vector container
+ * and a non-inline container with children can hold fresh blocks; an
+ * inline leaf holds only its parsed list, which the scan must not pay
+ * for. */
+static bool S_store_descends(markdown_core_node *node) {
+    return MARKDOWN_CORE_NODE_ARRAY_P(node) || (!contains_inlines(node) && node->first_child != NULL);
+}
+
+static void S_store_pass(markdown_core_parser *parser, markdown_core_node *root) {
+    parser->store_stack_size = 0;
+    if (!S_store_frame_push(parser, root)) {
+        return;
+    }
+    while (parser->store_stack_size) {
+        struct markdown_core_store_frame *frame = &parser->store_stack[parser->store_stack_size - 1];
+        markdown_core_node *descend = NULL;
+        markdown_core_node *entry;
+        if (MARKDOWN_CORE_NODE_ARRAY_P(frame->node)) {
+            while (frame->next_index < frame->node->children.count) {
+                entry = frame->node->children.vec[frame->next_index++];
+                if ((entry->flags & MARKDOWN_CORE_NODE__SHARED) || !MARKDOWN_CORE_NODE_BLOCK_P(entry)) {
+                    continue;
+                }
+                if (S_store_descends(entry)) {
+                    descend = entry;
+                    break;
+                }
+                S_store_dispatch(parser, entry);
+            }
+        } else {
+            while (frame->next_intrusive) {
+                entry = frame->next_intrusive;
+                frame->next_intrusive = entry->next;
+                if ((entry->flags & MARKDOWN_CORE_NODE__SHARED) || !MARKDOWN_CORE_NODE_BLOCK_P(entry)) {
+                    continue;
+                }
+                if (S_store_descends(entry)) {
+                    descend = entry;
+                    break;
+                }
+                S_store_dispatch(parser, entry);
+            }
+        }
+        if (descend) {
+            /* The push may grow the stack, so nothing reads `frame` after
+             * it. A refused one ends the pass with every node it had not
+             * reached still carrying ORIGIN, unstored -- and that is a
+             * whole tree, not a poisoned one: the free walk owns an ORIGIN
+             * block's children exactly as it owns any fresh block's
+             * (node.c), the record extends its memo over nothing that was
+             * not stored, and the next derivation simply misses again. */
+            if (!S_store_frame_push(parser, descend)) {
+                parser->store_stack_size = 0;
+                return;
+            }
+            continue;
+        }
+        parser->store_stack_size--;
+        S_store_dispatch(parser, frame->node);
+    }
+}
+
 static markdown_core_node *S_project(
     markdown_core_parser *parser,
     markdown_core_node *skeleton,
@@ -2554,8 +2996,48 @@ static markdown_core_node *S_project(
 
     S_run_block_tails(parser, &skeleton);
 
+    /* THE STORE PASS (F27): every store, after every hook. Derive-path
+     * only -- the finish path projects the CST itself, where nothing
+     * carries ORIGIN. */
+    if (parser->fresh_queue_armed && skeleton) {
+        S_store_pass(parser, skeleton);
+    }
+
     parser->line_marks_size = marks_before;
     return skeleton;
+}
+
+/* TAKE THE SLOT AT `depth` FOR `cst` (review-found, round 3): the table is
+ * the spine, so the slot either names this container already -- the
+ * common feed, the spine unchanged from the last record -- or names the
+ * one that stood at this depth before it closed, and with it every level
+ * below, which all stood inside it. That suffix is cut away whole and the
+ * slot retaken empty; the memo is born later, at the first pair that
+ * proves. The table grows only here and before anything commits to the
+ * slot, so a refused growth costs this level and those below it their
+ * runs -- a slow feed, never a wrong tree -- and nothing else. */
+static bool S_spine_memo_slot(markdown_core_parser *parser, const markdown_core_node *cst, size_t depth) {
+    assert(depth <= parser->spine_memo_size);
+    if (depth < parser->spine_memo_size) {
+        if (parser->spine_memos[depth].container == cst) {
+            return true;
+        }
+        S_spine_memo_truncate(parser, depth);
+    }
+    if (depth == parser->spine_memo_alloc) {
+        size_t grown = parser->spine_memo_alloc ? parser->spine_memo_alloc * 2 : 4;
+        struct markdown_core_spine_memo *table =
+            (struct markdown_core_spine_memo *)parser->mem->realloc(parser->spine_memos, grown * sizeof(*table));
+        if (!table) {
+            return false;
+        }
+        parser->spine_memos = table;
+        parser->spine_memo_alloc = grown;
+    }
+    parser->spine_memos[depth].container = cst;
+    parser->spine_memos[depth].memo = NULL;
+    parser->spine_memo_size = depth + 1;
+    return true;
 }
 
 /* RECORD THE STABLE PREFIX (#161, F25), after the projection stored its
@@ -2569,23 +3051,35 @@ static markdown_core_node *S_project(
  * structure by plain refcount. Every failure here is absorbed the way the
  * store absorbs its own (S_cache_store): a memo that cannot be born or
  * cannot grow leaves the recorded run as it stands -- a slow feed, never
- * a wrong tree -- so no path sets `oom`. */
-static void S_doc_memo_record(markdown_core_parser *parser, markdown_core_node *derived, markdown_core_map *refmap) {
-    markdown_core_child_memo *memo = parser->doc_memo;
+ * a wrong tree -- so no path sets `oom`. Answers whether the level HOLDS
+ * ITS SLOT, which is what the walk below needs to go one level deeper: a
+ * level the table cannot index ends the spine as far as the table knows
+ * it. */
+static bool S_spine_memo_record_level(
+    markdown_core_parser *parser,
+    const markdown_core_node *cst,
+    markdown_core_node *derived,
+    markdown_core_map *refmap,
+    size_t depth
+) {
+    markdown_core_child_memo *memo;
     const markdown_core_node *src_child;
     size_t start;
     size_t i;
 
-    /* Only the parser's own map records, the store's rule (T9); a replaced
-     * root is not the clone's container -- a hook builds through the public
-     * constructors, which never vectorize -- so the ARRAY_P term also
-     * proves `children.vec` below is the clone's. */
-    if (refmap != parser->refmap || parser->no_projection_cache || !MARKDOWN_CORE_NODE_ARRAY_P(derived)) {
-        return;
+    /* A replaced node is not the clone's container -- a hook builds
+     * through the public constructors, which never vectorize -- so the
+     * ARRAY_P term also proves `children.vec` below is the clone's. */
+    if (!MARKDOWN_CORE_NODE_ARRAY_P(derived)) {
+        return false;
     }
+    if (!S_spine_memo_slot(parser, cst, depth)) {
+        return false;
+    }
+    memo = parser->spine_memos[depth].memo;
     if (memo && !S_memo_fresh(parser, memo, refmap)) {
         markdown_core_child_memo_release(memo);
-        parser->doc_memo = NULL;
+        parser->spine_memos[depth].memo = NULL;
         memo = NULL;
     }
     if (memo) {
@@ -2599,7 +3093,7 @@ static void S_doc_memo_record(markdown_core_parser *parser, markdown_core_node *
         memo->footgen = parser->footnote_defs->generation;
     }
     start = memo ? memo->count : 0;
-    src_child = start ? memo->src_last->next : parser->root->first_child;
+    src_child = start ? memo->src_last->next : cst->first_child;
     for (i = start; i < derived->children.count && src_child; i++, src_child = src_child->next) {
         markdown_core_node *entry = derived->children.vec[i];
         /* The pair proves alignment or ends the run: an OPEN block's stamp
@@ -2612,22 +3106,68 @@ static void S_doc_memo_record(markdown_core_parser *parser, markdown_core_node *
             break;
         }
         if (!memo) {
-            /* Born at the first provable pair, never empty-handed; the
-             * generations are the ones the projection just ran under. */
+            /* Born at the first provable pair, never empty-handed, into
+             * the slot the level already holds; the generations are the
+             * ones the projection just ran under. */
             memo = markdown_core_child_memo_new(parser->mem);
             if (!memo) {
-                return;
+                return true;
             }
             memo->refgen = parser->refmap->generation;
             memo->footgen = parser->footnote_defs->generation;
             memo->extgen = parser->extension_generation;
-            parser->doc_memo = memo;
+            parser->spine_memos[depth].memo = memo;
         }
         if (!markdown_core_child_memo_push(memo, entry)) {
-            return;
+            return true;
         }
         memo->src_last = src_child;
     }
+    return true;
+}
+
+/* RECORD DOWN THE SPINE (F27): the document always, then each OPEN
+ * container along the rightmost path, paired with its own projection --
+ * the derived side's LAST entry, which is fresh exactly because its
+ * source is open. ONE PASS (review-found, round 3): the walk retakes the
+ * table level by level as it descends, and whatever stands below the
+ * level it stops at left the spine -- the container closed (it retains
+ * wholesale now) or died at its close, and containers close leaf-first,
+ * so the dead levels are always the table's suffix. The sweep this
+ * replaces climbed the live spine once per slot, quadratic in the depth
+ * whenever every open container had a run of its own. The stored
+ * pointers are COMPARED and never dereferenced, and a CST container is
+ * freed only with the parse, so a dead one is just never matched. */
+static void S_spine_memo_record(markdown_core_parser *parser, markdown_core_node *derived, markdown_core_map *refmap) {
+    const markdown_core_node *cst = parser->root;
+    markdown_core_node *d = derived;
+    size_t depth = 0;
+
+    /* Only the parser's own map records, the store's rule (T9). */
+    if (refmap != parser->refmap || parser->no_projection_cache) {
+        return;
+    }
+    while (cst && d) {
+        const markdown_core_node *next_cst;
+        markdown_core_node *next_d;
+        if (!S_spine_memo_record_level(parser, cst, d, refmap, depth)) {
+            break;
+        }
+        depth++;
+        /* The level held its slot, which proves `d` is the clone's own
+         * vector container. */
+        next_cst = cst->last_child;
+        if (!next_cst || !(next_cst->flags & MARKDOWN_CORE_NODE__OPEN) || d->children.count == 0) {
+            break;
+        }
+        next_d = d->children.vec[d->children.count - 1];
+        if (next_d->flags & MARKDOWN_CORE_NODE__SHARED) {
+            break;
+        }
+        cst = next_cst;
+        d = next_d;
+    }
+    S_spine_memo_truncate(parser, depth);
 }
 
 /* THE PROJECTION: AST = project(CST, refmap) (§12.1), as a NEW tree. Clone
@@ -2687,7 +3227,7 @@ markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parse
      * poisoned projection stored who-knows-what, so it records nothing --
      * and the tree it half-built is about to be freed below anyway. */
     if (derived && !parser->oom) {
-        S_doc_memo_record(parser, derived, refmap);
+        S_spine_memo_record(parser, derived, refmap);
     }
     if (arena) {
         markdown_core_node_arena_release(arena);

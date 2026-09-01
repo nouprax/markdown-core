@@ -362,6 +362,9 @@ if(MARKDOWN_CORE_STATIC)
     # every free order, falls back on a consulted generation's move, and
     # never records an OPEN block.
     markdown_core_add_test(projection_child_memo "streaming" 120 projection_runner --case child_memo)
+    # F27: closed containers retained wholesale -- identity across
+    # derivations, consulted-gated invalidation, every free order.
+    markdown_core_add_test(projection_container_retention "streaming" 120 projection_runner --case container_retention)
     # Phase F's gates (T15, T16, T17). feed_bound is counter-based and
     # deterministic; resident_memory reads ru_maxrss, so like the wall-clock
     # gates it carries the complexity label the sanitizer presets exclude;
@@ -396,6 +399,22 @@ if(MARKDOWN_CORE_STATIC)
     markdown_core_add_test(pathological_complexity_projection_slope "pathological;complexity" 120 projection_runner
                            --case projection_slope)
     set_tests_properties(pathological_complexity_projection_slope PROPERTIES RUN_SERIAL TRUE)
+    # F27, review-found P1: a derivation is O(built) at any nesting depth. A
+    # document that is almost entirely depth, over an eightfold depth ratio,
+    # reads ~1.5x normalized; the per-node ancestor climb this gate was written
+    # against read ~17x. Wall-clock, complexity-labelled and serial like the
+    # other slope gates.
+    markdown_core_add_test(pathological_complexity_depth_slope "pathological;complexity" 120 projection_runner --case
+                           depth_slope)
+    set_tests_properties(pathological_complexity_depth_slope PROPERTIES RUN_SERIAL TRUE)
+    # F27, review round 3: the spine memo table costs each open level once. A
+    # stair of open quotes, each holding a closed paragraph before the next,
+    # gives every level a run; re-deriving it over an eightfold depth ratio
+    # reads under 2x normalized where the table scanned per container read
+    # 13-14x. Wall-clock, complexity-labelled and serial like the depth gate.
+    markdown_core_add_test(pathological_complexity_spine_depth_slope "pathological;complexity" 120 projection_runner
+                           --case spine_depth_slope)
+    set_tests_properties(pathological_complexity_spine_depth_slope PROPERTIES RUN_SERIAL TRUE)
 endif()
 
 markdown_core_add_test(

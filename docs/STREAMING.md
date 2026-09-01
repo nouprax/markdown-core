@@ -1746,6 +1746,204 @@ the profile is allocator traffic (~22%) and the O(new) work itself. A
 delta-shaped consumer (#162) sidesteps even the memcpy; within the
 value-shaped API this is the floor worth having.
 
+### F27 — retention reaches every closed block, and the memo reaches every open container: the feed is O(open + changed)  · VERIFIED (#161, closing round)
+
+Three commits, each measured on the shape it exists for; callgrind Ir,
+same-session A/B per change. The adversarial harnesses: the OPEN-LIST
+stream (one tight list fed an item per line, 2,000 items, a derivation
+per feed — the shape the document-only memo could not serve) and the
+FENCE-MIXED stream (a code fence in every unit, 66 KB over 6,400 line
+feeds — the shape whose fences capped every run).
+
+**1. Every childless block enrolls — bare leaves, hooked or not.** A
+code fence, a thematic break, an HTML block, an empty container, a
+reference DEFINITION (kept as a node — the mdast model) never turned
+SHARED: recloned every feed forever, and one at top level capped the
+document's memo at its index. Three doors, each found by measurement:
+the enrolled predicate drops its `contains_inlines` term (childless is
+the shape the store's move honors; bare leaves enroll closed-only — a
+cost line, their store saves only a clone — which also keeps the
+always-open document out); the tail's store arm keeps a CHILDLESS block
+too, because the formula extension declares `code_block` for its
+promotion, so every fence ran a tail whose end then stripped the origin
+unstored — enrollment alone measured +42% on the fence stream before
+this arm, buying a malloc shell and a tail for nothing; and a sweep
+after the tails stores what no tail visited, over a fresh list
+compacted BEFORE any hook runs (the drain can free what it was handed;
+the compacted set is exactly what it is never handed). A fence the hook
+declined — or retyped in place — is the deterministic projection of its
+origin under the stored key: the promotion memo T9's amendment asked
+for. **Fence-mixed: 3,038.6M → 150.3M Ir (−95%), wall ~59 ms.**
+
+**2. A closed container is one retained value.** The enrolled predicate
+grows its container arm: a CLOSED container — no open descendant, since
+the open spine is the rightmost path — enrolls with its children, and a
+hit is the retained ARRAY node itself, the subtree never entered. The
+sweep stores it (children first, its backward order) once every entry
+is SHARED, under a holder keyed on the container's own stamp with the
+consulted bits OR'd from the entries' holders: a definition's arrival
+re-keys exactly the containers whose subtrees asked (#163 one level
+up), and the per-child walk inside a stale one still serves every
+non-asking child by identity — unless a hook's name reaches the
+container, which the second review round below rebuilds whole. An
+entry that cannot share — a
+directive's arena label, a hook's fresh replacement — leaves the
+container merely unstored. The retained node carries its holder in
+`link` as a leaf's borrow does; the holder teardown gains the ARRAY arm
+(the other arm's first/last writes would tear the vector through the
+union). **Open-list: 1,297.5M → 304.4M Ir (−77%).**
+
+**3. Every open container on the spine carries its own child memo.**
+The document's memo was the depth-0 instance of a per-container fact,
+so `doc_memo` became a small table of (CST container, memo) pairs —
+pointer-keyed and swept each record against the live spine as landed;
+indexed by spine depth since the third review round below — compared,
+never dereferenced, so a container that closed or died at its close
+just falls out. The clone consumes through one helper at the root AND at
+every open-container descent (a run reaching the end of the child list
+skips the descent whole); the record walks the rightmost path, pairing
+each open CST container with the derived side's LAST entry, fresh
+exactly because its source is open. One union collision surfaced as a
+segfault: a container that JUST closed is an enrolled MISS (ORIGIN in
+`link`) while its memo still stands — the store wins the transition
+derive, and the record sweeps the dead memo. **Open-list: 304.4M →
+85.7M Ir; the round's total on the adversarial shape 1,271.3M → 85.7M
+(−93%), wall ~168 → ~28 ms.**
+
+The flat harness is unchanged through all three (165.2M vs F26's
+164.9M), the one-shot too (63.85M vs 63.91M); the tiniest-session shape
+pays the table sweep's constant (~+2%, 65.1M → 67.1M on 650 six-line
+sessions). The `container_retention` gate pins identity, consulted
+invalidation, the open list's own boundary, and a directive across its
+arena's death; `child_memo` grew the definition-node and hooked-fence
+teeth; seven planted reverts across the three commits were each caught,
+two by sanitizers, one by the crash it was built to prevent. **What
+remains Θ(width) per feed is the document-level consume (F26's memcpy
+and count) — every nested level now pays only for its OPEN containers —
+which is #161's stated goal, O(open + changed), on every shape the
+suite runs.** One shape the suite does not ship stands outside the
+bound, named at the end of the second review round: a hook declared on
+a CONTAINER name.
+
+**The review round consolidated the store into ONE pass.** Codex worked
+the landing over four findings, and the last one named the invariant the
+first three were circling: the hook contract's own words are that a hook
+acts on the block it is handed AND INSIDE IT, so nothing may freeze
+until every hook that can reach a node has run — a child stored at its
+own tail was SHARED by the time its ancestor's hook edited inside, and
+the edit was a silently refused no-op (a wart that predated this round
+for inline leaves). Every store now happens in one post-order walk of
+the LIVE tree after the whole drain (`S_store_pass`): the live tree is
+the liveness proof a pre-hook queue never had (what a hook freed is
+simply not here — the queue-read use-after-free Codex predicted was
+reproduced verbatim under ASan before the rework), post-order is the
+container store's all-SHARED proof arriving in the right order, and the
+walk skips retained subtrees and memoized prefixes whole, so it stays
+O(built). The tail-site stores, the pre-hook sweep and its compaction
+all fell to the one mechanism; a hooked container stores on its first
+derivation and serves by identity from the second. The gate's acts five
+through seven pin the counting hook, the removing hook (sanitizer-
+judged), and the inside-edit landing. One deliberate carve-out closed
+the round: a child under a hooked OPEN container defers retention -- its
+ancestor's hook may still edit it on a later feed, and the third feed's
+"remove the first item once three exist" must land, not silently miss a
+frozen node -- so that subtree stays per-feed fresh exactly as before
+this round, until the close bakes the hook's last word into the stored
+whole (act eight, and act nine for a paragraph inside the closed first
+item, which answers to the open hooked list above it just as the item
+does).
+
+**The second review round moved that decision from the store to the
+clone.** Two findings arrived after the merge. **P1:** the carve-out was
+asked per stored node by climbing the WHOLE parent chain, so a document
+that is mostly depth paid depth squared — two derivations of 500, 1,000,
+2,000 and 4,000 nested quotes measured 0.62, 2.49, 10.39 and 38.71 ms,
+fourfold per doubling. The climb is gone, not made cheaper: the store
+pass asks nothing about ancestors any more, because the clone walk
+already STANDS on the chain and can carry the answer down. It decides a
+`S_clone_mode` once per region — the outermost hooked container being
+rebuilt — and every node under it is cloned in that mode. **P2:** a
+hooked container that is REBUILT rather than served — its store refused
+because a hook left a fresh child, or invalidated because a definition
+re-keyed it — was handed its SHARED children, so the hook's edit inside
+was the same silently refused no-op the first round had chased out of
+the tail: the same CST projected `[5,3]` after one feed and `[3,5]`
+after the next (acts ten and eleven, refused and invalidated). So the
+three modes: RETAINS outside hooked regions (hits served, misses
+enrolled); REBUILDS inside a closed hooked container being rebuilt (no
+hit and no memo run served, still enrolled, stored after the hook's one
+run); DISCARDS under an OPEN hooked container (nothing enrolls — arena
+shells, nothing under it reaches a store — which is the first round's
+carve-out with the question answered once instead of per node). A
+store-side guard that blocked frames under an open hooked container was
+built, measured and discarded: the open hooked list at 1,000, 2,000 and
+4,000 items read 280, 1,383 and 6,075 ms with it and 440, 2,407 and
+15,196 without, against 194, 985 and 4,097 for the clone-side decision
+(the plain list: 5.5, 18.2 and 65.3). The `depth_slope` gate pins P1
+the way the other slope gates pin their bounds: 1,000 against 8,000
+levels deep, normalized 1.2–1.6x now against 16–17x with the climb.
+The harnesses re-measure at 87.8M nested (the climb read 88.5M; the
+round's pass before the carve-out, 85.7M — the rest is the clone's
+name lookups at each container descent, +0.45%), with flat and
+fence-mixed within a fraction of a percent (166.3M and 151.8M).
+
+**The third review round made the table the spine.** One finding
+after the second: the per-container memo table of commit 3 was keyed on
+the container's pointer and read by a linear scan — the clone scanned
+it once per open container it descended into, and the record swept it
+once per entry with each sweep climbing the live spine — so a document
+whose spine held a memo at every level paid depth squared twice over.
+A STAIR (each open quote holding one closed paragraph before the next
+open quote) at 100, 400, 1,600 and 6,400 levels measured its second
+derivation at 0.03, 0.29, 7.1 and 117 ms, and its first at 20 ms at the
+deepest, the record's own sweep. The table is now indexed by spine
+depth: slot k names the spine container at depth k, the document at 0.
+The clone counts the open containers it enters on the way down and
+asks for a run by that index — one compare; a slot naming another
+container is a miss, never a wrong tree — and the record retakes the
+table level by level down `last_child`, truncating the suffix the spine
+no longer holds (containers close leaf-first, so what left the spine is
+always the table's tail). Scan and sweep are gone, not made cheaper:
+0.01, 0.08, 0.29 and 3.9 ms on the same stair, 6.9 ms for its first
+derivation, and 869 instructions per level at 1,000 and at 4,000 levels
+(callgrind over steady-state derivations) — flat to four digits. The
+`spine_depth_slope` gate pins it the way `depth_slope` pins the second
+round: the stair at 500 against 4,000 levels, steady-state derivations
+after one enrolling one, normalized under 3x — 1.5–1.9x now, the
+remainder being the working set leaving the cache inside the ratio,
+against 13–14x with the scan. The three rounds share one lesson, and
+it is the design rule this section now states: every term was per-node
+work that re-derived its CONTEXT by scanning or climbing a structure
+sized by another dimension of the document — the parent chain per
+stored node, the table per container, the spine per table entry — and
+every fix was the same move, carrying the context down the walk that
+already stands on it. A side table keyed by pointer invites the scan;
+a table that mirrors the spine is read by the depth the walk already
+counts.
+
+**The cost of a container hook, stated honestly.** Declaring a
+container's name costs that container's subtree its retention for as
+long as the container is open or being rebuilt — the hook may act
+anywhere inside it, and a SHARED node cannot be edited. Measured with a
+no-op hook on `list`: a definition's arrival rebuilds the closed hooked
+list whole, once per invalidation (402 misses at 200 items where 4
+sufficed); a hook that leaves a fresh child in a closed list keeps the
+list refused, so every feed rebuilds it — 2N+2 misses per feed forever
+(402, 1,602 and 3,202 at 200, 800 and 1,600 items; the first round read
+2 misses there, but paid Θ(N) holds per feed for the same shape); and a
+hook on `document`, or on any container that stays open, is a full
+rebuild per derivation. No shipped extension declares a container name
+(the formula extension names `formula_block`, `code_block` and
+`paragraph`; autolink names `*inlines`; the table extension retypes a
+paragraph in place), so nothing shipped stands on the cliff, and the
+`depth_slope` gate does not either. The durable answer is
+sharing-aware editing — adoption taking a hold on the shared node's
+holder and unlink releasing it, with copy-on-write for an edit deeper
+than one level, which is a hook-API change D9 permits — and it is a
+redesign of the hook contract, not a patch to this round: filed as
+#168, with a SELF-vs-SUBTREE reach declaration on the descriptor as its
+cheap half and the promotion of a hook's fresh child as its third.
+
 ---
 
 ## 4. Decisions — RULED, 2026-08-25
@@ -2018,6 +2216,54 @@ back in the vocabulary that produced them.
   profile). The `projection_child_memo` gate pins six acts; five planted
   defects each caught, two by sanitizers. −80% Ir on the width harness on
   top of F25; numbers and the restated bound in F26.
+- **Retention reaches every closed block and the memo reaches every open
+  container · #161's closing round, 2026-09-01 (F27).** Every childless
+  block enrolls (the tail's store arm keeps what a name hook declined to
+  replace — the promotion memo T9's amendment asked for — and a
+  pre-hook-compacted sweep stores what no tail visits); a CLOSED
+  container is one retained value under a holder keyed on its stamp with
+  consulted bits OR'd from its entries, failing closed on any entry that
+  cannot share; and the document's memo generalized into a per-open-
+  container table swept against the live spine, consumed at the root and
+  at every open descent. Fence-mixed −95%, open-list −93% (wall ~168 →
+  ~28 ms), flat and one-shot unchanged; details, the union-collision
+  fix, and the reached O(open + changed) bound in F27.
+- **Who edits a hooked subtree is decided ONCE, in the clone · #161's
+  review rounds, 2026-09-01 (F27).** The first round consolidated every
+  store into one post-order pass over the live tree after the whole
+  drain, so nothing freezes before every hook that can reach it has run.
+  Its carve-out — a child under a hooked OPEN container defers — was
+  asked per stored node by climbing the parent chain, depth squared:
+  38.7 ms for two derivations of 4,000 nested quotes (P1). And a hooked
+  container REBUILT rather than served (its store refused by a fresh
+  child, or invalidated by a definition) was still handed its frozen
+  children, so one CST projected `[5,3]` after one feed and `[3,5]`
+  after the next (P2). The second round moved the decision into the
+  clone walk, which already stands on the chain: a `S_clone_mode` per
+  region, the outermost hooked container being rebuilt — RETAINS outside
+  it; REBUILDS inside a closed one (no hit and no memo run served, still
+  enrolled and stored after the hook's one run); DISCARDS under an OPEN
+  one (nothing enrolls) — and the store pass asks nothing about
+  ancestors. A store-side frame guard was built, measured and discarded
+  (280, 1,383 and 6,075 ms against the clone's 194, 985 and 4,097 on the
+  open hooked list at 1,000, 2,000 and 4,000 items). The `depth_slope`
+  gate pins P1 at 1.2–1.6x normalized (16–17x with the climb); acts ten
+  to twelve of `container_retention` and a Debug-only assert at the
+  hook's own call site pin P2. The price of naming a container is stated
+  in F27, in §6, and in the contract's own words.
+- **The spine memo table is indexed by depth · #161's third review
+  round, 2026-09-01 (F27).** The per-container memo table was read by a
+  linear scan — once per open container in the clone, once per entry in
+  the record with a climb of the spine each — so a stair whose every
+  level holds a memo paid depth squared: 117 ms for a second derivation
+  of 6,400 levels. Slot k now names the spine container at depth k; the
+  clone counts open containers on the way down and asks by index, the
+  record retakes the table down `last_child` and truncates the suffix
+  that left the spine. 3.9 ms on the same stair, 869 instructions per
+  level at 1,000 and 4,000 (callgrind), the `spine_depth_slope` gate at
+  1.5–1.9x normalized against 13–14x. F27 states the rule the three
+  rounds share: context is carried down the walk, never re-derived by
+  scanning a structure sized by another dimension.
 
 ---
 
@@ -2433,6 +2679,21 @@ Stated so they are not later mistaken for defects.
   **T15's bound stays stated over the projection only**, the referencing
   pass measured and reported beside it, the way the binding-side copy-out
   is.
+- **A hook declared on a CONTAINER name costs that container's subtree
+  its retention while the container is open or being rebuilt.** The hook
+  contract lets a hook act on the block it is handed and inside it, and
+  a SHARED node cannot be edited (the silent no-op of F22 is the failure
+  mode), so the clone opens a region at the outermost hooked container
+  it rebuilds and serves no hit and no memo run under it; under an OPEN
+  hooked container nothing enrolls at all. An open hooked list is
+  re-derived whole at every feed — 194, 985 and 4,097 ms across 1,000,
+  2,000 and 4,000 items where the plain list reads 5.5, 18.2 and 65.3 —
+  and a closed one is rebuilt once per invalidation, or once per feed
+  while a hook keeps leaving a fresh child in it. No shipped extension
+  declares a container name, and `markdown-core-extension-api.h` asks
+  hooks for the leaf names they act on wherever those are enough. **This
+  is accepted** until sharing-aware editing (#168) changes the contract;
+  F27's second review round has the measurements.
 - **A feed is not monotone.** A definition arriving later changes the projection
   of a block returned earlier. That block was never wrong: it was resolved
   against the map as it then stood, and CommonMark defines the earlier outcome
