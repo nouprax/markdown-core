@@ -1097,24 +1097,29 @@ int markdown_core_node_set_syntax_extension(markdown_core_node *node, const mark
         return 0;
     }
 
-    /* The classification must stay legal (review-found): attaching a
-     * descriptor is a mutation like set_type, and one whose
-     * contains_inlines answers true over existing BLOCK children would
-     * build by attachment the hybrid the adoption law refuses to
-     * construct. The NEW descriptor is asked before it is attached; the
-     * cursor walks either child shape. */
-    if (extension && extension->contains_inlines_func && extension->contains_inlines_func(extension, node)) {
-        markdown_core_child_cursor cursor;
-        markdown_core_node *child;
-        for (child = markdown_core_child_first(node, &cursor); child;
-            child = markdown_core_child_after(node, child, &cursor)) {
-            if (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child->type)) {
-                return 0;
+    /* The EFFECTIVE post-assignment classification is what must stay
+     * legal (review-found, twice): a descriptor change is a mutation like
+     * set_type, and asking only the new descriptor's own hook missed the
+     * changes that fall back to the core default -- detaching, or
+     * attaching a descriptor without a contains_inlines_func, turns a
+     * bare PARAGRAPH's answer true. Assign, ask the one predicate
+     * everything else asks, and roll back on refusal: the same
+     * transaction set_type runs. The cursor walks either child shape. */
+    {
+        const markdown_core_syntax_extension *initial = node->extension;
+        node->extension = extension;
+        if (S_node_contains_inlines(node)) {
+            markdown_core_child_cursor cursor;
+            markdown_core_node *child;
+            for (child = markdown_core_child_first(node, &cursor); child;
+                child = markdown_core_child_after(node, child, &cursor)) {
+                if (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child->type)) {
+                    node->extension = initial;
+                    return 0;
+                }
             }
         }
     }
-
-    node->extension = extension;
     return 1;
 }
 

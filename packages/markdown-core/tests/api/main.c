@@ -1631,6 +1631,30 @@ static const markdown_core_syntax_extension HYBRID_PROBE_EXTENSION = {
     .contains_inlines_func = hybrid_probe_contains_inlines,
 };
 
+/* Classifies its node as a CONTAINER (contains_inlines false) while its
+ * can_contain admits everything: the legal shape whose detachment -- or
+ * whose swap for a descriptor with no contains_inlines_func at all --
+ * would fall back to the bare PARAGRAPH's true and rebuild the hybrid. */
+static int hybrid_probe_contains_inlines_false(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_node *node
+) {
+    (void)extension;
+    (void)node;
+    return 0;
+}
+
+static const markdown_core_syntax_extension HYBRID_CONTAINER_EXTENSION = {
+    .name = "hybrid_container_probe",
+    .can_contain_func = hybrid_probe_can_contain,
+    .contains_inlines_func = hybrid_probe_contains_inlines_false,
+};
+
+static const markdown_core_syntax_extension HYBRID_BARE_EXTENSION = {
+    .name = "hybrid_bare_probe",
+    .can_contain_func = hybrid_probe_can_contain,
+};
+
 static void no_inline_block_hybrid(test_batch_runner *runner) {
     markdown_core_node *parent = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     markdown_core_node *block_child = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
@@ -1662,6 +1686,36 @@ static void no_inline_block_hybrid(test_batch_runner *runner) {
         0,
         "attaching a contains_inlines descriptor over block children refuses"
     );
+
+    /* The EFFECTIVE classification gates a descriptor change, not the new
+     * descriptor's own hook: a container-classified paragraph legally
+     * holds a block child, and detaching -- or swapping to a descriptor
+     * with no contains_inlines_func -- falls back to the bare PARAGRAPH's
+     * true, which would rebuild the hybrid. */
+    {
+        markdown_core_node *container = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node *held = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+        INT_EQ(
+            runner,
+            markdown_core_node_set_syntax_extension(container, &HYBRID_CONTAINER_EXTENSION),
+            1,
+            "a container-classifying descriptor attaches to a bare paragraph"
+        );
+        INT_EQ(runner, markdown_core_node_append_child(container, held), 1, "the container paragraph takes a block");
+        INT_EQ(
+            runner,
+            markdown_core_node_set_syntax_extension(container, NULL),
+            0,
+            "detaching over a block child refuses: the fallback classification is true"
+        );
+        INT_EQ(
+            runner,
+            markdown_core_node_set_syntax_extension(container, &HYBRID_BARE_EXTENSION),
+            0,
+            "a descriptor without contains_inlines_func refuses the same way"
+        );
+        markdown_core_node_free(container);
+    }
 
     markdown_core_node_free(parent);
     markdown_core_node_free(block_child);
