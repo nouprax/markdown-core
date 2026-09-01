@@ -1844,9 +1844,12 @@ ancestor's hook may still edit it on a later feed, and the third feed's
 "remove the first item once three exist" must land, not silently miss a
 frozen node -- so that subtree stays per-feed fresh exactly as before
 this round, until the close bakes the hook's last word into the stored
-whole (act eight). The harnesses re-measure at 88.0M nested (the
-deferral's ancestor climb, ~+3%) with flat and fence-mixed within a
-percent.
+whole (act eight). The deferral's climb walks the WHOLE parent chain,
+skipping closed intermediates rather than stopping at them: a paragraph
+inside the closed first item answers to the open hooked list above it
+just as the item itself does (act nine, review-found). The harnesses
+re-measure at 88.5M nested (the deferral's ancestor climb, ~+3%) with
+flat and fence-mixed within a percent.
 
 ---
 

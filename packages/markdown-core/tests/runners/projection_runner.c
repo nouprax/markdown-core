@@ -3069,6 +3069,39 @@ static const markdown_core_syntax_extension CR_THIRD_EXTENSION = {
     .postprocess_blocks = "list\0",
 };
 
+/* Reaches PAST the closed first item to the paragraph inside it -- the
+ * deep cross-feed edit (review-found): the item closes on the second
+ * feed but the hooked list above it stays open, and a climb that
+ * stopped at the first closed ancestor stored the paragraph anyway,
+ * handing the third feed's removal a frozen target. */
+static void cr_deep_target_hook(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node **block
+) {
+    size_t count = 0;
+    markdown_core_children item = markdown_core_node_children(*block);
+    (void)extension;
+    (void)parser;
+    for (; item.child; item = markdown_core_children_next(item)) {
+        count++;
+    }
+    if (count >= 3) {
+        const markdown_core_node *first = markdown_core_node_children(*block).child;
+        markdown_core_node *inside = (markdown_core_node *)markdown_core_node_children(first).child;
+        if (inside) {
+            markdown_core_node_unlink(inside);
+            markdown_core_node_free(inside);
+        }
+    }
+}
+
+static const markdown_core_syntax_extension CR_DEEP_EXTENSION = {
+    .name = "container_deep_probe",
+    .postprocess_block_func = cr_deep_target_hook,
+    .postprocess_blocks = "list\0",
+};
+
 /* Removes the block it is handed -- the contract's other allowance, and
  * the one that frees a whole subtree mid-drain: the sweep must never
  * read what lived under it (review-found). */
@@ -3576,6 +3609,90 @@ static int case_container_retention(const ts_spec_file *file) {
                        t4->children.vec[0]->children.count != 2) {
                 fputs("container retention: the closed edited list did not serve by identity\n", stderr);
                 failures++;
+            }
+            if (t3) {
+                markdown_core_node_free(t3);
+                t3 = NULL;
+            }
+            if (t4) {
+                markdown_core_node_free(t4);
+            }
+        }
+        markdown_core_parser_free(parser);
+        parser = NULL;
+    }
+
+    /* Act 9: the climb past CLOSED intermediates (review-found): the
+     * paragraph inside the first item sits beneath a closed item under
+     * an open hooked list, and it must stay as editable as the item
+     * itself -- a climb that stopped at the first closed ancestor stored
+     * it on the second feed and silently refused the third feed's
+     * removal. Once the list closes, the subtree stores WITH the
+     * paragraph gone and serves by identity. */
+    if (!failures) {
+        static const char CR_ONE[] = "- item one\n";
+        static const char CR_TWO[] = "- item two\n";
+        static const char CR_THREE[] = "- item three\n";
+        static const char CR_CLOSER[] = "\nclosing paragraph\n\n";
+        markdown_core_node *t3 = NULL;
+        markdown_core_node *t4 = NULL;
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        if (!markdown_core_parser_attach_syntax_extension(parser, &CR_DEEP_EXTENSION)) {
+            fputs("container retention: could not attach the deep-target probe\n", stderr);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        markdown_core_parser_feed(parser, CR_ONE, sizeof(CR_ONE) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        markdown_core_parser_feed(parser, CR_TWO, sizeof(CR_TWO) - 1);
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        markdown_core_parser_feed(parser, CR_THREE, sizeof(CR_THREE) - 1);
+        t3 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1 || !t2 || !t3) {
+            fputs("container retention: deep-target derivations failed\n", stderr);
+            failures++;
+        } else {
+            markdown_core_node *open_list = t3->children.vec[0];
+            const markdown_core_node *first_item = markdown_core_node_children(open_list).child;
+            if (!MARKDOWN_CORE_NODE_ARRAY_P(open_list) || open_list->children.count != 3 || !first_item) {
+                fputs("container retention: the deep-target list lost its shape\n", stderr);
+                failures++;
+            } else if (markdown_core_node_children(first_item).child != NULL) {
+                fputs("container retention: the deep removal was silently refused\n", stderr);
+                failures++;
+            }
+        }
+        if (t1) {
+            markdown_core_node_free(t1);
+            t1 = NULL;
+        }
+        if (t2) {
+            markdown_core_node_free(t2);
+            t2 = NULL;
+        }
+        if (t3) {
+            markdown_core_node_free(t3);
+            t3 = NULL;
+        }
+        if (!failures) {
+            markdown_core_parser_feed(parser, CR_CLOSER, sizeof(CR_CLOSER) - 1);
+            t3 = markdown_core_parser_derive_tree(parser, parser->refmap);
+            t4 = markdown_core_parser_derive_tree(parser, parser->refmap);
+            if (!t3 || !t4) {
+                fputs("container retention: deep-target closing derivations failed\n", stderr);
+                failures++;
+            } else {
+                markdown_core_node *closed_list = t4->children.vec[0];
+                const markdown_core_node *first_item = markdown_core_node_children(closed_list).child;
+                if (t3->children.vec[0] != closed_list || !(closed_list->flags & MARKDOWN_CORE_NODE__SHARED) ||
+                    closed_list->children.count != 3 || !first_item ||
+                    markdown_core_node_children(first_item).child != NULL) {
+                    fputs("container retention: the deep-edited list did not serve by identity\n", stderr);
+                    failures++;
+                }
             }
             if (t3) {
                 markdown_core_node_free(t3);

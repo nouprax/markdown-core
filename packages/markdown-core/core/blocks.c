@@ -2702,8 +2702,16 @@ static bool S_store_frame_push(markdown_core_parser *parser, markdown_core_node 
 static bool S_open_ancestor_hook_reaches(markdown_core_parser *parser, const markdown_core_node *cst) {
     const markdown_core_node *ancestor;
     S_tail_masks_fresh(parser);
-    for (ancestor = cst->parent; ancestor && (ancestor->flags & MARKDOWN_CORE_NODE__OPEN);
-        ancestor = ancestor->parent) {
+    for (ancestor = cst->parent; ancestor; ancestor = ancestor->parent) {
+        /* A closed ancestor is SKIPPED, never a stopping point
+         * (review-found): the open spine sits ABOVE it -- an open node's
+         * ancestors are all open -- and an open hooked list reaches a
+         * paragraph inside its closed first item just as surely as it
+         * reaches the item itself. Only the OPEN ancestors are asked,
+         * since only they re-run their hooks on a later feed. */
+        if (!(ancestor->flags & MARKDOWN_CORE_NODE__OPEN)) {
+            continue;
+        }
         if (S_row_any(
                 parser,
                 S_names_row(parser, markdown_core_node_get_type_string((markdown_core_node *)ancestor))
