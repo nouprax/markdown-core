@@ -127,6 +127,14 @@ struct markdown_core_parser {
      * `derive_tree` call so the clone can see it; the arena itself leaves on
      * the derived root. NULL whenever the parser is at rest. */
     markdown_core_node_arena *derive_arena;
+    /* THE DOCUMENT'S CHILD MEMO (#161, F25): the stable prefix of the
+     * top-level SHARED blocks, recorded after a derivation and consumed by
+     * the next for one memo hold and a memcpy instead of a freshness
+     * check, a hold and a release per closed block. This is the parser's
+     * own hold; NULL until a derivation records a run, and again after an
+     * invalidation lets the stale memo go (trees still holding it keep
+     * it alive). */
+    markdown_core_child_memo *doc_memo;
     /* THE PER-BLOCK TAIL'S QUEUE (T18): the blocks a projection's walk found
      * tail work for, in EXIT order, acted on after the walk -- a hook may
      * replace or remove the block, and the walk must not be standing on it

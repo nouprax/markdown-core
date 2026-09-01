@@ -2477,6 +2477,398 @@ static int case_hook_once(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+static int cm_dump_contains(const uint8_t *dump, size_t length, const char *needle) {
+    size_t n = strlen(needle);
+    size_t i;
+    if (!dump || length < n) {
+        return 0;
+    }
+    for (i = 0; i + n <= length; i++) {
+        if (memcmp(dump + i, needle, n) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* THE STABLE-PREFIX MEMO's gate (#161, F25), read through the internal
+ * fields, because the memo has no public face and its failure modes -- a
+ * stale prefix served, a hold given back twice, an OPEN block recorded --
+ * do not all show in a rendering. Six acts: the run records and serves
+ * (the recorded nodes themselves, one boundary per tree, the hit ledger
+ * moving by the whole run and the miss ledger not at all); it extends
+ * while older trees keep the smaller boundary they consumed, through
+ * every free order; an OPEN block never enters -- recorded open, the
+ * lines it takes after would be lost by every later consumer, since the
+ * write clock covers exactly the spine the memo skips; a consulted
+ * generation's move stales the run whole, the fallback resolves what the
+ * run would have served stale, and the record REBUILDS while the old
+ * tree keeps the old memo and the old answer alive; the parser dies
+ * before the last consumer; and --no-cache builds nothing. */
+static int case_child_memo(const ts_spec_file *file) {
+    static const char CM_P1[] = "the first paragraph\n\n";
+    static const char CM_P2[] = "the second bears *emphasis*\n\n";
+    static const char CM_P3[] = "the third paragraph\n\n";
+    static const char CM_P4[] = "the fourth paragraph\n\n";
+    static const char CM_OPEN[] = "omega grows\n";
+    static const char CM_CLOSE[] = "and keeps growing\n\n";
+    static const char CM_REF[] = "see [x] for details\n\n";
+    static const char CM_DEF[] = "[x]: /url\n\n";
+    markdown_core_parser *parser = NULL;
+    markdown_core_node *t1 = NULL;
+    markdown_core_node *t2 = NULL;
+    markdown_core_node *t3 = NULL;
+    markdown_core_node *t4 = NULL;
+    markdown_core_node *t5 = NULL;
+    markdown_core_node *t6 = NULL;
+    markdown_core_node *t7 = NULL;
+    markdown_core_node *t8 = NULL;
+    markdown_core_node *t9 = NULL;
+    uint8_t *baseline2 = NULL;
+    uint8_t *baseline7 = NULL;
+    uint8_t *baseline8 = NULL;
+    uint8_t *baseline9 = NULL;
+    size_t baseline2_len = 0;
+    size_t baseline7_len = 0;
+    size_t baseline8_len = 0;
+    size_t baseline9_len = 0;
+    int failures = 0;
+    (void)file;
+
+    if (pr_no_cache) {
+        puts("child memo: skipped under --no-cache (the memo is the cache's)");
+        return 0;
+    }
+    parser = pr_parser_new();
+    if (!parser) {
+        return -1;
+    }
+
+    /* Act 1: three closed paragraphs record a run; the next tree consumes
+     * it whole. */
+    markdown_core_parser_feed(parser, CM_P1, sizeof(CM_P1) - 1);
+    markdown_core_parser_feed(parser, CM_P2, sizeof(CM_P2) - 1);
+    markdown_core_parser_feed(parser, CM_P3, sizeof(CM_P3) - 1);
+    t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+    if (!t1) {
+        fputs("child memo: first derivation failed\n", stderr);
+        failures++;
+    } else {
+        if (t1->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) {
+            fputs("child memo: the recording tree claims a prefix no memo served\n", stderr);
+            failures++;
+        }
+        if (!parser->doc_memo || parser->doc_memo->count != 3) {
+            fprintf(
+                stderr,
+                "child memo: the run recorded %zu of 3 closed blocks\n",
+                parser->doc_memo ? parser->doc_memo->count : (size_t)0
+            );
+            failures++;
+        }
+    }
+    if (!failures) {
+        size_t hits_before = parser->cache_hits;
+        size_t misses_before = parser->cache_misses;
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t2) {
+            fputs("child memo: consuming derivation failed\n", stderr);
+            failures++;
+        } else {
+            size_t i;
+            if (!(t2->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || (size_t)(uintptr_t)t2->as.opaque != 3 ||
+                t2->link.memo != parser->doc_memo) {
+                fputs("child memo: the consumer does not carry the memo's boundary\n", stderr);
+                failures++;
+            }
+            if (parser->cache_hits - hits_before != 3 || parser->cache_misses != misses_before) {
+                fprintf(
+                    stderr,
+                    "child memo: the consume moved the ledger by %zu hits and %zu misses, not 3 and 0\n",
+                    parser->cache_hits - hits_before,
+                    parser->cache_misses - misses_before
+                );
+                failures++;
+            }
+            for (i = 0; !failures && i < 3; i++) {
+                if (t2->children.vec[i] != t1->children.vec[i]) {
+                    fputs("child memo: the consumed prefix is not the recorded nodes themselves\n", stderr);
+                    failures++;
+                }
+            }
+            baseline2 = pr_dump(t2, &baseline2_len);
+            if (!failures && baseline2) {
+                size_t first_len = 0;
+                uint8_t *first_dump = pr_dump(t1, &first_len);
+                if (!first_dump || first_len != baseline2_len || memcmp(first_dump, baseline2, first_len) != 0) {
+                    fputs("child memo: recorder and consumer dump differently\n", stderr);
+                    failures++;
+                }
+                if (first_dump) {
+                    markdown_core_dump_free(first_dump);
+                }
+            }
+        }
+    }
+
+    /* Act 2: the memo extends; each tree keeps the boundary IT consumed
+     * while the memo's count moves on. */
+    if (!failures) {
+        markdown_core_parser_feed(parser, CM_P4, sizeof(CM_P4) - 1);
+        t3 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        t4 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t3 || !t4) {
+            fputs("child memo: extending derivations failed\n", stderr);
+            failures++;
+        } else if ((size_t)(uintptr_t)t3->as.opaque != 3 || (size_t)(uintptr_t)t4->as.opaque != 4 ||
+                   t3->children.count != 4 || !parser->doc_memo || parser->doc_memo->count != 4) {
+            fputs("child memo: the extension moved the boundaries with the count\n", stderr);
+            failures++;
+        } else if (t4->children.vec[0] != t3->children.vec[0] || t4->children.vec[3] != t3->children.vec[3]) {
+            fputs("child memo: the extended run is not the same nodes\n", stderr);
+            failures++;
+        }
+    }
+    /* The free order: the widest boundary first, the recorder, the middle
+     * consumer -- each must give back exactly the holds its own boundary
+     * says -- and the first consumer then reads on alone. */
+    if (t4) {
+        markdown_core_node_free(t4);
+        t4 = NULL;
+    }
+    if (t1) {
+        markdown_core_node_free(t1);
+        t1 = NULL;
+    }
+    if (t3) {
+        markdown_core_node_free(t3);
+        t3 = NULL;
+    }
+    if (!failures && t2 && baseline2) {
+        size_t len = 0;
+        uint8_t *dump = pr_dump(t2, &len);
+        if (!dump || len != baseline2_len || memcmp(dump, baseline2, len) != 0) {
+            fputs("child memo: the surviving consumer stopped reading after its siblings died\n", stderr);
+            failures++;
+        }
+        if (dump) {
+            markdown_core_dump_free(dump);
+        }
+    }
+    if (t2) {
+        markdown_core_node_free(t2);
+        t2 = NULL;
+    }
+
+    /* Act 3: an OPEN block never enters the run. */
+    if (!failures) {
+        markdown_core_parser_feed(parser, CM_OPEN, sizeof(CM_OPEN) - 1);
+        t5 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t5) {
+            fputs("child memo: open-block derivation failed\n", stderr);
+            failures++;
+        } else if (!parser->doc_memo || parser->doc_memo->count != 4) {
+            fprintf(
+                stderr,
+                "child memo: the open block was recorded (count %zu, not 4)\n",
+                parser->doc_memo ? parser->doc_memo->count : (size_t)0
+            );
+            failures++;
+        } else if (t5->children.count != 5) {
+            fputs("child memo: the open block fell out of the derived tree\n", stderr);
+            failures++;
+        }
+        markdown_core_parser_feed(parser, CM_CLOSE, sizeof(CM_CLOSE) - 1);
+        t6 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t6) {
+            fputs("child memo: closing derivation failed\n", stderr);
+            failures++;
+        } else {
+            size_t len = 0;
+            uint8_t *dump = pr_dump(t6, &len);
+            if (!cm_dump_contains(dump, len, "keeps growing")) {
+                fputs("child memo: the closed block lost the line fed while it was open\n", stderr);
+                failures++;
+            }
+            if (dump) {
+                markdown_core_dump_free(dump);
+            }
+            if (!parser->doc_memo || parser->doc_memo->count != 5) {
+                fputs("child memo: the closed block did not extend the run\n", stderr);
+                failures++;
+            }
+        }
+        if (t5) {
+            markdown_core_node_free(t5);
+            t5 = NULL;
+        }
+        if (t6) {
+            markdown_core_node_free(t6);
+            t6 = NULL;
+        }
+    }
+
+    /* Act 4: a consulted generation's move stales the run whole; the
+     * fallback resolves; the record rebuilds; the old tree keeps the old
+     * memo and the old answer. */
+    if (!failures) {
+        markdown_core_parser_feed(parser, CM_REF, sizeof(CM_REF) - 1);
+        t7 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t7 || !(t7->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || t7->link.memo != parser->doc_memo ||
+            parser->doc_memo->count != 6) {
+            fputs("child memo: the consulting block did not extend the run\n", stderr);
+            failures++;
+        } else {
+            baseline7 = pr_dump(t7, &baseline7_len);
+            markdown_core_parser_feed(parser, CM_DEF, sizeof(CM_DEF) - 1);
+            t8 = markdown_core_parser_derive_tree(parser, parser->refmap);
+            if (!t8) {
+                fputs("child memo: post-definition derivation failed\n", stderr);
+                failures++;
+            } else {
+                baseline8 = pr_dump(t8, &baseline8_len);
+                if (t8->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) {
+                    fputs("child memo: a stale run was consumed past a definition's arrival\n", stderr);
+                    failures++;
+                }
+                if (!baseline7 || !baseline8 ||
+                    (baseline7_len == baseline8_len && memcmp(baseline7, baseline8, baseline7_len) == 0)) {
+                    fputs("child memo: the fallback did not resolve the reference\n", stderr);
+                    failures++;
+                }
+                if (!parser->doc_memo || parser->doc_memo == t7->link.memo || parser->doc_memo->count != 6) {
+                    fputs("child memo: the record did not rebuild after the move\n", stderr);
+                    failures++;
+                }
+                if (!failures && baseline7) {
+                    size_t relen = 0;
+                    uint8_t *redump = pr_dump(t7, &relen);
+                    if (!redump || relen != baseline7_len || memcmp(redump, baseline7, relen) != 0) {
+                        fputs("child memo: the old tree lost its answer to the rebuild\n", stderr);
+                        failures++;
+                    }
+                    if (redump) {
+                        markdown_core_dump_free(redump);
+                    }
+                }
+            }
+        }
+    }
+
+    /* Act 5: the parser dies first; the last consumer holds the rebuilt
+     * memo, and through it every entry, alone. */
+    if (!failures) {
+        t9 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t9 || !(t9->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || (size_t)(uintptr_t)t9->as.opaque != 6) {
+            fputs("child memo: the rebuilt run did not serve\n", stderr);
+            failures++;
+        } else {
+            baseline9 = pr_dump(t9, &baseline9_len);
+            if (!baseline9 || !baseline8 || baseline9_len != baseline8_len ||
+                memcmp(baseline9, baseline8, baseline9_len) != 0) {
+                fputs("child memo: the rebuilt run serves a different answer than its recorder\n", stderr);
+                failures++;
+            }
+        }
+    }
+    if (t8) {
+        markdown_core_node_free(t8);
+        t8 = NULL;
+    }
+    if (t7) {
+        markdown_core_node_free(t7);
+        t7 = NULL;
+    }
+    markdown_core_parser_free(parser);
+    parser = NULL;
+    if (!failures && t9 && baseline9) {
+        size_t len = 0;
+        uint8_t *dump = pr_dump(t9, &len);
+        if (!dump || len != baseline9_len || memcmp(dump, baseline9, len) != 0) {
+            fputs("child memo: the last consumer stopped reading when the parser died\n", stderr);
+            failures++;
+        }
+        if (dump) {
+            markdown_core_dump_free(dump);
+        }
+    }
+    if (t9) {
+        markdown_core_node_free(t9);
+        t9 = NULL;
+    }
+
+    /* Act 6: the cache's switch is the memo's switch. */
+    if (!failures) {
+        markdown_core_parser *bare = pr_parser_new();
+        if (!bare) {
+            failures++;
+        } else {
+            markdown_core_node *only;
+            bare->no_projection_cache = true;
+            markdown_core_parser_feed(bare, CM_P1, sizeof(CM_P1) - 1);
+            markdown_core_parser_feed(bare, CM_P2, sizeof(CM_P2) - 1);
+            only = markdown_core_parser_derive_tree(bare, bare->refmap);
+            if (only) {
+                markdown_core_node_free(only);
+            }
+            only = markdown_core_parser_derive_tree(bare, bare->refmap);
+            if (only) {
+                markdown_core_node_free(only);
+            }
+            if (bare->doc_memo) {
+                fputs("child memo: --no-cache still built a memo\n", stderr);
+                failures++;
+            }
+            markdown_core_parser_free(bare);
+        }
+    }
+
+    if (t1) {
+        markdown_core_node_free(t1);
+    }
+    if (t2) {
+        markdown_core_node_free(t2);
+    }
+    if (t3) {
+        markdown_core_node_free(t3);
+    }
+    if (t4) {
+        markdown_core_node_free(t4);
+    }
+    if (t5) {
+        markdown_core_node_free(t5);
+    }
+    if (t6) {
+        markdown_core_node_free(t6);
+    }
+    if (t7) {
+        markdown_core_node_free(t7);
+    }
+    if (t8) {
+        markdown_core_node_free(t8);
+    }
+    if (t9) {
+        markdown_core_node_free(t9);
+    }
+    if (parser) {
+        markdown_core_parser_free(parser);
+    }
+    if (baseline2) {
+        markdown_core_dump_free(baseline2);
+    }
+    if (baseline7) {
+        markdown_core_dump_free(baseline7);
+    }
+    if (baseline8) {
+        markdown_core_dump_free(baseline8);
+    }
+    if (baseline9) {
+        markdown_core_dump_free(baseline9);
+    }
+    printf("child memo: %s\n", failures ? "the run does not hold" : "one hold and a memcpy serve the closed prefix");
+    return failures ? -1 : 0;
+}
+
 /* THE MAP-IMMUNITY REFINEMENT (#163): a map's generation takes part in the
  * cache key only for a block whose stored projection had something to ask
  * that map. Both halves are asserted: a definition arriving must still
@@ -3244,6 +3636,7 @@ static const pr_case_entry PR_CASES[] = {
     {"map_immunity", case_map_immunity, 0},
     {"node_sharing", case_node_sharing, 0},
     {"hook_once", case_hook_once, 0},
+    {"child_memo", case_child_memo, 0},
     {"label_tail", case_label_tail, 0},
     {"feed_bound", case_feed_bound, 0},
     {"resident_memory", case_resident_memory, 0},

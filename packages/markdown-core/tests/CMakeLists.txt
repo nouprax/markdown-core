@@ -358,6 +358,10 @@ if(MARKDOWN_CORE_STATIC)
     markdown_core_add_test(projection_map_immunity "streaming" 120 projection_runner --case map_immunity)
     markdown_core_add_test(projection_node_sharing "streaming" 120 projection_runner --case node_sharing)
     markdown_core_add_test(projection_hook_once "streaming" 120 projection_runner --case hook_once)
+    # F25: the stable-prefix memo -- records, serves, extends, survives
+    # every free order, falls back on a consulted generation's move, and
+    # never records an OPEN block.
+    markdown_core_add_test(projection_child_memo "streaming" 120 projection_runner --case child_memo)
     # Phase F's gates (T15, T16, T17). feed_bound is counter-based and
     # deterministic; resident_memory reads ru_maxrss, so like the wall-clock
     # gates it carries the complexity label the sanitizer presets exclude;

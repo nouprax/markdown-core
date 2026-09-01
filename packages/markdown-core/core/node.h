@@ -192,16 +192,25 @@ enum markdown_core_node__internal_flags {
      * all see one frozen answer. */
     MARKDOWN_CORE_NODE__CONTAINS_INLINES = (1 << 10),
 
+    /* THE MEMOIZED PREFIX (#161, F25): this container's vector begins with
+     * a run copied from a child memo, whose entries the MEMO holds -- the
+     * tree's part in all of them is ONE hold on the memo itself. The free
+     * walk skips per-entry releases below the boundary (`as.opaque` on the
+     * DOCUMENT node carries it) and releases `link.memo` once. Only the
+     * derived document node carries this flag today. */
+    MARKDOWN_CORE_NODE__MEMO_PREFIX = (1 << 11),
+
     // The first bit an extension may claim. Extension flags are compile-time
     // constants owned by the extension that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 11),
+    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 12),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
 
 typedef struct markdown_core_holder markdown_core_holder;
 typedef struct markdown_core_node_arena markdown_core_node_arena;
+typedef struct markdown_core_child_memo markdown_core_child_memo;
 
 struct markdown_core_node {
     markdown_core_strbuf content;
@@ -315,10 +324,16 @@ struct markdown_core_node {
      * ORIGIN -- a derived block between its clone and the end of its tail:
      * `origin` is the CST block it was cloned from, so the tail can store
      * what it projected. The free walk ignores the slot; the tail turns it
-     * into BORROWED (a store) or clears it. */
+     * into BORROWED (a store) or clears it.
+     *
+     * MEMO_PREFIX -- a derived container whose vector begins with a memo's
+     * prefix: `memo` is the child memo this tree holds once, `as.opaque`
+     * carries the boundary index, and the free walk releases the memo
+     * instead of the entries below the boundary. */
     union {
         markdown_core_holder *holder;
         struct markdown_core_node *origin;
+        struct markdown_core_child_memo *memo;
     } link;
 
     union {
@@ -381,8 +396,8 @@ struct markdown_core_holder {
 
 /* Does this node alias a holder's list? The one question every walk asks. */
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_BORROWED_P(const markdown_core_node *node) {
-    return node->link.holder != NULL &&
-           (node->flags & (MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN)) == 0;
+    return node->link.holder != NULL && (node->flags & (MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN |
+                                                           MARKDOWN_CORE_NODE__MEMO_PREFIX)) == 0;
 }
 
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_ARRAY_P(const markdown_core_node *node) {
@@ -475,6 +490,51 @@ void markdown_core_node_arena_forget(markdown_core_node *node);
  * descriptor. Called at construction and by each validated mutation; every
  * steady-state reader asks the bit, never the descriptor's hook. */
 void markdown_core_node_classify(markdown_core_node *node);
+
+/* THE STABLE-PREFIX CHILD MEMO (#161, F25). The leading run of a
+ * container's SHARED children, recorded once so a derivation can take the
+ * whole run for ONE hold and a memcpy instead of a freshness check, a
+ * holder hold, and a release per closed block per feed. The memo owns one
+ * holder hold per entry (taken at push, released with the memo); a tree
+ * that consumed the prefix holds the MEMO once and copies the entries into
+ * its own vector, so the memo's array may grow or die without touching any
+ * tree. The parser holds the memo it is extending; invalidation releases
+ * the parser's hold and builds anew, while trees still holding the old
+ * memo keep it -- and through it every entry's holder -- alive: persistent
+ * structure by plain refcount. Append-only top-level streaming is what
+ * makes a prefix stable: a closed top-level block is never touched again,
+ * so only a map or extension generation can stale it, and those gate the
+ * whole memo through `consulted` and the recorded generations. */
+struct markdown_core_child_memo {
+    markdown_core_mem *mem;
+    markdown_core_atomic_u32 refs;
+    markdown_core_node **entries;
+    size_t count;
+    size_t alloc;
+    /* The CST child the LAST entry projects: where a consuming derivation
+     * resumes its per-child walk, at `src_last->next` read at use. The
+     * anchor is a recorded child and never its successor because only
+     * CLOSED blocks are recorded and a closed top-level block is permanent
+     * for the CST's life, while the successor can be the OPEN block -- and
+     * an open paragraph that finalizes into pure reference definitions is
+     * freed at its close, which would leave a stored successor dangling. */
+    const markdown_core_node *src_last;
+    /* OR of the entries' consulted bits, and the generations the run was
+     * recorded under: the whole prefix is fresh iff every generation a
+     * consulted map names is unchanged and the extension set is the same. */
+    markdown_core_node_internal_flags consulted;
+    size_t refgen;
+    size_t footgen;
+    size_t extgen;
+};
+
+markdown_core_child_memo *markdown_core_child_memo_new(markdown_core_mem *mem);
+void markdown_core_child_memo_hold(markdown_core_child_memo *memo);
+void markdown_core_child_memo_release(markdown_core_child_memo *memo);
+/* Append one SHARED entry: takes the memo's own hold on the entry's holder
+ * and folds its consulted bits in. Returns 0 when the array could not
+ * grow; the memo is unchanged then. */
+bool markdown_core_child_memo_push(markdown_core_child_memo *memo, markdown_core_node *entry);
 
 markdown_core_holder *markdown_core_holder_new(markdown_core_mem *mem);
 void markdown_core_holder_hold(markdown_core_holder *holder);

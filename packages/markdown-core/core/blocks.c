@@ -257,6 +257,12 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     parser->fresh_queue = NULL;
     parser->fresh_queue_size = 0;
     parser->fresh_queue_alloc = 0;
+    /* The parser's own hold on the child memo (F25); trees that consumed
+     * it keep it alive after this. */
+    if (parser->doc_memo) {
+        markdown_core_child_memo_release(parser->doc_memo);
+        parser->doc_memo = NULL;
+    }
     parser->mem->free(parser->tail_mask_pool);
     parser->mem->free((void *)parser->tail_name_rows);
     parser->tail_mask_pool = NULL;
@@ -2008,6 +2014,26 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
      * do for the copied one. */
 }
 
+/* THE STABLE-PREFIX MEMO's freshness (#161, F25): the whole recorded run in
+ * one comparison per axis instead of one per block. The per-block key
+ * (S_cache_fresh) also compares the block's write stamp; the memo carries
+ * none because it records only CLOSED top-level blocks and every write
+ * happens on the open spine (parser.h, the write clock), so a recorded
+ * block's stamp cannot move. The map generations take part only when some
+ * recorded block consulted that map (#163), OR-folded at push -- one
+ * consulting block anywhere in the run gates the run, which is the F19
+ * trade taken once for the prefix instead of per block. */
+static bool S_memo_fresh(
+    markdown_core_parser *parser,
+    const markdown_core_child_memo *memo,
+    markdown_core_map *refmap
+) {
+    return refmap == parser->refmap && !parser->no_projection_cache && memo->extgen == parser->extension_generation &&
+           (!(memo->consulted & MARKDOWN_CORE_NODE__CONSULTED_REFMAP) || memo->refgen == parser->refmap->generation) &&
+           (!(memo->consulted & MARKDOWN_CORE_NODE__CONSULTED_FOOTNOTES) ||
+               memo->footgen == parser->footnote_defs->generation);
+}
+
 /* A chunk coming to rest in a clone: an owner-backed source shares by
  * retaining, and an alloc'd source is PROMOTED first -- its allocation is
  * wrapped in a buffer once, on the first derivation that copies it, so the
@@ -2286,11 +2312,19 @@ lost:
  * sibling order, so a closed child's NODE can later be shared between trees
  * without carrying any per-tree fact. Zero children still flag the shape --
  * an empty document is a container, not a leaf. */
-static bool S_vec_open(markdown_core_parser *parser, markdown_core_node *parent, const markdown_core_node *src) {
+static bool S_vec_open(
+    markdown_core_parser *parser,
+    markdown_core_node *parent,
+    const markdown_core_node *src,
+    size_t *counted_out
+) {
     const markdown_core_node *child;
     size_t total = 0;
     for (child = src->first_child; child; child = child->next) {
         total++;
+    }
+    if (counted_out) {
+        *counted_out = total;
     }
     parent->children.vec = NULL;
     parent->children.count = 0;
@@ -2348,13 +2382,39 @@ static markdown_core_node *S_clone_block_tree(
     markdown_core_node *dst_root = S_clone_block_node(parser, src_root, refmap);
     markdown_core_node *dst_parent = dst_root;
     const markdown_core_node *src = src_root->first_child;
+    size_t width = 0;
 
     if (!dst_root) {
         return NULL;
     }
-    if (!S_vec_open(parser, dst_root, src_root)) {
+    if (!S_vec_open(parser, dst_root, src_root, &width)) {
         markdown_core_node_free(dst_root);
         return NULL;
+    }
+    /* THE MEMO IS CONSUMED FIRST (#161, F25): the recorded run of closed
+     * top-level blocks enters the new tree as one memcpy and ONE memo hold
+     * -- the memo's per-entry holder holds stand in for the per-entry
+     * holds the walk below takes -- and the walk resumes at the first
+     * child after the run. The entries are COPIED, never aliased: the
+     * memo's array reallocates as it grows, and this tree's vector is its
+     * own. The boundary rides in the doc's `as.opaque` because the memo's
+     * own count keeps growing past it; the free walk reads the NODE's
+     * boundary (node.c). The `width` term is the fail-closed door: a memo
+     * somehow longer than the container it memoizes would overrun the
+     * vector, so it is merely not consumed -- a slow feed, never a
+     * corrupted tree. The hit ledger moves by the whole run: these are the
+     * same hits the per-child walk would have counted. */
+    if (parser->doc_memo && parser->doc_memo->count > 0 && parser->doc_memo->count <= width &&
+        S_memo_fresh(parser, parser->doc_memo, refmap)) {
+        markdown_core_child_memo *memo = parser->doc_memo;
+        memcpy(dst_root->children.vec, memo->entries, memo->count * sizeof(*memo->entries));
+        dst_root->children.count = memo->count;
+        markdown_core_child_memo_hold(memo);
+        dst_root->link.memo = memo;
+        dst_root->flags |= MARKDOWN_CORE_NODE__MEMO_PREFIX;
+        dst_root->as.opaque = (void *)(uintptr_t)memo->count;
+        parser->cache_hits += memo->count;
+        src = memo->src_last->next;
     }
     while (src) {
         markdown_core_node *dst = S_clone_block_node(parser, src, refmap);
@@ -2374,7 +2434,7 @@ static markdown_core_node *S_clone_block_tree(
              * -- so ORIGIN here is provably impossible, and the assert
              * holds the door on the predicate ever loosening. */
             assert(!(dst->flags & MARKDOWN_CORE_NODE__ORIGIN));
-            if (!S_vec_open(parser, dst, src)) {
+            if (!S_vec_open(parser, dst, src, NULL)) {
                 markdown_core_node_free(dst_root);
                 return NULL;
             }
@@ -2471,6 +2531,78 @@ static markdown_core_node *S_project(
     return skeleton;
 }
 
+/* RECORD THE STABLE PREFIX (#161, F25), after the projection stored its
+ * misses: walk the derived vector alongside the CST's children and extend
+ * the memo over every leading pair that PROVES itself -- the CST child is
+ * closed, and the entry is that child's own retained projection --
+ * stopping at the first that does not. Incremental: the walk starts where
+ * the memo ends, so a steady stream pays O(new blocks) here per feed. A
+ * stale memo is released and rebuilt from the start; trees still holding
+ * it keep it -- and through it every entry's holder -- alive: persistent
+ * structure by plain refcount. Every failure here is absorbed the way the
+ * store absorbs its own (S_cache_store): a memo that cannot be born or
+ * cannot grow leaves the recorded run as it stands -- a slow feed, never
+ * a wrong tree -- so no path sets `oom`. */
+static void S_doc_memo_record(markdown_core_parser *parser, markdown_core_node *derived, markdown_core_map *refmap) {
+    markdown_core_child_memo *memo = parser->doc_memo;
+    const markdown_core_node *src_child;
+    size_t start;
+    size_t i;
+
+    /* Only the parser's own map records, the store's rule (T9); a replaced
+     * root is not the clone's container -- a hook builds through the public
+     * constructors, which never vectorize -- so the ARRAY_P term also
+     * proves `children.vec` below is the clone's. */
+    if (refmap != parser->refmap || parser->no_projection_cache || !MARKDOWN_CORE_NODE_ARRAY_P(derived)) {
+        return;
+    }
+    if (memo && !S_memo_fresh(parser, memo, refmap)) {
+        markdown_core_child_memo_release(memo);
+        parser->doc_memo = NULL;
+        memo = NULL;
+    }
+    if (memo) {
+        /* The unconsulted axes ride forward (#163): a generation that
+         * moved while no recorded block consulted its map must not stale
+         * the run later, when an extending entry first consults it --
+         * that entry is validated under the CURRENT generation, which is
+         * therefore what the run now records. A consulted axis just
+         * proved equal, so for it the write is identity. */
+        memo->refgen = parser->refmap->generation;
+        memo->footgen = parser->footnote_defs->generation;
+    }
+    start = memo ? memo->count : 0;
+    src_child = start ? memo->src_last->next : parser->root->first_child;
+    for (i = start; i < derived->children.count && src_child; i++, src_child = src_child->next) {
+        markdown_core_node *entry = derived->children.vec[i];
+        /* The pair proves alignment or ends the run: an OPEN block's stamp
+         * still moves under the write clock -- and an open paragraph can
+         * still die at its close, taken whole by a reference definition --
+         * while a hook that removed an earlier entry from this vector
+         * shifted the rest left, which the holder identity catches. */
+        if ((src_child->flags & MARKDOWN_CORE_NODE__OPEN) || !(entry->flags & MARKDOWN_CORE_NODE__SHARED) ||
+            !(src_child->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) || src_child->link.holder->node != entry) {
+            break;
+        }
+        if (!memo) {
+            /* Born at the first provable pair, never empty-handed; the
+             * generations are the ones the projection just ran under. */
+            memo = markdown_core_child_memo_new(parser->mem);
+            if (!memo) {
+                return;
+            }
+            memo->refgen = parser->refmap->generation;
+            memo->footgen = parser->footnote_defs->generation;
+            memo->extgen = parser->extension_generation;
+            parser->doc_memo = memo;
+        }
+        if (!markdown_core_child_memo_push(memo, entry)) {
+            return;
+        }
+        memo->src_last = src_child;
+    }
+}
+
 /* THE PROJECTION: AST = project(CST, refmap) (§12.1), as a NEW tree. Clone
  * the block skeleton and project onto the clone. The CST is not written: a
  * later derivation, against this map or another, starts from the same bytes.
@@ -2524,6 +2656,12 @@ markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parse
 
     derived = S_project(parser, derived, refmap);
     parser->fresh_queue_armed = false;
+    /* The memo extends only over what this projection PROVED (F25): a
+     * poisoned projection stored who-knows-what, so it records nothing --
+     * and the tree it half-built is about to be freed below anyway. */
+    if (derived && !parser->oom) {
+        S_doc_memo_record(parser, derived, refmap);
+    }
     if (arena) {
         markdown_core_node_arena_release(arena);
     }
