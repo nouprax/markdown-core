@@ -189,14 +189,33 @@ MARKDOWN_CORE_EXPORT void markdown_core_node_free(markdown_core_node *node);
  */
 
 /** Returns the next node in the sequence after 'node', or NULL if
- * there is none.
+ * there is none. INTRUSIVE LISTS ONLY (D9): inline content and the CST.
+ * A derived CONTAINER's children live in the parent's vector, where a
+ * shared child cannot carry a per-tree sibling -- walk those with
+ * markdown_core_node_child_begin/child_step below, which handle every
+ * child shape.
  */
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_next(markdown_core_node *node);
 
 /** Returns the previous node in the sequence after 'node', or NULL if
- * there is none.
+ * there is none. Intrusive lists only, as markdown_core_node_next.
  */
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_previous(markdown_core_node *node);
+
+/** Walk 'node's children whatever their shape (D9): begin answers the
+ * first child and seeds '*cursor'; step answers the one after 'child'.
+ * O(1) a step, no allocation. The cursor is meaningful only to these two.
+ *
+ *     size_t cursor;
+ *     markdown_core_node *child = markdown_core_node_child_begin(node, &cursor);
+ *     for (; child; child = markdown_core_node_child_step(node, child, &cursor)) { ... }
+ */
+MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_child_begin(markdown_core_node *node, size_t *cursor);
+MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_child_step(
+    markdown_core_node *node,
+    markdown_core_node *child,
+    size_t *cursor
+);
 
 /** Returns the parent of 'node', or NULL if there is none.
  */

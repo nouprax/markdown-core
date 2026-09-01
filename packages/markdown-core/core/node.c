@@ -648,19 +648,43 @@ markdown_core_node *markdown_core_node_parent(markdown_core_node *node) {
 }
 
 markdown_core_node *markdown_core_node_first_child(markdown_core_node *node) {
+    markdown_core_child_cursor cursor;
     if (node == NULL) {
         return NULL;
-    } else {
-        return node->first_child;
     }
+    /* Shape-aware (D9, review-found): on a vector container the intrusive
+     * field is the vector pointer, not a node. */
+    return markdown_core_child_first(node, &cursor);
 }
 
 markdown_core_node *markdown_core_node_last_child(markdown_core_node *node) {
     if (node == NULL) {
         return NULL;
-    } else {
-        return node->last_child;
     }
+    return markdown_core_child_back(node);
+}
+
+markdown_core_node *markdown_core_node_child_begin(markdown_core_node *node, size_t *cursor) {
+    markdown_core_child_cursor inner;
+    markdown_core_node *child;
+    if (node == NULL) {
+        *cursor = 0;
+        return NULL;
+    }
+    child = markdown_core_child_first(node, &inner);
+    *cursor = inner.index;
+    return child;
+}
+
+markdown_core_node *markdown_core_node_child_step(markdown_core_node *node, markdown_core_node *child, size_t *cursor) {
+    markdown_core_child_cursor inner;
+    if (node == NULL || child == NULL) {
+        return NULL;
+    }
+    inner.index = *cursor;
+    child = markdown_core_child_after(node, child, &inner);
+    *cursor = inner.index;
+    return child;
 }
 
 const char *markdown_core_node_get_literal(markdown_core_node *node) {
