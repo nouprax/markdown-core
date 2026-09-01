@@ -57,13 +57,18 @@ struct markdown_core_syntax_extension {
      * hook DOES, and the projection cache (T9, #161) acts on the difference:
      * `"*inlines"` declares a pass over the block's INLINE CONTENT; a NAME
      * declares a pass over the block NODE -- it may replace or remove it.
-     * Either kind runs on every FRESH projection of its block and never on a
-     * cache hit: a hit is the stored projection served by identity (D9), the
-     * hook's effect baked in with the rest of it, and the node it would be
-     * offered is frozen for every tree at once. A hook that REPLACES the
-     * block keeps it out of the store, so a replacing hook does run on every
-     * projection; per-projection side effects on a block the cache retains
-     * are not part of this contract. */
+     * Either kind runs on every FRESH projection of its block. A DERIVE hit
+     * runs neither: the retained node itself is the answer, the hook's
+     * node-level effect baked in (D9), and the node it would be offered is
+     * frozen for every tree at once. The SEAL (`finish`) runs the NAME
+     * hooks once more per stored block: it hands back the CST shell rather
+     * than the retained node, so the hook reproduces its node-level effect
+     * there -- the children stay the stored list, every node of it frozen.
+     * A hook that REPLACES the block keeps it out of the store, so a
+     * replacing hook runs on every projection. Hooks are assumed
+     * deterministic over the node they are handed; per-projection side
+     * effects on a block the cache retains are not part of this
+     * contract. */
     const char *postprocess_blocks;
     markdown_core_close_block_func close_block_func;
     markdown_core_opaque_alloc_func opaque_alloc_func;

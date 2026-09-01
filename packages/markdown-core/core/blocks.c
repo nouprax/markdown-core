@@ -1162,16 +1162,19 @@ void markdown_core_manage_extensions_special_characters(markdown_core_parser *pa
  * formula promotes `$$x$$<!-- c -->`.
  *
  * WHICH HALF A CACHE HIT SKIPS -- F15 rule 2, re-resolved under retention
- * (D9, F24): a HIT skips the WHOLE tail. The stored projection is served by
- * identity, every pass's effect -- consolidation, the `"*inlines"` hooks,
- * the comment strip, and a name hook's node-level work -- baked in at the
+ * (D9, F24): a DERIVE hit skips the WHOLE tail. The retained node itself is
+ * served, every pass's effect -- consolidation, the `"*inlines"` hooks, the
+ * comment strip, and a name hook's node-level work -- baked in at the
  * projection that RECORDED it, and the node a name hook would be offered is
- * frozen for every tree at once. What keeps a name hook's per-projection
- * runs is the STORE, not the dispatch: a hook that replaces its block keeps
- * it out of the store (the replacement carries no ORIGIN), so a `PARAGRAPH`
- * around a standalone formula is a fresh paragraph on every projection, and
- * only the hook makes it the `FormulaBlock` five gates pin.
- * `syntax_extension.h` states the contract. */
+ * frozen for every tree at once. The SEAL's hit runs the NAME hooks once
+ * more (review-found): finish hands back the CST shell borrowing the
+ * stored children, and only the hooks can reproduce their node-level work
+ * on that shell -- the children they must not touch are frozen. What keeps
+ * a replacing hook per-projection is the STORE, not the dispatch: a
+ * replacement carries no ORIGIN, so a `PARAGRAPH` around a standalone
+ * formula is a fresh paragraph on every projection, and only the hook makes
+ * it the `FormulaBlock` five gates pin. `syntax_extension.h` states the
+ * contract. */
 
 static const char S_INLINES_MEMBER[] = "*inlines";
 
@@ -1664,13 +1667,24 @@ static void process_inlines(
                  * after the lookahead was taken -- so the walk would descend
                  * into it and meet a directive's label, an inline-class node
                  * that `contains_inlines` claims, and parse it AGAIN into the
-                 * shared list. It is not QUEUED either (review-found): a hit
-                 * is the stored projection served by identity at finish
-                 * exactly as at derive -- its hooks ran at the recording
-                 * projection, and a block a hook would have replaced was
-                 * never stored -- so the queue re-ran name hooks that had
-                 * nothing left to say, and a consumer counting hook runs
-                 * watched finish disagree with derive_tree. */
+                 * shared list.
+                 *
+                 * The block IS queued, exactly once (review-found, twice
+                 * over): the seal is the one projection that cannot serve a
+                 * hit by identity -- it hands back this CST shell, whose
+                 * node-level state a name hook may have changed on the
+                 * DERIVED clone before the store (a retype, a level) --
+                 * so the name hooks run here once to reproduce that state
+                 * on the shell. Suppressing them lost the cached node-level
+                 * mutation at the seal; queueing here AND at the EXIT ran
+                 * them twice. The children stay the stored list either way:
+                 * every node in it carries SHARED, so a hook that reaches
+                 * into them meets the frozen-projection surface. Derive
+                 * hits stay hook-free: there the retained node itself is
+                 * the answer, mutation baked in. */
+                if (S_block_has_tail_work(parser, cur) && !S_tail_queue_push(parser, cur)) {
+                    parser->oom = true;
+                }
                 markdown_core_iter_skip_children(iter);
                 continue;
             }

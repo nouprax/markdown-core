@@ -2353,16 +2353,23 @@ static int case_node_sharing(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
-/* THE HOOK-ONCE GATE (F25, review-found twice): a name-selected hook runs at
- * the projection that RECORDS a block and never on a hit -- not at a derive
- * (the shared EXIT used to re-queue every stored block per feed) and not at
- * the seal (the borrow arm used to queue every borrower for its name hooks).
- * A counting hook watches all three: the recording derive runs it once per
- * paragraph, a second derive adds nothing, and finish adds nothing. Skipped
- * under --no-cache, where every projection records and the count grows by
- * design. */
+/* THE HOOK-ONCE GATE (F25, review-found three times): a name-selected hook
+ * runs at the projection that RECORDS a block, never at a derive hit (the
+ * shared EXIT used to re-queue every stored block per feed), and exactly
+ * ONCE per stored block at the seal -- finish hands back the CST shell, and
+ * the hook must reproduce its node-level effect there; zero lost the cached
+ * mutation, and the historical double queue ran it twice. A counting AND
+ * mutating hook watches all three: the recording derive runs it once per
+ * paragraph, a second derive adds nothing, finish adds exactly one per
+ * stored block, and the sealed tree dumps identically to the hit derive's
+ * below the document line (the document node's own scope end differs by
+ * design: open at a derive, final at the seal). Skipped under --no-cache,
+ * where every projection records and the counts grow by design. */
 static size_t ho_hook_runs;
 
+/* Counts AND mutates in place (no replacement, so the block still stores):
+ * the retype is the node-level effect whose loss at the seal the gate must
+ * see -- a count alone cannot tell a reproduced shell from a stale one. */
 static void ho_counting_hook(
     const markdown_core_syntax_extension *extension,
     markdown_core_parser *parser,
@@ -2370,8 +2377,10 @@ static void ho_counting_hook(
 ) {
     (void)extension;
     (void)parser;
-    (void)block;
     ho_hook_runs++;
+    if (markdown_core_node_set_type(*block, MARKDOWN_CORE_NODE_HEADING)) {
+        markdown_core_node_set_heading_level(*block, 3);
+    }
 }
 
 static const markdown_core_syntax_extension HO_COUNTING_EXTENSION = {
@@ -2421,9 +2430,38 @@ static int case_hook_once(const ts_spec_file *file) {
         failures++;
     }
     sealed = markdown_core_parser_finish(parser);
-    if (!sealed || ho_hook_runs != after_recording) {
-        fprintf(stderr, "hook once: the seal re-ran the hook (%zu -> %zu)\n", after_recording, ho_hook_runs);
+    if (!sealed || ho_hook_runs != after_recording + 2) {
+        fprintf(
+            stderr,
+            "hook once: the seal ran the hook %zu times over %zu for 2 stored blocks -- one each reproduces "
+            "the shell's node, zero loses the cached mutation, two each was the double queue\n",
+            sealed ? ho_hook_runs - after_recording : (size_t)0,
+            after_recording
+        );
         failures++;
+    }
+    /* The seal's answer IS the derive's answer below the document line: the
+     * hit derive served the retained node with the retype baked in, and the
+     * seal reproduced the same retype on the CST shell. The document node's
+     * own scope end differs by design -- open at a derive, final at the
+     * seal -- so the compare starts past each dump's first line. A seal
+     * that skipped the hook still dumps paragraphs here. */
+    if (!failures && second && sealed) {
+        size_t second_length = 0;
+        size_t sealed_length = 0;
+        uint8_t *second_dump = pr_dump(second, &second_length);
+        uint8_t *sealed_dump = pr_dump(sealed, &sealed_length);
+        const uint8_t *second_body = second_dump ? memchr(second_dump, '\n', second_length) : NULL;
+        const uint8_t *sealed_body = sealed_dump ? memchr(sealed_dump, '\n', sealed_length) : NULL;
+        size_t second_body_length = second_body ? second_length - (size_t)(second_body - second_dump) : 0;
+        size_t sealed_body_length = sealed_body ? sealed_length - (size_t)(sealed_body - sealed_dump) : 0;
+        if (!second_body || !sealed_body || second_body_length != sealed_body_length ||
+            memcmp(second_body, sealed_body, second_body_length) != 0) {
+            fputs("hook once: the sealed tree lost the cached node-level mutation\n", stderr);
+            failures++;
+        }
+        markdown_core_dump_free(second_dump);
+        markdown_core_dump_free(sealed_dump);
     }
     if (first) {
         markdown_core_node_free(first);

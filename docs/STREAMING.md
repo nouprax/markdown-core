@@ -1931,11 +1931,18 @@ back in the vocabulary that produced them.
   link writes would have double-freed a nested hit the day the shape
   appeared; asserts now hold that door, and container retention (phase 2)
   stores vectors of shared children, not intrusive lists. F15 rule 2's
-  statement followed retention into `syntax_extension.h`: EVERY tail pass —
-  name hooks included — runs on fresh projections only; a hit reproduces
-  the recorded projection by identity, and what keeps a replacing hook
-  per-projection is the store its replacement never enters, not the
-  dispatch.
+  statement followed retention into `syntax_extension.h`, with the seal's
+  carve-out found one round later: a DERIVE hit runs no tail pass at all —
+  the retained node itself is the answer, node-level hook effects baked in
+  — while the SEAL runs the NAME hooks exactly once per stored block,
+  because finish hands back the CST shell borrowing the stored children
+  and only the hooks can reproduce their node-level work (a retype, a
+  level) on that shell; zero lost the cached mutation, and the historical
+  double queue ran them twice. The children the hooks must not touch are
+  frozen, which is what makes the seal's re-run safe. What keeps a
+  replacing hook per-projection is the store its replacement never enters,
+  not the dispatch. The hook_once gate counts all three paths and dumps
+  the sealed tree against the hit derive's.
 
 ---
 
