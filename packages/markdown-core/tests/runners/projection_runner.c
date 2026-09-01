@@ -45,6 +45,7 @@
 
 #include "markdown-core.h"
 #include "markdown-core-extensions.h"
+#include "syntax_extension.h"
 
 #include "ast_internal.h"
 #include "iterator.h"
@@ -2352,6 +2353,92 @@ static int case_node_sharing(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+/* THE HOOK-ONCE GATE (F25, review-found twice): a name-selected hook runs at
+ * the projection that RECORDS a block and never on a hit -- not at a derive
+ * (the shared EXIT used to re-queue every stored block per feed) and not at
+ * the seal (the borrow arm used to queue every borrower for its name hooks).
+ * A counting hook watches all three: the recording derive runs it once per
+ * paragraph, a second derive adds nothing, and finish adds nothing. Skipped
+ * under --no-cache, where every projection records and the count grows by
+ * design. */
+static size_t ho_hook_runs;
+
+static void ho_counting_hook(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node **block
+) {
+    (void)extension;
+    (void)parser;
+    (void)block;
+    ho_hook_runs++;
+}
+
+static const markdown_core_syntax_extension HO_COUNTING_EXTENSION = {
+    .name = "hook_once_probe",
+    .postprocess_block_func = ho_counting_hook,
+    .postprocess_blocks = "paragraph\0",
+};
+
+static int case_hook_once(const ts_spec_file *file) {
+    static const char HO_TEXT[] = "the first paragraph\n\nthe second paragraph\n\n";
+    markdown_core_parser *parser;
+    markdown_core_node *first = NULL;
+    markdown_core_node *second = NULL;
+    markdown_core_node *sealed = NULL;
+    size_t after_recording;
+    int failures = 0;
+    (void)file;
+
+    if (pr_no_cache) {
+        printf("hook once: skipped under --no-cache\n");
+        return 0;
+    }
+    parser = pr_parser_new();
+    if (!parser) {
+        return -1;
+    }
+    ho_hook_runs = 0;
+    if (!markdown_core_parser_attach_syntax_extension(parser, &HO_COUNTING_EXTENSION)) {
+        fputs("hook once: the counting extension did not attach\n", stderr);
+        markdown_core_parser_free(parser);
+        return -1;
+    }
+    markdown_core_parser_feed(parser, HO_TEXT, sizeof(HO_TEXT) - 1);
+    first = markdown_core_parser_derive_tree(parser, parser->refmap);
+    after_recording = ho_hook_runs;
+    if (!first || after_recording != 2) {
+        fprintf(
+            stderr,
+            "hook once: the recording projection ran the hook %zu times for 2 paragraphs\n",
+            after_recording
+        );
+        failures++;
+    }
+    second = markdown_core_parser_derive_tree(parser, parser->refmap);
+    if (!second || ho_hook_runs != after_recording) {
+        fprintf(stderr, "hook once: a derive hit re-ran the hook (%zu -> %zu)\n", after_recording, ho_hook_runs);
+        failures++;
+    }
+    sealed = markdown_core_parser_finish(parser);
+    if (!sealed || ho_hook_runs != after_recording) {
+        fprintf(stderr, "hook once: the seal re-ran the hook (%zu -> %zu)\n", after_recording, ho_hook_runs);
+        failures++;
+    }
+    if (first) {
+        markdown_core_node_free(first);
+    }
+    if (second) {
+        markdown_core_node_free(second);
+    }
+    if (sealed) {
+        markdown_core_node_free(sealed);
+    }
+    markdown_core_parser_free(parser);
+    printf("hook once: %s\n", failures ? "a hit still runs hooks" : "hooks run where the store is");
+    return failures ? -1 : 0;
+}
+
 /* THE MAP-IMMUNITY REFINEMENT (#163): a map's generation takes part in the
  * cache key only for a block whose stored projection had something to ask
  * that map. Both halves are asserted: a definition arriving must still
@@ -3118,6 +3205,7 @@ static const pr_case_entry PR_CASES[] = {
     {"attach_invalidation", case_attach_invalidation, 0},
     {"map_immunity", case_map_immunity, 0},
     {"node_sharing", case_node_sharing, 0},
+    {"hook_once", case_hook_once, 0},
     {"label_tail", case_label_tail, 0},
     {"feed_bound", case_feed_bound, 0},
     {"resident_memory", case_resident_memory, 0},

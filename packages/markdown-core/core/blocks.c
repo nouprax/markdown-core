@@ -1664,18 +1664,19 @@ static void process_inlines(
                  * after the lookahead was taken -- so the walk would descend
                  * into it and meet a directive's label, an inline-class node
                  * that `contains_inlines` claims, and parse it AGAIN into the
-                 * shared list. The block is queued here because the EXIT the
-                 * reset consumes is where it would otherwise be queued, and
-                 * its name hooks must still run (F15 rule 2). */
-                if (S_block_has_tail_work(parser, cur) && !S_tail_queue_push(parser, cur)) {
-                    parser->oom = true;
-                }
+                 * shared list. It is not QUEUED either (review-found): a hit
+                 * is the stored projection served by identity at finish
+                 * exactly as at derive -- its hooks ran at the recording
+                 * projection, and a block a hook would have replaced was
+                 * never stored -- so the queue re-ran name hooks that had
+                 * nothing left to say, and a consumer counting hook runs
+                 * watched finish disagree with derive_tree. */
                 markdown_core_iter_skip_children(iter);
                 continue;
             }
             markdown_core_parse_inlines(parser, cur, refmap, options);
         } else if (MARKDOWN_CORE_NODE_BLOCK_P(cur) && !(cur->flags & MARKDOWN_CORE_NODE__SHARED) &&
-                   S_block_has_tail_work(parser, cur)) {
+                   !MARKDOWN_CORE_NODE_BORROWED_P(cur) && S_block_has_tail_work(parser, cur)) {
             /* COLLECTED, NOT ACTED ON: a hook may replace or remove the block
              * and the walk is standing on it (F13 requirement 2). The walk
              * never descends into a block's own inlines -- its lookahead was
@@ -1683,16 +1684,19 @@ static void process_inlines(
              * list above, so this EXIT follows the ENTER directly and the
              * queue is the blocks in post-order.
              *
-             * A SHARED block never queues (measured, 2026-09-01): the ENTER
-             * skip above still delivers this EXIT, and without the flag test
-             * every retained block re-answered the name rows and re-ran its
-             * hooks as no-ops on every feed -- half the Ir of a width-heavy
-             * stream -- against both F24's "no tail on a hit" and the
-             * syntax_extension.h contract. The no-op is provable, not
-             * incidental: a block a name hook would have replaced was never
-             * stored (the replacement carries no ORIGIN), so a stored
-             * block's hooks have nothing to say, and a hook that would
-             * write anyway meets the frozen-projection surface. */
+             * A SHARED block never queues (measured, 2026-09-01), and a
+             * BORROWER never queues either (review-found, the hook_once
+             * gate): skip_children above still delivers each one's EXIT,
+             * and without the two tests every hit re-answered the name
+             * rows and re-ran its hooks -- the retained blocks on every
+             * feed of a derive, half the Ir of a width-heavy stream, and
+             * the borrowers again at the seal, where a counting hook
+             * watched finish disagree with derive_tree. The no-op is
+             * provable, not incidental: a block a name hook would have
+             * replaced was never stored (the replacement carries no
+             * ORIGIN), so a stored block's hooks have nothing to say, and
+             * a hook that would write anyway meets the frozen-projection
+             * surface. */
             if (!S_tail_queue_push(parser, cur)) {
                 parser->oom = true;
             }
