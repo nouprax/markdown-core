@@ -127,10 +127,6 @@ struct markdown_core_parser {
      * `derive_tree` call so the clone can see it; the arena itself leaves on
      * the derived root. NULL whenever the parser is at rest. */
     markdown_core_node_arena *derive_arena;
-    /* Non-zero while the clone walks the subtree of an enrolled miss: those
-     * nodes ride into a cache holder at the store and must outlive the
-     * arena, so they take malloc shells (#161, D9). */
-    size_t derive_malloc_depth;
     /* THE PER-BLOCK TAIL'S QUEUE (T18): the blocks a projection's walk found
      * tail work for, in EXIT order, acted on after the walk -- a hook may
      * replace or remove the block, and the walk must not be standing on it

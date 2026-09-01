@@ -2015,7 +2015,7 @@ static markdown_core_node *S_clone_block_node(
      * tail will store it, the holder will hand it to later trees, and a
      * node that outlives this tree cannot live in this tree's arena, so it
      * takes a malloc shell. */
-    bool arena_shell = parser->derive_arena && !enrolled && parser->derive_malloc_depth == 0;
+    bool arena_shell = parser->derive_arena && !enrolled;
     if (arena_shell) {
         dst = markdown_core_node_arena_calloc(parser->derive_arena);
         if (!dst) {
@@ -2219,10 +2219,10 @@ static bool S_vec_open(markdown_core_parser *parser, markdown_core_node *parent,
     parent->children.count = 0;
     if (total) {
         /* The vector's allocator FOLLOWS THE SHELL'S (review-found), never
-         * the derivation's mood: a malloc-shelled parent inside an enrolled
-         * subtree outlives this tree's arena in a cache holder, and an
-         * arena vector under it would dangle there. The free walk and the
-         * holder both rely on this one rule. */
+         * the derivation's mood: a derivation whose arena was refused
+         * shells every node from malloc, and an arena vector under a
+         * malloc shell would outlive nothing it can name. The free walk
+         * relies on this one rule. */
         parent->children.vec =
             (parent->flags & MARKDOWN_CORE_NODE__ARENA)
                 ? (
@@ -2241,26 +2241,20 @@ static bool S_vec_open(markdown_core_parser *parser, markdown_core_node *parent,
  * ancestor guard, the numbering climb and the hooks read it -- and keeps
  * enough of a sibling chain for the free walk's splice. A SHARED child
  * learns NOTHING (#161, D9): every one of these facts is per-tree, the
- * vector carries them all, and the node belongs to every tree at once. */
+ * vector carries them all, and the node belongs to every tree at once.
+ *
+ * Every parent the clone hands in is vec-opened: an enrolled block never
+ * carries skeleton children -- the enrolled types (paragraph, heading,
+ * table cell) hold content bytes, and their inline children materialize
+ * at projection through `node_append_child`, whose intrusive list is
+ * what the store's `take_children` moves. The intrusive arm that used
+ * to sit here for "enrolled parents" served a shape the grammar cannot
+ * build (review-found: a nested hit would have been linked into a
+ * retained list and freed under its own holder), and container
+ * retention (#161 phase 2) stores vectors of shared children, not
+ * intrusive lists, so it was no future's groundwork either. */
 static void S_vec_append(markdown_core_node *parent, markdown_core_node *child) {
-    if (!MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
-        /* An ENROLLED parent -- a leaf directive whose CST label rides in
-         * the skeleton -- keeps intrusive children: its store moves the
-         * whole list into a holder (`take_children`) and its hit is the
-         * retained node, so no per-tree sibling variance ever reaches its
-         * interior, and the vector would only stand between the store and
-         * the list it moves. */
-        child->parent = parent;
-        child->prev = parent->last_child;
-        child->next = NULL;
-        if (parent->last_child) {
-            parent->last_child->next = child;
-        } else {
-            parent->first_child = child;
-        }
-        parent->last_child = child;
-        return;
-    }
+    assert(MARKDOWN_CORE_NODE_ARRAY_P(parent));
     parent->children.vec[parent->children.count++] = child;
     if (!(child->flags & MARKDOWN_CORE_NODE__SHARED)) {
         child->parent = parent;
@@ -2294,16 +2288,16 @@ static markdown_core_node *S_clone_block_tree(
         S_vec_append(dst_parent, dst);
 
         if (src->first_child && !(dst->flags & MARKDOWN_CORE_NODE__SHARED)) {
-            /* An enrolled parent stays INTRUSIVE (S_vec_append) and its
-             * whole subtree takes malloc shells: the store will move these
-             * nodes into a holder that outlives this tree's arena. A HIT
-             * never reaches this branch (review-found): the retained node
-             * IS the projection of the source's whole subtree, and
+            /* A HIT never reaches this branch (review-found): the retained
+             * node IS the projection of the source's whole subtree, and
              * descending would clone raw CST children over the shared
-             * projection every other live tree is reading. */
-            if (dst->flags & MARKDOWN_CORE_NODE__ORIGIN) {
-                parser->derive_malloc_depth++;
-            } else if (!S_vec_open(parser, dst, src)) {
+             * projection every other live tree is reading. An enrolled
+             * MISS never reaches it either -- no enrolled type contains
+             * skeleton children -- and the store's `take_children` reads
+             * the intrusive list a vec-opened parent no longer keeps, so
+             * the assert holds the door on any grammar that changes that. */
+            assert(!(dst->flags & MARKDOWN_CORE_NODE__ORIGIN));
+            if (!S_vec_open(parser, dst, src)) {
                 markdown_core_node_free(dst_root);
                 return NULL;
             }
@@ -2311,9 +2305,6 @@ static markdown_core_node *S_clone_block_tree(
             dst_parent = dst;
         } else {
             while (!src->next && src != src_root) {
-                if (dst_parent->flags & MARKDOWN_CORE_NODE__ORIGIN) {
-                    parser->derive_malloc_depth--;
-                }
                 src = src->parent;
                 dst_parent = dst_parent->parent;
             }
@@ -2323,7 +2314,6 @@ static markdown_core_node *S_clone_block_tree(
             src = src->next;
         }
     }
-    parser->derive_malloc_depth = 0;
     return dst_root;
 }
 
