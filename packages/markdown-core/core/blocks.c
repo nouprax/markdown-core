@@ -1916,6 +1916,15 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
 
     node->link.origin = NULL;
     node->flags &= ~MARKDOWN_CORE_NODE__ORIGIN;
+    /* THE STORE MOVES AN INTRUSIVE LIST and nothing else (review-found):
+     * `take_children` reads `first_child/last_child`, which on a
+     * vector-shaped container are the vector pointer and the count. The
+     * enrolled predicate keeps that shape out of here; if any future path
+     * lets one through, the block goes unstored -- a slow feed, never a
+     * corrupted holder. */
+    if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
+        return;
+    }
     holder = markdown_core_holder_new(parser->mem);
     if (!holder) {
         /* Nothing is lost: the tree keeps its own children. */
@@ -2031,8 +2040,16 @@ static markdown_core_node *S_clone_block_node(
      * -- handed back under one holder hold for the requesting tree. No
      * clone, no content retain, no tail: what F15 rule 2 re-ran per
      * projection to reproduce, retention reproduces by identity. */
+    /* A block with SKELETON CHILDREN never enrolls (review-found): the
+     * store's `take_children` moves an intrusive list and the clone's
+     * containers are vector-shaped, so the hybrid an extension can build
+     * -- `contains_inlines` true AND CST children via `parser_add_child`
+     * -- has no representation both sides accept. It projects fresh every
+     * feed instead: uncached and correct in every build, where enrolling
+     * it aborted debug and corrupted release at the store. Its enrolled
+     * CHILDREN still hit one by one. */
     enrolled = MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src) && contains_inlines((markdown_core_node *)src) &&
-               refmap == parser->refmap && !parser->no_projection_cache;
+               src->first_child == NULL && refmap == parser->refmap && !parser->no_projection_cache;
     hit = enrolled && S_cache_fresh(parser, src, refmap) && src->link.holder->node != NULL;
     if (hit) {
         markdown_core_holder *holder = src->link.holder;
@@ -2284,15 +2301,15 @@ static bool S_vec_open(markdown_core_parser *parser, markdown_core_node *parent,
  * vector carries them all, and the node belongs to every tree at once.
  *
  * Every parent the clone hands in is vec-opened: an enrolled block never
- * carries skeleton children -- the enrolled types (paragraph, heading,
- * table cell) hold content bytes, and their inline children materialize
- * at projection through `node_append_child`, whose intrusive list is
- * what the store's `take_children` moves. The intrusive arm that used
- * to sit here for "enrolled parents" served a shape the grammar cannot
- * build (review-found: a nested hit would have been linked into a
- * retained list and freed under its own holder), and container
- * retention (#161 phase 2) stores vectors of shared children, not
- * intrusive lists, so it was no future's groundwork either. */
+ * carries skeleton children -- the enrolled PREDICATE refuses the shape,
+ * not just the built-in grammar -- and an enrolled block's inline
+ * children materialize at projection through `node_append_child`, whose
+ * intrusive list is what the store's `take_children` moves. The
+ * intrusive arm that used to sit here for "enrolled parents" served a
+ * shape nothing can now build (review-found: a nested hit would have
+ * been linked into a retained list and freed under its own holder), and
+ * container retention (#161 phase 2) stores vectors of shared children,
+ * not intrusive lists, so it was no future's groundwork either. */
 static void S_vec_append(markdown_core_node *parent, markdown_core_node *child) {
     assert(MARKDOWN_CORE_NODE_ARRAY_P(parent));
     parent->children.vec[parent->children.count++] = child;
@@ -2332,10 +2349,10 @@ static markdown_core_node *S_clone_block_tree(
              * node IS the projection of the source's whole subtree, and
              * descending would clone raw CST children over the shared
              * projection every other live tree is reading. An enrolled
-             * MISS never reaches it either -- no enrolled type contains
-             * skeleton children -- and the store's `take_children` reads
-             * the intrusive list a vec-opened parent no longer keeps, so
-             * the assert holds the door on any grammar that changes that. */
+             * MISS never reaches it either, by the enrolled predicate
+             * itself now -- a block with skeleton children never enrolls
+             * -- so ORIGIN here is provably impossible, and the assert
+             * holds the door on the predicate ever loosening. */
             assert(!(dst->flags & MARKDOWN_CORE_NODE__ORIGIN));
             if (!S_vec_open(parser, dst, src)) {
                 markdown_core_node_free(dst_root);
