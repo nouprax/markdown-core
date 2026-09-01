@@ -5331,6 +5331,27 @@ static void wd_patch_i32(wd_out *out, size_t at, int32_t value) {
     out->data[at + 3] = (uint8_t)(bits >> 24);
 }
 
+/* THE KINDS A SPINE MAY NAME, as the header states them: the block
+ * containers of blocks, which are the kinds whose children the bindings
+ * address by position. A field program ending in children is not enough
+ * -- a paragraph's or a table row's does too -- and a spine on one of those
+ * would reassemble here while both decoders refuse it (review-found), so
+ * the gate restates the header's set rather than the writer's. */
+static int wd_spine_kind(uint8_t kind) {
+    switch (kind) {
+    case MARKDOWN_CORE_KIND_DOCUMENT:
+    case MARKDOWN_CORE_KIND_BLOCK_QUOTE:
+    case MARKDOWN_CORE_KIND_LIST:
+    case MARKDOWN_CORE_KIND_LIST_ITEM:
+    case MARKDOWN_CORE_KIND_TABLE:
+    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
+    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 /* A SPINE op, `delta` standing just past its 0xFE tag, against the
  * previous frame's node at `prev_at`. */
 static void wd_spine(wd_cursor *delta, const wd_cursor *frame, size_t prev_at, wd_out *out, const char **why) {
@@ -5349,6 +5370,11 @@ static void wd_spine(wd_cursor *delta, const wd_cursor *frame, size_t prev_at, w
     prev.at = prev_at;
     if (!program || !strchr(program, 'C')) {
         *why = "a spine op names a kind without a child list";
+        delta->failed = 1;
+        return;
+    }
+    if (!wd_spine_kind(kind)) {
+        *why = "a spine op names a kind the bindings cannot address by position";
         delta->failed = 1;
         return;
     }
