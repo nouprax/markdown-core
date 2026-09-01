@@ -65,10 +65,15 @@ struct markdown_core_syntax_extension {
      * than the retained node, so the hook reproduces its node-level effect
      * there -- the children stay the stored list, every node of it frozen.
      * A hook that REPLACES the block keeps it out of the store, so a
-     * replacing hook runs on every projection. Hooks are assumed
-     * deterministic over the node they are handed; per-projection side
-     * effects on a block the cache retains are not part of this
-     * contract. */
+     * replacing hook runs on every projection.
+     *
+     * `contains_inlines_func` is consulted at node construction and at
+     * each validated type or descriptor change, and its answer is FROZEN
+     * into the node between those points; the engine never re-asks it in
+     * steady state, so a stateful answer cannot classify a block one way
+     * at adoption and another at projection, and derive and seal always
+     * agree. Per-projection side effects on a block the cache retains are
+     * not part of this contract. */
     const char *postprocess_blocks;
     markdown_core_close_block_func close_block_func;
     markdown_core_opaque_alloc_func opaque_alloc_func;

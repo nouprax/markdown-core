@@ -1655,6 +1655,26 @@ static const markdown_core_syntax_extension HYBRID_BARE_EXTENSION = {
     .can_contain_func = hybrid_probe_can_contain,
 };
 
+/* Answers whatever the static says -- the stateful descriptor whose flip
+ * the engine must never see: the classification is committed at the
+ * validated mutations and frozen between them. */
+static int hybrid_flip_answer;
+
+static int hybrid_probe_contains_inlines_flip(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_node *node
+) {
+    (void)extension;
+    (void)node;
+    return hybrid_flip_answer;
+}
+
+static const markdown_core_syntax_extension HYBRID_FLIP_EXTENSION = {
+    .name = "hybrid_flip_probe",
+    .can_contain_func = hybrid_probe_can_contain,
+    .contains_inlines_func = hybrid_probe_contains_inlines_flip,
+};
+
 static void no_inline_block_hybrid(test_batch_runner *runner) {
     markdown_core_node *parent = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     markdown_core_node *block_child = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
@@ -1715,6 +1735,32 @@ static void no_inline_block_hybrid(test_batch_runner *runner) {
             "a descriptor without contains_inlines_func refuses the same way"
         );
         markdown_core_node_free(container);
+    }
+
+    /* A STATEFUL descriptor's flip moves nothing (review-found): the
+     * classification is asked at the validated mutations and FROZEN
+     * between them, so an answer that changes afterwards is never seen --
+     * the committed container still admits and adopts block children. */
+    {
+        markdown_core_node *flipper = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node *taken = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+        hybrid_flip_answer = 0;
+        INT_EQ(
+            runner,
+            markdown_core_node_set_syntax_extension(flipper, &HYBRID_FLIP_EXTENSION),
+            1,
+            "the flip descriptor attaches while answering container"
+        );
+        hybrid_flip_answer = 1;
+        INT_EQ(
+            runner,
+            markdown_core_node_can_contain_type(flipper, MARKDOWN_CORE_NODE_BLOCK_QUOTE) ? 1 : 0,
+            1,
+            "the flipped answer is never seen: the committed container still admits blocks"
+        );
+        INT_EQ(runner, markdown_core_node_append_child(flipper, taken), 1, "and still adopts one");
+        markdown_core_node_free(flipper);
+        hybrid_flip_answer = 0;
     }
 
     markdown_core_node_free(parent);

@@ -217,6 +217,20 @@ static bool S_node_contains_inlines(markdown_core_node *node) {
     return node->type == MARKDOWN_CORE_NODE_PARAGRAPH || node->type == MARKDOWN_CORE_NODE_HEADING;
 }
 
+/* THE ONE ASKING (review-found, the hybrid arc): the descriptor's hook is
+ * consulted here and nowhere in steady state, so its answer is FROZEN into
+ * the flag between validated mutations -- a stateful hook cannot classify
+ * a block one way at adoption and another at projection, splitting derive
+ * from seal. Construction and the gated mutations call this after they
+ * validate; everything else reads the bit. */
+void markdown_core_node_classify(markdown_core_node *node) {
+    if (S_node_contains_inlines(node)) {
+        node->flags |= MARKDOWN_CORE_NODE__CONTAINS_INLINES;
+    } else {
+        node->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__CONTAINS_INLINES;
+    }
+}
+
 bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
     if (child_type == MARKDOWN_CORE_NODE_DOCUMENT) {
         return false;
@@ -231,8 +245,9 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
      * parent exactly as it climbs past an interrupted paragraph, and the
      * public adoption surface answers 0. The core's own type rules always
      * said this (paragraph and heading take inlines only); this line says
-     * it to extensions too. */
-    if (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && S_node_contains_inlines(node)) {
+     * it to extensions too. The COMMITTED bit is asked, not the hook: the
+     * adoption law judges the classification the engine will act on. */
+    if (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && (node->flags & MARKDOWN_CORE_NODE__CONTAINS_INLINES)) {
         return false;
     }
 
@@ -329,6 +344,7 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(
     markdown_core_strbuf_init(mem, &node->content, 0);
     node->type = (uint16_t)type;
     node->extension = extension;
+    markdown_core_node_classify(node);
 
     switch (node->type) {
     case MARKDOWN_CORE_NODE_HEADING:
@@ -628,6 +644,7 @@ int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_typ
     free_node_as(node);
 
     node->type = (uint16_t)type;
+    markdown_core_node_classify(node);
 
     return 1;
 }
@@ -1120,6 +1137,7 @@ int markdown_core_node_set_syntax_extension(markdown_core_node *node, const mark
             }
         }
     }
+    markdown_core_node_classify(node);
     return 1;
 }
 

@@ -148,6 +148,7 @@ static markdown_core_node *make_block(
     markdown_core_strbuf_init(mem, &e->content, 32);
     e->type = (uint16_t)tag;
     e->flags = MARKDOWN_CORE_NODE__OPEN;
+    markdown_core_node_classify(e);
     e->start_line = start_line;
     e->start_column = start_column;
     e->end_line = start_line;
@@ -390,12 +391,13 @@ static MARKDOWN_CORE_INLINE bool accepts_lines(markdown_core_node *node) {
     );
 }
 
+/* The COMMITTED classification (node.h), never the descriptor's hook: the
+ * hook is consulted only by `markdown_core_node_classify` at construction
+ * and at the validated mutations, so derive, seal, enrollment and the
+ * adoption law all read one frozen answer -- and the hot paths trade an
+ * indirect call for a bit on a word already loaded. */
 static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
-    if (node->extension && node->extension->contains_inlines_func) {
-        return node->extension->contains_inlines_func(node->extension, node) != 0;
-    }
-
-    return (node->type == MARKDOWN_CORE_NODE_PARAGRAPH || node->type == MARKDOWN_CORE_NODE_HEADING);
+    return (node->flags & MARKDOWN_CORE_NODE__CONTAINS_INLINES) != 0;
 }
 
 #define MARKDOWN_CORE_MAX_INLINE_DEPTH 256
@@ -2415,16 +2417,16 @@ static void S_project_fresh(markdown_core_parser *parser, markdown_core_map *ref
     markdown_core_manage_extensions_special_characters(parser, true);
     for (i = 0; i < parser->fresh_queue_size; i++) {
         markdown_core_node *block = parser->fresh_queue[i];
-        /* The SHAPE test beside the classification (review-found): a
-         * stateful contains_inlines_func can answer true at projection
-         * for a block adopted under false, and the inline parser appends
-         * through the intrusive overlay -- on a vector-shaped container
-         * that write lands in the vector pointer and the count. A flipped
-         * hybrid projects with its children and its content unparsed:
-         * degraded, never corrupted. Every legitimate inline block is
-         * intrusive (it had no skeleton children to vectorize), so the
-         * test costs one bit on a word already loaded. */
-        if (contains_inlines(block) && !MARKDOWN_CORE_NODE_ARRAY_P(block)) {
+        /* An inline block is never vector-shaped (review-found, closed by
+         * the committed classification): the flag is frozen between
+         * validated mutations, a flagged block can never have adopted the
+         * skeleton children that vectorize, and the clone carries the
+         * flag -- so the shape that once needed a guard here cannot be
+         * built, on this path or the seal's, and the two cannot disagree.
+         * The assert holds that door; the inline parser's own assert
+         * stands at the write site behind it. */
+        assert(!(contains_inlines(block) && MARKDOWN_CORE_NODE_ARRAY_P(block)));
+        if (contains_inlines(block)) {
             markdown_core_parse_inlines(parser, block, refmap, parser->options);
         }
     }
@@ -3130,6 +3132,7 @@ static void open_new_blocks(
 
                 markdown_core_parser_touch(parser, *container);
                 (*container)->type = (uint16_t)MARKDOWN_CORE_NODE_HEADING;
+                markdown_core_node_classify(*container);
                 (*container)->as.heading.level = lev;
                 (*container)->as.heading.setext = true;
                 S_advance_offset(parser, input, input->len - 1 - parser->offset, false);
