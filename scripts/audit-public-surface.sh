@@ -154,13 +154,12 @@ const runtimeExports = [
         match[1].split(",").map((name) => name.trim())
     )
 ].sort();
-// `Concrete` joined the runtime list at Step 12.2; `RegionRole` left it with
-// the regions when 11a-11c were retired. `Session` joined at T14
-// (docs/STREAMING.md D5) and became the living `Document` when the 3.0 names
-// were formalized: the stream's one handle, beside the `Read` values it
-// returns (`Read` and `Semantic` are types, not runtime exports).
+// `RegionRole` left the runtime list with the regions when 11a-11c were
+// retired; `Concrete` left it with the concrete view (D8). `Session` joined
+// at T14 (docs/STREAMING.md D5) and became the living `Document` when the
+// 3.0 names were formalized: the stream's one handle, beside the `Read`
+// values it returns (`Read` and `Semantic` are types, not runtime exports).
 const expectedRuntime = [
-    "Concrete",
     "Document",
     "ParseError",
     "TreeDumper",
