@@ -52,8 +52,6 @@ private fun WireReader.read(): Read {
     return Read(Semantic(content, rootId, rootScope))
 }
 
-private fun WireReader.count(): Int = int().also { require(it >= 0) { "invalid native count" } }
-
 private fun WireReader.error(): ParseException {
     val code =
         when (int()) {
@@ -100,12 +98,6 @@ internal class WireReader(
     }
 
     fun requiredString(): String = requireNotNull(string()) { "missing native field" }
-
-    fun bytes(size: Int): ByteArray {
-        require(size >= 0 && size <= bytes.size - offset) { "invalid native byte run" }
-        val end = offset + size
-        return bytes.copyOfRange(offset, end).also { offset = end }
-    }
 
     fun scope(): Scope = Scope(Position(int(), int()), Position(int(), int()))
 

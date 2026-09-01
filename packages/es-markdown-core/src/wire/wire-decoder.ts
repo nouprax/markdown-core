@@ -157,14 +157,6 @@ class WireReader {
         return value;
     }
 
-    bytes(size: number): Uint8Array {
-        if (size < 0 || size > this.#bytes.length - this.#offset) throw new Error("invalid native byte run");
-        const end = this.#offset + size;
-        const value = this.#bytes.slice(this.#offset, end);
-        this.#offset = end;
-        return value;
-    }
-
     scope(): Scope {
         return {
             start: { line: this.int(), column: this.int() },
