@@ -1746,6 +1746,80 @@ the profile is allocator traffic (~22%) and the O(new) work itself. A
 delta-shaped consumer (#162) sidesteps even the memcpy; within the
 value-shaped API this is the floor worth having.
 
+### F27 — retention reaches every closed block, and the memo reaches every open container: the feed is O(open + changed)  · VERIFIED (#161, closing round)
+
+Three commits, each measured on the shape it exists for; callgrind Ir,
+same-session A/B per change. The adversarial harnesses: the OPEN-LIST
+stream (one tight list fed an item per line, 2,000 items, a derivation
+per feed — the shape the document-only memo could not serve) and the
+FENCE-MIXED stream (a code fence in every unit, 66 KB over 6,400 line
+feeds — the shape whose fences capped every run).
+
+**1. Every childless block enrolls — bare leaves, hooked or not.** A
+code fence, a thematic break, an HTML block, an empty container, a
+reference DEFINITION (kept as a node — the mdast model) never turned
+SHARED: recloned every feed forever, and one at top level capped the
+document's memo at its index. Three doors, each found by measurement:
+the enrolled predicate drops its `contains_inlines` term (childless is
+the shape the store's move honors; bare leaves enroll closed-only — a
+cost line, their store saves only a clone — which also keeps the
+always-open document out); the tail's store arm keeps a CHILDLESS block
+too, because the formula extension declares `code_block` for its
+promotion, so every fence ran a tail whose end then stripped the origin
+unstored — enrollment alone measured +42% on the fence stream before
+this arm, buying a malloc shell and a tail for nothing; and a sweep
+after the tails stores what no tail visited, over a fresh list
+compacted BEFORE any hook runs (the drain can free what it was handed;
+the compacted set is exactly what it is never handed). A fence the hook
+declined — or retyped in place — is the deterministic projection of its
+origin under the stored key: the promotion memo T9's amendment asked
+for. **Fence-mixed: 3,038.6M → 150.3M Ir (−95%), wall ~59 ms.**
+
+**2. A closed container is one retained value.** The enrolled predicate
+grows its container arm: a CLOSED container — no open descendant, since
+the open spine is the rightmost path — enrolls with its children, and a
+hit is the retained ARRAY node itself, the subtree never entered. The
+sweep stores it (children first, its backward order) once every entry
+is SHARED, under a holder keyed on the container's own stamp with the
+consulted bits OR'd from the entries' holders: a definition's arrival
+re-keys exactly the containers whose subtrees asked (#163 one level
+up), and the per-child walk inside a stale one still serves every
+non-asking child by identity. An entry that cannot share — a
+directive's arena label, a hook's fresh replacement — leaves the
+container merely unstored. The retained node carries its holder in
+`link` as a leaf's borrow does; the holder teardown gains the ARRAY arm
+(the other arm's first/last writes would tear the vector through the
+union). **Open-list: 1,297.5M → 304.4M Ir (−77%).**
+
+**3. Every open container on the spine carries its own child memo.**
+The document's memo was the depth-0 instance of a per-container fact,
+so `doc_memo` became a small pointer-keyed table of (CST container,
+memo) pairs, swept each record against the live spine — compared, never
+dereferenced, so a container that closed or died at its close just
+falls out. The clone consumes through one helper at the root AND at
+every open-container descent (a run reaching the end of the child list
+skips the descent whole); the record walks the rightmost path, pairing
+each open CST container with the derived side's LAST entry, fresh
+exactly because its source is open. One union collision surfaced as a
+segfault: a container that JUST closed is an enrolled MISS (ORIGIN in
+`link`) while its memo still stands — the store wins the transition
+derive, and the record sweeps the dead memo. **Open-list: 304.4M →
+85.7M Ir; the round's total on the adversarial shape 1,271.3M → 85.7M
+(−93%), wall ~168 → ~28 ms.**
+
+The flat harness is unchanged through all three (165.2M vs F26's
+164.9M), the one-shot too (63.85M vs 63.91M); the tiniest-session shape
+pays the table sweep's constant (~+2%, 65.1M → 67.1M on 650 six-line
+sessions). The `container_retention` gate pins identity, consulted
+invalidation, the open list's own boundary, and a directive across its
+arena's death; `child_memo` grew the definition-node and hooked-fence
+teeth; seven planted reverts across the three commits were each caught,
+two by sanitizers, one by the crash it was built to prevent. **What
+remains Θ(width) per feed is the document-level consume (F26's memcpy
+and count) — every nested level now pays only for its OPEN containers —
+which is #161's stated goal, O(open + changed), on every shape the
+suite runs.**
+
 ---
 
 ## 4. Decisions — RULED, 2026-08-25
@@ -2018,6 +2092,18 @@ back in the vocabulary that produced them.
   profile). The `projection_child_memo` gate pins six acts; five planted
   defects each caught, two by sanitizers. −80% Ir on the width harness on
   top of F25; numbers and the restated bound in F26.
+- **Retention reaches every closed block and the memo reaches every open
+  container · #161's closing round, 2026-09-01 (F27).** Every childless
+  block enrolls (the tail's store arm keeps what a name hook declined to
+  replace — the promotion memo T9's amendment asked for — and a
+  pre-hook-compacted sweep stores what no tail visits); a CLOSED
+  container is one retained value under a holder keyed on its stamp with
+  consulted bits OR'd from its entries, failing closed on any entry that
+  cannot share; and the document's memo generalized into a per-open-
+  container table swept against the live spine, consumed at the root and
+  at every open descent. Fence-mixed −95%, open-list −93% (wall ~168 →
+  ~28 ms), flat and one-shot unchanged; details, the union-collision
+  fix, and the reached O(open + changed) bound in F27.
 
 ---
 
