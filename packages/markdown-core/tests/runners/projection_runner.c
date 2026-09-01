@@ -2202,6 +2202,84 @@ done:
     return failures ? -1 : 0;
 }
 
+/* THE SHARING GATE (#161, D9): a hit is the RETAINED NODE ITSELF, so two
+ * derivations of an unwritten CST must hand back the SAME PHYSICAL node for
+ * a closed paragraph -- pointer equality, not value equality -- and both
+ * trees must read correctly while alive and free independently afterwards.
+ * Red without retention (a fresh clone per feed compares unequal), red
+ * without the per-tree hold (a use-after-free under the sanitizers). */
+static const markdown_core_node *sg_first_shared_block(markdown_core_node *root) {
+    markdown_core_children cursor = markdown_core_node_children(root);
+    for (; cursor.child; cursor = markdown_core_children_next(cursor)) {
+        if (cursor.child->flags & MARKDOWN_CORE_NODE__SHARED) {
+            return cursor.child;
+        }
+    }
+    return NULL;
+}
+
+static int case_node_sharing(const ts_spec_file *file) {
+    static const char SG_TEXT[] = "the first paragraph\n\nthe second paragraph\n\n";
+    markdown_core_parser *parser;
+    markdown_core_node *first = NULL;
+    markdown_core_node *second = NULL;
+    const markdown_core_node *first_shared;
+    const markdown_core_node *second_shared;
+    int failures = 0;
+    (void)file;
+
+    if (pr_no_cache) {
+        printf("node sharing: skipped under --no-cache\n");
+        return 0;
+    }
+    parser = pr_parser_new();
+    if (!parser) {
+        return -1;
+    }
+    markdown_core_parser_feed(parser, SG_TEXT, sizeof(SG_TEXT) - 1);
+    first = markdown_core_parser_derive_tree(parser, parser->refmap);
+    second = markdown_core_parser_derive_tree(parser, parser->refmap);
+    if (!first || !second) {
+        fputs("node sharing: derivation failed\n", stderr);
+        failures++;
+    } else {
+        first_shared = sg_first_shared_block(first);
+        second_shared = sg_first_shared_block(second);
+        if (!first_shared || first_shared != second_shared) {
+            fputs("node sharing: two reads of an unwritten CST did not hand back the same node\n", stderr);
+            failures++;
+        }
+        if (!failures) {
+            size_t first_length = 0;
+            size_t second_length = 0;
+            uint8_t *first_dump = pr_dump(first, &first_length);
+            uint8_t *second_dump = pr_dump(second, &second_length);
+            if (!first_dump || !second_dump || first_length != second_length ||
+                memcmp(first_dump, second_dump, first_length) != 0) {
+                fputs("node sharing: the two trees dump differently\n", stderr);
+                failures++;
+            }
+            markdown_core_dump_free(first_dump);
+            markdown_core_dump_free(second_dump);
+        }
+    }
+    /* Free in store order first, then the survivor must still read. */
+    markdown_core_node_free(first);
+    if (!failures && second) {
+        size_t length = 0;
+        uint8_t *dump = pr_dump(second, &length);
+        if (!dump || length == 0) {
+            fputs("node sharing: the surviving tree stopped reading after the first was freed\n", stderr);
+            failures++;
+        }
+        markdown_core_dump_free(dump);
+    }
+    markdown_core_node_free(second);
+    markdown_core_parser_free(parser);
+    printf("node sharing: %s\n", failures ? "the clone is back" : "a hit is the retained node itself");
+    return failures ? -1 : 0;
+}
+
 /* THE MAP-IMMUNITY REFINEMENT (#163): a map's generation takes part in the
  * cache key only for a block whose stored projection had something to ask
  * that map. Both halves are asserted: a definition arriving must still
@@ -2967,6 +3045,7 @@ static const pr_case_entry PR_CASES[] = {
     {"block_identity_transitions", case_block_identity_transitions, 0},
     {"attach_invalidation", case_attach_invalidation, 0},
     {"map_immunity", case_map_immunity, 0},
+    {"node_sharing", case_node_sharing, 0},
     {"label_tail", case_label_tail, 0},
     {"feed_bound", case_feed_bound, 0},
     {"resident_memory", case_resident_memory, 0},

@@ -1526,6 +1526,15 @@ static void process_inlines(
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
         if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
+            if (cur->flags & MARKDOWN_CORE_NODE__SHARED) {
+                /* THE RETAINED NODE IS FINISHED WORK (#161, D9): parse,
+                 * consolidation, hooks, strip and numbering all ran before
+                 * its store, so the walk neither parses, queues, nor enters
+                 * it -- F22's rule, upgraded from "never write" to "never
+                 * even look". */
+                markdown_core_iter_skip_children(iter);
+                continue;
+            }
             if (!contains_inlines(cur)) {
                 continue;
             }
@@ -1822,6 +1831,16 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
     origin->link.holder = holder;
     origin->flags |= MARKDOWN_CORE_NODE__CACHE_OWNER;
     markdown_core_node_borrow_children(node, holder);
+    /* THE NODE IS RETAINED WITH ITS LIST (#161, D9): from here it belongs
+     * to every tree at once, so the facts that named THIS tree -- parent,
+     * siblings -- come off. The borrow above already counts this tree's
+     * hold; later trees take their own at the clone. The shell is malloc's
+     * (the clone gave every enrolled miss one), so it outlives any arena. */
+    holder->node = node;
+    node->flags |= MARKDOWN_CORE_NODE__SHARED;
+    node->parent = NULL;
+    node->next = NULL;
+    node->prev = NULL;
     /* Under #153 the stored list's literals hold retained slices of the
      * frozen content, so the block that just became a borrower keeps only
      * its own reference (released at node free) -- there is no private
@@ -1872,15 +1891,33 @@ static markdown_core_node *S_clone_block_node(
     markdown_core_map *refmap
 ) {
     markdown_core_mem *mem = parser->mem;
-    /* Skeleton nodes live and die with the derived tree, so they come out of
-     * the derivation's arena (#161) -- zeroed, like the calloc this was. The
-     * flag is set at birth, before anything can fail, so every disposal path
-     * below can ask it; the content is init'd with the ARENA's mem -- the
-     * same three functions, at the address `forget` recovers the arena by. */
     markdown_core_node *dst;
     bool enrolled;
     bool hit;
-    if (parser->derive_arena) {
+    /* THE HIT IS DECIDED FIRST (#152 Stage 1), now before any allocation:
+     * a hit is THE RETAINED NODE ITSELF (#161, D9) -- the projection the
+     * store kept, promotion, strip, numbering and consulted bits baked in
+     * -- handed back under one holder hold for the requesting tree. No
+     * clone, no content retain, no tail: what F15 rule 2 re-ran per
+     * projection to reproduce, retention reproduces by identity. */
+    enrolled = MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src) && contains_inlines((markdown_core_node *)src) &&
+               refmap == parser->refmap && !parser->no_projection_cache;
+    hit = enrolled && S_cache_fresh(parser, src, refmap) && src->link.holder->node != NULL;
+    if (hit) {
+        markdown_core_holder *holder = src->link.holder;
+        markdown_core_holder_hold(holder);
+        parser->cache_hits++;
+        return holder->node;
+    }
+    /* Skeleton nodes live and die with the derived tree, so they come out
+     * of the derivation's arena (#161) -- zeroed, like the calloc this was;
+     * the flag is set at birth, before anything can fail, so every disposal
+     * path below can ask it. The one exception is an enrolled MISS: its
+     * tail will store it, the holder will hand it to later trees, and a
+     * node that outlives this tree cannot live in this tree's arena, so it
+     * takes a malloc shell. */
+    bool arena_shell = parser->derive_arena && !enrolled;
+    if (arena_shell) {
         dst = markdown_core_node_arena_calloc(parser->derive_arena);
         if (!dst) {
             return NULL;
@@ -1893,23 +1930,6 @@ static markdown_core_node *S_clone_block_node(
         }
     }
     markdown_core_strbuf_init(mem, &dst->content, 0);
-    /* THE HIT IS DECIDED FIRST (#152 Stage 1). Content is the arena backing
-     * an OWNED inline list -- `parse_inlines` reads its subject off
-     * `content.ptr` -- and a hit block borrows its list from the holder, so
-     * a hit skips the parse. It does NOT skip the content: name-selected
-     * postprocess hooks run on borrowed blocks too (F15 rule 2) and may
-     * read the block's bytes, so a hit clone that dropped them would show a
-     * hook authored bytes on the recording projection and nothing on the
-     * next (review finding on this series). The bytes ride along below as a
-     * RETAIN of the frozen buffer -- the elision #152 keeps is the byte
-     * copy, not the content. The predicate reads `src`, which is whole;
-     * `dst` is still half-built here (an extension's `contains_inlines_func`
-     * may read state the copy below has not reached yet). `S_cache_fresh`
-     * is pure: it reads parser state and `src`, and nothing between here
-     * and the borrow at the bottom writes either. */
-    enrolled = MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src) && contains_inlines((markdown_core_node *)src) &&
-               refmap == parser->refmap && !parser->no_projection_cache;
-    hit = enrolled && S_cache_fresh(parser, src, refmap);
     if (src->content.size) {
         /* THE LAZY FREEZE (#153): a closed block's content freezes on the
          * first derivation that shares it -- allocation and bytes
@@ -1986,7 +2006,7 @@ static markdown_core_node *S_clone_block_node(
      * clone's own fact, never the CST's -- is re-asserted after it (#161). */
     dst->flags = src->flags & ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN |
                                   MARKDOWN_CORE_NODE__CONSULTED_REFMAP | MARKDOWN_CORE_NODE__CONSULTED_FOOTNOTES);
-    if (parser->derive_arena) {
+    if (arena_shell) {
         dst->flags |= MARKDOWN_CORE_NODE__ARENA;
     }
     dst->extension = src->extension;
@@ -2062,27 +2082,19 @@ static markdown_core_node *S_clone_block_node(
         }
     }
 
-    /* THE HIT IS TAKEN HERE, where the origin is in hand, so the derived
-     * block never needs to find it again (the decision itself was taken at
-     * the top, where it governs the content copy). A miss remembers the
-     * origin for the store at the end of its tail. Only BLOCK-class nodes
-     * with inline content take part: they are the ones the re-parse costs,
-     * and they are the ones the walk queues -- a CST-resident inline
-     * construct (a directive's label) is never queued, so enrolling it left
-     * ORIGIN and a CST pointer on a node the caller holds (found on the
-     * landing review). Its passes run from the block that owns it instead. */
+    /* A HIT RETURNED AT THE TOP (#161, D9); what reaches here enrolled is a
+     * MISS, and it remembers where it came from so its tail can store. A
+     * projection against another map never stores: what it resolves is that
+     * map's answer, and the key names this parser's. Only BLOCK-class nodes
+     * with inline content take part: they are the ones the re-parse costs
+     * -- a CST-resident inline construct (a directive's label) is never
+     * queued, so enrolling it left ORIGIN and a CST pointer on a node the
+     * caller holds (found on the landing review). Its passes run from the
+     * block that owns it instead. */
     if (enrolled) {
-        if (hit) {
-            markdown_core_node_borrow_children(dst, src->link.holder);
-            parser->cache_hits++;
-        } else {
-            /* A miss remembers where it came from so its tail can store. A
-             * projection against another map never stores: what it resolves
-             * is that map's answer, and the key names this parser's. */
-            dst->link.origin = (markdown_core_node *)src;
-            dst->flags |= MARKDOWN_CORE_NODE__ORIGIN;
-            parser->cache_misses++;
-        }
+        dst->link.origin = (markdown_core_node *)src;
+        dst->flags |= MARKDOWN_CORE_NODE__ORIGIN;
+        parser->cache_misses++;
     }
     return dst;
 
@@ -2121,17 +2133,17 @@ static bool S_vec_open(markdown_core_parser *parser, markdown_core_node *parent,
     return true;
 }
 
-/* Append into the vector AND keep the child's own sibling links written: the
- * public first/next accessors stay truthful until D9's walker replaces them,
- * at no cost a fresh node minds. The links die with those accessors. */
+/* Append into the vector. A FRESH child also learns its parent -- the
+ * ancestor guard, the numbering climb and the hooks read it -- and keeps
+ * enough of a sibling chain for the free walk's splice. A SHARED child
+ * learns NOTHING (#161, D9): every one of these facts is per-tree, the
+ * vector carries them all, and the node belongs to every tree at once. */
 static void S_vec_append(markdown_core_node *parent, markdown_core_node *child) {
-    markdown_core_node *back = parent->children.count ? parent->children.vec[parent->children.count - 1] : NULL;
     parent->children.vec[parent->children.count++] = child;
-    child->parent = parent;
-    child->prev = back;
-    child->next = NULL;
-    if (back) {
-        back->next = child;
+    if (!(child->flags & MARKDOWN_CORE_NODE__SHARED)) {
+        child->parent = parent;
+        child->prev = NULL;
+        child->next = NULL;
     }
 }
 

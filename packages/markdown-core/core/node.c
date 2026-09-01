@@ -409,17 +409,32 @@ static void S_free_nodes(markdown_core_node *e) {
 
         if (MARKDOWN_CORE_NODE_ARRAY_P(e)) {
             /* A container's vector joins the walk the way an intrusive list
-             * always has: the entries are chained through their own `next`
-             * fields -- every entry here is this tree's to write -- and the
-             * vector itself goes back to the allocator. The splice stays
-             * allocation-free, which a free path must be. */
+             * always has: the FRESH entries are chained through their own
+             * `next` fields -- theirs to write, this tree owns them -- and
+             * the vector goes back to the allocator. A SHARED entry is
+             * another matter entirely (#161, D9): this tree's part in it is
+             * one holder hold, released here, and the node itself is never
+             * entered -- the holder frees it with its list when the last
+             * tree lets go. The splice stays allocation-free. */
             size_t i;
-            for (i = 0; i + 1 < e->children.count; i++) {
-                e->children.vec[i]->next = e->children.vec[i + 1];
+            markdown_core_node *chain_head = NULL;
+            markdown_core_node *chain_tail = NULL;
+            for (i = 0; i < e->children.count; i++) {
+                markdown_core_node *entry = e->children.vec[i];
+                if (entry->flags & MARKDOWN_CORE_NODE__SHARED) {
+                    markdown_core_holder_release(entry->link.holder);
+                    continue;
+                }
+                if (chain_tail) {
+                    chain_tail->next = entry;
+                } else {
+                    chain_head = entry;
+                }
+                chain_tail = entry;
             }
-            if (e->children.count) {
-                e->children.vec[e->children.count - 1]->next = e->next;
-                next = e->children.vec[0];
+            if (chain_tail) {
+                chain_tail->next = e->next;
+                next = chain_head;
             } else {
                 next = e->next;
             }
@@ -469,6 +484,17 @@ void markdown_core_holder_hold(markdown_core_holder *holder) { markdown_core_ato
 void markdown_core_holder_release(markdown_core_holder *holder) {
     if (markdown_core_atomic_decrement(&holder->refs) != 0) {
         return;
+    }
+    /* The retained projection dies with its list (#161, D9): its children
+     * ALIAS the list freed below, so they are detached first, and its
+     * holder link is cleared so the walk cannot re-enter this release. */
+    if (holder->node) {
+        markdown_core_node *retained = holder->node;
+        retained->first_child = NULL;
+        retained->last_child = NULL;
+        retained->link.holder = NULL;
+        retained->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__SHARED;
+        markdown_core_node_free(retained);
     }
     /* The list's `next` chain is exactly what `S_free_nodes` walks; the
      * `parent` it never reads is NULL on every node here. */

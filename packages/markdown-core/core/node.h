@@ -173,11 +173,18 @@ enum markdown_core_node__internal_flags {
      * stay intrusive -- an inline list is shared WHOLE behind a holder, so
      * its internal links never lie. */
     MARKDOWN_CORE_NODE__CHILD_ARRAY = (1 << 8),
+    /* The node IS the holder's retained projection (#161, D9): one physical
+     * node handed into every tree that hits, under one holder hold per
+     * tree. Parentless and linkless -- every per-tree fact lives in the
+     * referencing tree's vector -- never entered by a projection's walk,
+     * never queued for a tail (its tail ran once, before the store), never
+     * written. Freed by the holder alone, when the last hold goes. */
+    MARKDOWN_CORE_NODE__SHARED = (1 << 9),
 
     // The first bit an extension may claim. Extension flags are compile-time
     // constants owned by the extension that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 9),
+    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 10),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -342,6 +349,14 @@ struct markdown_core_holder {
      * (#163) -- a definition arriving cannot change a block that consulted
      * neither, so its hit survives the bump. */
     markdown_core_node_internal_flags consulted;
+    /* THE RETAINED PROJECTION (#161, D9): the derived block node the list
+     * was projected into, malloc-shelled so it outlives any one tree's
+     * arena, flagged SHARED, aliasing this holder's list as its children.
+     * A hit hands THIS node into the requesting tree's vector under one
+     * hold; the holder frees it with the list when the last hold goes.
+     * NULL only on a holder that has not stored since the field landed --
+     * every store sets it. */
+    markdown_core_node *node;
 };
 
 /* Does this node alias a holder's list? The one question every walk asks. */
