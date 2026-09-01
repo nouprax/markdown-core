@@ -1319,37 +1319,45 @@ static bool S_tail_queue_push(markdown_core_parser *parser, markdown_core_node *
  * its numbers and must not be written (F22). */
 static void S_number_inline_descendants(markdown_core_node *block) {
     markdown_core_child_cursor cursor;
-    markdown_core_node *cur = markdown_core_child_first(block, &cursor);
+    markdown_core_node *top = markdown_core_child_first(block, &cursor);
     uint32_t ordinal = 0;
-    while (cur) {
-        /* A nested BLOCK owns its own namespace: its identity is its mint and
-         * its inlines are numbered at its own tail. The one block that mixes
-         * child classes is a directive block, whose label is inline-class and
-         * CST-resident; the label and its parsed content are what this skip
-         * leaves in THIS block's namespace. */
-        if (!MARKDOWN_CORE_NODE_BLOCK_P(cur)) {
-            cur->identifier = ++ordinal;
-            /* The pair's other half, stamped here because this is the one
-             * moment anything stands inside the block and beside the inline
-             * at once: a shared child list carries no parent to climb (T19),
-             * so an inline that did not learn its owner here could never
-             * answer it. */
-            cur->owner = block->identifier;
-            if (cur->first_child) {
-                cur = cur->first_child;
-                continue;
+    /* TWO LOOPS, ONE PER TRUST LEVEL (#161, D9). A TOP-LEVEL child is
+     * stepped through the cursor and never dereferenced for its links: a
+     * block sibling may already be the stored, parentless SHARED node --
+     * its own tail ran first, post-order -- and asking it for a parent or
+     * a next is exactly the per-tree question it no longer answers. An
+     * INTERIOR node is parse-built under an inline top child this walk
+     * owns, so its parents are whole and the climb stops at `top`. */
+    while (top) {
+        /* A nested BLOCK owns its own namespace: its identity is its mint
+         * and its inlines are numbered at its own tail. The one block that
+         * mixes child classes is a directive block, whose label is
+         * inline-class and CST-resident; the label and its parsed content
+         * are what this skip leaves in THIS block's namespace. */
+        if (!MARKDOWN_CORE_NODE_BLOCK_P(top)) {
+            markdown_core_node *cur = top;
+            for (;;) {
+                cur->identifier = ++ordinal;
+                /* The pair's other half, stamped here because this is the
+                 * one moment anything stands inside the block and beside
+                 * the inline at once: a shared child list carries no parent
+                 * to climb (T19), so an inline that did not learn its owner
+                 * here could never answer it. */
+                cur->owner = block->identifier;
+                if (cur->first_child) {
+                    cur = cur->first_child;
+                    continue;
+                }
+                while (cur != top && !cur->next) {
+                    cur = cur->parent;
+                }
+                if (cur == top) {
+                    break;
+                }
+                cur = cur->next;
             }
         }
-        while (cur->parent != block && cur != block && !cur->next) {
-            cur = cur->parent;
-        }
-        if (cur == block) {
-            cur = NULL;
-        } else if (cur->parent == block) {
-            cur = markdown_core_child_after(block, cur, &cursor);
-        } else {
-            cur = cur->next;
-        }
+        top = markdown_core_child_after(block, top, &cursor);
     }
 }
 
@@ -1916,7 +1924,7 @@ static markdown_core_node *S_clone_block_node(
      * tail will store it, the holder will hand it to later trees, and a
      * node that outlives this tree cannot live in this tree's arena, so it
      * takes a malloc shell. */
-    bool arena_shell = parser->derive_arena && !enrolled;
+    bool arena_shell = parser->derive_arena && !enrolled && parser->derive_malloc_depth == 0;
     if (arena_shell) {
         dst = markdown_core_node_arena_calloc(parser->derive_arena);
         if (!dst) {
@@ -2139,6 +2147,24 @@ static bool S_vec_open(markdown_core_parser *parser, markdown_core_node *parent,
  * learns NOTHING (#161, D9): every one of these facts is per-tree, the
  * vector carries them all, and the node belongs to every tree at once. */
 static void S_vec_append(markdown_core_node *parent, markdown_core_node *child) {
+    if (!MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
+        /* An ENROLLED parent -- a leaf directive whose CST label rides in
+         * the skeleton -- keeps intrusive children: its store moves the
+         * whole list into a holder (`take_children`) and its hit is the
+         * retained node, so no per-tree sibling variance ever reaches its
+         * interior, and the vector would only stand between the store and
+         * the list it moves. */
+        child->parent = parent;
+        child->prev = parent->last_child;
+        child->next = NULL;
+        if (parent->last_child) {
+            parent->last_child->next = child;
+        } else {
+            parent->first_child = child;
+        }
+        parent->last_child = child;
+        return;
+    }
     parent->children.vec[parent->children.count++] = child;
     if (!(child->flags & MARKDOWN_CORE_NODE__SHARED)) {
         child->parent = parent;
@@ -2172,7 +2198,12 @@ static markdown_core_node *S_clone_block_tree(
         S_vec_append(dst_parent, dst);
 
         if (src->first_child) {
-            if (!S_vec_open(parser, dst, src)) {
+            /* An enrolled parent stays INTRUSIVE (S_vec_append) and its
+             * whole subtree takes malloc shells: the store will move these
+             * nodes into a holder that outlives this tree's arena. */
+            if (dst->flags & MARKDOWN_CORE_NODE__ORIGIN) {
+                parser->derive_malloc_depth++;
+            } else if (!S_vec_open(parser, dst, src)) {
                 markdown_core_node_free(dst_root);
                 return NULL;
             }
@@ -2180,6 +2211,9 @@ static markdown_core_node *S_clone_block_tree(
             dst_parent = dst;
         } else {
             while (!src->next && src != src_root) {
+                if (dst_parent->flags & MARKDOWN_CORE_NODE__ORIGIN) {
+                    parser->derive_malloc_depth--;
+                }
                 src = src->parent;
                 dst_parent = dst_parent->parent;
             }
@@ -2189,6 +2223,7 @@ static markdown_core_node *S_clone_block_tree(
             src = src->next;
         }
     }
+    parser->derive_malloc_depth = 0;
     return dst_root;
 }
 
