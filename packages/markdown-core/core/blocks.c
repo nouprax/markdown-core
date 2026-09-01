@@ -1157,16 +1157,17 @@ void markdown_core_manage_extensions_special_characters(markdown_core_parser *pa
  * autolink turns `a<!-- x -->@b.com` into a link, and stripping before
  * formula promotes `$$x$$<!-- c -->`.
  *
- * WHICH HALF A CACHE HIT SKIPS -- F15 rule 2, the resolution T18 owes. A pass
- * over the block's CHILDREN (consolidation, a hook declared `"*inlines"`, the
- * strip of inline comments) is skipped for a block whose children are
- * borrowed from the projection cache: the cache stored them after those
- * passes ran. A pass over the block NODE (a hook declared by name, the strip
- * of a comment `HTML_BLOCK`) runs on every projection, because the node is
- * the one part of a hit the cache never serves -- a `PARAGRAPH` around a
- * standalone formula is a fresh paragraph on every projection, and only the
- * hook makes it the `FormulaBlock` five gates pin. `holder` (T19) says which
- * kind of block this is; today nothing sets it and every block is its own. */
+ * WHICH HALF A CACHE HIT SKIPS -- F15 rule 2, re-resolved under retention
+ * (D9, F24): a HIT skips the WHOLE tail. The stored projection is served by
+ * identity, every pass's effect -- consolidation, the `"*inlines"` hooks,
+ * the comment strip, and a name hook's node-level work -- baked in at the
+ * projection that RECORDED it, and the node a name hook would be offered is
+ * frozen for every tree at once. What keeps a name hook's per-projection
+ * runs is the STORE, not the dispatch: a hook that replaces its block keeps
+ * it out of the store (the replacement carries no ORIGIN), so a `PARAGRAPH`
+ * around a standalone formula is a fresh paragraph on every projection, and
+ * only the hook makes it the `FormulaBlock` five gates pin.
+ * `syntax_extension.h` states the contract. */
 
 static const char S_INLINES_MEMBER[] = "*inlines";
 

@@ -1860,6 +1860,35 @@ back in the vocabulary that produced them.
   mechanical sites), and the holder retains the derived node itself, handed
   back shared on every hit. The wire, the dumps and every answer are
   byte-identical; only the C navigation surface changed shape.
+- **The retained projection is FROZEN, at any depth and for content too ·
+  review round on F24's landing, 2026-09-01.** Three findings completed the
+  fail-closed surface. (1) A consumer's `node_free` of a shared child used
+  to release the holder hold — but the parentless node cannot leave the
+  vector that holds it, so the tree's own free walk released the same hold
+  again and the holder died under the CST cache: free is now the refused
+  no-op unlink already was, and the store flags the WHOLE stored subtree
+  `SHARED` (once per store, allocation-free), so free/unlink/adoption fail
+  closed on interiors and `S_can_contain` refuses shared parents at the one
+  chokepoint every insertion shares. (2) Content is as frozen as structure:
+  every setter, the extension setters, consolidation's merge and `unput`'s
+  trim answer 0 for a shared node (`unput` also read `last_child` through
+  the raw overlay — garbage on a vector container — and now takes the
+  shape-aware accessor). The `node_sharing` gate runs the hostile sequence
+  against a pre-mutation baseline dump and died under ASan at the stolen
+  release before the fix. (3) The clone's "enrolled parents stay intrusive"
+  arm was DELETED as unreachable: no enrolled type (paragraph, heading,
+  table cell — `contains_inlines` claims the directive LABEL but `BLOCK_P`
+  does not) admits skeleton children, so the arm, the `derive_malloc_depth`
+  machinery and the ORIGIN descend branch served a shape the grammar cannot
+  build — a suite-wide probe fired zero times — while its unconditional
+  link writes would have double-freed a nested hit the day the shape
+  appeared; asserts now hold that door, and container retention (phase 2)
+  stores vectors of shared children, not intrusive lists. F15 rule 2's
+  statement followed retention into `syntax_extension.h`: EVERY tail pass —
+  name hooks included — runs on fresh projections only; a hit reproduces
+  the recorded projection by identity, and what keeps a replacing hook
+  per-projection is the store its replacement never enters, not the
+  dispatch.
 
 ---
 
