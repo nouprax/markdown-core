@@ -5630,7 +5630,18 @@ static int wd_compare(
 }
 
 /* One example through two lockstep sessions: `chunk` bytes per feed, or by
- * line when `chunk` is 0; then the seal. */
+ * line when `chunk` is 0; then the seal. THE BASELINE'S CONTRACT RIDES
+ * ALONG (review-found): the header says an owned document
+ * (`markdown_core_session_feed`) and a discarded read (`_advance`) are not
+ * payloads and move nothing, and that a FULL request inside a delta stream
+ * is answered whole and becomes the next baseline -- so on a fixed cadence
+ * of steps the delta session takes its chunk through one of those doors
+ * instead, the full session takes the same chunk through its own, and the
+ * next delta must still reassemble against the last PAYLOAD. The owned
+ * documents are held to the end of the example and freed after the seal,
+ * the way a consumer keeps a read across later feeds (T19). */
+#define WD_HELD_MAX 64
+
 static int wd_run_example(const ts_spec_case *test_case, size_t chunk, wd_stats *stats) {
     const char *label = chunk ? "bytes" : "lines";
     markdown_core_parse_options options;
@@ -5640,12 +5651,16 @@ static int wd_run_example(const ts_spec_case *test_case, size_t chunk, wd_stats 
     size_t length = test_case->markdown_length;
     size_t start = 0;
     size_t boundary = 0;
+    size_t step = 0;
     uint8_t *previous = NULL;
     size_t previous_length = 0;
     uint8_t *delta_payload;
     uint8_t *full_payload;
     size_t delta_length;
     size_t full_length;
+    markdown_core_document *held[WD_HELD_MAX];
+    size_t held_count = 0;
+    size_t i;
     int failures = 0;
 
     markdown_core_parse_options_init(&options);
@@ -5659,30 +5674,66 @@ static int wd_run_example(const ts_spec_case *test_case, size_t chunk, wd_stats 
     }
     while (start < length && !failures) {
         size_t end;
+        const uint8_t *piece;
+        size_t piece_length;
+        markdown_core_wire_frame request = MARKDOWN_CORE_WIRE_DELTA;
         if (chunk) {
             end = length - start < chunk ? length : start + chunk;
         } else {
             const char *newline = (const char *)memchr(text + start, '\n', length - start);
             end = newline ? (size_t)(newline - text) + 1 : length;
         }
+        piece = (const uint8_t *)text + start;
+        piece_length = end - start;
+        step++;
+        start = end;
+        if (step % 5 == 3 && held_count < WD_HELD_MAX) {
+            /* An owned document on the delta side, the same bytes as a
+             * discarded FULL payload on the full side: neither is a
+             * payload of its session's wire. */
+            markdown_core_document *owned = markdown_core_session_feed(delta, piece, piece_length, NULL);
+            if (!owned) {
+                fprintf(stderr, "example %d %s: an owned feed failed\n", test_case->example, label);
+                failures++;
+                break;
+            }
+            held[held_count++] = owned;
+            full_payload = NULL;
+            full_length = 0;
+            markdown_core_session_feed_wire(
+                full,
+                piece,
+                piece_length,
+                0,
+                MARKDOWN_CORE_WIRE_FULL,
+                &full_payload,
+                &full_length,
+                NULL
+            );
+            markdown_core_wire_free(full_payload);
+            continue;
+        }
+        if (step % 7 == 4) {
+            if (!markdown_core_session_advance(delta, piece, piece_length, NULL) ||
+                !markdown_core_session_advance(full, piece, piece_length, NULL)) {
+                fprintf(stderr, "example %d %s: an advance failed\n", test_case->example, label);
+                failures++;
+                break;
+            }
+            continue;
+        }
+        if (step % 11 == 6) {
+            request = MARKDOWN_CORE_WIRE_FULL;
+        }
         delta_payload = NULL;
         full_payload = NULL;
         delta_length = 0;
         full_length = 0;
-        markdown_core_session_feed_wire(
-            delta,
-            (const uint8_t *)text + start,
-            end - start,
-            2,
-            MARKDOWN_CORE_WIRE_DELTA,
-            &delta_payload,
-            &delta_length,
-            NULL
-        );
+        markdown_core_session_feed_wire(delta, piece, piece_length, 2, request, &delta_payload, &delta_length, NULL);
         markdown_core_session_feed_wire(
             full,
-            (const uint8_t *)text + start,
-            end - start,
+            piece,
+            piece_length,
             2,
             MARKDOWN_CORE_WIRE_FULL,
             &full_payload,
@@ -5704,7 +5755,6 @@ static int wd_run_example(const ts_spec_case *test_case, size_t chunk, wd_stats 
             ) != 0) {
             failures++;
         }
-        start = end;
     }
     if (!failures) {
         delta_payload = NULL;
@@ -5738,27 +5788,88 @@ static int wd_run_example(const ts_spec_case *test_case, size_t chunk, wd_stats 
     free(previous);
     markdown_core_session_free(delta);
     markdown_core_session_free(full);
+    /* The owned documents outlive the sessions and every payload (T19):
+     * they still read, and their release must find nothing shared freed. */
+    for (i = 0; i < held_count; i++) {
+        uint8_t *dump = NULL;
+        size_t dump_length = 0;
+        if (!markdown_core_document_dump(held[i], &dump, &dump_length, NULL) || dump_length == 0) {
+            fprintf(stderr, "example %d %s: a held document no longer reads\n", test_case->example, label);
+            failures++;
+        }
+        markdown_core_dump_free(dump);
+        markdown_core_document_free(held[i]);
+    }
     return failures ? -1 : 0;
+}
+
+/* THE DEPTH THE DELTA WALKS (review-found): every open container on the
+ * spine is a SPINE op inside the one above it, so the encoder recurses
+ * once per nesting level exactly as the whole-tree writer does, and a
+ * nest no fixture reaches must still reassemble -- and not exhaust the
+ * stack under the sanitizer builds, whose frames are larger. The nest is
+ * an in-memory example fed by line and in 7-byte pieces like the others:
+ * every feed rewrites the whole spine, and the seal closes every level at
+ * once. */
+#define WD_DEEP_LEVELS 2000
+
+static int wd_run_deep(wd_stats *stats) {
+    ts_spec_case synthetic;
+    size_t length = 0;
+    char *prefix = ts_repeat("> ", WD_DEEP_LEVELS, &length);
+    char *text;
+    int failed;
+    if (!prefix) {
+        return -1;
+    }
+    text = (char *)malloc(length + 16);
+    if (!text) {
+        free(prefix);
+        return -1;
+    }
+    memcpy(text, prefix, length);
+    memcpy(text + length, "one\nand two\n", 13);
+    free(prefix);
+    memset(&synthetic, 0, sizeof(synthetic));
+    synthetic.markdown = text;
+    synthetic.markdown_length = length + 12;
+    synthetic.example = -WD_DEEP_LEVELS;
+    failed = wd_run_example(&synthetic, 0, stats) != 0 || wd_run_example(&synthetic, 7, stats) != 0;
+    free(text);
+    return failed ? -1 : 0;
 }
 
 static int case_wire_delta(const ts_spec_file *file) {
     size_t index;
     int failures = 0;
     wd_stats stats = {0, 0, 0, 0};
+    wd_stats deep = {0, 0, 0, 0};
     for (index = 0; index < file->count; index++) {
         const ts_spec_case *test_case = &file->cases[index];
         if (wd_run_example(test_case, 0, &stats) != 0 || wd_run_example(test_case, 7, &stats) != 0) {
             failures++;
         }
     }
+    /* The nest's frames are counted apart: a spine that is all open is
+     * rewritten whole at every feed, so its deltas are no smaller than the
+     * full frames, and the corpus's size term below must not be diluted
+     * by it. */
+    if (wd_run_deep(&deep) != 0) {
+        fprintf(stderr, "wire delta: the %d-deep nest does not reassemble\n", WD_DEEP_LEVELS);
+        failures++;
+    }
     printf(
-        "wire delta: %zu/%zu examples reassemble, %zu frames, %zu deltas, %zu delta bytes for %zu full bytes\n",
+        "wire delta: %zu/%zu examples reassemble, %zu frames, %zu deltas, %zu delta bytes for %zu full bytes; "
+        "the %d-deep nest %zu frames, %zu deltas\n",
         file->count - (size_t)failures,
         file->count,
         stats.frames,
         stats.deltas,
         stats.delta_bytes,
-        stats.full_bytes
+        stats.full_bytes,
+        WD_DEEP_LEVELS,
+        deep.frames,
+        deep.deltas
     );
     if (stats.deltas == 0 || stats.delta_bytes >= stats.full_bytes) {
         fputs("wire delta: the corpus produced no delta, or deltas no smaller than the full frames\n", stderr);

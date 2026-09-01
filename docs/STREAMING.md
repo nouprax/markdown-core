@@ -2056,7 +2056,16 @@ open paragraph fed a line at a time is re-serialized, re-decoded and
 re-allocated once per line, and the remaining 1.7× per step is that. A
 diff INSIDE an open block's inline list is the next step if a stream ever
 needs it; it would cost the inline parse the derivation already pays and
-buy only the decode.
+buy only the decode. The delta encoder recurses once per nesting level,
+as the whole-tree writer does, with a larger frame per level (96 against
+48 bytes at -O3): a nest of block quotes, which the block phase does not
+cap, reaches the stack's end on the delta path first — under a sanitizer
+build near 30,000 levels, where the plain build carries both encoders to
+about 74,000 (review-found). The corpus gate walks a 2,000-deep nest by
+line and by 7-byte pieces under every sanitizer, so the depth a document
+can plausibly have is covered; a document that exhausts the stack was
+already an accepted bound of the tree writers (§6), and the delta does
+not move it in a plain build.
 
 ---
 
