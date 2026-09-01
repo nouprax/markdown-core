@@ -1639,6 +1639,53 @@ under one holder, key on the container's own stamp plus OR'd consulted bits
 content-less leaves (code blocks, thematic breaks) enroll with it, so a
 stored container never references arena memory.
 
+### F25 — the width the projection still walked was mostly two defects, and they fall for −79%  · VERIFIED (#161, follow-up to F24)
+
+Profiled on a rebuilt line-fed harness: `session_feed` per line over a 98 KB
+stream whose unit is a heading + one-line paragraph — 2,500 stored blocks,
+5,000 feeds, the flattest and therefore widest shape a document can take.
+Callgrind Ir, load-independent; same session, same binary flags, A/B per
+change.
+
+**Defect 1 — the shared EXIT still answered the name rows (half the
+stream).** The ENTER of a retained block skips its subtree, but
+`skip_children` still delivers the block's own EXIT, and the EXIT arm
+carried no SHARED test: every stored block re-answered `get_type_string`
+and the name rows, queued, and re-ran its hooks as no-ops on every feed —
+against F24's own "no tail" sentence and the revised contract. The no-op is
+provable (a block a name hook would have replaced was never stored), so one
+flag test replaces the interrogation: **3,819M → 1,742M Ir (−54%), wall 695
+→ 440 ms; `S_run_block_tail` falls 25.2% → 0.2% of the profile.**
+
+**Defect 2 — the projection walked the whole width to find the fresh set
+it already knew.** The derive-path walk stepped ENTER, flag test, skip,
+EXIT past every retained child — a quarter of the remaining instructions —
+to locate exactly the blocks the clone had just BUILT. The clone now
+records what it builds in a per-derive fresh list and the projection serves
+that list; the walk is the finish path's alone (T1 hands in the CST, whose
+borrowers need it). Parses run forward in clone order; the tail queue fills
+backward, so a child still precedes its parent in the drain and the
+replacement rule holds; sibling order flips, which F15 states is free.
+**1,742M → 816M Ir (−53%), wall 440 → 310 ms; the iterator falls 25% →
+0.6%.** Together: **−79% Ir on the width-heavy stream**, dumps and every
+suite byte-identical.
+
+**The bound, restated.** What remains Θ(width) per feed is the clone's
+REFERENCING pass alone: `S_clone_block_node` (45% — the enrolled predicate,
+one freshness check, one hold per closed block) and the clone-tree loop
+with its vector fill (22%), plus one release per entry at the free (5%).
+About 30 Ir per closed block per feed, every one of them a pointer-width
+touch. Collapsing THAT needs the derived child-vector itself memoized —
+and F24's "enroll closed containers" is not sufficient for it: the widest
+streams are FLAT, their one container is the always-open document, so the
+memo must cover an OPEN container's stable prefix (previous derivation's
+vector + a child-list generation + OR'd consulted bits, holds owned by the
+memo so a tree takes ONE hold), with the per-child pass kept as the
+fallback wherever a generation or a consulted map moved. Container
+enrollment then rides the same memo for nested shapes. That design is the
+remaining #161 step; its ownership rules go through the same review the
+frozen-projection surface earned.
+
 ---
 
 ## 4. Decisions — RULED, 2026-08-25
