@@ -1138,7 +1138,20 @@ int markdown_core_node_set_syntax_extension(markdown_core_node *node, const mark
     {
         const markdown_core_syntax_extension *initial = node->extension;
         bool contains;
+        bool payload_built = false;
         node->extension = extension;
+        /* Attachment FINISHES the node before asking (review-found): the
+         * parse-time pattern attaches and then initializes, so a payload-
+         * reading hook would have observed nothing and frozen an
+         * initialization-time answer. The new descriptor's own allocator
+         * runs here, exactly as the constructor runs it, wherever the node
+         * carries no payload yet -- the parse-time creation sites shed
+         * their manual duplicate of it -- and a refusal below frees what
+         * this call built. */
+        if (extension && extension->opaque_alloc_func && !node->as.opaque) {
+            extension->opaque_alloc_func(extension, NODE_MEM(node), node);
+            payload_built = node->as.opaque != NULL;
+        }
         contains = S_node_contains_inlines(node);
         if (contains) {
             markdown_core_child_cursor cursor;
@@ -1146,6 +1159,12 @@ int markdown_core_node_set_syntax_extension(markdown_core_node *node, const mark
             for (child = markdown_core_child_first(node, &cursor); child;
                 child = markdown_core_child_after(node, child, &cursor)) {
                 if (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child->type)) {
+                    if (payload_built) {
+                        if (extension->opaque_free_func) {
+                            extension->opaque_free_func(extension, NODE_MEM(node), node);
+                        }
+                        node->as.opaque = NULL;
+                    }
                     node->extension = initial;
                     return 0;
                 }

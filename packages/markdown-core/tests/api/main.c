@@ -1695,6 +1695,45 @@ static const markdown_core_syntax_extension HYBRID_TICTOC_EXTENSION = {
     .contains_inlines_func = hybrid_probe_contains_inlines_tictoc,
 };
 
+/* A payload-reading classification: answers inline only when the opaque
+ * payload its own allocator builds is present and initialized -- the hook
+ * that froze an initialization-time answer while the attach path asked
+ * before allocating. */
+static int hybrid_payload_contains_inlines(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
+    (void)extension;
+    return node->as.opaque != NULL && *(int *)node->as.opaque == 42;
+}
+
+static void hybrid_payload_alloc(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_mem *mem,
+    markdown_core_node *node
+) {
+    int *payload = (int *)mem->calloc(1, sizeof(*payload));
+    (void)extension;
+    if (payload) {
+        *payload = 42;
+    }
+    node->as.opaque = payload;
+}
+
+static void hybrid_payload_free(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_mem *mem,
+    markdown_core_node *node
+) {
+    (void)extension;
+    mem->free(node->as.opaque);
+}
+
+static const markdown_core_syntax_extension HYBRID_PAYLOAD_EXTENSION = {
+    .name = "hybrid_payload_probe",
+    .can_contain_func = hybrid_probe_can_contain,
+    .contains_inlines_func = hybrid_payload_contains_inlines,
+    .opaque_alloc_func = hybrid_payload_alloc,
+    .opaque_free_func = hybrid_payload_free,
+};
+
 /* Reads the union defaults the constructor writes -- the hook that sees
  * garbage if classification runs before the node is fully built. */
 static int hybrid_probe_reads_level(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
@@ -1825,6 +1864,29 @@ static void no_inline_block_hybrid(test_batch_runner *runner) {
         );
         markdown_core_node_free(ticker);
         hybrid_tictoc_calls = 0;
+    }
+
+    /* Attachment finishes the node before asking (review-found): the new
+     * descriptor's own opaque allocator runs inside set_syntax_extension,
+     * so a payload-reading hook classifies the payload its extension
+     * built, not the nothing that predated it. */
+    {
+        markdown_core_node *carrier = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+        markdown_core_node *denied = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+        INT_EQ(
+            runner,
+            markdown_core_node_set_syntax_extension(carrier, &HYBRID_PAYLOAD_EXTENSION),
+            1,
+            "the payload descriptor attaches and builds its payload"
+        );
+        INT_EQ(
+            runner,
+            markdown_core_node_append_child(carrier, denied),
+            0,
+            "the attach classified the built payload: the inline carrier refuses a block"
+        );
+        markdown_core_node_free(carrier);
+        markdown_core_node_free(denied);
     }
 
     /* Classification runs on the FINISHED node (review-found): a hook may
