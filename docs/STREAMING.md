@@ -1686,6 +1686,66 @@ enrollment then rides the same memo for nested shapes. That design is the
 remaining #161 step; its ownership rules go through the same review the
 frozen-projection surface earned.
 
+### F26 — the stable prefix serves for one hold and a memcpy: −80% on what F25 left  · VERIFIED (#161, F25's remaining step, landed)
+
+Same harness, same discipline (98 KB, 5,000 line feeds, 2,500 stored
+blocks; callgrind Ir, same-session A/B per change).
+
+**The memo, as landed.** The parser records the document's leading run of
+SHARED top-level blocks once, after a projection stores its misses, and
+the next derivation takes the run whole: one memo hold, one memcpy into
+its own vector, per-child walk resumed after the run. The record trusts
+only what it proves pair by pair — the CST child is **closed** (an open
+block's stamp still moves, and an open paragraph can die at its close,
+taken whole by a reference definition) and the derived entry is that
+child's own retained projection, by holder identity. The anchor is the
+last *recorded* child, never its successor (the successor can be the open
+block that dies); freshness is one comparison per axis for the whole run
+— extension generation always, each map generation only where some entry
+consulted that map (#163), OR-folded at push, unconsulted axes refreshed
+at each extension. Ownership is persistent structure by refcount: the
+memo holds each entry's holder; a tree holds the memo once and carries
+its **own** boundary (the memo's count keeps growing past it) beside the
+hold in an arena-owned `memo_ref` — review-found: the boundary's first
+home was the extension-owned `as.opaque`, where a document-selected name
+hook's attach would have trusted the integer as a payload and the free
+would have handed it to `opaque_free_func`; the arm now stays NULL and
+the gate asserts it; the free
+walk skips the run and returns the one hold; invalidation releases the
+parser's hold and rebuilds while old trees keep the old memo — and the
+old answer — alive. Every failure is absorbed the way the store absorbs
+its own: slow feed, never a wrong tree. **808.9M → 227.2M Ir (−72%),
+wall ~156 → ~56 ms.**
+
+**The defect the memo exposed.** With the referencing pass gone,
+`S_block_has_tail_work` was 27.6% of the feed loop: the derived document
+is fresh every feed, and its `S_has_inline_child` walked all of the width
+to learn, every time, that a document holds no inline child. A memoized
+prefix needs no asking — its entries passed the record's proof, each a
+closed top-level BLOCK — so the question starts at the consuming tree's
+boundary, suffix still walked. **227.2M → 164.9M Ir (−27%), wall ~48
+ms.**
+
+Together **808.9M → 164.9M Ir (−80%)** on the width harness — cumulative
+with F25, **3,819M → 165M (−96%), wall 695 → ~48 ms** — dumps and every
+suite byte-identical (correctness 121, sanitizers 3 × 105, conformance
+2). The `projection_child_memo` gate pins the mechanism in six acts, and
+five planted defects were each caught: an open block recorded (a fed
+line demonstrably lost), the hit ledger dropped, staleness ignored, the
+prefix double-released (ASan), the boundary read from the memo's count
+(LeakSanitizer).
+
+**The bound, restated once more.** Θ(width) per feed is now the consume's
+own memcpy (26% — ~3.4 Ir per closed block, a pointer copy) and the
+vector count in `S_vec_open` (~2 Ir per block inside `derive_tree`'s
+16%), which is the price of the fail-closed door at the consume: the
+width is counted from the CST rather than trusted from the memo, so a
+broken permanence invariant makes a slow feed instead of an overrun.
+About 5–6 Ir per closed block per feed, down from F25's ~30. The rest of
+the profile is allocator traffic (~22%) and the O(new) work itself. A
+delta-shaped consumer (#162) sidesteps even the memcpy; within the
+value-shaped API this is the floor worth having.
+
 ---
 
 ## 4. Decisions — RULED, 2026-08-25
@@ -1943,6 +2003,21 @@ back in the vocabulary that produced them.
   replacing hook per-projection is the store its replacement never enters,
   not the dispatch. The hook_once gate counts all three paths and dumps
   the sealed tree against the hit derive's.
+- **The stable prefix is a MEMO a tree consumes for one hold and a memcpy ·
+  F25's remaining step, landed 2026-09-01 (F26).** The parser records the
+  document's leading run of SHARED top-level blocks after a projection
+  stores its misses — pair-proven (closed CST child, holder identity),
+  anchored on the last recorded child, freshness one comparison per axis
+  with #163's consulted gating OR-folded across the run — and the next
+  derivation memcpys the run under ONE memo hold, its own boundary beside
+  it in an arena-owned `memo_ref` (the extension-owned `as.opaque` stays
+  NULL — review-found), per-child walk resumed after. Persistent structure by
+  refcount: invalidation rebuilds while old trees keep the old memo and
+  the old answer alive. The document's tail question then starts past the
+  boundary (its O(width) inline-child scan was the next defect in the
+  profile). The `projection_child_memo` gate pins six acts; five planted
+  defects each caught, two by sanitizers. −80% Ir on the width harness on
+  top of F25; numbers and the restated bound in F26.
 
 ---
 

@@ -438,7 +438,7 @@ static void S_free_nodes(markdown_core_node *e) {
          * this block are the holder's, and the splice below would pull them
          * into this walk and free them under every other borrower. Cut them
          * loose, then release the one hold this block had. */
-        if (e->link.holder && !(e->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
+        if (e->link.holder && !(e->flags & (MARKDOWN_CORE_NODE__ORIGIN | MARKDOWN_CORE_NODE__MEMO_PREFIX))) {
             markdown_core_holder *holder = e->link.holder;
             if (!(e->flags & MARKDOWN_CORE_NODE__CACHE_OWNER)) {
                 e->first_child = NULL;
@@ -472,10 +472,19 @@ static void S_free_nodes(markdown_core_node *e) {
              * one holder hold, released here, and the node itself is never
              * entered -- the holder frees it with its list when the last
              * tree lets go. The splice stays allocation-free. */
-            size_t i;
+            size_t i = 0;
             markdown_core_node *chain_head = NULL;
             markdown_core_node *chain_tail = NULL;
-            for (i = 0; i < e->children.count; i++) {
+            if (e->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) {
+                /* The prefix is the MEMO's (#161, F25): its entries were
+                 * copied under one memo hold, never held per-tree, so the
+                 * walk starts past the boundary and gives back that one
+                 * hold instead. The ref itself is the tree's arena's --
+                 * read, never freed. */
+                i = e->link.memo_ref->boundary;
+                markdown_core_child_memo_release(e->link.memo_ref->memo);
+            }
+            for (; i < e->children.count; i++) {
                 markdown_core_node *entry = e->children.vec[i];
                 if (entry->flags & MARKDOWN_CORE_NODE__SHARED) {
                     markdown_core_holder_release(entry->link.holder);
@@ -567,6 +576,50 @@ void markdown_core_holder_release(markdown_core_holder *holder) {
      * `parent` it never reads is NULL on every node here. */
     S_free_nodes(holder->first_child);
     holder->mem->free(holder);
+}
+
+markdown_core_child_memo *markdown_core_child_memo_new(markdown_core_mem *mem) {
+    markdown_core_child_memo *memo = (markdown_core_child_memo *)mem->calloc(1, sizeof(*memo));
+    if (memo) {
+        memo->mem = mem;
+        /* Born with the creator's hold, like a holder (#153). */
+        markdown_core_atomic_init(&memo->refs, 1);
+    }
+    return memo;
+}
+
+void markdown_core_child_memo_hold(markdown_core_child_memo *memo) { markdown_core_atomic_increment(&memo->refs); }
+
+void markdown_core_child_memo_release(markdown_core_child_memo *memo) {
+    size_t i;
+    if (markdown_core_atomic_decrement(&memo->refs) != 0) {
+        return;
+    }
+    /* The memo's holds go with it: one release per entry, the exact holds
+     * push took. Trees copied the entries and hold the memo, never the
+     * entries, so this is the only per-entry accounting left. */
+    for (i = 0; i < memo->count; i++) {
+        markdown_core_holder_release(memo->entries[i]->link.holder);
+    }
+    memo->mem->free(memo->entries);
+    memo->mem->free(memo);
+}
+
+bool markdown_core_child_memo_push(markdown_core_child_memo *memo, markdown_core_node *entry) {
+    if (memo->count == memo->alloc) {
+        size_t grown = memo->alloc ? memo->alloc * 2 : 64;
+        markdown_core_node **entries =
+            (markdown_core_node **)memo->mem->realloc(memo->entries, grown * sizeof(*entries));
+        if (!entries) {
+            return false;
+        }
+        memo->entries = entries;
+        memo->alloc = grown;
+    }
+    markdown_core_holder_hold(entry->link.holder);
+    memo->consulted |= entry->link.holder->consulted;
+    memo->entries[memo->count++] = entry;
+    return true;
 }
 
 /* Pure pointer moves: every chunk in the list already holds its bytes --
@@ -1290,7 +1343,29 @@ static int S_vec_reserve(markdown_core_node *parent) {
     return 1;
 }
 
+/* THE MEMO HOLD DISSOLVES AT THE FIRST EDIT BELOW ITS BOUNDARY
+ * (review-found): an insertion at `at < boundary` shifts the recorded run,
+ * and a boundary cannot say "these entries minus the one at 2" -- the free
+ * walk would skip the new child and release a shifted entry the tree never
+ * held individually. So the tree stops speaking in runs: it takes the
+ * per-entry holder holds the boundary stood in for -- exactly what the
+ * per-child walk would have taken -- and gives back its one memo hold.
+ * Infallible, so the placement below cannot be left half-done. An edit at
+ * or above the boundary moves no recorded index and dissolves nothing;
+ * a removal below the boundary cannot happen (a SHARED entry refuses
+ * unlink and replace). The PARSER's memo is untouched: later derivations
+ * keep consuming it. */
 static void S_vec_place(markdown_core_node *parent, size_t at, markdown_core_node *child) {
+    if ((parent->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) && at < parent->link.memo_ref->boundary) {
+        markdown_core_memo_ref *ref = parent->link.memo_ref;
+        size_t i;
+        for (i = 0; i < ref->boundary; i++) {
+            markdown_core_holder_hold(parent->children.vec[i]->link.holder);
+        }
+        markdown_core_child_memo_release(ref->memo);
+        parent->link.memo_ref = NULL;
+        parent->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__MEMO_PREFIX;
+    }
     memmove(
         &parent->children.vec[at + 1],
         &parent->children.vec[at],
