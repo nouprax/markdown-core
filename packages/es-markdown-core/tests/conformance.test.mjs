@@ -141,6 +141,43 @@ for (const testCase of canonicalManifest.cases) {
             document.dispose();
         }
     });
+
+    // THE DELTA'S GATE (#162): a document fed one line at a time answers
+    // every feed through a DELTA against its previous read, and each such
+    // read must equal -- structurally and in its dump -- the read a fresh
+    // document answers for the same bytes in one WHOLE frame; the seal, a
+    // delta too, must equal the whole-text parse. Structural equality is the
+    // binding's own reassembly checked: a value reused in the wrong place,
+    // or a child dropped or doubled, is a difference here.
+    test(`conformance: shared canonical AST case ${testCase.name} delta-streamed by line equals the whole reads`, async () => {
+        const document = new Document(testCase.parseOptions);
+        try {
+            const bytes = new TextEncoder().encode(testCase.source);
+            let fed = 0;
+            let boundary = 0;
+            while (fed < bytes.length) {
+                const newline = bytes.indexOf(0x0a, fed);
+                const end = newline === -1 ? bytes.length : newline + 1;
+                const read = document.feed(bytes.subarray(fed, end));
+                fed = end;
+                boundary += 1;
+                const whole = new Document(testCase.parseOptions);
+                try {
+                    const expected = whole.feed(bytes.subarray(0, fed));
+                    assert.equal(read.dump(), expected.dump(), `${testCase.name} boundary ${boundary}`);
+                    assert.deepStrictEqual(read.semantic, expected.semantic, `${testCase.name} boundary ${boundary}`);
+                } finally {
+                    whole.dispose();
+                }
+            }
+            const sealed = document.seal();
+            const expected = new Document(testCase.source, testCase.parseOptions).seal();
+            assert.equal(sealed.dump(), testCase.expected, testCase.name);
+            assert.deepStrictEqual(sealed.semantic, expected.semantic, `${testCase.name} sealed`);
+        } finally {
+            document.dispose();
+        }
+    });
 }
 
 function flatten(root) {

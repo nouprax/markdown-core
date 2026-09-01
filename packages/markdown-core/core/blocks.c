@@ -2291,8 +2291,16 @@ static markdown_core_node *S_clone_block_node(
      * nor outlive its tree. The store pass therefore has no ancestor to
      * ask about, and the climb it once made per enrolled node (quadratic
      * in nesting depth) has no question left to answer. */
+    /* THE ROOT NEVER ENROLLS, BY ITS OWN SHAPE (#162): the OPEN term kept it
+     * out while every derivation met it open, but a session that seals
+     * through a derivation (`markdown_core_session_finish_wire`'s delta)
+     * clones the CST after `finalize_document` closed it, and a closed root
+     * would enroll, store, and hand its holder a retained projection that
+     * `S_free_nodes` then releases with the CST -- one hold too many for a
+     * node that also belongs to the derived tree. The CST root is the one
+     * block with no parent, which is the term. */
     enrolled = mode != S_CLONE_DISCARDS && MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src) &&
-               refmap == parser->refmap && !parser->no_projection_cache &&
+               src->parent != NULL && refmap == parser->refmap && !parser->no_projection_cache &&
                (src->first_child == NULL
                        ? (contains_inlines((markdown_core_node *)src) || !(src->flags & MARKDOWN_CORE_NODE__OPEN))
                        : (!contains_inlines((markdown_core_node *)src) && !(src->flags & MARKDOWN_CORE_NODE__OPEN)));
@@ -4240,22 +4248,44 @@ finished:
     markdown_core_strbuf_clear(&parser->curline);
 }
 
+/* CLOSE THE STREAM WITHOUT PROJECTING IT (#162): the held partial line is
+ * processed and the spine finalized, so the CST is final and every block
+ * in it closed -- the state `markdown_core_parser_finish` projects in place,
+ * left standing for a caller that will DERIVE the sealed tree instead:
+ * a session sealing through the delta wire needs the sealed tree as a
+ * derivation, since the delta is a pointer-identity diff against the tree
+ * it derived last, and an in-place projection shares nothing with it. The
+ * held partial line is the last thing the stream said; if its buffer lost
+ * bytes, what is here is a PREFIX, and processing it would commit a line
+ * the author did not write. Every allocation-loss route the maps carry
+ * converges into `parser->oom` here, so the answer says whether there is a
+ * tree to derive. Once, per parser: `finish` after this is not a path. */
+bool markdown_core_parser_close(markdown_core_parser *parser) {
+    if (parser->root == NULL) {
+        return false;
+    }
+    if (parser->linebuf.oom) {
+        parser->oom = true;
+    } else if (parser->linebuf.size) {
+        S_process_line(parser, parser->linebuf.ptr, parser->linebuf.size);
+        markdown_core_strbuf_clear(&parser->linebuf);
+    }
+    finalize_document(parser);
+    if (parser->refmap && parser->refmap->oom) {
+        parser->oom = true;
+    }
+    if (parser->footnote_defs && parser->footnote_defs->oom) {
+        parser->oom = true;
+    }
+    return !parser->oom;
+}
+
 markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
     markdown_core_node *res;
 
     /* Parser was already finished once */
     if (parser->root == NULL) {
         return NULL;
-    }
-
-    /* The held partial line is the last thing the stream said. If its buffer
-     * lost bytes, what is here is a PREFIX, and processing it would commit a
-     * line the author did not write. */
-    if (parser->linebuf.oom) {
-        parser->oom = true;
-    } else if (parser->linebuf.size) {
-        S_process_line(parser, parser->linebuf.ptr, parser->linebuf.size);
-        markdown_core_strbuf_clear(&parser->linebuf);
     }
 
     /* Close the spine -- the CST is final -- then run the LAST PROJECTION,
@@ -4269,7 +4299,7 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
      * treat the CST as already gone. `oom` is tested first for the reason
      * `derive_tree` tests it: a lost allocation leaves a tree that is not all
      * there, and there is nothing to project. */
-    finalize_document(parser);
+    markdown_core_parser_close(parser);
 
     if (parser->oom) {
         res = NULL;

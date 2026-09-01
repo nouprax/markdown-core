@@ -203,6 +203,63 @@ class DocumentTest {
     }
 
     @Test
+    fun aFeedReusesThePreviousReadsValuesForEveryBlockThatDidNotMove() {
+        // THE DELTA (#162): a feed's payload names, by position, the previous
+        // read's children that the engine retained, and the decoder hands
+        // those very values into the new read -- object identity, not a copy
+        // -- so a consumer keyed on the previous read finds the same objects.
+        // What changed is new: the open paragraph is re-read each time it
+        // grows.
+        Document().use { document ->
+            val first = document.feed("# One\n\npara\n\ntail")
+            assertEquals(2, first.semantic.content.size)
+            val second = document.feed(" grows\n\n- item\n")
+            assertEquals(4, second.semantic.content.size)
+            assertTrue(second.semantic.content[0] === first.semantic.content[0])
+            assertTrue(second.semantic.content[1] === first.semantic.content[1])
+            assertIs<Paragraph>(second.semantic.content[2])
+            assertIs<List>(second.semantic.content[3])
+            // The seal is a delta too: everything closed before it is the
+            // same value it was, and the read equals the whole-text parse.
+            val sealed = document.seal()
+            assertTrue(sealed.semantic.content[0] === second.semantic.content[0])
+            assertTrue(sealed.semantic.content[1] === second.semantic.content[1])
+            assertTrue(sealed.semantic.content[2] === second.semantic.content[2])
+            assertEquals(Document("# One\n\npara\n\ntail grows\n\n- item\n").seal().dump(), sealed.dump())
+            // A reused value is still a value: the earlier reads are unchanged.
+            assertEquals(2, first.semantic.content.size)
+            assertEquals(4, second.semantic.content.size)
+        }
+    }
+
+    @Test
+    fun deltaStreamedReadsEqualTheWholeReadsAtEveryLine() {
+        // THE DELTA'S GATE (#162), over this suite's own source: a document
+        // fed one line at a time answers every feed through a DELTA against
+        // its previous read, and each such read must dump exactly as the read
+        // a fresh document answers for the same bytes in one WHOLE frame; the
+        // seal, a delta too, must equal the whole-text parse.
+        val bytes = source.encodeToByteArray()
+        Document().use { document ->
+            var fed = 0
+            var boundaries = 0
+            while (fed < bytes.size) {
+                var end = fed
+                while (end < bytes.size && bytes[end] != '\n'.code.toByte()) end++
+                if (end < bytes.size) end++
+                val read = document.feed(bytes.copyOfRange(fed, end))
+                fed = end
+                boundaries++
+                Document().use { whole ->
+                    assertEquals(whole.feed(bytes.copyOfRange(0, fed)).dump(), read.dump(), "boundary $boundaries")
+                }
+            }
+            assertTrue(boundaries > 10)
+            assertEquals(Document(source).seal().dump(), document.seal().dump())
+        }
+    }
+
+    @Test
     fun aClosedDocumentRefusesEveryCallAndCloseIsIdempotent() {
         val document = Document()
         document.close()

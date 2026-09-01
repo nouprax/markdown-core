@@ -365,6 +365,20 @@ if(MARKDOWN_CORE_STATIC)
     # F27: closed containers retained wholesale -- identity across
     # derivations, consulted-gated invalidation, every free order.
     markdown_core_add_test(projection_container_retention "streaming" 120 projection_runner --case container_retention)
+    # #162: the delta wire reassembles, byte for byte, to the full frame at
+    # every boundary and at the seal -- every fixture, fed by line and in
+    # 7-byte pieces, through the facade's two lockstep sessions.
+    foreach(fixture spec regression extensions extensions-directive extensions-formula-github)
+        markdown_core_add_test(
+            projection_wire_delta_${fixture}
+            "streaming"
+            240
+            projection_runner
+            --case
+            wire_delta
+            --spec
+            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
+    endforeach()
     # Phase F's gates (T15, T16, T17). feed_bound is counter-based and
     # deterministic; resident_memory reads ru_maxrss, so like the wall-clock
     # gates it carries the complexity label the sanitizer presets exclude;

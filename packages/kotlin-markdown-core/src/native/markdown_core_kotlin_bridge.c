@@ -7,12 +7,16 @@
 #include <string.h>
 
 /* THE ENVELOPE, and nothing else: the document's bytes are the facade's
- * `markdown_core_document_wire` -- the canonical wire, written once beside the
- * canonical dump and decoded by every binding -- and what this bridge adds is
- * the four magic bytes and the status that say whether a tree or an error
- * follows. The magic is versioned (`MKC7`) because THIS transport can skew: a
+ * own wire -- the canonical bytes, written once beside the canonical dump
+ * and decoded by every binding -- and what this bridge adds is the four
+ * magic bytes and the status that say whether a payload or an error
+ * follows. The magic is versioned (`MKC8`) because THIS transport can skew: a
  * prebuilt native library can sit beside newer Kotlin code, and a payload the
- * decoder misreads must fail closed rather than decode as garbage. */
+ * decoder misreads must fail closed rather than decode as garbage. The
+ * payload leads with the facade's frame byte (#162): a feed or a seal asked
+ * for a DELTA answers one when it can, against the last payload this
+ * session wrote, and the decoder hands the previous read's values back into
+ * the new one. */
 
 typedef struct bridge_buffer {
     uint8_t *data;
@@ -81,45 +85,24 @@ static void apply_options(markdown_core_parse_options *options, uint32_t mask) {
     options->directives = (mask & (1u << 8)) != 0;
 }
 
-static const uint8_t envelope_magic[] = {'M', 'K', 'C', '7'};
+static const uint8_t envelope_magic[] = {'M', 'K', 'C', '8'};
 
 /* The five envelope bytes, written into room the buffer already holds --
- * `markdown_core_document_wire` reserved it in the payload's own allocation,
- * so a successful read costs no second buffer and no copy. */
+ * the facade reserved it in the payload's own allocation, so a successful
+ * read costs no second buffer and no copy. */
 static void stamp_envelope(uint8_t *buffer, uint8_t status) {
     memcpy(buffer, envelope_magic, sizeof(envelope_magic));
     buffer[sizeof(envelope_magic)] = status;
 }
 
-/* THE ONE PAYLOAD WRITER for every answer that carries a DOCUMENT it owns
- * (`finish`), an ERROR, or an advance's healthy nothing. A `feed` serializes
- * through `markdown_core_session_feed_wire` instead (#146) -- same envelope,
- * same payload bytes, gated by the facade's equivalence test -- and comes
- * here only to report its errors. Takes ownership of both `document` and
- * `error`; the caller keeps neither. `document == NULL` with no error is
- * an ADVANCE's healthy answer: the envelope alone, nothing behind it. */
-static bool deliver(
-    markdown_core_document *document,
-    markdown_core_error *error,
-    uint8_t **output,
-    size_t *output_length
-) {
+/* THE ONE PAYLOAD WRITER for every answer that carries NO TREE: an ERROR,
+ * or an advance's healthy nothing. A `feed` and a `seal` serialize through
+ * the facade's session wire instead (#146, #162) -- same envelope, stamped
+ * into the payload's own room -- and come here only to report their
+ * errors. Takes ownership of `error`; the caller keeps nothing. No error
+ * is an ADVANCE's healthy answer: the envelope alone, nothing behind it. */
+static bool deliver(markdown_core_error *error, uint8_t **output, size_t *output_length) {
     bridge_buffer buffer = {0};
-
-    if (document != NULL) {
-        uint8_t *wire = NULL;
-        size_t wire_length = 0;
-        bool serialized = markdown_core_document_wire(document, sizeof(envelope_magic) + 1, &wire, &wire_length, NULL);
-        markdown_core_error_free(error);
-        markdown_core_document_free(document);
-        if (!serialized) {
-            return false;
-        }
-        stamp_envelope(wire, 0);
-        *output = wire;
-        *output_length = wire_length;
-        return true;
-    }
 
     put_bytes(&buffer, envelope_magic, sizeof(envelope_magic));
     if (error == NULL) {
@@ -159,6 +142,7 @@ bool markdown_core_kotlin_session_feed(
     markdown_core_kotlin_session *session,
     const uint8_t *chunk,
     size_t length,
+    uint32_t request,
     uint8_t **output,
     size_t *output_length
 ) {
@@ -180,6 +164,7 @@ bool markdown_core_kotlin_session_feed(
             chunk,
             length,
             sizeof(envelope_magic) + 1,
+            request == 1 ? MARKDOWN_CORE_WIRE_DELTA : MARKDOWN_CORE_WIRE_FULL,
             &wire,
             &wire_length,
             &error
@@ -192,27 +177,43 @@ bool markdown_core_kotlin_session_feed(
     if (error == NULL) {
         return false;
     }
-    return deliver(NULL, error, output, output_length);
+    return deliver(error, output, output_length);
 }
 
 bool markdown_core_kotlin_session_finish(
     markdown_core_kotlin_session *session,
+    uint32_t request,
     uint8_t **output,
     size_t *output_length
 ) {
     markdown_core_error *error = NULL;
-    markdown_core_document *document;
+    uint8_t *wire = NULL;
+    size_t wire_length = 0;
 
     if (output == NULL || output_length == NULL) {
         return false;
     }
     *output = NULL;
     *output_length = 0;
-    document = markdown_core_session_finish(session, &error);
-    if (document == NULL && error == NULL) {
+    /* The seal on the wire (#162): the sealed tree serialized in the frame
+     * the decoder asked for, and the session ended either way. */
+    if (markdown_core_session_finish_wire(
+            session,
+            sizeof(envelope_magic) + 1,
+            request == 1 ? MARKDOWN_CORE_WIRE_DELTA : MARKDOWN_CORE_WIRE_FULL,
+            &wire,
+            &wire_length,
+            &error
+        )) {
+        stamp_envelope(wire, 0);
+        *output = wire;
+        *output_length = wire_length;
+        return true;
+    }
+    if (error == NULL) {
         return false;
     }
-    return deliver(document, error, output, output_length);
+    return deliver(error, output, output_length);
 }
 
 bool markdown_core_kotlin_session_advance(
@@ -234,7 +235,7 @@ bool markdown_core_kotlin_session_advance(
      * nothing is serialized: the envelope alone answers, or the error rides
      * in it. */
     markdown_core_session_advance(session, chunk, length, &error);
-    return deliver(NULL, error, output, output_length);
+    return deliver(error, output, output_length);
 }
 
 void markdown_core_kotlin_session_free(markdown_core_kotlin_session *session) { markdown_core_session_free(session); }

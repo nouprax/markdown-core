@@ -2478,8 +2478,16 @@ static void wire_serialization(test_batch_runner *runner) {
             stepped = markdown_core_session_feed(composed, chunk, chunk_length, NULL);
             equal = stepped != NULL && markdown_core_document_wire(stepped, 3, &composed_wire, &composed_length, NULL);
             markdown_core_document_free(stepped);
-            equal = equal &&
-                    markdown_core_session_feed_wire(direct, chunk, chunk_length, 3, &direct_wire, &direct_length, NULL);
+            equal = equal && markdown_core_session_feed_wire(
+                                 direct,
+                                 chunk,
+                                 chunk_length,
+                                 3,
+                                 MARKDOWN_CORE_WIRE_FULL,
+                                 &direct_wire,
+                                 &direct_length,
+                                 NULL
+                             );
             equal = equal && composed_length == direct_length &&
                     memcmp(composed_wire, direct_wire, composed_length) == 0 && direct_wire[0] == 0 &&
                     direct_wire[2] == 0;
@@ -2501,11 +2509,165 @@ static void wire_serialization(test_batch_runner *runner) {
         uint8_t *refused = NULL;
         size_t refused_length = 0;
         OK(runner,
-            !markdown_core_session_feed_wire(NULL, NULL, 0, 0, &refused, &refused_length, &error) && error != NULL &&
+            !markdown_core_session_feed_wire(
+                NULL,
+                NULL,
+                0,
+                0,
+                MARKDOWN_CORE_WIRE_FULL,
+                &refused,
+                &refused_length,
+                &error
+            ) && error != NULL &&
                 markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
             "the managed feed wire refuses a null session with the finished-session error");
         markdown_core_error_free(error);
         error = NULL;
+        OK(runner,
+            !markdown_core_session_finish_wire(NULL, 0, MARKDOWN_CORE_WIRE_FULL, &refused, &refused_length, &error) &&
+                error != NULL && markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+            "the seal on the wire refuses a null session with the finished-session error");
+        markdown_core_error_free(error);
+        error = NULL;
+    }
+
+    /* THE FRAME BYTE (#162): every payload leads with one, and this entry's
+     * is FULL. THE SEAL ON THE WIRE: a DELTA asked of a session that never
+     * wrote a payload is answered FULL -- the in-place seal's bytes, the
+     * whole-text parse's behind the envelope room -- and the seal ends the
+     * session whatever it answered. */
+    OK(runner,
+        whole_length > 0 && whole[0] == MARKDOWN_CORE_WIRE_FULL,
+        "a document's wire leads with the FULL frame byte");
+    session = markdown_core_session_new(&options, NULL);
+    if (session) {
+        uint8_t *sealed_wire = NULL;
+        size_t sealed_length = 0;
+        OK(runner,
+            markdown_core_session_advance(session, (const uint8_t *)markdown, strlen(markdown), NULL),
+            "an advance takes the whole text");
+        OK(runner,
+            markdown_core_session_finish_wire(
+                session,
+                5,
+                MARKDOWN_CORE_WIRE_DELTA,
+                &sealed_wire,
+                &sealed_length,
+                &error
+            ) && sealed_length == whole_length + 5 &&
+                sealed_wire[0] == 0 && sealed_wire[4] == 0 && memcmp(sealed_wire + 5, whole, whole_length) == 0,
+            "a delta asked of a session with no previous payload seals FULL, the whole-text parse's bytes behind "
+            "zeroed envelope room");
+        markdown_core_wire_free(sealed_wire);
+        sealed_wire = NULL;
+        OK(runner,
+            !markdown_core_session_finish_wire(
+                session,
+                0,
+                MARKDOWN_CORE_WIRE_FULL,
+                &sealed_wire,
+                &sealed_length,
+                &error
+            ) && error != NULL &&
+                markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+            "a second seal is refused with the finished-session error");
+        markdown_core_error_free(error);
+        error = NULL;
+        markdown_core_session_free(session);
+    } else {
+        OK(runner, 0, "seal-on-the-wire session opens");
+    }
+
+    /* THE DELTA FRAME: the first payload of a session asked for DELTA is
+     * FULL, the next is a DELTA whose root op is a SPINE, and a FULL seal
+     * after deltas is the whole-text parse's bytes for everything fed. The
+     * byte-level reassembly of deltas over the corpus is projection_runner's
+     * wire_delta case. */
+    session = markdown_core_session_new(&options, NULL);
+    if (session) {
+        static const char more[] = "\nAnd more.\n";
+        markdown_core_session *whole_frames = markdown_core_session_new(&options, NULL);
+        uint8_t *first = NULL;
+        uint8_t *full_first = NULL;
+        uint8_t *second = NULL;
+        uint8_t *sealed_wire = NULL;
+        size_t first_length = 0;
+        size_t full_first_length = 0;
+        size_t second_length = 0;
+        size_t sealed_length = 0;
+        char *combined = (char *)malloc(strlen(markdown) + strlen(more) + 1);
+        OK(runner,
+            whole_frames != NULL &&
+                markdown_core_session_feed_wire(
+                    session,
+                    (const uint8_t *)markdown,
+                    strlen(markdown),
+                    0,
+                    MARKDOWN_CORE_WIRE_DELTA,
+                    &first,
+                    &first_length,
+                    NULL
+                ) &&
+                markdown_core_session_feed_wire(
+                    whole_frames,
+                    (const uint8_t *)markdown,
+                    strlen(markdown),
+                    0,
+                    MARKDOWN_CORE_WIRE_FULL,
+                    &full_first,
+                    &full_first_length,
+                    NULL
+                ) &&
+                first_length == full_first_length && memcmp(first, full_first, first_length) == 0 &&
+                first[0] == MARKDOWN_CORE_WIRE_FULL,
+            "the first payload of a session asked for DELTA is FULL: the same bytes a FULL request answers");
+        markdown_core_wire_free(full_first);
+        markdown_core_session_free(whole_frames);
+        OK(runner,
+            markdown_core_session_feed_wire(
+                session,
+                (const uint8_t *)more,
+                strlen(more),
+                0,
+                MARKDOWN_CORE_WIRE_DELTA,
+                &second,
+                &second_length,
+                NULL
+            ) && second_length > 2 &&
+                second[0] == MARKDOWN_CORE_WIRE_DELTA && second[1] == 0xFE &&
+                second[2] == MARKDOWN_CORE_KIND_DOCUMENT && second_length < whole_length,
+            "the next payload is a DELTA whose root op is the document's SPINE, smaller than the tree it stands for");
+        if (combined) {
+            markdown_core_document *both;
+            uint8_t *both_wire = NULL;
+            size_t both_length = 0;
+            memcpy(combined, markdown, strlen(markdown));
+            memcpy(combined + strlen(markdown), more, strlen(more) + 1);
+            both = markdown_core_document_parse((const uint8_t *)combined, strlen(combined), &options, NULL);
+            OK(runner,
+                both != NULL && markdown_core_document_wire(both, 0, &both_wire, &both_length, NULL) &&
+                    markdown_core_session_finish_wire(
+                        session,
+                        0,
+                        MARKDOWN_CORE_WIRE_FULL,
+                        &sealed_wire,
+                        &sealed_length,
+                        NULL
+                    ) &&
+                    sealed_length == both_length && memcmp(sealed_wire, both_wire, both_length) == 0,
+                "a FULL seal after deltas is the whole-text parse's bytes for everything fed");
+            markdown_core_wire_free(both_wire);
+            markdown_core_document_free(both);
+            free(combined);
+        } else {
+            OK(runner, 0, "combined text allocates");
+        }
+        markdown_core_wire_free(first);
+        markdown_core_wire_free(second);
+        markdown_core_wire_free(sealed_wire);
+        markdown_core_session_free(session);
+    } else {
+        OK(runner, 0, "delta session opens");
     }
     markdown_core_wire_free(whole);
     markdown_core_document_free(document);

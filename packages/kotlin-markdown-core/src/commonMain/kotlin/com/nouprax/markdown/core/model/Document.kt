@@ -39,6 +39,20 @@ public class Document(
     private var handle: Long = nativeSessionNew(options)
 
     /**
+     * THE PREVIOUS READ (#162): the semantic tree of the last payload this
+     * document decoded, which the next payload may be a DELTA against --
+     * the native side keeps the tree it wrote that payload from and names
+     * by position what did not move, so the values already built here are
+     * handed into the new read instead of decoded again. Null whenever
+     * there is nothing to be a delta against: before the first feed (the
+     * constructor's discarded read is not a payload), and after a feed that
+     * failed natively or in the decoder -- the native side leaves its
+     * baseline standing on its own failures and replaces it on the
+     * decoder's, and asking for FULL is correct against either.
+     */
+    private var previous: Semantic? = null
+
+    /**
      * Opens a document and feeds it [markdown] in one step -- exactly
      * `Document(options)` followed by one [feed] whose returned read is
      * discarded (and, being discarded, never decoded), so the whole-text
@@ -53,7 +67,7 @@ public class Document(
      * chunk may end anywhere -- mid-line, mid-character -- and an empty chunk
      * is a legal feed: the read as it stands.
      */
-    public fun feed(chunk: ByteArray): Read = WireDecoder.decodeRead(nativeSessionFeed(live(), chunk))
+    public fun feed(chunk: ByteArray): Read = read { request -> nativeSessionFeed(live(), chunk, request) }
 
     /** Feeds [chunk] as its UTF-8 bytes. */
     public fun feed(chunk: String): Read = feed(chunk.encodeToByteArray())
@@ -64,7 +78,7 @@ public class Document(
      * [IllegalStateException].
      */
     public fun seal(): Read {
-        val sealed = WireDecoder.decodeRead(nativeSessionFinish(live()))
+        val sealed = read { request -> nativeSessionFinish(live(), request) }
         close()
         return sealed
     }
@@ -75,6 +89,7 @@ public class Document(
      * remains a plain value.
      */
     override fun close() {
+        previous = null
         if (handle != 0L) {
             nativeSessionFree(handle)
             handle = 0L
@@ -84,5 +99,20 @@ public class Document(
     private fun live(): Long {
         check(handle != 0L) { "the document is sealed or closed" }
         return handle
+    }
+
+    /**
+     * One read through the wire: DELTA is asked for exactly when a previous
+     * read is in hand, the previous read is cleared before the call so that
+     * any failure leaves the next request FULL, and a decoded read becomes
+     * the previous one.
+     */
+    private inline fun read(invoke: (request: Int) -> ByteArray): Read {
+        val baseline = previous
+        previous = null
+        val request = if (baseline == null) WireDecoder.FULL_FRAME else WireDecoder.DELTA_FRAME
+        val read = WireDecoder.decodeRead(invoke(request), baseline)
+        previous = read.semantic
+        return read
     }
 }

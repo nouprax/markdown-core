@@ -2,18 +2,31 @@ package com.nouprax.markdown.core
 
 internal object WireDecoder {
     /**
-     * `MKC7`: the payload after the envelope is the facade's own
-     * `markdown_core_document_wire` bytes -- every node leads with its
-     * identity, a definition's match key rides where `identifier` did, and a
-     * reference carries the identity of the definition it resolved to instead
-     * of repeating that key.
+     * `MKC8`: the payload after the envelope is the facade's own wire bytes,
+     * frame byte first -- every node leads with its identity, a definition's
+     * match key rides where `identifier` did, and a reference carries the
+     * identity of the definition it resolved to instead of repeating that
+     * key.
      */
-    private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x37)
+    private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x38)
 
-    fun decodeRead(bytes: ByteArray): Read {
+    /** The frame a payload leads with (`markdown_core_wire_frame`): the
+     * request a document sends and the byte the payload answers with. */
+    const val FULL_FRAME: Int = 0
+    const val DELTA_FRAME: Int = 1
+
+    /**
+     * Decodes a payload: the envelope, then the tree -- whole, or as a delta
+     * (#162) against [previous], the semantic tree of the payload before it,
+     * whose values are reused wherever the delta says nothing moved.
+     */
+    fun decodeRead(
+        bytes: ByteArray,
+        previous: Semantic? = null,
+    ): Read {
         val reader = WireReader(bytes)
         reader.header()
-        return reader.read()
+        return reader.read(previous)
     }
 
     /**
@@ -42,14 +55,34 @@ internal object WireDecoder {
     }
 }
 
-/** THE ROOT IS READ BY HAND, and it is the only node that is. */
-private fun WireReader.read(): Read {
-    require(kind() == WireKind.DOCUMENT) { "native bridge returned an invalid document tree" }
-    val rootId = identity()
-    val rootScope = scope()
-    val content = markupList()
-    require(finished) { "native bridge returned a truncated payload" }
-    return Read(Semantic(content, rootId, rootScope))
+/** THE ROOT IS READ BY HAND, and it is the only node that is: whole in a
+ * FULL frame, and as the one SPINE op a DELTA frame opens with. */
+private fun WireReader.read(previous: Semantic?): Read {
+    when (val frame = byte().toInt()) {
+        WireDecoder.FULL_FRAME -> {
+            require(kind() == WireKind.DOCUMENT) { "native bridge returned an invalid document tree" }
+            val rootId = identity()
+            val rootScope = scope()
+            val content = markupList()
+            require(finished) { "native bridge returned a truncated payload" }
+            return Read(Semantic(content, rootId, rootScope))
+        }
+
+        WireDecoder.DELTA_FRAME -> {
+            requireNotNull(previous) { "native bridge sent a delta frame with no previous read" }
+            require(byte().toInt() and 0xff == WireReader.OP_SPINE) {
+                "native bridge sent a delta frame that does not open with the document's spine"
+            }
+            val semantic = spine(previous)
+            require(semantic is Semantic) { "native bridge returned an invalid document tree" }
+            require(finished) { "native bridge returned a truncated payload" }
+            return Read(semantic)
+        }
+
+        else -> {
+            error("unsupported native wire frame $frame")
+        }
+    }
 }
 
 private fun WireReader.error(): ParseException {
@@ -69,6 +102,24 @@ internal class WireReader(
 ) {
     private var offset = 0
     val finished: Boolean get() = offset == bytes.size
+
+    /**
+     * THE SPINE CONTEXT (#162): set by `spine` just before it decodes the
+     * rewritten node, and consumed by that node's first `markupList` -- the
+     * one that reads its children -- which then reads OPS against these
+     * previous children instead of a child list. Null everywhere else, so a
+     * node written whole inside a delta decodes exactly as in a full frame.
+     * A spine whose node never consumed it is a protocol error: the native
+     * side rewrote a node that has no child list.
+     */
+    var spine: kotlin.collections.List<Markup>? = null
+
+    companion object {
+        /** The delta's op tags, above every kind ordinal: a tag below them IS
+         * a node's kind byte. */
+        const val OP_SPINE: Int = 0xfe
+        const val OP_SAME: Int = 0xff
+    }
 
     fun byte(): Byte {
         require(offset < bytes.size) { "truncated native bridge payload" }
@@ -104,6 +155,8 @@ internal class WireReader(
     fun identity(): Identity = Identity(int(), int())
 
     fun kind(): WireKind = WireKind.from(byte().toInt() and 0xff)
+
+    fun rawTag(): Int = byte().toInt() and 0xff
 
     fun boolean(): Boolean =
         when (byte().toInt()) {

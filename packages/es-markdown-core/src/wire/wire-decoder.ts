@@ -10,11 +10,24 @@ import { TreeDumper } from "../tree-dumper.js";
 import type { Identity, ListFlavor, PlacementMode, ReferenceForm, Scope, TableAlignment } from "../values.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
-/* THE ONE DECODE PASS. The native side answers every read with one MKC7
+/* THE ONE DECODE PASS. The native side answers every read with one MKC8
  * payload -- the envelope's magic and status, then the facade's own canonical
  * wire -- and this file turns that one buffer into the same plain values the
  * per-field walk used to build, with the boundary crossed once per READ
- * instead of once per field. */
+ * instead of once per field. A payload is a FULL tree or a DELTA against
+ * the previous payload (#162): the delta names, by position, the children
+ * of the previous read that did not move, and those values are reused as
+ * they are -- every decoded value is immutable data, so a read that shares
+ * subtrees with the read before it is still a plain value. */
+
+/** The frame a payload leads with (`markdown_core_wire_frame`): the request
+ * a document sends and the byte the payload answers with. */
+export const WireFrame: { readonly full: 0; readonly delta: 1 } = Object.freeze({ full: 0, delta: 1 } as const);
+
+/* The delta's op tags, above every kind ordinal: a tag below them IS a
+ * node's kind byte. */
+const OP_SPINE = 0xfe;
+const OP_SAME = 0xff;
 
 /** The two members a decoded value does not carry yet: `dump` is defined on
  * every node after the copy, out of the decoder's reach. */
@@ -43,11 +56,12 @@ export interface DecodedRead {
     readonly semantic: Semantic;
 }
 
-/** Decodes a full payload: the envelope, then the tree. */
-export function decodeRead(bytes: Uint8Array): DecodedRead {
+/** Decodes a payload: the envelope, then the tree -- whole, or as a delta
+ * against `previous`, the semantic tree of the payload before it. */
+export function decodeRead(bytes: Uint8Array, previous: Semantic | null = null): DecodedRead {
     const reader = new WireReader(bytes);
     reader.header();
-    return reader.read();
+    return reader.read(previous);
 }
 
 /**
@@ -59,17 +73,25 @@ export function decodeDiscarded(bytes: Uint8Array): void {
     new WireReader(bytes).header();
 }
 
-/** `MKC7`: the payload after the envelope is the facade's canonical wire --
- * every node leads with its identity, a definition's match key rides where
- * `identifier` did, and a reference carries the identity of the definition it
- * resolved to instead of repeating that key. */
-const magic = [0x4d, 0x4b, 0x43, 0x37];
+/** `MKC8`: the payload after the envelope is the facade's canonical wire,
+ * frame byte first -- every node leads with its identity, a definition's
+ * match key rides where `identifier` did, and a reference carries the
+ * identity of the definition it resolved to instead of repeating that key. */
+const magic = [0x4d, 0x4b, 0x43, 0x38];
 
 class WireReader {
     #offset = 0;
     readonly #bytes: Uint8Array;
     readonly #view: DataView;
     readonly #utf8Decoder = new TextDecoder("utf-8", { fatal: false });
+    /* THE SPINE CONTEXT (#162): set by `spine` just before it decodes the
+     * rewritten node, and consumed by that node's first `markupList` -- the
+     * one that reads its children -- which then reads OPS against these
+     * previous children instead of a child list. Null everywhere else, so a
+     * node written whole inside a delta decodes exactly as in a full frame.
+     * A spine whose node never consumed it is a protocol error: the native
+     * side rewrote a node that has no child list. */
+    #spine: readonly Markup[] | null = null;
 
     constructor(bytes: Uint8Array) {
         this.#bytes = bytes;
@@ -90,7 +112,19 @@ class WireReader {
         if (status !== 0) throw new Error("unsupported native bridge status");
     }
 
-    read(): DecodedRead {
+    read(previous: Semantic | null): DecodedRead {
+        const frame = this.byte();
+        if (frame === WireFrame.delta) {
+            if (previous === null) throw new Error("native bridge sent a delta frame with no previous read");
+            if (this.byte() !== OP_SPINE) {
+                throw new Error("native bridge sent a delta frame that does not open with the document's spine");
+            }
+            const semantic = this.spine(previous);
+            if (semantic.kind !== "document") throw new Error("native bridge returned an invalid document tree");
+            if (!this.finished) throw new Error("native bridge returned a truncated payload");
+            return { semantic };
+        }
+        if (frame !== WireFrame.full) throw new Error(`native bridge sent an unknown wire frame ${frame}`);
         if (this.kind() !== "document") throw new Error("native bridge returned an invalid document tree");
         const id = this.identity();
         const scope = this.scope();
@@ -169,7 +203,10 @@ class WireReader {
     }
 
     kind(): NativeKind {
-        const rawValue = this.byte();
+        return this.kindOf(this.byte());
+    }
+
+    kindOf(rawValue: number): NativeKind {
         const kind = kinds[rawValue];
         if (!kind || kind === "none") throw new Error(`native parser returned unknown node kind ${rawValue}`);
         return kind;
@@ -197,6 +234,11 @@ class WireReader {
     }
 
     markupList(): readonly Markup[] {
+        const previous = this.#spine;
+        if (previous !== null) {
+            this.#spine = null;
+            return this.ops(previous);
+        }
         const count = this.count("child count");
         const children: Markup[] = [];
         for (let index = 0; index < count; index++) {
@@ -206,10 +248,62 @@ class WireReader {
     }
 
     node(): Markup {
-        const kind = this.kind();
+        return this.nodeOfKind(this.kind());
+    }
+
+    nodeOfKind(kind: NativeKind): Markup {
         const id = this.identity();
         const scope = this.scope();
         return this.markup(this.value(kind, id, scope));
+    }
+
+    /** A SPINE op's node, `previous` being the previous read's node at the
+     * same position: the fields are read afresh and the children come from
+     * the ops that follow, against the previous node's children. */
+    spine(previous: Markup): Markup {
+        const kind = this.kind();
+        if (kind !== previous.kind) throw new Error(`native parser rewrote a ${previous.kind} as a ${kind}`);
+        const id = this.identity();
+        if (id.block !== previous.id.block || id.ordinal !== previous.id.ordinal) {
+            throw new Error("native parser rewrote a node under another identity");
+        }
+        const scope = this.scope();
+        this.#spine = positionalChildren(previous);
+        const value =
+            kind === "document"
+                ? Object.assign(this.base(id, scope, "document"), { content: this.markupList() })
+                : this.value(kind, id, scope);
+        if (this.#spine !== null) throw new Error(`native parser rewrote a ${kind}, which has no child list`);
+        return this.markup(value);
+    }
+
+    /** The ops that turn `previous` -- the previous read's children of the
+     * node being rewritten -- into the new node's children. */
+    ops(previous: readonly Markup[]): readonly Markup[] {
+        const count = this.count("op count");
+        const children: Markup[] = [];
+        let position = 0;
+        for (let index = 0; index < count; index++) {
+            const tag = this.byte();
+            if (tag === OP_SAME) {
+                const run = this.count("reused child count");
+                if (run > previous.length - position) {
+                    throw new Error("native parser reused children the previous read does not have");
+                }
+                for (let offset = 0; offset < run; offset++) children.push(previous[position + offset]!);
+                position += run;
+            } else if (tag === OP_SPINE) {
+                const node = previous[position];
+                if (node === undefined)
+                    throw new Error("native parser rewrote a child the previous read does not have");
+                children.push(this.spine(node));
+                position++;
+            } else {
+                children.push(this.nodeOfKind(this.kindOf(tag)));
+                position++;
+            }
+        }
+        return children;
     }
 
     /** A decoded value already carries its `dump` through the shared
@@ -345,14 +439,14 @@ class WireReader {
         if (flavor === "bullet" && start !== null) {
             throw new Error("native parser returned a start value for a bullet list");
         }
-        const count = this.count("list item count");
-        const items: ListItem[] = [];
-        for (let index = 0; index < count; index++) {
-            const item = this.node();
+        /* Through `markupList`, not a loop of its own: a list is a container
+         * of blocks, so a delta may rewrite it as a SPINE whose ops address
+         * its items by position (#162). */
+        const items = this.markupList();
+        for (const item of items) {
             if (item.kind !== "listItem") throw new Error("list contains a non-item node");
-            items.push(item);
         }
-        return Object.assign(this.base(id, scope, "list"), { flavor, start, tight, items });
+        return Object.assign(this.base(id, scope, "list"), { flavor, start, tight, items: items as ListItem[] });
     }
 
     table(id: Identity, scope: Scope): MarkupValueOf<"table"> {
@@ -361,19 +455,23 @@ class WireReader {
         for (let index = 0; index < columnCount; index++) {
             alignments.push(this.tableAlignment());
         }
-        const rowCount = this.count("table row count");
-        const rows: TableRow[] = [];
-        for (let index = 0; index < rowCount; index++) {
-            const row = this.node();
+        /* Through `markupList` for the same reason as a list's items. The
+         * header row is the table's FIRST child on the wire -- the engine
+         * opens a table with it -- which is what lets a delta address
+         * `[header, ...rows]` by position. */
+        const children = this.markupList();
+        for (const row of children) {
             if (row.kind !== "tableRow") throw new Error("table contains a non-row node");
-            rows.push(row);
         }
+        const rows = children as TableRow[];
         const headers = rows.filter((row) => row.isHeader);
         if (headers.length !== 1) throw new Error(`table contains ${headers.length} header rows`);
+        const header = rows[0]!;
+        if (!header.isHeader) throw new Error("table does not open with its header row");
         return Object.assign(this.base(id, scope, "table"), {
             alignments,
-            header: headers[0]!,
-            rows: rows.filter((row) => !row.isHeader)
+            header,
+            rows: rows.slice(1)
         });
     }
 
@@ -468,6 +566,29 @@ class WireReader {
 
 function unreachable(value: never): never {
     throw new Error(`unreachable native node kind ${String(value)}`);
+}
+
+/** The previous read's children of a node a SPINE rewrites, in WIRE ORDER:
+ * the positions the op stream counts in. Only the block containers the
+ * native side ever rewrites have one -- a list's items, a table's header
+ * then its rows, a directive block's label then its content, and the
+ * content of the rest -- so a spine on any other kind is refused. */
+function positionalChildren(node: Markup): readonly Markup[] {
+    switch (node.kind) {
+        case "document":
+        case "blockQuote":
+        case "listItem":
+        case "footnoteDefinition":
+            return node.content;
+        case "list":
+            return node.items;
+        case "table":
+            return [node.header, ...node.rows];
+        case "directiveBlock":
+            return node.label === null ? node.content : [node.label, ...node.content];
+        default:
+            throw new Error(`native parser rewrote a ${node.kind}, which has no children to reuse`);
+    }
 }
 
 function errorCode(rawValue: number): ParseErrorCode {

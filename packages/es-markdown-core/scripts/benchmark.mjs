@@ -19,13 +19,14 @@ function benchmark(workload, source) {
 }
 
 // The streaming path: the same input fed in N chunks, N multiplying by 16
-// per step. Per-feed cost that is independent of the chunk count keeps each
-// step under ~16x. The cap is twice that ceiling -- the same construction
-// as bench_runner.c's BENCH_MAX_DOUBLING_RATIO (4.0 for a 2x step) -- so it
-// tolerates today's per-feed full decode while catching a super-linear
-// blowup; tightening it is part of fixing the per-feed costs, loosening it
-// is not an option (#148).
-const FEED_STEP_RATIO_MAX = 32;
+// per step. With the wire crossing as a DELTA (#162) a feed costs the open
+// spine and the changed blocks, so a step reads near 1x -- 1.20x and 1.70x
+// measured, where the per-feed whole decode read 3.1x and 12.7x. The cap
+// is the construction bench_runner.c's BENCH_MAX_DOUBLING_RATIO uses (4.0
+// for a 2x step): it tolerates the open block re-read per feed and refuses
+// a return to per-feed whole decodes; loosening it is not an option
+// (#148).
+const FEED_STEP_RATIO_MAX = 4;
 
 function feedLoopBenchmark(workload, unit, units) {
     const chunkCounts = [1, 16, 256];

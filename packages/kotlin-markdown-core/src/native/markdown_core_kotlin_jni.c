@@ -3,7 +3,7 @@
 #include <jni.h>
 
 /* One bridge payload becomes one Java byte array: the session's feed and
- * finish both funnel their MKC7 bytes through here. `succeeded == false` is
+ * finish both funnel their MKC8 bytes through here. `succeeded == false` is
  * the bridge saying the payload buffer itself could not be built, which is
  * the one failure with no payload to decode -- it surfaces as the
  * OutOfMemoryError it is. */
@@ -40,7 +40,8 @@ JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_sessionFee
     JNIEnv *environment,
     jobject receiver,
     jlong session,
-    jbyteArray chunk
+    jbyteArray chunk,
+    jint request
 ) {
     jbyte *chunk_bytes = NULL;
     jsize chunk_length;
@@ -71,6 +72,7 @@ JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_sessionFee
         (markdown_core_kotlin_session *)(intptr_t)session,
         (const uint8_t *)chunk_bytes,
         (size_t)chunk_length,
+        (uint32_t)request,
         &output,
         &output_length
     );
@@ -115,15 +117,23 @@ JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_sessionAdv
     return S_payload_to_array(environment, succeeded, output, output_length);
 }
 
-JNIEXPORT jbyteArray JNICALL
-Java_com_nouprax_markdown_core_JvmNative_sessionFinish(JNIEnv *environment, jobject receiver, jlong session) {
+JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_sessionFinish(
+    JNIEnv *environment,
+    jobject receiver,
+    jlong session,
+    jint request
+) {
     uint8_t *output = NULL;
     size_t output_length = 0;
     bool succeeded;
     (void)receiver;
 
-    succeeded =
-        markdown_core_kotlin_session_finish((markdown_core_kotlin_session *)(intptr_t)session, &output, &output_length);
+    succeeded = markdown_core_kotlin_session_finish(
+        (markdown_core_kotlin_session *)(intptr_t)session,
+        (uint32_t)request,
+        &output,
+        &output_length
+    );
     return S_payload_to_array(environment, succeeded, output, output_length);
 }
 
