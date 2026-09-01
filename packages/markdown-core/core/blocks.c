@@ -1465,6 +1465,22 @@ static void S_number_inline_descendants(markdown_core_node *block) {
 static bool S_has_inline_child(markdown_core_node *block) {
     markdown_core_child_cursor cursor;
     markdown_core_node *child;
+    /* A memoized prefix needs no asking (F25): its entries passed the
+     * record's own proof -- each the retained projection of a closed
+     * top-level BLOCK -- so the question starts at the boundary. The walk
+     * below was the derived document's last O(width) instruction term per
+     * feed, spent learning every feed that a document holds no inline
+     * child; the suffix stays walked, so the answer is unchanged for any
+     * shape the clone can build. */
+    if (block->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) {
+        size_t i;
+        for (i = (size_t)(uintptr_t)block->as.opaque; i < block->children.count; i++) {
+            if (!MARKDOWN_CORE_NODE_BLOCK_P(block->children.vec[i])) {
+                return true;
+            }
+        }
+        return false;
+    }
     for (child = markdown_core_child_first(block, &cursor); child;
         child = markdown_core_child_after(block, child, &cursor)) {
         if (!MARKDOWN_CORE_NODE_BLOCK_P(child)) {
