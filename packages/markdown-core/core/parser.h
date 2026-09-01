@@ -35,8 +35,6 @@ typedef struct {
     int column;
 } markdown_core_line_mark;
 
-#define MARKDOWN_CORE_TAIL_NAMES 32
-
 struct markdown_core_parser {
     struct markdown_core_mem *mem;
     /* A hashtable of urls in the current document for cross-references */
@@ -141,28 +139,27 @@ struct markdown_core_parser {
     markdown_core_node **tail_queue;
     size_t tail_queue_size;
     size_t tail_queue_alloc;
-    /* THE NAME MASKS (F15, #161): which attached extensions declared a given
-     * answered name, as a bitmask in `syntax_extensions` list order, plus the
-     * fixed mask of `"*inlines"` declarers. One lookup per tail replaces the
-     * per-(block x extension) memo scan the old shape paid on every
-     * projection -- 14% of a hit-dominated feed, measured. Keyed on the
-     * name's POINTER -- every `get_type_string` answers a literal -- and per
-     * parser, so parsers on different threads share nothing. Rebuilt lazily
-     * when `extension_generation` moves (`tail_mask_generation` is that
-     * generation plus one, so zero means never built). The masks carry the
-     * first 64 extensions; a later one is asked directly, so the failure
-     * direction is a slow feed, never a missed hook. Full is not wrong: a
-     * name that does not fit is walked again. */
-    uint64_t tail_inlines_mask;
-    struct {
-        const char *name;
-        uint64_t mask;
-    } tail_name_masks[MARKDOWN_CORE_TAIL_NAMES];
-    size_t tail_name_mask_size;
+    /* THE NAME MASKS (F15, #161, review-found): which attached extensions
+     * declared a given answered name, as a bitset in `syntax_extensions`
+     * list order -- `tail_mask_words` words per row, so EVERY extension
+     * follows the same algorithm at any count -- plus the fixed row of
+     * `"*inlines"` declarers. One lookup per tail replaces the per-(block x
+     * extension) memo scan the old shape paid on every projection -- 14% of
+     * a hit-dominated feed, measured. Keyed on the name's POINTER -- every
+     * `get_type_string` answers a literal -- and per parser, so parsers on
+     * different threads share nothing. Rebuilt lazily when
+     * `extension_generation` moves (`tail_mask_generation` is that
+     * generation plus one, so zero means never built); the row table grows
+     * on demand, so a name never falls back to a second code path. A
+     * rebuild that cannot allocate poisons the parse (`oom`), the same
+     * answer every other lost allocation gives. Row 0 of the pool is the
+     * inlines row; name rows follow. */
+    size_t tail_mask_words;
+    uint64_t *tail_mask_pool;
+    const char **tail_name_rows;
+    size_t tail_name_row_size;
+    size_t tail_name_row_alloc;
     size_t tail_mask_generation;
-    /* Extensions past the 64th exist (never in practice): the tail walks the
-     * list's overflow with the direct predicate on top of the masks. */
-    bool tail_masks_overflow;
 };
 
 /* THE PROJECTION (§12.1): a new tree derived from the parser's CST -- the

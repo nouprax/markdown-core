@@ -246,6 +246,14 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     parser->tail_queue = NULL;
     parser->tail_queue_size = 0;
     parser->tail_queue_alloc = 0;
+    parser->mem->free(parser->tail_mask_pool);
+    parser->mem->free((void *)parser->tail_name_rows);
+    parser->tail_mask_pool = NULL;
+    parser->tail_name_rows = NULL;
+    parser->tail_name_row_size = 0;
+    parser->tail_name_row_alloc = 0;
+    parser->tail_mask_words = 0;
+    parser->tail_mask_generation = 0;
 }
 
 static void markdown_core_parser_reset(markdown_core_parser *parser) {
@@ -1173,26 +1181,57 @@ static bool S_set_names(const char *set, const char *name) {
     return false;
 }
 
-/* Rebuild the tail filter's masks (parser.h) for the extension set as it now
- * stands: bit `i` speaks for the `i`th attached extension, in list order --
- * the order the tail offers blocks (F15 rule 1) -- so iterating mask bits
- * ascending IS iterating the list. The name-keyed table is cleared and
- * refilled lazily by `S_names_mask`; only the fixed `"*inlines"` mask is
- * computed here. An extension with no hook or no declared set gets no bit
- * anywhere: it is never offered, exactly as `S_set_names` never matched it. */
+/* Rebuild the tail filter's rows (parser.h) for the extension set as it now
+ * stands: bit `i` -- word i/64, bit i%64 -- speaks for the `i`th attached
+ * extension, in list order, the order the tail offers blocks (F15 rule 1).
+ * The name-keyed rows are cleared and refilled lazily by `S_names_row`;
+ * only the fixed `"*inlines"` row (pool row 0) is computed here. An
+ * extension with no hook or no declared set gets no bit anywhere: it is
+ * never offered, exactly as `S_set_names` never matched it. A rebuild that
+ * cannot allocate poisons the parse -- the same answer every other lost
+ * allocation gives -- and leaves the table empty, so nothing dereferences
+ * a half-built pool. */
 static void S_tail_masks_rebuild(markdown_core_parser *parser) {
     markdown_core_llist *extensions;
+    size_t count = 0;
+    size_t words;
     size_t idx = 0;
-    parser->tail_inlines_mask = 0;
-    parser->tail_name_mask_size = 0;
-    for (extensions = parser->syntax_extensions; extensions && idx < 64; extensions = extensions->next, idx++) {
+    for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
+        count++;
+    }
+    words = count ? (count + 63) / 64 : 1;
+    if (words != parser->tail_mask_words || !parser->tail_mask_pool) {
+        size_t row_alloc = parser->tail_name_row_alloc ? parser->tail_name_row_alloc : 8;
+        uint64_t *pool =
+            (uint64_t *)parser->mem->realloc(parser->tail_mask_pool, (1 + row_alloc) * words * sizeof(*pool));
+        const char **names = parser->tail_name_rows
+                                 ? parser->tail_name_rows
+                                 : (const char **)parser->mem->realloc(NULL, row_alloc * sizeof(*names));
+        if (!pool || !names) {
+            parser->mem->free(pool ? pool : parser->tail_mask_pool);
+            if (names && !parser->tail_name_rows) {
+                parser->mem->free((void *)names);
+            }
+            parser->tail_mask_pool = NULL;
+            parser->tail_name_row_size = 0;
+            parser->tail_mask_generation = parser->extension_generation + 1;
+            parser->oom = true;
+            return;
+        }
+        parser->tail_mask_pool = pool;
+        parser->tail_name_rows = names;
+        parser->tail_name_row_alloc = row_alloc;
+        parser->tail_mask_words = words;
+    }
+    memset(parser->tail_mask_pool, 0, parser->tail_mask_words * sizeof(*parser->tail_mask_pool));
+    parser->tail_name_row_size = 0;
+    for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next, idx++) {
         const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
         if (ext->postprocess_block_func && ext->postprocess_blocks &&
             S_set_names(ext->postprocess_blocks, S_INLINES_MEMBER)) {
-            parser->tail_inlines_mask |= (uint64_t)1 << idx;
+            parser->tail_mask_pool[idx >> 6] |= (uint64_t)1 << (idx & 63);
         }
     }
-    parser->tail_masks_overflow = extensions != NULL;
     parser->tail_mask_generation = parser->extension_generation + 1;
 }
 
@@ -1202,66 +1241,99 @@ static MARKDOWN_CORE_INLINE void S_tail_masks_fresh(markdown_core_parser *parser
     }
 }
 
-/* Which extensions declared `name`? The masks are keyed on the name's
- * POINTER, and the name is a function of the NODE rather than of its type: a
- * `LIST_ITEM` carrying tasklist answers "tasklist" and a plain one
- * "list_item"; a `TABLE_ROW` answers "table_header" or "table_row". Keyed on
- * the type both would be wrong; keyed on the name there is nothing to
- * special-case. A literal with the same bytes at another address misses once
- * and takes its own entry. */
-static uint64_t S_names_mask(markdown_core_parser *parser, const char *name) {
-    markdown_core_llist *extensions;
-    uint64_t mask = 0;
-    size_t idx = 0;
-    size_t i;
-    for (i = 0; i < parser->tail_name_mask_size; i++) {
-        if (parser->tail_name_masks[i].name == name) {
-            /* Move-to-front: a projection asks about the same few names in
-             * runs (every paragraph in a feed, then every list item), so
-             * the answer's steady state is the first probe. */
-            if (i > 0) {
-                const char *swap_name = parser->tail_name_masks[i - 1].name;
-                uint64_t swap_mask = parser->tail_name_masks[i - 1].mask;
-                parser->tail_name_masks[i - 1] = parser->tail_name_masks[i];
-                parser->tail_name_masks[i].name = swap_name;
-                parser->tail_name_masks[i].mask = swap_mask;
-                i--;
-            }
-            return parser->tail_name_masks[i].mask;
-        }
-    }
-    for (extensions = parser->syntax_extensions; extensions && idx < 64; extensions = extensions->next, idx++) {
-        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
-        if (ext->postprocess_block_func && ext->postprocess_blocks && S_set_names(ext->postprocess_blocks, name)) {
-            mask |= (uint64_t)1 << idx;
-        }
-    }
-    if (parser->tail_name_mask_size < MARKDOWN_CORE_TAIL_NAMES) {
-        parser->tail_name_masks[parser->tail_name_mask_size].name = name;
-        parser->tail_name_masks[parser->tail_name_mask_size].mask = mask;
-        parser->tail_name_mask_size++;
-    }
-    return mask;
+static MARKDOWN_CORE_INLINE const uint64_t *S_inlines_row(markdown_core_parser *parser) {
+    return parser->tail_mask_pool;
 }
 
-/* The 65th extension and beyond live past the masks' reach and are asked
- * directly -- the exact predicate the masks memoize, so an over-attached
- * parser is slower, never wrong. */
-static bool S_tail_wants_slow(const markdown_core_syntax_extension *ext, const char *name, bool offer_inlines) {
-    if (!ext->postprocess_block_func || !ext->postprocess_blocks) {
+static MARKDOWN_CORE_INLINE bool S_row_test(const uint64_t *row, size_t idx) {
+    return row != NULL && (row[idx >> 6] >> (idx & 63) & 1) != 0;
+}
+
+/* Which extensions declared `name`? The rows are keyed on the name's
+ * POINTER, and the name is a function of the NODE rather than of its type:
+ * a `LIST_ITEM` carrying tasklist answers "tasklist" and a plain one
+ * "list_item"; a `TABLE_ROW` answers "table_header" or "table_row". Keyed
+ * on the type both would be wrong; keyed on the name there is nothing to
+ * special-case. A literal with the same bytes at another address misses
+ * once and takes its own row. The table GROWS on demand -- pool and names
+ * together -- so every name and every extension follows this one path;
+ * NULL only when an allocation was lost, which poisoned the parse. */
+static const uint64_t *S_names_row(markdown_core_parser *parser, const char *name) {
+    markdown_core_llist *extensions;
+    size_t words = parser->tail_mask_words;
+    uint64_t *row;
+    size_t idx = 0;
+    size_t i;
+    if (!parser->tail_mask_pool) {
+        return NULL;
+    }
+    for (i = 0; i < parser->tail_name_row_size; i++) {
+        if (parser->tail_name_rows[i] == name) {
+            /* Move-to-front by one: a projection asks about the same few
+             * names in runs, so the steady state is an early probe. */
+            if (i > 0) {
+                uint64_t *above = parser->tail_mask_pool + i * words;
+                uint64_t *here = above + words;
+                const char *swap_name = parser->tail_name_rows[i - 1];
+                size_t w;
+                for (w = 0; w < words; w++) {
+                    uint64_t swap_word = above[w];
+                    above[w] = here[w];
+                    here[w] = swap_word;
+                }
+                parser->tail_name_rows[i - 1] = name;
+                parser->tail_name_rows[i] = swap_name;
+                i--;
+            }
+            return parser->tail_mask_pool + (1 + i) * words;
+        }
+    }
+    if (parser->tail_name_row_size == parser->tail_name_row_alloc) {
+        size_t grown = parser->tail_name_row_alloc * 2;
+        uint64_t *pool = (uint64_t *)parser->mem->realloc(parser->tail_mask_pool, (1 + grown) * words * sizeof(*pool));
+        const char **names;
+        if (!pool) {
+            parser->oom = true;
+            return NULL;
+        }
+        parser->tail_mask_pool = pool;
+        names = (const char **)parser->mem->realloc((void *)parser->tail_name_rows, grown * sizeof(*names));
+        if (!names) {
+            parser->oom = true;
+            return NULL;
+        }
+        parser->tail_name_rows = names;
+        parser->tail_name_row_alloc = grown;
+    }
+    i = parser->tail_name_row_size;
+    row = parser->tail_mask_pool + (1 + i) * words;
+    memset(row, 0, words * sizeof(*row));
+    for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next, idx++) {
+        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
+        if (ext->postprocess_block_func && ext->postprocess_blocks && S_set_names(ext->postprocess_blocks, name)) {
+            row[idx >> 6] |= (uint64_t)1 << (idx & 63);
+        }
+    }
+    parser->tail_name_rows[i] = name;
+    parser->tail_name_row_size++;
+    return row;
+}
+
+static MARKDOWN_CORE_INLINE bool S_row_any(const markdown_core_parser *parser, const uint64_t *row) {
+    size_t w;
+    if (!row) {
         return false;
     }
-    if (offer_inlines && S_set_names(ext->postprocess_blocks, S_INLINES_MEMBER)) {
-        return true;
+    for (w = 0; w < parser->tail_mask_words; w++) {
+        if (row[w]) {
+            return true;
+        }
     }
-    return S_set_names(ext->postprocess_blocks, name);
+    return false;
 }
 
 /* Asked at the block's EXIT, so a block nothing will touch is never queued. */
 static bool S_block_has_tail_work(markdown_core_parser *parser, markdown_core_node *block) {
-    markdown_core_llist *extensions;
-    size_t idx;
-    const char *name;
     if (contains_inlines(block)) {
         return true;
     }
@@ -1277,18 +1349,7 @@ static bool S_block_has_tail_work(markdown_core_parser *parser, markdown_core_no
     /* Only the name clause is left to ask: the `"*inlines"` offer needs
      * inline content, and a block with any already answered above. */
     S_tail_masks_fresh(parser);
-    name = markdown_core_node_get_type_string(block);
-    if (S_names_mask(parser, name) != 0) {
-        return true;
-    }
-    if (parser->tail_masks_overflow) {
-        for (extensions = parser->syntax_extensions, idx = 0; extensions; extensions = extensions->next, idx++) {
-            if (idx >= 64 && S_tail_wants_slow((const markdown_core_syntax_extension *)extensions->data, name, false)) {
-                return true;
-            }
-        }
-    }
-    return false;
+    return S_row_any(parser, S_names_row(parser, markdown_core_node_get_type_string(block)));
 }
 
 static bool S_tail_queue_push(markdown_core_parser *parser, markdown_core_node *block) {
@@ -1382,7 +1443,8 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
     markdown_core_llist *extensions;
     markdown_core_node *node = *block;
     bool children_own = !MARKDOWN_CORE_NODE_BORROWED_P(node);
-    uint64_t offered;
+    const uint64_t *name_row;
+    bool offer_inlines;
     size_t idx;
 
     S_tail_masks_fresh(parser);
@@ -1397,18 +1459,11 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
      * 1), so it is recomputed after every hook that ran -- a hook may
      * replace the node -- and left alone across the extensions that were
      * not offered, which touched nothing. */
-    offered = S_names_mask(parser, markdown_core_node_get_type_string(node));
-    if (children_own && contains_inlines(node)) {
-        offered |= parser->tail_inlines_mask;
-    }
+    name_row = S_names_row(parser, markdown_core_node_get_type_string(node));
+    offer_inlines = children_own && contains_inlines(node);
     for (extensions = parser->syntax_extensions, idx = 0; extensions; extensions = extensions->next, idx++) {
         const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
-        if (idx < 64 ? !(offered >> idx & 1)
-                     : !S_tail_wants_slow(
-                           ext,
-                           markdown_core_node_get_type_string(node),
-                           children_own && contains_inlines(node)
-                       )) {
+        if (!S_row_test(name_row, idx) && !(offer_inlines && S_row_test(S_inlines_row(parser), idx))) {
             continue;
         }
         ext->postprocess_block_func(ext, parser, &node);
@@ -1417,10 +1472,8 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
             return;
         }
         children_own = !MARKDOWN_CORE_NODE_BORROWED_P(node);
-        offered = S_names_mask(parser, markdown_core_node_get_type_string(node));
-        if (children_own && contains_inlines(node)) {
-            offered |= parser->tail_inlines_mask;
-        }
+        name_row = S_names_row(parser, markdown_core_node_get_type_string(node));
+        offer_inlines = children_own && contains_inlines(node);
     }
 
     if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
@@ -1461,9 +1514,7 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
             }
             for (extensions = parser->syntax_extensions, idx = 0; extensions; extensions = extensions->next, idx++) {
                 const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
-                if (idx < 64 ? !(parser->tail_inlines_mask >> idx & 1)
-                             : !(ext->postprocess_block_func && ext->postprocess_blocks &&
-                                   S_set_names(ext->postprocess_blocks, S_INLINES_MEMBER))) {
+                if (!S_row_test(S_inlines_row(parser), idx)) {
                     continue;
                 }
                 /* An "*inlines" pass rewrites CHILDREN and neither replaces
@@ -2286,19 +2337,16 @@ markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parse
      * -- after the projection, whose hooks may free skeleton nodes -- so
      * from here the nodes alone keep the pages alive, however the caller
      * frees, borrows against, or replaces what it was handed. */
-    if ((size_t)parser->block_ids_minted + 2 <= MARKDOWN_CORE_ARENA_WORTH_NODES) {
-        /* A small document's skeleton is cheaper as its own allocations
-         * than as a page plus the alignment slop: measured on a 12 KB
-         * line-fed stream, the page regime cost half again as much wall
-         * time as the calloc it replaced. NULL here keeps the clone on the
-         * per-node path. */
-        arena = NULL;
-    } else {
-        arena = markdown_core_node_arena_new(parser->mem, (size_t)parser->block_ids_minted + 2);
-        if (!arena) {
-            parser->oom = true;
-            return NULL;
-        }
+    /* ONE allocation model at every size (review-found): the byte threshold
+     * that once spared small documents the page-and-slop churn earned its
+     * keep only while every feed rebuilt every node -- with hits sharing
+     * the retained node, the arena serves the spine, the vectors and the
+     * misses, and the 12 KB stream measures the same to the digit with the
+     * threshold gone. */
+    arena = markdown_core_node_arena_new(parser->mem, (size_t)parser->block_ids_minted + 2);
+    if (!arena) {
+        parser->oom = true;
+        return NULL;
     }
     parser->derive_arena = arena;
     derived = S_clone_block_tree(parser, parser->root, refmap);

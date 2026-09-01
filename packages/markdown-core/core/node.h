@@ -444,11 +444,6 @@ static MARKDOWN_CORE_INLINE markdown_core_node *markdown_core_child_back(const m
  * a byte another tree can reach. Under AddressSanitizer the unhanded
  * remainder of a page and every forgotten node are poisoned, so the
  * checking a per-node free() gave up is kept. */
-/* Below this many skeleton nodes the page and its alignment slop cost more
- * than the callocs they replace (measured, derive_tree): a small document
- * derives on the per-node path. */
-#define MARKDOWN_CORE_ARENA_WORTH_NODES 128
-
 markdown_core_node_arena *markdown_core_node_arena_new(markdown_core_mem *mem, size_t node_hint);
 markdown_core_node *markdown_core_node_arena_calloc(markdown_core_node_arena *arena);
 void *markdown_core_node_arena_bytes(markdown_core_node_arena *arena, size_t size);
