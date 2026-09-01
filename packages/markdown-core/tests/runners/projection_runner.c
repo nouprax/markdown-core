@@ -2966,6 +2966,250 @@ static int case_child_memo(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+/* CONTAINER RETENTION's gate (#161, F27): a CLOSED container is one
+ * retainable value -- the hit is the retained ARRAY node itself, its
+ * subtree never entered -- keyed on its stamp with the consulted bits OR'd
+ * up from its entries, so a definition's arrival re-derives exactly the
+ * containers whose subtrees asked while the rest keep serving by
+ * identity. Four acts: a closed list serves pointer-identical across
+ * derivations; the closed ITEMS of a still-open list already serve while
+ * the list itself stays fresh; a consulted move re-derives the asking
+ * container per-child (the non-asking sibling still hits) and resolves;
+ * and every free order unwinds, the parser first included. */
+static int case_container_retention(const ts_spec_file *file) {
+    static const char CR_LIST[] = "- alpha one\n- beta two\n- gamma three\n\nclosing paragraph\n\n";
+    static const char CR_ITEM1[] = "- first item here\n";
+    static const char CR_ITEM2[] = "- second item here\n";
+    static const char CR_ITEM3[] = "- third item here\n";
+    static const char CR_REFLIST[] = "- plain item text\n- see [x] label\n\nafter the list\n\n";
+    static const char CR_DEF[] = "[x]: /url\n\n";
+    markdown_core_parser *parser = NULL;
+    markdown_core_node *t1 = NULL;
+    markdown_core_node *t2 = NULL;
+    int failures = 0;
+    (void)file;
+
+    if (pr_no_cache) {
+        puts("container retention: skipped under --no-cache");
+        return 0;
+    }
+
+    /* Act 1: the closed list is ONE retained value. */
+    parser = pr_parser_new();
+    if (!parser) {
+        return -1;
+    }
+    markdown_core_parser_feed(parser, CR_LIST, sizeof(CR_LIST) - 1);
+    t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+    t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+    if (!t1 || !t2) {
+        fputs("container retention: derivations failed\n", stderr);
+        failures++;
+    } else {
+        markdown_core_node *first_list = t1->children.vec[0];
+        markdown_core_node *second_list = t2->children.vec[0];
+        if (first_list != second_list || !(second_list->flags & MARKDOWN_CORE_NODE__SHARED) ||
+            !MARKDOWN_CORE_NODE_ARRAY_P(second_list) || second_list->children.count != 3) {
+            fputs("container retention: two reads of a closed list are not the same node\n", stderr);
+            failures++;
+        }
+        if (!failures) {
+            size_t len1 = 0;
+            size_t len2 = 0;
+            uint8_t *d1 = pr_dump(t1, &len1);
+            uint8_t *d2 = pr_dump(t2, &len2);
+            if (!d1 || !d2 || len1 != len2 || memcmp(d1, d2, len1) != 0) {
+                fputs("container retention: the retained list dumps differently\n", stderr);
+                failures++;
+            }
+            if (d1) {
+                markdown_core_dump_free(d1);
+            }
+            if (d2) {
+                markdown_core_dump_free(d2);
+            }
+        }
+    }
+    /* Free order both ways, the parser last here. */
+    if (t1) {
+        markdown_core_node_free(t1);
+        t1 = NULL;
+    }
+    if (t2) {
+        markdown_core_node_free(t2);
+        t2 = NULL;
+    }
+    markdown_core_parser_free(parser);
+    parser = NULL;
+
+    /* Act 2: the still-open list's CLOSED items already serve. */
+    if (!failures) {
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        markdown_core_parser_feed(parser, CR_ITEM1, sizeof(CR_ITEM1) - 1);
+        markdown_core_parser_feed(parser, CR_ITEM2, sizeof(CR_ITEM2) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        markdown_core_parser_feed(parser, CR_ITEM3, sizeof(CR_ITEM3) - 1);
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1 || !t2) {
+            fputs("container retention: open-list derivations failed\n", stderr);
+            failures++;
+        } else {
+            markdown_core_node *open1 = t1->children.vec[0];
+            markdown_core_node *open2 = t2->children.vec[0];
+            if ((open1->flags & MARKDOWN_CORE_NODE__SHARED) || (open2->flags & MARKDOWN_CORE_NODE__SHARED)) {
+                fputs("container retention: an OPEN list was retained\n", stderr);
+                failures++;
+            } else if (!MARKDOWN_CORE_NODE_ARRAY_P(open1) || !MARKDOWN_CORE_NODE_ARRAY_P(open2) ||
+                       open1->children.count != 2 || open2->children.count != 3) {
+                fputs("container retention: the open lists lost their items\n", stderr);
+                failures++;
+            } else if (open2->children.vec[0] != open1->children.vec[0] ||
+                       !(open1->children.vec[0]->flags & MARKDOWN_CORE_NODE__SHARED)) {
+                fputs("container retention: a closed item is not the same node across derivations\n", stderr);
+                failures++;
+            }
+        }
+        /* The PARSER dies first this time; the trees must keep reading. */
+        markdown_core_parser_free(parser);
+        parser = NULL;
+        if (!failures && t2) {
+            size_t len = 0;
+            uint8_t *dump = pr_dump(t2, &len);
+            if (!dump || len == 0) {
+                fputs("container retention: the tree stopped reading after the parser died\n", stderr);
+                failures++;
+            }
+            if (dump) {
+                markdown_core_dump_free(dump);
+            }
+        }
+        if (t2) {
+            markdown_core_node_free(t2);
+            t2 = NULL;
+        }
+        if (t1) {
+            markdown_core_node_free(t1);
+            t1 = NULL;
+        }
+    }
+
+    /* Act 3: a consulted move re-derives the asking container and
+     * resolves; the non-asking sibling still serves by identity. */
+    if (!failures) {
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        markdown_core_parser_feed(parser, CR_REFLIST, sizeof(CR_REFLIST) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        markdown_core_parser_feed(parser, CR_DEF, sizeof(CR_DEF) - 1);
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1 || !t2) {
+            fputs("container retention: consulted derivations failed\n", stderr);
+            failures++;
+        } else {
+            markdown_core_node *stale_list = t1->children.vec[0];
+            markdown_core_node *fresh_list = t2->children.vec[0];
+            markdown_core_node *closing1 = t1->children.vec[1];
+            markdown_core_node *closing2 = t2->children.vec[1];
+            size_t len1 = 0;
+            size_t len2 = 0;
+            uint8_t *d1 = pr_dump(t1, &len1);
+            uint8_t *d2 = pr_dump(t2, &len2);
+            if (stale_list == fresh_list) {
+                fputs("container retention: the asking list survived the definition's arrival\n", stderr);
+                failures++;
+            }
+            if (fresh_list->children.count != 2 || fresh_list->children.vec[0] != stale_list->children.vec[0]) {
+                fputs("container retention: the non-asking item did not serve by identity\n", stderr);
+                failures++;
+            }
+            if (closing1 != closing2) {
+                fputs("container retention: the non-asking sibling was re-derived\n", stderr);
+                failures++;
+            }
+            if (!d1 || !d2 || (len1 == len2 && memcmp(d1, d2, len1) == 0)) {
+                fputs("container retention: the definition's arrival resolved nothing\n", stderr);
+                failures++;
+            }
+            if (d1) {
+                markdown_core_dump_free(d1);
+            }
+            if (d2) {
+                markdown_core_dump_free(d2);
+            }
+        }
+        if (t1) {
+            markdown_core_node_free(t1);
+            t1 = NULL;
+        }
+        if (t2) {
+            markdown_core_node_free(t2);
+            t2 = NULL;
+        }
+        markdown_core_parser_free(parser);
+        parser = NULL;
+    }
+
+    /* Act 4: a container whose entry CANNOT be shared -- a directive
+     * block's CST-resident label rides the derivation arena -- is merely
+     * unstored, never a holder that references arena memory. The
+     * discriminating order: derive, FREE (that derivation's arena dies
+     * with the tree), derive again, and READ -- a store that ignored the
+     * unshared entry would now serve a pointer into the dead arena. */
+    if (!failures) {
+        static const char CR_DIRECTIVE[] = "::note[with a *label* here]{k=v}\n\nafter block\n\n";
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        markdown_core_parser_feed(parser, CR_DIRECTIVE, sizeof(CR_DIRECTIVE) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1) {
+            fputs("container retention: directive derivation failed\n", stderr);
+            failures++;
+        } else {
+            size_t len1 = 0;
+            uint8_t *baseline = pr_dump(t1, &len1);
+            markdown_core_node_free(t1);
+            t1 = NULL;
+            t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+            if (!t2 || !baseline) {
+                fputs("container retention: directive re-derivation failed\n", stderr);
+                failures++;
+            } else {
+                size_t len2 = 0;
+                uint8_t *dump = pr_dump(t2, &len2);
+                if (!dump || len1 != len2 || memcmp(baseline, dump, len1) != 0) {
+                    fputs("container retention: the directive lost its label to a dead arena\n", stderr);
+                    failures++;
+                }
+                if (dump) {
+                    markdown_core_dump_free(dump);
+                }
+            }
+            if (baseline) {
+                markdown_core_dump_free(baseline);
+            }
+            if (t2) {
+                markdown_core_node_free(t2);
+                t2 = NULL;
+            }
+        }
+        markdown_core_parser_free(parser);
+        parser = NULL;
+    }
+
+    printf(
+        "container retention: %s\n",
+        failures ? "a closed container is not one value" : "a closed container serves whole, by identity"
+    );
+    return failures ? -1 : 0;
+}
+
 /* THE MAP-IMMUNITY REFINEMENT (#163): a map's generation takes part in the
  * cache key only for a block whose stored projection had something to ask
  * that map. Both halves are asserted: a definition arriving must still
@@ -3810,6 +4054,7 @@ static const pr_case_entry PR_CASES[] = {
     {"node_sharing", case_node_sharing, 0},
     {"hook_once", case_hook_once, 0},
     {"child_memo", case_child_memo, 0},
+    {"container_retention", case_container_retention, 0},
     {"label_tail", case_label_tail, 0},
     {"feed_bound", case_feed_bound, 0},
     {"resident_memory", case_resident_memory, 0},

@@ -362,6 +362,10 @@ if(MARKDOWN_CORE_STATIC)
     # every free order, falls back on a consulted generation's move, and
     # never records an OPEN block.
     markdown_core_add_test(projection_child_memo "streaming" 120 projection_runner --case child_memo)
+    # F27: closed containers retained wholesale -- identity across
+    # derivations, consulted-gated invalidation, every free order.
+    markdown_core_add_test(projection_container_retention "streaming" 120 projection_runner --case
+                           container_retention)
     # Phase F's gates (T15, T16, T17). feed_bound is counter-based and
     # deterministic; resident_memory reads ru_maxrss, so like the wall-clock
     # gates it carries the complexity label the sanitizer presets exclude;

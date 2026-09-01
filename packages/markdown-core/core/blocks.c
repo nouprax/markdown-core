@@ -2038,6 +2038,66 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
      * do for the copied one. */
 }
 
+/* STORE A CONTAINER'S WHOLE PROJECTION (#161, F27): the vector of shared
+ * entries under one holder, keyed like a leaf's store on the origin's
+ * stamp -- a closed container is never written, the same fact the memo
+ * stands on -- with the consulted bits OR'd from the entries' own
+ * holders, so a definition's arrival re-keys exactly the containers whose
+ * subtrees asked (#163, one level up). Every entry must already be
+ * SHARED: a child that is not -- a directive's CST-resident label, a
+ * hook's fresh replacement, a lost store -- leaves the container merely
+ * unstored, a slow feed, never a holder that references arena memory.
+ * The shell and vector must be malloc's for the same reason; the clone
+ * gave every enrolled miss exactly that. The tree's own hold mirrors the
+ * one `borrow_children` takes on the leaf path: the parent vector's
+ * entry releases it at the free. */
+static void S_container_store(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_node *origin = node->link.origin;
+    markdown_core_holder *holder;
+    markdown_core_node_internal_flags consulted = 0;
+    size_t i;
+
+    node->link.origin = NULL;
+    node->flags &= ~MARKDOWN_CORE_NODE__ORIGIN;
+    if (!MARKDOWN_CORE_NODE_ARRAY_P(node) || (node->flags & MARKDOWN_CORE_NODE__ARENA)) {
+        return;
+    }
+    for (i = 0; i < node->children.count; i++) {
+        markdown_core_node *entry = node->children.vec[i];
+        if (!(entry->flags & MARKDOWN_CORE_NODE__SHARED)) {
+            return;
+        }
+        consulted |= entry->link.holder->consulted;
+    }
+    holder = markdown_core_holder_new(parser->mem);
+    if (!holder) {
+        /* Nothing is lost: the tree keeps its own vector. */
+        return;
+    }
+    holder->stamp = origin->stamp;
+    holder->refgen = parser->refmap->generation;
+    holder->footgen = parser->footnote_defs->generation;
+    holder->extgen = parser->extension_generation;
+    holder->consulted = consulted;
+    holder->node = node;
+    /* Every consumer of a SHARED entry -- the free walk, the memo's push,
+     * the dissolve -- reaches the holder through the entry's own link,
+     * exactly as a leaf's borrow leaves it. */
+    node->link.holder = holder;
+    /* The creation hold is the cache's (holders are born held); this one
+     * is the TREE's. */
+    markdown_core_holder_hold(holder);
+    if (origin->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) {
+        markdown_core_holder_release(origin->link.holder);
+    }
+    origin->link.holder = holder;
+    origin->flags |= MARKDOWN_CORE_NODE__CACHE_OWNER;
+    node->flags |= MARKDOWN_CORE_NODE__SHARED;
+    node->parent = NULL;
+    node->next = NULL;
+    node->prev = NULL;
+}
+
 /* THE STABLE-PREFIX MEMO's freshness (#161, F25): the whole recorded run in
  * one comparison per axis instead of one per block. The per-block key
  * (S_cache_fresh) also compares the block's write stamp; the memo carries
@@ -2131,9 +2191,21 @@ static markdown_core_node *S_clone_block_node(
      * feed to save fifteen field copies. It also keeps the DOCUMENT out
      * by construction: the root is open for every derivation that can
      * ever see it. */
-    enrolled = MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src) && src->first_child == NULL &&
-               (contains_inlines((markdown_core_node *)src) || !(src->flags & MARKDOWN_CORE_NODE__OPEN)) &&
-               refmap == parser->refmap && !parser->no_projection_cache;
+    /* A CLOSED CONTAINER enrolls WITH its children (#161, F27): once its
+     * subtree stops changing -- closed blocks are never written, and the
+     * open spine is the rightmost path, so a closed container holds no
+     * open descendant -- its whole projection is one retainable value,
+     * keyed like a leaf's on its own stamp plus the OR of its entries'
+     * consulted bits. The hit skips the entire subtree; the miss clones,
+     * descends, and the sweep stores it once every entry has turned
+     * SHARED (its own children hit or were stored first), failing closed
+     * on any that has not -- a directive's CST-resident label, a hook's
+     * fresh replacement. */
+    enrolled = MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src) && refmap == parser->refmap &&
+               !parser->no_projection_cache &&
+               (src->first_child == NULL
+                       ? (contains_inlines((markdown_core_node *)src) || !(src->flags & MARKDOWN_CORE_NODE__OPEN))
+                       : (!contains_inlines((markdown_core_node *)src) && !(src->flags & MARKDOWN_CORE_NODE__OPEN)));
     hit = enrolled && S_cache_fresh(parser, src, refmap) && src->link.holder->node != NULL;
     if (hit) {
         markdown_core_holder *holder = src->link.holder;
@@ -2477,12 +2549,12 @@ static markdown_core_node *S_clone_block_tree(
             /* A HIT never reaches this branch (review-found): the retained
              * node IS the projection of the source's whole subtree, and
              * descending would clone raw CST children over the shared
-             * projection every other live tree is reading. An enrolled
-             * MISS never reaches it either, by the enrolled predicate
-             * itself now -- a block with skeleton children never enrolls
-             * -- so ORIGIN here is provably impossible, and the assert
-             * holds the door on the predicate ever loosening. */
-            assert(!(dst->flags & MARKDOWN_CORE_NODE__ORIGIN));
+             * projection every other live tree is reading. An INLINE
+             * enrolled miss never reaches it either -- childless by the
+             * predicate -- while a container-enrolled miss (F27) descends
+             * exactly here, carrying ORIGIN for the sweep's store; the
+             * assert keeps the inline door shut. */
+            assert(!(dst->flags & MARKDOWN_CORE_NODE__ORIGIN) || !contains_inlines(dst));
             if (!S_vec_open(parser, dst, src, NULL)) {
                 markdown_core_node_free(dst_root);
                 return NULL;
@@ -2609,7 +2681,11 @@ static markdown_core_node *S_project(
         for (i = parser->fresh_queue_size; i > 0; i--) {
             markdown_core_node *built = parser->fresh_queue[i - 1];
             if (built->flags & MARKDOWN_CORE_NODE__ORIGIN) {
-                S_cache_store(parser, built);
+                if (MARKDOWN_CORE_NODE_ARRAY_P(built)) {
+                    S_container_store(parser, built);
+                } else {
+                    S_cache_store(parser, built);
+                }
             }
         }
         parser->fresh_queue_size = 0;
