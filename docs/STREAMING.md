@@ -1838,8 +1838,15 @@ O(built). The tail-site stores, the pre-hook sweep and its compaction
 all fell to the one mechanism; a hooked container stores on its first
 derivation and serves by identity from the second. The gate's acts five
 through seven pin the counting hook, the removing hook (sanitizer-
-judged), and the inside-edit landing; the harnesses re-measure to the
-digit (85.66M nested) with flat and fence-mixed within half a percent.
+judged), and the inside-edit landing. One deliberate carve-out closed
+the round: a child under a hooked OPEN container defers retention -- its
+ancestor's hook may still edit it on a later feed, and the third feed's
+"remove the first item once three exist" must land, not silently miss a
+frozen node -- so that subtree stays per-feed fresh exactly as before
+this round, until the close bakes the hook's last word into the stored
+whole (act eight). The harnesses re-measure at 88.0M nested (the
+deferral's ancestor climb, ~+3%) with flat and fence-mixed within a
+percent.
 
 ---
 

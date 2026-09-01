@@ -3037,6 +3037,38 @@ static const markdown_core_syntax_extension CR_PRUNING_EXTENSION = {
     .postprocess_blocks = "list\0",
 };
 
+static size_t cr_third_hook_runs;
+
+/* Removes the FIRST item once three exist -- the cross-feed inside edit
+ * (review-found): while the list stays open its items must stay fresh,
+ * or the third feed's hook meets a frozen first item and the removal is
+ * a silently refused no-op. */
+static void cr_third_item_hook(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node **block
+) {
+    size_t count = 0;
+    markdown_core_children item = markdown_core_node_children(*block);
+    (void)extension;
+    (void)parser;
+    cr_third_hook_runs++;
+    for (; item.child; item = markdown_core_children_next(item)) {
+        count++;
+    }
+    if (count >= 3) {
+        markdown_core_node *first = (markdown_core_node *)markdown_core_node_children(*block).child;
+        markdown_core_node_unlink(first);
+        markdown_core_node_free(first);
+    }
+}
+
+static const markdown_core_syntax_extension CR_THIRD_EXTENSION = {
+    .name = "container_third_probe",
+    .postprocess_block_func = cr_third_item_hook,
+    .postprocess_blocks = "list\0",
+};
+
 /* Removes the block it is handed -- the contract's other allowance, and
  * the one that frees a whole subtree mid-drain: the sweep must never
  * read what lived under it (review-found). */
@@ -3476,6 +3508,82 @@ static int case_container_retention(const ts_spec_file *file) {
         }
         if (t3) {
             markdown_core_node_free(t3);
+        }
+        markdown_core_parser_free(parser);
+        parser = NULL;
+    }
+
+    /* Act 8: the ancestor's future edit outranks retention
+     * (review-found): a list hook that removes the first item once three
+     * exist must find it EDITABLE on the third feed, so items under a
+     * hooked OPEN list stay fresh per feed; once the list closes, the
+     * hook's last word lands in the closing drain and the whole subtree
+     * stores with it, serving by identity after. */
+    if (!failures) {
+        static const char CR_ONE[] = "- item one\n";
+        static const char CR_TWO[] = "- item two\n";
+        static const char CR_THREE[] = "- item three\n";
+        static const char CR_CLOSER[] = "\nclosing paragraph\n\n";
+        markdown_core_node *t3 = NULL;
+        markdown_core_node *t4 = NULL;
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        if (!markdown_core_parser_attach_syntax_extension(parser, &CR_THIRD_EXTENSION)) {
+            fputs("container retention: could not attach the third-item probe\n", stderr);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        cr_third_hook_runs = 0;
+        markdown_core_parser_feed(parser, CR_ONE, sizeof(CR_ONE) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        markdown_core_parser_feed(parser, CR_TWO, sizeof(CR_TWO) - 1);
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        markdown_core_parser_feed(parser, CR_THREE, sizeof(CR_THREE) - 1);
+        t3 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1 || !t2 || !t3) {
+            fputs("container retention: incremental hooked derivations failed\n", stderr);
+            failures++;
+        } else {
+            markdown_core_node *open_list = t3->children.vec[0];
+            if (!MARKDOWN_CORE_NODE_ARRAY_P(open_list) || open_list->children.count != 2) {
+                fputs("container retention: the third feed's removal was silently refused\n", stderr);
+                failures++;
+            }
+        }
+        if (t1) {
+            markdown_core_node_free(t1);
+            t1 = NULL;
+        }
+        if (t2) {
+            markdown_core_node_free(t2);
+            t2 = NULL;
+        }
+        if (t3) {
+            markdown_core_node_free(t3);
+            t3 = NULL;
+        }
+        if (!failures) {
+            markdown_core_parser_feed(parser, CR_CLOSER, sizeof(CR_CLOSER) - 1);
+            t3 = markdown_core_parser_derive_tree(parser, parser->refmap);
+            t4 = markdown_core_parser_derive_tree(parser, parser->refmap);
+            if (!t3 || !t4) {
+                fputs("container retention: closing hooked derivations failed\n", stderr);
+                failures++;
+            } else if (t3->children.vec[0] != t4->children.vec[0] ||
+                       !(t4->children.vec[0]->flags & MARKDOWN_CORE_NODE__SHARED) ||
+                       t4->children.vec[0]->children.count != 2) {
+                fputs("container retention: the closed edited list did not serve by identity\n", stderr);
+                failures++;
+            }
+            if (t3) {
+                markdown_core_node_free(t3);
+                t3 = NULL;
+            }
+            if (t4) {
+                markdown_core_node_free(t4);
+            }
         }
         markdown_core_parser_free(parser);
         parser = NULL;

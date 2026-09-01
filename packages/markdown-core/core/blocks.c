@@ -2693,8 +2693,43 @@ static bool S_store_frame_push(markdown_core_parser *parser, markdown_core_node 
     return true;
 }
 
+/* Will a NAME hook still reach this CST node's subtree on a later feed?
+ * Only an OPEN ancestor can: it reprojects fresh every derivation and its
+ * hook may edit anywhere inside (the contract's words), while a closed
+ * ancestor runs its one storing hook in the same drain that precedes this
+ * very pass. The name rows alone answer -- an "*inlines" pass rewrites an
+ * inline list's children and never restructures blocks (F15 rule 2). */
+static bool S_open_ancestor_hook_reaches(markdown_core_parser *parser, const markdown_core_node *cst) {
+    const markdown_core_node *ancestor;
+    S_tail_masks_fresh(parser);
+    for (ancestor = cst->parent; ancestor && (ancestor->flags & MARKDOWN_CORE_NODE__OPEN);
+        ancestor = ancestor->parent) {
+        if (S_row_any(
+                parser,
+                S_names_row(parser, markdown_core_node_get_type_string((markdown_core_node *)ancestor))
+            )) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void S_store_dispatch(markdown_core_parser *parser, markdown_core_node *node) {
     if (!(node->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
+        return;
+    }
+    /* AN ANCESTOR'S FUTURE EDIT OUTRANKS RETENTION (review-found): a
+     * child stored under a hooked OPEN container would be frozen by the
+     * time that container's hook re-ran on the next feed, and the edit
+     * the contract promises -- remove an item once three exist -- would
+     * silently miss. Such a child stays fresh, re-projected per feed
+     * exactly as before this round, until the ancestor closes; the
+     * closing derivation runs the hook's last word in its drain and THEN
+     * stores the whole subtree, edit baked in. Bounded to the hooked
+     * container's own subtree, only while it is open. */
+    if (node->link.origin && S_open_ancestor_hook_reaches(parser, node->link.origin)) {
+        node->link.origin = NULL;
+        node->flags &= ~MARKDOWN_CORE_NODE__ORIGIN;
         return;
     }
     if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
