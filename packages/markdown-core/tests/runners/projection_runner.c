@@ -3021,10 +3021,10 @@ static void cr_pruning_hook(
     for (; item.child; item = markdown_core_children_next(item)) {
         markdown_core_children inner = markdown_core_node_children(item.child);
         for (; inner.child; inner = markdown_core_children_next(inner)) {
-            if (markdown_core_node_get_type(inner.child) == MARKDOWN_CORE_NODE_LIST) {
-                markdown_core_node *doomed = inner.child;
-                markdown_core_node_unlink(doomed);
-                markdown_core_node_free(doomed);
+            markdown_core_node *candidate = (markdown_core_node *)inner.child;
+            if (markdown_core_node_get_type(candidate) == MARKDOWN_CORE_NODE_LIST) {
+                markdown_core_node_unlink(candidate);
+                markdown_core_node_free(candidate);
                 break;
             }
         }
@@ -3443,7 +3443,7 @@ static int case_container_retention(const ts_spec_file *file) {
             for (; item.child; item = markdown_core_children_next(item)) {
                 for (inner = markdown_core_node_children(item.child); inner.child;
                     inner = markdown_core_children_next(inner)) {
-                    if (markdown_core_node_get_type(inner.child) == MARKDOWN_CORE_NODE_LIST) {
+                    if (markdown_core_node_get_type((markdown_core_node *)inner.child) == MARKDOWN_CORE_NODE_LIST) {
                         lists_inside++;
                     }
                 }
