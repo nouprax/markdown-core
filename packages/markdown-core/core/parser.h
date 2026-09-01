@@ -145,6 +145,20 @@ struct markdown_core_parser {
     } *spine_memos;
     size_t spine_memo_size;
     size_t spine_memo_alloc;
+    /* THE STORE PASS's frames (F27): one per level of the fresh subtree
+     * being walked after the drain, so the pass is iterative at any
+     * nesting. Reused across the projections of one parse; released with
+     * the parse. */
+    struct markdown_core_store_frame {
+        markdown_core_node *node;
+        /* The resume position among the node's children: the index for a
+         * vector container, the next sibling pointer for an intrusive
+         * one. */
+        size_t next_index;
+        markdown_core_node *next_intrusive;
+    } *store_stack;
+    size_t store_stack_size;
+    size_t store_stack_alloc;
     /* THE PER-BLOCK TAIL'S QUEUE (T18): the blocks a projection's walk found
      * tail work for, in EXIT order, acted on after the walk -- a hook may
      * replace or remove the block, and the walk must not be standing on it

@@ -257,6 +257,10 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     parser->fresh_queue = NULL;
     parser->fresh_queue_size = 0;
     parser->fresh_queue_alloc = 0;
+    parser->mem->free(parser->store_stack);
+    parser->store_stack = NULL;
+    parser->store_stack_size = 0;
+    parser->store_stack_alloc = 0;
     /* The parser's own holds on the spine memos (F25, F27); trees that
      * consumed one keep it alive after this. */
     {
@@ -1591,41 +1595,15 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
         S_number_inline_descendants(node);
     }
 
-    /* THE STORE, last, so the list the cache keeps is the one the tail
-     * finished with -- and the numbering above rides into it. A derived block
-     * that was replaced took its origin with it. A CHILDLESS block stores
-     * too (#161, F27): a code fence the formula hook looked at and declined
-     * -- or retyped in place, which is the promotion T9's amendment said a
-     * hit must reproduce -- is the deterministic projection of its origin
-     * under the stored key, exactly like an inline list; without this arm a
-     * bare leaf with any name-declared hook could never be retained, and
-     * with the formula extension attached that was every code fence in the
-     * document. What still un-enrolls here is a block that lost its inline
-     * standing while KEEPING children: its list is no longer the shape the
-     * store's move honors. */
-    if (node && (node->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
-        if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
-            /* A TAILED CONTAINER retains too (review-found): an extension
-             * that declares a container name queues it here, and
-             * un-enrolling it made every later derivation reclone the
-             * unchanged closed subtree -- the bound this round exists
-             * for. What the hooks left in place is the deterministic
-             * projection of the origin under the stored key, exactly as
-             * a declined promotion is, and the container store's own
-             * all-SHARED proof fails closed on anything they changed
-             * that cannot share -- an appended fresh child included. The
-             * ARRAY arm is asked FIRST (review-found): a vector container
-             * emptied by its own hook answers `first_child == NULL`
-             * through the union, and the leaf store would clear its
-             * ORIGIN only to refuse the shape. */
-            S_container_store(parser, node);
-        } else if (children_own && (contains_inlines(node) || node->first_child == NULL)) {
-            S_cache_store(parser, node);
-        } else {
-            node->link.origin = NULL;
-            node->flags &= ~MARKDOWN_CORE_NODE__ORIGIN;
-        }
-    }
+    /* THE STORE MOVED OFF THE TAIL (F27, review-found): a hook acts on
+     * the block it is handed AND INSIDE IT (the contract's own words), so
+     * nothing may freeze until every hook that can reach a node has run
+     * -- a child stored at its own tail was SHARED by the time its
+     * ancestor's hook tried to edit inside, and the edit was silently
+     * refused. Every store now happens in ONE post-order pass over the
+     * live tree after the whole drain (S_store_pass), which also ends the
+     * era of pre-hook queues read after hooks may have freed their
+     * entries. */
     *block = node;
 }
 
@@ -2086,21 +2064,6 @@ static void S_container_store(markdown_core_parser *parser, markdown_core_node *
     }
     for (i = 0; i < node->children.count; i++) {
         markdown_core_node *entry = node->children.vec[i];
-        if (!(entry->flags & MARKDOWN_CORE_NODE__SHARED) && (entry->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
-            /* AN UNSWEPT DESCENDANT STORES AT ITS ANCESTOR'S TAIL
-             * (review-found): the sweep must not read a node an ancestor
-             * hook may have freed, so a candidate under a hooked ancestor
-             * is excluded there -- but HERE the subtree is provably
-             * alive, since this container survived to its own store.
-             * Bottom-up through the recursion, mirroring the sweep's
-             * child-first order; a child that still cannot share fails
-             * the whole container closed below, as ever. */
-            if (MARKDOWN_CORE_NODE_ARRAY_P(entry)) {
-                S_container_store(parser, entry);
-            } else if (entry->first_child == NULL) {
-                S_cache_store(parser, entry);
-            }
-        }
         if (!(entry->flags & MARKDOWN_CORE_NODE__SHARED)) {
             return;
         }
@@ -2692,41 +2655,113 @@ static void S_project_fresh(markdown_core_parser *parser, markdown_core_map *ref
             }
         }
     }
-    /* THE SWEEPABLES ARE PICKED BEFORE ANY HOOK RUNS (#161, F27,
-     * review-shaped): the fresh list is compacted down to the built blocks
-     * that carry ORIGIN and NO tail work -- exactly the set the drain will
-     * never hand to a hook, so nothing here can be freed or replaced
-     * before the sweep reads it. A block WITH tail work settles its own
-     * store at its tail's end, as before. Clone order is preserved, so
-     * the sweep's backward walk still stores a child before its parent
-     * asks. */
-    {
-        size_t kept = 0;
-        for (i = 0; i < parser->fresh_queue_size; i++) {
-            markdown_core_node *block = parser->fresh_queue[i];
-            const markdown_core_node *ancestor;
-            bool reachable_by_a_hook = MARKDOWN_CORE_NODE_BLOCK_P(block) && S_block_has_tail_work(parser, block);
-            /* An ANCESTOR's hook can free this block too (review-found):
-             * a hook may remove or replace the block it is handed, and
-             * that takes the whole subtree -- so a candidate is safe only
-             * when NO node on its parent chain will be handed to one.
-             * Every fresh ancestor passed the same tail-work question on
-             * this very list, so re-asking it up the chain is exactly
-             * queue membership, without disturbing the drain's order. A
-             * candidate under a hooked ancestor is merely unswept: its
-             * subtree stays per-derivation while the hook stays -- slow,
-             * never a dangling read. */
-            for (ancestor = block->parent; !reachable_by_a_hook && ancestor; ancestor = ancestor->parent) {
-                reachable_by_a_hook = MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)ancestor) &&
-                                      S_block_has_tail_work(parser, (markdown_core_node *)ancestor);
+    parser->fresh_queue_size = 0;
+    markdown_core_manage_extensions_special_characters(parser, false);
+}
+
+/* THE STORE PASS (#161, F27, review-shaped three times over): one
+ * post-order walk of the LIVE tree, after the whole drain, storing every
+ * ORIGIN node whose shape a store honors. After-the-drain is the
+ * contract's own requirement -- a hook acts on the block it is handed AND
+ * INSIDE IT, so a child frozen at its own tail turned an ancestor's later
+ * edit into a silently refused no-op. The live tree is the liveness proof
+ * a pre-hook queue never had: what a hook freed is simply not here. And
+ * post-order is the container store's all-SHARED proof arriving in the
+ * right order. The walk skips retained subtrees whole (nothing fresh
+ * lives under SHARED), never descends past inline content, and starts a
+ * memoized container at its own boundary, so it is O(built) with a flag
+ * test per skipped entry. Iterative on an explicit frame stack: nesting
+ * is input-shaped and the C stack is not. Any refused allocation ends the
+ * pass early -- unstored is a slow feed, never a wrong tree. */
+static bool S_store_frame_push(markdown_core_parser *parser, markdown_core_node *node) {
+    if (parser->store_stack_size == parser->store_stack_alloc) {
+        size_t grown = parser->store_stack_alloc ? parser->store_stack_alloc * 2 : 16;
+        struct markdown_core_store_frame *stack =
+            (struct markdown_core_store_frame *)parser->mem->realloc(parser->store_stack, grown * sizeof(*stack));
+        if (!stack) {
+            return false;
+        }
+        parser->store_stack = stack;
+        parser->store_stack_alloc = grown;
+    }
+    parser->store_stack[parser->store_stack_size].node = node;
+    parser->store_stack[parser->store_stack_size].next_index =
+        (node->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) ? node->link.memo_ref->boundary : 0;
+    parser->store_stack[parser->store_stack_size].next_intrusive =
+        MARKDOWN_CORE_NODE_ARRAY_P(node) ? NULL : node->first_child;
+    parser->store_stack_size++;
+    return true;
+}
+
+static void S_store_dispatch(markdown_core_parser *parser, markdown_core_node *node) {
+    if (!(node->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
+        return;
+    }
+    if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
+        S_container_store(parser, node);
+    } else if (contains_inlines(node) || node->first_child == NULL) {
+        S_cache_store(parser, node);
+    } else {
+        /* Retyped out of its inline standing while keeping children: no
+         * store honors the shape, so it merely un-enrolls. */
+        node->link.origin = NULL;
+        node->flags &= ~MARKDOWN_CORE_NODE__ORIGIN;
+    }
+}
+
+/* Does the pass need to look INSIDE this fresh block? A vector container
+ * and a non-inline container with children can hold fresh blocks; an
+ * inline leaf holds only its parsed list, which the scan must not pay
+ * for. */
+static bool S_store_descends(markdown_core_node *node) {
+    return MARKDOWN_CORE_NODE_ARRAY_P(node) || (!contains_inlines(node) && node->first_child != NULL);
+}
+
+static void S_store_pass(markdown_core_parser *parser, markdown_core_node *root) {
+    parser->store_stack_size = 0;
+    if (!S_store_frame_push(parser, root)) {
+        return;
+    }
+    while (parser->store_stack_size) {
+        struct markdown_core_store_frame *frame = &parser->store_stack[parser->store_stack_size - 1];
+        markdown_core_node *descend = NULL;
+        markdown_core_node *entry;
+        if (MARKDOWN_CORE_NODE_ARRAY_P(frame->node)) {
+            while (frame->next_index < frame->node->children.count) {
+                entry = frame->node->children.vec[frame->next_index++];
+                if ((entry->flags & MARKDOWN_CORE_NODE__SHARED) || !MARKDOWN_CORE_NODE_BLOCK_P(entry)) {
+                    continue;
+                }
+                if (S_store_descends(entry)) {
+                    descend = entry;
+                    break;
+                }
+                S_store_dispatch(parser, entry);
             }
-            if ((block->flags & MARKDOWN_CORE_NODE__ORIGIN) && !reachable_by_a_hook) {
-                parser->fresh_queue[kept++] = block;
+        } else {
+            while (frame->next_intrusive) {
+                entry = frame->next_intrusive;
+                frame->next_intrusive = entry->next;
+                if ((entry->flags & MARKDOWN_CORE_NODE__SHARED) || !MARKDOWN_CORE_NODE_BLOCK_P(entry)) {
+                    continue;
+                }
+                if (S_store_descends(entry)) {
+                    descend = entry;
+                    break;
+                }
+                S_store_dispatch(parser, entry);
             }
         }
-        parser->fresh_queue_size = kept;
+        if (descend) {
+            if (!S_store_frame_push(parser, descend)) {
+                parser->store_stack_size = 0;
+                return;
+            }
+            continue;
+        }
+        parser->store_stack_size--;
+        S_store_dispatch(parser, frame->node);
     }
-    markdown_core_manage_extensions_special_characters(parser, false);
 }
 
 static markdown_core_node *S_project(
@@ -2754,29 +2789,11 @@ static markdown_core_node *S_project(
 
     S_run_block_tails(parser, &skeleton);
 
-    /* THE SWEEP STORES WHAT NO TAIL VISITED (#161, F27): a bare leaf -- a
-     * code fence, a thematic break, an HTML block outside the strip pass,
-     * an empty container -- has no tail work, so the store that lives at
-     * the tail's end never saw it and every feed recloned it forever --
-     * and one at top level capped the document's memo at its index. The
-     * fresh list was compacted down to exactly these before any hook ran
-     * (S_project_fresh), so every entry is alive; the walk runs BACKWARD
-     * so a child is stored before its parent asks, which is the order
-     * container retention rides. Derive-path only: the finish path
-     * projects the CST itself, where nothing carries ORIGIN. */
-    if (parser->fresh_queue_armed) {
-        size_t i;
-        for (i = parser->fresh_queue_size; i > 0; i--) {
-            markdown_core_node *built = parser->fresh_queue[i - 1];
-            if (built->flags & MARKDOWN_CORE_NODE__ORIGIN) {
-                if (MARKDOWN_CORE_NODE_ARRAY_P(built)) {
-                    S_container_store(parser, built);
-                } else {
-                    S_cache_store(parser, built);
-                }
-            }
-        }
-        parser->fresh_queue_size = 0;
+    /* THE STORE PASS (F27): every store, after every hook. Derive-path
+     * only -- the finish path projects the CST itself, where nothing
+     * carries ORIGIN. */
+    if (parser->fresh_queue_armed && skeleton) {
+        S_store_pass(parser, skeleton);
     }
 
     parser->line_marks_size = marks_before;

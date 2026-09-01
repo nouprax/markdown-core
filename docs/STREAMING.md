@@ -1820,6 +1820,27 @@ and count) — every nested level now pays only for its OPEN containers —
 which is #161's stated goal, O(open + changed), on every shape the
 suite runs.**
 
+**The review round consolidated the store into ONE pass.** Codex worked
+the landing over four findings, and the last one named the invariant the
+first three were circling: the hook contract's own words are that a hook
+acts on the block it is handed AND INSIDE IT, so nothing may freeze
+until every hook that can reach a node has run — a child stored at its
+own tail was SHARED by the time its ancestor's hook edited inside, and
+the edit was a silently refused no-op (a wart that predated this round
+for inline leaves). Every store now happens in one post-order walk of
+the LIVE tree after the whole drain (`S_store_pass`): the live tree is
+the liveness proof a pre-hook queue never had (what a hook freed is
+simply not here — the queue-read use-after-free Codex predicted was
+reproduced verbatim under ASan before the rework), post-order is the
+container store's all-SHARED proof arriving in the right order, and the
+walk skips retained subtrees and memoized prefixes whole, so it stays
+O(built). The tail-site stores, the pre-hook sweep and its compaction
+all fell to the one mechanism; a hooked container stores on its first
+derivation and serves by identity from the second. The gate's acts five
+through seven pin the counting hook, the removing hook (sanitizer-
+judged), and the inside-edit landing; the harnesses re-measure to the
+digit (85.66M nested) with flat and fence-mixed within half a percent.
+
 ---
 
 ## 4. Decisions — RULED, 2026-08-25

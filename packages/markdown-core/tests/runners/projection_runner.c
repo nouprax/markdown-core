@@ -3002,6 +3002,41 @@ static const markdown_core_syntax_extension CR_LIST_EXTENSION = {
     .postprocess_blocks = "list\0",
 };
 
+static size_t cr_prune_hook_runs;
+
+/* Edits INSIDE the block it is handed -- the contract's own words -- by
+ * removing any nested list from the handed list's items. Before the
+ * store moved off the tail, the inner list was already FROZEN when this
+ * ran on the outer one, and the removal was a silently refused no-op
+ * (review-found). */
+static void cr_pruning_hook(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node **block
+) {
+    markdown_core_children item = markdown_core_node_children(*block);
+    (void)extension;
+    (void)parser;
+    cr_prune_hook_runs++;
+    for (; item.child; item = markdown_core_children_next(item)) {
+        markdown_core_children inner = markdown_core_node_children(item.child);
+        for (; inner.child; inner = markdown_core_children_next(inner)) {
+            if (markdown_core_node_get_type(inner.child) == MARKDOWN_CORE_NODE_LIST) {
+                markdown_core_node *doomed = inner.child;
+                markdown_core_node_unlink(doomed);
+                markdown_core_node_free(doomed);
+                break;
+            }
+        }
+    }
+}
+
+static const markdown_core_syntax_extension CR_PRUNING_EXTENSION = {
+    .name = "container_prune_probe",
+    .postprocess_block_func = cr_pruning_hook,
+    .postprocess_blocks = "list\0",
+};
+
 /* Removes the block it is handed -- the contract's other allowance, and
  * the one that frees a whole subtree mid-drain: the sweep must never
  * read what lived under it (review-found). */
@@ -3368,6 +3403,79 @@ static int case_container_retention(const ts_spec_file *file) {
         if (t2) {
             markdown_core_node_free(t2);
             t2 = NULL;
+        }
+        markdown_core_parser_free(parser);
+        parser = NULL;
+    }
+
+    /* Act 7: a hook EDITS INSIDE the block it is handed -- the
+     * contract's own words -- and the edit must land: the outer list's
+     * hook removes the nested list from its first item, which the old
+     * tail-time store had already frozen by the time the outer hook ran
+     * (review-found; the planted early pass reproduces the silent
+     * refusal). The edited container then stores WITH the edit and
+     * serves by identity, the hooks never re-run. */
+    if (!failures) {
+        static const char CR_NESTED[] = "- outer one\n  - inner a\n  - inner b\n- outer two\n\nclose\n\n";
+        markdown_core_node *t3 = NULL;
+        parser = pr_parser_new();
+        if (!parser) {
+            return -1;
+        }
+        if (!markdown_core_parser_attach_syntax_extension(parser, &CR_PRUNING_EXTENSION)) {
+            fputs("container retention: could not attach the pruning probe\n", stderr);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        cr_prune_hook_runs = 0;
+        markdown_core_parser_feed(parser, CR_NESTED, sizeof(CR_NESTED) - 1);
+        t1 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        t2 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        t3 = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!t1 || !t2 || !t3) {
+            fputs("container retention: pruning derivations failed\n", stderr);
+            failures++;
+        } else {
+            markdown_core_node *outer = t1->children.vec[0];
+            markdown_core_children item = markdown_core_node_children(outer);
+            markdown_core_children inner;
+            int lists_inside = 0;
+            for (; item.child; item = markdown_core_children_next(item)) {
+                for (inner = markdown_core_node_children(item.child); inner.child;
+                    inner = markdown_core_children_next(inner)) {
+                    if (markdown_core_node_get_type(inner.child) == MARKDOWN_CORE_NODE_LIST) {
+                        lists_inside++;
+                    }
+                }
+            }
+            if (lists_inside != 0) {
+                fputs("container retention: the inside edit was silently refused\n", stderr);
+                failures++;
+            }
+            if (t2->children.vec[0] != outer || t3->children.vec[0] != outer ||
+                !(outer->flags & MARKDOWN_CORE_NODE__SHARED)) {
+                fputs("container retention: the edited container did not serve by identity\n", stderr);
+                failures++;
+            }
+            if (cr_prune_hook_runs != 2) {
+                fprintf(
+                    stderr,
+                    "container retention: the pruning hook ran %zu times over one storing miss and two hits\n",
+                    cr_prune_hook_runs
+                );
+                failures++;
+            }
+        }
+        if (t1) {
+            markdown_core_node_free(t1);
+            t1 = NULL;
+        }
+        if (t2) {
+            markdown_core_node_free(t2);
+            t2 = NULL;
+        }
+        if (t3) {
+            markdown_core_node_free(t3);
         }
         markdown_core_parser_free(parser);
         parser = NULL;
