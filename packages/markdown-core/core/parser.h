@@ -132,13 +132,20 @@ struct markdown_core_parser {
      * document always, an open list or quote while it grows -- recorded
      * after a derivation and consumed by the next for one memo hold and a
      * memcpy instead of a freshness check, a hold and a release per
-     * closed child. Each entry is the parser's own hold on that memo,
-     * keyed by the CST container's POINTER: compared against the live
-     * spine and dereferenced only while its container is on it, so a
-     * container that closed -- or died at its close -- just falls out at
-     * the next record, its memo released (trees still holding it keep it
-     * alive). The table's length is the depth ever open at a derivation:
-     * small, swept whole each record. */
+     * closed child. THE TABLE IS THE SPINE (review-found, round 3): slot k
+     * names the spine container at depth k, the document at 0, and holds
+     * the parser's own hold on that container's memo -- NULL while the
+     * level has no proved prefix. The clone asks for a container's run at
+     * the depth it counted on the way down, and the record retakes the
+     * table by the same walk down `last_child`, so both pay one index per
+     * level where a scan of the table per container was quadratic in the
+     * depth. A slot naming another container is a miss, never a wrong
+     * tree: the pointer is COMPARED, dereferenced only while its
+     * container is on the spine, and a CST container is freed only with
+     * the parse. Containers close leaf-first, so the levels that left the
+     * spine are always the table's suffix, released whole where the record
+     * stops (trees still holding a memo keep it alive). The table's length
+     * is the depth open at the last record. */
     struct markdown_core_spine_memo {
         const markdown_core_node *container;
         markdown_core_child_memo *memo;

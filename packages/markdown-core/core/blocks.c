@@ -219,6 +219,22 @@ int markdown_core_parser_attach_syntax_extension(
     return 1;
 }
 
+/* CUT THE SPINE TABLE BACK TO `keep` LEVELS (F25, F27; parser.h): the
+ * table is a stack indexed by spine depth, so every level from `keep` up
+ * left the spine together -- containers close leaf-first -- and the
+ * parser's own hold on each level's memo ends here. A level whose prefix
+ * never proved holds no memo. Trees that consumed a released memo keep it,
+ * and through it every entry's holder, alive: persistent structure by
+ * plain refcount. */
+static void S_spine_memo_truncate(markdown_core_parser *parser, size_t keep) {
+    while (parser->spine_memo_size > keep) {
+        markdown_core_child_memo *memo = parser->spine_memos[--parser->spine_memo_size].memo;
+        if (memo) {
+            markdown_core_child_memo_release(memo);
+        }
+    }
+}
+
 static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     if (parser->root) {
         markdown_core_node_free(parser->root);
@@ -263,16 +279,10 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     parser->store_stack_alloc = 0;
     /* The parser's own holds on the spine memos (F25, F27); trees that
      * consumed one keep it alive after this. */
-    {
-        size_t spine_i;
-        for (spine_i = 0; spine_i < parser->spine_memo_size; spine_i++) {
-            markdown_core_child_memo_release(parser->spine_memos[spine_i].memo);
-        }
-        parser->mem->free(parser->spine_memos);
-        parser->spine_memos = NULL;
-        parser->spine_memo_size = 0;
-        parser->spine_memo_alloc = 0;
-    }
+    S_spine_memo_truncate(parser, 0);
+    parser->mem->free(parser->spine_memos);
+    parser->spine_memos = NULL;
+    parser->spine_memo_alloc = 0;
     parser->mem->free(parser->tail_mask_pool);
     parser->mem->free((void *)parser->tail_name_rows);
     parser->tail_mask_pool = NULL;
@@ -2596,9 +2606,11 @@ static const markdown_core_node *S_spine_consume(
     const markdown_core_node *src,
     size_t width,
     markdown_core_map *refmap,
-    S_clone_mode mode
+    S_clone_mode mode,
+    size_t depth
 ) {
-    size_t i;
+    markdown_core_child_memo *memo;
+    markdown_core_memo_ref *ref;
     /* The memo is the OTHER door retention comes through, and it opens
      * without asking a single node (review-found, P2): inside a rebuilt
      * hooked container every block must be built fresh, so the run is not
@@ -2617,40 +2629,43 @@ static const markdown_core_node *S_spine_consume(
         return src->first_child;
     }
     /* A container that JUST closed can be both things at once: its spine
-     * memo still stands (the sweep runs at the record, after this clone)
-     * while the clone has already marked it a container-enrolled MISS --
-     * and ORIGIN and memo_ref are one union slot. The store wins the
+     * memo still stands (the record, after this clone, is what retires
+     * it) while the clone has already marked it a container-enrolled MISS
+     * -- and ORIGIN and memo_ref are one union slot. The store wins the
      * transition derive: this build walks per-child once, retains the
      * whole container, and the next derivation hits it wholesale while
-     * the record sweeps the dead memo. */
+     * the record cuts the dead memo away. */
     if (dst->flags & MARKDOWN_CORE_NODE__ORIGIN) {
         return src->first_child;
     }
-    for (i = 0; i < parser->spine_memo_size; i++) {
-        markdown_core_child_memo *memo;
-        markdown_core_memo_ref *ref;
-        if (parser->spine_memos[i].container != src) {
-            continue;
-        }
-        memo = parser->spine_memos[i].memo;
-        if (memo->count == 0 || memo->count > width || !S_memo_fresh(parser, memo, refmap)) {
-            break;
-        }
-        ref = (markdown_core_memo_ref *)markdown_core_node_arena_bytes(parser->derive_arena, sizeof(*ref));
-        if (!ref) {
-            break;
-        }
-        ref->memo = memo;
-        ref->boundary = memo->count;
-        memcpy(dst->children.vec, memo->entries, memo->count * sizeof(*memo->entries));
-        dst->children.count = memo->count;
-        markdown_core_child_memo_hold(memo);
-        dst->link.memo_ref = ref;
-        dst->flags |= MARKDOWN_CORE_NODE__MEMO_PREFIX;
-        parser->cache_hits += memo->count;
-        return memo->src_last->next;
+    /* THE LOOKUP IS ONE INDEX (review-found, round 3): the table IS the
+     * spine (parser.h), so a container's run stands at its own depth or
+     * nowhere, and the pointer compare makes a slot that names some other
+     * container -- a level the record has not retaken yet -- a plain miss,
+     * never a wrong tree. The scan this replaces asked every slot for
+     * every open container, and a nest of open quotes each holding a
+     * closed paragraph before the next has as many slots as levels:
+     * quadratic in the depth, 178x slower for 16x the depth. */
+    if (depth >= parser->spine_memo_size || parser->spine_memos[depth].container != src) {
+        return src->first_child;
     }
-    return src->first_child;
+    memo = parser->spine_memos[depth].memo;
+    if (!memo || memo->count == 0 || memo->count > width || !S_memo_fresh(parser, memo, refmap)) {
+        return src->first_child;
+    }
+    ref = (markdown_core_memo_ref *)markdown_core_node_arena_bytes(parser->derive_arena, sizeof(*ref));
+    if (!ref) {
+        return src->first_child;
+    }
+    ref->memo = memo;
+    ref->boundary = memo->count;
+    memcpy(dst->children.vec, memo->entries, memo->count * sizeof(*memo->entries));
+    dst->children.count = memo->count;
+    markdown_core_child_memo_hold(memo);
+    dst->link.memo_ref = ref;
+    dst->flags |= MARKDOWN_CORE_NODE__MEMO_PREFIX;
+    parser->cache_hits += memo->count;
+    return memo->src_last->next;
 }
 
 static markdown_core_node *S_clone_block_tree(
@@ -2686,6 +2701,18 @@ static markdown_core_node *S_clone_block_tree(
      * 2). */
     const markdown_core_node *unfrozen = NULL;
     S_clone_mode mode = S_CLONE_RETAINS;
+    /* THE SPINE DEPTH (review-found, round 3): the open blocks are the
+     * rightmost path, root to `current`, each the last child of the one
+     * above, and a pre-order walk meets them top-down -- so the OPEN
+     * containers this walk has descended into count the depth of the one
+     * it stands in, which is the slot its run stands at in the spine
+     * table. Never decremented: past the deepest open container the walk
+     * only climbs, every open container being its parent's last child.
+     * Counted in every mode, since the region refuses the run and not
+     * the depth; and the record builds the table by the same walk down
+     * `last_child`, so the two sides agree by construction and a slip
+     * would cost a missed run, never a wrong tree (the lookup compares). */
+    size_t spine_depth = 0;
 
     if (!dst_root) {
         return NULL;
@@ -2698,7 +2725,7 @@ static markdown_core_node *S_clone_block_tree(
         unfrozen = src_root;
         mode = S_region_mode(unfrozen);
     }
-    src = S_spine_consume(parser, dst_root, src_root, width, refmap, mode);
+    src = S_spine_consume(parser, dst_root, src_root, width, refmap, mode, spine_depth);
     while (src) {
         markdown_core_node *dst = S_clone_block_node(parser, src, refmap, mode);
         if (!dst) {
@@ -2736,7 +2763,10 @@ static markdown_core_node *S_clone_block_tree(
                 unfrozen = src;
                 mode = S_region_mode(unfrozen);
             }
-            resume = S_spine_consume(parser, dst, src, inner_width, refmap, mode);
+            if (src->flags & MARKDOWN_CORE_NODE__OPEN) {
+                spine_depth++;
+            }
+            resume = S_spine_consume(parser, dst, src, inner_width, refmap, mode, spine_depth);
             if (resume) {
                 src = resume;
                 dst_parent = dst;
@@ -2977,6 +3007,39 @@ static markdown_core_node *S_project(
     return skeleton;
 }
 
+/* TAKE THE SLOT AT `depth` FOR `cst` (review-found, round 3): the table is
+ * the spine, so the slot either names this container already -- the
+ * common feed, the spine unchanged from the last record -- or names the
+ * one that stood at this depth before it closed, and with it every level
+ * below, which all stood inside it. That suffix is cut away whole and the
+ * slot retaken empty; the memo is born later, at the first pair that
+ * proves. The table grows only here and before anything commits to the
+ * slot, so a refused growth costs this level and those below it their
+ * runs -- a slow feed, never a wrong tree -- and nothing else. */
+static bool S_spine_memo_slot(markdown_core_parser *parser, const markdown_core_node *cst, size_t depth) {
+    assert(depth <= parser->spine_memo_size);
+    if (depth < parser->spine_memo_size) {
+        if (parser->spine_memos[depth].container == cst) {
+            return true;
+        }
+        S_spine_memo_truncate(parser, depth);
+    }
+    if (depth == parser->spine_memo_alloc) {
+        size_t grown = parser->spine_memo_alloc ? parser->spine_memo_alloc * 2 : 4;
+        struct markdown_core_spine_memo *table =
+            (struct markdown_core_spine_memo *)parser->mem->realloc(parser->spine_memos, grown * sizeof(*table));
+        if (!table) {
+            return false;
+        }
+        parser->spine_memos = table;
+        parser->spine_memo_alloc = grown;
+    }
+    parser->spine_memos[depth].container = cst;
+    parser->spine_memos[depth].memo = NULL;
+    parser->spine_memo_size = depth + 1;
+    return true;
+}
+
 /* RECORD THE STABLE PREFIX (#161, F25), after the projection stored its
  * misses: walk the derived vector alongside the CST's children and extend
  * the memo over every leading pair that PROVES itself -- the CST child is
@@ -2988,16 +3051,19 @@ static markdown_core_node *S_project(
  * structure by plain refcount. Every failure here is absorbed the way the
  * store absorbs its own (S_cache_store): a memo that cannot be born or
  * cannot grow leaves the recorded run as it stands -- a slow feed, never
- * a wrong tree -- so no path sets `oom`. */
-static void S_spine_memo_record_level(
+ * a wrong tree -- so no path sets `oom`. Answers whether the level HOLDS
+ * ITS SLOT, which is what the walk below needs to go one level deeper: a
+ * level the table cannot index ends the spine as far as the table knows
+ * it. */
+static bool S_spine_memo_record_level(
     markdown_core_parser *parser,
     const markdown_core_node *cst,
     markdown_core_node *derived,
-    markdown_core_map *refmap
+    markdown_core_map *refmap,
+    size_t depth
 ) {
-    markdown_core_child_memo *memo = NULL;
+    markdown_core_child_memo *memo;
     const markdown_core_node *src_child;
-    size_t slot = (size_t)-1;
     size_t start;
     size_t i;
 
@@ -3005,19 +3071,15 @@ static void S_spine_memo_record_level(
      * through the public constructors, which never vectorize -- so the
      * ARRAY_P term also proves `children.vec` below is the clone's. */
     if (!MARKDOWN_CORE_NODE_ARRAY_P(derived)) {
-        return;
+        return false;
     }
-    for (i = 0; i < parser->spine_memo_size; i++) {
-        if (parser->spine_memos[i].container == cst) {
-            slot = i;
-            memo = parser->spine_memos[i].memo;
-            break;
-        }
+    if (!S_spine_memo_slot(parser, cst, depth)) {
+        return false;
     }
+    memo = parser->spine_memos[depth].memo;
     if (memo && !S_memo_fresh(parser, memo, refmap)) {
         markdown_core_child_memo_release(memo);
-        parser->spine_memo_size--;
-        parser->spine_memos[slot] = parser->spine_memos[parser->spine_memo_size];
+        parser->spine_memos[depth].memo = NULL;
         memo = NULL;
     }
     if (memo) {
@@ -3044,81 +3106,58 @@ static void S_spine_memo_record_level(
             break;
         }
         if (!memo) {
-            /* Born at the first provable pair, never empty-handed; the
-             * generations are the ones the projection just ran under. The
-             * table grows before the memo commits, so a refused slot
-             * costs the memo and nothing else. */
-            if (parser->spine_memo_size == parser->spine_memo_alloc) {
-                size_t grown = parser->spine_memo_alloc ? parser->spine_memo_alloc * 2 : 4;
-                struct markdown_core_spine_memo *table =
-                    (struct markdown_core_spine_memo *)
-                        parser->mem->realloc(parser->spine_memos, grown * sizeof(*table));
-                if (!table) {
-                    return;
-                }
-                parser->spine_memos = table;
-                parser->spine_memo_alloc = grown;
-            }
+            /* Born at the first provable pair, never empty-handed, into
+             * the slot the level already holds; the generations are the
+             * ones the projection just ran under. */
             memo = markdown_core_child_memo_new(parser->mem);
             if (!memo) {
-                return;
+                return true;
             }
             memo->refgen = parser->refmap->generation;
             memo->footgen = parser->footnote_defs->generation;
             memo->extgen = parser->extension_generation;
-            parser->spine_memos[parser->spine_memo_size].container = cst;
-            parser->spine_memos[parser->spine_memo_size].memo = memo;
-            parser->spine_memo_size++;
+            parser->spine_memos[depth].memo = memo;
         }
         if (!markdown_core_child_memo_push(memo, entry)) {
-            return;
+            return true;
         }
         memo->src_last = src_child;
     }
+    return true;
 }
 
 /* RECORD DOWN THE SPINE (F27): the document always, then each OPEN
  * container along the rightmost path, paired with its own projection --
  * the derived side's LAST entry, which is fresh exactly because its
- * source is open. Entries whose container left the spine are swept
- * first: the container closed (it retains wholesale now) or died at its
- * close; the stored pointers are COMPARED against the live spine and
- * never dereferenced, so a dead one is just never matched. */
+ * source is open. ONE PASS (review-found, round 3): the walk retakes the
+ * table level by level as it descends, and whatever stands below the
+ * level it stops at left the spine -- the container closed (it retains
+ * wholesale now) or died at its close, and containers close leaf-first,
+ * so the dead levels are always the table's suffix. The sweep this
+ * replaces climbed the live spine once per slot, quadratic in the depth
+ * whenever every open container had a run of its own. The stored
+ * pointers are COMPARED and never dereferenced, and a CST container is
+ * freed only with the parse, so a dead one is just never matched. */
 static void S_spine_memo_record(markdown_core_parser *parser, markdown_core_node *derived, markdown_core_map *refmap) {
     const markdown_core_node *cst = parser->root;
     markdown_core_node *d = derived;
-    size_t i;
+    size_t depth = 0;
 
     /* Only the parser's own map records, the store's rule (T9). */
     if (refmap != parser->refmap || parser->no_projection_cache) {
         return;
     }
-    i = 0;
-    while (i < parser->spine_memo_size) {
-        const markdown_core_node *live = parser->current;
-        bool on_spine = false;
-        while (live) {
-            if (live == parser->spine_memos[i].container) {
-                on_spine = true;
-                break;
-            }
-            live = live->parent;
-        }
-        if (on_spine) {
-            i++;
-        } else {
-            markdown_core_child_memo_release(parser->spine_memos[i].memo);
-            parser->spine_memo_size--;
-            parser->spine_memos[i] = parser->spine_memos[parser->spine_memo_size];
-        }
-    }
     while (cst && d) {
         const markdown_core_node *next_cst;
         markdown_core_node *next_d;
-        S_spine_memo_record_level(parser, cst, d, refmap);
+        if (!S_spine_memo_record_level(parser, cst, d, refmap, depth)) {
+            break;
+        }
+        depth++;
+        /* The level held its slot, which proves `d` is the clone's own
+         * vector container. */
         next_cst = cst->last_child;
-        if (!next_cst || !(next_cst->flags & MARKDOWN_CORE_NODE__OPEN) || !MARKDOWN_CORE_NODE_ARRAY_P(d) ||
-            d->children.count == 0) {
+        if (!next_cst || !(next_cst->flags & MARKDOWN_CORE_NODE__OPEN) || d->children.count == 0) {
             break;
         }
         next_d = d->children.vec[d->children.count - 1];
@@ -3128,6 +3167,7 @@ static void S_spine_memo_record(markdown_core_parser *parser, markdown_core_node
         cst = next_cst;
         d = next_d;
     }
+    S_spine_memo_truncate(parser, depth);
 }
 
 /* THE PROJECTION: AST = project(CST, refmap) (§12.1), as a NEW tree. Clone

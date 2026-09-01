@@ -407,6 +407,14 @@ if(MARKDOWN_CORE_STATIC)
     markdown_core_add_test(pathological_complexity_depth_slope "pathological;complexity" 120 projection_runner --case
                            depth_slope)
     set_tests_properties(pathological_complexity_depth_slope PROPERTIES RUN_SERIAL TRUE)
+    # F27, review round 3: the spine memo table costs each open level once. A
+    # stair of open quotes, each holding a closed paragraph before the next,
+    # gives every level a run; re-deriving it over an eightfold depth ratio
+    # reads under 2x normalized where the table scanned per container read
+    # 13-14x. Wall-clock, complexity-labelled and serial like the depth gate.
+    markdown_core_add_test(pathological_complexity_spine_depth_slope "pathological;complexity" 120 projection_runner
+                           --case spine_depth_slope)
+    set_tests_properties(pathological_complexity_spine_depth_slope PROPERTIES RUN_SERIAL TRUE)
 endif()
 
 markdown_core_add_test(

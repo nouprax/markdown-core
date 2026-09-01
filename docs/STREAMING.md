@@ -1795,10 +1795,11 @@ union). **Open-list: 1,297.5M → 304.4M Ir (−77%).**
 
 **3. Every open container on the spine carries its own child memo.**
 The document's memo was the depth-0 instance of a per-container fact,
-so `doc_memo` became a small pointer-keyed table of (CST container,
-memo) pairs, swept each record against the live spine — compared, never
-dereferenced, so a container that closed or died at its close just
-falls out. The clone consumes through one helper at the root AND at
+so `doc_memo` became a small table of (CST container, memo) pairs —
+pointer-keyed and swept each record against the live spine as landed;
+indexed by spine depth since the third review round below — compared,
+never dereferenced, so a container that closed or died at its close
+just falls out. The clone consumes through one helper at the root AND at
 every open-container descent (a run reaching the end of the child list
 skips the descent whole); the record walks the rightmost path, pairing
 each open CST container with the derived side's LAST entry, fresh
@@ -1885,6 +1886,40 @@ The harnesses re-measure at 87.8M nested (the climb read 88.5M; the
 round's pass before the carve-out, 85.7M — the rest is the clone's
 name lookups at each container descent, +0.45%), with flat and
 fence-mixed within a fraction of a percent (166.3M and 151.8M).
+
+**The third review round made the table the spine.** One finding
+after the second: the per-container memo table of commit 3 was keyed on
+the container's pointer and read by a linear scan — the clone scanned
+it once per open container it descended into, and the record swept it
+once per entry with each sweep climbing the live spine — so a document
+whose spine held a memo at every level paid depth squared twice over.
+A STAIR (each open quote holding one closed paragraph before the next
+open quote) at 100, 400, 1,600 and 6,400 levels measured its second
+derivation at 0.03, 0.29, 7.1 and 117 ms, and its first at 20 ms at the
+deepest, the record's own sweep. The table is now indexed by spine
+depth: slot k names the spine container at depth k, the document at 0.
+The clone counts the open containers it enters on the way down and
+asks for a run by that index — one compare; a slot naming another
+container is a miss, never a wrong tree — and the record retakes the
+table level by level down `last_child`, truncating the suffix the spine
+no longer holds (containers close leaf-first, so what left the spine is
+always the table's tail). Scan and sweep are gone, not made cheaper:
+0.01, 0.08, 0.29 and 3.9 ms on the same stair, 6.9 ms for its first
+derivation, and 869 instructions per level at 1,000 and at 4,000 levels
+(callgrind over steady-state derivations) — flat to four digits. The
+`spine_depth_slope` gate pins it the way `depth_slope` pins the second
+round: the stair at 500 against 4,000 levels, steady-state derivations
+after one enrolling one, normalized under 3x — 1.5–1.9x now, the
+remainder being the working set leaving the cache inside the ratio,
+against 13–14x with the scan. The three rounds share one lesson, and
+it is the design rule this section now states: every term was per-node
+work that re-derived its CONTEXT by scanning or climbing a structure
+sized by another dimension of the document — the parent chain per
+stored node, the table per container, the spine per table entry — and
+every fix was the same move, carrying the context down the walk that
+already stands on it. A side table keyed by pointer invites the scan;
+a table that mirrors the spine is read by the depth the walk already
+counts.
 
 **The cost of a container hook, stated honestly.** Declaring a
 container's name costs that container's subtree its retention for as
@@ -2216,6 +2251,19 @@ back in the vocabulary that produced them.
   to twelve of `container_retention` and a Debug-only assert at the
   hook's own call site pin P2. The price of naming a container is stated
   in F27, in §6, and in the contract's own words.
+- **The spine memo table is indexed by depth · #161's third review
+  round, 2026-09-01 (F27).** The per-container memo table was read by a
+  linear scan — once per open container in the clone, once per entry in
+  the record with a climb of the spine each — so a stair whose every
+  level holds a memo paid depth squared: 117 ms for a second derivation
+  of 6,400 levels. Slot k now names the spine container at depth k; the
+  clone counts open containers on the way down and asks by index, the
+  record retakes the table down `last_child` and truncates the suffix
+  that left the spine. 3.9 ms on the same stair, 869 instructions per
+  level at 1,000 and 4,000 (callgrind), the `spine_depth_slope` gate at
+  1.5–1.9x normalized against 13–14x. F27 states the rule the three
+  rounds share: context is carried down the walk, never re-derived by
+  scanning a structure sized by another dimension.
 
 ---
 

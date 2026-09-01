@@ -382,6 +382,15 @@ static int case_refmap_independence(const ts_spec_file *file) {
 #define PR_MIN_SAMPLE_NS 25000000ULL
 static const double PR_MAX_NORMALIZED_SLOWDOWN = 8.0;
 
+/* The slope gates each take PR_SLOPE_REPEATS samples and keep the median,
+ * so one preempted sample moves nothing. */
+static double pr_median_of_three(const double samples[PR_SLOPE_REPEATS]) {
+    double a = samples[0], b = samples[1], c = samples[2];
+    double high = a > b ? (a > c ? a : c) : (b > c ? b : c);
+    double low = a < b ? (a < c ? a : c) : (b < c ? b : c);
+    return a + b + c - high - low;
+}
+
 /* Representative prose: emphasis, an inline link, code, and a reference that
  * resolves against the map, so the projection does the work a real document
  * asks of it. */
@@ -444,12 +453,7 @@ static int pr_slope_measure(const char *input, size_t length, double *seconds) {
         }
     }
     markdown_core_parser_free(parser);
-    {
-        double a = samples[0], b = samples[1], c = samples[2];
-        double high = a > b ? (a > c ? a : c) : (b > c ? b : c);
-        double low = a < b ? (a < c ? a : c) : (b < c ? b : c);
-        *seconds = a + b + c - high - low;
-    }
+    *seconds = pr_median_of_three(samples);
     return 0;
 }
 
@@ -575,12 +579,7 @@ static int pr_depth_measure(size_t depth, double *seconds) {
         samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
     }
     free(input);
-    {
-        double a = samples[0], b = samples[1], c = samples[2];
-        double high = a > b ? (a > c ? a : c) : (b > c ? b : c);
-        double low = a < b ? (a < c ? a : c) : (b < c ? b : c);
-        *seconds = a + b + c - high - low;
-    }
+    *seconds = pr_median_of_three(samples);
     return 0;
 }
 
@@ -606,6 +605,141 @@ static int case_depth_slope(const ts_spec_file *file) {
         int failed = normalized_slowdown > PR_MAX_DEPTH_SLOWDOWN;
         printf(
             "depth slope: %zu deep: %.6fs, %zu deep: %.6fs, normalized slowdown %.3fx%s\n",
+            depths[0],
+            timings[0],
+            depths[1],
+            timings[1],
+            normalized_slowdown,
+            failed ? " [NON-LINEAR IN DEPTH]" : ""
+        );
+        return failed ? -1 : 0;
+    }
+}
+
+/* THE SPINE MEMO TABLE COSTS EACH OPEN LEVEL ONCE (#161, F27, review-found
+ * round 3). The depth gate above leaves ONE memo standing -- every quote
+ * of its nest is closed by the time it derives -- so it never meets the
+ * shape that defeats a table scanned per container: a STAIR, each open
+ * quote holding one closed paragraph before the next open quote, where
+ * every level of the spine records a run of its own and a lookup that
+ * scans the table for its container, or a sweep that climbs the spine per
+ * slot, pays depth x depth. The table indexed by spine depth pays one
+ * index per level, whichever way it is asked.
+ *
+ * The subject is the STEADY STATE, not the enrolling derivation: after one
+ * warm derivation records the runs, every further derivation of the same
+ * CST consumes the whole table and records it again, and that is what a
+ * consumer re-deriving between feeds pays. So each repeat feeds one
+ * parser, derives once off the clock, then times the derivations that
+ * follow. The document is quadratic in its depth by construction (line m
+ * carries m quote markers), so the feed is the expensive part of the
+ * repeat and stays off the clock -- and the depths are half the depth
+ * gate's, 4000 levels being a 16 MB document.
+ *
+ * The bound is the depth gate's: eightfold depth, normalized slowdown
+ * under 3x. The table scanned per container read 13-14x here (0.45 ms
+ * against 49 ms); the indexed one reads 1.5-1.9x, and its instruction
+ * count is flat to four digits (869 per level at 1000 and at 4000,
+ * callgrind) -- the remainder is the working set leaving the cache inside
+ * the ratio, which is why the bound is not tighter. Wall-clock,
+ * complexity-labelled, serial. */
+#define PR_STAIR_SMALL 500
+#define PR_STAIR_LARGE 4000
+
+static char *pr_stair_document(size_t depth, size_t *length) {
+    size_t total = 0;
+    size_t at = 0;
+    size_t m;
+    char *input;
+    for (m = 0; m < depth; m++) {
+        total += (m + 1) * 2 + (size_t)snprintf(NULL, 0, "p%zu\n", m);
+    }
+    input = (char *)malloc(total + 1);
+    if (!input) {
+        return NULL;
+    }
+    for (m = 0; m < depth; m++) {
+        size_t i;
+        for (i = 0; i <= m; i++) {
+            input[at++] = '>';
+            input[at++] = ' ';
+        }
+        at += (size_t)sprintf(input + at, "p%zu\n", m);
+    }
+    input[at] = '\0';
+    *length = at;
+    return input;
+}
+
+static int pr_stair_measure(size_t depth, double *seconds) {
+    double samples[PR_SLOPE_REPEATS];
+    size_t length = 0;
+    char *input = pr_stair_document(depth, &length);
+    int repeat;
+    if (!input) {
+        return -1;
+    }
+    for (repeat = 0; repeat < PR_SLOPE_REPEATS; repeat++) {
+        markdown_core_parser *parser = pr_parser_new();
+        markdown_core_node *derived;
+        uint64_t elapsed = 0;
+        unsigned iterations = 0;
+        if (!parser) {
+            free(input);
+            return -1;
+        }
+        markdown_core_parser_feed(parser, input, length);
+        /* The warm derivation: enrolls the closed paragraphs and records
+         * one run per open quote. */
+        derived = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!derived) {
+            markdown_core_parser_free(parser);
+            free(input);
+            return -1;
+        }
+        markdown_core_node_free(derived);
+        while (elapsed < PR_DEPTH_MIN_SAMPLE_NS && iterations < PR_DEPTH_MAX_ITERATIONS) {
+            uint64_t started = ts_monotonic_ns();
+            derived = markdown_core_parser_derive_tree(parser, parser->refmap);
+            elapsed += ts_monotonic_ns() - started;
+            if (!derived) {
+                markdown_core_parser_free(parser);
+                free(input);
+                return -1;
+            }
+            markdown_core_node_free(derived);
+            iterations++;
+        }
+        markdown_core_parser_free(parser);
+        samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
+    }
+    free(input);
+    *seconds = pr_median_of_three(samples);
+    return 0;
+}
+
+static int case_spine_depth_slope(const ts_spec_file *file) {
+    static const size_t depths[] = {PR_STAIR_SMALL, PR_STAIR_LARGE};
+    double timings[2];
+    size_t step;
+    (void)file;
+    if (pr_no_cache) {
+        puts("spine depth slope: skipped under --no-cache (nothing records, so no table is consulted)");
+        return 0;
+    }
+    for (step = 0; step < 2; step++) {
+        if (pr_stair_measure(depths[step], &timings[step]) != 0) {
+            fputs("spine depth slope: derivation failed while measuring\n", stderr);
+            return -1;
+        }
+    }
+    {
+        double depth_growth = (double)depths[1] / (double)depths[0];
+        double time_growth = timings[1] / timings[0];
+        double normalized_slowdown = time_growth / depth_growth;
+        int failed = normalized_slowdown > PR_MAX_DEPTH_SLOWDOWN;
+        printf(
+            "spine depth slope: %zu deep: %.6fs, %zu deep: %.6fs, normalized slowdown %.3fx%s\n",
             depths[0],
             timings[0],
             depths[1],
@@ -2600,15 +2734,13 @@ static int case_hook_once(const ts_spec_file *file) {
 }
 
 /* The document's spine-memo entry (F27 generalized the doc memo into the
- * per-container table); NULL when no run is recorded for the root. */
+ * per-container table, indexed by spine depth since review round 3, so the
+ * root's is slot 0 or nothing); NULL when no run is recorded for the root. */
 static markdown_core_child_memo *cm_root_memo(markdown_core_parser *parser) {
-    size_t i;
-    for (i = 0; i < parser->spine_memo_size; i++) {
-        if (parser->spine_memos[i].container == parser->root) {
-            return parser->spine_memos[i].memo;
-        }
+    if (parser->spine_memo_size == 0 || parser->spine_memos[0].container != parser->root) {
+        return NULL;
     }
-    return NULL;
+    return parser->spine_memos[0].memo;
 }
 
 static int cm_dump_contains(const uint8_t *dump, size_t length, const char *needle) {
@@ -4978,6 +5110,7 @@ static const pr_case_entry PR_CASES[] = {
     {"session_documents", case_session_documents, 0},
     {"projection_slope", case_projection_slope, 0},
     {"depth_slope", case_depth_slope, 0},
+    {"spine_depth_slope", case_spine_depth_slope, 0},
 };
 
 int main(int argc, char **argv) {
