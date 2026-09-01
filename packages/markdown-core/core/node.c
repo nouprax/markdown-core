@@ -344,7 +344,6 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(
     markdown_core_strbuf_init(mem, &node->content, 0);
     node->type = (uint16_t)type;
     node->extension = extension;
-    markdown_core_node_classify(node);
 
     switch (node->type) {
     case MARKDOWN_CORE_NODE_HEADING:
@@ -366,6 +365,11 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(
     if (node->extension && node->extension->opaque_alloc_func) {
         node->extension->opaque_alloc_func(node->extension, mem, node);
     }
+
+    /* Classified LAST (review-found): the hook may read the union defaults
+     * or the opaque payload the allocator above just built, and the answer
+     * it gives here is the one the engine freezes. */
+    markdown_core_node_classify(node);
 
     return node;
 }
@@ -607,6 +611,7 @@ static bool S_projection_frozen(const markdown_core_node *node) {
 
 int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_type type) {
     markdown_core_node_type initial_type;
+    bool contains;
 
     if (S_projection_frozen(node)) {
         return 0;
@@ -626,8 +631,12 @@ int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_typ
     /* The children must stay legal under the new type (review-found): a
      * type whose content parses into inlines cannot keep BLOCK children,
      * or set_type would build by mutation the hybrid the adoption law
-     * refuses to construct. The cursor walks either child shape. */
-    if (S_node_contains_inlines(node)) {
+     * refuses to construct. The cursor walks either child shape. The
+     * answer is captured ONCE (review-found): it gates the walk here and
+     * is the value committed below, so a stateful hook cannot answer
+     * false past the walk and true into the bit. */
+    contains = S_node_contains_inlines(node);
+    if (contains) {
         markdown_core_child_cursor cursor;
         markdown_core_node *child;
         for (child = markdown_core_child_first(node, &cursor); child;
@@ -644,7 +653,11 @@ int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_typ
     free_node_as(node);
 
     node->type = (uint16_t)type;
-    markdown_core_node_classify(node);
+    if (contains) {
+        node->flags |= MARKDOWN_CORE_NODE__CONTAINS_INLINES;
+    } else {
+        node->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__CONTAINS_INLINES;
+    }
 
     return 1;
 }
@@ -1124,8 +1137,10 @@ int markdown_core_node_set_syntax_extension(markdown_core_node *node, const mark
      * transaction set_type runs. The cursor walks either child shape. */
     {
         const markdown_core_syntax_extension *initial = node->extension;
+        bool contains;
         node->extension = extension;
-        if (S_node_contains_inlines(node)) {
+        contains = S_node_contains_inlines(node);
+        if (contains) {
             markdown_core_child_cursor cursor;
             markdown_core_node *child;
             for (child = markdown_core_child_first(node, &cursor); child;
@@ -1136,8 +1151,16 @@ int markdown_core_node_set_syntax_extension(markdown_core_node *node, const mark
                 }
             }
         }
+        /* ONE ASKING (review-found): the answer that VALIDATED is the
+         * answer COMMITTED. A second ask would let a stateful hook answer
+         * false past the children walk and true into the bit, committing
+         * the hybrid the walk just refused. */
+        if (contains) {
+            node->flags |= MARKDOWN_CORE_NODE__CONTAINS_INLINES;
+        } else {
+            node->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__CONTAINS_INLINES;
+        }
     }
-    markdown_core_node_classify(node);
     return 1;
 }
 

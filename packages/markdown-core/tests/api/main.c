@@ -1675,6 +1675,39 @@ static const markdown_core_syntax_extension HYBRID_FLIP_EXTENSION = {
     .contains_inlines_func = hybrid_probe_contains_inlines_flip,
 };
 
+/* Answers false the FIRST time and true after -- the hook that would slip
+ * a false past a validating ask and a true into a committing one, were
+ * the engine to ask twice in one transaction. */
+static int hybrid_tictoc_calls;
+
+static int hybrid_probe_contains_inlines_tictoc(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_node *node
+) {
+    (void)extension;
+    (void)node;
+    return hybrid_tictoc_calls++ > 0;
+}
+
+static const markdown_core_syntax_extension HYBRID_TICTOC_EXTENSION = {
+    .name = "hybrid_tictoc_probe",
+    .can_contain_func = hybrid_probe_can_contain,
+    .contains_inlines_func = hybrid_probe_contains_inlines_tictoc,
+};
+
+/* Reads the union defaults the constructor writes -- the hook that sees
+ * garbage if classification runs before the node is fully built. */
+static int hybrid_probe_reads_level(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
+    (void)extension;
+    return node->type == MARKDOWN_CORE_NODE_HEADING && node->as.heading.level == 1;
+}
+
+static const markdown_core_syntax_extension HYBRID_LEVEL_EXTENSION = {
+    .name = "hybrid_level_probe",
+    .can_contain_func = hybrid_probe_can_contain,
+    .contains_inlines_func = hybrid_probe_reads_level,
+};
+
 static void no_inline_block_hybrid(test_batch_runner *runner) {
     markdown_core_node *parent = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     markdown_core_node *block_child = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
@@ -1761,6 +1794,55 @@ static void no_inline_block_hybrid(test_batch_runner *runner) {
         INT_EQ(runner, markdown_core_node_append_child(flipper, taken), 1, "and still adopts one");
         markdown_core_node_free(flipper);
         hybrid_flip_answer = 0;
+    }
+
+    /* ONE ASKING per transaction (review-found): the answer that validates
+     * a descriptor change is the answer committed. A hook answering false
+     * then true must not pass the children walk on the false and commit
+     * the bit on the true. */
+    {
+        markdown_core_node *ticker = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node *carried = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+        INT_EQ(
+            runner,
+            markdown_core_node_set_syntax_extension(ticker, &HYBRID_CONTAINER_EXTENSION),
+            1,
+            "the container descriptor attaches for the tictoc setup"
+        );
+        INT_EQ(runner, markdown_core_node_append_child(ticker, carried), 1, "the container takes a block");
+        hybrid_tictoc_calls = 0;
+        INT_EQ(
+            runner,
+            markdown_core_node_set_syntax_extension(ticker, &HYBRID_TICTOC_EXTENSION),
+            1,
+            "the tictoc descriptor attaches on its validated false"
+        );
+        INT_EQ(
+            runner,
+            markdown_core_node_can_contain_type(ticker, MARKDOWN_CORE_NODE_BLOCK_QUOTE) ? 1 : 0,
+            1,
+            "the validated false is the committed answer: the container still admits blocks"
+        );
+        markdown_core_node_free(ticker);
+        hybrid_tictoc_calls = 0;
+    }
+
+    /* Classification runs on the FINISHED node (review-found): a hook may
+     * read the union defaults or the opaque payload, so the constructor
+     * classifies after both are built. The probe answers true only when
+     * it sees the heading level the constructor writes. */
+    {
+        markdown_core_node *built =
+            markdown_core_node_new_with_ext(MARKDOWN_CORE_NODE_HEADING, &HYBRID_LEVEL_EXTENSION);
+        markdown_core_node *refused = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+        INT_EQ(
+            runner,
+            markdown_core_node_append_child(built, refused),
+            0,
+            "the constructor classified the finished node: the inline heading refuses a block"
+        );
+        markdown_core_node_free(built);
+        markdown_core_node_free(refused);
     }
 
     markdown_core_node_free(parent);
