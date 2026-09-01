@@ -1,14 +1,212 @@
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "config.h"
 #include "node.h"
+#include "iterator.h"
 #include "references.h"
 #include "syntax_extension.h"
 
 static void S_node_unlink(markdown_core_node *node);
 
 #define NODE_MEM(node) markdown_core_node_mem(node)
+
+/* The arena keeps ASan's checking (#161): a page's unhanded remainder and
+ * every forgotten node are poisoned, so a read past the bump or a use after
+ * node_free reports exactly as it did when every node was its own
+ * allocation. */
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define MARKDOWN_CORE_ARENA_POISON 1
+#endif
+#elif defined(__SANITIZE_ADDRESS__)
+#define MARKDOWN_CORE_ARENA_POISON 1
+#endif
+#ifdef MARKDOWN_CORE_ARENA_POISON
+#include <sanitizer/asan_interface.h>
+#define S_arena_poison(ptr, len) __asan_poison_memory_region((ptr), (len))
+#define S_arena_unpoison(ptr, len) __asan_unpoison_memory_region((ptr), (len))
+#else
+#define S_arena_poison(ptr, len) ((void)0)
+#define S_arena_unpoison(ptr, len) ((void)0)
+#endif
+
+/* THE PAGE IS FOUND BY MASKING (node.h): every page lives inside one
+ * 64 KiB-aligned window and never outgrows it, so `forget` recovers the
+ * page header -- and the arena behind it -- from a node's address alone,
+ * and nothing else in the system carries arena identity. The allocation is
+ * over-sized by the alignment and the aligned window placed inside it
+ * (`raw` keeps what free() needs); the slop is never written, so it costs
+ * address space, not resident memory. */
+#define MARKDOWN_CORE_ARENA_ALIGN ((uintptr_t)65536)
+
+typedef struct markdown_core_node_arena_page {
+    markdown_core_node_arena *arena;
+    void *raw;
+    struct markdown_core_node_arena_page *next;
+    size_t used;
+    size_t cap;
+    markdown_core_node nodes[];
+} markdown_core_node_arena_page;
+
+/* Byte pages carry the derivation's VECTORS (#161, D9): no alignment and no
+ * masking, because a vector is never handed back one by one -- it dies with
+ * the pages -- and an oversize request simply sizes its own page. */
+typedef struct markdown_core_node_arena_bpage {
+    struct markdown_core_node_arena_bpage *next;
+    size_t used;
+    size_t cap;
+    unsigned char bytes[];
+} markdown_core_node_arena_bpage;
+
+struct markdown_core_node_arena {
+    markdown_core_mem *mem;
+    markdown_core_node_arena_page *pages;
+    markdown_core_node_arena_bpage *bpages;
+    size_t live;
+};
+
+#define MARKDOWN_CORE_ARENA_BPAGE_BYTES ((size_t)32768)
+
+#define MARKDOWN_CORE_ARENA_MAX_NODES                                                                                  \
+    (((size_t)MARKDOWN_CORE_ARENA_ALIGN - sizeof(markdown_core_node_arena_page)) / sizeof(markdown_core_node))
+#define MARKDOWN_CORE_ARENA_MIN_NODES 8
+
+static markdown_core_node_arena_page *S_arena_page_new(markdown_core_node_arena *arena, size_t cap) {
+    markdown_core_node_arena_page *page;
+    void *raw;
+    uintptr_t base;
+    if (cap > MARKDOWN_CORE_ARENA_MAX_NODES) {
+        cap = MARKDOWN_CORE_ARENA_MAX_NODES;
+    }
+    /* realloc(NULL), not calloc: calloc would WRITE every byte of the
+     * window and the slop -- 43% of a feed went to that memset when this
+     * was measured -- while the nodes are zeroed one by one as they are
+     * handed out, and the header's five fields are all assigned below. */
+    raw = arena->mem->realloc(
+        NULL,
+        sizeof(markdown_core_node_arena_page) + cap * sizeof(markdown_core_node) + MARKDOWN_CORE_ARENA_ALIGN - 1
+    );
+    if (!raw) {
+        return NULL;
+    }
+    base = ((uintptr_t)raw + MARKDOWN_CORE_ARENA_ALIGN - 1) & ~(MARKDOWN_CORE_ARENA_ALIGN - 1);
+    page = (markdown_core_node_arena_page *)base;
+    page->arena = arena;
+    page->raw = raw;
+    page->next = arena->pages;
+    page->used = 0;
+    page->cap = cap;
+    arena->pages = page;
+    S_arena_poison(page->nodes, cap * sizeof(markdown_core_node));
+    return page;
+}
+
+markdown_core_node_arena *markdown_core_node_arena_new(markdown_core_mem *mem, size_t node_hint) {
+    markdown_core_node_arena *arena = (markdown_core_node_arena *)mem->calloc(1, sizeof(*arena));
+    if (!arena) {
+        return NULL;
+    }
+    arena->mem = mem;
+    /* Born at one: the creator's hold (#153), released by `derive_tree` once
+     * the nodes carry their own. */
+    arena->live = 1;
+    if (!S_arena_page_new(
+            arena,
+            node_hint < MARKDOWN_CORE_ARENA_MIN_NODES ? MARKDOWN_CORE_ARENA_MIN_NODES : node_hint
+        )) {
+        mem->free(arena);
+        return NULL;
+    }
+    return arena;
+}
+
+/* Zeroed, exactly like the calloc it replaces -- per node, at hand-out. */
+markdown_core_node *markdown_core_node_arena_calloc(markdown_core_node_arena *arena) {
+    markdown_core_node_arena_page *page = arena->pages;
+    markdown_core_node *node;
+    if (page->used == page->cap) {
+        page = S_arena_page_new(arena, MARKDOWN_CORE_ARENA_MAX_NODES);
+        if (!page) {
+            return NULL;
+        }
+    }
+    node = &page->nodes[page->used++];
+    S_arena_unpoison(node, sizeof(*node));
+    memset(node, 0, sizeof(*node));
+    arena->live++;
+    return node;
+}
+
+static void S_arena_drop(markdown_core_node_arena *arena) {
+    markdown_core_mem *mem = arena->mem;
+    markdown_core_node_arena_page *page = arena->pages;
+    markdown_core_node_arena_bpage *bpage = arena->bpages;
+    while (page) {
+        markdown_core_node_arena_page *next = page->next;
+        void *raw = page->raw;
+        S_arena_unpoison(page->nodes, page->cap * sizeof(markdown_core_node));
+        mem->free(raw);
+        page = next;
+    }
+    while (bpage) {
+        markdown_core_node_arena_bpage *next = bpage->next;
+        mem->free(bpage);
+        bpage = next;
+    }
+    mem->free(arena);
+}
+
+/* Bump `size` bytes with the vectors' lifetime -- the arena's own. 16-aligned;
+ * NULL when the allocator refuses a page. */
+void *markdown_core_node_arena_bytes(markdown_core_node_arena *arena, size_t size) {
+    markdown_core_node_arena_bpage *bpage = arena->bpages;
+    void *out;
+    size = (size + 15) & ~(size_t)15;
+    if (!bpage || bpage->cap - bpage->used < size) {
+        size_t cap = size > MARKDOWN_CORE_ARENA_BPAGE_BYTES ? size : MARKDOWN_CORE_ARENA_BPAGE_BYTES;
+        bpage = (markdown_core_node_arena_bpage *)arena->mem->realloc(NULL, sizeof(*bpage) + cap);
+        if (!bpage) {
+            return NULL;
+        }
+        bpage->next = arena->bpages;
+        bpage->used = 0;
+        bpage->cap = cap;
+        arena->bpages = bpage;
+    }
+    out = bpage->bytes + bpage->used;
+    bpage->used += size;
+    return out;
+}
+
+/* The arena an ARENA-flagged node lives in, by the same masking `forget`
+ * uses: for the one caller (vector growth under a hook) that must allocate
+ * beside a node it did not derive. */
+markdown_core_node_arena *markdown_core_node_arena_of(markdown_core_node *node) {
+    markdown_core_node_arena_page *page =
+        (markdown_core_node_arena_page *)((uintptr_t)node & ~(MARKDOWN_CORE_ARENA_ALIGN - 1));
+    return page->arena;
+}
+
+void markdown_core_node_arena_release(markdown_core_node_arena *arena) {
+    if (--arena->live == 0) {
+        S_arena_drop(arena);
+    }
+}
+
+/* Hand one node back. Safe to be the drop that frees the pages mid-walk: a
+ * walk's saved `next` can only point at a node it has not visited, and an
+ * unvisited arena node means the count is still positive. */
+void markdown_core_node_arena_forget(markdown_core_node *node) {
+    markdown_core_node_arena_page *page =
+        (markdown_core_node_arena_page *)((uintptr_t)node & ~(MARKDOWN_CORE_ARENA_ALIGN - 1));
+    markdown_core_node_arena *arena = page->arena;
+    S_arena_poison(node, sizeof(*node));
+    if (--arena->live == 0) {
+        S_arena_drop(arena);
+    }
+}
 
 bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
     if (child_type == MARKDOWN_CORE_NODE_DOCUMENT) {
@@ -48,6 +246,19 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
 
 static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
     if (node == NULL || child == NULL) {
+        return false;
+    }
+    /* A SHARED node cannot be adopted (review-found): a tree references it
+     * only under a holder hold the engine takes at the clone, and a splice
+     * would create an uncounted reference. */
+    if (child->flags & MARKDOWN_CORE_NODE__SHARED) {
+        return false;
+    }
+    /* Nor can one adopt (review-found): every node of a retained
+     * projection carries the flag -- root and interior alike -- and a
+     * splice into any of them would show one consumer's edit to every
+     * tree at once. All insertion paths funnel through here. */
+    if (node->flags & MARKDOWN_CORE_NODE__SHARED) {
         return false;
     }
     if (NODE_MEM(node) != NODE_MEM(child)) {
@@ -209,18 +420,74 @@ static void S_free_nodes(markdown_core_node *e) {
 
         free_node_as(e);
 
-        if (e->last_child) {
-            // Splice children into list
-            e->last_child->next = e->next;
-            e->next = e->first_child;
+        if (MARKDOWN_CORE_NODE_ARRAY_P(e)) {
+            /* A container's vector joins the walk the way an intrusive list
+             * always has: the FRESH entries are chained through their own
+             * `next` fields -- theirs to write, this tree owns them -- and
+             * the vector goes back to the allocator. A SHARED entry is
+             * another matter entirely (#161, D9): this tree's part in it is
+             * one holder hold, released here, and the node itself is never
+             * entered -- the holder frees it with its list when the last
+             * tree lets go. The splice stays allocation-free. */
+            size_t i;
+            markdown_core_node *chain_head = NULL;
+            markdown_core_node *chain_tail = NULL;
+            for (i = 0; i < e->children.count; i++) {
+                markdown_core_node *entry = e->children.vec[i];
+                if (entry->flags & MARKDOWN_CORE_NODE__SHARED) {
+                    markdown_core_holder_release(entry->link.holder);
+                    continue;
+                }
+                if (chain_tail) {
+                    chain_tail->next = entry;
+                } else {
+                    chain_head = entry;
+                }
+                chain_tail = entry;
+            }
+            if (chain_tail) {
+                chain_tail->next = e->next;
+                next = chain_head;
+            } else {
+                next = e->next;
+            }
+            if (e->children.vec && !(e->flags & MARKDOWN_CORE_NODE__ARENA)) {
+                /* An arena shell's vector is arena memory; it goes with the
+                 * pages, not through free(). */
+                NODE_MEM(e)->free(e->children.vec);
+            }
+        } else {
+            if (e->last_child) {
+                // Splice children into list
+                e->last_child->next = e->next;
+                e->next = e->first_child;
+            }
+            next = e->next;
         }
-        next = e->next;
-        NODE_MEM(e)->free(e);
+        /* An arena node's memory is the arena's to take back (#161): the
+         * releases above are done, and `forget` frees the pages once the
+         * last node is handed in. */
+        if (e->flags & MARKDOWN_CORE_NODE__ARENA) {
+            markdown_core_node_arena_forget(e);
+        } else {
+            NODE_MEM(e)->free(e);
+        }
         e = next;
     }
 }
 
 void markdown_core_node_free(markdown_core_node *node) {
+    /* A SHARED node is never a consumer's to free (review-found, twice):
+     * the tree's one hold belongs to the VECTOR ENTRY, and a parentless
+     * shared node cannot name that vector to leave it, so the entry stays
+     * and the tree's own free walk releases the hold exactly once. The
+     * release that used to sit here was a second release of the same
+     * hold, killing the holder under the CST cache and every other live
+     * tree. Fail closed like unlink: no-op. The holder's own teardown
+     * clears the flag first, so the final free takes the path below. */
+    if (node->flags & MARKDOWN_CORE_NODE__SHARED) {
+        return;
+    }
     S_node_unlink(node);
     node->next = NULL;
     S_free_nodes(node);
@@ -241,6 +508,17 @@ void markdown_core_holder_hold(markdown_core_holder *holder) { markdown_core_ato
 void markdown_core_holder_release(markdown_core_holder *holder) {
     if (markdown_core_atomic_decrement(&holder->refs) != 0) {
         return;
+    }
+    /* The retained projection dies with its list (#161, D9): its children
+     * ALIAS the list freed below, so they are detached first, and its
+     * holder link is cleared so the walk cannot re-enter this release. */
+    if (holder->node) {
+        markdown_core_node *retained = holder->node;
+        retained->first_child = NULL;
+        retained->last_child = NULL;
+        retained->link.holder = NULL;
+        retained->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__SHARED;
+        markdown_core_node_free(retained);
     }
     /* The list's `next` chain is exactly what `S_free_nodes` walks; the
      * `parent` it never reads is NULL on every node here. */
@@ -279,9 +557,21 @@ markdown_core_node_type markdown_core_node_get_type(markdown_core_node *node) {
     }
 }
 
+/* A node of a retained projection is frozen for every tree at once
+ * (review-found): every node under a stored block carries SHARED, and
+ * each writer on this surface answers 0 for one -- the same fail-closed
+ * answer the structural surface gives -- because a write here would show
+ * one consumer's edit to every tree and to the cache itself. */
+static bool S_projection_frozen(const markdown_core_node *node) {
+    return (node->flags & MARKDOWN_CORE_NODE__SHARED) != 0;
+}
+
 int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_type type) {
     markdown_core_node_type initial_type;
 
+    if (S_projection_frozen(node)) {
+        return 0;
+    }
     if (type == node->type) {
         return 1;
     }
@@ -394,19 +684,43 @@ markdown_core_node *markdown_core_node_parent(markdown_core_node *node) {
 }
 
 markdown_core_node *markdown_core_node_first_child(markdown_core_node *node) {
+    markdown_core_child_cursor cursor;
     if (node == NULL) {
         return NULL;
-    } else {
-        return node->first_child;
     }
+    /* Shape-aware (D9, review-found): on a vector container the intrusive
+     * field is the vector pointer, not a node. */
+    return markdown_core_child_first(node, &cursor);
 }
 
 markdown_core_node *markdown_core_node_last_child(markdown_core_node *node) {
     if (node == NULL) {
         return NULL;
-    } else {
-        return node->last_child;
     }
+    return markdown_core_child_back(node);
+}
+
+markdown_core_node *markdown_core_node_child_begin(markdown_core_node *node, size_t *cursor) {
+    markdown_core_child_cursor inner;
+    markdown_core_node *child;
+    if (node == NULL) {
+        *cursor = 0;
+        return NULL;
+    }
+    child = markdown_core_child_first(node, &inner);
+    *cursor = inner.index;
+    return child;
+}
+
+markdown_core_node *markdown_core_node_child_step(markdown_core_node *node, markdown_core_node *child, size_t *cursor) {
+    markdown_core_child_cursor inner;
+    if (node == NULL || child == NULL) {
+        return NULL;
+    }
+    inner.index = *cursor;
+    child = markdown_core_child_after(node, child, &inner);
+    *cursor = inner.index;
+    return child;
 }
 
 const char *markdown_core_node_get_literal(markdown_core_node *node) {
@@ -432,7 +746,7 @@ const char *markdown_core_node_get_literal(markdown_core_node *node) {
 }
 
 int markdown_core_node_set_literal(markdown_core_node *node, const char *content) {
-    if (node == NULL) {
+    if (node == NULL || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -465,6 +779,9 @@ int markdown_core_node_set_string_content(markdown_core_node *node, const char *
      * and node_check rejects the half-thawed shape. The strbuf is reset
      * BEFORE the release: the release may free the very bytes
      * `content.ptr` aliases. */
+    if (S_projection_frozen(node)) {
+        return 0;
+    }
     if (node->frozen_content) {
         markdown_core_buf *frozen = node->frozen_content;
         node->frozen_content = NULL;
@@ -492,7 +809,7 @@ int markdown_core_node_get_heading_level(markdown_core_node *node) {
 }
 
 int markdown_core_node_set_heading_level(markdown_core_node *node, int level) {
-    if (node == NULL || level < 1 || level > 6) {
+    if (node == NULL || level < 1 || level > 6 || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -525,7 +842,7 @@ int markdown_core_node_set_list_type(markdown_core_node *node, markdown_core_lis
         return 0;
     }
 
-    if (node == NULL) {
+    if (node == NULL || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -554,7 +871,7 @@ int markdown_core_node_set_list_delim(markdown_core_node *node, markdown_core_de
         return 0;
     }
 
-    if (node == NULL) {
+    if (node == NULL || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -579,7 +896,7 @@ int markdown_core_node_get_list_start(markdown_core_node *node) {
 }
 
 int markdown_core_node_set_list_start(markdown_core_node *node, int start) {
-    if (node == NULL || start < 0) {
+    if (node == NULL || start < 0 || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -604,7 +921,7 @@ int markdown_core_node_get_list_tight(markdown_core_node *node) {
 }
 
 int markdown_core_node_set_list_tight(markdown_core_node *node, int tight) {
-    if (node == NULL) {
+    if (node == NULL || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -635,7 +952,7 @@ const char *markdown_core_node_get_fence_info(markdown_core_node *node) {
 }
 
 int markdown_core_node_set_fence_info(markdown_core_node *node, const char *info) {
-    if (node == NULL) {
+    if (node == NULL || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -681,7 +998,7 @@ const char *markdown_core_node_get_url(markdown_core_node *node) {
 }
 
 int markdown_core_node_set_url(markdown_core_node *node, const char *url) {
-    if (node == NULL) {
+    if (node == NULL || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -717,7 +1034,7 @@ const char *markdown_core_node_get_title(markdown_core_node *node) {
 }
 
 int markdown_core_node_set_title(markdown_core_node *node, const char *title) {
-    if (node == NULL) {
+    if (node == NULL || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -737,7 +1054,7 @@ int markdown_core_node_set_title(markdown_core_node *node, const char *title) {
 }
 
 int markdown_core_node_set_syntax_extension(markdown_core_node *node, const markdown_core_syntax_extension *extension) {
-    if (node == NULL) {
+    if (node == NULL || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -775,30 +1092,108 @@ int markdown_core_node_get_end_column(markdown_core_node *node) {
 
 // Unlink a node without adjusting its next, prev, and parent pointers.
 static void S_node_unlink(markdown_core_node *node) {
+    markdown_core_node *parent;
     if (node == NULL) {
         return;
     }
 
-    if (node->prev) {
+    /* A SHARED neighbor is never written (review-found, #161): its sibling
+     * fields belong to every tree at once, and under a vector parent the
+     * vector alone carries this tree's order. */
+    if (node->prev && !(node->prev->flags & MARKDOWN_CORE_NODE__SHARED)) {
         node->prev->next = node->next;
     }
-    if (node->next) {
+    if (node->next && !(node->next->flags & MARKDOWN_CORE_NODE__SHARED)) {
         node->next->prev = node->prev;
     }
 
+    parent = node->parent;
+    if (parent == NULL) {
+        return;
+    }
+    if (MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
+        /* The vector is the parent's sibling order (#161): close the gap.
+         * The dual links above already spliced the neighbors. */
+        size_t i;
+        for (i = 0; i < parent->children.count; i++) {
+            if (parent->children.vec[i] == node) {
+                memmove(
+                    &parent->children.vec[i],
+                    &parent->children.vec[i + 1],
+                    (parent->children.count - i - 1) * sizeof(*parent->children.vec)
+                );
+                parent->children.count--;
+                break;
+            }
+        }
+        return;
+    }
     // Adjust first_child and last_child of parent.
-    markdown_core_node *parent = node->parent;
-    if (parent) {
-        if (parent->first_child == node) {
-            parent->first_child = node->next;
-        }
-        if (parent->last_child == node) {
-            parent->last_child = node->prev;
-        }
+    if (parent->first_child == node) {
+        parent->first_child = node->next;
+    }
+    if (parent->last_child == node) {
+        parent->last_child = node->prev;
     }
 }
 
+/* THE FALLIBLE HALF FIRST (review-found): `reserve` makes room for one more
+ * child while the tree is still whole, so a refused allocation leaves the
+ * child in its ORIGINAL parent and every link intact -- the unlink runs
+ * only after room exists, and `place` below cannot fail. An arena parent's
+ * vector is arena memory (never realloc'd): reserve takes a fresh bump,
+ * copies, and lets the old bytes ride out with the pages. Growth is exact:
+ * `replace` never comes here (it swaps in place), so this path carries only
+ * an extension's genuine insert, which no per-feed walk repeats. */
+static int S_vec_reserve(markdown_core_node *parent) {
+    markdown_core_node **grown;
+    if (parent->flags & MARKDOWN_CORE_NODE__ARENA) {
+        grown = (markdown_core_node **)markdown_core_node_arena_bytes(
+            markdown_core_node_arena_of(parent),
+            (parent->children.count + 1) * sizeof(*grown)
+        );
+        if (!grown) {
+            return 0;
+        }
+        memcpy(grown, parent->children.vec, parent->children.count * sizeof(*grown));
+    } else {
+        grown = (markdown_core_node **)NODE_MEM(parent)->realloc(
+            parent->children.vec,
+            (parent->children.count + 1) * sizeof(*grown)
+        );
+        if (!grown) {
+            return 0;
+        }
+    }
+    parent->children.vec = grown;
+    return 1;
+}
+
+static void S_vec_place(markdown_core_node *parent, size_t at, markdown_core_node *child) {
+    memmove(
+        &parent->children.vec[at + 1],
+        &parent->children.vec[at],
+        (parent->children.count - at) * sizeof(*parent->children.vec)
+    );
+    parent->children.vec[at] = child;
+    parent->children.count++;
+}
+
+static size_t S_vec_index_of(const markdown_core_node *parent, const markdown_core_node *child) {
+    size_t i = 0;
+    while (i < parent->children.count && parent->children.vec[i] != child) {
+        i++;
+    }
+    return i;
+}
+
 void markdown_core_node_unlink(markdown_core_node *node) {
+    /* A SHARED node carries no per-tree links to unlink and is never
+     * written (review-found): the call is a whole no-op, and removing a
+     * shared entry from a tree is the engine's own business (F22). */
+    if (node == NULL || (node->flags & MARKDOWN_CORE_NODE__SHARED)) {
+        return;
+    }
     S_node_unlink(node);
 
     node->next = NULL;
@@ -826,24 +1221,34 @@ int markdown_core_node_insert_before(markdown_core_node *node, markdown_core_nod
         return 0;
     }
 
+    markdown_core_node *parent = node->parent;
+    if (MARKDOWN_CORE_NODE_ARRAY_P(parent) && !S_vec_reserve(parent)) {
+        return 0;
+    }
+
     S_node_unlink(sibling);
+    if (MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
+        S_vec_place(parent, S_vec_index_of(parent, node), sibling);
+    }
 
     markdown_core_node *old_prev = node->prev;
 
-    // Insert 'sibling' between 'old_prev' and 'node'.
-    if (old_prev) {
+    /* Insert 'sibling' between 'old_prev' and 'node'. A SHARED neighbor is
+     * never written (review-found): its sibling fields belong to every tree
+     * at once, and the vector already carries this tree's order. */
+    if (old_prev && !(old_prev->flags & MARKDOWN_CORE_NODE__SHARED)) {
         old_prev->next = sibling;
     }
     sibling->prev = old_prev;
     sibling->next = node;
-    node->prev = sibling;
+    if (!(node->flags & MARKDOWN_CORE_NODE__SHARED)) {
+        node->prev = sibling;
+    }
 
-    // Set new parent.
-    markdown_core_node *parent = node->parent;
     sibling->parent = parent;
 
     // Adjust first_child of parent if inserted as first child.
-    if (parent && !old_prev) {
+    if (parent && !MARKDOWN_CORE_NODE_ARRAY_P(parent) && !old_prev) {
         parent->first_child = sibling;
     }
 
@@ -870,24 +1275,33 @@ int markdown_core_node_insert_after(markdown_core_node *node, markdown_core_node
         return 0;
     }
 
+    markdown_core_node *parent = node->parent;
+    if (MARKDOWN_CORE_NODE_ARRAY_P(parent) && !S_vec_reserve(parent)) {
+        return 0;
+    }
+
     S_node_unlink(sibling);
+    if (MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
+        S_vec_place(parent, S_vec_index_of(parent, node) + 1, sibling);
+    }
 
     markdown_core_node *old_next = node->next;
 
-    // Insert 'sibling' between 'node' and 'old_next'.
-    if (old_next) {
+    /* A SHARED neighbor is never written (review-found); the vector
+     * carries this tree's order. */
+    if (old_next && !(old_next->flags & MARKDOWN_CORE_NODE__SHARED)) {
         old_next->prev = sibling;
     }
     sibling->next = old_next;
     sibling->prev = node;
-    node->next = sibling;
+    if (!(node->flags & MARKDOWN_CORE_NODE__SHARED)) {
+        node->next = sibling;
+    }
 
-    // Set new parent.
-    markdown_core_node *parent = node->parent;
     sibling->parent = parent;
 
     // Adjust last_child of parent if inserted as last child.
-    if (parent && !old_next) {
+    if (parent && !MARKDOWN_CORE_NODE_ARRAY_P(parent) && !old_next) {
         parent->last_child = sibling;
     }
 
@@ -895,6 +1309,48 @@ int markdown_core_node_insert_after(markdown_core_node *node, markdown_core_node
 }
 
 int markdown_core_node_replace(markdown_core_node *oldnode, markdown_core_node *newnode) {
+    markdown_core_node *parent;
+    if (!oldnode || !newnode || oldnode == newnode) {
+        return 0;
+    }
+    if (oldnode->flags & MARKDOWN_CORE_NODE__SHARED) {
+        /* The engine alone reseats shared entries (review-found): a
+         * consumer's replace would write another tree's vector slot out
+         * from under its holder hold. */
+        return 0;
+    }
+    parent = oldnode->parent;
+    if (parent && MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
+        /* IN PLACE (review-found): a replacement neither grows nor shifts
+         * the vector, so the slot is swapped where it stands -- the mass
+         * path (a promotion per formula paragraph) stays O(1) per swap
+         * instead of re-copying the parent's vector each time. */
+        size_t at;
+        if (!S_can_contain(parent, newnode)) {
+            return 0;
+        }
+        at = S_vec_index_of(parent, oldnode);
+        if (at == parent->children.count) {
+            return 0;
+        }
+        S_node_unlink(newnode);
+        parent->children.vec[at] = newnode;
+        newnode->parent = parent;
+        newnode->prev = oldnode->prev;
+        newnode->next = oldnode->next;
+        /* A SHARED neighbor is never written (review-found); the vector
+         * carries this tree's order. */
+        if (newnode->prev && !(newnode->prev->flags & MARKDOWN_CORE_NODE__SHARED)) {
+            newnode->prev->next = newnode;
+        }
+        if (newnode->next && !(newnode->next->flags & MARKDOWN_CORE_NODE__SHARED)) {
+            newnode->next->prev = newnode;
+        }
+        oldnode->next = NULL;
+        oldnode->prev = NULL;
+        oldnode->parent = NULL;
+        return 1;
+    }
     if (!markdown_core_node_insert_before(oldnode, newnode)) {
         return 0;
     }
@@ -905,6 +1361,24 @@ int markdown_core_node_replace(markdown_core_node *oldnode, markdown_core_node *
 int markdown_core_node_prepend_child(markdown_core_node *node, markdown_core_node *child) {
     if (!S_can_contain(node, child)) {
         return 0;
+    }
+
+    if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
+        markdown_core_node *old_first;
+        if (!S_vec_reserve(node)) {
+            return 0;
+        }
+        S_node_unlink(child);
+        old_first = node->children.count ? node->children.vec[0] : NULL;
+        S_vec_place(node, 0, child);
+        child->next = old_first;
+        child->prev = NULL;
+        child->parent = node;
+        /* A SHARED neighbor is never written (review-found). */
+        if (old_first && !(old_first->flags & MARKDOWN_CORE_NODE__SHARED)) {
+            old_first->prev = child;
+        }
+        return 1;
     }
 
     S_node_unlink(child);
@@ -929,6 +1403,24 @@ int markdown_core_node_prepend_child(markdown_core_node *node, markdown_core_nod
 int markdown_core_node_append_child(markdown_core_node *node, markdown_core_node *child) {
     if (!S_can_contain(node, child)) {
         return 0;
+    }
+
+    if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
+        markdown_core_node *back;
+        if (!S_vec_reserve(node)) {
+            return 0;
+        }
+        S_node_unlink(child);
+        back = node->children.count ? node->children.vec[node->children.count - 1] : NULL;
+        S_vec_place(node, node->children.count, child);
+        child->next = NULL;
+        child->prev = back;
+        child->parent = node;
+        /* A SHARED neighbor is never written (review-found). */
+        if (back && !(back->flags & MARKDOWN_CORE_NODE__SHARED)) {
+            back->next = child;
+        }
+        return 1;
     }
 
     S_node_unlink(child);
@@ -965,20 +1457,34 @@ static void S_print_error(FILE *out, markdown_core_node *node, const char *elem)
 }
 
 int markdown_core_node_check(markdown_core_node *node, FILE *out) {
-    markdown_core_node *cur;
-    /* A borrowed list's nodes have no parent by contract (node.h), so the
+    /* Iterator-driven since #161/D9: the walk itself understands both child
+     * shapes, and the checker asks per parent what its shape promises. A
+     * borrowed list's nodes have no parent by contract (node.h), so the
      * parent check is not applied to them -- "repairing" it would hand the
-     * list to whichever borrower was checked last -- and the climb out of the
-     * list goes to the borrower, as the iterator's does. */
-    markdown_core_node *borrower = NULL;
+     * list to whichever borrower was checked last. */
+    markdown_core_iter walk;
+    markdown_core_event_type ev_type;
     int errors = 0;
 
     if (!node) {
         return 0;
     }
 
-    cur = node;
-    for (;;) {
+    markdown_core_iter_init(&walk, node);
+    while ((ev_type = markdown_core_iter_next(&walk)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *cur = markdown_core_iter_get_node(&walk);
+        markdown_core_node *parent = NULL;
+        if (ev_type != MARKDOWN_CORE_EVENT_ENTER) {
+            continue;
+        }
+        /* The frame the ENTER just pushed is `cur` itself when it has
+         * children; the parent context sits one below. */
+        if (walk.depth > 0 && walk.frames[walk.depth - 1].node == cur) {
+            parent = walk.depth > 1 ? walk.frames[walk.depth - 2].node : NULL;
+        } else if (walk.depth > 0) {
+            parent = walk.frames[walk.depth - 1].node;
+        }
+
         /* #152/#153's invariant: a block that borrows its list owns no
          * mutable content arena -- its bytes, if any, alias a frozen buffer
          * the block holds a reference to (`asize == 0` marks the alias),
@@ -993,53 +1499,46 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
             S_print_error(out, cur, "frozen content");
             ++errors;
         }
-        if (cur->first_child) {
-            if (cur->first_child->prev != NULL) {
-                S_print_error(out, cur->first_child, "prev");
-                cur->first_child->prev = NULL;
-                ++errors;
-            }
-            if (MARKDOWN_CORE_NODE_BORROWED_P(cur)) {
-                borrower = cur;
-            } else if (cur->first_child->parent != cur) {
-                S_print_error(out, cur->first_child, "parent");
-                cur->first_child->parent = cur;
-                ++errors;
-            }
-            cur = cur->first_child;
+        if (parent == NULL) {
             continue;
         }
-
-    next_sibling:
-        if (cur == node) {
-            break;
-        }
-        if (cur->next) {
-            if (cur->next->prev != cur) {
-                S_print_error(out, cur->next, "prev");
-                cur->next->prev = cur;
+        if (MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
+            /* The vector is the order; a child may say this parent or, once
+             * it is shared (#161), no parent at all -- never another tree's. */
+            if (cur->parent != NULL && cur->parent != parent) {
+                S_print_error(out, cur, "parent");
                 ++errors;
             }
-            if (cur->next->parent != cur->parent) {
-                S_print_error(out, cur->next, "parent");
-                cur->next->parent = cur->parent;
+        } else if (MARKDOWN_CORE_NODE_BORROWED_P(parent)) {
+            /* Parentless by contract; nothing to repair. */
+        } else {
+            if (cur->parent != parent) {
+                S_print_error(out, cur, "parent");
+                cur->parent = parent;
                 ++errors;
             }
-            cur = cur->next;
-            continue;
-        }
-
-        {
-            markdown_core_node *parent = cur->parent ? cur->parent : borrower;
-            if (parent->last_child != cur) {
+            if (cur->prev == NULL && parent->first_child != cur) {
+                S_print_error(out, parent, "first_child");
+                ++errors;
+            }
+            if (cur->next == NULL && parent->last_child != cur) {
                 S_print_error(out, parent, "last_child");
                 parent->last_child = cur;
                 ++errors;
             }
-            cur = parent;
+            if (cur->next && cur->next->prev != cur) {
+                S_print_error(out, cur->next, "prev");
+                cur->next->prev = cur;
+                ++errors;
+            }
         }
-        goto next_sibling;
     }
 
+    if (walk.oom) {
+        /* A truncated walk verified less than the tree: say so rather than
+         * vouching for what was never visited. */
+        S_print_error(out, node, "walk spill");
+        ++errors;
+    }
     return errors;
 }

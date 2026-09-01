@@ -503,22 +503,44 @@ markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
  * its brackets, and `label=` is gone from the dump because the node is there
  * to be seen. The two accessors that existed only to name where the label's
  * children began and ended went with it. */
-const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node) {
-    return node ? node->first_child : NULL;
+markdown_core_children markdown_core_node_children(const markdown_core_node *node) {
+    markdown_core_children cursor = {node, NULL, 0};
+    markdown_core_child_cursor inner;
+    if (node) {
+        cursor.child = markdown_core_child_first(node, &inner);
+        cursor.index = inner.index;
+    }
+    return cursor;
 }
 
-const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node) {
-    return node ? node->next : NULL;
+markdown_core_children markdown_core_children_next(markdown_core_children cursor) {
+    markdown_core_child_cursor inner;
+    if (!cursor.parent || !cursor.child) {
+        cursor.child = NULL;
+        return cursor;
+    }
+    inner.index = cursor.index;
+    cursor.child = markdown_core_child_after(cursor.parent, cursor.child, &inner);
+    cursor.index = inner.index;
+    return cursor;
 }
 
 size_t markdown_core_node_child_count(const markdown_core_node *node) {
-    const markdown_core_node *child = markdown_core_node_get_first_child(node);
-    size_t count = 0;
-    while (child) {
-        count++;
-        child = markdown_core_node_get_next_sibling(child);
+    if (!node) {
+        return 0;
     }
-    return count;
+    if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
+        return node->children.count;
+    }
+    {
+        size_t count = 0;
+        const markdown_core_node *child = node->first_child;
+        while (child) {
+            count++;
+            child = child->next;
+        }
+        return count;
+    }
 }
 
 bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level) {
@@ -1048,15 +1070,19 @@ static const char *mode_name(markdown_core_placement_mode mode) {
 static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, markdown_core_node_kind kind) {
     markdown_core_string a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0};
     markdown_core_optional_string oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
-    markdown_core_optional_i64 start;
-    markdown_core_optional_bool checked;
-    markdown_core_list_flavor flavor;
-    markdown_core_placement_mode mode;
+    /* Every accessor below fills its out-parameters before this reads them
+     * -- the kinds match by construction -- but the initializers keep that
+     * fact out of the compiler's hands: -Werror builds cannot see through
+     * the switch, and dump output must never depend on what they guess. */
+    markdown_core_optional_i64 start = {false, 0};
+    markdown_core_optional_bool checked = {false, false};
+    markdown_core_list_flavor flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET;
+    markdown_core_placement_mode mode = MARKDOWN_CORE_PLACEMENT_EMBEDDED;
     markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
     markdown_core_identity definition = {0, 0};
-    bool x, y, has_attributes;
-    size_t count, i;
-    int32_t level;
+    bool x = false, y = false, has_attributes = false;
+    size_t count = 0, i;
+    int32_t level = 0;
     switch (kind) {
     case MARKDOWN_CORE_KIND_HEADING:
         markdown_core_node_heading_level(node, &level);
@@ -1243,7 +1269,6 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
 static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_scope scope = markdown_core_node_scope(node);
-    const markdown_core_node *child;
     size_t count = markdown_core_node_child_count(node);
     size_t i;
     markdown_core_identity identity = markdown_core_node_identifier(node);
@@ -1273,15 +1298,17 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     buffer_i64(buffer, (int64_t)count);
     buffer_cstr(buffer, "\n");
 
-    child = markdown_core_node_get_first_child(node);
-    while (child) {
-        const markdown_core_node *next = markdown_core_node_get_next_sibling(child);
-        if (!ensure_more(buffer, depth)) {
-            return;
+    {
+        markdown_core_children cursor = markdown_core_node_children(node);
+        while (cursor.child) {
+            markdown_core_children next = markdown_core_children_next(cursor);
+            if (!ensure_more(buffer, depth)) {
+                return;
+            }
+            buffer->more[depth] = next.child != NULL;
+            dump_node(buffer, cursor.child, depth + 1);
+            cursor = next;
         }
-        buffer->more[depth] = next != NULL;
-        dump_node(buffer, child, depth + 1);
-        child = next;
     }
 }
 
@@ -1386,15 +1413,15 @@ static void wire_identity(dump_buffer *buffer, markdown_core_identity identity) 
 static void wire_node(dump_buffer *buffer, const markdown_core_node *node);
 
 static void wire_children(dump_buffer *buffer, const markdown_core_node *node) {
-    const markdown_core_node *child = markdown_core_node_get_first_child(node);
+    markdown_core_children cursor;
     size_t count = markdown_core_node_child_count(node);
     if (count > INT32_MAX) {
         buffer->failed = true;
         return;
     }
     wire_i32(buffer, (int32_t)count);
-    for (; child; child = markdown_core_node_get_next_sibling(child)) {
-        wire_node(buffer, child);
+    for (cursor = markdown_core_node_children(node); cursor.child; cursor = markdown_core_children_next(cursor)) {
+        wire_node(buffer, cursor.child);
     }
 }
 
@@ -1438,8 +1465,8 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
     case MARKDOWN_CORE_KIND_LINE_BREAK:
         break;
     case MARKDOWN_CORE_KIND_LIST: {
-        markdown_core_list_flavor flavor;
-        markdown_core_optional_i64 start;
+        markdown_core_list_flavor flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET;
+        markdown_core_optional_i64 start = {false, 0};
         bool tight = false;
         markdown_core_node_list_properties(node, &flavor, &start, &tight);
         wire_i32(buffer, (int32_t)flavor);
@@ -1450,7 +1477,7 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
         break;
     }
     case MARKDOWN_CORE_KIND_LIST_ITEM: {
-        markdown_core_optional_bool checked;
+        markdown_core_optional_bool checked = {false, false};
         markdown_core_node_list_item_checked(node, &checked);
         wire_u8(buffer, checked.has_value ? (checked.value ? 1 : 0) : UINT8_MAX);
         wire_children(buffer, node);
@@ -1477,14 +1504,14 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
     case MARKDOWN_CORE_KIND_FORMULA: {
         /* The one kind whose mode is a fact about the source rather than about
          * the kind; the other five stopped carrying it at Q29. */
-        markdown_core_placement_mode mode;
+        markdown_core_placement_mode mode = MARKDOWN_CORE_PLACEMENT_EMBEDDED;
         markdown_core_node_formula_properties(node, &mode, &first);
         wire_i32(buffer, (int32_t)mode);
         wire_string(buffer, first);
         break;
     }
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK: {
-        markdown_core_placement_mode mode;
+        markdown_core_placement_mode mode = MARKDOWN_CORE_PLACEMENT_EMBEDDED;
         markdown_core_node_formula_properties(node, &mode, &first);
         wire_string(buffer, first);
         break;

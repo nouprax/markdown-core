@@ -158,16 +158,39 @@ enum markdown_core_node__internal_flags {
      * generation for a block that never consulted it. */
     MARKDOWN_CORE_NODE__CONSULTED_REFMAP = (1 << 5),
     MARKDOWN_CORE_NODE__CONSULTED_FOOTNOTES = (1 << 6),
+    /* The node's MEMORY is a derivation arena's (#161): the free walk still
+     * releases everything the node holds -- frozen content, holder holds,
+     * chunk retains, the boxed definition -- but hands the 192 bytes back to
+     * the arena (`markdown_core_node_arena_forget`) instead of the general
+     * allocator, and the arena's last node out drops the pages. */
+    MARKDOWN_CORE_NODE__ARENA = (1 << 7),
+    /* The node's CHILDREN ARE A VECTOR (`children.vec/count`), not an
+     * intrusive list (#161, D9). Set by the derivation on every skeleton
+     * parent it gives children to, because siblinghood is the PARENT's fact:
+     * an intrusive `next` writes a per-tree answer into the child, which is
+     * exactly what forbids sharing the child (F23), while a vector keeps
+     * every per-tree fact in per-tree memory. The CST and every inline list
+     * stay intrusive -- an inline list is shared WHOLE behind a holder, so
+     * its internal links never lie. */
+    MARKDOWN_CORE_NODE__CHILD_ARRAY = (1 << 8),
+    /* The node IS the holder's retained projection (#161, D9): one physical
+     * node handed into every tree that hits, under one holder hold per
+     * tree. Parentless and linkless -- every per-tree fact lives in the
+     * referencing tree's vector -- never entered by a projection's walk,
+     * never queued for a tail (its tail ran once, before the store), never
+     * written. Freed by the holder alone, when the last hold goes. */
+    MARKDOWN_CORE_NODE__SHARED = (1 << 9),
 
     // The first bit an extension may claim. Extension flags are compile-time
     // constants owned by the extension that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 7),
+    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 10),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
 
 typedef struct markdown_core_holder markdown_core_holder;
+typedef struct markdown_core_node_arena markdown_core_node_arena;
 
 struct markdown_core_node {
     markdown_core_strbuf content;
@@ -188,8 +211,33 @@ struct markdown_core_node {
     struct markdown_core_node *next;
     struct markdown_core_node *prev;
     struct markdown_core_node *parent;
-    struct markdown_core_node *first_child;
-    struct markdown_core_node *last_child;
+    /* TWO CHILD SHAPES, and `MARKDOWN_CORE_NODE__CHILD_ARRAY` says which
+     * (#161, D9). Intrusive `first_child..last_child` for the CST, for
+     * every inline list, and for a leaf's parsed content; `children` -- a
+     * vector of child pointers -- for a derived skeleton parent, where the
+     * per-tree sibling order must live in per-tree memory so a closed
+     * child's NODE can be shared between trees. The vector's memory follows
+     * the node's own: an arena node's vector is arena-bumped and dies with
+     * the pages, a malloc'd node's is malloc'd and freed with it. */
+    /* The anonymous member is C11 (6.7.2.1p13); MSVC accepts it in its C
+     * mode but files it under C4201, which /WX promotes. */
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4201)
+#endif
+    union {
+        struct {
+            struct markdown_core_node *first_child;
+            struct markdown_core_node *last_child;
+        };
+        struct {
+            struct markdown_core_node **vec;
+            size_t count;
+        } children;
+    };
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
     int start_line;
     int start_column;
@@ -310,6 +358,14 @@ struct markdown_core_holder {
      * (#163) -- a definition arriving cannot change a block that consulted
      * neither, so its hit survives the bump. */
     markdown_core_node_internal_flags consulted;
+    /* THE RETAINED PROJECTION (#161, D9): the derived block node the list
+     * was projected into, malloc-shelled so it outlives any one tree's
+     * arena, flagged SHARED, aliasing this holder's list as its children.
+     * A hit hands THIS node into the requesting tree's vector under one
+     * hold; the holder frees it with the list when the last hold goes.
+     * NULL only on a holder that has not stored since the field landed --
+     * every store sets it. */
+    markdown_core_node *node;
 };
 
 /* Does this node alias a holder's list? The one question every walk asks. */
@@ -317,6 +373,92 @@ static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_BORROWED_P(const markdown_co
     return node->link.holder != NULL &&
            (node->flags & (MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN)) == 0;
 }
+
+static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_ARRAY_P(const markdown_core_node *node) {
+    return (node->flags & MARKDOWN_CORE_NODE__CHILD_ARRAY) != 0;
+}
+
+/* THE CHILD CURSOR: one loop shape over both child representations. `index`
+ * is the vector cursor and is meaningless on an intrusive parent; the
+ * CALLER owns knowing the parent across the loop, which is what lets an
+ * intrusive step stay the child's own `next`. Every walk over children that
+ * can be a derived container's goes through these two; a walk that knows
+ * its list is intrusive -- an inline list, the CST -- may keep reading
+ * `first_child`/`next` directly. */
+typedef struct {
+    size_t index;
+} markdown_core_child_cursor;
+
+static MARKDOWN_CORE_INLINE markdown_core_node *markdown_core_child_first(
+    const markdown_core_node *parent,
+    markdown_core_child_cursor *cursor
+) {
+    cursor->index = 0;
+    if (MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
+        return parent->children.count ? parent->children.vec[0] : NULL;
+    }
+    return parent->first_child;
+}
+
+static MARKDOWN_CORE_INLINE markdown_core_node *markdown_core_child_after(
+    const markdown_core_node *parent,
+    const markdown_core_node *child,
+    markdown_core_child_cursor *cursor
+) {
+    if (MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
+        cursor->index++;
+        return cursor->index < parent->children.count ? parent->children.vec[cursor->index] : NULL;
+    }
+    return child->next;
+}
+
+static MARKDOWN_CORE_INLINE markdown_core_node *markdown_core_child_back(const markdown_core_node *parent) {
+    if (MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
+        return parent->children.count ? parent->children.vec[parent->children.count - 1] : NULL;
+    }
+    return parent->last_child;
+}
+
+/* THE DERIVATION ARENA (#161). A feed's derived skeleton is one node per CST
+ * block, all born in `derive_tree` and almost all dying with the tree -- a
+ * lifetime the general allocator re-proves node by node, at 25-39% of a
+ * hit-dominated feed. The arena states it once: `derive_tree` sizes one page
+ * off the parser's block mint, the clone bumps nodes out of it (zeroed, like
+ * the calloc they replace, flag `ARENA`), and the pages go back in one
+ * motion when the last node is forgotten.
+ *
+ * The tree stays SELF-CONTAINED: no root carries a handle -- a root is a
+ * node like any other, free to be borrowed against, replaced by a hook, or
+ * freed from inside a projection -- and no node carries a pointer, because
+ * pages are 64 KiB-ALIGNED and never outgrow their alignment window:
+ * masking a node's address recovers its page header, and the header names
+ * the arena (`forget`). Nothing else changes shape -- `content.mem` stays
+ * the parser's own mem, so no buffer, iterator, or chunk a projection
+ * builds can capture an address that dies with the arena. (The first build
+ * hung the handle on the returned root's link slot, which a borrow
+ * clobbers; the second hid the arena behind a mem wrapper in `content.mem`,
+ * which a frozen open block's buffer carried into a cache holder that
+ * outlived it. The masking has no address to lose and nothing to clobber.)
+ * The arena keeps a live count, born at ONE for the deriving call's own
+ * hold (#153's create-at-one rule) and one more per node handed out;
+ * `release` drops the creator's, `forget` a node's, and whoever reaches
+ * zero frees the pages. The count is NOT atomic, deliberately: an arena
+ * belongs to ONE derived document, access to one document is the caller's
+ * to order (include/markdown_core.h), and the creator's hold is gone
+ * before the caller ever sees the tree.
+ *
+ * Only skeleton nodes live here; everything a projection allocates that can
+ * OUTLIVE the tree -- an inline list moved into a cache holder, a hook's
+ * replacement node -- keeps the general allocator, so the arena never owns
+ * a byte another tree can reach. Under AddressSanitizer the unhanded
+ * remainder of a page and every forgotten node are poisoned, so the
+ * checking a per-node free() gave up is kept. */
+markdown_core_node_arena *markdown_core_node_arena_new(markdown_core_mem *mem, size_t node_hint);
+markdown_core_node *markdown_core_node_arena_calloc(markdown_core_node_arena *arena);
+void *markdown_core_node_arena_bytes(markdown_core_node_arena *arena, size_t size);
+markdown_core_node_arena *markdown_core_node_arena_of(markdown_core_node *node);
+void markdown_core_node_arena_release(markdown_core_node_arena *arena);
+void markdown_core_node_arena_forget(markdown_core_node *node);
 
 markdown_core_holder *markdown_core_holder_new(markdown_core_mem *mem);
 void markdown_core_holder_hold(markdown_core_holder *holder);

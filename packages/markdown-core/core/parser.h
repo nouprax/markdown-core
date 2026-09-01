@@ -35,8 +35,6 @@ typedef struct {
     int column;
 } markdown_core_line_mark;
 
-#define MARKDOWN_CORE_TAIL_MEMO 64
-
 struct markdown_core_parser {
     struct markdown_core_mem *mem;
     /* A hashtable of urls in the current document for cross-references */
@@ -125,6 +123,14 @@ struct markdown_core_parser {
     bool no_projection_cache;
     size_t cache_hits;
     size_t cache_misses;
+    /* THE DERIVATION'S ARENA (#161), set only for the span of one
+     * `derive_tree` call so the clone can see it; the arena itself leaves on
+     * the derived root. NULL whenever the parser is at rest. */
+    markdown_core_node_arena *derive_arena;
+    /* Non-zero while the clone walks the subtree of an enrolled miss: those
+     * nodes ride into a cache holder at the store and must outlive the
+     * arena, so they take malloc shells (#161, D9). */
+    size_t derive_malloc_depth;
     /* THE PER-BLOCK TAIL'S QUEUE (T18): the blocks a projection's walk found
      * tail work for, in EXIT order, acted on after the walk -- a hook may
      * replace or remove the block, and the walk must not be standing on it
@@ -133,17 +139,27 @@ struct markdown_core_parser {
     markdown_core_node **tail_queue;
     size_t tail_queue_size;
     size_t tail_queue_alloc;
-    /* THE NAME MEMO (F15): whether extension `ext` declared type name `name`,
-     * keyed on the name's POINTER -- every `get_type_string` answers a literal,
-     * so the steady state is a pointer compare and the set is walked only to
-     * fill an entry. Per parser, so parsers on different threads share
-     * nothing. Full is not wrong: a pair that does not fit is walked again. */
-    struct {
-        const void *ext;
-        const char *name;
-        bool wants;
-    } tail_memo[MARKDOWN_CORE_TAIL_MEMO];
-    size_t tail_memo_size;
+    /* THE NAME MASKS (F15, #161, review-found): which attached extensions
+     * declared a given answered name, as a bitset in `syntax_extensions`
+     * list order -- `tail_mask_words` words per row, so EVERY extension
+     * follows the same algorithm at any count -- plus the fixed row of
+     * `"*inlines"` declarers. One lookup per tail replaces the per-(block x
+     * extension) memo scan the old shape paid on every projection -- 14% of
+     * a hit-dominated feed, measured. Keyed on the name's POINTER -- every
+     * `get_type_string` answers a literal -- and per parser, so parsers on
+     * different threads share nothing. Rebuilt lazily when
+     * `extension_generation` moves (`tail_mask_generation` is that
+     * generation plus one, so zero means never built); the row table grows
+     * on demand, so a name never falls back to a second code path. A
+     * rebuild that cannot allocate poisons the parse (`oom`), the same
+     * answer every other lost allocation gives. Row 0 of the pool is the
+     * inlines row; name rows follow. */
+    size_t tail_mask_words;
+    uint64_t *tail_mask_pool;
+    const char **tail_name_rows;
+    size_t tail_name_row_size;
+    size_t tail_name_row_alloc;
+    size_t tail_mask_generation;
 };
 
 /* THE PROJECTION (§12.1): a new tree derived from the parser's CST -- the

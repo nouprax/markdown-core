@@ -338,9 +338,24 @@ MARKDOWN_CORE_API markdown_core_node_kind markdown_core_node_get_kind(const mark
 MARKDOWN_CORE_API const char *markdown_core_node_kind_name(markdown_core_node_kind kind);
 MARKDOWN_CORE_API markdown_core_scope markdown_core_node_scope(const markdown_core_node *node);
 
-/** Canonical traversal hides directive-label wrapper nodes. */
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node);
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node);
+/** A node's children are read through a BY-VALUE cursor. Sibling order is
+ * the PARENT's fact (D9): asking a node what follows it was the one question
+ * a node shared between two reads of one stream could not answer, so the
+ * cursor carries the parent and the position, every step is O(1), and no
+ * allocation or free is involved. `child` is NULL once the children are
+ * exhausted (and for a NULL or childless `node`). Iterate:
+ *
+ *     markdown_core_children cur = markdown_core_node_children(node);
+ *     for (; cur.child; cur = markdown_core_children_next(cur)) { ... }
+ */
+typedef struct {
+    const markdown_core_node *parent;
+    const markdown_core_node *child;
+    size_t index;
+} markdown_core_children;
+
+MARKDOWN_CORE_API markdown_core_children markdown_core_node_children(const markdown_core_node *node);
+MARKDOWN_CORE_API markdown_core_children markdown_core_children_next(markdown_core_children cursor);
 MARKDOWN_CORE_API size_t markdown_core_node_child_count(const markdown_core_node *node);
 
 MARKDOWN_CORE_API bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level);

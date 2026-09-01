@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "config.h"
 #include "node.h"
@@ -14,7 +15,19 @@ void markdown_core_iter_init(markdown_core_iter *iter, markdown_core_node *root)
     iter->cur.node = NULL;
     iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
     iter->next.node = root;
-    iter->borrower = NULL;
+    iter->oom = false;
+    iter->frames = iter->inline_frames;
+    iter->depth = 0;
+    iter->cap = MARKDOWN_CORE_ITER_INLINE_DEPTH;
+}
+
+void markdown_core_iter_deinit(markdown_core_iter *iter) {
+    if (iter->frames != iter->inline_frames) {
+        iter->mem->free(iter->frames);
+        iter->frames = iter->inline_frames;
+        iter->cap = MARKDOWN_CORE_ITER_INLINE_DEPTH;
+    }
+    iter->depth = 0;
 }
 
 markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
@@ -30,7 +43,38 @@ markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
     return iter;
 }
 
-void markdown_core_iter_free(markdown_core_iter *iter) { iter->mem->free(iter); }
+void markdown_core_iter_free(markdown_core_iter *iter) {
+    markdown_core_iter_deinit(iter);
+    iter->mem->free(iter);
+}
+
+/* Push `node` as the ancestor the walk is entering. A failed spill raises
+ * `oom` and refuses the push; the caller then skips the subtree, so the
+ * walk stays well formed and merely incomplete. */
+static bool S_iter_push(markdown_core_iter *iter, markdown_core_node *node) {
+    if (iter->depth == iter->cap) {
+        size_t grown = iter->cap * 2;
+        markdown_core_iter_frame *frames;
+        if (iter->frames == iter->inline_frames) {
+            frames = (markdown_core_iter_frame *)iter->mem->calloc(grown, sizeof(*frames));
+            if (frames) {
+                memcpy(frames, iter->frames, iter->depth * sizeof(*frames));
+            }
+        } else {
+            frames = (markdown_core_iter_frame *)iter->mem->realloc(iter->frames, grown * sizeof(*frames));
+        }
+        if (!frames) {
+            iter->oom = true;
+            return false;
+        }
+        iter->frames = frames;
+        iter->cap = grown;
+    }
+    iter->frames[iter->depth].node = node;
+    iter->frames[iter->depth].index = 0;
+    iter->depth++;
+    return true;
+}
 
 markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
     markdown_core_event_type ev_type = iter->next.ev_type;
@@ -43,54 +87,75 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
         return ev_type;
     }
 
-    /* roll forward to next item, setting both fields */
     if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
-        if (MARKDOWN_CORE_NODE_BORROWED_P(node)) {
-            iter->borrower = node;
-        }
-        if (node->first_child == NULL) {
-            /* stay on this node but exit */
-            iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
-        } else {
+        markdown_core_child_cursor cursor;
+        markdown_core_node *first = markdown_core_child_first(node, &cursor);
+        if (first && S_iter_push(iter, node)) {
             iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-            iter->next.node = node->first_child;
+            iter->next.node = first;
+        } else {
+            /* Childless, or a spill the allocator refused: this node closes
+             * next either way. */
+            iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
         }
-    } else if (node == iter->root) {
-        /* don't move past root */
+    } else if (iter->depth == 0) {
+        /* The root's EXIT: the walk is over and the spill goes back. */
+        markdown_core_iter_deinit(iter);
         iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
         iter->next.node = NULL;
-    } else if (node->next) {
-        iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-        iter->next.node = node->next;
     } else {
-        /* A parentless node inside the walk is the last of a borrowed list:
-         * the way out is the borrower, not a parent it does not have. */
-        markdown_core_node *parent = node->parent ? node->parent : iter->borrower;
-        if (parent) {
-            iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
-            iter->next.node = parent;
+        markdown_core_iter_frame *top = &iter->frames[iter->depth - 1];
+        markdown_core_node *sibling;
+        if (MARKDOWN_CORE_NODE_ARRAY_P(top->node)) {
+            top->index++;
+            sibling = top->index < top->node->children.count ? top->node->children.vec[top->index] : NULL;
         } else {
-            assert(false);
-            iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
-            iter->next.node = NULL;
+            sibling = node->next;
         }
-    }
-
-    if (ev_type == MARKDOWN_CORE_EVENT_EXIT && node == iter->borrower) {
-        iter->borrower = NULL;
+        if (sibling) {
+            iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
+            iter->next.node = sibling;
+        } else {
+            iter->depth--;
+            iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
+            iter->next.node = top->node;
+        }
     }
 
     return ev_type;
 }
 
+/* Re-deliver `current`'s EXIT so the walk recomputes its lookahead from the
+ * siblings that now stand there. Valid ONLY for a node under an INTRUSIVE,
+ * OWNED parent whose list was edited AHEAD of the cursor -- consolidation's
+ * idiom -- because an intrusive level keeps no cursor state to fall out of
+ * step with; an array level does, and its lists are never edited mid-walk.
+ * The lookahead being re-wound may already have POPPED the parent's frame
+ * (it had computed the parent's own EXIT), so the parent is re-armed here;
+ * it is readable off the node exactly because the list is owned. */
 void markdown_core_iter_reset(
     markdown_core_iter *iter,
     markdown_core_node *current,
     markdown_core_event_type event_type
 ) {
+    if (event_type == MARKDOWN_CORE_EVENT_EXIT && current != iter->root && current->parent &&
+        (iter->depth == 0 || iter->frames[iter->depth - 1].node != current->parent)) {
+        S_iter_push(iter, current->parent);
+    }
     iter->next.ev_type = event_type;
     iter->next.node = current;
     markdown_core_iter_next(iter);
+}
+
+void markdown_core_iter_skip_children(markdown_core_iter *iter) {
+    markdown_core_node *current = iter->cur.node;
+    assert(iter->cur.ev_type == MARKDOWN_CORE_EVENT_ENTER);
+    if (iter->next.ev_type == MARKDOWN_CORE_EVENT_ENTER && iter->depth > 0 &&
+        iter->frames[iter->depth - 1].node == current) {
+        iter->depth--;
+    }
+    iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
+    iter->next.node = current;
 }
 
 markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter) { return iter->cur.node; }
@@ -114,7 +179,14 @@ int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
      * happened to be safe; with the contract total it is a use-after-free. */
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
-        if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->type != MARKDOWN_CORE_NODE_TEXT) {
+        /* A SHARED text node is a retained projection's (review-found):
+         * its literal and its links are every tree's at once, so it
+         * neither merges nor drops here. Its runs were consolidated
+         * before the store, and a shared node is never the intrusive
+         * sibling of a fresh one, so skipping it skips whole frozen
+         * runs, not halves of mixed ones. */
+        if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->type != MARKDOWN_CORE_NODE_TEXT ||
+            (cur->flags & MARKDOWN_CORE_NODE__SHARED)) {
             continue;
         }
 
@@ -179,5 +251,11 @@ int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
     }
 
     markdown_core_strbuf_free(&buf);
+    if (iter->oom) {
+        /* A refused spill truncated the walk (iterator.h): runs past the
+         * truncation were never consolidated, and the caller treats this
+         * exactly as it treats a lost merge buffer. */
+        ok = 0;
+    }
     return ok;
 }

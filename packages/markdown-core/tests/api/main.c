@@ -1957,8 +1957,8 @@ static void association_accessor(test_batch_runner *runner) {
                 refused++;
                 INT_EQ(runner, carries, 0, "kind %d refuses the association accessor", (int)kind);
             }
-            for (node = markdown_core_node_get_first_child(current); node;
-                node = markdown_core_node_get_next_sibling(node)) {
+            markdown_core_children walk_cursor = markdown_core_node_children(current);
+            for (; (node = walk_cursor.child) != NULL; walk_cursor = markdown_core_children_next(walk_cursor)) {
                 if (depth < sizeof(stack) / sizeof(stack[0])) {
                     stack[depth++] = node;
                 }
@@ -2013,7 +2013,8 @@ static void identity_accessors(test_batch_runner *runner) {
     /* The two ReferenceDefinition siblings, in document order. Mints are
      * monotone in document order (D4), which is what lets the map's smallest
      * identity BE the first definition. */
-    for (node = markdown_core_node_get_first_child(root); node; node = markdown_core_node_get_next_sibling(node)) {
+    markdown_core_children root_cursor = markdown_core_node_children(root);
+    for (; (node = root_cursor.child) != NULL; root_cursor = markdown_core_children_next(root_cursor)) {
         if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_REFERENCE_DEFINITION) {
             markdown_core_identity mint = markdown_core_node_identifier(node);
             OK(runner, mint.block != 0 && mint.ordinal == 0, "a definition is a block with a nonzero mint");
@@ -2028,29 +2029,32 @@ static void identity_accessors(test_batch_runner *runner) {
         winner.block != 0 && loser.block != 0 && winner.block < loser.block,
         "both definitions are in the tree and mints follow document order");
 
-    paragraph = markdown_core_node_get_first_child(root);
-    for (node = markdown_core_node_get_first_child(paragraph); node; node = markdown_core_node_get_next_sibling(node)) {
-        markdown_core_node_kind kind = markdown_core_node_get_kind(node);
-        if (kind == MARKDOWN_CORE_KIND_LINK_REFERENCE || kind == MARKDOWN_CORE_KIND_IMAGE_REFERENCE) {
-            markdown_core_identity paragraph_identity = markdown_core_node_identifier(paragraph);
-            references++;
-            identity = markdown_core_node_identifier(node);
-            OK(runner,
-                identity.block == paragraph_identity.block && identity.ordinal != 0,
-                "kind %d is an inline owned by its paragraph, with a nonzero ordinal",
-                (int)kind);
-            OK(runner,
-                markdown_core_node_reference_definition(node, &definition) && definition.block == winner.block &&
-                    definition.ordinal == 0,
-                "kind %d names the first definition of its label",
-                (int)kind);
-        }
-        if (kind == MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE) {
-            references++;
-            OK(runner,
-                markdown_core_node_reference_definition(node, &definition) && definition.block != 0 &&
-                    definition.block != winner.block && definition.block != loser.block,
-                "a footnote call names its own definition");
+    paragraph = markdown_core_node_children(root).child;
+    {
+        markdown_core_children para_cursor = markdown_core_node_children(paragraph);
+        for (; (node = para_cursor.child) != NULL; para_cursor = markdown_core_children_next(para_cursor)) {
+            markdown_core_node_kind kind = markdown_core_node_get_kind(node);
+            if (kind == MARKDOWN_CORE_KIND_LINK_REFERENCE || kind == MARKDOWN_CORE_KIND_IMAGE_REFERENCE) {
+                markdown_core_identity paragraph_identity = markdown_core_node_identifier(paragraph);
+                references++;
+                identity = markdown_core_node_identifier(node);
+                OK(runner,
+                    identity.block == paragraph_identity.block && identity.ordinal != 0,
+                    "kind %d is an inline owned by its paragraph, with a nonzero ordinal",
+                    (int)kind);
+                OK(runner,
+                    markdown_core_node_reference_definition(node, &definition) && definition.block == winner.block &&
+                        definition.ordinal == 0,
+                    "kind %d names the first definition of its label",
+                    (int)kind);
+            }
+            if (kind == MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE) {
+                references++;
+                OK(runner,
+                    markdown_core_node_reference_definition(node, &definition) && definition.block != 0 &&
+                        definition.block != winner.block && definition.block != loser.block,
+                    "a footnote call names its own definition");
+            }
         }
     }
     INT_EQ(runner, references, 3, "all three reference kinds resolved");

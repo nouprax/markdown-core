@@ -1503,6 +1503,142 @@ tree: **nothing walks into a borrowed list to write.** The iterator climbs
 out of one to the borrower it entered through (F17); the projection's own
 walk now never enters one at all.
 
+### F23 — literal block-node sharing cannot satisfy the public navigation contract, and the clone's constant is what falls  · VERIFIED (#161)
+
+**The owner's steer** (2026-09-01) re-ruled §6's "the clone is accepted and no
+task removes it": per-feed throughput is the goal, everything else is means,
+so #161 asked for the derived tree to SHARE closed block nodes and shrink the
+clone to the open spine plus the changed set — engine-side O(open + changed).
+
+**The literal shape is impossible against the API as ruled, and the proof is
+short.** `markdown_core_node_get_next_sibling(const markdown_core_node *)`
+is stateless: a physically shared node must answer "what follows me" the same
+in every tree that contains it. On an append stream the answer near the tail
+DIFFERS per feed — the last closed sibling's next is that feed's open clone —
+so a node is shareable only when its next-target is itself a permanently
+shared node. That induction has no base: `derived(c_i)` can be permanent only
+after `derived(c_i+1)` is, and the tail always holds a fresher sibling, so
+nothing is ever permanent and the shareable set is empty. This is the
+persistent-list fact that a forward-linked list shares TAILS and an
+append-only stream grows on the side the links point toward; it would invert
+if navigation were `last_child`/`prev_sibling`, and it dissolves entirely for
+a consumer that walks through the iterator, which already climbs through a
+borrower (F17) — but the C surface exposes first/next, and D8 just ruled that
+surface. Making Read iterator-only is an API break and therefore a D-question
+for the owner, not a task. The promotion-memo half of the issue's shape (a
+hit reproducing a name-hook's replacement without running it) falls with the
+node sharing that would have carried it; F15 rule 2 stands.
+
+**What falls instead is the clone's CONSTANT, in two measured cuts.**
+Callgrind over the 98 KB line-fed stream (`session_feed` per line, hit-
+dominated), Ir being load-independent:
+
+- **The tail filter's memo scan** (F15's `(ext, name)` memo, walked per block
+  per extension per projection) was 13.9% by itself, with `get_type_string`
+  re-derived beside it per probe. The parser now keeps the declared sets as
+  BITMASKS in extension-list order — one `"*inlines"` mask and a name-keyed
+  table filled lazily, rebuilt when `extension_generation` moves — so a tail
+  computes its offer set once and re-answers it only after a hook actually
+  ran (F15 rule 1 unchanged). 882.0M → 809.6M Ir (−8.2%).
+- **The skeleton's allocator round-trip** — one calloc per CST block per feed
+  and the consumer's matching frees, the malloc family at ~33% — became a
+  DERIVATION ARENA: one allocation sized off the block mint, bump-served
+  zeroed nodes, pages returned in one motion when the last node dies. The
+  tree stays SELF-CONTAINED (no handle on the root, nothing in
+  `content.mem`): pages are 64 KiB-aligned and never outgrow the window, so
+  masking a node's address names its page and the page its arena, and a live
+  count born at one makes any free order safe, interior hook frees included.
+  Two discarded designs are recorded at the definition (node.h): a root-slot
+  handle dies to a legitimate borrow against an empty document; a mem-wrapper
+  in `content.mem` escapes into frozen buffers that cache holders keep alive
+  after the arena dies. Both were caught by existing gates (`borrow_across_feed`,
+  `block_identity`), which is those gates doing their job. Pages are
+  realloc'd, not calloc'd — zeroing the window upfront measured 43% of a
+  feed — and a document under 128 blocks keeps the per-node path, where the
+  page plus slop costs more than the callocs it replaces (the 12 KB stream
+  regressed 54% before the threshold said so).
+
+**Where it lands.** 882.0M → 553.5M Ir (−37%) on the 98 KB stream; wall
+125.4 → 97.4 ms (−22%); 488 KB −14% wall; 12 KB and the 41-case one-shot
+unchanged; ASan (with the arena poisoning every unhanded slot and forgotten
+node), UBSan, the resident-memory gate and the feed benchmarks green. A feed
+remains Θ(blocks) — clone walk, projection walk, free walk — with the
+allocator term gone and the filter term collapsed; what Θ(blocks) still
+buys and what an API re-ruling would buy beyond it now live in #161.
+
+**Superseded the same day**: the owner ruled the API open (D9), and F24 is
+the sharing this finding proved impossible against the OLD surface, landed
+against the new one.
+
+### F24 — siblinghood moved to the parent, the API followed, and a hit became the retained node itself  · VERIFIED (#161, D9)
+
+**The obstruction dissolved, not overpowered.** F23's proof was never about
+nodes: it was that an intrusive `next` writes a PER-TREE fact — what follows
+me in THIS tree — into memory two trees share. D9 let the representation
+say so: a derived skeleton parent now holds its children as a VECTOR
+(`children.vec/count`, flag `CHILD_ARRAY`, overlaying `first_child/
+last_child`), every per-tree fact lives in per-tree memory, and a shared
+node answers no question that varies by tree. The CST and every inline list
+stay intrusive — an inline list is shared WHOLE behind its holder (T19),
+and its internal links never lie. The public surface followed: the
+stateless first/next accessors became the by-value children cursor
+(`markdown_core_node_children`/`markdown_core_children_next`, O(1) a step
+on either shape), the internal iterator carries its own ancestry as an
+explicit frame stack instead of climbing parents, and the wire, the dump
+and the bindings' surfaces did not move (Swift's Markup builders switched
+cursor in four mechanical sites; ECMAScript and Kotlin read the wire).
+
+**Then the issue's literal shape landed.** The holder retains the derived
+node it stored — malloc-shelled to outlive any tree's arena, flagged
+`SHARED`, parentless and linkless, its list aliased as its children — and a
+hit at the clone returns THAT node under one holder hold per requesting
+tree: no allocation, no content retain, no parse, no tail, no entry by any
+projection walk (F22 upgraded from never-write to never-look). Promotion,
+strip, consolidation, numbering and the consulted bits are baked into the
+stored projection: what F15 rule 2 re-ran every projection to REPRODUCE,
+retention reproduces by identity — rule 2's re-run survives only where a
+store never happens (a hook's replacement node carries no origin, so a
+formula paragraph re-projects each feed, exactly as before). The free
+walk's part in a shared entry is one holder release; the holder frees the
+shell with the list when the last tree lets go, on whatever thread that
+happens (the holds were already atomic).
+
+**Three builds failed before the shape held, and each is written where it
+fell**: the root-slot arena handle (a borrow clobbers it — the borrow gate
+caught a holder freed as an arena), the mem-wrapper in `content.mem` (a
+frozen buffer carried it into a holder that outlived the arena — the
+identity gate caught the read), and the ARENA flag re-asserted past its
+allocation (an enrolled miss took a malloc shell but kept the flag, and
+`forget()` masked a malloc address into a fake page — the feed_bound gate
+caught it). The `node_sharing` gate now pins the mechanism itself: two
+derivations of an unwritten CST hand back POINTER-identical shared blocks,
+dump byte-identically, and the survivor reads after either free order;
+retention forced off turns it red.
+
+**Numbers** (98 KB line-fed stream, same protocol as F20/F23; `main` before
+this series = 882.0M Ir / 125.4 ms):
+
+```
+masks + arena (F23)        553.5M Ir   97.4 ms
+vectors (substrate alone)      —      125.0 ms   (transitional: dual writes + all-fresh clone)
+retention (this finding)   521.3M Ir   84.1 ms   -41% Ir / -33% wall vs main
+488 KB                                2400 ms    -32% wall;  12 KB 2.49 ms;  one-shot unchanged
+```
+
+**The bound, stated honestly.** NODE work per feed is now O(open + changed):
+a closed unchanged block costs no clone, no parse, no tail, no hook, no
+free. What remains Θ(width) per feed is the REFERENCING pass — the vector
+fill, one freshness check and one hold per closed top-level block, one
+release at the free — i.e. the skeleton of the copy-out §6 already accepts,
+at pointer-write cost; and the tail interrogation of per-feed-fresh
+CONTAINERS (name-mask lookups per list item per feed — 17% of the remaining
+profile), because phase 1 retains LEAVES only. Container subtree retention
+— enroll closed containers, store their vectors of already-shared children
+under one holder, key on the container's own stamp plus OR'd consulted bits
+— collapses both terms for nested documents and is the next step in #161;
+content-less leaves (code blocks, thematic breaks) enroll with it, so a
+stored container never references arena memory.
+
 ---
 
 ## 4. Decisions — RULED, 2026-08-25
@@ -1710,6 +1846,20 @@ back in the vocabulary that produced them.
   writers and both decoders. What a feed returns is now the shared tree and
   nothing else; what a stream keeps resident is the CST and the cache, not a
   second copy of everything fed.
+- **D9 — 3.0 is unreleased, so any API change is acceptable before it · owner
+  ruling, 2026-09-01, same session.** Ruled in answer to F23's D-question:
+  the O(open + changed) feed needed literal node sharing, node sharing could
+  not satisfy a stateless next-sibling accessor, and the owner removed the
+  accessor's protection rather than the goal ("我支持高性能实现，我们根本没发布3.0，
+  所以在发布前，什么API改动都可以接受"). What it bought, in order (F24): a
+  derived container holds its children as a VECTOR — sibling order is the
+  parent's fact, so a shared child answers no per-tree question — the public
+  first/next accessors became the by-value children cursor
+  (`markdown_core_node_children` / `markdown_core_children_next`; ECMAScript
+  and Kotlin read the wire and are untouched, Swift's builders moved in four
+  mechanical sites), and the holder retains the derived node itself, handed
+  back shared on every hit. The wire, the dumps and every answer are
+  byte-identical; only the C navigation surface changed shape.
 
 ---
 
@@ -2113,15 +2263,18 @@ Stated so they are not later mistaken for defects.
   re-renders only the elements whose value stopped comparing equal, so it pays
   the copy but not the render. (This clause first credited the change
   classification; Phase D's ruling killed it as never owed.)
-- **The per-feed clone is a whole-document term and NO task removes it.**
-  `markdown_core_parser_derive_tree`
-  ([blocks.c:1711](../packages/markdown-core/core/blocks.c#L1711)) is
-  `S_clone_block_tree` plus `S_project`, and the clone walks the entire CST and
-  copies every block's content bytes. The owner accepts it, so **T15's bound is
-  stated over the projection only**: the clone is measured and reported beside
-  it, the way the binding-side copy-out is. A gate demanding "no term in the
-  document already fed" without that carve-out could not pass however much of
-  Phase B landed.
+- **The per-feed clone is GONE for what did not change; what remains
+  whole-document is the referencing pass.** ~~NO task removes it~~ → F23
+  (the old API forbade sharing; the constant fell instead) → D9 (the owner
+  opened the API) → F24 (a hit is the retained node itself). NODE work per
+  feed is O(open + changed); the Θ(width) that remains is the derived
+  root's vector fill, a freshness check and a holder hold per closed block,
+  and their release at the free — the skeleton of the copy-out this section
+  already accepts — plus the tail interrogation of per-feed-fresh
+  containers, which container retention (#161's next step, F24) collapses.
+  **T15's bound stays stated over the projection only**, the referencing
+  pass measured and reported beside it, the way the binding-side copy-out
+  is.
 - **A feed is not monotone.** A definition arriving later changes the projection
   of a block returned earlier. That block was never wrong: it was resolved
   against the map as it then stood, and CommonMark defines the earlier outcome

@@ -567,11 +567,13 @@ static void pr_generation_clear(pr_generation *generation) {
 /* A block whose children are all inline -- vacuously so for a block with
  * none, which is what puts the empty list under test as well. */
 static int pr_is_leaf_block(markdown_core_node *node) {
+    markdown_core_child_cursor cursor;
     markdown_core_node *child;
     if (!MARKDOWN_CORE_NODE_BLOCK_P(node)) {
         return 0;
     }
-    for (child = node->first_child; child; child = child->next) {
+    for (child = markdown_core_child_first(node, &cursor); child;
+        child = markdown_core_child_after(node, child, &cursor)) {
         if (!MARKDOWN_CORE_NODE_INLINE_P(child)) {
             return 0;
         }
@@ -1227,50 +1229,31 @@ static const pr_key_entry *pr_key_find(const pr_key_set *set, const markdown_cor
 static int pr_collect_blocks(markdown_core_node *root, markdown_core_node ***out, size_t *count) {
     markdown_core_node **items = NULL;
     size_t n = 0, cap = 0;
-    markdown_core_node *cur = root;
-    while (cur) {
+    markdown_core_iter walk;
+    markdown_core_event_type ev_type;
+    markdown_core_iter_init(&walk, root);
+    while ((ev_type = markdown_core_iter_next(&walk)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *cur = markdown_core_iter_get_node(&walk);
+        if (ev_type != MARKDOWN_CORE_EVENT_ENTER) {
+            continue;
+        }
+        if (!MARKDOWN_CORE_NODE_BLOCK_P(cur)) {
+            /* An inline-class child (a directive's label) roots no blocks. */
+            markdown_core_iter_skip_children(&walk);
+            continue;
+        }
         if (n == cap) {
             markdown_core_node **grown;
             cap = cap ? cap * 2 : 32;
             grown = (markdown_core_node **)realloc(items, cap * sizeof(*items));
             if (!grown) {
                 free(items);
+                markdown_core_iter_deinit(&walk);
                 return -1;
             }
             items = grown;
         }
         items[n++] = cur;
-        /* Descend to the first BLOCK-class child and walk only block
-         * siblings. The one mixed-class container is a labeled directive
-         * block, whose FIRST child is the inline-class label with the block
-         * children after it -- a first-child class test walked past its
-         * whole interior (landing review). */
-        {
-            markdown_core_node *child = cur->first_child;
-            while (child && !MARKDOWN_CORE_NODE_BLOCK_P(child)) {
-                child = child->next;
-            }
-            if (child) {
-                cur = child;
-                continue;
-            }
-        }
-        for (;;) {
-            markdown_core_node *sibling;
-            if (cur == root) {
-                cur = NULL;
-                break;
-            }
-            sibling = cur->next;
-            while (sibling && !MARKDOWN_CORE_NODE_BLOCK_P(sibling)) {
-                sibling = sibling->next;
-            }
-            if (sibling) {
-                cur = sibling;
-                break;
-            }
-            cur = cur->parent;
-        }
     }
     *out = items;
     *count = n;
@@ -1604,8 +1587,13 @@ static int pr_identity_boundary(
             );
             failed = 1;
         }
-        for (first_sibling = all[i]->first_child; first_sibling && !failed; first_sibling = first_sibling->next) {
-            for (later_sibling = first_sibling->next; later_sibling && !failed; later_sibling = later_sibling->next) {
+        markdown_core_child_cursor first_cursor;
+        for (first_sibling = markdown_core_child_first(all[i], &first_cursor); first_sibling && !failed;
+            first_sibling = markdown_core_child_after(all[i], first_sibling, &first_cursor)) {
+            markdown_core_child_cursor later_cursor = first_cursor;
+            for (later_sibling = markdown_core_child_after(all[i], first_sibling, &later_cursor);
+                later_sibling && !failed;
+                later_sibling = markdown_core_child_after(all[i], later_sibling, &later_cursor)) {
                 if (first_sibling->identifier == later_sibling->identifier) {
                     fprintf(
                         stderr,
@@ -1821,9 +1809,11 @@ typedef struct ti_record {
 } ti_record;
 
 static int ti_snapshot(markdown_core_node *root, ti_record *out) {
+    markdown_core_child_cursor cursor;
     markdown_core_node *child;
     out->count = 0;
-    for (child = root->first_child; child; child = child->next) {
+    for (child = markdown_core_child_first(root, &cursor); child;
+        child = markdown_core_child_after(root, child, &cursor)) {
         if (out->count == TI_MAX_CHILDREN) {
             return -1;
         }
@@ -2209,6 +2199,156 @@ done:
         markdown_core_parser_free(probe_parser);
     }
     printf("attach invalidation: %s\n", failures ? "stale list served" : "attach re-projects");
+    return failures ? -1 : 0;
+}
+
+/* THE SHARING GATE (#161, D9): a hit is the RETAINED NODE ITSELF, so two
+ * derivations of an unwritten CST must hand back the SAME PHYSICAL node for
+ * a closed paragraph -- pointer equality, not value equality -- and both
+ * trees must read correctly while alive and free independently afterwards.
+ * Red without retention (a fresh clone per feed compares unequal), red
+ * without the per-tree hold (a use-after-free under the sanitizers). */
+static const markdown_core_node *sg_first_shared_block(markdown_core_node *root) {
+    markdown_core_children cursor = markdown_core_node_children(root);
+    for (; cursor.child; cursor = markdown_core_children_next(cursor)) {
+        if (cursor.child->flags & MARKDOWN_CORE_NODE__SHARED) {
+            return cursor.child;
+        }
+    }
+    return NULL;
+}
+
+static int case_node_sharing(const ts_spec_file *file) {
+    static const char SG_TEXT[] = "the first paragraph\n\nthe second paragraph\n\n";
+    markdown_core_parser *parser;
+    markdown_core_node *first = NULL;
+    markdown_core_node *second = NULL;
+    const markdown_core_node *first_shared;
+    const markdown_core_node *second_shared;
+    int failures = 0;
+    (void)file;
+
+    if (pr_no_cache) {
+        printf("node sharing: skipped under --no-cache\n");
+        return 0;
+    }
+    parser = pr_parser_new();
+    if (!parser) {
+        return -1;
+    }
+    markdown_core_parser_feed(parser, SG_TEXT, sizeof(SG_TEXT) - 1);
+    first = markdown_core_parser_derive_tree(parser, parser->refmap);
+    second = markdown_core_parser_derive_tree(parser, parser->refmap);
+    if (!first || !second) {
+        fputs("node sharing: derivation failed\n", stderr);
+        failures++;
+    } else {
+        first_shared = sg_first_shared_block(first);
+        second_shared = sg_first_shared_block(second);
+        if (!first_shared || first_shared != second_shared) {
+            fputs("node sharing: two reads of an unwritten CST did not hand back the same node\n", stderr);
+            failures++;
+        }
+        if (!failures) {
+            size_t first_length = 0;
+            size_t second_length = 0;
+            uint8_t *first_dump = pr_dump(first, &first_length);
+            uint8_t *second_dump = pr_dump(second, &second_length);
+            if (!first_dump || !second_dump || first_length != second_length ||
+                memcmp(first_dump, second_dump, first_length) != 0) {
+                fputs("node sharing: the two trees dump differently\n", stderr);
+                failures++;
+            }
+            markdown_core_dump_free(first_dump);
+            markdown_core_dump_free(second_dump);
+        }
+        /* THE CONSUMER'S FREE IS NOT A RELEASE (review-found, P1): the
+         * tree's one hold belongs to the vector entry, so a direct free
+         * of the shared block -- and of a node inside it, and every
+         * structural mutation against either -- must be a refused no-op.
+         * Asserted the hard way: mutate, re-dump, then the frees below
+         * and a fresh derive must still serve the retained node. Before
+         * the fix the free here released the holder's hold a second
+         * time and the interior free destroyed a listed inline, so the
+         * re-dump or the teardown died under ASan. */
+        if (!failures) {
+            markdown_core_node *mut = (markdown_core_node *)first_shared;
+            markdown_core_node *interior = markdown_core_node_first_child(mut);
+            markdown_core_node *stray = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+            size_t baseline_length = 0;
+            uint8_t *baseline = pr_dump(first, &baseline_length);
+            markdown_core_node_free(mut);
+            markdown_core_node_unlink(mut);
+            if (interior) {
+                markdown_core_node_free(interior);
+                markdown_core_node_unlink(interior);
+            }
+            if (stray) {
+                if (markdown_core_node_append_child(mut, stray) ||
+                    (interior && markdown_core_node_insert_after(interior, stray)) ||
+                    markdown_core_node_replace(interior ? interior : mut, stray)) {
+                    fputs("node sharing: a structural mutation reached the shared projection\n", stderr);
+                    failures++;
+                }
+                markdown_core_node_free(stray);
+            }
+            /* Content is as frozen as structure: a write through any
+             * setter would show in every tree at once, so each answers
+             * 0 for a shared node, and the trim walks away untaken. The
+             * dumps against the baseline are the proof either way. */
+            if ((interior && markdown_core_node_set_literal(interior, "rewritten")) ||
+                markdown_core_node_set_string_content(mut, "rewritten") ||
+                markdown_core_node_set_type(mut, MARKDOWN_CORE_NODE_HEADING)) {
+                fputs("node sharing: a content setter reached the shared projection\n", stderr);
+                failures++;
+            }
+            markdown_core_node_unput(mut, 3);
+            if (!failures && baseline) {
+                size_t first_length = 0;
+                size_t second_length = 0;
+                uint8_t *first_dump = pr_dump(first, &first_length);
+                uint8_t *second_dump = pr_dump(second, &second_length);
+                if (!first_dump || first_length != baseline_length ||
+                    memcmp(first_dump, baseline, baseline_length) != 0 || !second_dump ||
+                    second_length != baseline_length || memcmp(second_dump, baseline, baseline_length) != 0) {
+                    fputs("node sharing: the trees dump differently after refused mutations\n", stderr);
+                    failures++;
+                }
+                markdown_core_dump_free(first_dump);
+                markdown_core_dump_free(second_dump);
+            }
+            markdown_core_dump_free(baseline);
+        }
+    }
+    /* Free in store order first, then the survivor must still read. */
+    markdown_core_node_free(first);
+    if (!failures && second) {
+        size_t length = 0;
+        uint8_t *dump = pr_dump(second, &length);
+        if (!dump || length == 0) {
+            fputs("node sharing: the surviving tree stopped reading after the first was freed\n", stderr);
+            failures++;
+        }
+        markdown_core_dump_free(dump);
+    }
+    markdown_core_node_free(second);
+    /* Both consumers gone, the cache's own hold must still serve: a fresh
+     * derive hits the retained node. Before the fix the mutation block's
+     * stolen release left the holder destroyed by the frees above, and
+     * this derive read it freed. */
+    if (!failures) {
+        size_t hits_before = parser->cache_hits;
+        markdown_core_node *third = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!third || parser->cache_hits < hits_before + 1) {
+            fputs("node sharing: the cache's hold did not survive its consumers\n", stderr);
+            failures++;
+        }
+        if (third) {
+            markdown_core_node_free(third);
+        }
+    }
+    markdown_core_parser_free(parser);
+    printf("node sharing: %s\n", failures ? "the clone is back" : "a hit is the retained node itself");
     return failures ? -1 : 0;
 }
 
@@ -2602,7 +2742,7 @@ static int cs_collect(markdown_core_node *root, int exempt_tail, cs_entry **out,
     markdown_core_iter walk;
     markdown_core_iter *iter = &walk;
     markdown_core_event_type ev_type;
-    markdown_core_node *tail = exempt_tail ? root->last_child : NULL;
+    markdown_core_node *tail = exempt_tail ? markdown_core_child_back(root) : NULL;
     size_t cap = 0;
     *out = NULL;
     *count = 0;
@@ -2610,7 +2750,7 @@ static int cs_collect(markdown_core_node *root, int exempt_tail, cs_entry **out,
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node = markdown_core_iter_get_node(iter);
         if (ev_type == MARKDOWN_CORE_EVENT_ENTER && tail && node == tail) {
-            markdown_core_iter_reset(iter, node, MARKDOWN_CORE_EVENT_EXIT);
+            markdown_core_iter_skip_children(iter);
             continue;
         }
         if (ev_type != MARKDOWN_CORE_EVENT_ENTER || !MARKDOWN_CORE_NODE_BLOCK_P(node) ||
@@ -2699,7 +2839,7 @@ static int case_carried_state(const ts_spec_file *file) {
                 return -1;
             }
             boundary_definitions = cs_definition_count(derived);
-            if (derived->first_child && derived->first_child != derived->last_child) {
+            if (markdown_core_node_child_count(derived) > 1) {
                 multi_block++;
             }
             markdown_core_node_free(derived);
@@ -2977,6 +3117,7 @@ static const pr_case_entry PR_CASES[] = {
     {"block_identity_transitions", case_block_identity_transitions, 0},
     {"attach_invalidation", case_attach_invalidation, 0},
     {"map_immunity", case_map_immunity, 0},
+    {"node_sharing", case_node_sharing, 0},
     {"label_tail", case_label_tail, 0},
     {"feed_bound", case_feed_bound, 0},
     {"resident_memory", case_resident_memory, 0},
