@@ -3,10 +3,9 @@ import MarkdownCoreC
 /// The root of the semantic tree — the view with policy applied, which may
 /// omit bytes: a fence, a bullet and a reference definition's punctuation are
 /// in no literal anywhere. It is an ordinary ``Markup`` node: nothing but its
-/// ``content`` and its ``scope``, like every node under it. What it does NOT
-/// carry is the text its scopes are counted against — a root detached from its
-/// ``Concrete`` is not self-interpreting, which is why the two travel together
-/// as a ``Read`` and never alone.
+/// ``content`` and its ``scope``, like every node under it. Its scopes are
+/// counted against the normalized source (see ``Read``), which the library
+/// does not hand back.
 public struct Semantic: Markup {
     /// The root's identity: its own mint with ordinal 0, like every block's.
     public let id: Identity
@@ -32,7 +31,7 @@ func markup(from node: OpaquePointer) -> any Markup {
     switch markdown_core_node_get_kind(node) {
     case MARKDOWN_CORE_KIND_DOCUMENT:
         // The root kind is only ever the ROOT, and the root is built by the
-        // copy-in that also carries the concrete view beside it.
+        // copy-in.
         preconditionFailure("a document node cannot be a child")
     case MARKDOWN_CORE_KIND_BLOCK_QUOTE: BlockQuote(from: node)
     case MARKDOWN_CORE_KIND_PARAGRAPH: Paragraph(from: node)

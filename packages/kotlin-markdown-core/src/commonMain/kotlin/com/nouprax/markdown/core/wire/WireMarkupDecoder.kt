@@ -6,8 +6,7 @@ internal fun WireReader.markup(): Markup {
     val nodeScope = scope()
     return when (kind) {
         WireKind.DOCUMENT -> {
-            // Only ever the ROOT, and the root is read by `document()`, which is
-            // the only place the concrete view exists to build it with.
+            // Only ever the ROOT, and the root is read by `read()`.
             error("a document node cannot be a child")
         }
 

@@ -10,7 +10,7 @@
  * `markdown_core_document_wire` -- the canonical wire, written once beside the
  * canonical dump and decoded by every binding -- and what this bridge adds is
  * the four magic bytes and the status that say whether a tree or an error
- * follows. The magic is versioned (`MKC6`) because THIS transport can skew: a
+ * follows. The magic is versioned (`MKC7`) because THIS transport can skew: a
  * prebuilt native library can sit beside newer Kotlin code, and a payload the
  * decoder misreads must fail closed rather than decode as garbage. */
 
@@ -81,7 +81,7 @@ static void apply_options(markdown_core_parse_options *options, uint32_t mask) {
     options->directives = (mask & (1u << 8)) != 0;
 }
 
-static const uint8_t envelope_magic[] = {'M', 'K', 'C', '6'};
+static const uint8_t envelope_magic[] = {'M', 'K', 'C', '7'};
 
 /* The five envelope bytes, written into room the buffer already holds --
  * `markdown_core_document_wire` reserved it in the payload's own allocation,

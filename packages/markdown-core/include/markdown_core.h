@@ -227,7 +227,7 @@ MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *docum
 
 /**
  * THE STREAM (docs/STREAMING.md §4 D5): a session, `feed`, and the document's
- * two total views -- the same `semantic` and `source` every document
+ * one view -- the same `semantic` every document
  * publishes. `feed` returns THE DOCUMENT AFTER THOSE BYTES: a value the
  * caller owns outright, frees with `markdown_core_document_free`, and keeps
  * -- it stays readable after every later feed and after the session itself
@@ -266,9 +266,9 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_session_feed(
  * document state directly -- the same bytes `markdown_core_session_feed`
  * followed by `markdown_core_document_wire` would produce, without building
  * the owned document in between. For a bridge whose document never escapes
- * the delivering call, that intermediate copies the source twice for a
- * serializer that reads neither copy; here the wire reads
- * the session's live state during the synchronous call. `prefix` reserves
+ * the delivering call, that intermediate is an allocation and a free per
+ * feed for a document nothing reads; here the wire is written during
+ * the synchronous call. `prefix` reserves
  * zeroed envelope room ahead of the payload, in the one allocation, exactly
  * as `markdown_core_document_wire` does; release the buffer with
  * `markdown_core_wire_free`. C consumers that read the document through
@@ -320,25 +320,14 @@ MARKDOWN_CORE_API void markdown_core_session_free(markdown_core_session *session
  *
  * They are counted against the NORMALIZED source -- UTF-8 as fed, every NUL
  * replaced by the three bytes of U+FFFD, every line ending a single `\n` and
- * every line having one -- and NOT against the buffer you passed, which is why
- * `markdown_core_document_source` publishes it: a caller whose input contained
- * a NUL has a buffer whose columns no longer agree with ours.
- * `_line_count` and `_line_start` are that source's line index.
+ * every line having one -- and NOT against the buffer you passed. The library
+ * does not hand that text back; a caller whose input can differ from it (a
+ * NUL, a CRLF, a missing final newline) applies the same normalization to its
+ * own copy before resolving a scope against it.
  *
  * All of it ends with the document.
  */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_semantic(const markdown_core_document *document);
-/** The normalized source: the text every scope's coordinates are counted
- * against. Empty, never null, for a document that parsed no bytes. */
-MARKDOWN_CORE_API markdown_core_string markdown_core_document_source(const markdown_core_document *document);
-/** How many lines the normalized source has. */
-MARKDOWN_CORE_API size_t markdown_core_document_line_count(const markdown_core_document *document);
-/** Where line `line` begins in the source, counting lines from 1. */
-MARKDOWN_CORE_API bool markdown_core_document_line_start(
-    const markdown_core_document *document,
-    size_t line,
-    size_t *offset
-);
 /** A parse failure. There is NO document, and there is no scope: an input the
  * parser could not turn into a document has no extent to point at. */
 MARKDOWN_CORE_API markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error);
@@ -508,7 +497,7 @@ MARKDOWN_CORE_API bool markdown_core_document_dump(
 );
 MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
 
-/** THE WIRE: the document's two total views serialized into ONE buffer, so a
+/** THE WIRE: the document serialized into ONE buffer, so a
  * binding whose boundary is expensive to cross -- JNI, WebAssembly -- crosses
  * it once per read instead of once per field. The dump above is the canonical
  * TEXT of a document; this is its canonical BYTES, and the two change together
@@ -543,8 +532,7 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  *     TableRow: u8 is-header, children
  *   children: i32 count, then each child node
  *
- * The root node is followed by the concrete view: i32 source length, its
- * bytes, i32 line count, u32 offset per line. Free the buffer with
+ * The root node ends the payload. Free the buffer with
  * `markdown_core_wire_free`. The layout changes only with the version this
  * library ships, which is why the buffer carries no version of its own --
  * a transport that can skew (a prebuilt native library beside newer binding

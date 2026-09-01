@@ -1,7 +1,6 @@
 package com.nouprax.markdown.core
 
 import kotlin.test.Test
-import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -127,11 +126,6 @@ class AstTest {
                 }
                 val sealed = document.seal()
                 assertEquals(testCase.expected, sealed.dump(), testCase.name)
-                assertContentEquals(
-                    Document(testCase.source, testCase.options).seal().concrete.source,
-                    sealed.concrete.source,
-                    testCase.name,
-                )
             }
         }
     }

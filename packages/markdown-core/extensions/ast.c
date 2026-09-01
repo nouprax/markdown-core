@@ -169,11 +169,9 @@ markdown_core_document *markdown_core_document_parse(
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
         return NULL;
     }
-    markdown_core_parser_retain_concrete(parser, &document->concrete);
     document->root = markdown_core_parser_finish(parser);
     markdown_core_parser_free(parser);
     if (!document->root) {
-        markdown_core_concrete_dispose(&document->concrete);
         free(document);
         /* A3, carried here from 3a: A FAILURE IS A RETURNED STATUS, and this is
          * the vocabulary the surface has for it. `finish` returns NULL for
@@ -192,7 +190,6 @@ void markdown_core_document_free(markdown_core_document *document) {
     if (!document) {
         return;
     }
-    markdown_core_concrete_dispose(&document->concrete);
     markdown_core_node_free(document->root);
     free(document);
 }
@@ -202,33 +199,10 @@ void markdown_core_document_free(markdown_core_document *document) {
  * DERIVED document -- `markdown_core_parser_derive_tree`, the clone-and-
  * project re-projection, whose closed blocks borrow the projection cache's
  * lists (T9) under the holder count that lets a borrow outlive the parser
- * itself (T19). The concrete view is a COPY -- the copy-out is the price
- * a feed pays to return a value (§6), and it is the only copying here; the
- * tree shares. */
+ * itself (T19). Nothing is copied out: the tree shares. */
 struct markdown_core_session {
     markdown_core_parser *parser;
 };
-
-static int S_concrete_copy(markdown_core_parser *parser, markdown_core_concrete *out) {
-    memset(out, 0, sizeof(*out));
-    out->mem = parser->mem;
-    markdown_core_strbuf_init(parser->mem, &out->source, parser->source.size);
-    markdown_core_strbuf_put(&out->source, parser->source.ptr, parser->source.size);
-    if (out->source.oom) {
-        markdown_core_concrete_dispose(out);
-        return 0;
-    }
-    if (parser->line_starts_size) {
-        out->line_starts = (bufsize_t *)parser->mem->calloc(parser->line_starts_size, sizeof(bufsize_t));
-        if (!out->line_starts) {
-            markdown_core_concrete_dispose(out);
-            return 0;
-        }
-        memcpy(out->line_starts, parser->line_starts, (size_t)parser->line_starts_size * sizeof(bufsize_t));
-        out->line_starts_size = parser->line_starts_size;
-    }
-    return 1;
-}
 
 markdown_core_session *markdown_core_session_new(
     const markdown_core_parse_options *options,
@@ -281,11 +255,6 @@ markdown_core_document *markdown_core_session_feed(
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
         return NULL;
     }
-    if (!S_concrete_copy(session->parser, &document->concrete)) {
-        markdown_core_document_free(document);
-        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not copy the document's views");
-        return NULL;
-    }
     return document;
 }
 
@@ -302,12 +271,10 @@ markdown_core_document *markdown_core_session_finish(markdown_core_session *sess
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
         return NULL;
     }
-    markdown_core_parser_retain_concrete(session->parser, &document->concrete);
     document->root = markdown_core_parser_finish(session->parser);
     markdown_core_parser_free(session->parser);
     session->parser = NULL;
     if (!document->root) {
-        markdown_core_concrete_dispose(&document->concrete);
         free(document);
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
         return NULL;
@@ -355,27 +322,6 @@ void markdown_core_session_free(markdown_core_session *session) {
 
 const markdown_core_node *markdown_core_document_semantic(const markdown_core_document *document) {
     return document ? document->root : NULL;
-}
-
-markdown_core_string markdown_core_document_source(const markdown_core_document *document) {
-    markdown_core_string value = {NULL, 0};
-    if (document && document->concrete.source.ptr) {
-        value.data = document->concrete.source.ptr;
-        value.length = (size_t)document->concrete.source.size;
-    }
-    return value;
-}
-
-size_t markdown_core_document_line_count(const markdown_core_document *document) {
-    return document ? (size_t)document->concrete.line_starts_size : 0;
-}
-
-bool markdown_core_document_line_start(const markdown_core_document *document, size_t line, size_t *offset) {
-    if (!document || !offset || line < 1 || line > (size_t)document->concrete.line_starts_size) {
-        return false;
-    }
-    *offset = (size_t)document->concrete.line_starts[line - 1];
-    return true;
 }
 
 markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error) {
@@ -1373,15 +1319,32 @@ void markdown_core_dump_free(uint8_t *output) { free(output); }
  * change in one and not the other. The layout is stated once, on
  * `markdown_core_document_wire` in the public header. */
 
-static void wire_u8(dump_buffer *buffer, uint8_t value) { buffer_bytes(buffer, &value, 1); }
+/* The fixed-size writes store directly into the reserved tail rather than
+ * routing a 1- or 4-byte memcpy through `buffer_bytes`: every node leads
+ * with an identity and a scope, so these are the wire's hottest stores and
+ * must not depend on the compiler electing to specialize the general path. */
+static void wire_u8(dump_buffer *buffer, uint8_t value) {
+    buffer_reserve(buffer, 1);
+    if (buffer->failed) {
+        return;
+    }
+    buffer->data[buffer->size++] = value;
+    buffer->data[buffer->size] = 0;
+}
 
 static void wire_u32(dump_buffer *buffer, uint32_t value) {
-    uint8_t bytes[4];
-    size_t index;
-    for (index = 0; index < 4; index++) {
-        bytes[index] = (uint8_t)(value >> (index * 8));
+    uint8_t *at;
+    buffer_reserve(buffer, 4);
+    if (buffer->failed) {
+        return;
     }
-    buffer_bytes(buffer, bytes, sizeof(bytes));
+    at = buffer->data + buffer->size;
+    at[0] = (uint8_t)value;
+    at[1] = (uint8_t)(value >> 8);
+    at[2] = (uint8_t)(value >> 16);
+    at[3] = (uint8_t)(value >> 24);
+    buffer->size += 4;
+    buffer->data[buffer->size] = 0;
 }
 
 static void wire_i32(dump_buffer *buffer, int32_t value) { wire_u32(buffer, (uint32_t)value); }
@@ -1633,64 +1596,12 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
     }
 }
 
-/* THE SOURCE A SCOPE'S COORDINATES ARE COUNTED AGAINST, after the tree: the
- * concrete view crosses in the same buffer because no binding value may retain
- * anything native. */
-static void wire_concrete(dump_buffer *buffer, const markdown_core_document *document) {
-    size_t lines = markdown_core_document_line_count(document);
-    markdown_core_string source = markdown_core_document_source(document);
-    size_t index;
-
-    if (source.length > INT32_MAX || lines > INT32_MAX) {
-        buffer->failed = true;
-        return;
-    }
-    wire_i32(buffer, (int32_t)source.length);
-    buffer_bytes(buffer, source.data, source.length);
-    wire_i32(buffer, (int32_t)lines);
-    for (index = 1; index <= lines; index++) {
-        size_t offset = 0;
-        if (!markdown_core_document_line_start(document, index, &offset) || offset > INT32_MAX) {
-            buffer->failed = true;
-            return;
-        }
-        wire_u32(buffer, (uint32_t)offset);
-    }
-}
-
-/* The same bytes `wire_concrete` writes, read off the LIVE parser: the
- * source and line starts it serializes are exactly the fields the owned
- * document's concrete copy duplicates (#146). */
-static void wire_concrete_live(dump_buffer *buffer, const markdown_core_parser *parser) {
-    size_t lines = (size_t)parser->line_starts_size;
-    size_t source_length = (size_t)parser->source.size;
-    size_t index;
-
-    if (source_length > INT32_MAX || lines > INT32_MAX) {
-        buffer->failed = true;
-        return;
-    }
-    wire_i32(buffer, (int32_t)source_length);
-    buffer_bytes(buffer, parser->source.ptr, source_length);
-    wire_i32(buffer, (int32_t)lines);
-    for (index = 0; index < lines; index++) {
-        if ((size_t)parser->line_starts[index] > INT32_MAX) {
-            buffer->failed = true;
-            return;
-        }
-        wire_u32(buffer, (uint32_t)parser->line_starts[index]);
-    }
-}
-
 /* THE MANAGED FEED (#146): feed, derive, and serialize in one synchronous
- * call, with the concrete view read off the live parser. The composed path
- * -- `markdown_core_session_feed` then `markdown_core_document_wire` then
- * `markdown_core_document_free` -- builds a fully-owned document whose only
- * reader is the serializer: the source is copied into the document and then
- * AGAIN into the wire, and the document dies before the call returns. Here
- * the wire reads `parser->source` and `parser->line_starts` directly and
- * the derived tree is freed before returning, so one full-source copy and
- * the owned document's lifecycle drop out of every
+ * call. The composed path -- `markdown_core_session_feed` then
+ * `markdown_core_document_wire` then `markdown_core_document_free` -- builds
+ * a fully-owned document whose only reader is the serializer, and the
+ * document dies before the call returns; here the derived tree is freed
+ * before returning, so the owned document's lifecycle drops out of every
  * managed feed. The bytes are the composed path's, gated byte-for-byte by
  * the equivalence test. C consumers keep `markdown_core_session_feed`'s
  * owned document; this entry is for bridges whose document never escapes
@@ -1738,7 +1649,6 @@ bool markdown_core_session_feed_wire(
         buffer.size = prefix;
     }
     wire_node(&buffer, root);
-    wire_concrete_live(&buffer, parser);
     markdown_core_node_free(root);
     if (buffer.failed) {
         free(buffer.data);
@@ -1774,7 +1684,6 @@ bool markdown_core_document_wire(
         buffer.size = prefix;
     }
     wire_node(&buffer, document->root);
-    wire_concrete(&buffer, document);
     if (buffer.failed) {
         free(buffer.data);
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not serialize the document");

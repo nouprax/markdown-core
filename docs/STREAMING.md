@@ -1681,6 +1681,20 @@ back in the vocabulary that produced them.
   pinned by the key, borrow and boundary A/B gates). With retention gone,
   `derive_tree` loses its recording window and `finish` takes in-place hits
   like any projection.
+- **D8 — the concrete view leaves the API · owner ruling, 2026-09-01, same
+  session as D7.** The same throughput steer: a `Read` is `semantic` alone.
+  Scopes stay counted against the normalized source — the definition is now
+  stated normatively in the header and the bindings' `Read` docs — but the
+  library stops handing the text back, so the per-feed source memcpy
+  (`S_concrete_copy`), the per-line source accumulation and its line index
+  (`parser->source`, `line_starts`, both retained for the document's life —
+  part of F9's 8.3× resident bound), the wire's trailing concrete section,
+  the `Concrete` value type in all three bindings, and the C accessors
+  (`_source`, `_line_count`, `_line_start`) are deleted whole. The wire
+  payload's layout changed, so the bridge envelope bumps MKC6 → MKC7 on both
+  writers and both decoders. What a feed returns is now the shared tree and
+  nothing else; what a stream keeps resident is the CST and the cache, not a
+  second copy of everything fed.
 
 ---
 

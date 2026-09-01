@@ -1,7 +1,6 @@
 package com.nouprax.markdown.core
 
 import kotlin.test.Test
-import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
@@ -57,11 +56,6 @@ class DocumentTest {
         val wholeText = Document(source).seal()
         assertEquals(wholeText.dump(), sealed.dump())
         assertEquals(wholeText.semantic.scope, sealed.semantic.scope)
-        assertContentEquals(wholeText.concrete.source, sealed.concrete.source)
-        assertEquals(wholeText.concrete.lines, sealed.concrete.lines)
-        for (line in 1..wholeText.concrete.lines) {
-            assertEquals(wholeText.concrete.offset(line), sealed.concrete.offset(line))
-        }
     }
 
     @Test
@@ -97,10 +91,9 @@ class DocumentTest {
     fun aMidStreamReadIsUsableAndUnchangedByLaterFeeds() {
         val document = Document()
         // The trailing line's ending has not arrived, so "two" is not yet in
-        // the projection -- not in the tree and not in the concrete view.
+        // the projection.
         val first = document.feed("# One\n\ntwo")
         assertIs<Heading>(first.semantic.content.single())
-        assertEquals("# One\n\n", first.concrete.source.decodeToString())
         val before = first.dump()
 
         // A later feed completes the line; the value already returned does

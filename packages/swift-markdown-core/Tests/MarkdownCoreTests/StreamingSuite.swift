@@ -13,7 +13,6 @@ import Testing
         let sealed = try document.seal()
         let wholeText = try Document(markdown: source).seal()
         #expect(sealed.dump() == wholeText.dump())
-        #expect(sealed.concrete == wholeText.concrete)
     }
 
     @Test("a mid-stream read is a value later feeds cannot disturb")
@@ -23,11 +22,9 @@ import Testing
             let document = try Document()
             let updated = try document.feed(chunk: Array("# Heading\n\ntail".utf8))
             // The heading's line ending arrived; `tail`'s has not, so the
-            // trailing line is not yet in the projection -- and the normalized
-            // source likewise carries only the complete lines.
+            // trailing line is not yet in the projection.
             #expect(updated.semantic.content.count == 1)
             #expect((updated.semantic.content.first as? Heading)?.level == 1)
-            #expect(updated.concrete.source == Array("# Heading\n\n".utf8))
             let record = updated.dump()
             early = updated
             _ = try document.feed(chunk: Array(" grows\n\n> quote\n".utf8))
@@ -38,7 +35,6 @@ import Testing
         // The document died with the scope; the value still reads.
         let held = try #require(early)
         #expect((held.semantic.content.first as? Heading)?.level == 1)
-        #expect(held.concrete.source == Array("# Heading\n\n".utf8))
     }
 
     @Test("a block keeps its identity across feeds and a reference names the first definition")
@@ -106,7 +102,6 @@ import Testing
         let wholeText = try Document(markdown: "").seal()
         #expect(sealed.semantic.content.isEmpty)
         #expect(sealed.dump() == wholeText.dump())
-        #expect(sealed.concrete == wholeText.concrete)
     }
 
     @Test("options gate constructs identically however the document is opened")

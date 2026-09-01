@@ -143,7 +143,7 @@ private fun name(node: Markup): String = node::class.simpleName ?: "unknown"
 /**
  * The tree of a whole-text parse: `Document(markdown, options).seal()`,
  * keeping only the semantic view. The shape tests below read trees; the
- * lifecycle and concrete tests spell the full entry out themselves.
+ * lifecycle tests spell the full entry out themselves.
  */
 internal fun parse(
     markdown: String,

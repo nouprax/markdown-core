@@ -69,7 +69,7 @@ class ErrorsTest {
 
     @Test
     fun everyWireGuardFiresWhenTheNativeSideAnswersOutOfRange() {
-        // The two sides of the wire are versioned separately -- the MKC6 bump
+        // The two sides of the wire are versioned separately -- the MKC7 bump
         // is that hazard made concrete -- and a decoder that mapped an unknown value
         // instead of refusing it turns a protocol mismatch into a wrong
         // document. Nothing proved any of these fired.
@@ -79,7 +79,7 @@ class ErrorsTest {
 
         // A header the decoder accepts, followed by nothing it can read.
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeRead("MKC6".encodeToByteArray())
+            WireDecoder.decodeRead("MKC7".encodeToByteArray())
         }
     }
 
@@ -87,7 +87,7 @@ class ErrorsTest {
     fun everyRefusalTheWireReaderCanMakeIsReachedByAPayload() {
         // The reader is one `require` after another and a corpus reaches none
         // of them: every payload the bridge actually writes is well formed. So
-        // write the malformed ones by hand. `MKC6` is the magic; the byte after
+        // write the malformed ones by hand. `MKC7` is the magic; the byte after
         // it is the status, and 1 means the payload is an error rather than a
         // document.
         fun payload(vararg parts: Any): ByteArray {
@@ -107,33 +107,33 @@ class ErrorsTest {
         // path that builds a ParseException.
         val failure =
             assertFailsWith<ParseException> {
-                WireDecoder.decodeRead(payload("MKC6", 1.toByte(), 1, 3, "bad"))
+                WireDecoder.decodeRead(payload("MKC7", 1.toByte(), 1, 3, "bad"))
             }
         assertEquals(ParseErrorCode.INVALID_ARGUMENT, failure.code)
         assertEquals("bad", failure.message)
         assertEquals(
             ParseErrorCode.INTERNAL,
             assertFailsWith<ParseException> {
-                WireDecoder.decodeRead(payload("MKC6", 1.toByte(), 99, 1, "x"))
+                WireDecoder.decodeRead(payload("MKC7", 1.toByte(), 99, 1, "x"))
             }.code,
         )
 
         // A status that is neither, a magic from the wrong wire version, a
         // root that is not a document, and a payload that stops mid-value.
         assertFailsWith<IllegalStateException> {
-            WireDecoder.decodeRead(payload("MKC6", 2.toByte()))
+            WireDecoder.decodeRead(payload("MKC7", 2.toByte()))
         }
         assertFailsWith<IllegalArgumentException> {
             WireDecoder.decodeRead(payload("MKC5", 0.toByte()))
         }
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeRead(payload("MKC6", 0.toByte(), 3.toByte()))
+            WireDecoder.decodeRead(payload("MKC7", 0.toByte(), 3.toByte()))
         }
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeRead(payload("MKC6", 0.toByte(), 1.toByte(), 1, 1))
+            WireDecoder.decodeRead(payload("MKC7", 0.toByte(), 1.toByte(), 1, 1))
         }
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeRead(payload("MKC6", 1.toByte(), 1, -2))
+            WireDecoder.decodeRead(payload("MKC7", 1.toByte(), 1, -2))
         }
     }
 
@@ -353,52 +353,3 @@ class RobustnessTest {
     }
 }
 
-/**
- * The source a scope's coordinates are counted against, copied into value types
- * and read after the native handle is gone. `parse` frees the handle before it
- * returns, so everything below reads a value with no native anything behind it.
- */
-class ConcreteTest {
-    @Test
-    fun theSourceAndItsLineIndexSurviveTheNativeRelease() {
-        val source =
-            listOf(
-                "# Heading ##",
-                "",
-                "> quoted *em* and `code`",
-                "",
-                "| a | b |",
-                "| --- | --- |",
-                "| c | d |",
-                "",
-                ":::container[Title]{kind=demo}",
-                "Body",
-                ":::",
-                "",
-                """[a]: /u "t"""",
-                "",
-                "see [a].",
-                "",
-            ).joinToString("\n")
-        val read = Document(source).seal()
-        val concrete = read.concrete
-        assertContentEquals(source.encodeToByteArray(), concrete.source)
-        assertEquals(15, concrete.lines)
-        assertEquals(0, concrete.offset(1))
-        assertEquals(14, concrete.offset(3))
-        assertFailsWith<IndexOutOfBoundsException> { concrete.offset(0) }
-        assertFailsWith<IndexOutOfBoundsException> { concrete.offset(16) }
-
-        // Every line but the first begins after a line ending.
-        for (line in 2..concrete.lines) {
-            val start = concrete.offset(line)
-            assertTrue(start > 0)
-            assertEquals('\n'.code.toByte(), concrete.source[start - 1])
-        }
-
-        // Nothing native is left: 300 more parses cannot move what was copied.
-        repeat(300) { parse("# copy\n") }
-        assertContentEquals(source.encodeToByteArray(), concrete.source)
-        assertEquals(14, concrete.offset(3))
-    }
-}

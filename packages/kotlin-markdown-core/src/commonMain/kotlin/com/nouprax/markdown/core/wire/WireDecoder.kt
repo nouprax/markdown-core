@@ -2,13 +2,13 @@ package com.nouprax.markdown.core
 
 internal object WireDecoder {
     /**
-     * `MKC6`: the payload after the envelope is the facade's own
+     * `MKC7`: the payload after the envelope is the facade's own
      * `markdown_core_document_wire` bytes -- every node leads with its
      * identity, a definition's match key rides where `identifier` did, and a
      * reference carries the identity of the definition it resolved to instead
      * of repeating that key.
      */
-    private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x36)
+    private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x37)
 
     fun decodeRead(bytes: ByteArray): Read {
         val reader = WireReader(bytes)
@@ -42,33 +42,14 @@ internal object WireDecoder {
     }
 }
 
-/**
- * THE ROOT IS READ BY HAND, and it is the only node that is.
- *
- * A read carries the concrete view beside the tree, the wire writes that view
- * AFTER the tree, and a node is built as it is read -- so the root's own
- * fields are read here, the view after them, and the read constructed from
- * both.
- */
+/** THE ROOT IS READ BY HAND, and it is the only node that is. */
 private fun WireReader.read(): Read {
     require(kind() == WireKind.DOCUMENT) { "native bridge returned an invalid document tree" }
     val rootId = identity()
     val rootScope = scope()
     val content = markupList()
-    val concrete = concrete()
     require(finished) { "native bridge returned a truncated payload" }
-    return Read(Semantic(content, rootId, rootScope), concrete)
-}
-
-/**
- * The source a scope's coordinates are counted against, as `write_concrete`
- * lays it out: the source length and its bytes, then the line count and one
- * offset per line.
- */
-private fun WireReader.concrete(): Concrete {
-    val source = bytes(int())
-    val lineStarts = IntArray(count()) { int() }
-    return Concrete(source, lineStarts)
+    return Read(Semantic(content, rootId, rootScope))
 }
 
 private fun WireReader.count(): Int = int().also { require(it >= 0) { "invalid native count" } }

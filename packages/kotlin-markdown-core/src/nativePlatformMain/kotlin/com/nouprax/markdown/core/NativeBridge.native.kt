@@ -26,7 +26,7 @@ import platform.posix.size_tVar
 
 /**
  * One payload becomes one [ByteArray], whoever produced it: a session's
- * feed, advance and finish all read and free their MKC6 bytes through here.
+ * feed, advance and finish all read and free their MKC7 bytes through here.
  */
 private inline fun payload(invoke: (CPointer<CPointerVar<UByteVar>>, CPointer<size_tVar>) -> Boolean): ByteArray =
     memScoped {

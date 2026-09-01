@@ -200,58 +200,6 @@ done:
     markdown_core_error_free(error);
 }
 
-/* Is `node` in `root`'s tree? A region's owner must be, or the two views are
- * not one parse. */
-/* WHAT A SCOPE INDEXES INTO. A scope names a place in the NORMALIZED source --
- * not in the bytes the caller passed -- so a consumer that follows one back to
- * the source needs those bytes and the index that turns a line into an offset
- * into them. This asserts that the two are there, agree with each other, and
- * refuse what is not a line. */
-static void check_source_and_lines(void) {
-    static const char *const SOURCE = "# heading ##\n"
-                                      "\n"
-                                      "para *em* text\n"
-                                      "\n"
-                                      "```js\n"
-                                      "code\n"
-                                      "```\n"
-                                      "\n"
-                                      "[a]: /u\n"
-                                      "\n"
-                                      "see [a] here\n";
-    markdown_core_document *document;
-    markdown_core_string text;
-    size_t at;
-    size_t line;
-    int lines_agree = 1;
-
-    document = markdown_core_document_parse((const uint8_t *)SOURCE, strlen(SOURCE), NULL, NULL);
-    check(document != NULL, "the corpus parses");
-    if (!document) {
-        return;
-    }
-    text = markdown_core_document_source(document);
-    check(
-        text.length == strlen(SOURCE) && memcmp(text.data, SOURCE, text.length) == 0,
-        "the source is the normalized source, byte for byte"
-    );
-    check(markdown_core_document_line_count(document) == 11, "the line index counts the source's lines");
-    for (line = 2; line <= markdown_core_document_line_count(document); line++) {
-        size_t start = 0;
-        if (!markdown_core_document_line_start(document, line, &start) || start == 0 ||
-            text.data[start - 1] != (uint8_t)'\n') {
-            lines_agree = 0;
-        }
-    }
-    check(lines_agree, "every line but the first begins after a line ending");
-    check(markdown_core_document_line_start(document, 1, &at) && at == 0, "line one begins at offset zero");
-    check(!markdown_core_document_line_start(document, 0, &at), "line zero is not a line");
-    check(!markdown_core_document_line_start(document, 12, &at), "a line past the end is not a line");
-    check(markdown_core_document_source(NULL).data == NULL, "a null document has no source");
-    check(markdown_core_document_line_count(NULL) == 0, "a null document has no lines");
-    markdown_core_document_free(document);
-}
-
 /* REQUIREMENT 14 THROUGH THE ACCESSORS, which is where it has to be checked.
  *
  * The dump renders `null` and `""` differently and the goldens pin that, but a
@@ -449,7 +397,8 @@ static void check_session(void) {
     uint8_t *after = NULL;
     size_t before_length = 0;
     size_t after_length = 0;
-    markdown_core_string text;
+    uint8_t *first_dump = NULL;
+    size_t first_dump_length = 0;
 
     check(session != NULL && error == NULL, "a session opens on the defaults");
     if (!session) {
@@ -461,22 +410,28 @@ static void check_session(void) {
     first = markdown_core_session_feed(session, (const uint8_t *)"# heading\n\nparagraph", 20, &error);
     check(first != NULL && error == NULL, "a feed returns the document after those bytes");
     if (first) {
-        text = markdown_core_document_source(first);
         check(
-            text.length == 11 && memcmp(text.data, "# heading\n\n", 11) == 0,
+            markdown_core_document_dump(first, &first_dump, &first_dump_length, &error),
+            "the mid-stream dump succeeds"
+        );
+        check(
+            first_dump != NULL && strstr((const char *)first_dump, "Heading") != NULL &&
+                strstr((const char *)first_dump, "Paragraph") == NULL,
             "a line whose ending has not arrived is not yet in the document"
         );
-        check(markdown_core_document_semantic(first) != NULL, "the mid-stream document has its semantic view");
     }
 
     second = markdown_core_session_feed(session, (const uint8_t *)" text\n\n- a\n- b\n", 15, &error);
     check(second != NULL && error == NULL, "a later feed returns a later document");
-    if (first) {
-        text = markdown_core_document_source(first);
+    if (first && first_dump) {
+        uint8_t *again = NULL;
+        size_t again_length = 0;
+        check(markdown_core_document_dump(first, &again, &again_length, &error), "the earlier document still dumps");
         check(
-            text.length == 11 && memcmp(text.data, "# heading\n\n", 11) == 0,
+            again != NULL && again_length == first_dump_length && memcmp(again, first_dump, again_length) == 0,
             "an earlier document is a value a later feed cannot move"
         );
+        markdown_core_dump_free(again);
     }
     if (second) {
         check(markdown_core_document_dump(second, &before, &before_length, &error), "the mid-stream dump succeeds");
@@ -547,6 +502,7 @@ static void check_session(void) {
     }
     markdown_core_dump_free(before);
     markdown_core_dump_free(after);
+    markdown_core_dump_free(first_dump);
     markdown_core_document_free(first);
     markdown_core_document_free(second);
     markdown_core_document_free(sealed);
@@ -564,7 +520,6 @@ int main(int argc, char **argv) {
     fixture_dir = argv[2];
     check_api();
     check_null_and_empty();
-    check_source_and_lines();
     check_session();
     for (i = 3; i < argc; i += 2) {
         check_fixture(fixture_dir, argv[i], argv[i + 1]);

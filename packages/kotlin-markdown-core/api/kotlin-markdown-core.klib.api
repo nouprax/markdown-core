@@ -162,15 +162,6 @@ final class com.nouprax.markdown.core/CodeBlock : com.nouprax.markdown.core/Mark
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/CodeBlock.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
 }
 
-final class com.nouprax.markdown.core/Concrete { // com.nouprax.markdown.core/Concrete|null[0]
-    final val lines // com.nouprax.markdown.core/Concrete.lines|{}lines[0]
-        final fun <get-lines>(): kotlin/Int // com.nouprax.markdown.core/Concrete.lines.<get-lines>|<get-lines>(){}[0]
-    final val source // com.nouprax.markdown.core/Concrete.source|{}source[0]
-        final fun <get-source>(): kotlin/ByteArray // com.nouprax.markdown.core/Concrete.source.<get-source>|<get-source>(){}[0]
-
-    final fun offset(kotlin/Int): kotlin/Int // com.nouprax.markdown.core/Concrete.offset|offset(kotlin.Int){}[0]
-}
-
 final class com.nouprax.markdown.core/Directive : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Directive|null[0]
     final val attributes // com.nouprax.markdown.core/Directive.attributes|{}attributes[0]
         final fun <get-attributes>(): kotlin.collections/List<com.nouprax.markdown.core/DirectiveAttribute>? // com.nouprax.markdown.core/Directive.attributes.<get-attributes>|<get-attributes>(){}[0]
@@ -522,8 +513,6 @@ final class com.nouprax.markdown.core/Position { // com.nouprax.markdown.core/Po
 }
 
 final class com.nouprax.markdown.core/Read { // com.nouprax.markdown.core/Read|null[0]
-    final val concrete // com.nouprax.markdown.core/Read.concrete|{}concrete[0]
-        final fun <get-concrete>(): com.nouprax.markdown.core/Concrete // com.nouprax.markdown.core/Read.concrete.<get-concrete>|<get-concrete>(){}[0]
     final val semantic // com.nouprax.markdown.core/Read.semantic|{}semantic[0]
         final fun <get-semantic>(): com.nouprax.markdown.core/Semantic // com.nouprax.markdown.core/Read.semantic.<get-semantic>|<get-semantic>(){}[0]
 

@@ -137,12 +137,6 @@ for (const testCase of canonicalManifest.cases) {
             const sealed = document.seal();
             assert.equal(TreeDumper.dump(sealed.semantic), testCase.expected, testCase.name);
             assert.equal(sealed.dump(), testCase.expected, testCase.name);
-            const wholeText = new Document(testCase.source, testCase.parseOptions).seal();
-            assert.deepEqual(sealed.concrete.source, wholeText.concrete.source, testCase.name);
-            assert.equal(sealed.concrete.lines, wholeText.concrete.lines, testCase.name);
-            for (let line = 1; line <= wholeText.concrete.lines; line += 1) {
-                assert.equal(sealed.concrete.offset(line), wholeText.concrete.offset(line), testCase.name);
-            }
         } finally {
             document.dispose();
         }

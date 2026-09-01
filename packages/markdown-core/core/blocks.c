@@ -235,13 +235,6 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
      * `mem` guards the first call: `markdown_core_parser_new_with_mem` reaches
      * here through `reset` on a calloc'd parser, and strbuf_free dereferences
      * the buffer's own allocator. */
-    if (parser->source.mem) {
-        markdown_core_strbuf_free(&parser->source);
-    }
-    parser->mem->free(parser->line_starts);
-    parser->line_starts = NULL;
-    parser->line_starts_size = 0;
-    parser->line_starts_alloc = 0;
     /* The content-to-source map outlives every block that indexes it and
      * nothing else does, so it is released here rather than with the node. */
     parser->mem->free(parser->line_marks);
@@ -270,7 +263,6 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
 
     markdown_core_strbuf_init(parser->mem, &parser->curline, 256);
     markdown_core_strbuf_init(parser->mem, &parser->linebuf, 0);
-    markdown_core_strbuf_init(parser->mem, &parser->source, 0);
 
     markdown_core_node *document = make_document(parser->mem);
 
@@ -289,7 +281,7 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
 
     /* A reset that could not rebuild its structures poisons the parser: feed
      * becomes a no-op and finish reports failure. */
-    if (!parser->root || !parser->refmap || !parser->footnote_defs || parser->curline.oom || parser->source.oom) {
+    if (!parser->root || !parser->refmap || !parser->footnote_defs || parser->curline.oom) {
         parser->oom = true;
     }
 
@@ -316,7 +308,6 @@ void markdown_core_parser_free(markdown_core_parser *parser) {
     markdown_core_parser_dispose(parser);
     markdown_core_strbuf_free(&parser->curline);
     markdown_core_strbuf_free(&parser->linebuf);
-    markdown_core_strbuf_free(&parser->source);
     markdown_core_llist_free(parser->mem, parser->syntax_extensions);
     markdown_core_llist_free(parser->mem, parser->inline_syntax_extensions);
     mem->free(parser);
@@ -389,47 +380,7 @@ static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
     return (node->type == MARKDOWN_CORE_NODE_PARAGRAPH || node->type == MARKDOWN_CORE_NODE_HEADING);
 }
 
-/* THE NORMALIZED SOURCE AND ITS LINE INDEX, in the form the gate reads.
- *
- * That is the whole of it. A scope answers where an element is; this answers
- * what its line and column numbers are COUNTED AGAINST -- the normalized
- * source, which is not the bytes the caller passed (a NUL is three bytes here,
- * every line ending is one `\n`, and every line has one). */
-static void S_write_concrete(markdown_core_parser *parser, FILE *out) {
-    bufsize_t i;
-
-    fprintf(out, "concrete source=%ld lines=%ld\n", (long)parser->source.size, (long)parser->line_starts_size);
-    for (i = 0; i < parser->line_starts_size; i++) {
-        fprintf(out, "line %ld %ld\n", (long)i + 1, (long)parser->line_starts[i]);
-    }
-}
-
 #define MARKDOWN_CORE_MAX_INLINE_DEPTH 256
-
-/* Note that a line begins at `start` in the normalized source.
- *
- * Returns false only when the index could not grow, in which case the parse is
- * already marked lost: a line index missing a line would answer a source offset
- * with the wrong line, silently. */
-static bool S_record_line_start(markdown_core_parser *parser, bufsize_t start) {
-    if (parser->line_starts_size == parser->line_starts_alloc) {
-        bufsize_t alloc = parser->line_starts_alloc ? parser->line_starts_alloc * 2 : 128;
-        bufsize_t *grown;
-        if (parser->line_starts_alloc > (bufsize_t)(INT32_MAX / 2)) {
-            parser->oom = true;
-            return false;
-        }
-        grown = (bufsize_t *)parser->mem->realloc(parser->line_starts, (size_t)alloc * sizeof(bufsize_t));
-        if (!grown) {
-            parser->oom = true;
-            return false;
-        }
-        parser->line_starts = grown;
-        parser->line_starts_alloc = alloc;
-    }
-    parser->line_starts[parser->line_starts_size++] = start;
-    return true;
-}
 
 /* Record where the bytes about to be appended to `node`'s content came from.
  *
@@ -3055,19 +3006,6 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
         return;
     }
 
-    /* The line joins the normalized source HERE, before anything reads it, so
-     * the source is complete for lines 1..N the moment line N has been fed --
-     * which is requirement 11a's L4 and the reason nothing about the record
-     * set may be built at close. */
-    if (!S_record_line_start(parser, parser->source.size)) {
-        return;
-    }
-    markdown_core_strbuf_put(&parser->source, parser->curline.ptr, parser->curline.size);
-    if (parser->source.oom) {
-        parser->oom = true;
-        return;
-    }
-
     parser->offset = 0;
     parser->column = 0;
     parser->first_nonspace = 0;
@@ -3207,26 +3145,6 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
         return NULL;
     }
 
-    if (parser->concrete_out) {
-        S_write_concrete(parser, parser->concrete_out);
-    }
-
-    /* REQUIREMENT 12: the document keeps the concrete view. Moved rather than
-     * copied -- the parser is about to reset and would free all three -- and
-     * moved HERE, after every rewrite and before the reset, which is the only
-     * moment at which the view is both complete and still owned. */
-    if (parser->concrete_retain) {
-        markdown_core_concrete *out = parser->concrete_retain;
-        out->mem = parser->mem;
-        out->source = parser->source;
-        out->line_starts = parser->line_starts;
-        out->line_starts_size = parser->line_starts_size;
-        markdown_core_strbuf_init(parser->mem, &parser->source, 0);
-        parser->line_starts = NULL;
-        parser->line_starts_size = 0;
-        parser->line_starts_alloc = 0;
-    }
-
     /* The parser's life ends here (ruling A): the reset disposes what is
      * still the parser's. The CST is not among it -- `parser->root` was
      * cleared at the projection because the CST left as the result, and
@@ -3245,23 +3163,6 @@ int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser) { retu
 int markdown_core_parser_get_indent(markdown_core_parser *parser) { return parser->indent; }
 
 int markdown_core_parser_is_blank(markdown_core_parser *parser) { return parser->blank; }
-
-void markdown_core_parser_retain_concrete(markdown_core_parser *parser, markdown_core_concrete *out) {
-    if (!parser || !out) {
-        return;
-    }
-    memset(out, 0, sizeof(*out));
-    parser->concrete_retain = out;
-}
-
-void markdown_core_concrete_dispose(markdown_core_concrete *concrete) {
-    if (!concrete || !concrete->mem) {
-        return;
-    }
-    markdown_core_strbuf_free(&concrete->source);
-    concrete->mem->free(concrete->line_starts);
-    memset(concrete, 0, sizeof(*concrete));
-}
 
 markdown_core_node *markdown_core_parser_add_child(
     markdown_core_parser *parser,

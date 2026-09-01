@@ -1,4 +1,3 @@
-import { Concrete } from "../concrete.js";
 import type { MarkupBase } from "../model/base.js";
 import type { DirectiveAttribute } from "../model/directive-attribute.js";
 import type { DirectiveLabel } from "../model/directive-label.js";
@@ -11,7 +10,7 @@ import { TreeDumper } from "../tree-dumper.js";
 import type { Identity, ListFlavor, PlacementMode, ReferenceForm, Scope, TableAlignment } from "../values.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
-/* THE ONE DECODE PASS. The native side answers every read with one MKC6
+/* THE ONE DECODE PASS. The native side answers every read with one MKC7
  * payload -- the envelope's magic and status, then the facade's own canonical
  * wire -- and this file turns that one buffer into the same plain values the
  * per-field walk used to build, with the boundary crossed once per READ
@@ -38,14 +37,13 @@ interface DirectiveFields {
     readonly content: readonly Markup[];
 }
 
-/** The decoded pair; the `Read` wrapper (with its non-enumerable `dump`) is
+/** The decoded view; the `Read` wrapper (with its non-enumerable `dump`) is
  * the runtime's to seal. */
 export interface DecodedRead {
     readonly semantic: Semantic;
-    readonly concrete: Concrete;
 }
 
-/** Decodes a full payload: the envelope, the tree, the concrete view. */
+/** Decodes a full payload: the envelope, then the tree. */
 export function decodeRead(bytes: Uint8Array): DecodedRead {
     const reader = new WireReader(bytes);
     reader.header();
@@ -61,11 +59,11 @@ export function decodeDiscarded(bytes: Uint8Array): void {
     new WireReader(bytes).header();
 }
 
-/** `MKC6`: the payload after the envelope is the facade's canonical wire --
+/** `MKC7`: the payload after the envelope is the facade's canonical wire --
  * every node leads with its identity, a definition's match key rides where
  * `identifier` did, and a reference carries the identity of the definition it
  * resolved to instead of repeating that key. */
-const magic = [0x4d, 0x4b, 0x43, 0x36];
+const magic = [0x4d, 0x4b, 0x43, 0x37];
 
 class WireReader {
     #offset = 0;
@@ -97,10 +95,9 @@ class WireReader {
         const id = this.identity();
         const scope = this.scope();
         const content = this.markupList();
-        const concrete = this.concrete();
         if (!this.finished) throw new Error("native bridge returned a truncated payload");
         const semantic = this.markup(Object.assign(this.base(id, scope, "document"), { content })) as Semantic;
-        return { semantic, concrete };
+        return { semantic };
     }
 
     parseError(): ParseError {
@@ -428,21 +425,6 @@ class WireReader {
             attributes.push({ name: this.requiredString(), value: this.requiredString() });
         }
         return Object.freeze(attributes);
-    }
-
-    /**
-     * The source a scope's coordinates are counted against, as `wire_concrete`
-     * lays it out: the source length and its bytes, then the line count and
-     * one offset per line.
-     */
-    concrete(): Concrete {
-        const source = this.bytes(this.count("source length"));
-        const lineCount = this.count("line count");
-        const lineStarts = new Uint32Array(lineCount);
-        for (let index = 0; index < lineCount; index++) {
-            lineStarts[index] = this.uint();
-        }
-        return new Concrete(source, lineStarts);
     }
 
     /** Every node starts on the shared prototype that carries `dump`

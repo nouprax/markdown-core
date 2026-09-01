@@ -3,7 +3,7 @@
 #include <jni.h>
 
 /* One bridge payload becomes one Java byte array: the session's feed and
- * finish both funnel their MKC6 bytes through here. `succeeded == false` is
+ * finish both funnel their MKC7 bytes through here. `succeeded == false` is
  * the bridge saying the payload buffer itself could not be built, which is
  * the one failure with no payload to decode -- it surfaces as the
  * OutOfMemoryError it is. */

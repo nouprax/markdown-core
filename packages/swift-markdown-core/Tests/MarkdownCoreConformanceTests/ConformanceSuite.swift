@@ -89,7 +89,6 @@ private func parse(_ source: String, options: ParseOptions = .init()) throws -> 
             #expect(TreeDumper.dump(sealed.semantic) == testCase.expected, Comment(rawValue: testCase.name))
             #expect(sealed.dump() == testCase.expected, Comment(rawValue: testCase.name))
             let wholeText = try Document(markdown: testCase.source, options: options).seal()
-            #expect(sealed.concrete == wholeText.concrete, Comment(rawValue: testCase.name))
         }
     }
 }

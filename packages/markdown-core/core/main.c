@@ -31,10 +31,7 @@ void print_usage(void) {
     printf("  --profile PROFILE named option set: default | gfm | gfm-smart | gfm-extended\n");
     printf("  --smart           Use smart punctuation\n");
     printf("  --validate-utf8   Replace UTF-8 invalid sequences with U+FFFD\n");
-    printf(
-        "  --strip-html-comments Strip HTML comment nodes from the parsed AST\n"
-        "  --source-index    Print the normalized source size and line index before the tree\n"
-    );
+    printf("  --strip-html-comments Strip HTML comment nodes from the parsed AST\n");
     printf("  --extension, -e EXTENSION_NAME  Specify an extension name to use\n");
     printf("  --list-extensions               List available extensions and quit\n");
     printf("  --strikethrough-double-tilde    Only parse strikethrough (if enabled)\n");
@@ -44,11 +41,9 @@ void print_usage(void) {
 }
 
 static bool print_document(markdown_core_node *document) {
-    /* The CLI dumps the tree only; the source and its line index are printed
-     * straight from the parser by `--source-index`, so the fields are zeroed
-     * here rather than filled and `markdown_core_document_free` is never called
-     * on this stack value. */
-    markdown_core_document facade_document = {document, {0}};
+    /* The CLI dumps the tree only; `markdown_core_document_free` is never
+     * called on this stack value. */
+    markdown_core_document facade_document = {document};
     markdown_core_error *error = NULL;
     uint8_t *dump = NULL;
     size_t length = 0;
@@ -85,7 +80,6 @@ int main(int argc, char *argv[]) {
     int *files;
     char buffer[4096];
     markdown_core_parser *parser = NULL;
-    bool source_index = false;
     size_t bytes;
     markdown_core_node *document = NULL;
     int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS |
@@ -147,10 +141,6 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Unknown profile %s\n", argv[i]);
                 goto failure;
             }
-        } else if (strcmp(argv[i], "--source-index") == 0) {
-            /* What a scope's coordinates index INTO: the size of the
-             * normalized source and where each of its lines begins. */
-            source_index = true;
         } else if (strcmp(argv[i], "--list-extensions") == 0) {
             print_extensions();
             goto success;
@@ -253,9 +243,6 @@ int main(int argc, char *argv[]) {
     }
 #endif
 
-    if (source_index) {
-        parser->concrete_out = stdout;
-    }
     document = markdown_core_parser_finish(parser);
 
     if (!document || !print_document(document)) {

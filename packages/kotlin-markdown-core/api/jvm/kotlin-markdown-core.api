@@ -26,12 +26,6 @@ public final class com/nouprax/markdown/core/CodeBlock : com/nouprax/markdown/co
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
-public final class com/nouprax/markdown/core/Concrete {
-	public final fun getLines ()I
-	public final fun getSource ()[B
-	public final fun offset (I)I
-}
-
 public final class com/nouprax/markdown/core/Directive : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
@@ -323,7 +317,6 @@ public final class com/nouprax/markdown/core/Position {
 
 public final class com/nouprax/markdown/core/Read {
 	public final fun dump ()Ljava/lang/String;
-	public final fun getConcrete ()Lcom/nouprax/markdown/core/Concrete;
 	public final fun getSemantic ()Lcom/nouprax/markdown/core/Semantic;
 }
 

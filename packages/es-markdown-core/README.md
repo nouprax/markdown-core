@@ -73,7 +73,7 @@ Use `Walker` for a read-only depth-first traversal:
 
 ```js
 new Walker().walk(read.semantic, (event, node) => {
-  console.log(event, node.kind, node.scope);
+    console.log(event, node.kind, node.scope);
 });
 ```
 

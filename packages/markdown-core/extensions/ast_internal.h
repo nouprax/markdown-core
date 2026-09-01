@@ -16,9 +16,6 @@ extern "C" {
 
 struct markdown_core_document {
     markdown_core_node *root;
-    /* Requirement 12's other view. Moved out of the parser at `finish` and
-     * released with the tree it names. */
-    markdown_core_concrete concrete;
 };
 
 #ifdef __cplusplus

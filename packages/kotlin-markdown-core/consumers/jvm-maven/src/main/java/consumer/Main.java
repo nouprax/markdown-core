@@ -19,9 +19,6 @@ public final class Main {
         if (read.getSemantic().getContent().size() != 1) {
             throw new IllegalStateException("the sealed read returned unexpected top-level content");
         }
-        if (read.getConcrete().getSource().length != "héllo 🚀\n".getBytes().length) {
-            throw new IllegalStateException("the concrete view did not survive the copy");
-        }
         String dump = TreeDumper.INSTANCE.dump(read.getSemantic());
         if (!dump.contains("héllo 🚀")) {
             throw new IllegalStateException("native payload returned an unexpected document: " + dump);
