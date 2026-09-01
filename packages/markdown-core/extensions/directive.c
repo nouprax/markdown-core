@@ -592,7 +592,10 @@ static int directive_name_is_valid(markdown_core_mem *mem, const char *name) {
 int markdown_core_extensions_set_directive_name(markdown_core_node *node, const char *name) {
     node_directive *directive = get_directive(node);
 
-    if (!directive || !directive_name_is_valid(markdown_core_node_mem(node), name)) {
+    /* A retained projection's node is frozen (review-found): a write
+     * here would show in every tree at once. */
+    if (!directive || (node->flags & MARKDOWN_CORE_NODE__SHARED) ||
+        !directive_name_is_valid(markdown_core_node_mem(node), name)) {
         return 0;
     }
 

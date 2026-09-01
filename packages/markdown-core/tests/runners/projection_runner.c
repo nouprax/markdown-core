@@ -2275,6 +2275,8 @@ static int case_node_sharing(const ts_spec_file *file) {
             markdown_core_node *mut = (markdown_core_node *)first_shared;
             markdown_core_node *interior = markdown_core_node_first_child(mut);
             markdown_core_node *stray = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+            size_t baseline_length = 0;
+            uint8_t *baseline = pr_dump(first, &baseline_length);
             markdown_core_node_free(mut);
             markdown_core_node_unlink(mut);
             if (interior) {
@@ -2285,24 +2287,37 @@ static int case_node_sharing(const ts_spec_file *file) {
                 if (markdown_core_node_append_child(mut, stray) ||
                     (interior && markdown_core_node_insert_after(interior, stray)) ||
                     markdown_core_node_replace(interior ? interior : mut, stray)) {
-                    fputs("node sharing: a mutation reached the shared projection\n", stderr);
+                    fputs("node sharing: a structural mutation reached the shared projection\n", stderr);
                     failures++;
                 }
                 markdown_core_node_free(stray);
             }
-            if (!failures) {
+            /* Content is as frozen as structure: a write through any
+             * setter would show in every tree at once, so each answers
+             * 0 for a shared node, and the trim walks away untaken. The
+             * dumps against the baseline are the proof either way. */
+            if ((interior && markdown_core_node_set_literal(interior, "rewritten")) ||
+                markdown_core_node_set_string_content(mut, "rewritten") ||
+                markdown_core_node_set_type(mut, MARKDOWN_CORE_NODE_HEADING)) {
+                fputs("node sharing: a content setter reached the shared projection\n", stderr);
+                failures++;
+            }
+            markdown_core_node_unput(mut, 3);
+            if (!failures && baseline) {
                 size_t first_length = 0;
                 size_t second_length = 0;
                 uint8_t *first_dump = pr_dump(first, &first_length);
                 uint8_t *second_dump = pr_dump(second, &second_length);
-                if (!first_dump || !second_dump || first_length != second_length ||
-                    memcmp(first_dump, second_dump, first_length) != 0) {
+                if (!first_dump || first_length != baseline_length ||
+                    memcmp(first_dump, baseline, baseline_length) != 0 || !second_dump ||
+                    second_length != baseline_length || memcmp(second_dump, baseline, baseline_length) != 0) {
                     fputs("node sharing: the trees dump differently after refused mutations\n", stderr);
                     failures++;
                 }
                 markdown_core_dump_free(first_dump);
                 markdown_core_dump_free(second_dump);
             }
+            markdown_core_dump_free(baseline);
         }
     }
     /* Free in store order first, then the survivor must still read. */

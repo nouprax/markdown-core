@@ -557,9 +557,21 @@ markdown_core_node_type markdown_core_node_get_type(markdown_core_node *node) {
     }
 }
 
+/* A node of a retained projection is frozen for every tree at once
+ * (review-found): every node under a stored block carries SHARED, and
+ * each writer on this surface answers 0 for one -- the same fail-closed
+ * answer the structural surface gives -- because a write here would show
+ * one consumer's edit to every tree and to the cache itself. */
+static bool S_projection_frozen(const markdown_core_node *node) {
+    return (node->flags & MARKDOWN_CORE_NODE__SHARED) != 0;
+}
+
 int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_type type) {
     markdown_core_node_type initial_type;
 
+    if (S_projection_frozen(node)) {
+        return 0;
+    }
     if (type == node->type) {
         return 1;
     }
@@ -734,7 +746,7 @@ const char *markdown_core_node_get_literal(markdown_core_node *node) {
 }
 
 int markdown_core_node_set_literal(markdown_core_node *node, const char *content) {
-    if (node == NULL) {
+    if (node == NULL || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -767,6 +779,9 @@ int markdown_core_node_set_string_content(markdown_core_node *node, const char *
      * and node_check rejects the half-thawed shape. The strbuf is reset
      * BEFORE the release: the release may free the very bytes
      * `content.ptr` aliases. */
+    if (S_projection_frozen(node)) {
+        return 0;
+    }
     if (node->frozen_content) {
         markdown_core_buf *frozen = node->frozen_content;
         node->frozen_content = NULL;
@@ -794,7 +809,7 @@ int markdown_core_node_get_heading_level(markdown_core_node *node) {
 }
 
 int markdown_core_node_set_heading_level(markdown_core_node *node, int level) {
-    if (node == NULL || level < 1 || level > 6) {
+    if (node == NULL || level < 1 || level > 6 || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -827,7 +842,7 @@ int markdown_core_node_set_list_type(markdown_core_node *node, markdown_core_lis
         return 0;
     }
 
-    if (node == NULL) {
+    if (node == NULL || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -856,7 +871,7 @@ int markdown_core_node_set_list_delim(markdown_core_node *node, markdown_core_de
         return 0;
     }
 
-    if (node == NULL) {
+    if (node == NULL || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -881,7 +896,7 @@ int markdown_core_node_get_list_start(markdown_core_node *node) {
 }
 
 int markdown_core_node_set_list_start(markdown_core_node *node, int start) {
-    if (node == NULL || start < 0) {
+    if (node == NULL || start < 0 || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -906,7 +921,7 @@ int markdown_core_node_get_list_tight(markdown_core_node *node) {
 }
 
 int markdown_core_node_set_list_tight(markdown_core_node *node, int tight) {
-    if (node == NULL) {
+    if (node == NULL || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -937,7 +952,7 @@ const char *markdown_core_node_get_fence_info(markdown_core_node *node) {
 }
 
 int markdown_core_node_set_fence_info(markdown_core_node *node, const char *info) {
-    if (node == NULL) {
+    if (node == NULL || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -983,7 +998,7 @@ const char *markdown_core_node_get_url(markdown_core_node *node) {
 }
 
 int markdown_core_node_set_url(markdown_core_node *node, const char *url) {
-    if (node == NULL) {
+    if (node == NULL || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -1019,7 +1034,7 @@ const char *markdown_core_node_get_title(markdown_core_node *node) {
 }
 
 int markdown_core_node_set_title(markdown_core_node *node, const char *title) {
-    if (node == NULL) {
+    if (node == NULL || S_projection_frozen(node)) {
         return 0;
     }
 
@@ -1039,7 +1054,7 @@ int markdown_core_node_set_title(markdown_core_node *node, const char *title) {
 }
 
 int markdown_core_node_set_syntax_extension(markdown_core_node *node, const markdown_core_syntax_extension *extension) {
-    if (node == NULL) {
+    if (node == NULL || S_projection_frozen(node)) {
         return 0;
     }
 

@@ -85,7 +85,9 @@ int markdown_core_extensions_formula_literal_view(const markdown_core_node *node
 
 int markdown_core_extensions_set_formula_literal(markdown_core_node *node, const char *literal) {
     node_formula *formula = get_formula(node);
-    if (!formula) {
+    /* A retained projection's node is frozen (review-found): a write
+     * here would show in every tree at once. */
+    if (!formula || (node->flags & MARKDOWN_CORE_NODE__SHARED)) {
         return 0;
     }
 
@@ -104,7 +106,9 @@ markdown_core_formula_mode markdown_core_extensions_get_formula_mode(markdown_co
 
 int markdown_core_extensions_set_formula_mode(markdown_core_node *node, markdown_core_formula_mode mode) {
     node_formula *formula = get_formula(node);
-    if (!formula) {
+    /* A retained projection's node is frozen (review-found): a write
+     * here would show in every tree at once. */
+    if (!formula || (node->flags & MARKDOWN_CORE_NODE__SHARED)) {
         return 0;
     }
 

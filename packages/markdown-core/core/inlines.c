@@ -2995,8 +2995,12 @@ static void S_update_text_sourcepos(markdown_core_node *node) {
 }
 
 void markdown_core_node_unput(markdown_core_node *node, int n) {
-    node = node->last_child;
-    while (n > 0 && node && node->type == MARKDOWN_CORE_NODE_TEXT) {
+    /* Shape-aware and shared-safe (review-found): a derived container
+     * keeps its children in a vector, where the raw overlay read was
+     * garbage, and a retained projection's text is frozen for every
+     * tree at once -- the trim stops where SHARED begins. */
+    node = markdown_core_node_last_child(node);
+    while (n > 0 && node && node->type == MARKDOWN_CORE_NODE_TEXT && !(node->flags & MARKDOWN_CORE_NODE__SHARED)) {
         bufsize_t remove = node->as.literal.len < (bufsize_t)n ? node->as.literal.len : (bufsize_t)n;
         node->as.literal.len -= remove;
         n -= (int)remove;

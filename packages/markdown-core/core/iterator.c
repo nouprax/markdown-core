@@ -179,7 +179,14 @@ int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
      * happened to be safe; with the contract total it is a use-after-free. */
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
-        if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->type != MARKDOWN_CORE_NODE_TEXT) {
+        /* A SHARED text node is a retained projection's (review-found):
+         * its literal and its links are every tree's at once, so it
+         * neither merges nor drops here. Its runs were consolidated
+         * before the store, and a shared node is never the intrusive
+         * sibling of a fresh one, so skipping it skips whole frozen
+         * runs, not halves of mixed ones. */
+        if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->type != MARKDOWN_CORE_NODE_TEXT ||
+            (cur->flags & MARKDOWN_CORE_NODE__SHARED)) {
             continue;
         }
 
