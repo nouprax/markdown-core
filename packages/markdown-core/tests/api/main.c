@@ -1601,6 +1601,67 @@ static void no_node_is_its_own_ancestor(test_batch_runner *runner) {
     markdown_core_node_free(r);
 }
 
+/* THE ADOPTION LAW (review-found, #165): a block whose content parses into
+ * inlines never adopts a BLOCK child, whatever an extension's own
+ * can_contain answers -- the engine has no representation for the hybrid
+ * (the store moves an intrusive list, the clone vectorizes containers, the
+ * inline parser appends through the intrusive fields). The permissive
+ * extension below says yes to everything; the engine must still say no,
+ * and set_type must refuse to build the same shape by mutation. */
+static int hybrid_probe_can_contain(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_node *node,
+    markdown_core_node_type child_type
+) {
+    (void)extension;
+    (void)node;
+    (void)child_type;
+    return 1;
+}
+
+static int hybrid_probe_contains_inlines(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
+    (void)extension;
+    (void)node;
+    return 1;
+}
+
+static const markdown_core_syntax_extension HYBRID_PROBE_EXTENSION = {
+    .name = "hybrid_probe",
+    .can_contain_func = hybrid_probe_can_contain,
+    .contains_inlines_func = hybrid_probe_contains_inlines,
+};
+
+static void no_inline_block_hybrid(test_batch_runner *runner) {
+    markdown_core_node *parent = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+    markdown_core_node *block_child = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+    markdown_core_node *inline_child = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+    markdown_core_node *doc = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
+    markdown_core_node *quote = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+    markdown_core_node *inner = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+
+    markdown_core_node_set_syntax_extension(parent, &HYBRID_PROBE_EXTENSION);
+    INT_EQ(
+        runner,
+        markdown_core_node_append_child(parent, block_child),
+        0,
+        "a contains_inlines parent refuses a block child over its extension's yes"
+    );
+    INT_EQ(runner, markdown_core_node_append_child(parent, inline_child), 1, "the same parent still takes an inline");
+
+    INT_EQ(runner, markdown_core_node_append_child(doc, quote), 1, "a document takes a quote");
+    INT_EQ(runner, markdown_core_node_append_child(quote, inner), 1, "a quote takes a paragraph");
+    INT_EQ(
+        runner,
+        markdown_core_node_set_type(quote, MARKDOWN_CORE_NODE_PARAGRAPH),
+        0,
+        "set_type refuses to build the hybrid by mutation"
+    );
+
+    markdown_core_node_free(parent);
+    markdown_core_node_free(block_child);
+    markdown_core_node_free(doc);
+}
+
 /* D33. `process_emphasis` used to choose its arm by the delimiter's BYTE:
  *
  *     if (extension)                       ... else
@@ -2316,6 +2377,7 @@ int main(void) {
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
     no_node_is_its_own_ancestor(runner);
+    no_inline_block_hybrid(runner);
     iterator_contract_is_total(runner);
 
     test_print_summary(runner);

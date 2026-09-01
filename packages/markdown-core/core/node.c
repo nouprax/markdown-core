@@ -208,8 +208,31 @@ void markdown_core_node_arena_forget(markdown_core_node *node) {
     }
 }
 
+/* Mirrors blocks.c's `contains_inlines` for the adoption law below; the two
+ * must answer alike. */
+static bool S_node_contains_inlines(markdown_core_node *node) {
+    if (node->extension && node->extension->contains_inlines_func) {
+        return node->extension->contains_inlines_func(node->extension, node) != 0;
+    }
+    return node->type == MARKDOWN_CORE_NODE_PARAGRAPH || node->type == MARKDOWN_CORE_NODE_HEADING;
+}
+
 bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
     if (child_type == MARKDOWN_CORE_NODE_DOCUMENT) {
+        return false;
+    }
+
+    /* UNIVERSAL, above any extension's own answer (review-found): a block
+     * whose content parses into INLINES cannot also hold BLOCK children.
+     * The hybrid has no representation the engine accepts -- the store
+     * moves an intrusive list, the clone vectorizes containers, and the
+     * inline parser appends through the intrusive fields -- so the shape
+     * is refused where it would be MADE: `add_child` climbs past such a
+     * parent exactly as it climbs past an interrupted paragraph, and the
+     * public adoption surface answers 0. The core's own type rules always
+     * said this (paragraph and heading take inlines only); this line says
+     * it to extensions too. */
+    if (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && S_node_contains_inlines(node)) {
         return false;
     }
 
@@ -582,6 +605,22 @@ int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_typ
     if (!S_can_contain(node->parent, node)) {
         node->type = (uint16_t)initial_type;
         return 0;
+    }
+
+    /* The children must stay legal under the new type (review-found): a
+     * type whose content parses into inlines cannot keep BLOCK children,
+     * or set_type would build by mutation the hybrid the adoption law
+     * refuses to construct. The cursor walks either child shape. */
+    if (S_node_contains_inlines(node)) {
+        markdown_core_child_cursor cursor;
+        markdown_core_node *child;
+        for (child = markdown_core_child_first(node, &cursor); child;
+            child = markdown_core_child_after(node, child, &cursor)) {
+            if (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child->type)) {
+                node->type = (uint16_t)initial_type;
+                return 0;
+            }
+        }
     }
 
     /* We rollback the type to free the union members appropriately */

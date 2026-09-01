@@ -2045,13 +2045,13 @@ static markdown_core_node *S_clone_block_node(
      * clone, no content retain, no tail: what F15 rule 2 re-ran per
      * projection to reproduce, retention reproduces by identity. */
     /* A block with SKELETON CHILDREN never enrolls (review-found): the
-     * store's `take_children` moves an intrusive list and the clone's
-     * containers are vector-shaped, so the hybrid an extension can build
-     * -- `contains_inlines` true AND CST children via `parser_add_child`
-     * -- has no representation both sides accept. It projects fresh every
-     * feed instead: uncached and correct in every build, where enrolling
-     * it aborted debug and corrupted release at the store. Its enrolled
-     * CHILDREN still hit one by one. */
+     * store's `take_children` moves an intrusive list, so a block that
+     * holds node children when the clone sees it cannot be stored. Since
+     * the adoption law (node.c, `can_contain_type`) refuses BLOCK
+     * children under any `contains_inlines` parent, an enrollable block
+     * cannot carry skeleton children at all any more; this term is the
+     * backstop that keeps a slipped shape merely uncached rather than
+     * corrupting at the store. */
     enrolled = MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src) && contains_inlines((markdown_core_node *)src) &&
                src->first_child == NULL && refmap == parser->refmap && !parser->no_projection_cache;
     hit = enrolled && S_cache_fresh(parser, src, refmap) && src->link.holder->node != NULL;
