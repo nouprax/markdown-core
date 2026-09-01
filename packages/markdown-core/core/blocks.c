@@ -252,6 +252,10 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     parser->tail_queue = NULL;
     parser->tail_queue_size = 0;
     parser->tail_queue_alloc = 0;
+    parser->mem->free(parser->fresh_queue);
+    parser->fresh_queue = NULL;
+    parser->fresh_queue_size = 0;
+    parser->fresh_queue_alloc = 0;
     parser->mem->free(parser->tail_mask_pool);
     parser->mem->free((void *)parser->tail_name_rows);
     parser->tail_mask_pool = NULL;
@@ -1374,6 +1378,21 @@ static bool S_tail_queue_push(markdown_core_parser *parser, markdown_core_node *
     return true;
 }
 
+static bool S_fresh_queue_push(markdown_core_parser *parser, markdown_core_node *block) {
+    if (parser->fresh_queue_size == parser->fresh_queue_alloc) {
+        size_t grown = parser->fresh_queue_alloc ? parser->fresh_queue_alloc * 2 : 64;
+        markdown_core_node **queue =
+            (markdown_core_node **)parser->mem->realloc(parser->fresh_queue, grown * sizeof(*queue));
+        if (!queue) {
+            return false;
+        }
+        parser->fresh_queue = queue;
+        parser->fresh_queue_alloc = grown;
+    }
+    parser->fresh_queue[parser->fresh_queue_size++] = block;
+    return true;
+}
+
 /* THE INLINE ORDINALS (T2, §4 D4). An inline's identity is its pre-order
  * ordinal among the owning block's inline descendants: unique within the
  * block -- so unique within any sibling list a consumer iterates -- and the
@@ -2208,6 +2227,14 @@ static markdown_core_node *S_clone_block_node(
         dst->flags |= MARKDOWN_CORE_NODE__ORIGIN;
         parser->cache_misses++;
     }
+    /* Every node the clone BUILDS enters the fresh list (#161): the
+     * projection serves exactly this set, so the retained nodes -- which
+     * returned at the top -- cost the walk nothing. A refused push poisons
+     * the parse the way a truncated walk did: a projection that missed a
+     * block must not look whole. */
+    if (parser->fresh_queue_armed && !S_fresh_queue_push(parser, dst)) {
+        parser->oom = true;
+    }
     return dst;
 
 lost:
@@ -2338,6 +2365,37 @@ static markdown_core_node *S_clone_block_tree(
  * after this it is an AST, and projecting it again would not give the same
  * answer. That is why a re-projection hands in a clone and `finish` hands in
  * the CST itself. */
+/* The derive-path projection serves EXACTLY the set the clone built (#161):
+ * the fresh list, in clone order. The walk that stepped past every retained
+ * block to find these -- ENTER, flag test, skip, EXIT per shared child, a
+ * quarter of a width-heavy stream's instructions -- is the finish path's
+ * alone now (T1 hands in the CST itself, where borrowers need the walk's
+ * treatment). Parses run forward; the tail queue fills BACKWARD, so a child
+ * still precedes its parent in the drain exactly as the walk's post-order
+ * had it, and the drain's "no entry behind a replacement dangles" rule
+ * keeps holding. Sibling order flips, which F15 states is free: no pass
+ * moves a node to another parent. */
+static void S_project_fresh(markdown_core_parser *parser, markdown_core_map *refmap) {
+    size_t i;
+    markdown_core_manage_extensions_special_characters(parser, true);
+    for (i = 0; i < parser->fresh_queue_size; i++) {
+        markdown_core_node *block = parser->fresh_queue[i];
+        if (contains_inlines(block)) {
+            markdown_core_parse_inlines(parser, block, refmap, parser->options);
+        }
+    }
+    for (i = parser->fresh_queue_size; i > 0; i--) {
+        markdown_core_node *block = parser->fresh_queue[i - 1];
+        if (MARKDOWN_CORE_NODE_BLOCK_P(block) && S_block_has_tail_work(parser, block)) {
+            if (!S_tail_queue_push(parser, block)) {
+                parser->oom = true;
+            }
+        }
+    }
+    parser->fresh_queue_size = 0;
+    markdown_core_manage_extensions_special_characters(parser, false);
+}
+
 static markdown_core_node *S_project(
     markdown_core_parser *parser,
     markdown_core_node *skeleton,
@@ -2355,7 +2413,11 @@ static markdown_core_node *S_project(
      * parse left it. */
     bufsize_t marks_before = parser->line_marks_size;
 
-    process_inlines(parser, skeleton, refmap, parser->options);
+    if (parser->fresh_queue_armed) {
+        S_project_fresh(parser, refmap);
+    } else {
+        process_inlines(parser, skeleton, refmap, parser->options);
+    }
 
     S_run_block_tails(parser, &skeleton);
 
@@ -2401,9 +2463,12 @@ markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parse
         return NULL;
     }
     parser->derive_arena = arena;
+    parser->fresh_queue_size = 0;
+    parser->fresh_queue_armed = true;
     derived = S_clone_block_tree(parser, parser->root, refmap);
     parser->derive_arena = NULL;
     if (!derived) {
+        parser->fresh_queue_armed = false;
         if (arena) {
             markdown_core_node_arena_release(arena);
         }
@@ -2412,6 +2477,7 @@ markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parse
     }
 
     derived = S_project(parser, derived, refmap);
+    parser->fresh_queue_armed = false;
     if (arena) {
         markdown_core_node_arena_release(arena);
     }

@@ -135,6 +135,15 @@ struct markdown_core_parser {
     markdown_core_node **tail_queue;
     size_t tail_queue_size;
     size_t tail_queue_alloc;
+    /* THE DERIVE'S FRESH LIST (#161): every node the clone BUILDS, in clone
+     * (pre-)order; the retained nodes it reuses never enter. Armed only for
+     * the span of one `derive_tree`, so the projection can serve exactly
+     * the built set instead of walking the whole width past the shared
+     * blocks. */
+    markdown_core_node **fresh_queue;
+    size_t fresh_queue_size;
+    size_t fresh_queue_alloc;
+    bool fresh_queue_armed;
     /* THE NAME MASKS (F15, #161, review-found): which attached extensions
      * declared a given answered name, as a bitset in `syntax_extensions`
      * list order -- `tail_mask_words` words per row, so EVERY extension
