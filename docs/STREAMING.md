@@ -1503,6 +1503,69 @@ tree: **nothing walks into a borrowed list to write.** The iterator climbs
 out of one to the borrower it entered through (F17); the projection's own
 walk now never enters one at all.
 
+### F23 — literal block-node sharing cannot satisfy the public navigation contract, and the clone's constant is what falls  · VERIFIED (#161)
+
+**The owner's steer** (2026-09-01) re-ruled §6's "the clone is accepted and no
+task removes it": per-feed throughput is the goal, everything else is means,
+so #161 asked for the derived tree to SHARE closed block nodes and shrink the
+clone to the open spine plus the changed set — engine-side O(open + changed).
+
+**The literal shape is impossible against the API as ruled, and the proof is
+short.** `markdown_core_node_get_next_sibling(const markdown_core_node *)`
+is stateless: a physically shared node must answer "what follows me" the same
+in every tree that contains it. On an append stream the answer near the tail
+DIFFERS per feed — the last closed sibling's next is that feed's open clone —
+so a node is shareable only when its next-target is itself a permanently
+shared node. That induction has no base: `derived(c_i)` can be permanent only
+after `derived(c_i+1)` is, and the tail always holds a fresher sibling, so
+nothing is ever permanent and the shareable set is empty. This is the
+persistent-list fact that a forward-linked list shares TAILS and an
+append-only stream grows on the side the links point toward; it would invert
+if navigation were `last_child`/`prev_sibling`, and it dissolves entirely for
+a consumer that walks through the iterator, which already climbs through a
+borrower (F17) — but the C surface exposes first/next, and D8 just ruled that
+surface. Making Read iterator-only is an API break and therefore a D-question
+for the owner, not a task. The promotion-memo half of the issue's shape (a
+hit reproducing a name-hook's replacement without running it) falls with the
+node sharing that would have carried it; F15 rule 2 stands.
+
+**What falls instead is the clone's CONSTANT, in two measured cuts.**
+Callgrind over the 98 KB line-fed stream (`session_feed` per line, hit-
+dominated), Ir being load-independent:
+
+- **The tail filter's memo scan** (F15's `(ext, name)` memo, walked per block
+  per extension per projection) was 13.9% by itself, with `get_type_string`
+  re-derived beside it per probe. The parser now keeps the declared sets as
+  BITMASKS in extension-list order — one `"*inlines"` mask and a name-keyed
+  table filled lazily, rebuilt when `extension_generation` moves — so a tail
+  computes its offer set once and re-answers it only after a hook actually
+  ran (F15 rule 1 unchanged). 882.0M → 809.6M Ir (−8.2%).
+- **The skeleton's allocator round-trip** — one calloc per CST block per feed
+  and the consumer's matching frees, the malloc family at ~33% — became a
+  DERIVATION ARENA: one allocation sized off the block mint, bump-served
+  zeroed nodes, pages returned in one motion when the last node dies. The
+  tree stays SELF-CONTAINED (no handle on the root, nothing in
+  `content.mem`): pages are 64 KiB-aligned and never outgrow the window, so
+  masking a node's address names its page and the page its arena, and a live
+  count born at one makes any free order safe, interior hook frees included.
+  Two discarded designs are recorded at the definition (node.h): a root-slot
+  handle dies to a legitimate borrow against an empty document; a mem-wrapper
+  in `content.mem` escapes into frozen buffers that cache holders keep alive
+  after the arena dies. Both were caught by existing gates (`borrow_across_feed`,
+  `block_identity`), which is those gates doing their job. Pages are
+  realloc'd, not calloc'd — zeroing the window upfront measured 43% of a
+  feed — and a document under 128 blocks keeps the per-node path, where the
+  page plus slop costs more than the callocs it replaces (the 12 KB stream
+  regressed 54% before the threshold said so).
+
+**Where it lands.** 882.0M → 553.5M Ir (−37%) on the 98 KB stream; wall
+125.4 → 97.4 ms (−22%); 488 KB −14% wall; 12 KB and the 41-case one-shot
+unchanged; ASan (with the arena poisoning every unhanded slot and forgotten
+node), UBSan, the resident-memory gate and the feed benchmarks green. A feed
+remains Θ(blocks) — clone walk, projection walk, free walk — with the
+allocator term gone and the filter term collapsed; what Θ(blocks) still
+buys and what an API re-ruling would buy beyond it now live in #161.
+
 ---
 
 ## 4. Decisions — RULED, 2026-08-25
@@ -2113,15 +2176,19 @@ Stated so they are not later mistaken for defects.
   re-renders only the elements whose value stopped comparing equal, so it pays
   the copy but not the render. (This clause first credited the change
   classification; Phase D's ruling killed it as never owed.)
-- **The per-feed clone is a whole-document term and NO task removes it.**
-  `markdown_core_parser_derive_tree`
-  ([blocks.c:1711](../packages/markdown-core/core/blocks.c#L1711)) is
-  `S_clone_block_tree` plus `S_project`, and the clone walks the entire CST and
-  copies every block's content bytes. The owner accepts it, so **T15's bound is
-  stated over the projection only**: the clone is measured and reported beside
-  it, the way the binding-side copy-out is. A gate demanding "no term in the
-  document already fed" without that carve-out could not pass however much of
-  Phase B landed.
+- **The per-feed clone is a whole-document term; its CONSTANT fell and its
+  REMOVAL is proven out of reach of this API.** ~~NO task removes it~~ — the
+  owner's 2026-09-01 steer (per-feed throughput is the goal, all else means)
+  re-opened it as #161, and F23 records both outcomes: literal block-node
+  sharing cannot satisfy the stateless `get_next_sibling` contract on an
+  append stream (the induction has no base — see F23), and the clone's
+  constant fell −37% Ir / −22% wall on the 98 KB stream instead, via the
+  tail-filter masks and the derivation arena. `derive_tree` is still
+  `S_clone_block_tree` plus `S_project`; **T15's bound stays stated over the
+  projection only**, the clone measured and reported beside it, the way the
+  binding-side copy-out is. Removing the Θ(blocks) term itself now requires
+  an API re-ruling (iterator-only navigation), which is the owner's
+  D-question, not a task.
 - **A feed is not monotone.** A definition arriving later changes the projection
   of a block returned earlier. That block was never wrong: it was resolved
   against the map as it then stood, and CommonMark defines the earlier outcome
