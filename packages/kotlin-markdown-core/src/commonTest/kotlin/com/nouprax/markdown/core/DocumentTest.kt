@@ -37,6 +37,22 @@ class DocumentTest {
             "",
             "[a]: /url \"t\"",
             "",
+            "> a quote",
+            "> of two lines",
+            "",
+            ":::note[Title]{kind=demo}",
+            "Body",
+            ":::",
+            "",
+            ":::bare",
+            "Body",
+            ":::",
+            "",
+            "[^n]: a note",
+            "    of two lines",
+            "",
+            "see [^n] too",
+            "",
         ).joinToString("\r\n")
 
     @Test
@@ -254,7 +270,7 @@ class DocumentTest {
                     assertEquals(whole.feed(bytes.copyOfRange(0, fed)).dump(), read.dump(), "boundary $boundaries")
                 }
             }
-            assertTrue(boundaries > 10)
+            assertTrue(boundaries > 20)
             assertEquals(Document(source).seal().dump(), document.seal().dump())
         }
     }

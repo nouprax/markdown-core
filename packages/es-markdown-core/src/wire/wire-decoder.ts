@@ -89,8 +89,9 @@ class WireReader {
      * one that reads its children -- which then reads OPS against these
      * previous children instead of a child list. Null everywhere else, so a
      * node written whole inside a delta decodes exactly as in a full frame.
-     * A spine whose node never consumed it is a protocol error: the native
-     * side rewrote a node that has no child list. */
+     * Always consumed: `spine` admits only the kinds `positionalChildren`
+     * knows, and every one of them reads its children through
+     * `markupList`. */
     #spine: readonly Markup[] | null = null;
 
     constructor(bytes: Uint8Array) {
@@ -119,8 +120,9 @@ class WireReader {
             if (this.byte() !== OP_SPINE) {
                 throw new Error("native bridge sent a delta frame that does not open with the document's spine");
             }
-            const semantic = this.spine(previous);
-            if (semantic.kind !== "document") throw new Error("native bridge returned an invalid document tree");
+            // `spine` refuses any kind but the previous read's, and the
+            // previous read is the document, so the result is one too.
+            const semantic = this.spine(previous) as Semantic;
             if (!this.finished) throw new Error("native bridge returned a truncated payload");
             return { semantic };
         }
@@ -273,7 +275,6 @@ class WireReader {
             kind === "document"
                 ? Object.assign(this.base(id, scope, "document"), { content: this.markupList() })
                 : this.value(kind, id, scope);
-        if (this.#spine !== null) throw new Error(`native parser rewrote a ${kind}, which has no child list`);
         return this.markup(value);
     }
 

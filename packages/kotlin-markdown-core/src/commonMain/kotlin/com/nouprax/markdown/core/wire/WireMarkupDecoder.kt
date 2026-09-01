@@ -14,41 +14,59 @@ internal fun WireReader.markup(): Markup {
  */
 internal fun WireReader.spine(previous: Markup): Markup {
     val kind = kind()
+    val (expected, children) = positionalChildren(previous)
+    require(kind == expected) { "native parser rewrote a $expected as a $kind" }
     val id = identity()
-    val nodeScope = scope()
     require(id == previous.id) { "native parser rewrote a node under another identity" }
-    spine = positionalChildren(previous)
-    val node =
-        if (kind == WireKind.DOCUMENT) {
-            require(previous is Semantic) { "native parser rewrote a ${previous::class.simpleName} as a document" }
-            Semantic(markupList(), id, nodeScope)
-        } else {
-            markupOf(kind, id, nodeScope)
-        }
-    require(spine == null) { "native parser rewrote a $kind, which has no child list" }
-    require(node::class == previous::class) {
-        "native parser rewrote a ${previous::class.simpleName} as a ${node::class.simpleName}"
-    }
-    return node
+    val nodeScope = scope()
+    // The context is always consumed: every kind `positionalChildren` knows
+    // reads its children through `markupList`.
+    spine = children
+    return if (kind == WireKind.DOCUMENT) Semantic(markupList(), id, nodeScope) else markupOf(kind, id, nodeScope)
 }
 
 /**
- * The previous read's children of a node a SPINE rewrites, in WIRE ORDER:
- * the positions the op stream counts in. Only the block containers the
- * native side ever rewrites have one -- a list's items, a table's header
- * then its rows, a directive block's label then its content, and the
- * content of the rest -- so a spine on any other kind is refused.
+ * The previous read's children of a node a SPINE rewrites, in WIRE ORDER --
+ * the positions the op stream counts in -- with the kind the rewrite must
+ * name. Only the block containers the native side ever rewrites have one:
+ * a list's items, a table's header then its rows, a directive block's label
+ * then its content, and the content of the rest. A spine on any other kind
+ * is refused.
  */
-private fun positionalChildren(node: Markup): kotlin.collections.List<Markup> =
+private fun positionalChildren(node: Markup): Pair<WireKind, kotlin.collections.List<Markup>> =
     when (node) {
-        is Semantic -> node.content
-        is BlockQuote -> node.content
-        is ListItem -> node.content
-        is FootnoteDefinition -> node.content
-        is List -> node.items
-        is Table -> listOf<Markup>(node.header) + node.rows
-        is DirectiveBlock -> node.label?.let { label -> listOf<Markup>(label) + node.content } ?: node.content
-        else -> error("native parser rewrote a ${node::class.simpleName}, which has no children to reuse")
+        is Semantic -> {
+            WireKind.DOCUMENT to node.content
+        }
+
+        is BlockQuote -> {
+            WireKind.BLOCK_QUOTE to node.content
+        }
+
+        is ListItem -> {
+            WireKind.LIST_ITEM to node.content
+        }
+
+        is FootnoteDefinition -> {
+            WireKind.FOOTNOTE_DEFINITION to node.content
+        }
+
+        is List -> {
+            WireKind.LIST to node.items
+        }
+
+        is Table -> {
+            WireKind.TABLE to listOf<Markup>(node.header) + node.rows
+        }
+
+        is DirectiveBlock -> {
+            WireKind.DIRECTIVE_BLOCK to
+                (node.label?.let { label -> listOf<Markup>(label) + node.content } ?: node.content)
+        }
+
+        else -> {
+            error("native parser rewrote a ${node::class.simpleName}, which has no children to reuse")
+        }
     }
 
 /**

@@ -89,7 +89,10 @@ longer exists. 3.0.0 ships a different streaming surface, described below.
   ECMAScript feed-loop benchmark on the 158 KB document falls from 986.6 ms
   to 36.6 ms at 256 chunks, the Kotlin one from 453.9 ms to 22.8 ms with a
   third of the resident memory, and the feed-loop caps in both bindings
-  tighten from 32 to 4 per 16× step.
+  tighten from 32 to 4 per 16× step. The decoders' coverage ledgers shrink
+  with the change: the ECMAScript wire decoder's unpinned branches 7 → 6 and
+  the Kotlin markup decoder's 28 → 21, the delta's refusals and the table's
+  header-first rule now pinned by payload.
 - The C facade's child navigation is a BY-VALUE cursor:
   `markdown_core_node_children` opens one and `markdown_core_children_next`
   steps it, each step O(1), no allocation. The pair replaces

@@ -256,6 +256,32 @@ class ErrorsTest {
         assertFailsWith<IllegalArgumentException> {
             WireDecoder.decodeRead(root(1, 0xff.toByte(), 1, 0.toByte()), previous)
         }
+
+        // A table's header row is its FIRST child on the wire -- the engine
+        // opens a table with it, and a delta addresses the rows by position
+        // -- so a table with no header, with two, or with its header second
+        // is refused.
+        fun row(
+            block: Int,
+            header: Boolean,
+        ) = bytes(27.toByte(), identity(block, 0), scope, (if (header) 1 else 0).toByte(), 0)
+
+        fun table(vararg rows: kotlin.collections.List<Byte>): ByteArray {
+            val node = bytes(11.toByte(), identity(2, 0), scope, 0, rows.size, bytes(*rows))
+            return bytes(header, 0.toByte(), 1.toByte(), identity(1, 0), scope, 1, node).toByteArray()
+        }
+        assertEquals(
+            true,
+            assertIs<Table>(
+                WireDecoder
+                    .decodeRead(table(row(3, true), row(4, false)))
+                    .semantic.content
+                    .single(),
+            ).header.isHeader,
+        )
+        assertFailsWith<IllegalArgumentException> { WireDecoder.decodeRead(table(row(3, false))) }
+        assertFailsWith<IllegalArgumentException> { WireDecoder.decodeRead(table(row(3, true), row(4, true))) }
+        assertFailsWith<IllegalArgumentException> { WireDecoder.decodeRead(table(row(3, false), row(4, true))) }
     }
 
     @Test
