@@ -475,6 +475,12 @@ static markdown_core_node *make_str_with_entities(
 // Like markdown_core_node_append_child but without costly sanity checks.
 // Assumes that child was newly created.
 static void append_child(markdown_core_node *node, markdown_core_node *child) {
+    /* Never a vector-shaped parent (review-found): these writes go through
+     * the intrusive overlay, and on a CHILD_ARRAY container they would land
+     * in the vector pointer and the count. The adoption law and the
+     * projection's shape test keep such parents out of the inline parse;
+     * this is the write site's own statement of it. */
+    assert(!MARKDOWN_CORE_NODE_ARRAY_P(node));
     markdown_core_node *old_last_child = node->last_child;
 
     child->next = NULL;

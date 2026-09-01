@@ -127,10 +127,6 @@ struct markdown_core_parser {
      * `derive_tree` call so the clone can see it; the arena itself leaves on
      * the derived root. NULL whenever the parser is at rest. */
     markdown_core_node_arena *derive_arena;
-    /* Non-zero while the clone walks the subtree of an enrolled miss: those
-     * nodes ride into a cache holder at the store and must outlive the
-     * arena, so they take malloc shells (#161, D9). */
-    size_t derive_malloc_depth;
     /* THE PER-BLOCK TAIL'S QUEUE (T18): the blocks a projection's walk found
      * tail work for, in EXIT order, acted on after the walk -- a hook may
      * replace or remove the block, and the walk must not be standing on it
@@ -139,6 +135,15 @@ struct markdown_core_parser {
     markdown_core_node **tail_queue;
     size_t tail_queue_size;
     size_t tail_queue_alloc;
+    /* THE DERIVE'S FRESH LIST (#161): every node the clone BUILDS, in clone
+     * (pre-)order; the retained nodes it reuses never enter. Armed only for
+     * the span of one `derive_tree`, so the projection can serve exactly
+     * the built set instead of walking the whole width past the shared
+     * blocks. */
+    markdown_core_node **fresh_queue;
+    size_t fresh_queue_size;
+    size_t fresh_queue_alloc;
+    bool fresh_queue_armed;
     /* THE NAME MASKS (F15, #161, review-found): which attached extensions
      * declared a given answered name, as a bitset in `syntax_extensions`
      * list order -- `tail_mask_words` words per row, so EVERY extension

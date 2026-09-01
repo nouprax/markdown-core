@@ -1601,6 +1601,317 @@ static void no_node_is_its_own_ancestor(test_batch_runner *runner) {
     markdown_core_node_free(r);
 }
 
+/* THE ADOPTION LAW (review-found, #165): a block whose content parses into
+ * inlines never adopts a BLOCK child, whatever an extension's own
+ * can_contain answers -- the engine has no representation for the hybrid
+ * (the store moves an intrusive list, the clone vectorizes containers, the
+ * inline parser appends through the intrusive fields). The permissive
+ * extension below says yes to everything; the engine must still say no,
+ * and set_type must refuse to build the same shape by mutation. */
+static int hybrid_probe_can_contain(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_node *node,
+    markdown_core_node_type child_type
+) {
+    (void)extension;
+    (void)node;
+    (void)child_type;
+    return 1;
+}
+
+static int hybrid_probe_contains_inlines(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
+    (void)extension;
+    (void)node;
+    return 1;
+}
+
+static const markdown_core_syntax_extension HYBRID_PROBE_EXTENSION = {
+    .name = "hybrid_probe",
+    .can_contain_func = hybrid_probe_can_contain,
+    .contains_inlines_func = hybrid_probe_contains_inlines,
+};
+
+/* Classifies its node as a CONTAINER (contains_inlines false) while its
+ * can_contain admits everything: the legal shape whose detachment -- or
+ * whose swap for a descriptor with no contains_inlines_func at all --
+ * would fall back to the bare PARAGRAPH's true and rebuild the hybrid. */
+static int hybrid_probe_contains_inlines_false(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_node *node
+) {
+    (void)extension;
+    (void)node;
+    return 0;
+}
+
+static const markdown_core_syntax_extension HYBRID_CONTAINER_EXTENSION = {
+    .name = "hybrid_container_probe",
+    .can_contain_func = hybrid_probe_can_contain,
+    .contains_inlines_func = hybrid_probe_contains_inlines_false,
+};
+
+static const markdown_core_syntax_extension HYBRID_BARE_EXTENSION = {
+    .name = "hybrid_bare_probe",
+    .can_contain_func = hybrid_probe_can_contain,
+};
+
+/* Answers whatever the static says -- the stateful descriptor whose flip
+ * the engine must never see: the classification is committed at the
+ * validated mutations and frozen between them. */
+static int hybrid_flip_answer;
+
+static int hybrid_probe_contains_inlines_flip(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_node *node
+) {
+    (void)extension;
+    (void)node;
+    return hybrid_flip_answer;
+}
+
+static const markdown_core_syntax_extension HYBRID_FLIP_EXTENSION = {
+    .name = "hybrid_flip_probe",
+    .can_contain_func = hybrid_probe_can_contain,
+    .contains_inlines_func = hybrid_probe_contains_inlines_flip,
+};
+
+/* Answers false the FIRST time and true after -- the hook that would slip
+ * a false past a validating ask and a true into a committing one, were
+ * the engine to ask twice in one transaction. */
+static int hybrid_tictoc_calls;
+
+static int hybrid_probe_contains_inlines_tictoc(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_node *node
+) {
+    (void)extension;
+    (void)node;
+    return hybrid_tictoc_calls++ > 0;
+}
+
+static const markdown_core_syntax_extension HYBRID_TICTOC_EXTENSION = {
+    .name = "hybrid_tictoc_probe",
+    .can_contain_func = hybrid_probe_can_contain,
+    .contains_inlines_func = hybrid_probe_contains_inlines_tictoc,
+};
+
+/* A payload-reading classification: answers inline only when the opaque
+ * payload its own allocator builds is present and initialized -- the hook
+ * that froze an initialization-time answer while the attach path asked
+ * before allocating. */
+static int hybrid_payload_contains_inlines(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
+    (void)extension;
+    return node->as.opaque != NULL && *(int *)node->as.opaque == 42;
+}
+
+static void hybrid_payload_alloc(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_mem *mem,
+    markdown_core_node *node
+) {
+    int *payload = (int *)mem->calloc(1, sizeof(*payload));
+    (void)extension;
+    if (payload) {
+        *payload = 42;
+    }
+    node->as.opaque = payload;
+}
+
+static void hybrid_payload_free(
+    const markdown_core_syntax_extension *extension,
+    markdown_core_mem *mem,
+    markdown_core_node *node
+) {
+    (void)extension;
+    mem->free(node->as.opaque);
+}
+
+static const markdown_core_syntax_extension HYBRID_PAYLOAD_EXTENSION = {
+    .name = "hybrid_payload_probe",
+    .can_contain_func = hybrid_probe_can_contain,
+    .contains_inlines_func = hybrid_payload_contains_inlines,
+    .opaque_alloc_func = hybrid_payload_alloc,
+    .opaque_free_func = hybrid_payload_free,
+};
+
+/* Reads the union defaults the constructor writes -- the hook that sees
+ * garbage if classification runs before the node is fully built. */
+static int hybrid_probe_reads_level(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
+    (void)extension;
+    return node->type == MARKDOWN_CORE_NODE_HEADING && node->as.heading.level == 1;
+}
+
+static const markdown_core_syntax_extension HYBRID_LEVEL_EXTENSION = {
+    .name = "hybrid_level_probe",
+    .can_contain_func = hybrid_probe_can_contain,
+    .contains_inlines_func = hybrid_probe_reads_level,
+};
+
+static void no_inline_block_hybrid(test_batch_runner *runner) {
+    markdown_core_node *parent = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+    markdown_core_node *block_child = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+    markdown_core_node *inline_child = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+    markdown_core_node *doc = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
+    markdown_core_node *quote = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+    markdown_core_node *inner = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+
+    markdown_core_node_set_syntax_extension(parent, &HYBRID_PROBE_EXTENSION);
+    INT_EQ(
+        runner,
+        markdown_core_node_append_child(parent, block_child),
+        0,
+        "a contains_inlines parent refuses a block child over its extension's yes"
+    );
+    INT_EQ(runner, markdown_core_node_append_child(parent, inline_child), 1, "the same parent still takes an inline");
+
+    INT_EQ(runner, markdown_core_node_append_child(doc, quote), 1, "a document takes a quote");
+    INT_EQ(runner, markdown_core_node_append_child(quote, inner), 1, "a quote takes a paragraph");
+    INT_EQ(
+        runner,
+        markdown_core_node_set_type(quote, MARKDOWN_CORE_NODE_PARAGRAPH),
+        0,
+        "set_type refuses to build the hybrid by mutation"
+    );
+    INT_EQ(
+        runner,
+        markdown_core_node_set_syntax_extension(quote, &HYBRID_PROBE_EXTENSION),
+        0,
+        "attaching a contains_inlines descriptor over block children refuses"
+    );
+
+    /* The EFFECTIVE classification gates a descriptor change, not the new
+     * descriptor's own hook: a container-classified paragraph legally
+     * holds a block child, and detaching -- or swapping to a descriptor
+     * with no contains_inlines_func -- falls back to the bare PARAGRAPH's
+     * true, which would rebuild the hybrid. */
+    {
+        markdown_core_node *container = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node *held = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+        INT_EQ(
+            runner,
+            markdown_core_node_set_syntax_extension(container, &HYBRID_CONTAINER_EXTENSION),
+            1,
+            "a container-classifying descriptor attaches to a bare paragraph"
+        );
+        INT_EQ(runner, markdown_core_node_append_child(container, held), 1, "the container paragraph takes a block");
+        INT_EQ(
+            runner,
+            markdown_core_node_set_syntax_extension(container, NULL),
+            0,
+            "detaching over a block child refuses: the fallback classification is true"
+        );
+        INT_EQ(
+            runner,
+            markdown_core_node_set_syntax_extension(container, &HYBRID_BARE_EXTENSION),
+            0,
+            "a descriptor without contains_inlines_func refuses the same way"
+        );
+        markdown_core_node_free(container);
+    }
+
+    /* A STATEFUL descriptor's flip moves nothing (review-found): the
+     * classification is asked at the validated mutations and FROZEN
+     * between them, so an answer that changes afterwards is never seen --
+     * the committed container still admits and adopts block children. */
+    {
+        markdown_core_node *flipper = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node *taken = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+        hybrid_flip_answer = 0;
+        INT_EQ(
+            runner,
+            markdown_core_node_set_syntax_extension(flipper, &HYBRID_FLIP_EXTENSION),
+            1,
+            "the flip descriptor attaches while answering container"
+        );
+        hybrid_flip_answer = 1;
+        INT_EQ(
+            runner,
+            markdown_core_node_can_contain_type(flipper, MARKDOWN_CORE_NODE_BLOCK_QUOTE) ? 1 : 0,
+            1,
+            "the flipped answer is never seen: the committed container still admits blocks"
+        );
+        INT_EQ(runner, markdown_core_node_append_child(flipper, taken), 1, "and still adopts one");
+        markdown_core_node_free(flipper);
+        hybrid_flip_answer = 0;
+    }
+
+    /* ONE ASKING per transaction (review-found): the answer that validates
+     * a descriptor change is the answer committed. A hook answering false
+     * then true must not pass the children walk on the false and commit
+     * the bit on the true. */
+    {
+        markdown_core_node *ticker = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node *carried = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+        INT_EQ(
+            runner,
+            markdown_core_node_set_syntax_extension(ticker, &HYBRID_CONTAINER_EXTENSION),
+            1,
+            "the container descriptor attaches for the tictoc setup"
+        );
+        INT_EQ(runner, markdown_core_node_append_child(ticker, carried), 1, "the container takes a block");
+        hybrid_tictoc_calls = 0;
+        INT_EQ(
+            runner,
+            markdown_core_node_set_syntax_extension(ticker, &HYBRID_TICTOC_EXTENSION),
+            1,
+            "the tictoc descriptor attaches on its validated false"
+        );
+        INT_EQ(
+            runner,
+            markdown_core_node_can_contain_type(ticker, MARKDOWN_CORE_NODE_BLOCK_QUOTE) ? 1 : 0,
+            1,
+            "the validated false is the committed answer: the container still admits blocks"
+        );
+        markdown_core_node_free(ticker);
+        hybrid_tictoc_calls = 0;
+    }
+
+    /* Attachment finishes the node before asking (review-found): the new
+     * descriptor's own opaque allocator runs inside set_syntax_extension,
+     * so a payload-reading hook classifies the payload its extension
+     * built, not the nothing that predated it. */
+    {
+        markdown_core_node *carrier = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+        markdown_core_node *denied = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+        INT_EQ(
+            runner,
+            markdown_core_node_set_syntax_extension(carrier, &HYBRID_PAYLOAD_EXTENSION),
+            1,
+            "the payload descriptor attaches and builds its payload"
+        );
+        INT_EQ(
+            runner,
+            markdown_core_node_append_child(carrier, denied),
+            0,
+            "the attach classified the built payload: the inline carrier refuses a block"
+        );
+        markdown_core_node_free(carrier);
+        markdown_core_node_free(denied);
+    }
+
+    /* Classification runs on the FINISHED node (review-found): a hook may
+     * read the union defaults or the opaque payload, so the constructor
+     * classifies after both are built. The probe answers true only when
+     * it sees the heading level the constructor writes. */
+    {
+        markdown_core_node *built =
+            markdown_core_node_new_with_ext(MARKDOWN_CORE_NODE_HEADING, &HYBRID_LEVEL_EXTENSION);
+        markdown_core_node *refused = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+        INT_EQ(
+            runner,
+            markdown_core_node_append_child(built, refused),
+            0,
+            "the constructor classified the finished node: the inline heading refuses a block"
+        );
+        markdown_core_node_free(built);
+        markdown_core_node_free(refused);
+    }
+
+    markdown_core_node_free(parent);
+    markdown_core_node_free(block_child);
+    markdown_core_node_free(doc);
+}
+
 /* D33. `process_emphasis` used to choose its arm by the delimiter's BYTE:
  *
  *     if (extension)                       ... else
@@ -2316,6 +2627,7 @@ int main(void) {
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
     no_node_is_its_own_ancestor(runner);
+    no_inline_block_hybrid(runner);
     iterator_contract_is_total(runner);
 
     test_print_summary(runner);

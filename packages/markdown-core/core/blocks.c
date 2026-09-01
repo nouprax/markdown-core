@@ -148,6 +148,7 @@ static markdown_core_node *make_block(
     markdown_core_strbuf_init(mem, &e->content, 32);
     e->type = (uint16_t)tag;
     e->flags = MARKDOWN_CORE_NODE__OPEN;
+    markdown_core_node_classify(e);
     e->start_line = start_line;
     e->start_column = start_column;
     e->end_line = start_line;
@@ -252,6 +253,10 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     parser->tail_queue = NULL;
     parser->tail_queue_size = 0;
     parser->tail_queue_alloc = 0;
+    parser->mem->free(parser->fresh_queue);
+    parser->fresh_queue = NULL;
+    parser->fresh_queue_size = 0;
+    parser->fresh_queue_alloc = 0;
     parser->mem->free(parser->tail_mask_pool);
     parser->mem->free((void *)parser->tail_name_rows);
     parser->tail_mask_pool = NULL;
@@ -386,12 +391,13 @@ static MARKDOWN_CORE_INLINE bool accepts_lines(markdown_core_node *node) {
     );
 }
 
+/* The COMMITTED classification (node.h), never the descriptor's hook: the
+ * hook is consulted only by `markdown_core_node_classify` at construction
+ * and at the validated mutations, so derive, seal, enrollment and the
+ * adoption law all read one frozen answer -- and the hot paths trade an
+ * indirect call for a bit on a word already loaded. */
 static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
-    if (node->extension && node->extension->contains_inlines_func) {
-        return node->extension->contains_inlines_func(node->extension, node) != 0;
-    }
-
-    return (node->type == MARKDOWN_CORE_NODE_PARAGRAPH || node->type == MARKDOWN_CORE_NODE_HEADING);
+    return (node->flags & MARKDOWN_CORE_NODE__CONTAINS_INLINES) != 0;
 }
 
 #define MARKDOWN_CORE_MAX_INLINE_DEPTH 256
@@ -1157,16 +1163,20 @@ void markdown_core_manage_extensions_special_characters(markdown_core_parser *pa
  * autolink turns `a<!-- x -->@b.com` into a link, and stripping before
  * formula promotes `$$x$$<!-- c -->`.
  *
- * WHICH HALF A CACHE HIT SKIPS -- F15 rule 2, the resolution T18 owes. A pass
- * over the block's CHILDREN (consolidation, a hook declared `"*inlines"`, the
- * strip of inline comments) is skipped for a block whose children are
- * borrowed from the projection cache: the cache stored them after those
- * passes ran. A pass over the block NODE (a hook declared by name, the strip
- * of a comment `HTML_BLOCK`) runs on every projection, because the node is
- * the one part of a hit the cache never serves -- a `PARAGRAPH` around a
- * standalone formula is a fresh paragraph on every projection, and only the
- * hook makes it the `FormulaBlock` five gates pin. `holder` (T19) says which
- * kind of block this is; today nothing sets it and every block is its own. */
+ * WHICH HALF A CACHE HIT SKIPS -- F15 rule 2, re-resolved under retention
+ * (D9, F24): a DERIVE hit skips the WHOLE tail. The retained node itself is
+ * served, every pass's effect -- consolidation, the `"*inlines"` hooks, the
+ * comment strip, and a name hook's node-level work -- baked in at the
+ * projection that RECORDED it, and the node a name hook would be offered is
+ * frozen for every tree at once. The SEAL's hit runs the NAME hooks once
+ * more (review-found): finish hands back the CST shell borrowing the
+ * stored children, and only the hooks can reproduce their node-level work
+ * on that shell -- the children they must not touch are frozen. What keeps
+ * a replacing hook per-projection is the STORE, not the dispatch: a
+ * replacement carries no ORIGIN, so a `PARAGRAPH` around a standalone
+ * formula is a fresh paragraph on every projection, and only the hook makes
+ * it the `FormulaBlock` five gates pin. `syntax_extension.h` states the
+ * contract. */
 
 static const char S_INLINES_MEMBER[] = "*inlines";
 
@@ -1370,6 +1380,21 @@ static bool S_tail_queue_push(markdown_core_parser *parser, markdown_core_node *
         parser->tail_queue_alloc = grown;
     }
     parser->tail_queue[parser->tail_queue_size++] = block;
+    return true;
+}
+
+static bool S_fresh_queue_push(markdown_core_parser *parser, markdown_core_node *block) {
+    if (parser->fresh_queue_size == parser->fresh_queue_alloc) {
+        size_t grown = parser->fresh_queue_alloc ? parser->fresh_queue_alloc * 2 : 64;
+        markdown_core_node **queue =
+            (markdown_core_node **)parser->mem->realloc(parser->fresh_queue, grown * sizeof(*queue));
+        if (!queue) {
+            return false;
+        }
+        parser->fresh_queue = queue;
+        parser->fresh_queue_alloc = grown;
+    }
+    parser->fresh_queue[parser->fresh_queue_size++] = block;
     return true;
 }
 
@@ -1644,9 +1669,21 @@ static void process_inlines(
                  * after the lookahead was taken -- so the walk would descend
                  * into it and meet a directive's label, an inline-class node
                  * that `contains_inlines` claims, and parse it AGAIN into the
-                 * shared list. The block is queued here because the EXIT the
-                 * reset consumes is where it would otherwise be queued, and
-                 * its name hooks must still run (F15 rule 2). */
+                 * shared list.
+                 *
+                 * The block IS queued, exactly once (review-found, twice
+                 * over): the seal is the one projection that cannot serve a
+                 * hit by identity -- it hands back this CST shell, whose
+                 * node-level state a name hook may have changed on the
+                 * DERIVED clone before the store (a retype, a level) --
+                 * so the name hooks run here once to reproduce that state
+                 * on the shell. Suppressing them lost the cached node-level
+                 * mutation at the seal; queueing here AND at the EXIT ran
+                 * them twice. The children stay the stored list either way:
+                 * every node in it carries SHARED, so a hook that reaches
+                 * into them meets the frozen-projection surface. Derive
+                 * hits stay hook-free: there the retained node itself is
+                 * the answer, mutation baked in. */
                 if (S_block_has_tail_work(parser, cur) && !S_tail_queue_push(parser, cur)) {
                     parser->oom = true;
                 }
@@ -1654,13 +1691,28 @@ static void process_inlines(
                 continue;
             }
             markdown_core_parse_inlines(parser, cur, refmap, options);
-        } else if (MARKDOWN_CORE_NODE_BLOCK_P(cur) && S_block_has_tail_work(parser, cur)) {
+        } else if (MARKDOWN_CORE_NODE_BLOCK_P(cur) && !(cur->flags & MARKDOWN_CORE_NODE__SHARED) &&
+                   !MARKDOWN_CORE_NODE_BORROWED_P(cur) && S_block_has_tail_work(parser, cur)) {
             /* COLLECTED, NOT ACTED ON: a hook may replace or remove the block
              * and the walk is standing on it (F13 requirement 2). The walk
              * never descends into a block's own inlines -- its lookahead was
              * taken before they were parsed -- and is reset past a borrowed
              * list above, so this EXIT follows the ENTER directly and the
-             * queue is the blocks in post-order. */
+             * queue is the blocks in post-order.
+             *
+             * A SHARED block never queues (measured, 2026-09-01), and a
+             * BORROWER never queues either (review-found, the hook_once
+             * gate): skip_children above still delivers each one's EXIT,
+             * and without the two tests every hit re-answered the name
+             * rows and re-ran its hooks -- the retained blocks on every
+             * feed of a derive, half the Ir of a width-heavy stream, and
+             * the borrowers again at the seal, where a counting hook
+             * watched finish disagree with derive_tree. The no-op is
+             * provable, not incidental: a block a name hook would have
+             * replaced was never stored (the replacement carries no
+             * ORIGIN), so a stored block's hooks have nothing to say, and
+             * a hook that would write anyway meets the frozen-projection
+             * surface. */
             if (!S_tail_queue_push(parser, cur)) {
                 parser->oom = true;
             }
@@ -1884,6 +1936,15 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
 
     node->link.origin = NULL;
     node->flags &= ~MARKDOWN_CORE_NODE__ORIGIN;
+    /* THE STORE MOVES AN INTRUSIVE LIST and nothing else (review-found):
+     * `take_children` reads `first_child/last_child`, which on a
+     * vector-shaped container are the vector pointer and the count. The
+     * enrolled predicate keeps that shape out of here; if any future path
+     * lets one through, the block goes unstored -- a slow feed, never a
+     * corrupted holder. */
+    if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
+        return;
+    }
     holder = markdown_core_holder_new(parser->mem);
     if (!holder) {
         /* Nothing is lost: the tree keeps its own children. */
@@ -1999,8 +2060,16 @@ static markdown_core_node *S_clone_block_node(
      * -- handed back under one holder hold for the requesting tree. No
      * clone, no content retain, no tail: what F15 rule 2 re-ran per
      * projection to reproduce, retention reproduces by identity. */
+    /* A block with SKELETON CHILDREN never enrolls (review-found): the
+     * store's `take_children` moves an intrusive list, so a block that
+     * holds node children when the clone sees it cannot be stored. Since
+     * the adoption law (node.c, `can_contain_type`) refuses BLOCK
+     * children under any `contains_inlines` parent, an enrollable block
+     * cannot carry skeleton children at all any more; this term is the
+     * backstop that keeps a slipped shape merely uncached rather than
+     * corrupting at the store. */
     enrolled = MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src) && contains_inlines((markdown_core_node *)src) &&
-               refmap == parser->refmap && !parser->no_projection_cache;
+               src->first_child == NULL && refmap == parser->refmap && !parser->no_projection_cache;
     hit = enrolled && S_cache_fresh(parser, src, refmap) && src->link.holder->node != NULL;
     if (hit) {
         markdown_core_holder *holder = src->link.holder;
@@ -2015,7 +2084,7 @@ static markdown_core_node *S_clone_block_node(
      * tail will store it, the holder will hand it to later trees, and a
      * node that outlives this tree cannot live in this tree's arena, so it
      * takes a malloc shell. */
-    bool arena_shell = parser->derive_arena && !enrolled && parser->derive_malloc_depth == 0;
+    bool arena_shell = parser->derive_arena && !enrolled;
     if (arena_shell) {
         dst = markdown_core_node_arena_calloc(parser->derive_arena);
         if (!dst) {
@@ -2195,6 +2264,14 @@ static markdown_core_node *S_clone_block_node(
         dst->flags |= MARKDOWN_CORE_NODE__ORIGIN;
         parser->cache_misses++;
     }
+    /* Every node the clone BUILDS enters the fresh list (#161): the
+     * projection serves exactly this set, so the retained nodes -- which
+     * returned at the top -- cost the walk nothing. A refused push poisons
+     * the parse the way a truncated walk did: a projection that missed a
+     * block must not look whole. */
+    if (parser->fresh_queue_armed && !S_fresh_queue_push(parser, dst)) {
+        parser->oom = true;
+    }
     return dst;
 
 lost:
@@ -2219,10 +2296,10 @@ static bool S_vec_open(markdown_core_parser *parser, markdown_core_node *parent,
     parent->children.count = 0;
     if (total) {
         /* The vector's allocator FOLLOWS THE SHELL'S (review-found), never
-         * the derivation's mood: a malloc-shelled parent inside an enrolled
-         * subtree outlives this tree's arena in a cache holder, and an
-         * arena vector under it would dangle there. The free walk and the
-         * holder both rely on this one rule. */
+         * the derivation's mood: a derivation whose arena was refused
+         * shells every node from malloc, and an arena vector under a
+         * malloc shell would outlive nothing it can name. The free walk
+         * relies on this one rule. */
         parent->children.vec =
             (parent->flags & MARKDOWN_CORE_NODE__ARENA)
                 ? (
@@ -2241,26 +2318,20 @@ static bool S_vec_open(markdown_core_parser *parser, markdown_core_node *parent,
  * ancestor guard, the numbering climb and the hooks read it -- and keeps
  * enough of a sibling chain for the free walk's splice. A SHARED child
  * learns NOTHING (#161, D9): every one of these facts is per-tree, the
- * vector carries them all, and the node belongs to every tree at once. */
+ * vector carries them all, and the node belongs to every tree at once.
+ *
+ * Every parent the clone hands in is vec-opened: an enrolled block never
+ * carries skeleton children -- the enrolled PREDICATE refuses the shape,
+ * not just the built-in grammar -- and an enrolled block's inline
+ * children materialize at projection through `node_append_child`, whose
+ * intrusive list is what the store's `take_children` moves. The
+ * intrusive arm that used to sit here for "enrolled parents" served a
+ * shape nothing can now build (review-found: a nested hit would have
+ * been linked into a retained list and freed under its own holder), and
+ * container retention (#161 phase 2) stores vectors of shared children,
+ * not intrusive lists, so it was no future's groundwork either. */
 static void S_vec_append(markdown_core_node *parent, markdown_core_node *child) {
-    if (!MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
-        /* An ENROLLED parent -- a leaf directive whose CST label rides in
-         * the skeleton -- keeps intrusive children: its store moves the
-         * whole list into a holder (`take_children`) and its hit is the
-         * retained node, so no per-tree sibling variance ever reaches its
-         * interior, and the vector would only stand between the store and
-         * the list it moves. */
-        child->parent = parent;
-        child->prev = parent->last_child;
-        child->next = NULL;
-        if (parent->last_child) {
-            parent->last_child->next = child;
-        } else {
-            parent->first_child = child;
-        }
-        parent->last_child = child;
-        return;
-    }
+    assert(MARKDOWN_CORE_NODE_ARRAY_P(parent));
     parent->children.vec[parent->children.count++] = child;
     if (!(child->flags & MARKDOWN_CORE_NODE__SHARED)) {
         child->parent = parent;
@@ -2294,16 +2365,16 @@ static markdown_core_node *S_clone_block_tree(
         S_vec_append(dst_parent, dst);
 
         if (src->first_child && !(dst->flags & MARKDOWN_CORE_NODE__SHARED)) {
-            /* An enrolled parent stays INTRUSIVE (S_vec_append) and its
-             * whole subtree takes malloc shells: the store will move these
-             * nodes into a holder that outlives this tree's arena. A HIT
-             * never reaches this branch (review-found): the retained node
-             * IS the projection of the source's whole subtree, and
+            /* A HIT never reaches this branch (review-found): the retained
+             * node IS the projection of the source's whole subtree, and
              * descending would clone raw CST children over the shared
-             * projection every other live tree is reading. */
-            if (dst->flags & MARKDOWN_CORE_NODE__ORIGIN) {
-                parser->derive_malloc_depth++;
-            } else if (!S_vec_open(parser, dst, src)) {
+             * projection every other live tree is reading. An enrolled
+             * MISS never reaches it either, by the enrolled predicate
+             * itself now -- a block with skeleton children never enrolls
+             * -- so ORIGIN here is provably impossible, and the assert
+             * holds the door on the predicate ever loosening. */
+            assert(!(dst->flags & MARKDOWN_CORE_NODE__ORIGIN));
+            if (!S_vec_open(parser, dst, src)) {
                 markdown_core_node_free(dst_root);
                 return NULL;
             }
@@ -2311,9 +2382,6 @@ static markdown_core_node *S_clone_block_tree(
             dst_parent = dst;
         } else {
             while (!src->next && src != src_root) {
-                if (dst_parent->flags & MARKDOWN_CORE_NODE__ORIGIN) {
-                    parser->derive_malloc_depth--;
-                }
                 src = src->parent;
                 dst_parent = dst_parent->parent;
             }
@@ -2323,7 +2391,6 @@ static markdown_core_node *S_clone_block_tree(
             src = src->next;
         }
     }
-    parser->derive_malloc_depth = 0;
     return dst_root;
 }
 
@@ -2335,6 +2402,46 @@ static markdown_core_node *S_clone_block_tree(
  * after this it is an AST, and projecting it again would not give the same
  * answer. That is why a re-projection hands in a clone and `finish` hands in
  * the CST itself. */
+/* The derive-path projection serves EXACTLY the set the clone built (#161):
+ * the fresh list, in clone order. The walk that stepped past every retained
+ * block to find these -- ENTER, flag test, skip, EXIT per shared child, a
+ * quarter of a width-heavy stream's instructions -- is the finish path's
+ * alone now (T1 hands in the CST itself, where borrowers need the walk's
+ * treatment). Parses run forward; the tail queue fills BACKWARD, so a child
+ * still precedes its parent in the drain exactly as the walk's post-order
+ * had it, and the drain's "no entry behind a replacement dangles" rule
+ * keeps holding. Sibling order flips, which F15 states is free: no pass
+ * moves a node to another parent. */
+static void S_project_fresh(markdown_core_parser *parser, markdown_core_map *refmap) {
+    size_t i;
+    markdown_core_manage_extensions_special_characters(parser, true);
+    for (i = 0; i < parser->fresh_queue_size; i++) {
+        markdown_core_node *block = parser->fresh_queue[i];
+        /* An inline block is never vector-shaped (review-found, closed by
+         * the committed classification): the flag is frozen between
+         * validated mutations, a flagged block can never have adopted the
+         * skeleton children that vectorize, and the clone carries the
+         * flag -- so the shape that once needed a guard here cannot be
+         * built, on this path or the seal's, and the two cannot disagree.
+         * The assert holds that door; the inline parser's own assert
+         * stands at the write site behind it. */
+        assert(!(contains_inlines(block) && MARKDOWN_CORE_NODE_ARRAY_P(block)));
+        if (contains_inlines(block)) {
+            markdown_core_parse_inlines(parser, block, refmap, parser->options);
+        }
+    }
+    for (i = parser->fresh_queue_size; i > 0; i--) {
+        markdown_core_node *block = parser->fresh_queue[i - 1];
+        if (MARKDOWN_CORE_NODE_BLOCK_P(block) && S_block_has_tail_work(parser, block)) {
+            if (!S_tail_queue_push(parser, block)) {
+                parser->oom = true;
+            }
+        }
+    }
+    parser->fresh_queue_size = 0;
+    markdown_core_manage_extensions_special_characters(parser, false);
+}
+
 static markdown_core_node *S_project(
     markdown_core_parser *parser,
     markdown_core_node *skeleton,
@@ -2352,7 +2459,11 @@ static markdown_core_node *S_project(
      * parse left it. */
     bufsize_t marks_before = parser->line_marks_size;
 
-    process_inlines(parser, skeleton, refmap, parser->options);
+    if (parser->fresh_queue_armed) {
+        S_project_fresh(parser, refmap);
+    } else {
+        process_inlines(parser, skeleton, refmap, parser->options);
+    }
 
     S_run_block_tails(parser, &skeleton);
 
@@ -2398,9 +2509,12 @@ markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parse
         return NULL;
     }
     parser->derive_arena = arena;
+    parser->fresh_queue_size = 0;
+    parser->fresh_queue_armed = true;
     derived = S_clone_block_tree(parser, parser->root, refmap);
     parser->derive_arena = NULL;
     if (!derived) {
+        parser->fresh_queue_armed = false;
         if (arena) {
             markdown_core_node_arena_release(arena);
         }
@@ -2409,6 +2523,7 @@ markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parse
     }
 
     derived = S_project(parser, derived, refmap);
+    parser->fresh_queue_armed = false;
     if (arena) {
         markdown_core_node_arena_release(arena);
     }
@@ -3017,6 +3132,7 @@ static void open_new_blocks(
 
                 markdown_core_parser_touch(parser, *container);
                 (*container)->type = (uint16_t)MARKDOWN_CORE_NODE_HEADING;
+                markdown_core_node_classify(*container);
                 (*container)->as.heading.level = lev;
                 (*container)->as.heading.setext = true;
                 S_advance_offset(parser, input, input->len - 1 - parser->offset, false);

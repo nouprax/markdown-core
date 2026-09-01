@@ -181,10 +181,21 @@ enum markdown_core_node__internal_flags {
      * written. Freed by the holder alone, when the last hold goes. */
     MARKDOWN_CORE_NODE__SHARED = (1 << 9),
 
+    /* THE COMMITTED CLASSIFICATION (review-found, the hybrid arc): whether
+     * this block's content parses into inlines, computed from (type,
+     * descriptor) at construction and recomputed only by the validated
+     * mutations -- set_type, set_syntax_extension, the setext retype --
+     * through `markdown_core_node_classify`. Every steady-state reader
+     * asks THIS BIT, never the descriptor's hook, so a stateful
+     * `contains_inlines_func` cannot answer one thing at adoption and
+     * another at projection: derive, seal, adoption law and enrollment
+     * all see one frozen answer. */
+    MARKDOWN_CORE_NODE__CONTAINS_INLINES = (1 << 10),
+
     // The first bit an extension may claim. Extension flags are compile-time
     // constants owned by the extension that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 10),
+    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 11),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -459,6 +470,11 @@ void *markdown_core_node_arena_bytes(markdown_core_node_arena *arena, size_t siz
 markdown_core_node_arena *markdown_core_node_arena_of(markdown_core_node *node);
 void markdown_core_node_arena_release(markdown_core_node_arena *arena);
 void markdown_core_node_arena_forget(markdown_core_node *node);
+
+/* Commit the node's classification bit (CONTAINS_INLINES) from its type and
+ * descriptor. Called at construction and by each validated mutation; every
+ * steady-state reader asks the bit, never the descriptor's hook. */
+void markdown_core_node_classify(markdown_core_node *node);
 
 markdown_core_holder *markdown_core_holder_new(markdown_core_mem *mem);
 void markdown_core_holder_hold(markdown_core_holder *holder);

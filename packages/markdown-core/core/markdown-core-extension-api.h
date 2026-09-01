@@ -260,10 +260,19 @@ typedef int (*markdown_core_accepts_lines_func)(
     markdown_core_node *node
 );
 
-/** THE PER-BLOCK POSTPROCESS (docs/STREAMING.md T18, F15). Called once per
- * projection for every block the descriptor's `postprocess_blocks` selects,
- * after that block's inlines are parsed and consolidated, in extension attach
- * order; the comment strip runs after the last hook. `*block` is IN/OUT:
+/** THE PER-BLOCK POSTPROCESS (docs/STREAMING.md T18, F15, F25). Called for
+ * every FRESHLY PROJECTED block the descriptor's `postprocess_blocks`
+ * selects, after that block's inlines are parsed and consolidated, in
+ * extension attach order; the comment strip runs after the last hook. A
+ * block served from the projection cache by `derive_tree` is the retained
+ * node itself, this hook's node-level effect baked in at the projection
+ * that recorded it, and the hook is NOT called again for it. The sealing
+ * `finish` serves a hit as the original CST shell borrowing the stored
+ * children, so there a NAME-selected hook runs once more to reproduce its
+ * node-level effect on the shell -- the children it must not touch are
+ * frozen. A hook that REPLACES its block keeps the block out of the store,
+ * so a replacing hook does run on every projection; `syntax_extension.h`
+ * states the full contract. `*block` is IN/OUT:
  * leave it to keep the node, reseat it to the node that replaced it, set it
  * NULL to say the node is gone. An out-parameter has one spelling per
  * outcome where a return value cannot tell "removed" from "unchanged"

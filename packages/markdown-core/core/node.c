@@ -208,8 +208,46 @@ void markdown_core_node_arena_forget(markdown_core_node *node) {
     }
 }
 
+/* Mirrors blocks.c's `contains_inlines` for the adoption law below; the two
+ * must answer alike. */
+static bool S_node_contains_inlines(markdown_core_node *node) {
+    if (node->extension && node->extension->contains_inlines_func) {
+        return node->extension->contains_inlines_func(node->extension, node) != 0;
+    }
+    return node->type == MARKDOWN_CORE_NODE_PARAGRAPH || node->type == MARKDOWN_CORE_NODE_HEADING;
+}
+
+/* THE ONE ASKING (review-found, the hybrid arc): the descriptor's hook is
+ * consulted here and nowhere in steady state, so its answer is FROZEN into
+ * the flag between validated mutations -- a stateful hook cannot classify
+ * a block one way at adoption and another at projection, splitting derive
+ * from seal. Construction and the gated mutations call this after they
+ * validate; everything else reads the bit. */
+void markdown_core_node_classify(markdown_core_node *node) {
+    if (S_node_contains_inlines(node)) {
+        node->flags |= MARKDOWN_CORE_NODE__CONTAINS_INLINES;
+    } else {
+        node->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__CONTAINS_INLINES;
+    }
+}
+
 bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
     if (child_type == MARKDOWN_CORE_NODE_DOCUMENT) {
+        return false;
+    }
+
+    /* UNIVERSAL, above any extension's own answer (review-found): a block
+     * whose content parses into INLINES cannot also hold BLOCK children.
+     * The hybrid has no representation the engine accepts -- the store
+     * moves an intrusive list, the clone vectorizes containers, and the
+     * inline parser appends through the intrusive fields -- so the shape
+     * is refused where it would be MADE: `add_child` climbs past such a
+     * parent exactly as it climbs past an interrupted paragraph, and the
+     * public adoption surface answers 0. The core's own type rules always
+     * said this (paragraph and heading take inlines only); this line says
+     * it to extensions too. The COMMITTED bit is asked, not the hook: the
+     * adoption law judges the classification the engine will act on. */
+    if (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && (node->flags & MARKDOWN_CORE_NODE__CONTAINS_INLINES)) {
         return false;
     }
 
@@ -327,6 +365,11 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(
     if (node->extension && node->extension->opaque_alloc_func) {
         node->extension->opaque_alloc_func(node->extension, mem, node);
     }
+
+    /* Classified LAST (review-found): the hook may read the union defaults
+     * or the opaque payload the allocator above just built, and the answer
+     * it gives here is the one the engine freezes. */
+    markdown_core_node_classify(node);
 
     return node;
 }
@@ -568,6 +611,7 @@ static bool S_projection_frozen(const markdown_core_node *node) {
 
 int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_type type) {
     markdown_core_node_type initial_type;
+    bool contains;
 
     if (S_projection_frozen(node)) {
         return 0;
@@ -584,11 +628,36 @@ int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_typ
         return 0;
     }
 
+    /* The children must stay legal under the new type (review-found): a
+     * type whose content parses into inlines cannot keep BLOCK children,
+     * or set_type would build by mutation the hybrid the adoption law
+     * refuses to construct. The cursor walks either child shape. The
+     * answer is captured ONCE (review-found): it gates the walk here and
+     * is the value committed below, so a stateful hook cannot answer
+     * false past the walk and true into the bit. */
+    contains = S_node_contains_inlines(node);
+    if (contains) {
+        markdown_core_child_cursor cursor;
+        markdown_core_node *child;
+        for (child = markdown_core_child_first(node, &cursor); child;
+            child = markdown_core_child_after(node, child, &cursor)) {
+            if (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child->type)) {
+                node->type = (uint16_t)initial_type;
+                return 0;
+            }
+        }
+    }
+
     /* We rollback the type to free the union members appropriately */
     node->type = (uint16_t)initial_type;
     free_node_as(node);
 
     node->type = (uint16_t)type;
+    if (contains) {
+        node->flags |= MARKDOWN_CORE_NODE__CONTAINS_INLINES;
+    } else {
+        node->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__CONTAINS_INLINES;
+    }
 
     return 1;
 }
@@ -1058,7 +1127,59 @@ int markdown_core_node_set_syntax_extension(markdown_core_node *node, const mark
         return 0;
     }
 
-    node->extension = extension;
+    /* The EFFECTIVE post-assignment classification is what must stay
+     * legal (review-found, twice): a descriptor change is a mutation like
+     * set_type, and asking only the new descriptor's own hook missed the
+     * changes that fall back to the core default -- detaching, or
+     * attaching a descriptor without a contains_inlines_func, turns a
+     * bare PARAGRAPH's answer true. Assign, ask the one predicate
+     * everything else asks, and roll back on refusal: the same
+     * transaction set_type runs. The cursor walks either child shape. */
+    {
+        const markdown_core_syntax_extension *initial = node->extension;
+        bool contains;
+        bool payload_built = false;
+        node->extension = extension;
+        /* Attachment FINISHES the node before asking (review-found): the
+         * parse-time pattern attaches and then initializes, so a payload-
+         * reading hook would have observed nothing and frozen an
+         * initialization-time answer. The new descriptor's own allocator
+         * runs here, exactly as the constructor runs it, wherever the node
+         * carries no payload yet -- the parse-time creation sites shed
+         * their manual duplicate of it -- and a refusal below frees what
+         * this call built. */
+        if (extension && extension->opaque_alloc_func && !node->as.opaque) {
+            extension->opaque_alloc_func(extension, NODE_MEM(node), node);
+            payload_built = node->as.opaque != NULL;
+        }
+        contains = S_node_contains_inlines(node);
+        if (contains) {
+            markdown_core_child_cursor cursor;
+            markdown_core_node *child;
+            for (child = markdown_core_child_first(node, &cursor); child;
+                child = markdown_core_child_after(node, child, &cursor)) {
+                if (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child->type)) {
+                    if (payload_built) {
+                        if (extension->opaque_free_func) {
+                            extension->opaque_free_func(extension, NODE_MEM(node), node);
+                        }
+                        node->as.opaque = NULL;
+                    }
+                    node->extension = initial;
+                    return 0;
+                }
+            }
+        }
+        /* ONE ASKING (review-found): the answer that VALIDATED is the
+         * answer COMMITTED. A second ask would let a stateful hook answer
+         * false past the children walk and true into the bit, committing
+         * the hybrid the walk just refused. */
+        if (contains) {
+            node->flags |= MARKDOWN_CORE_NODE__CONTAINS_INLINES;
+        } else {
+            node->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__CONTAINS_INLINES;
+        }
+    }
     return 1;
 }
 

@@ -1639,6 +1639,53 @@ under one holder, key on the container's own stamp plus OR'd consulted bits
 content-less leaves (code blocks, thematic breaks) enroll with it, so a
 stored container never references arena memory.
 
+### F25 — the width the projection still walked was mostly two defects, and they fall for −79%  · VERIFIED (#161, follow-up to F24)
+
+Profiled on a rebuilt line-fed harness: `session_feed` per line over a 98 KB
+stream whose unit is a heading + one-line paragraph — 2,500 stored blocks,
+5,000 feeds, the flattest and therefore widest shape a document can take.
+Callgrind Ir, load-independent; same session, same binary flags, A/B per
+change.
+
+**Defect 1 — the shared EXIT still answered the name rows (half the
+stream).** The ENTER of a retained block skips its subtree, but
+`skip_children` still delivers the block's own EXIT, and the EXIT arm
+carried no SHARED test: every stored block re-answered `get_type_string`
+and the name rows, queued, and re-ran its hooks as no-ops on every feed —
+against F24's own "no tail" sentence and the revised contract. The no-op is
+provable (a block a name hook would have replaced was never stored), so one
+flag test replaces the interrogation: **3,819M → 1,742M Ir (−54%), wall 695
+→ 440 ms; `S_run_block_tail` falls 25.2% → 0.2% of the profile.**
+
+**Defect 2 — the projection walked the whole width to find the fresh set
+it already knew.** The derive-path walk stepped ENTER, flag test, skip,
+EXIT past every retained child — a quarter of the remaining instructions —
+to locate exactly the blocks the clone had just BUILT. The clone now
+records what it builds in a per-derive fresh list and the projection serves
+that list; the walk is the finish path's alone (T1 hands in the CST, whose
+borrowers need it). Parses run forward in clone order; the tail queue fills
+backward, so a child still precedes its parent in the drain and the
+replacement rule holds; sibling order flips, which F15 states is free.
+**1,742M → 816M Ir (−53%), wall 440 → 310 ms; the iterator falls 25% →
+0.6%.** Together: **−79% Ir on the width-heavy stream**, dumps and every
+suite byte-identical.
+
+**The bound, restated.** What remains Θ(width) per feed is the clone's
+REFERENCING pass alone: `S_clone_block_node` (45% — the enrolled predicate,
+one freshness check, one hold per closed block) and the clone-tree loop
+with its vector fill (22%), plus one release per entry at the free (5%).
+About 30 Ir per closed block per feed, every one of them a pointer-width
+touch. Collapsing THAT needs the derived child-vector itself memoized —
+and F24's "enroll closed containers" is not sufficient for it: the widest
+streams are FLAT, their one container is the always-open document, so the
+memo must cover an OPEN container's stable prefix (previous derivation's
+vector + a child-list generation + OR'd consulted bits, holds owned by the
+memo so a tree takes ONE hold), with the per-child pass kept as the
+fallback wherever a generation or a consulted map moved. Container
+enrollment then rides the same memo for nested shapes. That design is the
+remaining #161 step; its ownership rules go through the same review the
+frozen-projection surface earned.
+
 ---
 
 ## 4. Decisions — RULED, 2026-08-25
@@ -1860,6 +1907,42 @@ back in the vocabulary that produced them.
   mechanical sites), and the holder retains the derived node itself, handed
   back shared on every hit. The wire, the dumps and every answer are
   byte-identical; only the C navigation surface changed shape.
+- **The retained projection is FROZEN, at any depth and for content too ·
+  review round on F24's landing, 2026-09-01.** Three findings completed the
+  fail-closed surface. (1) A consumer's `node_free` of a shared child used
+  to release the holder hold — but the parentless node cannot leave the
+  vector that holds it, so the tree's own free walk released the same hold
+  again and the holder died under the CST cache: free is now the refused
+  no-op unlink already was, and the store flags the WHOLE stored subtree
+  `SHARED` (once per store, allocation-free), so free/unlink/adoption fail
+  closed on interiors and `S_can_contain` refuses shared parents at the one
+  chokepoint every insertion shares. (2) Content is as frozen as structure:
+  every setter, the extension setters, consolidation's merge and `unput`'s
+  trim answer 0 for a shared node (`unput` also read `last_child` through
+  the raw overlay — garbage on a vector container — and now takes the
+  shape-aware accessor). The `node_sharing` gate runs the hostile sequence
+  against a pre-mutation baseline dump and died under ASan at the stolen
+  release before the fix. (3) The clone's "enrolled parents stay intrusive"
+  arm was DELETED as unreachable: no enrolled type (paragraph, heading,
+  table cell — `contains_inlines` claims the directive LABEL but `BLOCK_P`
+  does not) admits skeleton children, so the arm, the `derive_malloc_depth`
+  machinery and the ORIGIN descend branch served a shape the grammar cannot
+  build — a suite-wide probe fired zero times — while its unconditional
+  link writes would have double-freed a nested hit the day the shape
+  appeared; asserts now hold that door, and container retention (phase 2)
+  stores vectors of shared children, not intrusive lists. F15 rule 2's
+  statement followed retention into `syntax_extension.h`, with the seal's
+  carve-out found one round later: a DERIVE hit runs no tail pass at all —
+  the retained node itself is the answer, node-level hook effects baked in
+  — while the SEAL runs the NAME hooks exactly once per stored block,
+  because finish hands back the CST shell borrowing the stored children
+  and only the hooks can reproduce their node-level work (a retype, a
+  level) on that shell; zero lost the cached mutation, and the historical
+  double queue ran them twice. The children the hooks must not touch are
+  frozen, which is what makes the seal's re-run safe. What keeps a
+  replacing hook per-projection is the store its replacement never enters,
+  not the dispatch. The hook_once gate counts all three paths and dumps
+  the sealed tree against the hit derive's.
 
 ---
 

@@ -325,8 +325,9 @@ static markdown_core_node *try_opening_formula_block(
         return NULL;
     }
 
+    /* The attach runs the descriptor's own opaque allocator (node.c): the
+     * manual calloc that used to follow it would leak that payload. */
     markdown_core_node_set_syntax_extension(node, extension);
-    node->as.opaque = parser->mem->calloc(1, sizeof(node_formula));
 
     formula = get_formula(node);
     if (!formula) {
