@@ -2788,8 +2788,18 @@ static int case_child_memo(const ts_spec_file *file) {
                     fputs("child memo: the fallback did not resolve the reference\n", stderr);
                     failures++;
                 }
-                if (!parser->doc_memo || parser->doc_memo == t7->link.memo_ref->memo || parser->doc_memo->count != 6) {
+                /* The rebuilt run reaches 7, one PAST the prose: the
+                 * arrived definition lives on as a ReferenceDefinition
+                 * NODE (node.h -- the mdast model), an inline-less leaf
+                 * that used to cap every run at its index and now
+                 * enrolls with the bare leaves (F27), so the rebuild
+                 * records it too. */
+                if (!parser->doc_memo || parser->doc_memo == t7->link.memo_ref->memo || parser->doc_memo->count != 7) {
                     fputs("child memo: the record did not rebuild after the move\n", stderr);
+                    failures++;
+                }
+                if (t8->children.count != 7 || !(t8->children.vec[6]->flags & MARKDOWN_CORE_NODE__SHARED)) {
+                    fputs("child memo: the definition node did not enroll with the bare leaves\n", stderr);
                     failures++;
                 }
                 if (!failures && baseline7) {
@@ -2811,7 +2821,7 @@ static int case_child_memo(const ts_spec_file *file) {
      * memo, and through it every entry, alone. */
     if (!failures) {
         t9 = markdown_core_parser_derive_tree(parser, parser->refmap);
-        if (!t9 || !(t9->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || t9->link.memo_ref->boundary != 6) {
+        if (!t9 || !(t9->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) || t9->link.memo_ref->boundary != 7) {
             fputs("child memo: the rebuilt run did not serve\n", stderr);
             failures++;
         } else {
@@ -2872,6 +2882,41 @@ static int case_child_memo(const ts_spec_file *file) {
                 failures++;
             }
             markdown_core_parser_free(bare);
+        }
+    }
+
+    /* Act 7: a bare leaf with a NAME HOOK is retained too (F27): the
+     * formula extension declares code_block for its promotion, so the
+     * fence runs a tail -- and the store at the tail's end now keeps what
+     * the hook declined to replace, the promotion-memo shape T9's
+     * amendment named. Without it the fence missed every derivation and
+     * capped every run at its index. */
+    if (!failures) {
+        static const char CM_FENCED[] = "before the fence\n\n```c\nint x;\n```\n\nafter the fence\n\n";
+        markdown_core_parser *fenced = pr_parser_new();
+        if (!fenced) {
+            failures++;
+        } else {
+            markdown_core_node *first = NULL;
+            markdown_core_node *second = NULL;
+            size_t misses_before;
+            markdown_core_parser_feed(fenced, CM_FENCED, sizeof(CM_FENCED) - 1);
+            first = markdown_core_parser_derive_tree(fenced, fenced->refmap);
+            misses_before = fenced->cache_misses;
+            second = markdown_core_parser_derive_tree(fenced, fenced->refmap);
+            if (!first || !second || fenced->cache_misses != misses_before || !fenced->doc_memo ||
+                fenced->doc_memo->count != 3 || !(second->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) ||
+                second->link.memo_ref->boundary != 3) {
+                fputs("child memo: the hooked fence is not retained, and caps the run\n", stderr);
+                failures++;
+            }
+            if (first) {
+                markdown_core_node_free(first);
+            }
+            if (second) {
+                markdown_core_node_free(second);
+            }
+            markdown_core_parser_free(fenced);
         }
     }
 

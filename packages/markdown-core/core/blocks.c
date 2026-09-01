@@ -1586,10 +1586,18 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
 
     /* THE STORE, last, so the list the cache keeps is the one the tail
      * finished with -- and the numbering above rides into it. A derived block
-     * that was replaced took its origin with it, and a block with no inline
-     * content never had one. */
+     * that was replaced took its origin with it. A CHILDLESS block stores
+     * too (#161, F27): a code fence the formula hook looked at and declined
+     * -- or retyped in place, which is the promotion T9's amendment said a
+     * hit must reproduce -- is the deterministic projection of its origin
+     * under the stored key, exactly like an inline list; without this arm a
+     * bare leaf with any name-declared hook could never be retained, and
+     * with the formula extension attached that was every code fence in the
+     * document. What still un-enrolls here is a block that lost its inline
+     * standing while KEEPING children: its list is no longer the shape the
+     * store's move honors. */
     if (node && (node->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
-        if (children_own && contains_inlines(node)) {
+        if (children_own && (contains_inlines(node) || node->first_child == NULL)) {
             S_cache_store(parser, node);
         } else {
             node->link.origin = NULL;
@@ -2110,8 +2118,22 @@ static markdown_core_node *S_clone_block_node(
      * cannot carry skeleton children at all any more; this term is the
      * backstop that keeps a slipped shape merely uncached rather than
      * corrupting at the store. */
-    enrolled = MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src) && contains_inlines((markdown_core_node *)src) &&
-               src->first_child == NULL && refmap == parser->refmap && !parser->no_projection_cache;
+    /* EVERY childless block enrolls, not just the inline-bearing (#161,
+     * F27): a code fence, a thematic break, an HTML block, an empty
+     * container -- each was recloned on every feed forever, and one at
+     * top level CAPPED the document's memo at its index, since its entry
+     * never turned SHARED. Their store moves an EMPTY list, which is the
+     * shape `take_children` trivially honors. The asymmetric OPEN term is
+     * a cost line, not a safety one: an inline leaf's store saves a whole
+     * inline parse, worth paying even for the still-open paragraph a
+     * double derivation re-reads, while a bare leaf's store saves only
+     * its clone -- storing one still taking lines would buy a holder per
+     * feed to save fifteen field copies. It also keeps the DOCUMENT out
+     * by construction: the root is open for every derivation that can
+     * ever see it. */
+    enrolled = MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src) && src->first_child == NULL &&
+               (contains_inlines((markdown_core_node *)src) || !(src->flags & MARKDOWN_CORE_NODE__OPEN)) &&
+               refmap == parser->refmap && !parser->no_projection_cache;
     hit = enrolled && S_cache_fresh(parser, src, refmap) && src->link.holder->node != NULL;
     if (hit) {
         markdown_core_holder *holder = src->link.holder;
@@ -2525,7 +2547,25 @@ static void S_project_fresh(markdown_core_parser *parser, markdown_core_map *ref
             }
         }
     }
-    parser->fresh_queue_size = 0;
+    /* THE SWEEPABLES ARE PICKED BEFORE ANY HOOK RUNS (#161, F27,
+     * review-shaped): the fresh list is compacted down to the built blocks
+     * that carry ORIGIN and NO tail work -- exactly the set the drain will
+     * never hand to a hook, so nothing here can be freed or replaced
+     * before the sweep reads it. A block WITH tail work settles its own
+     * store at its tail's end, as before. Clone order is preserved, so
+     * the sweep's backward walk still stores a child before its parent
+     * asks. */
+    {
+        size_t kept = 0;
+        for (i = 0; i < parser->fresh_queue_size; i++) {
+            markdown_core_node *block = parser->fresh_queue[i];
+            if ((block->flags & MARKDOWN_CORE_NODE__ORIGIN) &&
+                !(MARKDOWN_CORE_NODE_BLOCK_P(block) && S_block_has_tail_work(parser, block))) {
+                parser->fresh_queue[kept++] = block;
+            }
+        }
+        parser->fresh_queue_size = kept;
+    }
     markdown_core_manage_extensions_special_characters(parser, false);
 }
 
@@ -2553,6 +2593,27 @@ static markdown_core_node *S_project(
     }
 
     S_run_block_tails(parser, &skeleton);
+
+    /* THE SWEEP STORES WHAT NO TAIL VISITED (#161, F27): a bare leaf -- a
+     * code fence, a thematic break, an HTML block outside the strip pass,
+     * an empty container -- has no tail work, so the store that lives at
+     * the tail's end never saw it and every feed recloned it forever --
+     * and one at top level capped the document's memo at its index. The
+     * fresh list was compacted down to exactly these before any hook ran
+     * (S_project_fresh), so every entry is alive; the walk runs BACKWARD
+     * so a child is stored before its parent asks, which is the order
+     * container retention rides. Derive-path only: the finish path
+     * projects the CST itself, where nothing carries ORIGIN. */
+    if (parser->fresh_queue_armed) {
+        size_t i;
+        for (i = parser->fresh_queue_size; i > 0; i--) {
+            markdown_core_node *built = parser->fresh_queue[i - 1];
+            if (built->flags & MARKDOWN_CORE_NODE__ORIGIN) {
+                S_cache_store(parser, built);
+            }
+        }
+        parser->fresh_queue_size = 0;
+    }
 
     parser->line_marks_size = marks_before;
     return skeleton;
