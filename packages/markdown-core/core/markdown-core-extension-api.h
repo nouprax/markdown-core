@@ -272,7 +272,14 @@ typedef int (*markdown_core_accepts_lines_func)(
  * node-level effect on the shell -- the children it must not touch are
  * frozen. A hook that REPLACES its block keeps the block out of the store,
  * so a replacing hook does run on every projection; `syntax_extension.h`
- * states the full contract. `*block` is IN/OUT:
+ * states the full contract. Naming a CONTAINER has a price the leaf names
+ * do not: the hook must meet an editable subtree, so while that container
+ * is open, or is being rebuilt at all, nothing under it is served from the
+ * cache -- an open list whose name is declared is re-derived whole at
+ * every feed. Declare the leaf names a hook acts on wherever they are
+ * enough. The name itself must be a function of the block's own type and
+ * payload, never of its children: the core asks it of a block before the
+ * children exist. `*block` is IN/OUT:
  * leave it to keep the node, reseat it to the node that replaced it, set it
  * NULL to say the node is gone. An out-parameter has one spelling per
  * outcome where a return value cannot tell "removed" from "unchanged"

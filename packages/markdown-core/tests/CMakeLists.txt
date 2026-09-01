@@ -399,6 +399,14 @@ if(MARKDOWN_CORE_STATIC)
     markdown_core_add_test(pathological_complexity_projection_slope "pathological;complexity" 120 projection_runner
                            --case projection_slope)
     set_tests_properties(pathological_complexity_projection_slope PROPERTIES RUN_SERIAL TRUE)
+    # F27, review-found P1: a derivation is O(built) at any nesting depth. A
+    # document that is almost entirely depth, over an eightfold depth ratio,
+    # reads ~1.5x normalized; the per-node ancestor climb this gate was written
+    # against read ~17x. Wall-clock, complexity-labelled and serial like the
+    # other slope gates.
+    markdown_core_add_test(pathological_complexity_depth_slope "pathological;complexity" 120 projection_runner --case
+                           depth_slope)
+    set_tests_properties(pathological_complexity_depth_slope PROPERTIES RUN_SERIAL TRUE)
 endif()
 
 markdown_core_add_test(
