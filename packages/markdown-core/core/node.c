@@ -1097,6 +1097,23 @@ int markdown_core_node_set_syntax_extension(markdown_core_node *node, const mark
         return 0;
     }
 
+    /* The classification must stay legal (review-found): attaching a
+     * descriptor is a mutation like set_type, and one whose
+     * contains_inlines answers true over existing BLOCK children would
+     * build by attachment the hybrid the adoption law refuses to
+     * construct. The NEW descriptor is asked before it is attached; the
+     * cursor walks either child shape. */
+    if (extension && extension->contains_inlines_func && extension->contains_inlines_func(extension, node)) {
+        markdown_core_child_cursor cursor;
+        markdown_core_node *child;
+        for (child = markdown_core_child_first(node, &cursor); child;
+            child = markdown_core_child_after(node, child, &cursor)) {
+            if (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child->type)) {
+                return 0;
+            }
+        }
+    }
+
     node->extension = extension;
     return 1;
 }

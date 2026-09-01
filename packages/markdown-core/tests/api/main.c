@@ -1656,6 +1656,12 @@ static void no_inline_block_hybrid(test_batch_runner *runner) {
         0,
         "set_type refuses to build the hybrid by mutation"
     );
+    INT_EQ(
+        runner,
+        markdown_core_node_set_syntax_extension(quote, &HYBRID_PROBE_EXTENSION),
+        0,
+        "attaching a contains_inlines descriptor over block children refuses"
+    );
 
     markdown_core_node_free(parent);
     markdown_core_node_free(block_child);

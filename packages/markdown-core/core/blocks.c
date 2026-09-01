@@ -2401,7 +2401,16 @@ static void S_project_fresh(markdown_core_parser *parser, markdown_core_map *ref
     markdown_core_manage_extensions_special_characters(parser, true);
     for (i = 0; i < parser->fresh_queue_size; i++) {
         markdown_core_node *block = parser->fresh_queue[i];
-        if (contains_inlines(block)) {
+        /* The SHAPE test beside the classification (review-found): a
+         * stateful contains_inlines_func can answer true at projection
+         * for a block adopted under false, and the inline parser appends
+         * through the intrusive overlay -- on a vector-shaped container
+         * that write lands in the vector pointer and the count. A flipped
+         * hybrid projects with its children and its content unparsed:
+         * degraded, never corrupted. Every legitimate inline block is
+         * intrusive (it had no skeleton children to vectorize), so the
+         * test costs one bit on a word already loaded. */
+        if (contains_inlines(block) && !MARKDOWN_CORE_NODE_ARRAY_P(block)) {
             markdown_core_parse_inlines(parser, block, refmap, parser->options);
         }
     }
