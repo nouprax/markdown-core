@@ -7,7 +7,7 @@ import MarkdownCoreC
 /// boundary before a line begins — which is where a block closed by a blank
 /// line ends.
 public struct Position: Sendable, Hashable {
-    /// The 1-based line, counted in ``Concrete/source``.
+    /// The 1-based line, counted in the normalized source (see ``Read``).
     public let line: Int32
     /// The 1-based boundary within the line, counted in BYTES, not characters.
     public let column: Int32
@@ -25,8 +25,8 @@ public struct Position: Sendable, Hashable {
 /// A SCOPE IS A PAIR OF BOUNDARIES, NOT A BYTE RANGE. It tells an editor which
 /// range of the source an element covers; it does not name a substring, and no
 /// substring can be taken with it. Slicing the source between two positions is
-/// a misuse — the coordinates are counted against ``Concrete/source``, which
-/// is the normalized text and not the string that was fed to the ``Document``.
+/// a misuse — the coordinates are counted against the normalized source (see
+/// ``Read``), not the string that was fed to the ``Document``.
 public struct Scope: Sendable, Hashable {
     /// The boundary the element begins at.
     public let start: Position

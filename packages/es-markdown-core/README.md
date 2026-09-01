@@ -16,9 +16,10 @@ initialization, so parsing is synchronous after the import resolves.
 ## Parse Markdown
 
 The living `Document` is the one entry into the parser: it is fed text — in
-one piece or many — and yields `Read` values, each the pair of the parse's two
-total views: `semantic`, the tree, and `concrete`, the normalized source its
-scopes are counted against. The whole-text parse is a one-chunk stream:
+one piece or many — and yields `Read` values, each carrying `semantic`, the
+tree. Scopes are counted against the normalized source (NULs to U+FFFD, line
+endings to `\n`), which the package does not hand back. The whole-text parse
+is a one-chunk stream:
 
 ```js
 import { Document, TreeDumper } from "@nouprax/es-markdown-core";
@@ -41,7 +42,6 @@ Every node carries `id: Identity` — `{ block, ordinal }`, the name a consumer
 tracks the element by across a stream's feeds: the render key. References
 carry `definition: Identity`, the identity of the first definition of their
 label, and definitions carry `norm`, the match key their label folds to.
-`concrete` carries the normalized source bytes with `lines` and `offset(line)`.
 The package exposes parsing and AST traversal, not rendering or AST mutation.
 
 ## Stream Markdown
@@ -73,7 +73,7 @@ Use `Walker` for a read-only depth-first traversal:
 
 ```js
 new Walker().walk(read.semantic, (event, node) => {
-  console.log(event, node.kind, node.scope);
+    console.log(event, node.kind, node.scope);
 });
 ```
 

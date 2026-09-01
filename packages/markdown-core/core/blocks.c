@@ -235,13 +235,6 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
      * `mem` guards the first call: `markdown_core_parser_new_with_mem` reaches
      * here through `reset` on a calloc'd parser, and strbuf_free dereferences
      * the buffer's own allocator. */
-    if (parser->source.mem) {
-        markdown_core_strbuf_free(&parser->source);
-    }
-    parser->mem->free(parser->line_starts);
-    parser->line_starts = NULL;
-    parser->line_starts_size = 0;
-    parser->line_starts_alloc = 0;
     /* The content-to-source map outlives every block that indexes it and
      * nothing else does, so it is released here rather than with the node. */
     parser->mem->free(parser->line_marks);
@@ -253,11 +246,6 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     parser->tail_queue = NULL;
     parser->tail_queue_size = 0;
     parser->tail_queue_alloc = 0;
-
-    /* Requirement 13's list. Released here whether or not it was retained: a
-     * parse that FAILED never reaches the move, and the requirement's converse
-     * says a failure carries no diagnostics. */
-    markdown_core_diagnostics_dispose(&parser->diagnostics);
 }
 
 static void markdown_core_parser_reset(markdown_core_parser *parser) {
@@ -275,7 +263,6 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
 
     markdown_core_strbuf_init(parser->mem, &parser->curline, 256);
     markdown_core_strbuf_init(parser->mem, &parser->linebuf, 0);
-    markdown_core_strbuf_init(parser->mem, &parser->source, 0);
 
     markdown_core_node *document = make_document(parser->mem);
 
@@ -294,7 +281,7 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
 
     /* A reset that could not rebuild its structures poisons the parser: feed
      * becomes a no-op and finish reports failure. */
-    if (!parser->root || !parser->refmap || !parser->footnote_defs || parser->curline.oom || parser->source.oom) {
+    if (!parser->root || !parser->refmap || !parser->footnote_defs || parser->curline.oom) {
         parser->oom = true;
     }
 
@@ -321,7 +308,6 @@ void markdown_core_parser_free(markdown_core_parser *parser) {
     markdown_core_parser_dispose(parser);
     markdown_core_strbuf_free(&parser->curline);
     markdown_core_strbuf_free(&parser->linebuf);
-    markdown_core_strbuf_free(&parser->source);
     markdown_core_llist_free(parser->mem, parser->syntax_extensions);
     markdown_core_llist_free(parser->mem, parser->inline_syntax_extensions);
     mem->free(parser);
@@ -394,271 +380,7 @@ static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
     return (node->type == MARKDOWN_CORE_NODE_PARAGRAPH || node->type == MARKDOWN_CORE_NODE_HEADING);
 }
 
-/* REQUIREMENT 13 -- the diagnostic list.
- *
- * It is the concrete record set's shape with no difference at all, and the
- * sameness is the point: A GROWTH THIS LIST CANNOT AFFORD ABANDONS THE PARSE,
- * exactly as the line-start and diagnostic record growth sites do
- * (`S_record_line_start`, `markdown_core_parser_diagnose`).
- *
- * OWNER RULING, 2026-08-24: "we do not want fallback when OOM happens; the
- * parser should return an error rather than return a fallback." So there is no
- * truncation marker and no short list: either the parse produced its complete
- * diagnostics, or there is no document. A degraded success is a document that
- * lies about how much the engine had to say about it, and this repository has
- * spent four defects (D27, D30, and both halves of A1) learning that a lossy
- * result reported as a success is worse than no result. */
-
-/* The message pool cap. A diagnostic says what the tree cannot; it does not
- * quote the document back. Cutting at a code-point boundary is not tidiness:
- * `message` is published as a UTF-8 `markdown_core_string`, and a cut through a
- * continuation byte would hand a consumer a sequence the engine itself would
- * have replaced on input. */
-#define MARKDOWN_CORE_DIAGNOSTIC_SUBJECT_MAX 40
-
-static bufsize_t S_diagnostic_subject_fit(const unsigned char *subject, bufsize_t length) {
-    if (length <= MARKDOWN_CORE_DIAGNOSTIC_SUBJECT_MAX) {
-        return length;
-    }
-    length = MARKDOWN_CORE_DIAGNOSTIC_SUBJECT_MAX;
-    while (length > 0 && (subject[length] & 0xC0) == 0x80) {
-        length--;
-    }
-    return length;
-}
-
-const char *markdown_core_diagnostic_code_string(markdown_core_diagnostic_code code) {
-    switch (code) {
-    case MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_LABEL_REJECTED:
-        return "directive-label-rejected";
-    case MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES_REJECTED:
-        return "directive-attributes-rejected";
-    case MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_REJECTED:
-        return "directive-rejected";
-    case MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_UNCLOSED:
-        return "directive-unclosed";
-    case MARKDOWN_CORE_DIAGNOSTIC_TABLE_REJECTED:
-        return "table-rejected";
-    case MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG:
-        return "label-too-long";
-    }
-    return NULL;
-}
-
-/* Record one diagnostic, at the place `start` .. `end`, with `message` and an
- * optional excerpt of the source it is about.
- *
- * NOTHING HERE MAY TOUCH `parser->oom`, and nothing here may change what the
- * parse builds. Both are the law. The three failure paths -- recording is off,
- * the entry array cannot grow, the message pool cannot grow -- all leave the
- * document exactly as it would have been, and the last two say so on the list.
- *
- * The message pool is written BEFORE the entry is committed, so a pool that
- * failed leaves no entry naming a slice of it. */
-void markdown_core_parser_diagnose(
-    markdown_core_parser *parser,
-    markdown_core_diagnostic_severity severity,
-    markdown_core_diagnostic_code code,
-    int start_line,
-    int start_column,
-    int end_line,
-    int end_column,
-    const char *message,
-    const unsigned char *subject,
-    bufsize_t subject_length
-) {
-    markdown_core_diagnostics *list;
-    markdown_core_diagnostic_record *entry;
-    bufsize_t pool_start;
-
-    if (!parser || !parser->diagnostics_on || !message) {
-        return;
-    }
-    list = &parser->diagnostics;
-
-    if (list->entries_size == list->entries_alloc) {
-        bufsize_t alloc;
-        markdown_core_diagnostic_record *grown;
-        if (list->entries_alloc > (bufsize_t)(INT32_MAX / 2)) {
-            parser->oom = true;
-            return;
-        }
-        alloc = list->entries_alloc ? list->entries_alloc * 2 : 16;
-        grown = (markdown_core_diagnostic_record *)parser->mem->realloc(list->entries, (size_t)alloc * sizeof(*grown));
-        if (!grown) {
-            parser->oom = true;
-            return;
-        }
-        list->entries = grown;
-        list->entries_alloc = alloc;
-    }
-
-    pool_start = list->messages.size;
-    markdown_core_strbuf_puts(&list->messages, message);
-    if (subject && subject_length > 0) {
-        bufsize_t fit = S_diagnostic_subject_fit(subject, subject_length);
-        unsigned char excerpt[MARKDOWN_CORE_DIAGNOSTIC_SUBJECT_MAX];
-        bufsize_t i;
-        /* A CONTROL BYTE BECOMES A SPACE, and this is the wire format's
-         * requirement rather than tidiness: an excerpt is cut out of the
-         * source, a label or an attribute list may span a line ending, and one
-         * `\n` inside a message turns one diagnostic row into two. Found by the
-         * neutrality gate on `spec.txt`, which is the only reason it is a
-         * one-line fix rather than a corrupt oracle. */
-        for (i = 0; i < fit; i++) {
-            excerpt[i] = subject[i] < 0x20 || subject[i] == 0x7F ? (unsigned char)' ' : subject[i];
-        }
-        markdown_core_strbuf_puts(&list->messages, ": \"");
-        markdown_core_strbuf_put(&list->messages, excerpt, fit);
-        markdown_core_strbuf_puts(&list->messages, fit < subject_length ? "...\"" : "\"");
-    }
-    if (list->messages.oom) {
-        /* The pool is a strbuf and its failure is sticky, so the partial write
-         * above cannot be trusted -- and an entry naming a slice of it would
-         * name a message that is a prefix of what it meant to say. */
-        parser->oom = true;
-        return;
-    }
-
-    entry = &list->entries[list->entries_size++];
-    entry->start_line = (int32_t)start_line;
-    entry->start_column = (int32_t)start_column;
-    entry->end_line = (int32_t)end_line;
-    entry->end_column = (int32_t)end_column;
-    entry->message_start = pool_start;
-    entry->message_length = list->messages.size - pool_start;
-    entry->severity = (uint8_t)severity;
-    entry->code = (uint8_t)code;
-}
-
-/* The same, over the LINE IN HAND, from `from` to its last non-space byte.
- *
- * The block phase needs no projection: a line offset IS a column, and the line
- * is the one being processed. This exists because two extensions want it and a
- * second copy of the rtrim is how the two would drift. */
-void markdown_core_parser_diagnose_line(
-    markdown_core_parser *parser,
-    markdown_core_diagnostic_severity severity,
-    markdown_core_diagnostic_code code,
-    const unsigned char *input,
-    bufsize_t len,
-    bufsize_t from,
-    const char *message,
-    const unsigned char *subject,
-    bufsize_t subject_length
-) {
-    bufsize_t to = len;
-
-    if (!parser || !parser->diagnostics_on || !input) {
-        return;
-    }
-    while (to > from &&
-           (input[to - 1] == '\n' || input[to - 1] == '\r' || input[to - 1] == ' ' || input[to - 1] == '\t')) {
-        to--;
-    }
-    if (to <= from) {
-        return;
-    }
-    markdown_core_parser_diagnose(
-        parser,
-        severity,
-        code,
-        parser->line_number,
-        (int)from + 1,
-        parser->line_number,
-        (int)to,
-        message,
-        subject,
-        subject_length
-    );
-}
-
-void markdown_core_parser_retain_diagnostics(markdown_core_parser *parser, markdown_core_diagnostics *out) {
-    if (!parser || !out) {
-        return;
-    }
-    memset(out, 0, sizeof(*out));
-    parser->diagnostics_on = true;
-    parser->diagnostics_retain = out;
-    if (!parser->diagnostics.mem) {
-        parser->diagnostics.mem = parser->mem;
-        markdown_core_strbuf_init(parser->mem, &parser->diagnostics.messages, 0);
-    }
-}
-
-void markdown_core_diagnostics_dispose(markdown_core_diagnostics *diagnostics) {
-    if (!diagnostics || !diagnostics->mem) {
-        return;
-    }
-    markdown_core_strbuf_free(&diagnostics->messages);
-    diagnostics->mem->free(diagnostics->entries);
-    memset(diagnostics, 0, sizeof(*diagnostics));
-}
-
-void markdown_core_diagnostics_write(const markdown_core_diagnostics *diagnostics, FILE *out) {
-    bufsize_t i;
-    bufsize_t count = diagnostics ? diagnostics->entries_size : 0;
-
-    fprintf(out, "diagnostics count=%ld\n", (long)count);
-    for (i = 0; i < count; i++) {
-        const markdown_core_diagnostic_record *entry = &diagnostics->entries[i];
-        const char *name = markdown_core_diagnostic_code_string((markdown_core_diagnostic_code)entry->code);
-        fprintf(
-            out,
-            "diagnostic %s %s %d:%d..%d:%d %.*s\n",
-            entry->severity == (uint8_t)MARKDOWN_CORE_DIAGNOSTIC_ERROR ? "ERROR" : "WARNING",
-            name ? name : "unknown",
-            entry->start_line,
-            entry->start_column,
-            entry->end_line,
-            entry->end_column,
-            (int)entry->message_length,
-            diagnostics->messages.ptr + entry->message_start
-        );
-    }
-}
-
-/* THE NORMALIZED SOURCE AND ITS LINE INDEX, in the form the gate reads.
- *
- * That is the whole of it. A scope answers where an element is; this answers
- * what its line and column numbers are COUNTED AGAINST -- the normalized
- * source, which is not the bytes the caller passed (a NUL is three bytes here,
- * every line ending is one `\n`, and every line has one). */
-static void S_write_concrete(markdown_core_parser *parser, FILE *out) {
-    bufsize_t i;
-
-    fprintf(out, "concrete source=%ld lines=%ld\n", (long)parser->source.size, (long)parser->line_starts_size);
-    for (i = 0; i < parser->line_starts_size; i++) {
-        fprintf(out, "line %ld %ld\n", (long)i + 1, (long)parser->line_starts[i]);
-    }
-}
-
 #define MARKDOWN_CORE_MAX_INLINE_DEPTH 256
-
-/* Note that a line begins at `start` in the normalized source.
- *
- * Returns false only when the index could not grow, in which case the parse is
- * already marked lost: a line index missing a line would answer a source offset
- * with the wrong line, silently. */
-static bool S_record_line_start(markdown_core_parser *parser, bufsize_t start) {
-    if (parser->line_starts_size == parser->line_starts_alloc) {
-        bufsize_t alloc = parser->line_starts_alloc ? parser->line_starts_alloc * 2 : 128;
-        bufsize_t *grown;
-        if (parser->line_starts_alloc > (bufsize_t)(INT32_MAX / 2)) {
-            parser->oom = true;
-            return false;
-        }
-        grown = (bufsize_t *)parser->mem->realloc(parser->line_starts, (size_t)alloc * sizeof(bufsize_t));
-        if (!grown) {
-            parser->oom = true;
-            return false;
-        }
-        parser->line_starts = grown;
-        parser->line_starts_alloc = alloc;
-    }
-    parser->line_starts[parser->line_starts_size++] = start;
-    return true;
-}
 
 /* Record where the bytes about to be appended to `node`'s content came from.
  *
@@ -1979,17 +1701,19 @@ static int S_optional_chunk_copy(
  * definitions, and `refmap_independence` projects against another. */
 static bool S_cache_fresh(markdown_core_parser *parser, const markdown_core_node *block, markdown_core_map *refmap) {
     const markdown_core_holder *holder = block->link.holder;
-    /* `diagnostics_on` here is the RECORDING projection (S_project raised it
-     * for exactly this walk): a hit skips the inline parse, and the inline
-     * parse is where every record-gated row speaks (label-too-long, the
-     * directive codes) -- so the recording projection re-parses instead of
-     * hitting. T10's rule extended to Requirement 13: correctness must never
-     * depend on the cache, and the diagnostic list is part of the model. Paid
-     * only when diagnostics were retained, and `finish` without them still
-     * hits in place. */
-    return refmap == parser->refmap && !parser->no_projection_cache && !parser->diagnostics_on &&
+    /* A map's generation takes part only when the stored projection had
+     * something to ask that map (#163): a definition arriving anywhere used
+     * to re-key every block in the document, and F19 measured 86.2% of those
+     * key changes spurious. A block whose parse held no reference-form label
+     * and no footnote call cannot be changed by an insert, so its hit
+     * survives the bump; the failure direction is unchanged -- a bit set
+     * without a lookup is a slow feed, never a wrong tree. */
+    return refmap == parser->refmap && !parser->no_projection_cache &&
            (block->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) && holder->stamp == block->stamp &&
-           holder->refgen == parser->refmap->generation && holder->footgen == parser->footnote_defs->generation &&
+           (!(holder->consulted & MARKDOWN_CORE_NODE__CONSULTED_REFMAP) ||
+               holder->refgen == parser->refmap->generation) &&
+           (!(holder->consulted & MARKDOWN_CORE_NODE__CONSULTED_FOOTNOTES) ||
+               holder->footgen == parser->footnote_defs->generation) &&
            holder->extgen == parser->extension_generation;
 }
 
@@ -2009,6 +1733,7 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
     holder->refgen = parser->refmap->generation;
     holder->footgen = parser->footnote_defs->generation;
     holder->extgen = parser->extension_generation;
+    holder->consulted = node->flags & (MARKDOWN_CORE_NODE__CONSULTED_REFMAP | MARKDOWN_CORE_NODE__CONSULTED_FOOTNOTES);
     /* The creation hold is the cache's hold (holders are born held). */
     if (origin->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) {
         markdown_core_holder_release(origin->link.holder);
@@ -2150,7 +1875,8 @@ static markdown_core_node *S_clone_block_node(
     dst->identifier = src->identifier;
     dst->owner = src->owner;
     dst->type = src->type;
-    dst->flags = src->flags & ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN);
+    dst->flags = src->flags & ~(MARKDOWN_CORE_NODE__CACHE_OWNER | MARKDOWN_CORE_NODE__ORIGIN |
+                                  MARKDOWN_CORE_NODE__CONSULTED_REFMAP | MARKDOWN_CORE_NODE__CONSULTED_FOOTNOTES);
     dst->extension = src->extension;
 
     switch (S_type(dst)) {
@@ -2306,21 +2032,12 @@ static markdown_core_node *S_clone_block_tree(
  * projected root, which a hook may have replaced. The skeleton is CONSUMED:
  * after this it is an AST, and projecting it again would not give the same
  * answer. That is why a re-projection hands in a clone and `finish` hands in
- * the CST itself.
- *
- * `record_diagnostics` gates the rows the projection itself raises (after
- * §12.9 that is `label-too-long` and the directive attribute/label codes).
- * They are CST facts read off the construct's own bytes, but the rule is that
- * a diagnostic speaks when its construct COMPLETES (§12.8 Q4) -- so only the
- * final projection, over a fully closed CST, records; one taken mid-parse
- * stays silent rather than describing an open block's prefix. */
+ * the CST itself. */
 static markdown_core_node *S_project(
     markdown_core_parser *parser,
     markdown_core_node *skeleton,
-    markdown_core_map *refmap,
-    int record_diagnostics
+    markdown_core_map *refmap
 ) {
-    bool recording = parser->diagnostics_on;
     /* A PROJECTION READS THE CST AND LEAVES NOTHING BEHIND THAT THE PARSE
      * WILL READ BACK (docs/STREAMING.md F21, correcting F10). `parse_inlines`
      * mints a mark for a block that has none -- an empty ATX heading, a
@@ -2333,9 +2050,7 @@ static markdown_core_node *S_project(
      * parse left it. */
     bufsize_t marks_before = parser->line_marks_size;
 
-    parser->diagnostics_on = recording && record_diagnostics != 0;
     process_inlines(parser, skeleton, refmap, parser->options);
-    parser->diagnostics_on = recording;
 
     S_run_block_tails(parser, &skeleton);
 
@@ -2348,11 +2063,7 @@ static markdown_core_node *S_project(
  * later derivation, against this map or another, starts from the same bytes.
  * This is the RE-projection path -- `finish`, whose CST has no later, skips
  * the clone and projects in place (T1). */
-markdown_core_node *markdown_core_parser_derive_tree(
-    markdown_core_parser *parser,
-    markdown_core_map *refmap,
-    int record_diagnostics
-) {
+markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parser, markdown_core_map *refmap) {
     markdown_core_node *derived;
 
     /* A parse that lost an allocation may hold a tree that is not all there --
@@ -2369,7 +2080,7 @@ markdown_core_node *markdown_core_parser_derive_tree(
         return NULL;
     }
 
-    return S_project(parser, derived, refmap, record_diagnostics);
+    return S_project(parser, derived, refmap);
 }
 
 markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len, int options) {
@@ -3307,19 +3018,6 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
         return;
     }
 
-    /* The line joins the normalized source HERE, before anything reads it, so
-     * the source is complete for lines 1..N the moment line N has been fed --
-     * which is requirement 11a's L4 and the reason nothing about the record
-     * set may be built at close. */
-    if (!S_record_line_start(parser, parser->source.size)) {
-        return;
-    }
-    markdown_core_strbuf_put(&parser->source, parser->curline.ptr, parser->curline.size);
-    if (parser->source.oom) {
-        parser->oom = true;
-        return;
-    }
-
     parser->offset = 0;
     parser->column = 0;
     parser->first_nonspace = 0;
@@ -3416,7 +3114,7 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
     if (parser->oom) {
         res = NULL;
     } else {
-        res = S_project(parser, parser->root, parser->refmap, 1);
+        res = S_project(parser, parser->root, parser->refmap);
         parser->root = NULL;
         parser->current = NULL;
     }
@@ -3459,37 +3157,6 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
         return NULL;
     }
 
-    if (parser->concrete_out) {
-        S_write_concrete(parser, parser->concrete_out);
-    }
-
-    /* REQUIREMENT 12: the document keeps the concrete view. Moved rather than
-     * copied -- the parser is about to reset and would free all three -- and
-     * moved HERE, after every rewrite and before the reset, which is the only
-     * moment at which the view is both complete and still owned. */
-    if (parser->concrete_retain) {
-        markdown_core_concrete *out = parser->concrete_retain;
-        out->mem = parser->mem;
-        out->source = parser->source;
-        out->line_starts = parser->line_starts;
-        out->line_starts_size = parser->line_starts_size;
-        markdown_core_strbuf_init(parser->mem, &parser->source, 0);
-        parser->line_starts = NULL;
-        parser->line_starts_size = 0;
-        parser->line_starts_alloc = 0;
-    }
-
-    /* REQUIREMENT 13: the document keeps the diagnostic list, moved at the
-     * same moment and for the same reason as the concrete view -- and, like
-     * it, only on the success path. Everything above this line has already
-     * decided that there IS a document; a parse failure falls out at the `oom`
-     * test and leaves the caller's list empty, which is the requirement's
-     * converse said in code. */
-    if (parser->diagnostics_retain) {
-        *parser->diagnostics_retain = parser->diagnostics;
-        memset(&parser->diagnostics, 0, sizeof(parser->diagnostics));
-    }
-
     /* The parser's life ends here (ruling A): the reset disposes what is
      * still the parser's. The CST is not among it -- `parser->root` was
      * cleared at the projection because the CST left as the result, and
@@ -3508,23 +3175,6 @@ int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser) { retu
 int markdown_core_parser_get_indent(markdown_core_parser *parser) { return parser->indent; }
 
 int markdown_core_parser_is_blank(markdown_core_parser *parser) { return parser->blank; }
-
-void markdown_core_parser_retain_concrete(markdown_core_parser *parser, markdown_core_concrete *out) {
-    if (!parser || !out) {
-        return;
-    }
-    memset(out, 0, sizeof(*out));
-    parser->concrete_retain = out;
-}
-
-void markdown_core_concrete_dispose(markdown_core_concrete *concrete) {
-    if (!concrete || !concrete->mem) {
-        return;
-    }
-    markdown_core_strbuf_free(&concrete->source);
-    concrete->mem->free(concrete->line_starts);
-    memset(concrete, 0, sizeof(*concrete));
-}
 
 markdown_core_node *markdown_core_parser_add_child(
     markdown_core_parser *parser,

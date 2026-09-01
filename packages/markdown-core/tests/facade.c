@@ -102,11 +102,10 @@ static void check_fixture(const char *fixture_dir, const char *name, const char 
     actual = NULL;
 
     /* THE SAME BYTES, STREAMED (T12): fed in 7-byte chunks through a session,
-     * the sealed document dumps onto the same reviewed golden and carries the
-     * same diagnostic rows. The chunk size is prime so line endings, UTF-8
-     * sequences and construct boundaries all get split. */
+     * the sealed document dumps onto the same reviewed golden. The chunk size
+     * is prime so line endings, UTF-8 sequences and construct boundaries all
+     * get split. */
     {
-        size_t oneshot_rows = markdown_core_document_diagnostic_count(document);
         markdown_core_session *session = markdown_core_session_new(&options, &error);
         markdown_core_document *sealed = NULL;
         size_t offset;
@@ -130,10 +129,6 @@ static void check_fixture(const char *fixture_dir, const char *name, const char 
             }
             markdown_core_dump_free(actual);
             actual = NULL;
-            check(
-                markdown_core_document_diagnostic_count(sealed) == oneshot_rows,
-                "the sealed stream carries the one-shot parse's diagnostic rows"
-            );
             markdown_core_document_free(sealed);
         }
         markdown_core_session_free(session);
@@ -203,58 +198,6 @@ done:
     markdown_core_dump_free(dump);
     markdown_core_document_free(document);
     markdown_core_error_free(error);
-}
-
-/* Is `node` in `root`'s tree? A region's owner must be, or the two views are
- * not one parse. */
-/* WHAT A SCOPE INDEXES INTO. A scope names a place in the NORMALIZED source --
- * not in the bytes the caller passed -- so a consumer that follows one back to
- * the source needs those bytes and the index that turns a line into an offset
- * into them. This asserts that the two are there, agree with each other, and
- * refuse what is not a line. */
-static void check_source_and_lines(void) {
-    static const char *const SOURCE = "# heading ##\n"
-                                      "\n"
-                                      "para *em* text\n"
-                                      "\n"
-                                      "```js\n"
-                                      "code\n"
-                                      "```\n"
-                                      "\n"
-                                      "[a]: /u\n"
-                                      "\n"
-                                      "see [a] here\n";
-    markdown_core_document *document;
-    markdown_core_string text;
-    size_t at;
-    size_t line;
-    int lines_agree = 1;
-
-    document = markdown_core_document_parse((const uint8_t *)SOURCE, strlen(SOURCE), NULL, NULL);
-    check(document != NULL, "the corpus parses");
-    if (!document) {
-        return;
-    }
-    text = markdown_core_document_source(document);
-    check(
-        text.length == strlen(SOURCE) && memcmp(text.data, SOURCE, text.length) == 0,
-        "the source is the normalized source, byte for byte"
-    );
-    check(markdown_core_document_line_count(document) == 11, "the line index counts the source's lines");
-    for (line = 2; line <= markdown_core_document_line_count(document); line++) {
-        size_t start = 0;
-        if (!markdown_core_document_line_start(document, line, &start) || start == 0 ||
-            text.data[start - 1] != (uint8_t)'\n') {
-            lines_agree = 0;
-        }
-    }
-    check(lines_agree, "every line but the first begins after a line ending");
-    check(markdown_core_document_line_start(document, 1, &at) && at == 0, "line one begins at offset zero");
-    check(!markdown_core_document_line_start(document, 0, &at), "line zero is not a line");
-    check(!markdown_core_document_line_start(document, 12, &at), "a line past the end is not a line");
-    check(markdown_core_document_source(NULL).data == NULL, "a null document has no source");
-    check(markdown_core_document_line_count(NULL) == 0, "a null document has no lines");
-    markdown_core_document_free(document);
 }
 
 /* REQUIREMENT 14 THROUGH THE ACCESSORS, which is where it has to be checked.
@@ -431,135 +374,11 @@ static void check_api(void) {
     check_option_gate(GATE_STRIP_HTML_COMMENTS, "before <!-- kept --> after\n", "literal=\"before  after\"");
 }
 
-/* REQUIREMENT 13 through the PUBLIC surface, which is the only place the law's
- * two halves meet: a document that carries a diagnostic list, and an error that
- * carries no scope because there is no document at all.
- *
- * The `label-too-long` code is exercised HERE and not in a fixture, and the
- * reason is the label: the cap is 1000 bytes, so a golden that showed it would
- * carry an eleven-hundred-character line that no reviewer can read and every
- * position oracle would then measure. Built in C it is three lines. */
-static void check_diagnostics(void) {
-    /* The last two constructs are DELIBERATELY diagnostic-free: a well-formed
-     * reference or footnote call that resolves to nothing is prose, not an
-     * error -- CommonMark defines the outcome -- and the codes that reported
-     * them are deleted (§12.9). Keeping the lines in the corpus is what pins
-     * the silence. */
-    static const char *const SOURCE = ":note[unclosed label\n"
-                                      "\n"
-                                      ":other{=value}\n"
-                                      "\n"
-                                      "see [text][undefined] here\n"
-                                      "\n"
-                                      "and [^undefined] too\n";
-    markdown_core_document *document;
-    markdown_core_error *error = NULL;
-    markdown_core_diagnostic diagnostic;
-    size_t count;
-    size_t i;
-    int severities[3] = {0, 0, 0};
-
-    document = markdown_core_document_parse((const uint8_t *)SOURCE, strlen(SOURCE), NULL, &error);
-    check(document != NULL && error == NULL, "the diagnostics corpus parses");
-    if (!document) {
-        markdown_core_error_free(error);
-        return;
-    }
-
-    count = markdown_core_document_diagnostic_count(document);
-    check(
-        count == 2,
-        "every degradation in the corpus is reported exactly once, and an unresolved reference is not one"
-    );
-
-    for (i = 0; i < count; i++) {
-        check(markdown_core_document_diagnostic_at(document, i, &diagnostic), "every index in range answers");
-        /* THE SCOPE IS RESOLVABLE WITHOUT A NODE HANDLE, which is what
-         * requirement 13 depends on 12 for: the line index turns the place
-         * back into an offset in the source the concrete view publishes. */
-        {
-            size_t offset = 0;
-            check(
-                markdown_core_document_line_start(document, (size_t)diagnostic.scope.start.line, &offset),
-                "a diagnostic's line is a line of the source"
-            );
-            check(
-                offset + (size_t)diagnostic.scope.start.column - 1 < markdown_core_document_source(document).length,
-                "a diagnostic's start is a byte of the source"
-            );
-        }
-        check(diagnostic.message.length > 0 && diagnostic.message.data != NULL, "a diagnostic carries a message");
-        check(markdown_core_diagnostic_code_name(diagnostic.code) != NULL, "every code has a name");
-        if (diagnostic.severity >= MARKDOWN_CORE_DIAGNOSTIC_WARNING &&
-            diagnostic.severity <= MARKDOWN_CORE_DIAGNOSTIC_ERROR) {
-            severities[diagnostic.severity]++;
-        }
-    }
-    check(
-        severities[MARKDOWN_CORE_DIAGNOSTIC_WARNING] == 2 && severities[MARKDOWN_CORE_DIAGNOSTIC_ERROR] == 0,
-        "the corpus's degradations are warnings; the error severity is the cap's, below"
-    );
-    check(!markdown_core_document_diagnostic_at(document, count, &diagnostic), "an index past the end is refused");
-    check(!markdown_core_document_diagnostic_at(document, 0, NULL), "a null out-parameter is refused");
-    markdown_core_document_free(document);
-
-    /* THE ENGINE'S OWN CAP, and the code that separates it from "no such
-     * definition": the author's label is well formed and this library refused
-     * to look it up. */
-    {
-        char *source = (char *)malloc(1200);
-        markdown_core_document *capped;
-        check(source != NULL, "the long-label buffer allocates");
-        if (source) {
-            memcpy(source, "see [", 5);
-            memset(source + 5, 'a', 1100);
-            memcpy(source + 1105, "][] here\n", 9);
-            capped = markdown_core_document_parse((const uint8_t *)source, 1114, NULL, NULL);
-            check(capped != NULL, "an over-long label still parses");
-            if (capped) {
-                check(
-                    markdown_core_document_diagnostic_count(capped) == 1 &&
-                        markdown_core_document_diagnostic_at(capped, 0, &diagnostic) &&
-                        diagnostic.code == MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG &&
-                        diagnostic.severity == MARKDOWN_CORE_DIAGNOSTIC_ERROR,
-                    "a label the engine refused as too long says so, as the one remaining ERROR"
-                );
-                markdown_core_document_free(capped);
-            }
-            free(source);
-        }
-    }
-
-    /* THE CONVERSE. A parse failure is not a diagnostic: there is no document,
-     * so there is no list to read.
-     *
-     * "A parse failure carries no scope" USED TO BE A CHECK HERE and is now the
-     * shape of the type: `markdown_core_error_get_scope` is deleted, the two
-     * fields behind it with it, and what a caller can ask an error for is its
-     * code and its message. A check cannot assert the absence of a symbol; the
-     * header is the statement. */
-    {
-        markdown_core_error *refusal = NULL;
-        markdown_core_document *none = markdown_core_document_parse(NULL, 8, NULL, &refusal);
-        check(none == NULL && refusal != NULL, "an invalid argument produces an error and no document");
-        check(
-            markdown_core_error_get_code(refusal) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-            "and the error says which failure it was"
-        );
-        markdown_core_error_free(refusal);
-    }
-    check(markdown_core_document_diagnostic_count(NULL) == 0, "a null document has no diagnostics");
-    check(
-        markdown_core_diagnostic_code_name((markdown_core_diagnostic_code)99) == NULL,
-        "a code no version defines has no name"
-    );
-}
-
 /* THE STREAM (T12), in the order the header states it: a mid-stream document
  * is the projection as it stands; it is a value that outlives every later
  * feed and the session itself (T19's borrow); the pending line's bytes join
- * only when their ending arrives; `finish` seals -- byte-identical,
- * diagnostics included, to the one-shot parse -- and ends the parse, after
+ * only when their ending arrives; `finish` seals -- byte-identical to the
+ * one-shot parse -- and ends the parse, after
  * which `feed` and `finish` refuse and only `free` remains. */
 static void check_session(void) {
     static const char *const FULL = "# heading\n"
@@ -578,7 +397,8 @@ static void check_session(void) {
     uint8_t *after = NULL;
     size_t before_length = 0;
     size_t after_length = 0;
-    markdown_core_string text;
+    uint8_t *first_dump = NULL;
+    size_t first_dump_length = 0;
 
     check(session != NULL && error == NULL, "a session opens on the defaults");
     if (!session) {
@@ -590,22 +410,28 @@ static void check_session(void) {
     first = markdown_core_session_feed(session, (const uint8_t *)"# heading\n\nparagraph", 20, &error);
     check(first != NULL && error == NULL, "a feed returns the document after those bytes");
     if (first) {
-        text = markdown_core_document_source(first);
         check(
-            text.length == 11 && memcmp(text.data, "# heading\n\n", 11) == 0,
+            markdown_core_document_dump(first, &first_dump, &first_dump_length, &error),
+            "the mid-stream dump succeeds"
+        );
+        check(
+            first_dump != NULL && strstr((const char *)first_dump, "Heading") != NULL &&
+                strstr((const char *)first_dump, "Paragraph") == NULL,
             "a line whose ending has not arrived is not yet in the document"
         );
-        check(markdown_core_document_semantic(first) != NULL, "the mid-stream document has its semantic view");
     }
 
     second = markdown_core_session_feed(session, (const uint8_t *)" text\n\n- a\n- b\n", 15, &error);
     check(second != NULL && error == NULL, "a later feed returns a later document");
-    if (first) {
-        text = markdown_core_document_source(first);
+    if (first && first_dump) {
+        uint8_t *again = NULL;
+        size_t again_length = 0;
+        check(markdown_core_document_dump(first, &again, &again_length, &error), "the earlier document still dumps");
         check(
-            text.length == 11 && memcmp(text.data, "# heading\n\n", 11) == 0,
+            again != NULL && again_length == first_dump_length && memcmp(again, first_dump, again_length) == 0,
             "an earlier document is a value a later feed cannot move"
         );
+        markdown_core_dump_free(again);
     }
     if (second) {
         check(markdown_core_document_dump(second, &before, &before_length, &error), "the mid-stream dump succeeds");
@@ -660,10 +486,6 @@ static void check_session(void) {
                 memcmp(sealed_dump, oneshot_dump, sealed_length) == 0,
             "the sealed stream is the one-shot parse"
         );
-        check(
-            markdown_core_document_diagnostic_count(sealed) == markdown_core_document_diagnostic_count(oneshot),
-            "and carries its diagnostic rows"
-        );
         markdown_core_dump_free(sealed_dump);
         markdown_core_dump_free(oneshot_dump);
     }
@@ -680,6 +502,7 @@ static void check_session(void) {
     }
     markdown_core_dump_free(before);
     markdown_core_dump_free(after);
+    markdown_core_dump_free(first_dump);
     markdown_core_document_free(first);
     markdown_core_document_free(second);
     markdown_core_document_free(sealed);
@@ -697,8 +520,6 @@ int main(int argc, char **argv) {
     fixture_dir = argv[2];
     check_api();
     check_null_and_empty();
-    check_source_and_lines();
-    check_diagnostics();
     check_session();
     for (i = 3; i < argc; i += 2) {
         check_fixture(fixture_dir, argv[i], argv[i + 1]);

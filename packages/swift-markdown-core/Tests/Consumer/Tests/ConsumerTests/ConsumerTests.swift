@@ -8,7 +8,6 @@ import Testing
 
         #expect((read.semantic.content.first as? Heading)?.level == 2)
         #expect(read.dump() == TreeDumper.dump(read.semantic))
-        #expect(read.concrete.source == Array("## Consumer\n".utf8))
     }
 
     @Test("the stream is on the same public product")
@@ -21,6 +20,5 @@ import Testing
         let sealed = try document.seal()
         let wholeText = try Document(markdown: "## Consumer\n").seal()
         #expect(sealed.dump() == wholeText.dump())
-        #expect(sealed.concrete == wholeText.concrete)
     }
 }

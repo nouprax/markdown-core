@@ -82,7 +82,7 @@ static void es_apply_options(markdown_core_parse_options *options, uint32_t flag
     options->directives = (flags & (1u << 8)) != 0;
 }
 
-static const uint8_t envelope_magic[] = {'M', 'K', 'C', '6'};
+static const uint8_t envelope_magic[] = {'M', 'K', 'C', '7'};
 
 /* The five envelope bytes, written into room the buffer already holds --
  * `markdown_core_document_wire` reserved it in the payload's own allocation,

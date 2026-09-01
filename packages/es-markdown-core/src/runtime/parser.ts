@@ -62,14 +62,14 @@ export function withHeapText<Result>(text: string, action: (pointer: number, len
 
 /**
  * THE ONE WAY A READ LEAVES WASM. `invoke` runs a native call that writes an
- * MKC6 payload behind the given output slot -- a document's `feed` and its
+ * MKC7 payload behind the given output slot -- a document's `feed` and its
  * `seal` both answer that way -- and this copies the payload out in ONE
  * crossing, releases the native buffer, and decodes the copy: a `Read` value,
  * or the `ParseError` the payload carried. Nothing native survives the call.
  */
 export function copyOut(invoke: (output: number) => number): Read {
-    const { semantic, concrete } = decodePayload(invoke, decodeRead);
-    return makeRead(semantic, concrete);
+    const { semantic } = decodePayload(invoke, decodeRead);
+    return makeRead(semantic);
 }
 
 /**
@@ -86,8 +86,8 @@ export function discardOut(invoke: (output: number) => number): void {
  * shape `.slice()`d the whole payload first, purely because the free ran
  * before the decode -- but the decoder is pure JS, nothing re-enters WASM
  * mid-decode to grow or detach the buffer, and everything it returns owns
- * its bytes (strings, plain values, and the Concrete source's one necessary
- * owning copy), so the full-payload copy bought nothing. A zero return from
+ * its bytes (strings and plain values), so the full-payload copy bought
+ * nothing. A zero return from
  * `invoke` is the one failure with no payload to decode: the buffer itself
  * could not be built. */
 function decodePayload<Result>(invoke: (output: number) => number, decode: (payload: Uint8Array) => Result): Result {
@@ -111,14 +111,11 @@ function decodePayload<Result>(invoke: (output: number) => number, decode: (payl
 }
 
 /**
- * The pair, sealed shut: `semantic` and `concrete` are data and enumerate;
- * `dump` is a convenience and does not.
+ * The read, sealed shut: `semantic` is data and enumerates; `dump` is a
+ * convenience and does not.
  */
-function makeRead(semantic: Read["semantic"], concrete: Read["concrete"]): Read {
-    const read = {
-        semantic,
-        concrete
-    } as { semantic: Read["semantic"]; concrete: Read["concrete"]; dump?: () => string };
+function makeRead(semantic: Read["semantic"]): Read {
+    const read = { semantic } as { semantic: Read["semantic"]; dump?: () => string };
     Object.defineProperty(read, "dump", {
         enumerable: false,
         value: () => semantic.dump()

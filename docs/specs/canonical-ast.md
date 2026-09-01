@@ -202,11 +202,11 @@ validates the owning edge: the value in `Table.header` is true and values in
 The living `Document` is the bindings' only parsing entry:
 `Document(markdown, options).seal()` for whole text, `Document(options)` plus
 `feed` for a stream. Either way a parse is a `Read` — `semantic`, the tree this
-table describes, beside `concrete`, the normalized source its scopes are
-counted against and that source's line index (`lines`, `offset(line)`). The C
+table describes. Its scopes are counted against the normalized source — UTF-8
+as fed, every NUL replaced by U+FFFD, every line ending a single `\n` and
+every line having one — which the library does not hand back. The C
 facade keeps its own entries (`markdown_core_document_parse` and the session).
-This table is the AST's contract; `concrete` has no kinds and no fields of its
-own, and it is not a dumped field. `ParseOptions` is immutable and contains exactly these booleans:
+This table is the AST's contract. `ParseOptions` is immutable and contains exactly these booleans:
 
 | Field | Default |
 | --- | --- |

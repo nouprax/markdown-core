@@ -149,11 +149,20 @@ enum markdown_core_node__internal_flags {
      * block it was cloned from; never set on a node a caller can hold. */
     MARKDOWN_CORE_NODE__CACHE_OWNER = (1 << 3),
     MARKDOWN_CORE_NODE__ORIGIN = (1 << 4),
+    /* Set by a block's own inline parse when it held a candidate the map
+     * COULD answer -- a reference-form label in range of the cap, a footnote
+     * call -- whether or not the map answered, or was even non-empty: an
+     * insert can change only a projection that had something to ask (#163).
+     * Recorded on the derived block as it parses, copied onto the holder at
+     * the store, and the reason `S_cache_fresh` may ignore a map's
+     * generation for a block that never consulted it. */
+    MARKDOWN_CORE_NODE__CONSULTED_REFMAP = (1 << 5),
+    MARKDOWN_CORE_NODE__CONSULTED_FOOTNOTES = (1 << 6),
 
     // The first bit an extension may claim. Extension flags are compile-time
     // constants owned by the extension that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 5),
+    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 7),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -295,6 +304,12 @@ struct markdown_core_holder {
     size_t refgen;
     size_t footgen;
     size_t extgen;
+    /* The CONSULTED bits of the block the list was projected from
+     * (MARKDOWN_CORE_NODE__CONSULTED_*): a map's generation takes part in
+     * the key only when the stored projection had something to ask that map
+     * (#163) -- a definition arriving cannot change a block that consulted
+     * neither, so its hit survives the bump. */
+    markdown_core_node_internal_flags consulted;
 };
 
 /* Does this node alias a holder's list? The one question every walk asks. */

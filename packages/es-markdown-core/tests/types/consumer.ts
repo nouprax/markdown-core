@@ -1,5 +1,4 @@
 import {
-    Concrete,
     Document,
     TreeDumper,
     visit,
@@ -16,23 +15,12 @@ import {
 
 const read: Read = new Document("# typed", { tables: true }).seal();
 const semantic: Semantic = read.semantic;
-const concrete: Concrete = read.concrete;
 const diagnostic: string = read.dump();
 const explicitDiagnostic: string = TreeDumper.dump(semantic);
 void diagnostic;
 void explicitDiagnostic;
-// The source a scope is counted against is bytes and a line index, and both
-// outlive the WASM handle.
-const source: Uint8Array = concrete.source;
-const offset: number = concrete.offset(1);
-const lines: number = concrete.lines;
-void source;
-void offset;
-void lines;
-// @ts-expect-error the source is readonly
-concrete.source = source;
-// @ts-expect-error the read's views are readonly
-read.concrete = concrete;
+// @ts-expect-error the read's view is readonly
+read.semantic = semantic;
 // The stream hands out `Read` values, and a chunk is a string or raw UTF-8
 // bytes -- nothing else crosses.
 const streaming: Document = new Document({ tables: false });

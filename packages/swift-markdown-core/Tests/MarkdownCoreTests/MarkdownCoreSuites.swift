@@ -8,7 +8,7 @@ import Testing
 @testable import MarkdownCore
 
 /// The tree of a whole-text parse: `Document(markdown:options:).seal()`,
-/// keeping only the semantic view. The lifecycle and concrete tests spell
+/// keeping only the semantic view. The lifecycle tests spell
 /// the full entry out themselves.
 private func parse(_ source: String, options: ParseOptions = .init()) throws -> Semantic {
     try Document(markdown: source, options: options).seal().semantic
@@ -90,7 +90,6 @@ private func parse(_ source: String, options: ParseOptions = .init()) throws -> 
     func copiedAndSendable() async throws {
         requireSendable(Read.self)
         requireSendable(Semantic.self)
-        requireSendable(Concrete.self)
         requireSendable(ParseOptions.self)
         let document = try parse("parallel 🚀\n")
         let counts = await withTaskGroup(of: Int.self, returning: [Int].self) { group in
@@ -100,54 +99,6 @@ private func parse(_ source: String, options: ParseOptions = .init()) throws -> 
         #expect(counts == Array(repeating: 1, count: 20))
     }
 
-}
-
-@Suite("concrete") struct ConcreteSuite {
-    /// The source a scope's coordinates are counted against, copied into value
-    /// types and read after the native handle is gone. `parse` frees the handle
-    /// before it returns, so everything below reads a value with no native
-    /// anything left behind it.
-    @Test("the normalized source and its line index survive the native release")
-    func sourceAndLines() throws {
-        let source = """
-            # Heading ##
-
-            > quoted *em* and `code`
-
-            | a | b |
-            | --- | --- |
-            | c | d |
-
-            :::container[Title]{kind=demo}
-            Body
-            :::
-
-            [a]: /u "t"
-
-            see [a].
-
-            """
-        let read = try Document(markdown: source).seal()
-        let concrete = read.concrete
-        #expect(concrete.source == Array(source.utf8))
-        #expect(concrete.lines == 15)
-        #expect(concrete.offset(of: 1) == 0)
-        #expect(concrete.offset(of: 3) == 14)
-        #expect(concrete.offset(of: 0) == nil)
-        #expect(concrete.offset(of: 16) == nil)
-
-        // Every line but the first begins after a line ending.
-        for line in 2...concrete.lines {
-            let start = try #require(concrete.offset(of: line))
-            #expect(start > 0)
-            #expect(concrete.source[start - 1] == UInt8(ascii: "\n"))
-        }
-
-        // Copying is not borrowing: 300 further parses must not disturb it.
-        for _ in 0..<300 { _ = try parse("# copy\n") }
-        #expect(concrete.source == Array(source.utf8))
-        #expect(concrete.offset(of: 3) == 14)
-    }
 }
 
 @Suite("api") struct DirectiveLabelSuite {

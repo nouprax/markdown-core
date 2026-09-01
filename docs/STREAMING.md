@@ -1248,6 +1248,21 @@ arriving bumps a generation and re-keys every block in the document (F6's
 crudeness, sized at 8.5 points in F12), and the spine stamp re-keys every
 open container on every line whether or not the line reached it.
 
+**Amended 2026-09-01 (#163): the definitional crudeness is closed.** A
+map's generation now takes part in the key only for a block whose stored
+projection HAD SOMETHING TO ASK that map: the block's inline parse sets a
+CONSULTED bit at the candidacy — a reference-form label in range of the
+cap, a footnote call — whether or not the map answered or was even
+non-empty when asked, the store copies the bits onto the holder, and
+`S_cache_fresh` compares a generation only behind its bit. This is not
+§1's dead label→sites index: no per-label state, no eager flipping, and
+the failure direction is unchanged (a bit set without a lookup is a slow
+feed, never a wrong tree). Isolated on a 2,000-paragraph stream with a
+definition arriving every 20 blocks: misses 104,100 → **4,100** (25×,
+hit rate 97.5% → 99.9%); the wall clock of that synthetic is
+clone-dominated, which is #161's case, not this one's. The gate is
+`projection_map_immunity`, mutation-verified red under a global key.
+
 **Cost.** `stamp` fills the four bytes before `type` and pads to the next
 eight: 184 → **192**. Same `bench_runner`, 41 cases, 5 rounds alternated,
 head against the T18 tree `4b43e3e`, min of `median_ms`:
@@ -1368,6 +1383,29 @@ gates are `projection_attach_invalidation` and
 `projection_diagnostics_after_derive`, each with its vacuity guard: the
 probe text must differ un-autolinked, and the control must raise rows to
 lose.
+
+**Amended 2026-08-31: the recording guard read the wrong flag and the cache
+never hit through the public surface.** "Answers stale while `diagnostics_on`
+is raised" conflated two states: RETENTION (a session raises the flag at its
+first byte, Requirement 13, and it stays up for the session's life) and the
+RECORDING projection (the sealing one — every `derive_tree` caller passes
+`record_diagnostics=0`). `S_project` computed the effective state, but the
+clone — where every hit is taken — runs *before* `S_project` and read the
+retention flag bare, so for every session each feed's clone refused every
+hit and re-parsed the whole document: hit rate 0 on the exact path Phase B
+was built for, invisible to every gate because the runners never retain
+diagnostics. Witness: 315 line-feeds of a 12 KB document made 160,800
+`parse_inlines` calls; a 488 KB document fed line by line cost 56.7 s
+against a one-shot's 8 ms. The fix moves the effective-state window to the
+derivation's own boundary — `derive_tree` lowers `diagnostics_on` across
+clone *and* projection when the derivation does not record, `finish` keeps
+retention standing so the sealing projection still re-parses and its rows
+still speak. Line-fed streams: 12 KB 30.5 → 2.9 ms, 98 KB 1,907 → 104 ms,
+488 KB 56,663 → 2,727 ms (10.5× / 18× / 21×); the wire feed 5.9×.
+`projection_diagnostics_after_derive` now carries the other half of the
+invariant — retention alone must not refuse the cache: two derivations of
+an unwritten CST under retained diagnostics must hit, asserted on
+`parser->cache_hits` and red on the unfixed engine (0 hits, 4 misses).
 
 ### F21 — F10 was wrong: a projection minted marks into the parser's vector, and positions after it were wrong  · VERIFIED, FIXED (`e34cf20`)
 
@@ -1644,6 +1682,34 @@ back in the vocabulary that produced them.
   is the semantic canon. Each binding's conformance entry already exists
   (`conformance:swift-macos`, `conformance:kotlin-jvm`, `conformance:es-node`)
   and T14 extends the corpora rather than adding a channel.
+- **D7 — the diagnostics requirement is DELETED · owner ruling, 2026-09-01.**
+  Per-feed throughput is the goal and everything else is means (the owner's
+  restatement of F12's constraint), and the diagnostic list was a self-imposed
+  product requirement — no CommonMark or micromark obligation — whose recording
+  rule was the one reason the sealing projection refused cache hits. Deleted
+  whole: the list, both severity/code vocabularies, the recording flag and
+  retention, every diagnose site (the parse behavior at each — the label cap,
+  the directive fallbacks, the table rejection — is UNCHANGED; only the row
+  emission goes), the three public accessors, the CLI's `--diagnostics`, the
+  census and its audit, and `projection_diagnostics_after_derive` (whose
+  invariant is vacuous with no retention to refuse the cache; reuse stays
+  pinned by the key, borrow and boundary A/B gates). With retention gone,
+  `derive_tree` loses its recording window and `finish` takes in-place hits
+  like any projection.
+- **D8 — the concrete view leaves the API · owner ruling, 2026-09-01, same
+  session as D7.** The same throughput steer: a `Read` is `semantic` alone.
+  Scopes stay counted against the normalized source — the definition is now
+  stated normatively in the header and the bindings' `Read` docs — but the
+  library stops handing the text back, so the per-feed source memcpy
+  (`S_concrete_copy`), the per-line source accumulation and its line index
+  (`parser->source`, `line_starts`, both retained for the document's life —
+  part of F9's 8.3× resident bound), the wire's trailing concrete section,
+  the `Concrete` value type in all three bindings, and the C accessors
+  (`_source`, `_line_count`, `_line_start`) are deleted whole. The wire
+  payload's layout changed, so the bridge envelope bumps MKC6 → MKC7 on both
+  writers and both decoders. What a feed returns is now the shared tree and
+  nothing else; what a stream keeps resident is the CST and the cache, not a
+  second copy of everything fed.
 
 ---
 
@@ -1981,6 +2047,9 @@ expectation the owner never had, and it dies whole:
       two carved-out terms are stated in its output, and the third — a
       definition's arrival re-keys the whole document (F19) — is asserted AS
       that term, so a change in its shape fails the gate instead of hiding.
+      *It failed exactly so on 2026-09-01: #163 closed the term (F19's
+      amendment), and the gate now asserts the tighter shape — an arrival
+      re-keys no block that consulted no map.*
 - [x] **T16 — measure resident memory** across a long stream, and state the
       bound that comes with every block keeping its content buffer for life.
       F14's first draft claimed clearing a formula block's content at close would

@@ -29,8 +29,7 @@ one-chunk stream. Every read stays readable after every later feed and after
 the document itself is gone. The streaming model is specified in
 [docs/STREAMING.md](docs/STREAMING.md).
 
-A `Read` is the parse under its two total views, and the pair is closed over
-its own coordinate system. **`semantic`** (the root type `Semantic`, an
+A `Read` is the parse. **`semantic`** (the root type `Semantic`, an
 ordinary `Markup` node) is the tree with policy applied; every node carries an
 **`id`** — an `Identity`, the pair `(block, ordinal)` naming the element
 across a stream's feeds: the render key, with `block` alone naming the region
@@ -40,15 +39,14 @@ no substring is taken with it. A reference (`LinkReference`,
 `ImageReference`, `FootnoteReference`) also carries **`definition`**: the
 identity of the first definition of its label in document order, while a
 definition carries its label as written beside **`norm`**, the match key the
-label folds to. **`concrete`**
-is what those numbers are counted against: the **normalized source** — UTF-8
-as fed, every NUL replaced by the three bytes of U+FFFD, every line ending a
-single `\n` and every line having one — with its line index (`lines`,
-`offset(line)`), because an input containing a NUL has a buffer whose columns
-no longer agree with the parser's.
+label folds to. A scope's numbers are counted against the **normalized
+source** — UTF-8 as fed, every NUL replaced by the three bytes of U+FFFD,
+every line ending a single `\n` and every line having one — which the
+library does not hand back: a caller whose input can differ from it applies
+the same normalization to its own copy before resolving a scope against it.
 
-In C the two views are siblings on one handle — a `markdown_core_document`
-lends out the root node and the source — which is exactly the shape `Read`
+In C a `markdown_core_document` lends out the root node,
+which is exactly the shape `Read`
 copies out; the bindings retain no native parser handle inside a read. The C
 facade keeps its own names and both of its entries:
 `markdown_core_document_parse` for a complete input, and the session
@@ -78,7 +76,6 @@ let read = try Document(
     options: ParseOptions(directives: false)
 ).seal()
 print(read.dump())
-print(read.concrete.lines)
 
 let streaming = try Document()
 let updated = try streaming.feed(chunk: "# Str")
@@ -108,7 +105,6 @@ import com.nouprax.markdown.core.Document
 
 val read = Document("# Hello", ParseOptions(directives = false)).seal()
 println(read.dump())
-println(read.concrete.lines)
 
 Document().use { document ->
     val updated = document.feed("# Str")
@@ -138,7 +134,6 @@ new Walker().walk(read.semantic, (event, node) => {
   console.log(event, node.kind, node.scope);
 });
 console.log(TreeDumper.dump(read.semantic));
-console.log(read.concrete.lines);
 
 using streaming = new Document(); // dispose() also works
 const updated = streaming.feed("# Streamed\n");
@@ -172,11 +167,7 @@ A streaming parse opens a session with `markdown_core_session_new`, feeds
 chunks with `markdown_core_session_feed`, and seals the stream with
 `markdown_core_session_finish`. `feed` and `finish` each return an owned
 document released with `markdown_core_document_free`;
-`markdown_core_session_free` releases the session itself. The C API also reports the parse's ordered
-diagnostic list — the places where a construct the author wrote did not become
-one and neither the tree nor the concrete view can say so — through
-`markdown_core_document_diagnostic_count` and
-`markdown_core_document_diagnostic_at`.
+`markdown_core_session_free` releases the session itself.
 
 The library initializes itself on the first parse. Concurrent parsing and
 read-only access are safe; callers must ensure that a document is freed only

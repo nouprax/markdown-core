@@ -11,6 +11,6 @@ class KmpConsumerTest {
         val read = Document("# KMP consumer\n").seal()
         assertEquals(1, read.semantic.content.size)
         assertEquals(read.dump(), TreeDumper.dump(read.semantic))
-        assertEquals(0, read.concrete.offset(1))
+        assertEquals(1, read.semantic.scope.start.line)
     }
 }

@@ -1,4 +1,3 @@
-export { Concrete } from "./concrete.js";
 export { Document } from "./runtime/document.js";
 export type { BlockQuote } from "./model/block-quote.js";
 export type { CodeBlock } from "./model/code-block.js";

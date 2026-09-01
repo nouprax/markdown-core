@@ -30,7 +30,7 @@
                     "reason": "llvm-cov emits no branch regions for Swift: SwiftPM's coverage instrumentation produces line, function, and region counters only. Line and function coverage carry this platform's gate until the toolchain grows branch support."
                 }
             ],
-            "minimumMeasuredFiles": 33,
+            "minimumMeasuredFiles": 32,
             "unpinned": {
                 "packages/swift-markdown-core/Sources/MarkdownCore/Document.swift": {
                     "lines": 9,
@@ -65,7 +65,7 @@
                 "packages/kotlin-markdown-core/src/"
             ],
             "exempt": [],
-            "minimumMeasuredFiles": 42,
+            "minimumMeasuredFiles": 41,
             "unpinned": {
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Markup.kt": {
                     "lines": 0,
@@ -80,7 +80,7 @@
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/wire/WireDecoder.kt": {
                     "lines": 3,
                     "functions": 0,
-                    "branches": 15
+                    "branches": 10
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/wire/WireKind.kt": {
                     "lines": 0,
@@ -115,7 +115,7 @@
                 }
             ],
             "exempt": [],
-            "minimumMeasuredFiles": 11,
+            "minimumMeasuredFiles": 10,
             "unpinned": {
                 "packages/es-markdown-core/src/runtime/document.ts": {
                     "lines": 0,

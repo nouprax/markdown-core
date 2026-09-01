@@ -23,9 +23,10 @@ JVM-only Gradle and Maven consumers can use
 ## Parse Markdown
 
 The living `Document` is the one entry into the parser: it is fed text -- in
-one piece or many -- and yields `Read` values, each the pair of the parse's
-two total views: `semantic`, the tree, and `concrete`, the normalized source
-its scopes are counted against. The whole-text parse is a one-chunk stream:
+one piece or many -- and yields `Read` values, each carrying `semantic`, the
+tree. Scopes are counted against the normalized source (NULs to U+FFFD, line
+endings to `\n`), which the package does not hand back. The whole-text parse
+is a one-chunk stream:
 
 ```kotlin
 import com.nouprax.markdown.core.Document
@@ -44,8 +45,7 @@ tree with source scopes, and every node carries `id: Identity` — the pair
 `(block, ordinal)` naming the element across a stream's feeds, the render
 key; references carry `definition: Identity`, the identity of the first
 definition of their label, and definitions carry `norm`, the match key their
-label folds to. `concrete` carries the normalized source bytes with
-`lines` and `offset(line)`. The package exposes parsing and read-only AST
+label folds to. The package exposes parsing and read-only AST
 traversal, not rendering or mutation.
 
 ## Stream Markdown

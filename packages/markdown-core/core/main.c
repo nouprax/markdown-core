@@ -31,11 +31,7 @@ void print_usage(void) {
     printf("  --profile PROFILE named option set: default | gfm | gfm-smart | gfm-extended\n");
     printf("  --smart           Use smart punctuation\n");
     printf("  --validate-utf8   Replace UTF-8 invalid sequences with U+FFFD\n");
-    printf(
-        "  --strip-html-comments Strip HTML comment nodes from the parsed AST\n"
-        "  --source-index    Print the normalized source size and line index before the tree\n"
-        "  --diagnostics     Record diagnostics and print them before the tree\n"
-    );
+    printf("  --strip-html-comments Strip HTML comment nodes from the parsed AST\n");
     printf("  --extension, -e EXTENSION_NAME  Specify an extension name to use\n");
     printf("  --list-extensions               List available extensions and quit\n");
     printf("  --strikethrough-double-tilde    Only parse strikethrough (if enabled)\n");
@@ -45,11 +41,9 @@ void print_usage(void) {
 }
 
 static bool print_document(markdown_core_node *document) {
-    /* The CLI dumps the tree only; the source and its line index are printed
-     * straight from the parser by `--source-index`, so the fields are zeroed
-     * here rather than filled and `markdown_core_document_free` is never called
-     * on this stack value. */
-    markdown_core_document facade_document = {document, {0}, {0}};
+    /* The CLI dumps the tree only; `markdown_core_document_free` is never
+     * called on this stack value. */
+    markdown_core_document facade_document = {document};
     markdown_core_error *error = NULL;
     uint8_t *dump = NULL;
     size_t length = 0;
@@ -86,9 +80,6 @@ int main(int argc, char *argv[]) {
     int *files;
     char buffer[4096];
     markdown_core_parser *parser = NULL;
-    bool source_index = false;
-    bool diagnostics_wanted = false;
-    markdown_core_diagnostics diagnostics = {0};
     size_t bytes;
     markdown_core_node *document = NULL;
     int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS |
@@ -150,19 +141,6 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Unknown profile %s\n", argv[i]);
                 goto failure;
             }
-        } else if (strcmp(argv[i], "--source-index") == 0) {
-            /* What a scope's coordinates index INTO: the size of the
-             * normalized source and where each of its lines begins. The
-             * document publishes both; this prints them so a gate can check
-             * that recording diagnostics changes neither. */
-            source_index = true;
-        } else if (strcmp(argv[i], "--diagnostics") == 0) {
-            /* REQUIREMENT 13. Unlike `--source-index`, which only asks `finish` to
-             * write what it already has, this has to be asked for BEFORE the
-             * first byte is fed: recording happens as the lines are read, and
-             * the law of the step is that a run without it builds the same
-             * tree and the same records as a run with it. */
-            diagnostics_wanted = true;
         } else if (strcmp(argv[i], "--list-extensions") == 0) {
             print_extensions();
             goto success;
@@ -211,9 +189,6 @@ int main(int argc, char *argv[]) {
     }
 
     parser = markdown_core_parser_new(options);
-    if (parser && diagnostics_wanted) {
-        markdown_core_parser_retain_diagnostics(parser, &diagnostics);
-    }
 
     /* The CLI says WHICH extensions and cannot say in what order; the order is
      * `core-extensions.c`'s, and it is the facade's too. Before D15 was fixed
@@ -268,14 +243,7 @@ int main(int argc, char *argv[]) {
     }
 #endif
 
-    if (source_index) {
-        parser->concrete_out = stdout;
-    }
     document = markdown_core_parser_finish(parser);
-
-    if (diagnostics_wanted) {
-        markdown_core_diagnostics_write(document ? &diagnostics : NULL, stdout);
-    }
 
     if (!document || !print_document(document)) {
         goto failure;
@@ -285,10 +253,6 @@ success:
     res = 0;
 
 failure:
-
-    if (diagnostics_wanted) {
-        markdown_core_diagnostics_dispose(&diagnostics);
-    }
 
     if (parser) {
         markdown_core_parser_free(parser);

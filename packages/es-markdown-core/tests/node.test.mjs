@@ -10,7 +10,7 @@ import { decodeRead } from "../dist/wire/wire-decoder.js";
 import { kindVisitor } from "./visitor.mjs";
 
 // The whole-text parse: the one entry, sealed in the same breath. `parse`
-// keeps only the semantic tree; the concrete and lifecycle tests below spell
+// keeps only the semantic tree; the lifecycle tests below spell
 // the full entry out themselves.
 const parse = (source, options) => new Document(source, options).seal().semantic;
 
@@ -89,50 +89,6 @@ test("robustness: repeated parse and release remains stable", () => {
     for (let index = 0; index < 2_000; index += 1) {
         assert.equal(parse("# Copy\n\n- [x] item 🚀\n").content.length, 2);
     }
-});
-
-// The requirement's own sentence: the concrete view survives being copied into
-// value types and the handle being freed. `parse` frees it before it returns,
-// so everything below reads a view with no WASM memory left behind it.
-test("concrete: the normalized source and its line index survive the native release", () => {
-    const source = [
-        "# Heading ##",
-        "",
-        "> quoted *em* and `code`",
-        "",
-        "| a | b |",
-        "| --- | --- |",
-        "| c | d |",
-        "",
-        ":::container[Title]{kind=demo}",
-        "Body",
-        ":::",
-        "",
-        '[a]: /u "t"',
-        "",
-        "see [a].",
-        ""
-    ].join("\n");
-    const read = new Document(source).seal();
-    const concrete = read.concrete;
-    assert.deepEqual(concrete.source, new TextEncoder().encode(source));
-    assert.equal(concrete.lines, 15);
-    assert.equal(concrete.offset(1), 0);
-    assert.equal(concrete.offset(3), 14);
-    assert.throws(() => concrete.offset(0), RangeError);
-    assert.throws(() => concrete.offset(16), RangeError);
-
-    // Every line but the first begins after a line ending.
-    for (let line = 2; line <= concrete.lines; line += 1) {
-        const start = concrete.offset(line);
-        assert.ok(start > 0);
-        assert.equal(concrete.source[start - 1], "\n".charCodeAt(0));
-    }
-
-    // Nothing native is left: 300 more parses cannot move what was copied.
-    for (let index = 0; index < 300; index += 1) parse("# copy\n");
-    assert.deepEqual(concrete.source, new TextEncoder().encode(source));
-    assert.equal(concrete.offset(3), 14);
 });
 
 test("robustness: the heap grows, and a document larger than the initial one parses", () => {
@@ -217,11 +173,6 @@ test("api: a document's chunked feeds equal the whole-text parse once sealed", (
         const sealed = document.seal();
         const wholeText = new Document(source).seal();
         assert.equal(sealed.dump(), wholeText.dump());
-        assert.deepEqual(sealed.concrete.source, wholeText.concrete.source);
-        assert.equal(sealed.concrete.lines, wholeText.concrete.lines);
-        for (let line = 1; line <= wholeText.concrete.lines; line += 1) {
-            assert.equal(sealed.concrete.offset(line), wholeText.concrete.offset(line));
-        }
     } finally {
         document.dispose();
     }
@@ -264,11 +215,10 @@ test("api: an empty feed is legal and an unfed document seals to the empty read"
 test("ownership: a mid-stream read is a value later feeds cannot disturb", () => {
     const document = new Document();
     // The trailing line's ending has not arrived, so "tail" is not yet in the
-    // projection -- not in the tree and not in the concrete view.
+    // projection.
     const early = document.feed("# Heading\n\ntail");
     assert.equal(early.semantic.content.length, 1);
     assert.equal(early.semantic.content[0].kind, "heading");
-    assert.deepEqual(early.concrete.source, new TextEncoder().encode("# Heading\n\n"));
     const record = early.dump();
 
     // A later feed completes the line; the value already returned does not
@@ -392,10 +342,10 @@ test("errors: a discarded feed still surfaces a native failure and frees its slo
 
 test("errors: every refusal the wire reader can make is reached by a payload", () => {
     // These guards exist because the two sides of the wire are versioned
-    // separately -- the MKC6 bump is the same hazard -- and a decoder that
+    // separately -- the MKC7 bump is the same hazard -- and a decoder that
     // silently mapped an unknown value would turn a protocol mismatch into a
     // wrong document. The payloads the bridge actually writes are well
-    // formed, so the malformed ones are written by hand: `MKC6` is the magic,
+    // formed, so the malformed ones are written by hand: `MKC7` is the magic,
     // and the byte after it is the status -- 1 means an error follows.
     const payload = (...parts) => {
         const out = [];
@@ -411,21 +361,21 @@ test("errors: every refusal the wire reader can make is reached by a payload", (
     // A native error crosses as a code and a message, which is the only path
     // that builds a ParseError out of a payload.
     assert.throws(
-        () => decodeRead(payload("MKC6", 1, int(1), int(3), "bad")),
+        () => decodeRead(payload("MKC7", 1, int(1), int(3), "bad")),
         (error) => error instanceof ParseError && error.code === "invalidArgument" && error.message === "bad"
     );
     assert.throws(
-        () => decodeRead(payload("MKC6", 1, int(99), int(1), "x")),
+        () => decodeRead(payload("MKC7", 1, int(99), int(1), "x")),
         (error) => error instanceof ParseError && error.code === "internal"
     );
 
     // A status that is neither, a magic from the wrong wire version, a root
     // that is not a document, and a payload that stops mid-value.
-    assert.throws(() => decodeRead(payload("MKC6", 2)), /unsupported native bridge status/u);
+    assert.throws(() => decodeRead(payload("MKC7", 2)), /unsupported native bridge status/u);
     assert.throws(() => decodeRead(payload("MKC5", 0)), /invalid native bridge payload/u);
-    assert.throws(() => decodeRead(payload("MKC6", 0, 3)), /invalid document tree/u);
-    assert.throws(() => decodeRead(payload("MKC6", 0, 1, int(1), int(1))), /truncated native bridge payload/u);
-    assert.throws(() => decodeRead(payload("MKC6", 1, int(1), int(-2))), /invalid native bridge string/u);
+    assert.throws(() => decodeRead(payload("MKC7", 0, 3)), /invalid document tree/u);
+    assert.throws(() => decodeRead(payload("MKC7", 0, 1, int(1), int(1))), /truncated native bridge payload/u);
+    assert.throws(() => decodeRead(payload("MKC7", 1, int(1), int(-2))), /invalid native bridge string/u);
 });
 
 test("errors: every out-of-range value inside a node payload is refused", () => {
@@ -451,7 +401,7 @@ test("errors: every out-of-range value inside a node payload is refused", () => 
     const scope = () => bytes(int(1), int(1), int(1), int(1));
     // A document root carrying exactly one child, which is the malformed node.
     const wrap = (...node) =>
-        Uint8Array.from([...bytes("MKC6", 0, 1), ...identity(1, 0), ...scope(), ...bytes(int(1)), ...bytes(...node)]);
+        Uint8Array.from([...bytes("MKC7", 0, 1), ...identity(1, 0), ...scope(), ...bytes(int(1)), ...bytes(...node)]);
     const child = (kind, ...fields) => wrap(kind, ...identity(2, 0), ...scope(), ...fields);
 
     assert.throws(() => decodeRead(child(99)), /unknown node kind 99/u);
@@ -487,7 +437,7 @@ test("errors: every out-of-range value inside a node payload is refused", () => 
     // A complete, healthy payload with one byte too many: the reader must
     // refuse the surplus rather than decode a prefix and call it the document.
     const complete = Uint8Array.from([
-        ...bytes("MKC6", 0, 1),
+        ...bytes("MKC7", 0, 1),
         ...identity(1, 0),
         ...scope(),
         ...bytes(int(0), int(0), int(0), 0)
@@ -503,7 +453,7 @@ test("errors: every out-of-range value inside a node payload is refused", () => 
 
     // And the third error code the envelope can carry.
     assert.throws(
-        () => decodeRead(Uint8Array.from(bytes("MKC6", 1, int(2), int(1), "x"))),
+        () => decodeRead(Uint8Array.from(bytes("MKC7", 1, int(2), int(1), "x"))),
         (error) => error instanceof ParseError && error.code === "allocationFailed"
     );
 });

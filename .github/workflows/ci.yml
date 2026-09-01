@@ -1354,12 +1354,6 @@ jobs:
               run: pnpm audit:scope-containment
             - name: Check that every position is a place
               run: pnpm audit:position-places
-            # Requirement 13's three laws, which drive the CLI over every
-            # fixture example. It lives here rather than in the repository
-            # health check because it needs the built binary the parity job
-            # already has.
-            - name: Check the diagnostic list
-              run: pnpm audit:diagnostics
             # Registered RED until Step 9a: it fails when a row stops
             # reproducing, not only when one appears.
             - name: Check that reference resolution is order-independent
