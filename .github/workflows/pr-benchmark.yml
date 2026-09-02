@@ -77,6 +77,7 @@ jobs:
               run: |
                   cmake --preset benchmark
                   cmake --build --preset benchmark --target bench_runner --parallel 2
+                  mkdir -p build/pr-benchmark
                   build/benchmark/packages/markdown-core/tests/bench_runner \
                       --workload binding_baseline \
                       --samples packages/markdown-core/benchmarks/samples \
