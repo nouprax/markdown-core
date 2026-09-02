@@ -39,12 +39,12 @@ static bool S_node_field_index(markdown_core_node *parent, markdown_core_node *n
     return false;
 }
 
-markdown_core_node *markdown_core_node_first_descendant(markdown_core_node *node) {
+markdown_core_node *markdown_core_node_first_direct_descendant(markdown_core_node *node) {
     markdown_core_node *field = markdown_core_node_field_at(node, 0);
     return field ? field : node ? node->first_child : NULL;
 }
 
-markdown_core_node *markdown_core_node_next_descendant(markdown_core_node *node) {
+markdown_core_node *markdown_core_node_next_direct_descendant(markdown_core_node *node) {
     markdown_core_node *parent;
     size_t index;
     if (!node || !(parent = node->parent)) {

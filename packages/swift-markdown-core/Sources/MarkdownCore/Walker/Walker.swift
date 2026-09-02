@@ -31,7 +31,7 @@ public struct Walker: Sendable {
         visit: (WalkEvent, any Markup) throws -> Void
     ) rethrows {
         try visit(.entering, node)
-        var visitor = ChildrenVisitor()
+        var visitor = DirectDescendantsVisitor()
         for child in node.accept(&visitor) {
             try walk(node: child, visit: visit)
         }
@@ -42,7 +42,7 @@ public struct Walker: Sendable {
 /// The private field-aware traversal projection used by `Walker`. A
 /// directive's `label` precedes its separate `content` and is not itself a
 /// content child.
-struct ChildrenVisitor: MarkupVisitor {
+struct DirectDescendantsVisitor: MarkupVisitor {
     mutating func visit(_ node: Document) -> [any Markup] { node.content }
 
     mutating func visit(_ node: BlockQuote) -> [any Markup] { node.content }

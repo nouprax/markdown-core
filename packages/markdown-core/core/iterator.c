@@ -40,7 +40,7 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
 
     /* roll forward to next item, setting both fields */
     if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
-        markdown_core_node *descendant = markdown_core_node_first_descendant(node);
+        markdown_core_node *descendant = markdown_core_node_first_direct_descendant(node);
         if (descendant == NULL) {
             /* stay on this node but exit */
             iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
@@ -53,7 +53,7 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
         iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
         iter->next.node = NULL;
     } else {
-        markdown_core_node *descendant = markdown_core_node_next_descendant(node);
+        markdown_core_node *descendant = markdown_core_node_next_direct_descendant(node);
         if (descendant) {
             iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
             iter->next.node = descendant;
@@ -220,12 +220,12 @@ int markdown_core_node_own(markdown_core_node *root) {
             break;
         }
 
-        markdown_core_node *descendant = markdown_core_node_first_descendant(cur);
+        markdown_core_node *descendant = markdown_core_node_first_direct_descendant(cur);
         if (descendant) {
             cur = descendant;
         } else {
             markdown_core_node *next = NULL;
-            while (cur != root && (next = markdown_core_node_next_descendant(cur)) == NULL) {
+            while (cur != root && (next = markdown_core_node_next_direct_descendant(cur)) == NULL) {
                 cur = cur->parent;
             }
             cur = (cur == root) ? NULL : next;

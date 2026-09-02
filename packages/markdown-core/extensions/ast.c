@@ -974,13 +974,13 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
 /* The debug tree shows every node-valued field, whereas the public child API
  * represents only structural content. Keep those two contracts explicit: a
  * directive label is dumped before content without becoming content. */
-static const markdown_core_node *dump_first_descendant(const markdown_core_node *node) {
+static const markdown_core_node *dump_first_direct_descendant(const markdown_core_node *node) {
     const markdown_core_node *label = markdown_core_node_directive_label(node);
     return label ? label : markdown_core_node_get_first_child(node);
 }
 
-static const markdown_core_node *dump_next_descendant(const markdown_core_node *parent,
-                                                      const markdown_core_node *node) {
+static const markdown_core_node *dump_next_direct_descendant(const markdown_core_node *parent,
+                                                             const markdown_core_node *node) {
     const markdown_core_node *label = markdown_core_node_directive_label(parent);
     if (node == label) {
         return markdown_core_node_get_first_child(parent);
@@ -988,7 +988,7 @@ static const markdown_core_node *dump_next_descendant(const markdown_core_node *
     return markdown_core_node_get_next_sibling(node);
 }
 
-static size_t dump_descendant_count(const markdown_core_node *node) {
+static size_t dump_direct_descendant_count(const markdown_core_node *node) {
     return markdown_core_node_child_count(node) + (markdown_core_node_directive_label(node) ? 1u : 0u);
 }
 
@@ -996,7 +996,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_scope scope = markdown_core_node_scope(node);
     const markdown_core_node *child;
-    size_t count = dump_descendant_count(node);
+    size_t count = dump_direct_descendant_count(node);
     size_t i;
     if (kind == MARKDOWN_CORE_KIND_NONE) {
         buffer->failed = true;
@@ -1022,9 +1022,9 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     buffer_i64(buffer, (int64_t)count);
     buffer_cstr(buffer, "\n");
 
-    child = dump_first_descendant(node);
+    child = dump_first_direct_descendant(node);
     while (child) {
-        const markdown_core_node *next = dump_next_descendant(node, child);
+        const markdown_core_node *next = dump_next_direct_descendant(node, child);
         if (!ensure_more(buffer, depth)) {
             return;
         }
