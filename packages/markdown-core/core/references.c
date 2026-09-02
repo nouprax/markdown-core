@@ -53,16 +53,8 @@ void markdown_core_association_free(markdown_core_mem *mem, markdown_core_associ
     markdown_core_chunk_free(mem, &association->identifier);
 }
 
-/* One free function for both sets: an entry is a label and nothing else. */
-static void definition_free(markdown_core_map *map, markdown_core_map_entry *entry) {
-    if (entry != NULL) {
-        map->mem->free(entry->label);
-        map->mem->free(entry);
-    }
-}
-
 static void definition_create(markdown_core_map *map, markdown_core_chunk *label) {
-    markdown_core_map_entry *entry;
+    markdown_core_map_record *record;
     unsigned char *reflabel;
     int lost = 0;
 
@@ -81,30 +73,27 @@ static void definition_create(markdown_core_map *map, markdown_core_chunk *label
         return;
     }
 
-    entry = (markdown_core_map_entry *)map->mem->calloc(1, sizeof(*entry));
-    if (!entry) {
+    record = (markdown_core_map_record *)map->mem->calloc(1, sizeof(*record));
+    if (!record) {
         map->oom = 1;
         map->mem->free(reflabel);
         return;
     }
-    entry->label = reflabel;
-    entry->age = map->size;
-    entry->next = map->refs;
+    record->label = reflabel;
+    record->next = map->records;
 
-    map->refs = entry;
+    map->records = record;
     map->size++;
 }
 
-markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem) {
-    return markdown_core_map_new(mem, definition_free);
-}
+markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem) { return markdown_core_map_new(mem); }
 
 void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label) {
     definition_create(map, label);
 }
 
 markdown_core_map *markdown_core_footnote_definition_map_new(markdown_core_mem *mem) {
-    return markdown_core_map_new(mem, definition_free);
+    return markdown_core_map_new(mem);
 }
 
 void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label) {

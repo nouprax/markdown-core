@@ -200,15 +200,15 @@ unsigned char *normalize_map_label(markdown_core_mem *mem, markdown_core_chunk *
 }
 
 static int index_map(markdown_core_map *map) {
-    markdown_core_map_entry *ref;
+    markdown_core_map_record *record;
     if (!markdown_core_key_index_init(&map->index, map->mem, map->size)) {
         return 0;
     }
-    /* Entries are linked newest-first. Replacing while traversing therefore
+    /* Records are linked newest-first. Replacing while traversing therefore
      * leaves the oldest (first source) definition in each slot. */
-    for (ref = map->refs; ref; ref = ref->next) {
-        if (!markdown_core_key_index_insert(&map->index, ref->label, (bufsize_t)strlen((char *)ref->label), ref, 1,
-                                            NULL)) {
+    for (record = map->records; record; record = record->next) {
+        if (!markdown_core_key_index_insert(&map->index, record->label, (bufsize_t)strlen((char *)record->label),
+                                            record, 1, NULL)) {
             markdown_core_key_index_free(&map->index);
             return 0;
         }
@@ -218,8 +218,8 @@ static int index_map(markdown_core_map *map) {
     return 1;
 }
 
-markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label) {
-    markdown_core_map_entry *r = NULL;
+markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label) {
+    markdown_core_map_record *record = NULL;
     unsigned char *norm;
 
     if (label->len < 1 || label->len > MAX_LINK_LABEL_LENGTH) {
@@ -247,36 +247,37 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
         return NULL;
     }
 
-    r = (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, norm, (bufsize_t)strlen((char *)norm));
+    record =
+        (markdown_core_map_record *)markdown_core_key_index_lookup(&map->index, norm, (bufsize_t)strlen((char *)norm));
     map->mem->free(norm);
 
-    return r;
+    return record;
 }
 
 void markdown_core_map_free(markdown_core_map *map) {
-    markdown_core_map_entry *ref;
+    markdown_core_map_record *record;
 
     if (map == NULL) {
         return;
     }
 
-    ref = map->refs;
-    while (ref) {
-        markdown_core_map_entry *next = ref->next;
-        map->free(map, ref);
-        ref = next;
+    record = map->records;
+    while (record) {
+        markdown_core_map_record *next = record->next;
+        map->mem->free(record->label);
+        map->mem->free(record);
+        record = next;
     }
 
     markdown_core_key_index_free(&map->index);
     map->mem->free(map);
 }
 
-markdown_core_map *markdown_core_map_new(markdown_core_mem *mem, markdown_core_map_free_f free) {
+markdown_core_map *markdown_core_map_new(markdown_core_mem *mem) {
     markdown_core_map *map = (markdown_core_map *)mem->calloc(1, sizeof(markdown_core_map));
     if (!map) {
         return NULL;
     }
     map->mem = mem;
-    map->free = free;
     return map;
 }

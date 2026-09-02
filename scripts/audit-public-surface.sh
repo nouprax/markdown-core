@@ -30,6 +30,12 @@ grep -q 'typedef struct markdown_core_extension markdown_core_extension;' \
 grep -q 'markdown_core_parser_attach_extension' \
     packages/markdown-core/core/markdown-core-extension-api.h \
     || fail "the parser-extension attachment API was not renamed coherently"
+if grep -R -n 'markdown_core_map_entry' packages/markdown-core --exclude-dir=build; then
+    fail "the retired map-entry type still exists"
+fi
+grep -q 'typedef struct markdown_core_map_record markdown_core_map_record;' \
+    packages/markdown-core/core/map.h \
+    || fail "the normalized-label map record does not use markdown_core_map_record"
 
 temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
