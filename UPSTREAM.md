@@ -17,7 +17,7 @@ parser product. Its current reconstruction:
 - removing Microsoft-specific parser extensions and options;
 - replacing inherited product, ABI, target, file, and package names;
 - exposing a read-only C AST facade and deterministic native AST debug dump;
-- adds the repository-owned directive, formula, and GFM syntax extensions;
+- adds the repository-owned directive, formula, and GFM parser extensions;
 - parses one complete source buffer per call and has no public feed/finish or
   file parsing lifecycle;
 - deletes the inherited renderers and renderer extension hooks;

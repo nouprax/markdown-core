@@ -1,5 +1,5 @@
 #include "autolink.h"
-#include "syntax_extension.h"
+#include "extension.h"
 #include <iterator.h>
 #include <parser.h>
 #include <string.h>
@@ -359,7 +359,7 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     return node;
 }
 
-static markdown_core_node *match(const markdown_core_syntax_extension *ext, markdown_core_parser *parser,
+static markdown_core_node *match(const markdown_core_extension *ext, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char c,
                                  markdown_core_inline_parser *inline_parser) {
     if (markdown_core_inline_parser_in_bracket(inline_parser, false) ||
@@ -614,7 +614,7 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
     markdown_core_chunk_free(parser->mem, &detached_chunk);
 }
 
-static markdown_core_node *postprocess(const markdown_core_syntax_extension *ext, markdown_core_parser *parser,
+static markdown_core_node *postprocess(const markdown_core_extension *ext, markdown_core_parser *parser,
                                        markdown_core_node *root) {
     markdown_core_iter *iter;
     markdown_core_event_type ev;
@@ -661,7 +661,7 @@ static markdown_core_node *postprocess(const markdown_core_syntax_extension *ext
     return root;
 }
 
-const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_AUTOLINK = {
+const markdown_core_extension MARKDOWN_CORE_EXTENSION_AUTOLINK = {
     .name = "autolink",
     .match_inline = match,
     .postprocess_func = postprocess,

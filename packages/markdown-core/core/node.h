@@ -162,7 +162,7 @@ struct markdown_core_node {
     uint16_t type;
     markdown_core_node_internal_flags flags;
 
-    const markdown_core_syntax_extension *extension;
+    const markdown_core_extension *extension;
 
     union {
         markdown_core_chunk literal;

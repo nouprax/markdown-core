@@ -67,7 +67,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             for (const char **it = extension_names; *it; ++it) {
                 unsigned bit = markdown_core_core_extensions_bit(*it);
                 if (!bit) {
-                    fprintf(stderr, "%s is not a valid syntax extension\n", *it);
+                    fprintf(stderr, "%s is not a valid parser extension\n", *it);
                     abort();
                 }
                 extension_mask |= bit;

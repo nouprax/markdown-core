@@ -16,7 +16,7 @@
  * two sites is how the defect was spelled. So this audit reads the source,
  * which is the only place that fact lives:
  *
- *   1. `markdown_core_parser_attach_syntax_extension` is called from exactly
+ *   1. `markdown_core_parser_attach_extension` is called from exactly
  *      one function in the shipped library, and that function is
  *      `markdown_core_core_extensions_attach`.
  *   2. Its table names every registered core extension exactly once, so an
@@ -43,7 +43,7 @@ const pkg = path.join(root, "packages/markdown-core");
 const read = (relative) => fs.readFileSync(path.join(pkg, relative), "utf8");
 
 const failures = [];
-const ATTACH = "markdown_core_parser_attach_syntax_extension";
+const ATTACH = "markdown_core_parser_attach_extension";
 
 /** Every `*.c` under `core/` and `extensions/` — the shipped library, no tests. */
 function librarySources() {
@@ -123,9 +123,7 @@ if (!table) {
         .readdirSync(path.join(pkg, "extensions"))
         .filter((name) => name.endsWith(".c"))
         .flatMap((name) => [
-            ...read(`extensions/${name}`).matchAll(
-                /^const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_(\w+) =/gm
-            )
+            ...read(`extensions/${name}`).matchAll(/^const markdown_core_extension MARKDOWN_CORE_EXTENSION_(\w+) =/gm)
         ])
         .map((match) => match[1].toLowerCase());
 

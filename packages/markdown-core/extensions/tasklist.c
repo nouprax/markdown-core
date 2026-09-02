@@ -1,5 +1,5 @@
 #include "tasklist.h"
-#include "syntax_extension.h"
+#include "extension.h"
 #include <assert.h>
 #include <parser.h>
 #include "ext_scanners.h"
@@ -12,7 +12,7 @@ typedef enum {
 // Local constants
 static const char TYPE_STRING[] = "tasklist";
 
-static const char *get_type_string(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
+static const char *get_type_string(const markdown_core_extension *extension, markdown_core_node *node) {
     return TYPE_STRING;
 }
 
@@ -57,17 +57,17 @@ static bool parse_node_item_prefix(markdown_core_parser *parser, const char *inp
     return res;
 }
 
-static int matches(const markdown_core_syntax_extension *self, markdown_core_parser *parser, unsigned char *input,
-                   int len, markdown_core_node *parent_container) {
+static int matches(const markdown_core_extension *self, markdown_core_parser *parser, unsigned char *input, int len,
+                   markdown_core_node *parent_container) {
     return parse_node_item_prefix(parser, (const char *)input, parent_container);
 }
 
-static int can_contain(const markdown_core_syntax_extension *extension, markdown_core_node *node,
+static int can_contain(const markdown_core_extension *extension, markdown_core_node *node,
                        markdown_core_node_type child_type) {
     return (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) ? 1 : 0;
 }
 
-static markdown_core_node *open_tasklist_item(const markdown_core_syntax_extension *self, int indented,
+static markdown_core_node *open_tasklist_item(const markdown_core_extension *self, int indented,
                                               markdown_core_parser *parser, markdown_core_node *parent_container,
                                               unsigned char *input, int len) {
     markdown_core_node_type node_type = markdown_core_node_get_type(parent_container);
@@ -85,7 +85,7 @@ static markdown_core_node *open_tasklist_item(const markdown_core_syntax_extensi
         return NULL;
     }
 
-    markdown_core_node_set_syntax_extension(parent_container, self);
+    markdown_core_node_set_extension(parent_container, self);
     markdown_core_parser_advance_offset(parser, (char *)input, 3, false);
 
     // Either an upper or lower case X means the task is completed -- read from
@@ -107,7 +107,7 @@ static markdown_core_node *open_tasklist_item(const markdown_core_syntax_extensi
 }
 
 /* A block-only extension; see the note in extensions/table.c. */
-const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_TASKLIST = {
+const markdown_core_extension MARKDOWN_CORE_EXTENSION_TASKLIST = {
     .name = "tasklist",
     .last_block_matches = matches,
     .get_type_string_func = get_type_string,

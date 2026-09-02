@@ -15,6 +15,22 @@ if [ "$public_headers" != "packages/markdown-core/include/markdown_core.h" ]; th
     fail "the C package must install exactly one facade header"
 fi
 
+test -f packages/markdown-core/core/extension.h \
+    || fail "the internal parser-extension descriptor header is missing"
+test ! -e packages/markdown-core/core/syntax_extension.h \
+    || fail "the retired syntax_extension.h header still exists"
+if grep -R -n -E \
+    'markdown_core_syntax_extension|markdown_core_[a-z0-9_]*_syntax_extensions?|syntax_extension\.h' \
+    packages/markdown-core scripts --exclude-dir=build --exclude=audit-public-surface.sh; then
+    fail "the retired syntax-extension identifier family still exists"
+fi
+grep -q 'typedef struct markdown_core_extension markdown_core_extension;' \
+    packages/markdown-core/core/markdown-core.h \
+    || fail "the parser-extension descriptor does not use markdown_core_extension"
+grep -q 'markdown_core_parser_attach_extension' \
+    packages/markdown-core/core/markdown-core-extension-api.h \
+    || fail "the parser-extension attachment API was not renamed coherently"
+
 temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
 

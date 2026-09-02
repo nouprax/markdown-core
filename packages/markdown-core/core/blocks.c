@@ -13,7 +13,7 @@
 #include <string.h>
 
 #include "markdown_core_ctype.h"
-#include "syntax_extension.h"
+#include "extension.h"
 #include "config.h"
 #include "parser.h"
 #include "markdown-core.h"
@@ -149,11 +149,11 @@ static markdown_core_node *make_document(markdown_core_mem *mem) {
 
 /* Both extension lists hold pointers to `static const` descriptors, and every
  * reader casts `data` straight back to a
- * `const markdown_core_syntax_extension *`. The const is discarded here and
+ * `const markdown_core_extension *`. The const is discarded here and
  * nowhere else because markdown_core_llist is a generic list that cannot
  * carry it; typing the parameter keeps the cast to this one line. */
 static int S_extension_list_append(markdown_core_mem *mem, markdown_core_llist **head,
-                                   const markdown_core_syntax_extension *extension) {
+                                   const markdown_core_extension *extension) {
     markdown_core_llist *node = (markdown_core_llist *)mem->calloc(1, sizeof(*node));
     markdown_core_llist *tail;
     if (!node) {
@@ -171,13 +171,12 @@ static int S_extension_list_append(markdown_core_mem *mem, markdown_core_llist *
     return 1;
 }
 
-int markdown_core_parser_attach_syntax_extension(markdown_core_parser *parser,
-                                                 const markdown_core_syntax_extension *extension) {
-    if (!S_extension_list_append(parser->mem, &parser->syntax_extensions, extension)) {
+int markdown_core_parser_attach_extension(markdown_core_parser *parser, const markdown_core_extension *extension) {
+    if (!S_extension_list_append(parser->mem, &parser->extensions, extension)) {
         return 0;
     }
     if (extension->match_inline || extension->insert_inline_from_delim) {
-        if (!S_extension_list_append(parser->mem, &parser->inline_syntax_extensions, extension)) {
+        if (!S_extension_list_append(parser->mem, &parser->inline_extensions, extension)) {
             return 0;
         }
     }
@@ -252,8 +251,8 @@ static void S_parser_free(markdown_core_parser *parser) {
     S_parser_dispose(parser);
     markdown_core_strbuf_free(&parser->curline);
     markdown_core_strbuf_free(&parser->line_scratch);
-    markdown_core_llist_free(parser->mem, parser->syntax_extensions);
-    markdown_core_llist_free(parser->mem, parser->inline_syntax_extensions);
+    markdown_core_llist_free(parser->mem, parser->extensions);
+    markdown_core_llist_free(parser->mem, parser->inline_extensions);
     mem->free(parser);
 }
 
@@ -948,8 +947,8 @@ static markdown_core_node *add_child(markdown_core_parser *parser, markdown_core
 void markdown_core_manage_extensions_special_characters(markdown_core_parser *parser, int add) {
     markdown_core_llist *tmp_ext;
 
-    for (tmp_ext = parser->inline_syntax_extensions; tmp_ext; tmp_ext = tmp_ext->next) {
-        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)tmp_ext->data;
+    for (tmp_ext = parser->inline_extensions; tmp_ext; tmp_ext = tmp_ext->next) {
+        const markdown_core_extension *ext = (const markdown_core_extension *)tmp_ext->data;
         const unsigned char *c;
 
         for (c = (const unsigned char *)ext->terminates_text; c && *c; c++) {
@@ -1031,7 +1030,7 @@ static int process_inline_fields(markdown_core_parser *parser, markdown_core_nod
     }
     while (!parser->oom && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node;
-        const markdown_core_syntax_extension *extension;
+        const markdown_core_extension *extension;
         if (event != MARKDOWN_CORE_EVENT_ENTER) {
             continue;
         }
@@ -1903,8 +1902,8 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             markdown_core_llist *tmp;
             markdown_core_node *new_container = NULL;
 
-            for (tmp = parser->syntax_extensions; tmp; tmp = tmp->next) {
-                const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)tmp->data;
+            for (tmp = parser->extensions; tmp; tmp = tmp->next) {
+                const markdown_core_extension *ext = (const markdown_core_extension *)tmp->data;
 
                 if (ext->try_opening_block) {
                     new_container = ext->try_opening_block(ext, indented, parser, *container, input->data, input->len);
@@ -2160,7 +2159,7 @@ static int S_apply_tree_phase(markdown_core_parser *parser, markdown_core_node *
     }
     while (!parser->oom && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node;
-        const markdown_core_syntax_extension *extension;
+        const markdown_core_extension *extension;
         if (event != MARKDOWN_CORE_EVENT_ENTER) {
             continue;
         }
@@ -2192,7 +2191,7 @@ static int S_check_tree(markdown_core_parser *parser, markdown_core_node **root_
 #endif
 
 static int S_postprocess_tree(markdown_core_parser *parser, markdown_core_node **root_slot, void *context) {
-    const markdown_core_syntax_extension *extension = (const markdown_core_syntax_extension *)context;
+    const markdown_core_extension *extension = (const markdown_core_extension *)context;
     markdown_core_node *processed = extension->postprocess_func(extension, parser, *root_slot);
     if (processed) {
         *root_slot = processed;
@@ -2239,8 +2238,8 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     }
 #endif
 
-    for (extensions = parser->syntax_extensions; extensions && !parser->oom; extensions = extensions->next) {
-        const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
+    for (extensions = parser->extensions; extensions && !parser->oom; extensions = extensions->next) {
+        const markdown_core_extension *ext = (const markdown_core_extension *)extensions->data;
         if (ext->postprocess_func) {
             if (!S_apply_tree_phase(parser, &parser->root, S_postprocess_tree, (void *)ext)) {
                 parser->oom = true;
@@ -2306,8 +2305,4 @@ void markdown_core_parser_advance_offset(markdown_core_parser *parser, const cha
 
 void markdown_core_parser_set_backslash_ispunct_func(markdown_core_parser *parser, markdown_core_ispunct_func func) {
     parser->backslash_ispunct = func;
-}
-
-markdown_core_llist *markdown_core_parser_get_syntax_extensions(markdown_core_parser *parser) {
-    return parser->syntax_extensions;
 }

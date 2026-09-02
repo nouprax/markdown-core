@@ -1,5 +1,5 @@
 #include <stddef.h>
-#include "syntax_extension.h"
+#include "extension.h"
 #include <string.h>
 
 #include "markdown-core-extensions.h"
@@ -30,7 +30,7 @@
 // turns a set into a sequence.
 static const struct {
     unsigned bit;
-    const markdown_core_syntax_extension *extension;
+    const markdown_core_extension *extension;
 } CORE_EXTENSIONS[] = {{MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH, &MARKDOWN_CORE_EXTENSION_STRIKETHROUGH},
                        {MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK, &MARKDOWN_CORE_EXTENSION_AUTOLINK},
                        {MARKDOWN_CORE_CORE_EXTENSION_TASKLIST, &MARKDOWN_CORE_EXTENSION_TASKLIST},
@@ -51,7 +51,7 @@ int markdown_core_core_extensions_attach(markdown_core_parser *parser, unsigned 
         if (!(mask & CORE_EXTENSIONS[i].bit)) {
             continue;
         }
-        if (!markdown_core_parser_attach_syntax_extension(parser, CORE_EXTENSIONS[i].extension)) {
+        if (!markdown_core_parser_attach_extension(parser, CORE_EXTENSIONS[i].extension)) {
             return 0;
         }
     }

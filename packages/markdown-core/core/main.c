@@ -6,7 +6,7 @@
 #include "markdown-core.h"
 #include "node.h"
 #include "markdown-core-extension-api.h"
-#include "syntax_extension.h"
+#include "extension.h"
 #include "parser.h"
 
 #include "../extensions/markdown-core-extensions.h"
@@ -155,7 +155,7 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(argv[i], "--profile") == 0) {
             /* A NAMED OPTION SET, so a comparison harness can ask for exactly
              * one language without knowing which flags spell it. `commonmark`
-             * turns every syntax extension off for the reference cmark
+             * turns every parser extension off for the reference cmark
              * oracle. `gfm` adds only the cmark-gfm extension set, and
              * `gfm-extended` adds this repository's own syntax.
              *
@@ -253,7 +253,7 @@ int main(int argc, char *argv[]) {
      * the CLI attached `directive` FIRST, the facade attached it LAST, and
      * every binding goes through the facade.
      *
-     * A CommonMark profile has no syntax extensions. This repository's own two
+     * A CommonMark profile has no parser extensions. This repository's own two
      * are off under the GFM profiles, leaving exactly the extension set shared
      * with cmark-gfm. */
     extensions = commonmark_profile ? 0

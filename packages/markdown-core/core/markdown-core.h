@@ -92,7 +92,7 @@ typedef struct markdown_core_node markdown_core_node;
 #endif
 typedef struct markdown_core_parser markdown_core_parser;
 typedef struct markdown_core_iter markdown_core_iter;
-typedef struct markdown_core_syntax_extension markdown_core_syntax_extension;
+typedef struct markdown_core_extension markdown_core_extension;
 
 /**
  * ## Custom memory allocator support
@@ -164,12 +164,12 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new(markdown_core_no
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_mem(markdown_core_node_type type,
                                                                          markdown_core_mem *mem);
 
-MARKDOWN_CORE_EXPORT markdown_core_node *
-markdown_core_node_new_with_ext(markdown_core_node_type type, const markdown_core_syntax_extension *extension);
+MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
+                                                                         const markdown_core_extension *extension);
 
 MARKDOWN_CORE_EXPORT markdown_core_node *
 markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
-                                        const markdown_core_syntax_extension *extension);
+                                        const markdown_core_extension *extension);
 
 /** Frees the memory allocated for a node and any children.
  */

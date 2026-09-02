@@ -9,8 +9,8 @@
 #include "harness.h"
 
 static bool attach_extension(markdown_core_parser *parser, void *context) {
-    const auto *extension = static_cast<const markdown_core_syntax_extension *>(context);
-    return markdown_core_parser_attach_syntax_extension(parser, extension) != 0;
+    const auto *extension = static_cast<const markdown_core_extension *>(context);
+    return markdown_core_parser_attach_extension(parser, extension) != 0;
 }
 
 void test_cplusplus(test_batch_runner *runner) {
@@ -23,11 +23,10 @@ void test_cplusplus(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 
     static const char directive_markdown[] = ":cpp{title=\"My Video\" id=ordinary muted=true}\n";
-    const markdown_core_syntax_extension *extension = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
+    const markdown_core_extension *extension = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
     markdown_core_node *document = markdown_core_parse_document_with_mem(
         directive_markdown, sizeof(directive_markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT,
-        markdown_core_get_default_mem_allocator(), attach_extension,
-        const_cast<markdown_core_syntax_extension *>(extension));
+        markdown_core_get_default_mem_allocator(), attach_extension, const_cast<markdown_core_extension *>(extension));
     markdown_core_node *paragraph = markdown_core_node_first_child(document);
     markdown_core_node *directive = markdown_core_node_first_child(paragraph);
     {

@@ -12,8 +12,8 @@
         {
             "id": "own-extensions",
             "kind": "excluded-from-comparison",
-            "summary": "Every syntax extension, including the GFM set, is disabled on Markdown Core's side.",
-            "handling": "The comparison uses the `commonmark` profile, which attaches no syntax extensions and enables no footnote option.",
+            "summary": "Every parser extension, including the GFM set, is disabled on Markdown Core's side.",
+            "handling": "The comparison uses the `commonmark` profile, which attaches no parser extensions and enables no footnote option.",
             "evidence": "packages/markdown-core/core/main.c, --profile commonmark"
         },
         {

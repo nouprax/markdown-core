@@ -5,7 +5,7 @@ It is a statement of the current repository, not a staged implementation plan
 and not a record of abandoned designs.
 
 Markdown Core is a renamed cmark-family Markdown parser with repository-owned
-syntax extensions and an immutable, typed document model. It parses one owned
+parser extensions and an immutable, typed document model. It parses one owned
 source buffer into one owned `Document`. It does not render output and it does
 not expose a parser lifecycle, incremental mutation, streaming, CST, or
 diagnostic subsystem.
@@ -27,7 +27,7 @@ a second supported API.
 The reconstruction makes four deliberate product changes:
 
 1. Rename the cmark-derived parser as Markdown Core.
-2. Attach the repository's syntax extensions to the one parse transaction.
+2. Attach the repository's parser extensions to the one parse transaction.
 3. Project the parse result into the canonical immutable AST exposed by C,
    Swift, Kotlin, and ECMAScript.
 4. Remove cmark's renderers and its caller-driven feed/finish lifecycle.
@@ -45,7 +45,7 @@ owned source bytes + parse options -> Document | ParseError
 ```
 
 The facade owns the complete source for the duration of parsing. Internally it
-creates one private parser, attaches the configured syntax extensions, parses
+creates one private parser, attaches the configured parser extensions, parses
 the full buffer, finishes the document, and destroys the parser before it
 returns. Parser state never escapes that transaction.
 
@@ -70,7 +70,7 @@ The following interfaces do not exist:
 The CLI follows the same rule: it reads the selected input completely and
 invokes the same one-shot parse transaction used by library consumers.
 
-## 3. Syntax extensions
+## 3. Parser extensions
 
 Extensions participate only in parser construction. They may register block
 or inline syntax, node types, and parser-local state, but they do not create a

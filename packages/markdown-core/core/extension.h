@@ -1,5 +1,5 @@
-#ifndef MARKDOWN_CORE_SYNTAX_EXTENSION_H
-#define MARKDOWN_CORE_SYNTAX_EXTENSION_H
+#ifndef MARKDOWN_CORE_EXTENSION_H
+#define MARKDOWN_CORE_EXTENSION_H
 
 #include "markdown-core.h"
 #include "markdown-core-extension-api.h"
@@ -9,11 +9,11 @@
  * exposes their owning slots only to parser phases; it does not change the
  * public child iterator or make a field a parent/child edge. */
 typedef int (*markdown_core_owned_subtree_visitor)(markdown_core_node **root_slot, void *context);
-typedef int (*markdown_core_visit_owned_subtrees_func)(const markdown_core_syntax_extension *extension,
+typedef int (*markdown_core_visit_owned_subtrees_func)(const markdown_core_extension *extension,
                                                        markdown_core_node *node,
                                                        markdown_core_owned_subtree_visitor visitor, void *context);
 
-struct markdown_core_syntax_extension {
+struct markdown_core_extension {
     markdown_core_match_block_func last_block_matches;
     markdown_core_open_block_func try_opening_block;
     markdown_core_match_inline_func match_inline;

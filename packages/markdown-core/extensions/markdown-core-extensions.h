@@ -13,9 +13,9 @@ extern "C" {
 
 /** The node types the six core extensions add, as COMPILE-TIME CONSTANTS.
  *
- * They used to be `markdown_core_node_type` globals assigned by
- * `markdown_core_syntax_extension_add_node` in whatever order
- * `core_extensions_registration` happened to call the `create_*` functions --
+ * They used to be `markdown_core_node_type` globals assigned by runtime
+ * registration in whatever order `core_extensions_registration` happened to
+ * call the `create_*` functions --
  * so a node type's numeric identity was a consequence of a call order, in a
  * different file, that nothing checked. Attach order and type numbering are
  * unrelated facts and conflating them is what made the old globals

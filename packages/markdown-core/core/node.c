@@ -4,7 +4,7 @@
 #include "config.h"
 #include "node.h"
 #include "references.h"
-#include "syntax_extension.h"
+#include "extension.h"
 
 static void S_node_unlink(markdown_core_node *node);
 
@@ -83,7 +83,7 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
 }
 
 markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
-                                                            const markdown_core_syntax_extension *extension) {
+                                                            const markdown_core_extension *extension) {
     markdown_core_node *node = (markdown_core_node *)mem->calloc(1, sizeof(*node));
     if (!node) {
         return NULL;
@@ -117,7 +117,7 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_t
 }
 
 markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
-                                                    const markdown_core_syntax_extension *extension) {
+                                                    const markdown_core_extension *extension) {
     return markdown_core_node_new_with_mem_and_ext(type, markdown_core_get_default_mem_allocator(), extension);
 }
 
@@ -727,15 +727,7 @@ int markdown_core_node_set_title(markdown_core_node *node, const char *title) {
     return 0;
 }
 
-const markdown_core_syntax_extension *markdown_core_node_get_syntax_extension(markdown_core_node *node) {
-    if (node == NULL) {
-        return NULL;
-    }
-
-    return node->extension;
-}
-
-int markdown_core_node_set_syntax_extension(markdown_core_node *node, const markdown_core_syntax_extension *extension) {
+int markdown_core_node_set_extension(markdown_core_node *node, const markdown_core_extension *extension) {
     if (node == NULL) {
         return 0;
     }

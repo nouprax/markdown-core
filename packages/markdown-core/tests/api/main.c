@@ -9,7 +9,7 @@
 #include "node.h"
 #include "buffer.h"
 #include "parser.h"
-#include "syntax_extension.h"
+#include "extension.h"
 #include "markdown-core-extensions.h"
 
 #include <markdown_core.h>
@@ -20,7 +20,7 @@
 #define UTF8_REPL "\xEF\xBF\xBD"
 
 typedef struct extension_setup {
-    const markdown_core_syntax_extension *const *extensions;
+    const markdown_core_extension *const *extensions;
     size_t count;
 } extension_setup;
 
@@ -29,7 +29,7 @@ static bool attach_extensions(markdown_core_parser *parser, void *context) {
     size_t i;
 
     for (i = 0; i < setup->count; i++) {
-        if (!markdown_core_parser_attach_syntax_extension(parser, setup->extensions[i])) {
+        if (!markdown_core_parser_attach_extension(parser, setup->extensions[i])) {
             return false;
         }
     }
@@ -37,7 +37,7 @@ static bool attach_extensions(markdown_core_parser *parser, void *context) {
 }
 
 static markdown_core_node *parse_with_extensions(const char *source, size_t length, int options,
-                                                 const markdown_core_syntax_extension *const *extensions,
+                                                 const markdown_core_extension *const *extensions,
                                                  size_t extension_count) {
     extension_setup setup = {extensions, extension_count};
     return markdown_core_parse_document_with_mem(source, length, options, markdown_core_get_default_mem_allocator(),
@@ -96,9 +96,9 @@ static void version(test_batch_runner *runner) {
 /* The extension types continue these two sequences, so listing them here means
  * the existing contiguity assertions pin every one of the nine values AND make
  * a collision or a gap impossible. Until Step 3.1 they were globals filled in
- * by `markdown_core_syntax_extension_add_node` in whatever order
- * `core_extensions_registration` called the `create_*` functions, and nothing
- * in the repository asserted a single one of them. */
+ * by runtime registration in whatever order `core_extensions_registration`
+ * called the `create_*` functions, and nothing in the repository asserted a
+ * single one of them. */
 static void node_type_values(test_batch_runner *runner) {
     static const markdown_core_node_type block_types[] = {MARKDOWN_CORE_NODE_DOCUMENT,
                                                           MARKDOWN_CORE_NODE_BLOCK_QUOTE,
@@ -316,7 +316,7 @@ static void accessors(test_batch_runner *runner) {
 }
 
 static markdown_core_node *parse_with_formula_extension_options(const char *markdown, int options) {
-    const markdown_core_syntax_extension *formula = &MARKDOWN_CORE_EXTENSION_FORMULA;
+    const markdown_core_extension *formula = &MARKDOWN_CORE_EXTENSION_FORMULA;
     return parse_with_extensions(markdown, strlen(markdown), options, &formula, 1);
 }
 
@@ -329,7 +329,7 @@ static markdown_core_node *parse_with_dollar_formula_extension(const char *markd
 }
 
 static markdown_core_node *parse_with_directive_extension(const char *markdown) {
-    const markdown_core_syntax_extension *directive = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
+    const markdown_core_extension *directive = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
     return parse_with_extensions(markdown, strlen(markdown), MARKDOWN_CORE_OPT_DEFAULT, &directive, 1);
 }
 
@@ -1184,9 +1184,9 @@ static void test_facade_dump(test_batch_runner *runner, const char *markdown, in
 // or not the defect is present. This one keeps failing.
 static void extension_decline_yields_turn(test_batch_runner *runner) {
     static const char *const markdown = "text\n:::note\nbody\n:::\n";
-    const markdown_core_syntax_extension *table = &MARKDOWN_CORE_EXTENSION_TABLE;
-    const markdown_core_syntax_extension *directive = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
-    const markdown_core_syntax_extension *extensions[] = {table, directive};
+    const markdown_core_extension *table = &MARKDOWN_CORE_EXTENSION_TABLE;
+    const markdown_core_extension *directive = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
+    const markdown_core_extension *extensions[] = {table, directive};
 
     OK(runner, table && directive, "table and directive extensions are available");
     if (!table || !directive) {
@@ -1341,7 +1341,7 @@ static markdown_core_node *stray_delimiter_push(markdown_core_parser *parser,
     return node;
 }
 
-static markdown_core_node *stray_unowned_match(const markdown_core_syntax_extension *self, markdown_core_parser *parser,
+static markdown_core_node *stray_unowned_match(const markdown_core_extension *self, markdown_core_parser *parser,
                                                markdown_core_node *parent, unsigned char character,
                                                markdown_core_inline_parser *inline_parser) {
     (void)self;
@@ -1349,7 +1349,7 @@ static markdown_core_node *stray_unowned_match(const markdown_core_syntax_extens
     return stray_delimiter_push(parser, inline_parser, character, MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH);
 }
 
-static markdown_core_node *stray_unnamed_match(const markdown_core_syntax_extension *self, markdown_core_parser *parser,
+static markdown_core_node *stray_unnamed_match(const markdown_core_extension *self, markdown_core_parser *parser,
                                                markdown_core_node *parent, unsigned char character,
                                                markdown_core_inline_parser *inline_parser) {
     (void)self;
@@ -1357,12 +1357,12 @@ static markdown_core_node *stray_unnamed_match(const markdown_core_syntax_extens
     return stray_delimiter_push(parser, inline_parser, character, (markdown_core_delimiter_rule)200);
 }
 
-static const markdown_core_syntax_extension STRAY_UNOWNED = {
+static const markdown_core_extension STRAY_UNOWNED = {
     .name = "stray-unowned", .match_inline = stray_unowned_match, .terminates_text = "@", .dispatch = "@"};
-static const markdown_core_syntax_extension STRAY_UNNAMED = {
+static const markdown_core_extension STRAY_UNNAMED = {
     .name = "stray-unnamed", .match_inline = stray_unnamed_match, .terminates_text = "@", .dispatch = "@"};
 
-static void stray_delimiter_parse(test_batch_runner *runner, const markdown_core_syntax_extension *extension,
+static void stray_delimiter_parse(test_batch_runner *runner, const markdown_core_extension *extension,
                                   const char *what) {
     const char *input = "a @ b @ c\n";
     markdown_core_node *document =

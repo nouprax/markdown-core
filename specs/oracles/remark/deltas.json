@@ -8,7 +8,7 @@
             "math": "micromark-extension-math@3.1.0",
             "footnotes and tables": "micromark-extension-gfm-* (remark-gfm)"
         },
-        "astShapeFrom": "mdast-util-directive@3.1.0 and mdast-util-from-markdown; every `ast-shape` delta below originates here, not in the syntax extensions.",
+        "astShapeFrom": "mdast-util-directive@3.1.0 and mdast-util-from-markdown; every `ast-shape` delta below originates here, not in the parser extensions.",
         "note": "Versions are pinned by pnpm-lock.yaml. This is a corrective and supplementary oracle: cmark remains authoritative for CommonMark and cmark-gfm for GFM extensions, while remark/mdast supplies independent evidence for directives, math, footnote representation, tables, and the reference-link model.",
         "notAnAuthorityFor": [
             "Which construct wins when two extensions could claim the same line. That is decided by micromark's construct priority and by this repository's audited extension attachment order — each an artifact of its own architecture, not a rule either project specifies. Divergences of that kind are product grammar decisions rather than mdast parity deltas.",

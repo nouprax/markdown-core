@@ -7,7 +7,7 @@ promised to remain compatible between releases.
 ## 3.0.0 - unreleased
 
 Reconstruct the cmark-derived engine as the renamed, parser-only Markdown Core
-product. This line adds the repository syntax extensions and immutable AST
+product. This line adds the repository parser extensions and immutable AST
 facade while removing renderer support and the caller-driven feed lifecycle.
 
 - Raise the Swift package contract to Swift tools 6.3 and iOS 26/macOS 26,

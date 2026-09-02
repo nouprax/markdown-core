@@ -1,5 +1,5 @@
 #include <markdown-core-extension-api.h>
-#include "syntax_extension.h"
+#include "extension.h"
 #include <inlines.h>
 #include <parser.h>
 #include <references.h>
@@ -187,7 +187,7 @@ static node_cell *append_row_cell(markdown_core_mem *mem, table_row *row, int *o
     return &row->cells[n_columns - 1];
 }
 
-static table_row *row_from_string(const markdown_core_syntax_extension *self, markdown_core_parser *parser,
+static table_row *row_from_string(const markdown_core_extension *self, markdown_core_parser *parser,
                                   unsigned char *string, int len) {
     // Parses a single table row. It has the following form:
     // `delim? table_cell (delim table_cell)* delim? newline`
@@ -418,9 +418,9 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
 //
 // `table` is the only extension with this shape; directive and formula already
 // answer NULL on every decline.
-static markdown_core_node *try_opening_table_header(const markdown_core_syntax_extension *self,
-                                                    markdown_core_parser *parser, markdown_core_node *parent_container,
-                                                    unsigned char *input, int len) {
+static markdown_core_node *try_opening_table_header(const markdown_core_extension *self, markdown_core_parser *parser,
+                                                    markdown_core_node *parent_container, unsigned char *input,
+                                                    int len) {
     markdown_core_node *table_header;
     table_row *header_row = NULL;
     table_row *delimiter_row = NULL;
@@ -482,7 +482,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_syntax_e
      * allocation failure the half-converted node stays behind with a NULL
      * payload -- every table helper tolerates that -- and the sticky flag
      * makes the parse fail, so nothing downstream trusts the node. */
-    markdown_core_node_set_syntax_extension(parent_container, self);
+    markdown_core_node_set_extension(parent_container, self);
     // From here down the node IS a table, so every remaining
     // `return parent_container` means "opened, then failed" rather than
     // "declined". Do not turn these into NULL with the six above it.
@@ -525,7 +525,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_syntax_e
         free_table_row(parser->mem, delimiter_row);
         return parent_container;
     }
-    markdown_core_node_set_syntax_extension(table_header, self);
+    markdown_core_node_set_extension(table_header, self);
     /* The header row and its cells are RECOVERED from the paragraph's content
      * buffer, and every offset below is an offset into that buffer. Adding one
      * to a column is only right while the buffer holds a single line starting
@@ -559,7 +559,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_syntax_e
          * written; one mark says so, because a cell is one line long. */
         S_mark_cell_content(parser, parent_container, header_cell, cell->start_offset + cell->internal_offset);
         markdown_core_node_set_string_content(header_cell, (char *)cell->buf->ptr);
-        markdown_core_node_set_syntax_extension(header_cell, self);
+        markdown_core_node_set_extension(header_cell, self);
         set_cell_index(header_cell, i);
     }
 
@@ -573,9 +573,8 @@ static markdown_core_node *try_opening_table_header(const markdown_core_syntax_e
     return parent_container;
 }
 
-static markdown_core_node *try_opening_table_row(const markdown_core_syntax_extension *self,
-                                                 markdown_core_parser *parser, markdown_core_node *parent_container,
-                                                 unsigned char *input, int len) {
+static markdown_core_node *try_opening_table_row(const markdown_core_extension *self, markdown_core_parser *parser,
+                                                 markdown_core_node *parent_container, unsigned char *input, int len) {
     markdown_core_node *table_row_block;
     table_row *row;
 
@@ -592,7 +591,7 @@ static markdown_core_node *try_opening_table_row(const markdown_core_syntax_exte
     if (!table_row_block) {
         return NULL;
     }
-    markdown_core_node_set_syntax_extension(table_row_block, self);
+    markdown_core_node_set_extension(table_row_block, self);
     table_row_block->end_column = parent_container->end_column;
     table_row_block->as.opaque = parser->mem->calloc(1, sizeof(node_table_row));
     if (!table_row_block->as.opaque) {
@@ -630,7 +629,7 @@ static markdown_core_node *try_opening_table_row(const markdown_core_syntax_exte
             markdown_core_parser_mark_content(parser, node, markdown_core_parser_get_line_number(parser),
                                               markdown_core_parser_get_first_nonspace(parser) + 1 + cell->start_offset +
                                                   cell->internal_offset);
-            markdown_core_node_set_syntax_extension(node, self);
+            markdown_core_node_set_extension(node, self);
             set_cell_index(node, i);
         }
 
@@ -660,7 +659,7 @@ static markdown_core_node *try_opening_table_row(const markdown_core_syntax_exte
                 break;
             }
             node->end_column = (int)completed_at;
-            markdown_core_node_set_syntax_extension(node, self);
+            markdown_core_node_set_extension(node, self);
             set_cell_index(node, i);
         }
     }
@@ -673,7 +672,7 @@ static markdown_core_node *try_opening_table_row(const markdown_core_syntax_exte
     return table_row_block;
 }
 
-static markdown_core_node *try_opening_table_block(const markdown_core_syntax_extension *self, int indented,
+static markdown_core_node *try_opening_table_block(const markdown_core_extension *self, int indented,
                                                    markdown_core_parser *parser, markdown_core_node *parent_container,
                                                    unsigned char *input, int len) {
     markdown_core_node_type parent_type = markdown_core_node_get_type(parent_container);
@@ -687,8 +686,8 @@ static markdown_core_node *try_opening_table_block(const markdown_core_syntax_ex
     return NULL;
 }
 
-static int matches(const markdown_core_syntax_extension *self, markdown_core_parser *parser, unsigned char *input,
-                   int len, markdown_core_node *parent_container) {
+static int matches(const markdown_core_extension *self, markdown_core_parser *parser, unsigned char *input, int len,
+                   markdown_core_node *parent_container) {
     int res = 0;
 
     if (markdown_core_node_get_type(parent_container) == MARKDOWN_CORE_NODE_TABLE) {
@@ -703,7 +702,7 @@ static int matches(const markdown_core_syntax_extension *self, markdown_core_par
     return res;
 }
 
-static const char *get_type_string(const markdown_core_syntax_extension *self, markdown_core_node *node) {
+static const char *get_type_string(const markdown_core_extension *self, markdown_core_node *node) {
     if (node->type == MARKDOWN_CORE_NODE_TABLE) {
         return "table";
     } else if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
@@ -719,7 +718,7 @@ static const char *get_type_string(const markdown_core_syntax_extension *self, m
     return "<unknown>";
 }
 
-static int can_contain(const markdown_core_syntax_extension *extension, markdown_core_node *node,
+static int can_contain(const markdown_core_extension *extension, markdown_core_node *node,
                        markdown_core_node_type child_type) {
     if (node->type == MARKDOWN_CORE_NODE_TABLE) {
         return child_type == MARKDOWN_CORE_NODE_TABLE_ROW;
@@ -731,11 +730,11 @@ static int can_contain(const markdown_core_syntax_extension *extension, markdown
     return false;
 }
 
-static int contains_inlines(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
+static int contains_inlines(const markdown_core_extension *extension, markdown_core_node *node) {
     return node->type == MARKDOWN_CORE_NODE_TABLE_CELL;
 }
 
-static void opaque_alloc(const markdown_core_syntax_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
+static void opaque_alloc(const markdown_core_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
     /* A NULL payload is tolerated by every table property helper; the node
      * then reports zero columns/alignments. */
     if (node->type == MARKDOWN_CORE_NODE_TABLE) {
@@ -747,7 +746,7 @@ static void opaque_alloc(const markdown_core_syntax_extension *self, markdown_co
     }
 }
 
-static void opaque_free(const markdown_core_syntax_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
+static void opaque_free(const markdown_core_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
     if (node->type == MARKDOWN_CORE_NODE_TABLE) {
         free_node_table(mem, node->as.opaque);
     } else if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
@@ -757,7 +756,7 @@ static void opaque_free(const markdown_core_syntax_extension *self, markdown_cor
 
 /* A block-only extension: no byte ends a text run for it, no byte is offered to an
  * inline hook it does not have, and no byte is transparent to flanking. */
-const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_TABLE = {
+const markdown_core_extension MARKDOWN_CORE_EXTENSION_TABLE = {
     .name = "table",
     .last_block_matches = matches,
     .try_opening_block = try_opening_table_block,

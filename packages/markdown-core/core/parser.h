@@ -78,8 +78,8 @@ struct markdown_core_parser {
      * one-shot transaction reports the whole parse as failed (NULL) instead of
      * returning a silently truncated document. */
     bool oom;
-    markdown_core_llist *syntax_extensions;
-    markdown_core_llist *inline_syntax_extensions;
+    markdown_core_llist *extensions;
+    markdown_core_llist *inline_extensions;
     markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
      * the special/emphasis-skip characters of the attached inline extensions.

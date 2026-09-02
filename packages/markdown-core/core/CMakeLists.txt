@@ -21,7 +21,7 @@ set(HEADERS
     inlines.h
     houdini.h
     markdown_core_ctype.h
-    syntax_extension.h
+    extension.h
     delimiter.h)
 set(LIBRARY_SOURCES
     markdown_core.c

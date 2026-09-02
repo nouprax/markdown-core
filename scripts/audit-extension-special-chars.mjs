@@ -54,7 +54,7 @@ const extensionsDir = path.join(root, "packages/markdown-core/extensions");
 // The one declaration: three designated initialisers in one `static const`
 // descriptor. Before 3.4 it was one `set_byte_sets` call in a `create_*`
 // function; before 3.2 it was a run of `llist_append`s.
-const DESCRIPTOR = /const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_\w+ = \{([\s\S]*?)\n\};/;
+const DESCRIPTOR = /const markdown_core_extension MARKDOWN_CORE_EXTENSION_\w+ = \{([\s\S]*?)\n\};/;
 const FIELD = (name) => new RegExp(`\\.${name}\\s*=\\s*("(?:\\\\.|[^"])*")`);
 const HOOK = /\.match_inline\s*=\s*(\w+)/;
 

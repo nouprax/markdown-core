@@ -20,7 +20,7 @@ struct delimiter {
     struct delimiter *next;
     markdown_core_node *inl_text;
     /** The extension that pushed it, or NULL for a core rule. One load. */
-    const markdown_core_syntax_extension *owner;
+    const markdown_core_extension *owner;
     bufsize_t position;
     bufsize_t length;
     markdown_core_delimiter_rule rule;
