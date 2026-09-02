@@ -1946,7 +1946,7 @@ redesign of the hook contract, not a patch to this round: filed as
 #168, with a SELF-vs-SUBTREE reach declaration on the descriptor as its
 cheap half and the promotion of a hook's fresh child as its third.
 
-### F28 — the wire crosses as a DELTA against the payload before it, and the feed loop stops re-reading the document per feed: −96% on the 256-chunk stream  · VERIFIED (#162)
+### F28 — the wire crosses as a DELTA against the payload before it, and the feed loop stops re-reading the document per feed: −97% on the 256-chunk stream  · VERIFIED (#162)
 
 **What was measured.** F27 made the engine's feed O(open + changed), and
 the bindings then paid the document again on every feed anyway: a feed's
@@ -2069,7 +2069,10 @@ stream 27× faster; the one-shot 22.6 → 22.2 ms and deep nesting 92 → 83
 64.9 / 453.9 ms → 18.6 / 21.5 / 22.8 ms — 1.16× and 1.06× per step where
 it read 2.6× and 7.0×, the 256-chunk stream 20× faster, its resident set
 488 → 152 MB and its heap in use 151 → 23 MB, since a read no longer
-allocates the document again per feed; the one-shot 16.6 → 14.6 ms. The
+allocates the document again per feed; the one-shot 16.6 → 14.6 ms. With
+the review round's exact fill in both decoders: ES 18.9 / 20.3 / 27.8 ms
+(1.07× and 1.36× per step, the 256-chunk stream 35× faster than before
+the delta) and Kotlin 16.3 / 22.9 / 20.5 ms, its resident set 150 MB. The
 #148 caps fall from 32 to 4 per 16× step
 in both bindings' feed-loop benchmarks: the construction bench_runner
 uses (4.0 on a 2× step), tolerating the per-feed floor that remains
@@ -2101,10 +2104,11 @@ paragraph fed by line. ES, one paragraph fed onto N closed ones, the last
 the appending decoders → 31.2 / 50.4 / 80.4 / 318.1 / 783.6 with the
 exact fill, at N = 2,000 / 4,000 / 8,000 / 16,000 / 32,000; profiled over
 the run at 32,000, the engine is 58% of a feed, the decoder's fill 29%,
-collection 5%. So the 1.7× per 16× step the ES feed-loop benchmark keeps
-(62 µs per added feed between 16 and 256 chunks on its 4,000-block
-document) is this floor — an earlier draft of this note laid it on the
-open block's re-read, the smallest of the three. The floor is accepted
+collection 5%. So the 1.7× per 16× step the ES feed-loop benchmark read
+before the exact fill, and the 1.36× it reads with it (31 µs per added
+feed between 16 and 256 chunks on its 4,000-block document), is this
+floor — an earlier draft of this note laid it on the open block's re-read,
+the smallest of the three. The floor is accepted
 (§6), and its removal is one change on both sides of the wire: a child
 sequence shared by structure rather than copied — the memo run referenced
 by the derived root instead of consumed into its vector, the count kept
