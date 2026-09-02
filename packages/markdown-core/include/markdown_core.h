@@ -605,8 +605,13 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  * and a SPINE's kind and identity always equal the previous child's. The
  * root of a DELTA frame is one SPINE op for the document. A node the
  * engine retained across the two derivations (docs/STREAMING.md F27) is
- * exactly what SAME names, so a delta costs the open spine and the
- * changed blocks, never the document.
+ * exactly what SAME names, so a delta is written in the open spine and
+ * the changed blocks, a stable prefix of any length crossing as one op.
+ * What a reader pays for a SAME run is its own: a binding that builds the
+ * new child list as a value copies one reference per reused child, which
+ * at the document's root is every closed block on every feed -- the
+ * value-level twin of the pointer terms the engine accepts per feed
+ * (docs/STREAMING.md §6).
  *
  * The root node ends the payload. Free the buffer with
  * `markdown_core_wire_free`. The layout changes only with the version this

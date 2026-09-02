@@ -73,12 +73,19 @@ private fun positionalChildren(node: Markup): Pair<WireKind, kotlin.collections.
  * The ops that turn [previous] -- the previous read's children of the node
  * being rewritten -- into the new node's children: SAME reuses the next run
  * of them as they are, SPINE rewrites the next one, and any other tag is a
- * kind byte opening a node written whole.
+ * kind byte opening a node written whole. Two passes: the ops are read
+ * into PARTS, a reused run's length or a node read afresh, and counted;
+ * the children are then filled into a list of exactly that capacity. The
+ * reused run is every closed block of the document on every feed that
+ * grows it -- the reference copy the delta leaves the reader
+ * (docs/STREAMING.md §6) -- and a list grown by halves under an append per
+ * reused child copied itself on the way.
  */
 private fun WireReader.ops(previous: kotlin.collections.List<Markup>): kotlin.collections.List<Markup> {
     val count = int()
     require(count >= 0) { "invalid native op count" }
-    val children = ArrayList<Markup>()
+    val parts = ArrayList<Any>(count)
+    var total = 0
     var position = 0
     repeat(count) {
         when (val tag = rawTag()) {
@@ -87,13 +94,15 @@ private fun WireReader.ops(previous: kotlin.collections.List<Markup>): kotlin.co
                 require(run >= 0 && run <= previous.size - position) {
                     "native parser reused children the previous read does not have"
                 }
-                for (offset in 0 until run) children += previous[position + offset]
+                parts += run
+                total += run
                 position += run
             }
 
             WireReader.OP_SPINE -> {
                 require(position < previous.size) { "native parser rewrote a child the previous read does not have" }
-                children += spine(previous[position])
+                parts += spine(previous[position])
+                total++
                 position++
             }
 
@@ -101,9 +110,21 @@ private fun WireReader.ops(previous: kotlin.collections.List<Markup>): kotlin.co
                 val kind = WireKind.from(tag)
                 val id = identity()
                 val nodeScope = scope()
-                children += markupOf(kind, id, nodeScope)
+                parts += markupOf(kind, id, nodeScope)
+                total++
                 position++
             }
+        }
+    }
+    val children = ArrayList<Markup>(total)
+    position = 0
+    for (part in parts) {
+        if (part is Int) {
+            for (offset in 0 until part) children += previous[position + offset]
+            position += part
+        } else {
+            children += part as Markup
+            position++
         }
     }
     return children.asImmutable()

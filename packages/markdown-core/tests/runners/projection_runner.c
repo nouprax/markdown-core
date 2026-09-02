@@ -5109,6 +5109,14 @@ typedef struct wd_out {
     size_t size;
     size_t capacity;
     int failed;
+    /* THE ACCOUNTING: the bytes SAME ops reused from the previous frame,
+     * and the op counts, so that a delta's length can be checked against
+     * the full frame's -- a SPINE costs its one tag byte over the node it
+     * rewrites, a SAME its tag and count over the children it stands for,
+     * and a NODE nothing. */
+    size_t reused;
+    size_t spines;
+    size_t sames;
 } wd_out;
 
 /* Letters: I identity, S scope, i i32, l i64, b u8, s string (i32 length,
@@ -5396,6 +5404,7 @@ static void wd_spine(wd_cursor *delta, const wd_cursor *frame, size_t prev_at, w
         *why = "a spine op's fields are truncated";
         return;
     }
+    out->spines++;
     wd_put(out, &kind, 1);
     wd_put(out, delta->data + fields_at, delta->at - fields_at);
     wd_skip_fields(&prev, program);
@@ -5435,6 +5444,8 @@ static void wd_spine(wd_cursor *delta, const wd_cursor *frame, size_t prev_at, w
                 break;
             }
             wd_put(out, prev.data + starts[position], starts[position + run] - starts[position]);
+            out->sames++;
+            out->reused += starts[position + run] - starts[position];
             position += run;
             produced += run;
         } else if (tag == 0xFE) {
@@ -5468,8 +5479,13 @@ static void wd_spine(wd_cursor *delta, const wd_cursor *frame, size_t prev_at, w
 }
 
 /* The FULL form of a payload: the payload itself for a FULL frame, the
- * reassembly against `previous` (itself a FULL form) for a DELTA. Malloc'd;
- * NULL with `*why` set when the payload does not reassemble. */
+ * reassembly against `previous` (itself a FULL form) for a DELTA, with
+ * `*reused` the bytes of it SAME ops stood for. Malloc'd; NULL with `*why`
+ * set when the payload does not reassemble, or when its length is not
+ * exactly the full form's less the reused bytes plus the ops' own -- one
+ * byte per SPINE, five per SAME -- which is every byte of a delta
+ * accounted for: nothing a SAME could have named written whole, and
+ * nothing written that the full form does not hold. */
 static uint8_t *wd_full_form(
     const uint8_t *payload,
     size_t length,
@@ -5477,6 +5493,7 @@ static uint8_t *wd_full_form(
     size_t previous_length,
     size_t *out_length,
     int *was_delta,
+    size_t *reused,
     const char **why
 ) {
     wd_cursor delta;
@@ -5485,6 +5502,7 @@ static uint8_t *wd_full_form(
     uint8_t full = 0;
 
     *was_delta = 0;
+    *reused = 0;
     if (length < 1) {
         *why = "an empty payload";
         return NULL;
@@ -5534,7 +5552,13 @@ static uint8_t *wd_full_form(
         free(out.data);
         return NULL;
     }
+    if (length != out.size - out.reused + out.spines + 5 * out.sames) {
+        *why = "the delta's length is not the full frame's less the reused bytes plus the ops' own";
+        free(out.data);
+        return NULL;
+    }
     *out_length = out.size;
+    *reused = out.reused;
     return out.data;
 }
 
@@ -5543,6 +5567,7 @@ typedef struct wd_stats {
     size_t deltas;
     size_t delta_bytes;
     size_t full_bytes;
+    size_t reused_bytes;
 } wd_stats;
 
 /* One boundary: the delta session's payload against the full session's,
@@ -5562,6 +5587,7 @@ static int wd_compare(
 ) {
     const char *why = "";
     int was_delta = 0;
+    size_t reused = 0;
     uint8_t *form;
     size_t form_length = 0;
     int equal;
@@ -5579,8 +5605,16 @@ static int wd_compare(
         markdown_core_wire_free(full_payload);
         return -1;
     }
-    form =
-        wd_full_form(delta_payload + 2, delta_length - 2, *previous, *previous_length, &form_length, &was_delta, &why);
+    form = wd_full_form(
+        delta_payload + 2,
+        delta_length - 2,
+        *previous,
+        *previous_length,
+        &form_length,
+        &was_delta,
+        &reused,
+        &why
+    );
     if (!form) {
         fprintf(
             stderr,
@@ -5618,9 +5652,16 @@ static int wd_compare(
         equal = 0;
     }
     stats->frames++;
-    stats->deltas += was_delta ? 1 : 0;
-    stats->delta_bytes += delta_length - 2;
-    stats->full_bytes += full_length - 2;
+    /* The size terms count a DELTA against the FULL frame it stands for
+     * and nothing else: a boundary the delta session answered FULL -- the
+     * first of a session, or one the walk asked FULL at -- is the same
+     * bytes twice. */
+    if (was_delta) {
+        stats->deltas++;
+        stats->delta_bytes += delta_length - 2;
+        stats->full_bytes += full_length - 2;
+        stats->reused_bytes += reused;
+    }
     markdown_core_wire_free(delta_payload);
     markdown_core_wire_free(full_payload);
     free(*previous);
@@ -5859,20 +5900,26 @@ static int case_wire_delta(const ts_spec_file *file) {
         failures++;
     }
     printf(
-        "wire delta: %zu/%zu examples reassemble, %zu frames, %zu deltas, %zu delta bytes for %zu full bytes; "
-        "the %d-deep nest %zu frames, %zu deltas\n",
+        "wire delta: %zu/%zu examples reassemble, %zu frames, %zu deltas, %zu delta bytes for %zu full bytes of "
+        "which %zu reused; the %d-deep nest %zu frames, %zu deltas\n",
         file->count - (size_t)failures,
         file->count,
         stats.frames,
         stats.deltas,
         stats.delta_bytes,
         stats.full_bytes,
+        stats.reused_bytes,
         WD_DEEP_LEVELS,
         deep.frames,
         deep.deltas
     );
-    if (stats.deltas == 0 || stats.delta_bytes >= stats.full_bytes) {
-        fputs("wire delta: the corpus produced no delta, or deltas no smaller than the full frames\n", stderr);
+    /* Not vacuous: the corpus must have produced deltas, and they must have
+     * REUSED something -- a delta of NODE ops alone is a full frame with a
+     * tag on it. Whether the deltas come out smaller than the full frames
+     * is the corpus's fact, reported above, not the protocol's: an example
+     * of a few lines is mostly its open paragraph, re-sent per line. */
+    if (stats.deltas == 0 || stats.reused_bytes == 0) {
+        fputs("wire delta: the corpus produced no delta, or deltas that reused nothing\n", stderr);
         failures++;
     }
     return failures ? -1 : 0;

@@ -279,10 +279,18 @@ class WireReader {
     }
 
     /** The ops that turn `previous` -- the previous read's children of the
-     * node being rewritten -- into the new node's children. */
+     * node being rewritten -- into the new node's children. Two passes: the
+     * ops are read into PARTS, a reused run's length or a node read afresh,
+     * and counted; the children are then filled into an array of exactly
+     * that length. The reused run is every closed block of the document on
+     * every feed that grows it -- the reference copy the delta leaves the
+     * reader (docs/STREAMING.md §6) -- and an append per reused child grew
+     * the array by halves and copied it on the way, twice the copy's own
+     * cost at 32,000 blocks. */
     ops(previous: readonly Markup[]): readonly Markup[] {
         const count = this.count("op count");
-        const children: Markup[] = [];
+        const parts: (Markup | number)[] = [];
+        let total = 0;
         let position = 0;
         for (let index = 0; index < count; index++) {
             const tag = this.byte();
@@ -291,17 +299,32 @@ class WireReader {
                 if (run > previous.length - position) {
                     throw new Error("native parser reused children the previous read does not have");
                 }
-                for (let offset = 0; offset < run; offset++) children.push(previous[position + offset]!);
+                parts.push(run);
+                total += run;
                 position += run;
             } else if (tag === OP_SPINE) {
                 const node = previous[position];
                 if (node === undefined)
                     throw new Error("native parser rewrote a child the previous read does not have");
-                children.push(this.spine(node));
-                position++;
+                parts.push(this.spine(node));
+                total += 1;
+                position += 1;
             } else {
-                children.push(this.nodeOfKind(this.kindOf(tag)));
-                position++;
+                parts.push(this.nodeOfKind(this.kindOf(tag)));
+                total += 1;
+                position += 1;
+            }
+        }
+        const children: Markup[] = new Array<Markup>(total);
+        let at = 0;
+        position = 0;
+        for (const part of parts) {
+            if (typeof part === "number") {
+                for (let offset = 0; offset < part; offset++) children[at++] = previous[position + offset]!;
+                position += part;
+            } else {
+                children[at++] = part;
+                position += 1;
             }
         }
         return children;

@@ -82,7 +82,9 @@ longer exists. 3.0.0 ships a different streaming surface, described below.
   and only the open spine and the changed blocks cross. The bindings hand
   the previous read's values into the new read wherever the delta says
   nothing moved — a reused subtree is the same object, still an immutable
-  value — and ask for FULL whenever they hold no previous read. In C,
+  value — and ask for FULL whenever they hold no previous read. What a
+  reader still pays per feed is one reference copied per reused child into
+  the new read's child list, bounded in docs/STREAMING.md §6. In C,
   `markdown_core_session_feed_wire` takes the frame request, and
   `markdown_core_session_finish_wire` seals the stream on the wire in the
   frame asked for; `markdown_core_document_wire` always writes FULL. The
