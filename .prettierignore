@@ -18,8 +18,9 @@ packages/markdown-core/tests/fixtures/
 packages/markdown-core/tests/canonical-ast/
 
 # Generated, copied, and package-manager content
-packages/markdown-core/core/case_fold_switch.inc
+packages/markdown-core/core/case_fold.inc
 packages/markdown-core/core/entities.inc
+packages/markdown-core/core/punctuation_or_symbol.inc
 packages/markdown-core/core/scanners.c
 packages/markdown-core/extensions/ext_scanners.c
 node_modules/
