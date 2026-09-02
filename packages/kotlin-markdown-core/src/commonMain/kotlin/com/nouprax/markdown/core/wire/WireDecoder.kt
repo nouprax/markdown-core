@@ -35,8 +35,6 @@ private fun WireReader.document(): Document {
     return Document(content, rootScope)
 }
 
-private fun WireReader.count(): Int = int().also { require(it >= 0) { "invalid native count" } }
-
 private fun WireReader.error(): ParseException {
     val code =
         when (int()) {
