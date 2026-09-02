@@ -226,12 +226,15 @@ pnpm check:mdast-parity
 
 Required CI contains only reproducible quality evidence: correctness,
 conformance, sanitizers, parity, package/consumer contracts, and
-release-policy checks. It does not run benchmark jobs, upload PR performance
-metrics, compare wall-clock values across hosted runners, or grant a
-privileged workflow permission to publish such comparisons. Test artifacts
-likewise contain test products only, not benchmark executables or classes;
-their producers rebuild CI-owned staging trees so removed targets cannot leak
-back in as stale files from an earlier local graph.
+release-policy checks. Benchmark results are not required gates. A separate
+read-only PR workflow measures one fixed C workload at the head and uploads
+only that untrusted result. Its privileged default-branch consumer never
+executes head code: it obtains or builds the exact-base baseline in its own
+trusted workspace, validates the origins, SHAs, schemas, workload version, and
+numeric bounds of both JSON inputs, then updates the informational comment.
+Test artifacts likewise contain test products only, not benchmark executables
+or classes; their producers rebuild CI-owned staging trees so removed targets
+cannot leak back in as stale files from an earlier local graph.
 
 The C benchmark remains an explicit local measurement tool. It is opt-in
 through the separate `benchmark` configure/build/test preset and never
@@ -241,10 +244,11 @@ semantic, structural, resource-bound, or operation-count invariant. The
 reference-expansion regression follows this rule by bounding AST payload bytes
 relative to source bytes without timing the parser.
 
-The Swift, Kotlin, and ECMAScript five-sample benchmark scripts are removed.
-They existed to feed the deleted PR metrics pipeline, had no controlled
-baseline or trend store, and in Swift's case forced every `swift test` build to
-compile the benchmark executable.
+The old Swift, Kotlin, and ECMAScript five-sample benchmark scripts and their
+cross-runtime PR metrics pipeline are removed. They had no controlled baseline
+or trend store, and in Swift's case forced every `swift test` build to compile
+the benchmark executable. The remaining PR observation is deliberately limited
+to the versioned native C workload and binary size described above.
 
 Binding conformance and packaging tests remain part of the product boundary;
 they must parse through the same one-shot semantics rather than reproduce C

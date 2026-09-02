@@ -224,11 +224,13 @@ device.
 Performance measurement is an explicit C-host experiment and never a CI gate.
 When a controlled environment is available, run `pnpm benchmark:c-host`. A
 separate PR benchmark reports one fixed parser workload and binary size against
-the exact PR base. It reuses an exact-SHA baseline artifact when one exists;
-otherwise it builds that base in the same run and publishes the result for
-later runs. Hosted-runner timing and RSS remain informational and never
-determine pass/fail. The binding packages intentionally expose no short
-wall-clock/RSS loops masquerading as cross-runtime diagnostics.
+the exact PR base. The read-only PR workflow measures and uploads only the
+untrusted head result. A privileged default-branch workflow reuses a trusted
+exact-SHA baseline when one exists, or checks out, builds, and publishes that
+base itself before validating both JSON inputs and updating the comment. It
+never executes code from the PR head. Hosted-runner timing and RSS remain
+informational and never determine pass/fail. The binding packages intentionally
+expose no short wall-clock/RSS loops masquerading as cross-runtime diagnostics.
 
 Run repository-wide formatting, lint, contract, topology, and public-surface
 checks with:

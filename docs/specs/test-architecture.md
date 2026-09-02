@@ -252,14 +252,17 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
 - 输入全部离线且确定:tracked samples(`packages/markdown-core/benchmarks/samples/`)
   或进程内确定性生成;运行时禁止 clone/download,禁止把生成输入写入源码树。
 - 独立 `PR Benchmark` workflow 只运行一个版本化 C parser workload 和 shared-library
-  size。它先按 exact base SHA 查找 main 发布或同一 PR 先前发布的 baseline；不存在时
-  checkout exact base、现场构建并以 `pr-benchmark-baseline-<SHA>` 发布。comparison
-  artifact 同时携带经过 schema 校验的 base/head 数值，不依赖普通 main CI 是否生成过
-  性能 artifact。
-- PR producer 只有 read 权限；privileged `workflow_run` commenter 不执行 PR 中的代码，
-  只读取名称、数量、大小和字段均受限的 JSON。评论没有 `boundary` 维度，因为固定
-  workload 只测量一个 parser operation。hosted-runner timing/RSS 只作为方向性观察，
-  binary size 只在工具链输入相同时可确定比较，任何一项都不进入 merge gate。
+  size。PR-controlled producer 只构建 head 并上传 `head.json`，不得 checkout base、携带
+  `base.json` 或发布 baseline；head artifact 始终按不可信输入处理。
+- privileged default-branch `workflow_run` commenter 从 GitHub API 解析当前 PR 的 exact
+  base SHA，只接受由 main push 或同一 privileged workflow 发布的 exact-SHA baseline。
+  若不存在可用 baseline，它以 `persist-credentials: false` checkout exact base，在自己的
+  workspace 构建并以 `pr-benchmark-baseline-<SHA>` 发布，然后再下载 head artifact。
+  commenter 只执行 exact base 中的代码，不 checkout 或执行 PR head；base/head JSON 各自
+  做 origin、SHA、schema、workload 与数值边界校验后才生成 comparison comment。
+- 评论没有 `boundary` 维度，因为固定 workload 只测量一个 parser operation。
+  hosted-runner timing/RSS 只作为方向性观察，binary size 只在工具链输入相同时可确定比较，
+  任何一项都不进入 merge gate。
 - 若将来需要性能门禁，必须先提供受控且可重复的测量环境、统计设计、版本化 workload
   与明确 false-positive budget，并通过架构评审；hosted runner 的跨 run 对比不满足要求。
 - 外部 corpus 只能按 `packages/markdown-core/tests/corpora/README.md` 的
@@ -282,7 +285,8 @@ CTest tree 路径传给同一脚本，追加动态 inventory/discovery 交叉检
 required labels 非空且没有 disabled test、没有 performance label，correctness/conformance
 selection 互斥，test runner discovery 与 CTest registration 一致，Swift suite discovery
 非空。`scripts/audit-ci-policy.sh` 另行强制 required CI 不含 benchmark job、测试制品不携带
-benchmark payload，并冻结独立 PR benchmark 的 exact-SHA fallback、artifact 和权限边界。
+benchmark payload，并冻结独立 PR benchmark 的 head-only untrusted producer、trusted
+exact-SHA baseline fallback、artifact origin 和权限边界。
 
 源码目录、文件合并方式、pnpm script 的具体实现文本、router/alias 命名、Android managed
 device 的内部编排方式，以及维护时选择的 GitHub Action major 都不是 CI 合同。这些内容可在

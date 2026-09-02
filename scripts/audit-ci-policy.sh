@@ -93,16 +93,31 @@ test -x scripts/pr-benchmark-result.mjs
 grep -Fq 'name: PR Benchmark' "$pr_benchmark"
 grep -Fq 'workflows: [PR Benchmark]' "$pr_benchmark_comment"
 grep -Fq 'pr-benchmark-baseline-${{ github.sha }}' "$pr_benchmark"
-grep -Fq 'pr-benchmark-baseline-${{ github.event.pull_request.base.sha }}' "$pr_benchmark"
-grep -Fq 'github.rest.actions.listArtifactsForRepo' "$pr_benchmark"
-grep -Fq 'const artifactName = `pr-benchmark-baseline-${base.sha}`' "$pr_benchmark"
-grep -Fq 'run.path === ".github/workflows/pr-benchmark.yml"' "$pr_benchmark"
-grep -Fq 'const trustedMain =' "$pr_benchmark"
-grep -Fq 'const samePullRequest =' "$pr_benchmark"
-grep -Fq 'steps.baseline.outputs.usable != '"'"'true'"'"'' "$pr_benchmark"
-grep -Fq 'ref: ${{ github.event.pull_request.base.sha }}' "$pr_benchmark"
-grep -Fq 'No published benchmark exists for exact base' "$pr_benchmark"
-grep -Fq 'the base will be built and published' "$pr_benchmark"
+grep -Fq 'name: pr-benchmark-head' "$pr_benchmark"
+grep -Fq 'path: build/pr-benchmark/head.json' "$pr_benchmark"
+head_benchmark_job=$(job_body measure-head "$pr_benchmark")
+if grep -Eq 'base\.json|baseline-source|pull_request\.base|pr-benchmark-baseline' <<<"$head_benchmark_job"; then
+    echo "PR-controlled benchmark job can access or publish trusted baseline data" >&2
+    exit 1
+fi
+grep -Fq 'pr-benchmark-baseline-${{ steps.comparison.outputs.base_sha }}' "$pr_benchmark_comment"
+grep -Fq 'github.rest.actions.listArtifactsForRepo' "$pr_benchmark_comment"
+grep -Fq 'const artifactName = `pr-benchmark-baseline-${process.env.BASE_SHA}`' "$pr_benchmark_comment"
+grep -Fq 'const trustedMain =' "$pr_benchmark_comment"
+grep -Fq 'const trustedFallback =' "$pr_benchmark_comment"
+grep -Fq 'run.path === ".github/workflows/pr-benchmark-comment.yml"' "$pr_benchmark_comment"
+grep -Fq 'steps.baseline.outputs.usable != '"'"'true'"'"'' "$pr_benchmark_comment"
+grep -Fq 'ref: ${{ steps.comparison.outputs.base_sha }}' "$pr_benchmark_comment"
+grep -Fq 'persist-credentials: false' "$pr_benchmark_comment"
+grep -Fq 'the privileged workflow will build and publish it' "$pr_benchmark_comment"
+if [ "$(grep -c 'uses: actions/checkout@' "$pr_benchmark_comment")" -ne 1 ]; then
+    echo "privileged benchmark workflow must checkout exactly one tree: the exact PR base" >&2
+    exit 1
+fi
+if grep -Eq '^[[:space:]]+issues: write$' "$pr_benchmark_comment"; then
+    echo "privileged benchmark workflow has unnecessary issue-wide write permission" >&2
+    exit 1
+fi
 grep -Fq '"boundary" in metric' "$pr_benchmark_comment"
 if grep -Eq '\|[^\n]*Boundary[^\n]*\|' "$pr_benchmark_comment"; then
     echo "PR benchmark comment still renders a boundary column" >&2
