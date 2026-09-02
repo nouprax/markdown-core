@@ -223,7 +223,7 @@ pnpm check:mdast-parity
 ```
 
 Required CI contains only reproducible quality evidence: correctness,
-conformance, sanitizers, coverage, parity, package/consumer contracts, and
+conformance, sanitizers, parity, package/consumer contracts, and
 release-policy checks. It does not run benchmark jobs, upload PR performance
 metrics, compare wall-clock values across hosted runners, or grant a
 privileged workflow permission to publish such comparisons. Test artifacts

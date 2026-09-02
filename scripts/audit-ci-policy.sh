@@ -381,10 +381,19 @@ if grep -Eq 'check:upstream-parity|--oracle (upstream|mdast)' <<<"$oracle_job"; 
 fi
 required_gate_job=$(job_body required-gates "$ci")
 grep -Fq '            - tests-ready' <<<"$required_gate_job"
-grep -Fq '            - coverage-ready' <<<"$required_gate_job"
 grep -Fq '            - upstream-parity' <<<"$required_gate_job"
-if grep -Eq 'benchmark|pr-metrics|collect-pr-metrics|binary\.size' <<<"$required_gate_job"; then
-    echo "performance measurements leaked into the required gate" >&2
+if grep -Eq 'benchmark|pr-metrics|collect-pr-metrics|binary\.size|coverage' <<<"$required_gate_job"; then
+    echo "measurement-only work leaked into the required gate" >&2
+    exit 1
+fi
+if grep -Eq '^    coverage(-ready)?:' "$ci"; then
+    echo "execution coverage must not be a CI job; use semantic contract tests" >&2
+    exit 1
+fi
+if [ -d specs/coverage ] || [ -e scripts/check-coverage.mjs ] || \
+    find scripts -maxdepth 1 -type f -name 'coverage-*' -print -quit | grep -q . || \
+    grep -Eq '"coverage:[^"]+"' package.json; then
+    echo "retired execution-coverage infrastructure returned" >&2
     exit 1
 fi
 

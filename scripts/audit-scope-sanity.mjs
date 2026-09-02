@@ -32,10 +32,9 @@ import process from "node:process";
 // a dump spelling that can say "no position" and "empty" without borrowing a
 // coordinate, which is a canonical-dump question (docs/specs/canonical-ast-dump.md).
 //
-// Until it has one this audit is a ratchet: the counts may shrink and may
-// never grow, exactly as specs/coverage/policy.json holds the unpinned
-// surface. When both reach zero the ledger, and this script, are deleted
-// rather than kept at zero.
+// Until it has one this audit is a semantic ratchet: the registered malformed
+// positions may shrink and may never grow. When both reach zero the ledger,
+// and this script, are deleted rather than kept at zero.
 
 const root = process.cwd();
 const ledgerPath = path.join(root, "specs/scope-sanity/ledger.json");

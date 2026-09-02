@@ -4,6 +4,7 @@ import { Document, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js
 // Past index.js for the instance itself: the heap is what this asserts about,
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
+import { parseDocumentWithNative } from "../dist/runtime/parser.js";
 import { NodeDecoder } from "../dist/wire/node-decoder.js";
 import { kindVisitor } from "./visitor.mjs";
 
@@ -52,8 +53,65 @@ test("unicode: UTF-8 survives native document release", () => {
 test("errors: empty input is valid and arguments are checked", () => {
     assert.deepEqual(Document.parse("").content, []);
     assert.throws(() => Document.parse(null), TypeError);
+    assert.throws(() => Document.parse("x", 1), TypeError);
     assert.throws(() => Document.parse("x", { tables: "yes" }), TypeError);
     assert.throws(() => Document.parse("x", { tables: null }), TypeError);
+});
+
+test("errors: allocation failure is terminal across the WASM boundary", () => {
+    let parseCalled = false;
+    const allocationFailure = {
+        memory: new globalThis.WebAssembly.Memory({ initial: 1 }),
+        malloc: () => 0,
+        free: () => {},
+        es_document_parse: () => {
+            parseCalled = true;
+            return 0;
+        }
+    };
+    assert.throws(
+        () => parseDocumentWithNative(allocationFailure, "text"),
+        (error) => error?.name === "ParseError" && error.code === "allocationFailed"
+    );
+    assert.equal(parseCalled, false, "the runtime must not parse or fall back after allocation refusal");
+
+    const memory = new globalThis.WebAssembly.Memory({ initial: 1 });
+    new Uint8Array(memory.buffer, 80, 13).set(new globalThis.TextEncoder().encode("out of memory"));
+    const allocations = [8, 32, 40];
+    const frees = [];
+    const freedErrors = [];
+    let documentFreed = false;
+    const nativeFailure = {
+        memory,
+        malloc: () => allocations.shift() ?? 0,
+        free: (pointer) => frees.push(pointer),
+        es_document_parse: (_source, _length, _flags, errorOutput) => {
+            new DataView(memory.buffer).setUint32(errorOutput, 64, true);
+            return 0;
+        },
+        es_document_free: () => {
+            documentFreed = true;
+        },
+        es_document_root: () => {
+            throw new Error("a failed parse has no root");
+        },
+        es_error_code: () => 2,
+        es_error_free: (pointer) => freedErrors.push(pointer),
+        es_string: (_object, _field, dataOutput, lengthOutput) => {
+            const view = new DataView(memory.buffer);
+            view.setUint32(dataOutput, 80, true);
+            view.setUint32(lengthOutput, 13, true);
+            return 1;
+        }
+    };
+    assert.throws(
+        () => parseDocumentWithNative(nativeFailure, "text"),
+        (error) =>
+            error?.name === "ParseError" && error.code === "allocationFailed" && error.message === "out of memory"
+    );
+    assert.equal(documentFreed, false);
+    assert.deepEqual(freedErrors, [64]);
+    assert.deepEqual(frees, [40, 32, 8]);
 });
 
 test("ownership: declarations are readonly without runtime freeze", () => {
@@ -144,7 +202,7 @@ test("ast: the decoder's reference, formula, list and empty-string arms are exer
     assert.equal(list.items.length, 2);
 });
 
-test("errors: every wire guard fires when the native side answers out of range", () => {
+test("errors: malformed native values are rejected before they enter the AST", () => {
     // These guards exist because the two sides of the wire are versioned
     // separately -- the Kotlin bridge's wire magic addresses the same hazard -- and
     // a decoder that silently mapped an unknown value would turn a protocol

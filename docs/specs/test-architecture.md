@@ -22,6 +22,10 @@
   `conformance:*` 必须运行该平台完整 contract checks。两者都不得退化为
   build/lint、不得静默 skip、不得用空/no-op task 为尚未实现的 target 假装通过。因此
   platform target 必须在 product 引入的同一阶段接入。
+- 不设 line/branch coverage job、coverage percentage 或未覆盖分支 ledger。它们会把
+  compiler 生成分支、平台 loader、防御性 wire 拒绝和 parser 语义混成一个数字，不能
+  证明 source-to-AST contract。语义覆盖由 reviewed canonical AST manifest、产品
+  correctness corpus、外部 oracle/parity 与明确的 failure/lifecycle invariant 负责。
 - `benchmark:c-host` 是 developer 实验入口，不进入 required CI、release 或 test
   artifact。独立的 PR benchmark workflow 可以从同一个 C runner 采集固定 workload，
   但不得以绝对时间、跨 runner 差值或少量样本比率改变退出状态。如果观测暴露风险，
@@ -181,7 +185,7 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
 
 - Canonical Markdown/`.ast` conformance data 只有一份，位于
   `specs/canonical-ast/`；`manifest.json` 是唯一 case list，并显式冻结 paths、
-  parse options、顺序、编码/换行和 coverage tags。该目录不含 runner。
+  parse options、顺序、编码/换行和 semantic coverage tags。该目录不含 runner。
 - C、Swift、Kotlin、ES 的现有原生 conformance targets 使用各自公开
   parse/immutable AST/Visitor/Walker/TreeDumper 路径枚举同一 manifest；bindings
   不调用 C dump/test runner、不读取另一 binding 输出，也不以 dump 构造生产 AST。

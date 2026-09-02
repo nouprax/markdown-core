@@ -209,7 +209,6 @@ export class NodeDecoder {
             case "directiveLabel":
                 return { ...this.base(node, kind), content: this.content(node) };
         }
-        return unreachable(kind);
     }
 
     private copyList(node: number): MarkupValueOf<"list"> {
@@ -253,7 +252,6 @@ export class NodeDecoder {
     }
 
     private copyTableRow(node: number): Omit<TableRow, "dump"> {
-        if (this.kind(node) !== "tableRow") throw new Error("table contains a non-row node");
         return {
             ...this.base(node, "tableRow"),
             isHeader: this.boolean(this.native.es_node_table_row_header(node), "table header state"),
@@ -266,7 +264,6 @@ export class NodeDecoder {
     }
 
     private copyTableCell(node: number): Omit<TableCell, "dump"> {
-        if (this.kind(node) !== "tableCell") throw new Error("table row contains a non-cell node");
         return { ...this.base(node, "tableCell"), content: this.content(node) };
     }
 
@@ -440,10 +437,6 @@ export class NodeDecoder {
     private requireLive(): void {
         if (!this.scratch) throw new Error("native decoder has been disposed");
     }
-}
-
-function unreachable(value: never): never {
-    throw new Error(`unreachable native node kind ${String(value)}`);
 }
 
 function errorCode(rawValue: number): ParseErrorCode {

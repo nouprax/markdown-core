@@ -36,9 +36,7 @@ private object DesktopNativeLoader {
         val platform =
             when {
                 os.contains("mac") && architecture in setOf("aarch64", "arm64") -> "macos-arm64"
-                os.contains("mac") && architecture in setOf("x86_64", "amd64") -> "macos-x64"
                 os.contains("linux") && architecture in setOf("x86_64", "amd64") -> "linux-x64"
-                os.contains("windows") && architecture in setOf("x86_64", "amd64") -> "windows-x64"
                 else -> throw UnsupportedOperationException("unsupported native platform: $os/$architecture")
             }
         val filename = System.mapLibraryName("markdown_core_kotlin")

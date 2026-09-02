@@ -49,6 +49,11 @@ const server = createServer(async (request, response) => {
             response.end(html);
             return;
         }
+        if (request.url === "/favicon.ico") {
+            response.statusCode = 204;
+            response.end();
+            return;
+        }
         if (request.url.startsWith("/result?")) {
             const status = new URL(request.url, "http://127.0.0.1").searchParams.get("status");
             response.end("ok");

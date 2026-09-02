@@ -17,6 +17,10 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   parser comparison. PR comments omit the meaningless boundary column, reuse
   an exact-base-SHA artifact when available, and otherwise build and publish
   that baseline before measuring the head.
+- Remove the obsolete line/branch coverage ratchet and its instrumented CI
+  builds. Canonical AST cases, parser corpora, parity oracles, strict OOM and
+  lifecycle tests remain the required semantic evidence instead of treating
+  compiler, loader, and defensive wire branches as one quality score.
 - Synchronize the CommonMark parser from cmark 0.29 through stable cmark 0.31.2,
   including published syntax, complexity/security, numeric-entity, Unicode 17,
   case-folding, entity-table, and scanner changes. Current cmark is the

@@ -7,6 +7,19 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
+private fun wirePayload(vararg parts: Any): ByteArray {
+    val out = mutableListOf<Byte>()
+    for (part in parts) {
+        when (part) {
+            is String -> out += part.encodeToByteArray().toList()
+            is Byte -> out += part
+            is Int -> repeat(4) { shift -> out += ((part shr (shift * 8)) and 0xff).toByte() }
+            else -> error("unsupported payload part")
+        }
+    }
+    return out.toByteArray()
+}
+
 class ApiTest {
     @Test
     fun defaultsAndOptionGates() {
@@ -70,7 +83,7 @@ class ErrorsTest {
     }
 
     @Test
-    fun everyWireGuardFiresWhenTheNativeSideAnswersOutOfRange() {
+    fun malformedWireValuesAreRejectedBeforeTheyEnterTheAst() {
         // The two sides of the wire are versioned separately -- MKC6 is the
         // current layout -- and a decoder that mapped an unknown value
         // instead of refusing it turns a protocol mismatch into a wrong
@@ -86,76 +99,53 @@ class ErrorsTest {
     }
 
     @Test
-    fun everyRefusalTheWireReaderCanMakeIsReachedByAPayload() {
-        // The reader is one `require` after another and a corpus reaches none
-        // of them: every payload the bridge actually writes is well formed. So
-        // write the malformed ones by hand. `MKC6` is the magic; the byte after
-        // it is the status, and 1 means the payload is an error rather than a
-        // document.
-        fun payload(vararg parts: Any): ByteArray {
-            val out = mutableListOf<Byte>()
-            for (part in parts) {
-                when (part) {
-                    is String -> out += part.encodeToByteArray().toList()
-                    is Byte -> out += part
-                    is Int -> repeat(4) { shift -> out += ((part shr (shift * 8)) and 0xff).toByte() }
-                    else -> error("unsupported payload part")
-                }
-            }
-            return out.toByteArray()
-        }
-
+    fun malformedAndFailedWirePayloadsAreRejected() {
         // A native error crosses as a code and a message, which is the only
         // path that builds a ParseException.
         val failure =
             assertFailsWith<ParseException> {
-                WireDecoder.decodeDocument(payload("MKC6", 1.toByte(), 1, 3, "bad"))
+                WireDecoder.decodeDocument(wirePayload("MKC6", 1.toByte(), 1, 3, "bad"))
             }
         assertEquals(ParseErrorCode.INVALID_ARGUMENT, failure.code)
         assertEquals("bad", failure.message)
         assertEquals(
             ParseErrorCode.INTERNAL,
             assertFailsWith<ParseException> {
-                WireDecoder.decodeDocument(payload("MKC6", 1.toByte(), 99, 1, "x"))
+                WireDecoder.decodeDocument(wirePayload("MKC6", 1.toByte(), 99, 1, "x"))
             }.code,
         )
+        val allocationFailure =
+            assertFailsWith<ParseException> {
+                WireDecoder.decodeDocument(wirePayload("MKC6", 1.toByte(), 2, 13, "out of memory"))
+            }
+        assertEquals(ParseErrorCode.ALLOCATION_FAILED, allocationFailure.code)
+        assertEquals("out of memory", allocationFailure.message)
 
         // A status that is neither, a magic from the wrong wire version, a
         // root that is not a document, and a payload that stops mid-value.
         assertFailsWith<IllegalStateException> {
-            WireDecoder.decodeDocument(payload("MKC6", 2.toByte()))
+            WireDecoder.decodeDocument(wirePayload("MKC6", 2.toByte()))
         }
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeDocument(payload("MKC5", 0.toByte()))
+            WireDecoder.decodeDocument(wirePayload("MKC5", 0.toByte()))
         }
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeDocument(payload("MKC6", 0.toByte(), 3.toByte()))
+            WireDecoder.decodeDocument(wirePayload("MKC6", 0.toByte(), 3.toByte()))
         }
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeDocument(payload("MKC6", 0.toByte(), 1.toByte(), 1, 1))
+            WireDecoder.decodeDocument(wirePayload("MKC6", 0.toByte(), 1.toByte(), 1, 1))
         }
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeDocument(payload("MKC6", 1.toByte(), 1, -2))
+            WireDecoder.decodeDocument(wirePayload("MKC6", 1.toByte(), 1, -2))
         }
-    }
-
-    @Test
-    fun aParseFailureCarriesItsCodeAndMessageAndNothingElse() {
-        // A parse fails only when an allocation does, so no input a caller can
-        // write reaches this type through `Document.parse`.
-        val failure = ParseException(ParseErrorCode.ALLOCATION_FAILED, "out of memory")
-        assertEquals(ParseErrorCode.ALLOCATION_FAILED, failure.code)
-        assertEquals("out of memory", failure.message)
     }
 }
 
-class WireCoverageTest {
+class BindingMappingTest {
     @Test
-    fun everyKindThisBranchAddedDecodesDumpsAndWalks() {
-        // The kinds Step 7 and Step 9b added -- a definition, both reference
-        // spellings and their forms, a directive label -- plus the enum arms
-        // nothing else in this suite writes: a standalone formula, an ordered
-        // list's start, and every table alignment.
+    fun extendedKindsDecodeDumpAndWalk() {
+        // One document verifies the extended node kinds and their semantic
+        // fields through decode, dump, and traversal.
         val source =
             listOf(
                 "[foo]: /url \"t\"",
