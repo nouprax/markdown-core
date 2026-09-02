@@ -74,6 +74,24 @@ longer exists. 3.0.0 ships a different streaming surface, described below.
   ECMAScript coverage ledger's unpinned surface shrinks with the walk it
   covered: the retired decoder's 22-line allowance becomes the wire
   decoder's 4-line, statically unreachable remainder.
+- The derive path keeps a WORK LEDGER (#169): `markdown_core_derive_ledger`
+  on the parser counts what a derivation does — the nodes the clone visited
+  and built, the memo entries served by memcpy, the widths counted, the
+  spine slots compared, the store pass's frames, the tail's pops, offers
+  and cursor steps, the inlines parsed — one increment each on a path that
+  already exists. `projection_runner --case work_ledger` asserts F27's
+  bound in those counts: on eight shapes at two sizes a steady-state
+  derivation builds exactly the open spine, serves every closed child of
+  every spine container by the memcpy and stores nothing, and the line-fed
+  streams visit what they build at every boundary — deterministic, so it
+  runs under every sanitizer preset, where the wall-clock slope gates
+  cannot. `scripts/complexity-callgrind.sh` reads the same matrix as
+  instructions per unit under callgrind, and a CI job holds it flat across
+  sizes (12 per closed block on the width shapes, 895 and 771 per open
+  level on the stair and the open nest). AGENTS.md states the dimension
+  inventory as a review step: every loop on the derive or feed path names
+  the dimension that bounds it, and one bounded by a dimension its unit
+  does not own is the finding.
 - A feed's payload is a DELTA against the payload before it (#162). Every
   wire payload leads with a frame byte — `markdown_core_wire_frame`, FULL
   or DELTA — and a session asked for DELTA answers the tree by its

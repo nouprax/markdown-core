@@ -123,6 +123,45 @@ struct markdown_core_parser {
     bool no_projection_cache;
     size_t cache_hits;
     size_t cache_misses;
+    /* THE DERIVE PATH'S WORK LEDGER (#169): one increment on a path that
+     * already exists, per unit of work a derivation does, so that a gate
+     * can hold F27's bound -- a steady-state derivation is O(open +
+     * changed) -- in counts rather than through a wall-clock ratio, under
+     * the sanitizer presets as well; and so that a term the miss ledger
+     * cannot see (one unstorable block turning every later hit from a
+     * memcpy entry into a per-child hold, #170) shows as the count it is.
+     * Per parse, zeroed with everything else at the reset, read by the
+     * runners as the difference around one derivation. Nothing branches on
+     * a counter; the Release build pays the adds and nothing else. */
+    struct markdown_core_derive_ledger {
+        /* CST nodes the clone walk stood on (S_clone_block_node calls,
+         * hits included) and the nodes it built (hits excluded). */
+        size_t clone_visited;
+        size_t clone_built;
+        /* Entries a memo run served by memcpy (S_spine_consume). */
+        size_t memo_served;
+        /* CST children counted to size a vector (S_vec_open): the one
+         * Theta(width) term the memcpy leaves, stated so it stays exact. */
+        size_t children_counted;
+        /* Spine table slots compared, at the consume and at the record. */
+        size_t spine_slots;
+        /* Pairs the record proved or refused (S_spine_memo_record_level). */
+        size_t record_paired;
+        /* Store pass frames pushed, entries tested, ORIGIN nodes sorted. */
+        size_t store_frames;
+        size_t store_visited;
+        size_t store_dispatched;
+        /* Row compares in S_names_row. */
+        size_t name_probes;
+        /* Tail queue entries drained, (block, extension) offers asked, and
+         * children stepped by the tail's own walks -- S_has_inline_child,
+         * the label pass, the numbering. */
+        size_t tail_pops;
+        size_t tail_offers;
+        size_t tail_cursor_steps;
+        /* Fresh blocks whose inlines were parsed. */
+        size_t inline_parses;
+    } ledger;
     /* THE DERIVATION'S ARENA (#161), set only for the span of one
      * `derive_tree` call so the clone can see it; the arena itself leaves on
      * the derived root. NULL whenever the parser is at rest. */

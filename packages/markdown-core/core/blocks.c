@@ -1212,7 +1212,7 @@ static void S_cache_store(markdown_core_parser *parser, markdown_core_node *node
 static void S_container_store(markdown_core_parser *parser, markdown_core_node *node);
 
 /* The inline ordinals (T2), defined beside the tail that assigns them. */
-static bool S_has_inline_child(markdown_core_node *block);
+static bool S_has_inline_child(markdown_core_parser *parser, markdown_core_node *block);
 
 static bool S_set_names(const char *set, const char *name) {
     const char *p;
@@ -1311,6 +1311,7 @@ static const uint64_t *S_names_row(markdown_core_parser *parser, const char *nam
         return NULL;
     }
     for (i = 0; i < parser->tail_name_row_size; i++) {
+        parser->ledger.name_probes++;
         if (parser->tail_name_rows[i] == name) {
             /* Move-to-front by one: a projection asks about the same few
              * names in runs, so the steady state is an early probe. */
@@ -1420,7 +1421,7 @@ static bool S_block_has_tail_work(markdown_core_parser *parser, markdown_core_no
     /* A block that is not an inline container can still OWN inline-class
      * children -- a directive block's CST-resident label -- and their
      * ordinals (T2) are assigned in the tail. */
-    if (S_has_inline_child(block)) {
+    if (S_has_inline_child(parser, block)) {
         return true;
     }
     if ((parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) && S_type(block) == MARKDOWN_CORE_NODE_HTML_BLOCK) {
@@ -1479,7 +1480,7 @@ static bool S_fresh_queue_push(markdown_core_parser *parser, markdown_core_node 
  * cache stores the list numbered, so a hit serves the same identities without
  * a write. Only an OWNED list is numbered -- a borrowed one already carries
  * its numbers and must not be written (F22). */
-static void S_number_inline_descendants(markdown_core_node *block) {
+static void S_number_inline_descendants(markdown_core_parser *parser, markdown_core_node *block) {
     markdown_core_child_cursor cursor;
     markdown_core_node *top = markdown_core_child_first(block, &cursor);
     uint32_t ordinal = 0;
@@ -1491,6 +1492,7 @@ static void S_number_inline_descendants(markdown_core_node *block) {
      * INTERIOR node is parse-built under an inline top child this walk
      * owns, so its parents are whole and the climb stops at `top`. */
     while (top) {
+        parser->ledger.tail_cursor_steps++;
         /* A nested BLOCK owns its own namespace: its identity is its mint
          * and its inlines are numbered at its own tail. The one block that
          * mixes child classes is a directive block, whose label is
@@ -1526,7 +1528,7 @@ static void S_number_inline_descendants(markdown_core_node *block) {
 /* Does the block hold any inline-class child of its own -- a parsed inline
  * list, or a CST-resident inline construct like a directive's label? This is
  * what obliges a tail: the inline ordinals above are assigned there. */
-static bool S_has_inline_child(markdown_core_node *block) {
+static bool S_has_inline_child(markdown_core_parser *parser, markdown_core_node *block) {
     markdown_core_child_cursor cursor;
     markdown_core_node *child;
     /* A memoized prefix needs no asking (F25): its entries passed the
@@ -1539,6 +1541,7 @@ static bool S_has_inline_child(markdown_core_node *block) {
     if (block->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) {
         size_t i;
         for (i = block->link.memo_ref->boundary; i < block->children.count; i++) {
+            parser->ledger.tail_cursor_steps++;
             if (!MARKDOWN_CORE_NODE_BLOCK_P(block->children.vec[i])) {
                 return true;
             }
@@ -1547,6 +1550,7 @@ static bool S_has_inline_child(markdown_core_node *block) {
     }
     for (child = markdown_core_child_first(block, &cursor); child;
         child = markdown_core_child_after(block, child, &cursor)) {
+        parser->ledger.tail_cursor_steps++;
         if (!MARKDOWN_CORE_NODE_BLOCK_P(child)) {
             return true;
         }
@@ -1604,6 +1608,7 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
     offer_inlines = children_own && contains_inlines(node);
     for (extensions = parser->syntax_extensions, idx = 0; extensions; extensions = extensions->next, idx++) {
         const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
+        parser->ledger.tail_offers++;
         if (!S_row_test(name_row, idx) && !(offer_inlines && S_row_test(S_inlines_row(parser), idx))) {
             continue;
         }
@@ -1642,12 +1647,13 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
      * block's own list gets them and before the shared numbering. A label is
      * never enrolled in the cache -- the clone leaves it unmarked -- so its
      * children are always its own. */
-    if (node && children_own && !contains_inlines(node) && S_has_inline_child(node)) {
+    if (node && children_own && !contains_inlines(node) && S_has_inline_child(parser, node)) {
         markdown_core_child_cursor label_cursor;
         markdown_core_node *child;
         for (child = markdown_core_child_first(node, &label_cursor); child;
             child = markdown_core_child_after(node, child, &label_cursor)) {
             markdown_core_node *content = child;
+            parser->ledger.tail_cursor_steps++;
             if (MARKDOWN_CORE_NODE_BLOCK_P(child) || !contains_inlines(child)) {
                 continue;
             }
@@ -1656,6 +1662,7 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
             }
             for (extensions = parser->syntax_extensions, idx = 0; extensions; extensions = extensions->next, idx++) {
                 const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
+                parser->ledger.tail_offers++;
                 if (!S_row_test(S_inlines_row(parser), idx)) {
                     continue;
                 }
@@ -1669,8 +1676,8 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
         }
     }
 
-    if (node && children_own && S_has_inline_child(node)) {
-        S_number_inline_descendants(node);
+    if (node && children_own && S_has_inline_child(parser, node)) {
+        S_number_inline_descendants(parser, node);
     }
 
     /* THE STORE MOVED OFF THE TAIL (F27, review-found): a hook acts on
@@ -1694,6 +1701,7 @@ static void S_run_block_tails(markdown_core_parser *parser, markdown_core_node *
     for (i = 0; i < parser->tail_queue_size; i++) {
         markdown_core_node *block = parser->tail_queue[i];
         bool is_root = block == *root;
+        parser->ledger.tail_pops++;
         S_run_block_tail(parser, &block);
         if (is_root) {
             *root = block;
@@ -2247,6 +2255,7 @@ static markdown_core_node *S_clone_block_node(
     markdown_core_node *dst;
     bool enrolled;
     bool hit;
+    parser->ledger.clone_visited++;
     /* THE HIT IS DECIDED FIRST (#152 Stage 1), now before any allocation:
      * a hit is THE RETAINED NODE ITSELF (#161, D9) -- the projection the
      * store kept, promotion, strip, numbering and consulted bits baked in
@@ -2516,6 +2525,7 @@ static markdown_core_node *S_clone_block_node(
     if (parser->fresh_queue_armed && !S_fresh_queue_push(parser, dst)) {
         parser->oom = true;
     }
+    parser->ledger.clone_built++;
     return dst;
 
 lost:
@@ -2541,6 +2551,7 @@ static bool S_vec_open(
     for (child = src->first_child; child; child = child->next) {
         total++;
     }
+    parser->ledger.children_counted += total;
     if (counted_out) {
         *counted_out = total;
     }
@@ -2654,6 +2665,7 @@ static const markdown_core_node *S_spine_consume(
      * every open container, and a nest of open quotes each holding a
      * closed paragraph before the next has as many slots as levels:
      * quadratic in the depth, 178x slower for 16x the depth. */
+    parser->ledger.spine_slots++;
     if (depth >= parser->spine_memo_size || parser->spine_memos[depth].container != src) {
         return src->first_child;
     }
@@ -2673,6 +2685,7 @@ static const markdown_core_node *S_spine_consume(
     dst->link.memo_ref = ref;
     dst->flags |= MARKDOWN_CORE_NODE__MEMO_PREFIX;
     parser->cache_hits += memo->count;
+    parser->ledger.memo_served += memo->count;
     return memo->src_last->next;
 }
 
@@ -2832,6 +2845,7 @@ static void S_project_fresh(markdown_core_parser *parser, markdown_core_map *ref
          * stands at the write site behind it. */
         assert(!(contains_inlines(block) && MARKDOWN_CORE_NODE_ARRAY_P(block)));
         if (contains_inlines(block)) {
+            parser->ledger.inline_parses++;
             markdown_core_parse_inlines(parser, block, refmap, parser->options);
         }
     }
@@ -2873,6 +2887,7 @@ static void S_project_fresh(markdown_core_parser *parser, markdown_core_map *ref
  * chain: nothing under an open hooked container enrolls, so nothing there
  * reaches a store. What the pass meets enrolled, it stores. */
 static bool S_store_frame_push(markdown_core_parser *parser, markdown_core_node *node) {
+    parser->ledger.store_frames++;
     if (parser->store_stack_size == parser->store_stack_alloc) {
         size_t grown = parser->store_stack_alloc ? parser->store_stack_alloc * 2 : 16;
         struct markdown_core_store_frame *stack =
@@ -2905,6 +2920,7 @@ static void S_store_dispatch(markdown_core_parser *parser, markdown_core_node *n
     if (!(node->flags & MARKDOWN_CORE_NODE__ORIGIN)) {
         return;
     }
+    parser->ledger.store_dispatched++;
     if (MARKDOWN_CORE_NODE_ARRAY_P(node)) {
         S_container_store(parser, node);
     } else if (contains_inlines(node) || node->first_child == NULL) {
@@ -2937,6 +2953,7 @@ static void S_store_pass(markdown_core_parser *parser, markdown_core_node *root)
         if (MARKDOWN_CORE_NODE_ARRAY_P(frame->node)) {
             while (frame->next_index < frame->node->children.count) {
                 entry = frame->node->children.vec[frame->next_index++];
+                parser->ledger.store_visited++;
                 if ((entry->flags & MARKDOWN_CORE_NODE__SHARED) || !MARKDOWN_CORE_NODE_BLOCK_P(entry)) {
                     continue;
                 }
@@ -2950,6 +2967,7 @@ static void S_store_pass(markdown_core_parser *parser, markdown_core_node *root)
             while (frame->next_intrusive) {
                 entry = frame->next_intrusive;
                 frame->next_intrusive = entry->next;
+                parser->ledger.store_visited++;
                 if ((entry->flags & MARKDOWN_CORE_NODE__SHARED) || !MARKDOWN_CORE_NODE_BLOCK_P(entry)) {
                     continue;
                 }
@@ -3026,6 +3044,7 @@ static markdown_core_node *S_project(
  * runs -- a slow feed, never a wrong tree -- and nothing else. */
 static bool S_spine_memo_slot(markdown_core_parser *parser, const markdown_core_node *cst, size_t depth) {
     assert(depth <= parser->spine_memo_size);
+    parser->ledger.spine_slots++;
     if (depth < parser->spine_memo_size) {
         if (parser->spine_memos[depth].container == cst) {
             return true;
@@ -3104,6 +3123,7 @@ static bool S_spine_memo_record_level(
     src_child = start ? memo->src_last->next : cst->first_child;
     for (i = start; i < derived->children.count && src_child; i++, src_child = src_child->next) {
         markdown_core_node *entry = derived->children.vec[i];
+        parser->ledger.record_paired++;
         /* The pair proves alignment or ends the run: an OPEN block's stamp
          * still moves under the write clock -- and an open paragraph can
          * still die at its close, taken whole by a reference definition --

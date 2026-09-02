@@ -2129,6 +2129,90 @@ not move it in a plain build.
 
 ---
 
+### F29 — the derive path keeps a work ledger, and F27's bound is a gate in counts: every shape of the matrix reads O(open + changed) exactly, and callgrind reads it flat per unit  · VERIFIED (#169)
+
+**What was gated before.** The complexity gates were wall-clock slopes
+(`depth_slope`, `spine_depth_slope`: 500 against 4,000 levels, the
+normalized ratio under 3.0) — loose because the working set leaving the
+cache lives inside the ratio, blind to a 2× algorithmic regression,
+skipped under the sanitizer presets where a timing means nothing, and
+unable to tell a constant from an asymptote. Three review rounds on #167
+found the same family by hand, one member per round, each after a
+measurement the suite did not make; and the audit's cap (#170) is
+invisible to the miss ledger — `cache_misses` stays at 1 per derivation
+while every hit behind one unstorable block turns from a memcpy entry
+into a per-child hold.
+
+**The ledger.** `markdown_core_derive_ledger` on the parser
+(`parser.h`): fourteen counters, one increment each on a path that
+already exists, zeroed at the reset with everything else — the clone's
+visited and built, memo entries served, children counted, spine slots
+compared, record pairs, store frames / visited / dispatched, name
+probes, tail pops / offers / cursor steps, inline parses. Nothing
+branches on a counter; the Release build pays the adds.
+
+**The gate.** `projection_runner --case work_ledger`, under the
+streaming label so it runs under ASan, UBSan and TSan: eight shapes —
+flat, open leaf, fence-mixed, stair, closed nest, open nest, open list,
+open quote — each at 1,000 and 4,000 units, fed whole. The ENROLLING
+derivation must build every block, serve nothing and store every closed
+one. The STEADY derivation must build exactly the spine and visit the
+spine plus the open leaves (an open leaf whose bytes did not move hits
+under its own stamp), serve every closed child of every spine container
+by the memcpy, store nothing, re-parse nothing, and count exactly the
+CST widths of the spine — the accepted term, pinned so it cannot grow
+unseen; the counters a hook's declarations or the row table's order can
+move are bounded by the spine and the built set with the constants
+named. Across the two sizes, every count the size does not name must be
+EQUAL on an O(1)-spine shape and within the size ratio on a spine-deep
+one. Then the STREAM: the six streamable shapes fed a line at a time, at
+every boundary the clone visiting what it built — at most four per-child
+hits, the children of a container that closed at that very line, whose
+store wins the transition — and building at most 4 × (spine + 2).
+
+**Measured, the steady derivation** at n = 4,000 (visited / built /
+served / counted): flat 1 / 1 / 4,000 / 4,000; open leaf 2 / 1 / 4,000 /
+4,001; fence-mixed 1 / 1 / 4,000 / 4,000; stair 4,002 / 4,001 / 3,999 /
+8,000 with 8,002 slots, 4,001 pairs and 4,001 frames; closed nest 1 / 1
+/ 2 / 2; open nest 4,002 / 4,001 / 0 / 4,001; open list 4 / 3 / 4,000 /
+4,003; open quote 3 / 2 / 4,000 / 4,002. The enrolling derivation reads
+every block built and every closed one stored on each.
+
+**Callgrind, per unit.** `scripts/complexity-callgrind.sh` — the
+`Test - C / Linux · Complexity (callgrind)` job — runs `ledger_probe`
+under callgrind collecting inside `derive_tree` and `node_free` only, at
+1 and at 9 steady derivations, the difference over 8 being one steady
+derivation, and holds the count per unit at the large size within 1.10×
+the small. Width shapes at 4,000 / 16,000 blocks: flat 50,587 / 195,286
+Ir — 12.6 / 12.2 per block; open leaf, fence-mixed and open quote the
+same within 1%; open list 13.1 / 12.4; closed nest 2,724 / 2,856 whole,
+a constant. Depth shapes at 1,000 / 4,000 levels: stair 897 / 895 per
+level, open nest 773 / 771. The 12 per closed block is the memo's memcpy
+as callgrind counts glibc's `rep movsb` — 8 per pointer above the
+threshold where the copy switches strategy, 0.8 below it, which is why
+the width shapes are measured at 4,000 and 16,000 rather than 1,000 and
+4,000 — plus the vector's count walk at 4; the stair's 895 is the
+per-level constant of an open container (clone, vector, consume, record,
+frame, free), where the third review round measured 869 by hand.
+
+**The rule.** AGENTS.md's performance section now states the dimension
+inventory as a review step: every loop on the derive or feed path names
+the dimension that bounds it and the product per derivation or per line;
+a loop bounded by a dimension its unit does not own is the finding
+before any measurement; the ledger and the matrix are where a new term
+must show as a count, and the callgrind job as instructions per unit
+that do not grow with the size.
+
+**Beside it.** The audit that motivated this gate enumerated the derive
+and the feed paths loop by loop; its flagged terms are issues #175–#180
+(with additions on #170, #172 and #176), each to be confirmed by its
+verification's measurement or closed as refuted. The shapes that carry
+them — the formula-first document, the labeled open directive, the lazy
+lines under a deep spine, the definition stream — join this matrix with
+the fix that makes them read flat.
+
+---
+
 ## 4. Decisions — RULED, 2026-08-25
 
 **The API shape is the ruling, and it answers most of §4 by dissolving it.**

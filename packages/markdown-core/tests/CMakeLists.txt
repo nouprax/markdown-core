@@ -386,6 +386,15 @@ if(MARKDOWN_CORE_STATIC)
     # finish on the block identity, over every extension corpus.
     markdown_core_add_test(projection_label_tail "streaming" 120 projection_runner --case label_tail)
     markdown_core_add_test(projection_feed_bound "streaming" 120 projection_runner --case feed_bound)
+    # #169: F27's bound in COUNTS. The parser's derive ledger, read around one
+    # derivation, must show a steady-state derivation O(open + changed) on
+    # every shape of the matrix at two sizes -- the clone visiting exactly
+    # what it builds, every closed child of a spine container served by the
+    # memcpy, the accepted width count pinned exactly -- and the line-fed
+    # stream visiting what it builds at every boundary. Deterministic, so it
+    # runs under every sanitizer preset, where the wall-clock slope gates
+    # cannot.
+    markdown_core_add_test(projection_work_ledger "streaming" 240 projection_runner --case work_ledger)
     # The #153 threading contract: a session's derived documents freed on
     # another thread, concurrently with further feeds and the session's own
     # death; the TSan lane is the judge.

@@ -5925,6 +5925,486 @@ static int case_wire_delta(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+/* #169 -- THE WORK LEDGER GATE: F27's bound in COUNTS. A steady-state
+ * derivation -- the CST unchanged since the derivation before it, every
+ * closed block stored and every spine level's run recorded -- is
+ * O(open + changed): the clone stands on the open spine and builds it, the
+ * memo serves every closed child of every spine container by one memcpy,
+ * and the store, the record and the tail touch what was built. The
+ * wall-clock slope gates above bound a RATIO at 3x and so cannot see a 2x
+ * regression, run under no sanitizer, and cannot tell a constant from an
+ * asymptote; this gate reads the parser's derive ledger (parser.h) as the
+ * difference around ONE derivation and asserts the closed form per shape,
+ * at two sizes, so a term the miss ledger never saw -- one unstorable
+ * block turning every later hit from a memcpy entry into a per-child hold
+ * (#170) -- fails as the count it is, deterministically, under every
+ * preset.
+ *
+ * The matrix: each shape at WL_SMALL and WL_LARGE units, fed whole, the
+ * ENROLLING derivation (every closed block a miss, stored by the pass)
+ * and the STEADY derivation (everything served) read apart -- the two
+ * have different bounds and the review rounds found defects in both. The
+ * exact counters are stated as functions of the unit count; the ones a
+ * hook's declarations or the row table's order can move are bounded, with
+ * the constant named. One accepted Theta(width) term is pinned EXACTLY so
+ * it cannot grow unseen: `children_counted`, the CST children a vector is
+ * sized from (F26: the width is counted from the CST rather than trusted
+ * from the memo). Then the STREAM: the same shapes fed a line at a time
+ * with a derivation per line, asserting at every boundary that the clone
+ * visited exactly what it built -- nothing served child by child -- and
+ * built no more than WL_STREAM_C times the open spine and the lines fed. */
+#define WL_SMALL 1000
+#define WL_LARGE 4000
+/* The core extensions pr_parser_new attaches: the tail asks each once per
+ * queued block. */
+#define WL_EXTENSIONS 6
+/* Distinct type-string literals the row table can hold with the shipped
+ * set, an upper bound on one probe. */
+#define WL_ROW_BOUND 40
+#define WL_STREAM_C 4
+#define WL_STREAM_UNITS 300
+
+typedef struct markdown_core_derive_ledger wl_ledger;
+
+typedef struct wl_shape {
+    const char *name;
+    char *(*build)(size_t units, size_t *length);
+    /* The closed forms, in units. The SPINE is the open containers, root
+     * included: what a steady derivation builds. An open LEAF whose bytes
+     * did not move since the last derivation is a hit (its stamp stands),
+     * so it is visited and not built; after a feed it is rebuilt. */
+    size_t (*blocks)(size_t n);
+    size_t (*stored)(size_t n);
+    size_t (*spine)(size_t n);
+    size_t (*open_leaves)(size_t n);
+    size_t (*memo_served)(size_t n);
+    /* The widths a vector is sized from: the enrolling derivation opens
+     * every closed container it builds, the steady one only the spine. */
+    size_t (*counted_enrolling)(size_t n);
+    size_t (*counted_steady)(size_t n);
+    int streamable;
+} wl_shape;
+
+static char *wl_repeat(const char *before, const char *unit, size_t units, const char *after, size_t *length) {
+    size_t unit_length = strlen(unit);
+    size_t total = strlen(before) + unit_length * units + strlen(after);
+    char *input = (char *)malloc(total + 1);
+    size_t at = 0;
+    size_t i;
+    if (!input) {
+        return NULL;
+    }
+    memcpy(input, before, strlen(before));
+    at += strlen(before);
+    for (i = 0; i < units; i++) {
+        memcpy(input + at, unit, unit_length);
+        at += unit_length;
+    }
+    memcpy(input + at, after, strlen(after));
+    at += strlen(after);
+    input[at] = '\0';
+    *length = at;
+    return input;
+}
+
+/* N closed paragraphs under the document: the width axis. */
+static char *wl_flat(size_t n, size_t *length) { return wl_repeat("", "para\n\n", n, "", length); }
+/* N closed paragraphs and one open. */
+static char *wl_open_leaf(size_t n, size_t *length) { return wl_repeat("", "para\n\n", n, "open\n", length); }
+/* N closed paragraphs alternating with closed fences: content-less closed
+ * leaves enroll too (#161). */
+static char *wl_fence_mixed(size_t n, size_t *length) {
+    return wl_repeat("", "para\n\n```\ncode\n```\n\n", n / 2, "", length);
+}
+/* N open quotes, each holding one closed paragraph before the next. */
+static char *wl_stair(size_t n, size_t *length) { return pr_stair_document(n, length); }
+/* N nested quotes closed by a blank line, then a paragraph: the nest is
+ * one retained container. */
+static char *wl_closed_nest(size_t n, size_t *length) { return wl_repeat("", "> ", n, "leaf\n\nend\n\n", length); }
+/* N nested quotes still open, a leaf open at the bottom. */
+static char *wl_open_nest(size_t n, size_t *length) { return wl_repeat("", "> ", n, "leaf\n", length); }
+/* An open list of N closed items and one open. */
+static char *wl_open_list(size_t n, size_t *length) { return wl_repeat("", "- item\n", n, "- open\n", length); }
+/* An open quote of N closed paragraphs and one open: the depth-1 memo. */
+static char *wl_open_quote(size_t n, size_t *length) { return wl_repeat("", "> para\n>\n", n, "> open\n", length); }
+
+static size_t wl_zero(size_t n) {
+    (void)n;
+    return 0;
+}
+static size_t wl_one(size_t n) {
+    (void)n;
+    return 1;
+}
+static size_t wl_two(size_t n) {
+    (void)n;
+    return 2;
+}
+static size_t wl_three(size_t n) {
+    (void)n;
+    return 3;
+}
+static size_t wl_n(size_t n) { return n; }
+static size_t wl_n_plus_1(size_t n) { return n + 1; }
+static size_t wl_n_plus_2(size_t n) { return n + 2; }
+static size_t wl_n_plus_3(size_t n) { return n + 3; }
+static size_t wl_n_minus_1(size_t n) { return n - 1; }
+static size_t wl_2n(size_t n) { return 2 * n; }
+static size_t wl_2n_plus_1(size_t n) { return 2 * n + 1; }
+static size_t wl_2n_plus_3(size_t n) { return 2 * n + 3; }
+static size_t wl_2n_plus_4(size_t n) { return 2 * n + 4; }
+static size_t wl_even(size_t n) { return n - n % 2; }
+static size_t wl_even_plus_1(size_t n) { return n - n % 2 + 1; }
+
+static const wl_shape WL_SHAPES[] = {
+    /* name, build, blocks, stored, spine, open leaves, memo served, counted enrolling, counted steady, streamable */
+    {"flat", wl_flat, wl_n_plus_1, wl_n, wl_one, wl_zero, wl_n, wl_n, wl_n, 1},
+    {"open_leaf", wl_open_leaf, wl_n_plus_2, wl_n_plus_1, wl_one, wl_one, wl_n, wl_n_plus_1, wl_n_plus_1, 1},
+    {"fence_mixed", wl_fence_mixed, wl_even_plus_1, wl_even, wl_one, wl_zero, wl_even, wl_even, wl_even, 1},
+    /* n open quotes each holding a closed paragraph before the next; the
+     * deepest paragraph open; every closed paragraph served by its level. */
+    {"stair", wl_stair, wl_2n_plus_1, wl_n, wl_n_plus_1, wl_one, wl_n_minus_1, wl_2n, wl_2n, 1},
+    /* the nest is one retained container beside the paragraph after it */
+    {"closed_nest", wl_closed_nest, wl_n_plus_3, wl_n_plus_2, wl_one, wl_zero, wl_two, wl_n_plus_2, wl_two, 0},
+    /* everything on the spine, nothing to serve */
+    {"open_nest", wl_open_nest, wl_n_plus_2, wl_one, wl_n_plus_1, wl_one, wl_zero, wl_n_plus_1, wl_n_plus_1, 0},
+    /* root, the list, the open item; n closed items served by the list */
+    {"open_list", wl_open_list, wl_2n_plus_4, wl_2n_plus_1, wl_three, wl_one, wl_n, wl_2n_plus_3, wl_n_plus_3, 1},
+    /* root and the quote; n closed paragraphs served at depth 1 */
+    {"open_quote", wl_open_quote, wl_n_plus_3, wl_n_plus_1, wl_two, wl_one, wl_n, wl_n_plus_2, wl_n_plus_2, 1},
+};
+
+#define WL_FIELDS(X)                                                                                                   \
+    X(clone_visited)                                                                                                   \
+    X(clone_built)                                                                                                     \
+    X(memo_served)                                                                                                     \
+    X(children_counted)                                                                                                \
+    X(spine_slots)                                                                                                     \
+    X(record_paired)                                                                                                   \
+    X(store_frames)                                                                                                    \
+    X(store_visited)                                                                                                   \
+    X(store_dispatched)                                                                                                \
+    X(name_probes)                                                                                                     \
+    X(tail_pops)                                                                                                       \
+    X(tail_offers)                                                                                                     \
+    X(tail_cursor_steps)                                                                                               \
+    X(inline_parses)
+
+static wl_ledger wl_delta(const wl_ledger *before, const wl_ledger *after) {
+    wl_ledger delta;
+#define WL_SUB(field) delta.field = after->field - before->field;
+    WL_FIELDS(WL_SUB)
+#undef WL_SUB
+    return delta;
+}
+
+static void wl_print(const char *shape, size_t n, const char *phase, const wl_ledger *delta) {
+    printf("work ledger: %s n=%zu %s:", shape, n, phase);
+#define WL_PRINT(field) printf(" %s=%zu", #field, delta->field);
+    WL_FIELDS(WL_PRINT)
+#undef WL_PRINT
+    putchar('\n');
+}
+
+static int wl_expect(
+    const char *shape,
+    size_t n,
+    const char *phase,
+    const char *field,
+    size_t actual,
+    size_t expected
+) {
+    if (actual == expected) {
+        return 0;
+    }
+    fprintf(stderr, "work ledger: %s n=%zu %s: %s is %zu, expected %zu\n", shape, n, phase, field, actual, expected);
+    return 1;
+}
+
+static int wl_bound(const char *shape, size_t n, const char *phase, const char *field, size_t actual, size_t limit) {
+    if (actual <= limit) {
+        return 0;
+    }
+    fprintf(stderr, "work ledger: %s n=%zu %s: %s is %zu, bound %zu\n", shape, n, phase, field, actual, limit);
+    return 1;
+}
+
+/* One shape at one size, fed whole: the enrolling derivation, then the
+ * steady one, each read as the ledger's difference around it. */
+static int wl_run_matrix(const wl_shape *shape, size_t n, wl_ledger *steady_out) {
+    size_t length = 0;
+    char *input = shape->build(n, &length);
+    markdown_core_parser *parser;
+    markdown_core_node *derived;
+    wl_ledger before;
+    wl_ledger enrolling;
+    wl_ledger steady;
+    size_t open = shape->spine(n);
+    size_t visited = shape->spine(n) + shape->open_leaves(n);
+    int failures = 0;
+    if (!input) {
+        return -1;
+    }
+    parser = pr_parser_new();
+    if (!parser) {
+        free(input);
+        return -1;
+    }
+    markdown_core_parser_feed(parser, input, length);
+    before = parser->ledger;
+    derived = markdown_core_parser_derive_tree(parser, parser->refmap);
+    if (!derived) {
+        fprintf(stderr, "work ledger: %s n=%zu: the enrolling derivation failed\n", shape->name, n);
+        markdown_core_parser_free(parser);
+        free(input);
+        return -1;
+    }
+    markdown_core_node_free(derived);
+    enrolling = wl_delta(&before, &parser->ledger);
+    before = parser->ledger;
+    derived = markdown_core_parser_derive_tree(parser, parser->refmap);
+    if (!derived) {
+        fprintf(stderr, "work ledger: %s n=%zu: the steady derivation failed\n", shape->name, n);
+        markdown_core_parser_free(parser);
+        free(input);
+        return -1;
+    }
+    markdown_core_node_free(derived);
+    steady = wl_delta(&before, &parser->ledger);
+    markdown_core_parser_free(parser);
+    free(input);
+    wl_print(shape->name, n, "enrolling", &enrolling);
+    wl_print(shape->name, n, "steady", &steady);
+
+    /* THE ENROLLING DERIVATION builds every block, serves nothing, and
+     * stores every closed one; the width it counts is the CST's. */
+    failures += wl_expect(shape->name, n, "enrolling", "clone_visited", enrolling.clone_visited, shape->blocks(n));
+    failures += wl_expect(shape->name, n, "enrolling", "clone_built", enrolling.clone_built, shape->blocks(n));
+    failures += wl_expect(shape->name, n, "enrolling", "memo_served", enrolling.memo_served, 0);
+    failures +=
+        wl_expect(shape->name, n, "enrolling", "store_dispatched", enrolling.store_dispatched, shape->stored(n));
+    failures += wl_expect(
+        shape->name,
+        n,
+        "enrolling",
+        "children_counted",
+        enrolling.children_counted,
+        shape->counted_enrolling(n)
+    );
+
+    /* THE STEADY DERIVATION: the clone stands on the open spine and builds
+     * exactly that, the open leaves hit under their own stamps, every
+     * closed child of every spine container comes through the memcpy,
+     * nothing stores and nothing is re-parsed. The width counted is the
+     * one accepted term, stated exactly so it cannot grow unseen. */
+    failures += wl_expect(shape->name, n, "steady", "clone_visited", steady.clone_visited, visited);
+    failures += wl_expect(shape->name, n, "steady", "clone_built", steady.clone_built, shape->spine(n));
+    failures += wl_expect(shape->name, n, "steady", "memo_served", steady.memo_served, shape->memo_served(n));
+    failures +=
+        wl_expect(shape->name, n, "steady", "children_counted", steady.children_counted, shape->counted_steady(n));
+    failures += wl_expect(shape->name, n, "steady", "store_dispatched", steady.store_dispatched, 0);
+    failures += wl_expect(shape->name, n, "steady", "inline_parses", steady.inline_parses, 0);
+    /* Bounded by the spine and what was built, with the constants named:
+     * a slot compare at the consume and at the record per level; a pair
+     * per level for the record to refuse; a frame per level; the pass, the
+     * tail and its walks over the built set; the row table's probes. */
+    failures += wl_bound(shape->name, n, "steady", "spine_slots", steady.spine_slots, 2 * open + 2);
+    failures += wl_bound(shape->name, n, "steady", "record_paired", steady.record_paired, open + 1);
+    failures += wl_bound(shape->name, n, "steady", "store_frames", steady.store_frames, open + 1);
+    failures += wl_bound(shape->name, n, "steady", "store_visited", steady.store_visited, visited);
+    failures += wl_bound(shape->name, n, "steady", "tail_pops", steady.tail_pops, visited);
+    failures +=
+        wl_bound(shape->name, n, "steady", "tail_offers", steady.tail_offers, 2 * WL_EXTENSIONS * steady.tail_pops);
+    failures += wl_bound(shape->name, n, "steady", "tail_cursor_steps", steady.tail_cursor_steps, 4 * visited + 4);
+    failures += wl_bound(
+        shape->name,
+        n,
+        "steady",
+        "name_probes",
+        steady.name_probes,
+        WL_ROW_BOUND * (2 * visited + steady.tail_pops)
+    );
+    if (steady_out) {
+        *steady_out = steady;
+    }
+    return failures ? -1 : 0;
+}
+
+/* THE STREAM: the shape fed a line at a time with a derivation per line.
+ * At every boundary the clone visits what it builds -- a per-child hit
+ * is a closed child the memo should have served, allowed only for the
+ * children of a container that closed at this very line, whose store
+ * wins the transition (S_spine_consume) -- and builds no more than
+ * WL_STREAM_C times the spine and the line. */
+static int wl_run_stream(const wl_shape *shape, size_t units) {
+    size_t length = 0;
+    char *input = shape->build(units, &length);
+    markdown_core_parser *parser;
+    size_t start = 0;
+    size_t i;
+    size_t lines = 0;
+    int failures = 0;
+    if (!input) {
+        return -1;
+    }
+    parser = pr_parser_new();
+    if (!parser) {
+        free(input);
+        return -1;
+    }
+    for (i = 0; i <= length && failures < 8; i++) {
+        size_t end;
+        wl_ledger before;
+        wl_ledger delta;
+        markdown_core_node *derived;
+        size_t open_now;
+        if (i < length && input[i] != '\n') {
+            continue;
+        }
+        if (i == length && start == length) {
+            break;
+        }
+        end = i < length ? i + 1 : length;
+        markdown_core_parser_feed(parser, input + start, end - start);
+        start = end;
+        lines++;
+        before = parser->ledger;
+        derived = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!derived) {
+            fprintf(stderr, "work ledger: %s stream: derivation %zu failed\n", shape->name, lines);
+            failures++;
+            break;
+        }
+        markdown_core_node_free(derived);
+        delta = wl_delta(&before, &parser->ledger);
+        open_now = shape->spine(lines < units ? lines : units);
+        failures +=
+            wl_bound(shape->name, lines, "stream", "clone_built", delta.clone_built, WL_STREAM_C * (open_now + 2));
+        failures += wl_bound(
+            shape->name,
+            lines,
+            "stream",
+            "clone_visited - clone_built",
+            delta.clone_visited - delta.clone_built,
+            WL_STREAM_C
+        );
+    }
+    {
+        markdown_core_node *finished = markdown_core_parser_finish(parser);
+        if (finished) {
+            markdown_core_node_free(finished);
+        }
+    }
+    markdown_core_parser_free(parser);
+    free(input);
+    printf("work ledger: %s stream: %zu boundaries%s\n", shape->name, lines, failures ? " [BOUND EXCEEDED]" : "");
+    return failures ? -1 : 0;
+}
+
+/* THE PROBE behind the callgrind matrix (scripts/complexity-callgrind.sh):
+ * one shape at one size, fed whole, the enrolling derivation and then
+ * `--derivations` steady ones, the ledger of each printed and nothing
+ * asserted. The script runs it under callgrind collecting inside
+ * `markdown_core_parser_derive_tree` and `markdown_core_node_free` only,
+ * at two derivation counts, and reads the difference as the instruction
+ * count of one steady derivation -- exact where the wall-clock slope
+ * gates are a ratio with the cache inside it. */
+static const char *pr_probe_shape = NULL;
+static size_t pr_probe_units = 0;
+static int pr_probe_derivations = 1;
+
+static int case_ledger_probe(const ts_spec_file *file) {
+    const wl_shape *shape = NULL;
+    size_t s;
+    size_t length = 0;
+    char *input;
+    markdown_core_parser *parser;
+    int k;
+    (void)file;
+    for (s = 0; s < sizeof(WL_SHAPES) / sizeof(WL_SHAPES[0]); s++) {
+        if (pr_probe_shape && strcmp(WL_SHAPES[s].name, pr_probe_shape) == 0) {
+            shape = &WL_SHAPES[s];
+        }
+    }
+    if (!shape || pr_probe_units == 0 || pr_probe_derivations < 0) {
+        fputs("ledger probe: --shape NAME --units N [--derivations K] required; shapes:", stderr);
+        for (s = 0; s < sizeof(WL_SHAPES) / sizeof(WL_SHAPES[0]); s++) {
+            fprintf(stderr, " %s", WL_SHAPES[s].name);
+        }
+        fputc('\n', stderr);
+        return -1;
+    }
+    input = shape->build(pr_probe_units, &length);
+    parser = input ? pr_parser_new() : NULL;
+    if (!parser) {
+        free(input);
+        return -1;
+    }
+    markdown_core_parser_feed(parser, input, length);
+    for (k = 0; k <= pr_probe_derivations; k++) {
+        wl_ledger before = parser->ledger;
+        wl_ledger delta;
+        markdown_core_node *derived = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!derived) {
+            fprintf(stderr, "ledger probe: derivation %d failed\n", k);
+            markdown_core_parser_free(parser);
+            free(input);
+            return -1;
+        }
+        markdown_core_node_free(derived);
+        delta = wl_delta(&before, &parser->ledger);
+        wl_print(shape->name, pr_probe_units, k == 0 ? "enrolling" : "steady", &delta);
+    }
+    markdown_core_parser_free(parser);
+    free(input);
+    return 0;
+}
+
+static int case_work_ledger(const ts_spec_file *file) {
+    static const size_t sizes[] = {WL_SMALL, WL_LARGE};
+    size_t s;
+    int failures = 0;
+    (void)file;
+    if (pr_no_cache) {
+        puts("work ledger: skipped under --no-cache (the bound is the cache's)");
+        return 0;
+    }
+    for (s = 0; s < sizeof(WL_SHAPES) / sizeof(WL_SHAPES[0]); s++) {
+        const wl_shape *shape = &WL_SHAPES[s];
+        wl_ledger steady[2];
+        size_t step;
+        for (step = 0; step < 2; step++) {
+            if (wl_run_matrix(shape, sizes[step], &steady[step]) != 0) {
+                failures++;
+            }
+        }
+        /* THE MATRIX: what the bounds leave free must not grow with the
+         * size either. A shape whose spine is O(1) reads the same counts
+         * at both sizes in every field the size does not name; a shape
+         * whose spine IS the size reads at most the size ratio's worth. */
+        {
+            int deep = shape->spine(sizes[1]) != shape->spine(sizes[0]);
+            size_t ratio = sizes[1] / sizes[0];
+#define WL_FLAT(field)                                                                                                 \
+    if (strcmp(#field, "memo_served") != 0 && strcmp(#field, "children_counted") != 0) {                               \
+        if (deep) {                                                                                                    \
+            failures +=                                                                                                \
+                wl_bound(shape->name, sizes[1], "matrix", #field, steady[1].field, ratio * steady[0].field + 16);      \
+        } else {                                                                                                       \
+            failures += wl_expect(shape->name, sizes[1], "matrix", #field, steady[1].field, steady[0].field);          \
+        }                                                                                                              \
+    }
+            WL_FIELDS(WL_FLAT)
+#undef WL_FLAT
+        }
+        if (shape->streamable && wl_run_stream(shape, WL_STREAM_UNITS) != 0) {
+            failures++;
+        }
+    }
+    printf("work ledger: %s\n", failures ? "a shape left the bound" : "every shape holds O(open + changed) in counts");
+    return failures ? -1 : 0;
+}
+
 typedef struct pr_case_entry {
     const char *name;
     int (*run)(const ts_spec_file *file);
@@ -5947,6 +6427,8 @@ static const pr_case_entry PR_CASES[] = {
     {"container_retention", case_container_retention, 0},
     {"label_tail", case_label_tail, 0},
     {"feed_bound", case_feed_bound, 0},
+    {"work_ledger", case_work_ledger, 0},
+    {"ledger_probe", case_ledger_probe, 0},
     {"resident_memory", case_resident_memory, 0},
     {"carried_state", case_carried_state, 1},
     {"dump_boundaries", case_dump_boundaries, 1},
@@ -5985,6 +6467,12 @@ int main(int argc, char **argv) {
             pr_repeats = atoi(argv[++arg]);
         } else if (strcmp(argv[arg], "--no-cache") == 0) {
             pr_no_cache = 1;
+        } else if (strcmp(argv[arg], "--shape") == 0 && arg + 1 < argc) {
+            pr_probe_shape = argv[++arg];
+        } else if (strcmp(argv[arg], "--units") == 0 && arg + 1 < argc) {
+            pr_probe_units = (size_t)atol(argv[++arg]);
+        } else if (strcmp(argv[arg], "--derivations") == 0 && arg + 1 < argc) {
+            pr_probe_derivations = atoi(argv[++arg]);
         } else {
             fputs("usage: projection_runner [--list] --case NAME (--spec FILE | --md FILE | --md-dir DIR)\n", stderr);
             return 2;

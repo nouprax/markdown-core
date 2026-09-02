@@ -1003,6 +1003,30 @@ jobs:
             - name: Run sanitizer suite without building
               run: scripts/run-c-test-artifact.sh build/ci-artifacts/c "${{ matrix.preset }}"
 
+    # THE CALLGRIND MATRIX (#169): the instruction count of one steady-state
+    # derivation per unit of each shape of the work ledger's matrix, at two
+    # sizes, held flat. Exact where the wall-clock slope gates are a ratio
+    # with the cache inside it, and a hosted runner's clock is no part of the
+    # number. Built from source here: valgrind wants the Release tree with
+    # its symbols, not a test artifact.
+    c-complexity-callgrind:
+        name: Test - C / Linux · Complexity (callgrind)
+        needs: build-tests-ready
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - name: Install valgrind
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends valgrind
+            - name: Build the projection runner
+              run: |
+                  cmake --preset default -DMARKDOWN_CORE_TESTS=ON
+                  cmake --build --preset default --parallel --target projection_runner
+            - name: Hold every shape's steady derivation flat per unit across sizes
+              run: scripts/complexity-callgrind.sh build/cmake
+
     benchmark-c:
         name: Test - C / Linux · Benchmark
         needs: build-tests-ready
@@ -1218,6 +1242,7 @@ jobs:
             - c-test
             - c-test-windows
             - c-sanitizer-test
+            - c-complexity-callgrind
         runs-on: ubuntu-latest
         steps:
             - name: Require every platform test
@@ -1229,6 +1254,7 @@ jobs:
                   C_TEST: ${{ needs.c-test.result }}
                   C_TEST_WINDOWS: ${{ needs.c-test-windows.result }}
                   C_SANITIZER_TEST: ${{ needs.c-sanitizer-test.result }}
+                  C_COMPLEXITY_CALLGRIND: ${{ needs.c-complexity-callgrind.result }}
               run: |
                   for result in \
                       "$SWIFT_TEST" \
@@ -1237,7 +1263,8 @@ jobs:
                       "$ES_TEST" \
                       "$C_TEST" \
                       "$C_TEST_WINDOWS" \
-                      "$C_SANITIZER_TEST"
+                      "$C_SANITIZER_TEST" \
+                      "$C_COMPLEXITY_CALLGRIND"
                   do
                       if [ "$result" != success ]; then
                           echo "A required test dependency concluded: $result" >&2

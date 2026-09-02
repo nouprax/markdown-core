@@ -49,6 +49,18 @@ relevant specifications or architecture documentation instead of this file.
 - Complexity tests must verify the intended general invariant, including
   adversarial shapes that defeat the former implementation. A favorable timing
   result alone is not proof that the implementation is sound.
+- Every loop on the derive or feed path names the dimension that bounds it —
+  depth D, width W, open O, changed C, extensions E, distinct names R, table
+  length T, feeds K — and the product per derivation or per line. A loop
+  bounded by a dimension its unit does not own (the parent chain per node, the
+  spine per line, the table per container, the extension list per block) is
+  the finding, before any measurement; the fix carries the context down the
+  walk that already stands on it rather than re-deriving it per unit. The
+  parser's derive ledger (`core/parser.h`) and the work-ledger shape matrix
+  (`projection_runner --case work_ledger`) are where a new term must show as
+  a count, under every sanitizer preset, and `scripts/complexity-callgrind.sh`
+  is where it must show as instructions per unit that do not grow with the
+  size.
 
 ## Execution environment boundaries
 
