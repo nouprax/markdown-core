@@ -160,8 +160,11 @@ struct markdown_core_parser {
         markdown_core_node *node;
         /* The resume position among the node's children: the index for a
          * vector container, the next sibling pointer for an intrusive
-         * one. */
+         * one, and on a container that consumed a memo run the next of the
+         * run's gaps (#170), which hold this tree's own nodes below the
+         * boundary the index starts at. */
         size_t next_index;
+        size_t next_gap;
         markdown_core_node *next_intrusive;
     } *store_stack;
     size_t store_stack_size;

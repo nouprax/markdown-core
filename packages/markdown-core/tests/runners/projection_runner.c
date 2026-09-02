@@ -5925,6 +5925,405 @@ static int case_wire_delta(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+/* #170 -- GAPS IN THE RUN. One block that can never store -- a standalone
+ * display formula or a formula fence (replaced by its hook at every
+ * projection, the replacement carrying no ORIGIN), a directive's
+ * CST-resident label, a closed directive that owns one -- used to end a
+ * level's recorded run at its index for the life of the parse: every later
+ * closed block came through the per-child path at every derivation (a hit,
+ * a hold, an append: ~128 Ir each) instead of the memcpy (~12), and the
+ * miss ledger never saw it, the miss count staying at one. The run now
+ * records a GAP for such a pair and continues past it. This gate reads the
+ * parser's own memo -- the run's length and its gap count, index-for-index
+ * with the CST children -- and holds the trees equal: the enrolling
+ * derivation, every steady one, a fresh parser's derivation of the same
+ * bytes, and, fed a line at a time, every boundary against a fresh
+ * parser's read of the same prefix. */
+typedef struct mg_shape {
+    const char *name;
+    char *(*build)(size_t units, size_t *length);
+    /* The level whose run is read (0 the document), its expected length
+     * for n units, and its expected gap count. */
+    size_t level;
+    size_t (*run)(size_t n);
+    size_t gaps;
+} mg_shape;
+
+static char *mg_join(
+    const char *before,
+    const char *unit,
+    size_t units,
+    const char *middle,
+    size_t more,
+    const char *after,
+    size_t *length
+) {
+    size_t unit_length = strlen(unit);
+    size_t total = strlen(before) + unit_length * (units + more) + strlen(middle) + strlen(after);
+    char *input = (char *)malloc(total + 1);
+    size_t at = 0;
+    size_t i;
+    if (!input) {
+        return NULL;
+    }
+    memcpy(input, before, strlen(before));
+    at += strlen(before);
+    for (i = 0; i < units; i++) {
+        memcpy(input + at, unit, unit_length);
+        at += unit_length;
+    }
+    memcpy(input + at, middle, strlen(middle));
+    at += strlen(middle);
+    for (i = 0; i < more; i++) {
+        memcpy(input + at, unit, unit_length);
+        at += unit_length;
+    }
+    memcpy(input + at, after, strlen(after));
+    at += strlen(after);
+    input[at] = '\0';
+    *length = at;
+    return input;
+}
+
+/* A display formula first, then n closed paragraphs, then an open one. */
+static char *mg_formula_first(size_t n, size_t *length) {
+    return mg_join("$$x$$\n\n", "para\n\n", n, "", 0, "open\n", length);
+}
+/* A formula fence first. */
+static char *mg_fence_first(size_t n, size_t *length) {
+    return mg_join("```formula\nx\n```\n\n", "para\n\n", n, "", 0, "open\n", length);
+}
+/* A closed labeled directive first: a block that owns a label. */
+static char *mg_label_closed_first(size_t n, size_t *length) {
+    return mg_join(":::a[x]\n:::\n\n", "para\n\n", n, "", 0, "open\n", length);
+}
+/* The formula in the middle of the width. */
+static char *mg_formula_middle(size_t n, size_t *length) {
+    return mg_join("", "para\n\n", n / 2, "$$x$$\n\n", n - n / 2, "open\n", length);
+}
+/* Two gaps: a formula, n paragraphs, a fence, n more. */
+static char *mg_two_gaps(size_t n, size_t *length) {
+    return mg_join("$$x$$\n\n", "para\n\n", n, "```formula\nx\n```\n\n", n, "open\n", length);
+}
+/* An OPEN labeled directive holding n closed paragraphs: the label is the
+ * first child of the spine container at depth 1. */
+static char *mg_label_open(size_t n, size_t *length) {
+    return mg_join(":::note[Title]\n", "para\n\n", n, "", 0, "open\n", length);
+}
+/* An open quote whose first child is the formula. */
+static char *mg_formula_quote(size_t n, size_t *length) {
+    return mg_join("> $$x$$\n>\n", "> para\n>\n", n, "", 0, "> open\n", length);
+}
+
+static size_t mg_n_plus_1(size_t n) { return n + 1; }
+static size_t mg_2n_plus_2(size_t n) { return 2 * n + 2; }
+
+static const mg_shape MG_SHAPES[] = {
+    {"formula_first", mg_formula_first, 0, mg_n_plus_1, 1},
+    {"fence_first", mg_fence_first, 0, mg_n_plus_1, 1},
+    {"label_closed_first", mg_label_closed_first, 0, mg_n_plus_1, 1},
+    {"formula_middle", mg_formula_middle, 0, mg_n_plus_1, 1},
+    {"two_gaps", mg_two_gaps, 0, mg_2n_plus_2, 2},
+    {"label_open", mg_label_open, 1, mg_n_plus_1, 1},
+    {"formula_quote", mg_formula_quote, 1, mg_n_plus_1, 1},
+};
+
+static markdown_core_child_memo *mg_memo(markdown_core_parser *parser, size_t level) {
+    if (level >= parser->spine_memo_size) {
+        return NULL;
+    }
+    return parser->spine_memos[level].memo;
+}
+
+/* The run at `level` after a derivation: its length and its gaps. */
+static int mg_expect_run(const mg_shape *shape, size_t n, const char *phase, markdown_core_parser *parser) {
+    markdown_core_child_memo *memo = mg_memo(parser, shape->level);
+    size_t count = memo ? memo->count : 0;
+    size_t gaps = memo ? memo->gap_count : 0;
+    if (count == shape->run(n) && gaps == shape->gaps) {
+        return 0;
+    }
+    fprintf(
+        stderr,
+        "memo gap: %s n=%zu %s: the level %zu run is %zu long with %zu gap(s), expected %zu with %zu\n",
+        shape->name,
+        n,
+        phase,
+        shape->level,
+        count,
+        gaps,
+        shape->run(n),
+        shape->gaps
+    );
+    return 1;
+}
+
+/* A fresh parser's derivation of `input`: what a whole-text read answers. */
+static uint8_t *mg_fresh_dump(const char *input, size_t length, size_t *dump_length) {
+    markdown_core_parser *parser = pr_parser_new();
+    markdown_core_node *derived;
+    uint8_t *dump;
+    if (!parser) {
+        return NULL;
+    }
+    markdown_core_parser_feed(parser, input, length);
+    derived = markdown_core_parser_derive_tree(parser, parser->refmap);
+    dump = derived ? pr_dump(derived, dump_length) : NULL;
+    if (derived) {
+        markdown_core_node_free(derived);
+    }
+    markdown_core_parser_free(parser);
+    return dump;
+}
+
+static int mg_run_shape(const mg_shape *shape, size_t n) {
+    size_t length = 0;
+    char *input = shape->build(n, &length);
+    markdown_core_parser *parser;
+    markdown_core_node *derived;
+    uint8_t *expected;
+    size_t expected_length = 0;
+    int failures = 0;
+    int k;
+    if (!input) {
+        return -1;
+    }
+    expected = mg_fresh_dump(input, length, &expected_length);
+    parser = expected ? pr_parser_new() : NULL;
+    if (!parser) {
+        markdown_core_dump_free(expected);
+        free(input);
+        return -1;
+    }
+    markdown_core_parser_feed(parser, input, length);
+    /* The enrolling derivation stores the closed blocks and records the
+     * run WITH its gap; the steady ones consume it and must read the same
+     * tree as a fresh parser's whole read. */
+    for (k = 0; k < 3 && failures < 4; k++) {
+        const char *phase = k == 0 ? "enrolling" : "steady";
+        derived = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!derived) {
+            fprintf(stderr, "memo gap: %s n=%zu: derivation %d failed\n", shape->name, n, k);
+            failures++;
+            break;
+        }
+        if (!pr_dump_equals(derived, expected, expected_length)) {
+            fprintf(
+                stderr,
+                "memo gap: %s n=%zu %s: derivation %d dumps unlike the fresh read\n",
+                shape->name,
+                n,
+                phase,
+                k
+            );
+            failures++;
+        }
+        markdown_core_node_free(derived);
+        failures += mg_expect_run(shape, n, phase, parser);
+    }
+    markdown_core_parser_free(parser);
+    markdown_core_dump_free(expected);
+    free(input);
+    return failures ? -1 : 0;
+}
+
+/* THE STREAM: the shape fed a line at a time, a derivation per line, every
+ * boundary against a fresh parser's read of the same prefix -- the record
+ * extending past the gap at every feed, and the consume walking the gap in
+ * place at every one. */
+static int mg_run_stream(const mg_shape *shape, size_t n) {
+    size_t length = 0;
+    char *input = shape->build(n, &length);
+    markdown_core_parser *parser;
+    size_t start = 0;
+    size_t i;
+    size_t lines = 0;
+    int failures = 0;
+    if (!input) {
+        return -1;
+    }
+    parser = pr_parser_new();
+    if (!parser) {
+        free(input);
+        return -1;
+    }
+    for (i = 0; i <= length && failures < 4; i++) {
+        size_t end;
+        markdown_core_node *derived;
+        uint8_t *expected;
+        size_t expected_length = 0;
+        if (i < length && input[i] != '\n') {
+            continue;
+        }
+        if (i == length && start == length) {
+            break;
+        }
+        end = i < length ? i + 1 : length;
+        markdown_core_parser_feed(parser, input + start, end - start);
+        start = end;
+        lines++;
+        derived = markdown_core_parser_derive_tree(parser, parser->refmap);
+        expected = mg_fresh_dump(input, end, &expected_length);
+        if (!derived || !expected) {
+            fprintf(stderr, "memo gap: %s stream line %zu: a derivation failed\n", shape->name, lines);
+            failures++;
+        } else if (!pr_dump_equals(derived, expected, expected_length)) {
+            fprintf(
+                stderr,
+                "memo gap: %s stream line %zu: the read dumps unlike a fresh read of the prefix\n",
+                shape->name,
+                lines
+            );
+            failures++;
+        }
+        if (derived) {
+            markdown_core_node_free(derived);
+        }
+        markdown_core_dump_free(expected);
+    }
+    /* At the end the run stands with its gap, the open paragraph aside. */
+    failures += mg_expect_run(shape, n, "stream end", parser);
+    {
+        markdown_core_node *finished = markdown_core_parser_finish(parser);
+        if (finished) {
+            markdown_core_node_free(finished);
+        }
+    }
+    markdown_core_parser_free(parser);
+    free(input);
+    printf("memo gap: %s stream: %zu boundaries%s\n", shape->name, lines, failures ? " [DIFFERS]" : "");
+    return failures ? -1 : 0;
+}
+
+static int case_memo_gap(const ts_spec_file *file) {
+    static const size_t sizes[] = {64, 1000};
+    size_t s;
+    int failures = 0;
+    (void)file;
+    if (pr_no_cache) {
+        puts("memo gap: skipped under --no-cache (the run is the cache's)");
+        return 0;
+    }
+    for (s = 0; s < sizeof(MG_SHAPES) / sizeof(MG_SHAPES[0]); s++) {
+        size_t step;
+        for (step = 0; step < 2; step++) {
+            if (mg_run_shape(&MG_SHAPES[s], sizes[step]) != 0) {
+                failures++;
+            }
+        }
+        if (mg_run_stream(&MG_SHAPES[s], 40) != 0) {
+            failures++;
+        }
+    }
+    printf(
+        "memo gap: %s\n",
+        failures ? "a run stopped at its gap, or a tree differed"
+                 : "every run continues past its gaps, every tree equal"
+    );
+    return failures ? -1 : 0;
+}
+
+/* THE RATIO (#170's table): the capped shape's steady derivation against
+ * the uncapped shape's, same width, same machine, same run -- the formula
+ * first against the flat document, the labeled open directive against the
+ * unlabeled one. Before the gaps the capped rows read 8-10x (318 against
+ * 37 us at 8,192 paragraphs); with them, within a few percent. The bound
+ * is MG_RATIO_MAX, a same-run ratio with no absolute clock in it.
+ * Wall-clock, complexity-labelled, serial. */
+#define MG_RATIO_MAX 2.0
+#define MG_RATIO_UNITS 8192
+#define MG_RATIO_DERIVATIONS 20
+
+static char *mg_flat(size_t n, size_t *length) { return mg_join("", "para\n\n", n, "", 0, "open\n", length); }
+static char *mg_plain_open(size_t n, size_t *length) {
+    return mg_join(":::note\n", "para\n\n", n, "", 0, "open\n", length);
+}
+
+static int mg_time(char *(*build)(size_t, size_t *), size_t n, double *seconds) {
+    double samples[PR_SLOPE_REPEATS];
+    size_t length = 0;
+    char *input = build(n, &length);
+    int repeat;
+    if (!input) {
+        return -1;
+    }
+    for (repeat = 0; repeat < PR_SLOPE_REPEATS; repeat++) {
+        markdown_core_parser *parser = pr_parser_new();
+        markdown_core_node *derived;
+        uint64_t started;
+        int k;
+        if (!parser) {
+            free(input);
+            return -1;
+        }
+        markdown_core_parser_feed(parser, input, length);
+        derived = markdown_core_parser_derive_tree(parser, parser->refmap);
+        if (!derived) {
+            markdown_core_parser_free(parser);
+            free(input);
+            return -1;
+        }
+        markdown_core_node_free(derived);
+        started = ts_monotonic_ns();
+        for (k = 0; k < MG_RATIO_DERIVATIONS; k++) {
+            derived = markdown_core_parser_derive_tree(parser, parser->refmap);
+            if (!derived) {
+                markdown_core_parser_free(parser);
+                free(input);
+                return -1;
+            }
+            markdown_core_node_free(derived);
+        }
+        samples[repeat] = (double)(ts_monotonic_ns() - started) / (1e9 * MG_RATIO_DERIVATIONS);
+        markdown_core_parser_free(parser);
+    }
+    free(input);
+    *seconds = pr_median_of_three(samples);
+    return 0;
+}
+
+static int case_memo_gap_ratio(const ts_spec_file *file) {
+    static const struct {
+        const char *name;
+        char *(*capped)(size_t, size_t *);
+        char *(*uncapped)(size_t, size_t *);
+    } pairs[] = {
+        {"formula first / flat", mg_formula_first, mg_flat},
+        {"labeled open directive / unlabeled", mg_label_open, mg_plain_open},
+    };
+    size_t i;
+    int failures = 0;
+    (void)file;
+    if (pr_no_cache) {
+        puts("memo gap ratio: skipped under --no-cache (the run is the cache's)");
+        return 0;
+    }
+    for (i = 0; i < sizeof(pairs) / sizeof(pairs[0]); i++) {
+        double capped = 0;
+        double uncapped = 0;
+        double ratio;
+        if (mg_time(pairs[i].capped, MG_RATIO_UNITS, &capped) != 0 ||
+            mg_time(pairs[i].uncapped, MG_RATIO_UNITS, &uncapped) != 0) {
+            fprintf(stderr, "memo gap ratio: %s: a derivation failed\n", pairs[i].name);
+            return -1;
+        }
+        ratio = capped / (uncapped > 0 ? uncapped : 1e-9);
+        printf(
+            "memo gap ratio: %s at %d: %.1f us against %.1f us per derivation, %.2fx%s\n",
+            pairs[i].name,
+            MG_RATIO_UNITS,
+            capped * 1e6,
+            uncapped * 1e6,
+            ratio,
+            ratio > MG_RATIO_MAX ? " [THE RUN IS CAPPED]" : ""
+        );
+        if (ratio > MG_RATIO_MAX) {
+            failures++;
+        }
+    }
+    return failures ? -1 : 0;
+}
+
 typedef struct pr_case_entry {
     const char *name;
     int (*run)(const ts_spec_file *file);
@@ -5947,6 +6346,8 @@ static const pr_case_entry PR_CASES[] = {
     {"container_retention", case_container_retention, 0},
     {"label_tail", case_label_tail, 0},
     {"feed_bound", case_feed_bound, 0},
+    {"memo_gap", case_memo_gap, 0},
+    {"memo_gap_ratio", case_memo_gap_ratio, 0},
     {"resident_memory", case_resident_memory, 0},
     {"carried_state", case_carried_state, 1},
     {"dump_boundaries", case_dump_boundaries, 1},

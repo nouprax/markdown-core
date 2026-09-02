@@ -74,6 +74,16 @@ longer exists. 3.0.0 ships a different streaming surface, described below.
   ECMAScript coverage ledger's unpinned surface shrinks with the walk it
   covered: the retired decoder's 22-line allowance becomes the wire
   decoder's 4-line, statically unreachable remainder.
+- A spine level's recorded run continues past a block that can never be
+  stored (#170): a formula's replaced paragraph or fence, a directive's
+  label, or a closed directive that owns one used to end the run at its
+  index for the life of the parse, every later closed block served child
+  by child at every feed; the run now records a GAP for such a pair, the
+  consume copies the stretches around it and builds the gap's child in
+  place, and the capped shapes derive within 1.1× of the uncapped ones
+  where they read 8–10×. Gated by `projection_runner --case memo_gap`
+  (seven shapes at two sizes and fed by line, every read equal to a fresh
+  parse) and `memo_gap_ratio`.
 - A feed's payload is a DELTA against the payload before it (#162). Every
   wire payload leads with a frame byte — `markdown_core_wire_frame`, FULL
   or DELTA — and a session asked for DELTA answers the tree by its

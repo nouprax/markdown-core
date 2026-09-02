@@ -9,6 +9,7 @@
 #include "syntax_extension.h"
 
 static void S_node_unlink(markdown_core_node *node);
+static void S_vec_dissolve(markdown_core_node *parent, size_t at);
 
 #define NODE_MEM(node) markdown_core_node_mem(node)
 
@@ -480,9 +481,32 @@ static void S_free_nodes(markdown_core_node *e) {
                  * copied under one memo hold, never held per-tree, so the
                  * walk starts past the boundary and gives back that one
                  * hold instead. The ref itself is the tree's arena's --
-                 * read, never freed. */
+                 * read, never freed. THE GAPS ARE THIS TREE'S (#170): a
+                 * gap's slot holds a node the clone built for this tree
+                 * alone (or whatever a hook put in its place), chained
+                 * into the walk like any fresh entry; a walk that died
+                 * before filling a slot never reaches it, `count` being
+                 * the number filled. */
+                markdown_core_child_memo *memo = e->link.memo_ref->memo;
+                size_t g;
                 i = e->link.memo_ref->boundary;
-                markdown_core_child_memo_release(e->link.memo_ref->memo);
+                for (g = 0; g < memo->gap_count && memo->gaps[g].index < i; g++) {
+                    markdown_core_node *entry;
+                    if (memo->gaps[g].index >= e->children.count) {
+                        break;
+                    }
+                    entry = e->children.vec[memo->gaps[g].index];
+                    if (!entry || (entry->flags & MARKDOWN_CORE_NODE__SHARED)) {
+                        continue;
+                    }
+                    if (chain_tail) {
+                        chain_tail->next = entry;
+                    } else {
+                        chain_head = entry;
+                    }
+                    chain_tail = entry;
+                }
+                markdown_core_child_memo_release(memo);
             }
             for (; i < e->children.count; i++) {
                 markdown_core_node *entry = e->children.vec[i];
@@ -612,15 +636,19 @@ void markdown_core_child_memo_release(markdown_core_child_memo *memo) {
     }
     /* The memo's holds go with it: one release per entry, the exact holds
      * push took. Trees copied the entries and hold the memo, never the
-     * entries, so this is the only per-entry accounting left. */
+     * entries, so this is the only per-entry accounting left. A gap holds
+     * nothing (#170): its entry is NULL. */
     for (i = 0; i < memo->count; i++) {
-        markdown_core_holder_release(memo->entries[i]->link.holder);
+        if (memo->entries[i]) {
+            markdown_core_holder_release(memo->entries[i]->link.holder);
+        }
     }
     memo->mem->free(memo->entries);
+    memo->mem->free(memo->gaps);
     memo->mem->free(memo);
 }
 
-bool markdown_core_child_memo_push(markdown_core_child_memo *memo, markdown_core_node *entry) {
+static bool S_memo_reserve(markdown_core_child_memo *memo) {
     if (memo->count == memo->alloc) {
         size_t grown = memo->alloc ? memo->alloc * 2 : 64;
         markdown_core_node **entries =
@@ -630,6 +658,34 @@ bool markdown_core_child_memo_push(markdown_core_child_memo *memo, markdown_core
         }
         memo->entries = entries;
         memo->alloc = grown;
+    }
+    return true;
+}
+
+bool markdown_core_child_memo_push_gap(markdown_core_child_memo *memo, const markdown_core_node *cst) {
+    if (!S_memo_reserve(memo)) {
+        return false;
+    }
+    if (memo->gap_count == memo->gap_alloc) {
+        size_t grown = memo->gap_alloc ? memo->gap_alloc * 2 : 4;
+        markdown_core_child_memo_gap *gaps =
+            (markdown_core_child_memo_gap *)memo->mem->realloc(memo->gaps, grown * sizeof(*gaps));
+        if (!gaps) {
+            return false;
+        }
+        memo->gaps = gaps;
+        memo->gap_alloc = grown;
+    }
+    memo->gaps[memo->gap_count].index = memo->count;
+    memo->gaps[memo->gap_count].cst = cst;
+    memo->gap_count++;
+    memo->entries[memo->count++] = NULL;
+    return true;
+}
+
+bool markdown_core_child_memo_push(markdown_core_child_memo *memo, markdown_core_node *entry) {
+    if (!S_memo_reserve(memo)) {
+        return false;
     }
     markdown_core_holder_hold(entry->link.holder);
     memo->consulted |= entry->link.holder->consulted;
@@ -1302,10 +1358,14 @@ static void S_node_unlink(markdown_core_node *node) {
     }
     if (MARKDOWN_CORE_NODE_ARRAY_P(parent)) {
         /* The vector is the parent's sibling order (#161): close the gap.
-         * The dual links above already spliced the neighbors. */
+         * The dual links above already spliced the neighbors. A removal
+         * below a memo run's boundary shifts the run (#170: a gap's child
+         * is a fresh node a hook may remove), so the run dissolves first,
+         * exactly as an insertion there dissolves it. */
         size_t i;
         for (i = 0; i < parent->children.count; i++) {
             if (parent->children.vec[i] == node) {
+                S_vec_dissolve(parent, i);
                 memmove(
                     &parent->children.vec[i],
                     &parent->children.vec[i + 1],
@@ -1370,17 +1430,26 @@ static int S_vec_reserve(markdown_core_node *parent) {
  * a removal below the boundary cannot happen (a SHARED entry refuses
  * unlink and replace). The PARSER's memo is untouched: later derivations
  * keep consuming it. */
-static void S_vec_place(markdown_core_node *parent, size_t at, markdown_core_node *child) {
+static void S_vec_dissolve(markdown_core_node *parent, size_t at) {
     if ((parent->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) && at < parent->link.memo_ref->boundary) {
         markdown_core_memo_ref *ref = parent->link.memo_ref;
         size_t i;
-        for (i = 0; i < ref->boundary; i++) {
-            markdown_core_holder_hold(parent->children.vec[i]->link.holder);
+        /* A gap's entry below the boundary is the tree's own fresh node
+         * (#170), held by nobody: only the SHARED entries take a hold. */
+        for (i = 0; i < ref->boundary && i < parent->children.count; i++) {
+            markdown_core_node *entry = parent->children.vec[i];
+            if (entry && (entry->flags & MARKDOWN_CORE_NODE__SHARED)) {
+                markdown_core_holder_hold(entry->link.holder);
+            }
         }
         markdown_core_child_memo_release(ref->memo);
         parent->link.memo_ref = NULL;
         parent->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__MEMO_PREFIX;
     }
+}
+
+static void S_vec_place(markdown_core_node *parent, size_t at, markdown_core_node *child) {
+    S_vec_dissolve(parent, at);
     memmove(
         &parent->children.vec[at + 1],
         &parent->children.vec[at],

@@ -1479,10 +1479,58 @@ static bool S_fresh_queue_push(markdown_core_parser *parser, markdown_core_node 
  * cache stores the list numbered, so a hit serves the same identities without
  * a write. Only an OWNED list is numbered -- a borrowed one already carries
  * its numbers and must not be written (F22). */
+/* THE CHILDREN A TAIL MAY HAVE TO LOOK AT (#170). The entries of a memo
+ * run are the retained projections of closed BLOCKS -- never inline-class,
+ * never fresh -- so a walk that looks for an inline-class child, or for
+ * work of this tree's own, has nothing to find in the run and skips it:
+ * the run's GAPS below the boundary, which hold this tree's own nodes, then
+ * the suffix past the boundary. On every other parent, every child, in
+ * either representation. Index order throughout: the gaps are recorded in
+ * order and all stand below the boundary. */
+typedef struct S_fresh_cursor {
+    size_t gap;
+    size_t index;
+    markdown_core_node *at;
+    bool vector;
+} S_fresh_cursor;
+
+static void S_fresh_begin(const markdown_core_node *block, S_fresh_cursor *cursor) {
+    cursor->gap = 0;
+    cursor->index = 0;
+    cursor->vector = MARKDOWN_CORE_NODE_ARRAY_P(block);
+    cursor->at = cursor->vector ? NULL : block->first_child;
+}
+
+static markdown_core_node *S_fresh_step(const markdown_core_node *block, S_fresh_cursor *cursor) {
+    if (!cursor->vector) {
+        markdown_core_node *entry = cursor->at;
+        if (entry) {
+            cursor->at = entry->next;
+        }
+        return entry;
+    }
+    if (block->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) {
+        const markdown_core_memo_ref *ref = block->link.memo_ref;
+        const markdown_core_child_memo *memo = ref->memo;
+        while (cursor->gap < memo->gap_count && memo->gaps[cursor->gap].index < ref->boundary) {
+            size_t at = memo->gaps[cursor->gap++].index;
+            if (at < block->children.count && block->children.vec[at]) {
+                return block->children.vec[at];
+            }
+        }
+        if (cursor->index < ref->boundary) {
+            cursor->index = ref->boundary;
+        }
+    }
+    return cursor->index < block->children.count ? block->children.vec[cursor->index++] : NULL;
+}
+
 static void S_number_inline_descendants(markdown_core_node *block) {
-    markdown_core_child_cursor cursor;
-    markdown_core_node *top = markdown_core_child_first(block, &cursor);
+    S_fresh_cursor cursor;
+    markdown_core_node *top;
     uint32_t ordinal = 0;
+    S_fresh_begin(block, &cursor);
+    top = S_fresh_step(block, &cursor);
     /* TWO LOOPS, ONE PER TRUST LEVEL (#161, D9). A TOP-LEVEL child is
      * stepped through the cursor and never dereferenced for its links: a
      * block sibling may already be the stored, parentless SHARED node --
@@ -1519,7 +1567,7 @@ static void S_number_inline_descendants(markdown_core_node *block) {
                 cur = cur->next;
             }
         }
-        top = markdown_core_child_after(block, top, &cursor);
+        top = S_fresh_step(block, &cursor);
     }
 }
 
@@ -1527,26 +1575,16 @@ static void S_number_inline_descendants(markdown_core_node *block) {
  * list, or a CST-resident inline construct like a directive's label? This is
  * what obliges a tail: the inline ordinals above are assigned there. */
 static bool S_has_inline_child(markdown_core_node *block) {
-    markdown_core_child_cursor cursor;
+    S_fresh_cursor cursor;
     markdown_core_node *child;
-    /* A memoized prefix needs no asking (F25): its entries passed the
-     * record's own proof -- each the retained projection of a closed
-     * top-level BLOCK -- so the question starts at the boundary. The walk
-     * below was the derived document's last O(width) instruction term per
-     * feed, spent learning every feed that a document holds no inline
-     * child; the suffix stays walked, so the answer is unchanged for any
-     * shape the clone can build. */
-    if (block->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) {
-        size_t i;
-        for (i = block->link.memo_ref->boundary; i < block->children.count; i++) {
-            if (!MARKDOWN_CORE_NODE_BLOCK_P(block->children.vec[i])) {
-                return true;
-            }
-        }
-        return false;
-    }
-    for (child = markdown_core_child_first(block, &cursor); child;
-        child = markdown_core_child_after(block, child, &cursor)) {
+    /* A memoized run needs no asking (F25): its entries passed the record's
+     * own proof -- each the retained projection of a closed BLOCK -- so the
+     * question is put to the run's gaps and the suffix past its boundary
+     * (#170). The walk this replaced was the derived document's last
+     * O(width) instruction term per feed, spent learning every feed that a
+     * document holds no inline child. */
+    S_fresh_begin(block, &cursor);
+    while ((child = S_fresh_step(block, &cursor)) != NULL) {
         if (!MARKDOWN_CORE_NODE_BLOCK_P(child)) {
             return true;
         }
@@ -1643,10 +1681,10 @@ static void S_run_block_tail(markdown_core_parser *parser, markdown_core_node **
      * never enrolled in the cache -- the clone leaves it unmarked -- so its
      * children are always its own. */
     if (node && children_own && !contains_inlines(node) && S_has_inline_child(node)) {
-        markdown_core_child_cursor label_cursor;
+        S_fresh_cursor label_cursor;
         markdown_core_node *child;
-        for (child = markdown_core_child_first(node, &label_cursor); child;
-            child = markdown_core_child_after(node, child, &label_cursor)) {
+        S_fresh_begin(node, &label_cursor);
+        while ((child = S_fresh_step(node, &label_cursor)) != NULL) {
             markdown_core_node *content = child;
             if (MARKDOWN_CORE_NODE_BLOCK_P(child) || !contains_inlines(child)) {
                 continue;
@@ -2608,6 +2646,31 @@ static void S_vec_append(markdown_core_node *parent, markdown_core_node *child) 
  * tree; a refused ref allocation is absorbed the same way. The hit
  * ledger moves by the whole run: the same hits the per-child walk would
  * have counted. */
+/* Copy the stretch of a consumed run that starts at the vector's end and
+ * runs to the next gap or the run's end (#170), and answer the CST child
+ * the walk continues from: the gap's own, or the child after the run --
+ * NULL when the run reaches the end of the children. The hit ledger moves
+ * by the stretch: the same hits the per-child walk would have counted,
+ * the gaps being its misses. */
+static const markdown_core_node *S_spine_stretch(
+    markdown_core_parser *parser,
+    markdown_core_node *dst,
+    markdown_core_memo_ref *ref
+) {
+    const markdown_core_child_memo *memo = ref->memo;
+    size_t from = dst->children.count;
+    size_t to = ref->next_gap < memo->gap_count ? memo->gaps[ref->next_gap].index : memo->count;
+    if (to > from) {
+        memcpy(dst->children.vec + from, memo->entries + from, (to - from) * sizeof(*memo->entries));
+        dst->children.count = to;
+        parser->cache_hits += to - from;
+    }
+    if (ref->next_gap < memo->gap_count) {
+        return memo->gaps[ref->next_gap].cst;
+    }
+    return memo->src_last->next;
+}
+
 static const markdown_core_node *S_spine_consume(
     markdown_core_parser *parser,
     markdown_core_node *dst,
@@ -2667,13 +2730,37 @@ static const markdown_core_node *S_spine_consume(
     }
     ref->memo = memo;
     ref->boundary = memo->count;
-    memcpy(dst->children.vec, memo->entries, memo->count * sizeof(*memo->entries));
-    dst->children.count = memo->count;
+    ref->next_gap = 0;
     markdown_core_child_memo_hold(memo);
     dst->link.memo_ref = ref;
     dst->flags |= MARKDOWN_CORE_NODE__MEMO_PREFIX;
-    parser->cache_hits += memo->count;
-    return memo->src_last->next;
+    /* THE FIRST STRETCH (#170): the run up to its first gap comes in as one
+     * memcpy, and the gap's child is handed back for the walk to build in
+     * its place; each later stretch is copied in as the walk passes its gap
+     * (S_spine_next). A run without gaps is the whole prefix, as before. */
+    return S_spine_stretch(parser, dst, ref);
+}
+
+/* THE WALK'S NEXT CHILD under `dst_parent` (#170): its sibling, unless the
+ * child just appended filled a gap in a consumed run, when the stretch
+ * after the gap is copied in and the walk resumes past it. The gap just
+ * filled is the one the ref points at, and the vector's end says whether
+ * the walk stands right after it; past the run the ref points past the
+ * gaps and nothing here fires. */
+static const markdown_core_node *S_spine_next(
+    markdown_core_parser *parser,
+    markdown_core_node *dst_parent,
+    const markdown_core_node *src
+) {
+    if (dst_parent->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) {
+        markdown_core_memo_ref *ref = dst_parent->link.memo_ref;
+        const markdown_core_child_memo *memo = ref->memo;
+        if (ref->next_gap < memo->gap_count && memo->gaps[ref->next_gap].index + 1 == dst_parent->children.count) {
+            ref->next_gap++;
+            return S_spine_stretch(parser, dst_parent, ref);
+        }
+    }
+    return src->next;
 }
 
 static markdown_core_node *S_clone_block_tree(
@@ -2708,6 +2795,7 @@ static markdown_core_node *S_clone_block_tree(
      * a region, and an inline hook restructures no block at all (F15 rule
      * 2). */
     const markdown_core_node *unfrozen = NULL;
+    const markdown_core_node *next;
     S_clone_mode mode = S_CLONE_RETAINS;
     /* THE SPINE DEPTH (review-found, round 3): the open blocks are the
      * rightmost path, root to `current`, each the last child of the one
@@ -2781,7 +2869,11 @@ static markdown_core_node *S_clone_block_tree(
                 continue;
             }
         }
-        while (!src->next && src != src_root) {
+        /* The next child at this level: the sibling, or -- when the child
+         * just built filled a gap in its parent's run -- the child past
+         * the stretch copied in behind it (#170). No next: climb. */
+        next = S_spine_next(parser, dst_parent, src);
+        while (!next && src != src_root) {
             src = src->parent;
             dst_parent = dst_parent->parent;
             /* Climbing onto the region's own container is leaving it: the
@@ -2790,11 +2882,12 @@ static markdown_core_node *S_clone_block_tree(
                 unfrozen = NULL;
                 mode = S_CLONE_RETAINS;
             }
+            next = src == src_root ? NULL : S_spine_next(parser, dst_parent, src);
         }
         if (src == src_root) {
             break;
         }
-        src = src->next;
+        src = next;
     }
     return dst_root;
 }
@@ -2886,6 +2979,7 @@ static bool S_store_frame_push(markdown_core_parser *parser, markdown_core_node 
     parser->store_stack[parser->store_stack_size].node = node;
     parser->store_stack[parser->store_stack_size].next_index =
         (node->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) ? node->link.memo_ref->boundary : 0;
+    parser->store_stack[parser->store_stack_size].next_gap = 0;
     parser->store_stack[parser->store_stack_size].next_intrusive =
         MARKDOWN_CORE_NODE_ARRAY_P(node) ? NULL : node->first_child;
     parser->store_stack_size++;
@@ -2935,7 +3029,28 @@ static void S_store_pass(markdown_core_parser *parser, markdown_core_node *root)
         markdown_core_node *descend = NULL;
         markdown_core_node *entry;
         if (MARKDOWN_CORE_NODE_ARRAY_P(frame->node)) {
-            while (frame->next_index < frame->node->children.count) {
+            /* THE RUN'S GAPS FIRST (#170): below the boundary a gap's slot
+             * holds this tree's own node -- a container miss whose inside
+             * stores, a replacement that does not -- and the pass owes it
+             * the same look as the suffix. */
+            if (frame->node->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) {
+                const markdown_core_memo_ref *ref = frame->node->link.memo_ref;
+                const markdown_core_child_memo *memo = ref->memo;
+                while (!descend && frame->next_gap < memo->gap_count &&
+                       memo->gaps[frame->next_gap].index < ref->boundary) {
+                    size_t at = memo->gaps[frame->next_gap++].index;
+                    entry = at < frame->node->children.count ? frame->node->children.vec[at] : NULL;
+                    if (!entry || (entry->flags & MARKDOWN_CORE_NODE__SHARED) || !MARKDOWN_CORE_NODE_BLOCK_P(entry)) {
+                        continue;
+                    }
+                    if (S_store_descends(entry)) {
+                        descend = entry;
+                        break;
+                    }
+                    S_store_dispatch(parser, entry);
+                }
+            }
+            while (!descend && frame->next_index < frame->node->children.count) {
                 entry = frame->node->children.vec[frame->next_index++];
                 if ((entry->flags & MARKDOWN_CORE_NODE__SHARED) || !MARKDOWN_CORE_NODE_BLOCK_P(entry)) {
                     continue;
@@ -3063,6 +3178,36 @@ static bool S_spine_memo_slot(markdown_core_parser *parser, const markdown_core_
  * ITS SLOT, which is what the walk below needs to go one level deeper: a
  * level the table cannot index ends the spine as far as the table knows
  * it. */
+/* A PAIR THAT CAN NEVER PROVE (#170): a closed CST child whose projection
+ * will not be SHARED at any later derivation, for a reason the pair itself
+ * shows -- so the run records a gap and continues, where ending at it
+ * capped the level's run for the life of the parse, every later block
+ * served child by child at every feed. Three shapes, all the shipped
+ * extensions can build: a CST-resident INLINE child (a directive's label,
+ * never enrolled); a block a hook REPLACED -- the derived entry is neither
+ * SHARED nor of the child's type, and a replacement carries no ORIGIN, so
+ * it is rebuilt at every projection; and a block that OWNS a label -- a
+ * closed labeled directive, whose container store refuses the inline
+ * entry every time. A lost store (the entry unshared, the type unchanged)
+ * is not permanent and still ends the run; a hook that REMOVED an entry
+ * shifted the vector, which the holder identity catches before this is
+ * asked, and stays an end too: a gap keeps index alignment, a removal
+ * breaks it. Closed blocks are never written, so a reason visible now is
+ * visible for the CST's life. */
+static bool S_pair_is_gap(const markdown_core_node *src_child, const markdown_core_node *entry) {
+    if ((src_child->flags & MARKDOWN_CORE_NODE__OPEN) || (entry->flags & MARKDOWN_CORE_NODE__SHARED)) {
+        return false;
+    }
+    if (!MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)src_child)) {
+        return true;
+    }
+    if (S_type((markdown_core_node *)entry) != S_type((markdown_core_node *)src_child)) {
+        return true;
+    }
+    return MARKDOWN_CORE_NODE_ARRAY_P(entry) && entry->children.count > 0 &&
+           !MARKDOWN_CORE_NODE_BLOCK_P(entry->children.vec[0]);
+}
+
 static bool S_spine_memo_record_level(
     markdown_core_parser *parser,
     const markdown_core_node *cst,
@@ -3108,15 +3253,17 @@ static bool S_spine_memo_record_level(
          * still moves under the write clock -- and an open paragraph can
          * still die at its close, taken whole by a reference definition --
          * while a hook that removed an earlier entry from this vector
-         * shifted the rest left, which the holder identity catches. */
-        if ((src_child->flags & MARKDOWN_CORE_NODE__OPEN) || !(entry->flags & MARKDOWN_CORE_NODE__SHARED) ||
-            !(src_child->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) || src_child->link.holder->node != entry) {
+         * shifted the rest left, which the holder identity catches. A pair
+         * that can NEVER prove is a GAP the run continues past (#170). */
+        bool proves = !(src_child->flags & MARKDOWN_CORE_NODE__OPEN) && (entry->flags & MARKDOWN_CORE_NODE__SHARED) &&
+                      (src_child->flags & MARKDOWN_CORE_NODE__CACHE_OWNER) && src_child->link.holder->node == entry;
+        if (!proves && !S_pair_is_gap(src_child, entry)) {
             break;
         }
         if (!memo) {
-            /* Born at the first provable pair, never empty-handed, into
-             * the slot the level already holds; the generations are the
-             * ones the projection just ran under. */
+            /* Born at the first pair that proves or gaps, never
+             * empty-handed, into the slot the level already holds; the
+             * generations are the ones the projection just ran under. */
             memo = markdown_core_child_memo_new(parser->mem);
             if (!memo) {
                 return true;
@@ -3126,7 +3273,8 @@ static bool S_spine_memo_record_level(
             memo->extgen = parser->extension_generation;
             parser->spine_memos[depth].memo = memo;
         }
-        if (!markdown_core_child_memo_push(memo, entry)) {
+        if (!(proves ? markdown_core_child_memo_push(memo, entry)
+                     : markdown_core_child_memo_push_gap(memo, src_child))) {
             return true;
         }
         memo->src_last = src_child;

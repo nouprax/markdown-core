@@ -2129,6 +2129,84 @@ not move it in a plain build.
 
 ---
 
+### F30 — a run continues past a block that can never store: the memo gaps, and the capped shapes derive within 1.1× of the uncapped  · VERIFIED (#170)
+
+**What was measured.** A level's recorded run (F25, F27) was a prefix of
+SHARED entries that ended at the first entry that was not — right for an
+entry that will be SHARED next time, wrong for one that never can be. Two
+shipped shapes make such an entry: a block a NAME hook REPLACES at every
+projection — formula's standalone `$$…$$` paragraph and its ```` ```formula
+```` fence, whose replacement carries no ORIGIN and is never stored — and a
+directive's CST-resident label, inline-class and never enrolled, which also
+keeps the closed directive that owns it out of the container store. One
+such block at index P capped its level's run at P for the life of the
+parse, and every later closed block came through the per-child path at
+every derivation. The audit measured it (callgrind, steady derivations, N
+= 2,000 / 8,000 / 32,000): plain 26,777 / 99,297 / 387,208 Ir — 12–13 per
+block, the memo covering N; `$$x$$` first 280,672 / 1,078,625 / 4,271,110
+— 133–140 per block, memo length 0, one miss per derivation, so the miss
+ledger never saw it; `::leaf[L]{a=b}` first the same. Wall: 318 µs against
+37 µs per derivation at 8,192 paragraphs.
+
+**The gap.** The record (`S_spine_memo_record_level`) still ends the run at
+a pair that merely fails to prove — a lost store, a hook that removed an
+entry and shifted the vector — but a pair that CAN NEVER prove, for a
+reason the pair itself shows, becomes a GAP the run continues past
+(`S_pair_is_gap`): the CST child is inline-class (a label); or the derived
+entry is neither SHARED nor of the child's type (a hook's replacement,
+rebuilt at every projection); or the entry is a container whose first
+entry is inline-class (a block that owns a label). Closed blocks are never
+written, so a reason visible now is visible for the CST's life. The memo
+records the gap as a NULL entry — index-for-index with the CST children,
+as before — and a gap list of (index, CST child), one per unstorable
+block. The consume copies the run in STRETCHES: the first up to the first
+gap, and each later one as the walk passes its gap (`S_spine_stretch`,
+`S_spine_next`), the gap's child handed to the walk to build in place —
+through `S_clone_block_node` as any fresh child, queued for its tail, so
+the hook that replaces it runs exactly as it did and the `FormulaBlock`
+gates keep their promotion. The store pass looks at the gaps below the
+boundary before the suffix (a gap that is a container miss stores its
+inside); the tail's own walks — `S_has_inline_child`, the label pass, the
+numbering — step the gaps and the suffix (`S_fresh_cursor`) where they
+stepped the whole width on a memo-less container; the free walk chains the
+gap entries, this tree's own, into the walk; and an insertion or a removal
+below the boundary dissolves the run (`S_vec_dissolve`), taking holds only
+on the SHARED entries. Per derivation: O(open + changed + gaps), a gap
+costing its own subtree.
+
+**Gates.** `projection_runner --case memo_gap` (streaming label, under
+every sanitizer preset): seven shapes — the formula first, the fence
+first, a closed labeled directive first, the formula in the middle, two
+gaps, the labeled OPEN directive (the gap at depth 1, index 0), the formula
+first inside an open quote — at 64 and 1,000 units: the enrolling
+derivation and two steady ones dump as a fresh parser's read of the same
+bytes, and the level's run, read from the parser's own memo, is the whole
+closed width with exactly the expected gaps; then each shape fed a line at
+a time, every boundary against a fresh read of the same prefix.
+`memo_gap_ratio` (complexity label, serial): the capped shape's steady
+derivation against the uncapped one's at 8,192 blocks, same run, within
+2.0×.
+
+**Measured.** The ratio gate: the formula first 44.8 µs against the flat
+document's 42.1 µs per derivation (1.07×); the labeled open directive 49.6
+µs against the unlabeled one's 44.6 µs (1.11×) — where the capped rows read
+8–10×. `container_retention`, `child_memo`, `hook_once` and the formula
+gates unchanged; correctness, ASan, UBSan and TSan green.
+
+**What remains.** A closed CONTAINER that holds an unstorable block — a
+closed quote around a `$$x$$` — is refused by the container store and, at
+its parent's level, shows nothing the pair can read as permanent (its type
+is its own, its first entry a block), so it still ends the run there; the
+width inside it is walked once per derivation. Making it a gap needs a
+permanence mark the store could leave on the CST block, or #168's third
+piece — promoting a hook's fresh child under the origin's stamp — which
+removes the formula case at its source and leaves (1) for out-of-tree
+replacing hooks. A block a hook REMOVES (the comment strip) shifts the
+vector and stays an end of the run: a gap keeps index alignment, a removal
+breaks it; that shape is #175's.
+
+---
+
 ## 4. Decisions — RULED, 2026-08-25
 
 **The API shape is the ruling, and it answers most of §4 by dissolving it.**

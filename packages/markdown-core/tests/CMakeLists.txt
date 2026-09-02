@@ -365,6 +365,12 @@ if(MARKDOWN_CORE_STATIC)
     # F27: closed containers retained wholesale -- identity across
     # derivations, consulted-gated invalidation, every free order.
     markdown_core_add_test(projection_container_retention "streaming" 120 projection_runner --case container_retention)
+    # #170: a level's run continues past a block that can never store -- a
+    # formula's replacement, a directive's label, a block that owns one --
+    # instead of ending at it for the life of the parse. The run's length and
+    # gaps are read from the parser's own memo, and every derivation, and
+    # every line-fed boundary, dumps as a fresh read of the same bytes.
+    markdown_core_add_test(projection_memo_gap "streaming" 240 projection_runner --case memo_gap)
     # #162: the delta wire reassembles, byte for byte, to the full frame at
     # every boundary and at the seal -- every fixture, fed by line and in
     # 7-byte pieces, through the facade's two lockstep sessions.
@@ -429,6 +435,12 @@ if(MARKDOWN_CORE_STATIC)
     markdown_core_add_test(pathological_complexity_spine_depth_slope "pathological;complexity" 120 projection_runner
                            --case spine_depth_slope)
     set_tests_properties(pathological_complexity_spine_depth_slope PROPERTIES RUN_SERIAL TRUE)
+    # #170: the capped shapes' steady derivation against the uncapped ones',
+    # same width, same run: within 2x where the capped run read 8-10x.
+    # Wall-clock, complexity-labelled and serial like the slope gates.
+    markdown_core_add_test(pathological_complexity_memo_gap_ratio "pathological;complexity" 120 projection_runner
+                           --case memo_gap_ratio)
+    set_tests_properties(pathological_complexity_memo_gap_ratio PROPERTIES RUN_SERIAL TRUE)
 endif()
 
 markdown_core_add_test(

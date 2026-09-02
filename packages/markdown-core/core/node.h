@@ -231,6 +231,11 @@ typedef struct markdown_core_child_memo markdown_core_child_memo;
 typedef struct markdown_core_memo_ref {
     markdown_core_child_memo *memo;
     size_t boundary;
+    /* THE WALK'S PLACE AMONG THE RUN'S GAPS (#170): the gap the clone is
+     * about to build, or has just built, so the next stretch of the run can
+     * be copied in after it without a search. Meaningful only while the
+     * derivation walks; the free walk reads the memo's own gap list. */
+    size_t next_gap;
 } markdown_core_memo_ref;
 
 struct markdown_core_node {
@@ -527,12 +532,28 @@ void markdown_core_node_classify(markdown_core_node *node);
  * makes a prefix stable: a closed top-level block is never touched again,
  * so only a map or extension generation can stale it, and those gate the
  * whole memo through `consulted` and the recorded generations. */
+/* A GAP IN THE RUN (#170): a closed CST child at `index` whose projection
+ * can never be SHARED -- a block a hook replaces at every projection, a
+ * directive's CST-resident label, a block that owns one -- recorded so the
+ * run continues PAST it instead of ending there for the life of the parse.
+ * The entry at the index is NULL; a consuming derivation copies the
+ * stretches between gaps and clones the gap's child fresh, in place. */
+typedef struct markdown_core_child_memo_gap {
+    size_t index;
+    const markdown_core_node *cst;
+} markdown_core_child_memo_gap;
+
 struct markdown_core_child_memo {
     markdown_core_mem *mem;
     markdown_core_atomic_u32 refs;
+    /* Index-for-index with the CST children from 0; NULL at a gap. */
     markdown_core_node **entries;
     size_t count;
     size_t alloc;
+    /* The gaps, in index order: few, one per unstorable block. */
+    markdown_core_child_memo_gap *gaps;
+    size_t gap_count;
+    size_t gap_alloc;
     /* The CST child the LAST entry projects: where a consuming derivation
      * resumes its per-child walk, at `src_last->next` read at use. The
      * anchor is a recorded child and never its successor because only
@@ -557,6 +578,10 @@ void markdown_core_child_memo_release(markdown_core_child_memo *memo);
  * and folds its consulted bits in. Returns 0 when the array could not
  * grow; the memo is unchanged then. */
 bool markdown_core_child_memo_push(markdown_core_child_memo *memo, markdown_core_node *entry);
+/* Append one GAP (#170): a NULL entry at the next index, and the CST child
+ * it stands for on the gap list. Returns 0 when an array could not grow;
+ * the memo is unchanged then. */
+bool markdown_core_child_memo_push_gap(markdown_core_child_memo *memo, const markdown_core_node *cst);
 
 markdown_core_holder *markdown_core_holder_new(markdown_core_mem *mem);
 void markdown_core_holder_hold(markdown_core_holder *holder);
