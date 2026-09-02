@@ -237,7 +237,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "attributes is an ordered sequence of name/value pairs sorted by name; label is a node-valued field whose scope spans its brackets and is never part of content; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one"
+            "invariants": "attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never part of content; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one"
         },
         {
             "name": "DirectiveLabel",
@@ -502,7 +502,7 @@
                     "optional": true
                 }
             ],
-            "invariants": "attributes is an ordered sequence of name/value pairs sorted by name; label is a node-valued field whose scope spans its brackets and is never a child/content element; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one"
+            "invariants": "attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never a child/content element; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one"
         },
         {
             "name": "FootnoteReference",

@@ -75,9 +75,11 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   `Link` or an `Image` with the definition's destination copied into them.
   `markdown_core_node_reference_form` reads the form.
 - A directive's label is a node of its own, `DirectiveLabel`, and its attributes
-  are a list of name/value pairs rather than a string of normalized JSON.
+  are a list of name/value pairs rather than a string of normalized JSON. The
+  list preserves each name's first-occurrence source order; duplicate values
+  update or accumulate in that original slot instead of triggering a sort.
   `markdown_core_node_directive_attribute_at` reads one pair, and the dump
-  prints `attributes=[class="x" k="v"]` where it printed JSON object text.
+  prints `attributes=[k="v" class="x"]` where it printed JSON object text.
 - `mode` is removed from `Code`, `CodeBlock`, `Directive`, `DirectiveBlock` and
   `FormulaBlock`, where it could only ever hold the one value its kind implies.
   `Formula` keeps it, because a formula is the one kind where it varies.

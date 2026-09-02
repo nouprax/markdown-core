@@ -189,15 +189,13 @@ function convert(node, definitions) {
  * the unquoted-value rules came to differ from the authority's without anything
  * noticing.
  *
- * mdast holds attributes as an object; the canonical dump prints a JSON object
- * or `null`. Both are rendered here as one sorted `key=value` string so the
- * comparison is about the attributes rather than about key order or the two
- * spellings of "none".
+ * mdast holds attributes as an insertion-ordered object. The canonical dump
+ * prints the same first-occurrence order, so this comparison deliberately does
+ * not normalize away an ordering defect.
  */
 export function renderAttributes(attributes) {
     const entries = Object.entries(attributes ?? {}).filter(([, value]) => value !== null && value !== undefined);
     if (!entries.length) return "null";
-    entries.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
     return entries.map(([key, value]) => `${key}=${JSON.stringify(String(value))}`).join(" ");
 }
 

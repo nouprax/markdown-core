@@ -172,8 +172,9 @@ int markdown_core_extensions_directive_has_attributes(markdown_core_node *node);
 MARKDOWN_CORE_EXPORT
 size_t markdown_core_extensions_directive_attribute_count(markdown_core_node *node);
 
-/** Reads the attribute at `index`, in the order the model holds them, which is
- * sorted by name (Q19). Returns 1 on success and 0 when the node is not a
+/** Reads the attribute at `index`, in first-occurrence source order. A repeated
+ * non-class name replaces the value in its original slot; repeated `class`
+ * values accumulate there. Returns 1 on success and 0 when the node is not a
  * directive or the index is out of range. The bytes are BORROWED from the node
  * and are not NUL-terminated, which is why each comes with its length.
  */

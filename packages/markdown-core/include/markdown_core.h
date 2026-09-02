@@ -294,6 +294,9 @@ MARKDOWN_CORE_API bool markdown_core_node_table_row_is_header(const markdown_cor
 MARKDOWN_CORE_API bool markdown_core_node_directive_properties(const markdown_core_node *node,
                                                                markdown_core_string *name, bool *has_attributes,
                                                                size_t *attribute_count);
+/** Reads one unique directive attribute in first-occurrence source order. A
+ * repeated non-class name updates the value in its original slot; repeated
+ * `class` values accumulate there in source order. */
 MARKDOWN_CORE_API bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, size_t index,
                                                                  markdown_core_string *name,
                                                                  markdown_core_string *value);

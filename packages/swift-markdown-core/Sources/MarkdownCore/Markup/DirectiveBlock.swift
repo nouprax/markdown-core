@@ -10,8 +10,8 @@ public struct DirectiveBlock: Markup {
     public let scope: Scope
     /// The directive's name, without its colons.
     public let name: String
-    /// The attributes the source wrote, sorted by name, or `nil` when it wrote
-    /// no `{...}` at all.
+    /// The attributes the source wrote, in first-occurrence source order, or
+    /// `nil` when it wrote no `{...}` at all.
     public let attributes: [DirectiveAttribute]?
     /// The bracketed label, or `nil` when the source wrote none.
     public let label: DirectiveLabel?

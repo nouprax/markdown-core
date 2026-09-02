@@ -20,8 +20,8 @@
 #include "ext_scanners.h"
 
 /* THE ATTRIBUTE LIST IS AN ORDERED MAP, because that is exactly what the
- * grammar asks for: a name appears once, `{a=1 b=2 a=3}` keeps `a=3`, `class`
- * accumulates, and the model is sorted by name (Q19).
+ * grammar asks for: a name appears once, `{a=1 b=2 a=3}` keeps `a=3` in its
+ * first-written position, and `class` accumulates in source order.
  *
  * It used to be a linked list with one node per SOURCE OCCURRENCE, folded
  * afterwards by a hash pass that marked the losers inactive. That built what it
@@ -484,31 +484,6 @@ static int upsert_attribute(markdown_core_mem *mem, attribute_builder *builder, 
     return 1;
 }
 
-/* Q19: THE MODEL IS SORTED, and by name. Two orders is how a third order
- * appears in a binding -- the map has no source order left to preserve once a
- * name appears once -- and remark's own projection is sorted too, which is what
- * the mdast oracle compares against.
- *
- * `qsort` over the array, not a merge sort over a list: the entries are
- * contiguous and there are no equal names to keep stable, because the map made
- * them unique. */
-static int compare_attributes_by_name(const void *left, const void *right) {
-    const directive_attribute *a = (const directive_attribute *)left;
-    const directive_attribute *b = (const directive_attribute *)right;
-    bufsize_t common = a->name.len < b->name.len ? a->name.len : b->name.len;
-    int cmp = memcmp(a->name.data, b->name.data, (size_t)common);
-    if (cmp) {
-        return cmp;
-    }
-    return a->name.len < b->name.len ? -1 : a->name.len > b->name.len;
-}
-
-static void sort_attributes_by_name(directive_attributes *attrs) {
-    if (attrs->count > 1) {
-        qsort(attrs->items, attrs->count, sizeof(*attrs->items), compare_attributes_by_name);
-    }
-}
-
 const char *markdown_core_extensions_get_directive_name(markdown_core_node *node) {
     node_directive *directive = get_directive(node);
     if (!directive) {
@@ -767,9 +742,6 @@ static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, b
 
     markdown_core_key_index_free(&builder.index);
     if (ok) {
-        /* Sorting last, and only here: the index maps a name to the slot it was
-         * inserted at, so it has to be gone before the entries move. */
-        sort_attributes_by_name(&builder.list);
         *result = builder.list;
         memset(&builder.list, 0, sizeof(builder.list));
     }

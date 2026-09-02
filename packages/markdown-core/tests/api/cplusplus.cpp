@@ -22,7 +22,7 @@ void test_cplusplus(test_batch_runner *runner) {
            "parsed literals are readable from C++");
     markdown_core_node_free(doc);
 
-    static const char directive_markdown[] = ":cpp{id=ordinary title=\"My Video\" muted=true}\n";
+    static const char directive_markdown[] = ":cpp{title=\"My Video\" id=ordinary muted=true}\n";
     const markdown_core_syntax_extension *extension = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
     markdown_core_node *document = markdown_core_parse_document_with_mem(
         directive_markdown, sizeof(directive_markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT,
@@ -45,7 +45,8 @@ void test_cplusplus(test_batch_runner *runner) {
             runner,
             markdown_core_extensions_directive_attribute_at(directive, 0, &name, &name_length, &value, &value_length),
             1, "directive attribute read in C++");
-        OK(runner, name_length == 2 && memcmp(name, "id", 2) == 0, "directive attributes are sorted by name in C++");
+        OK(runner, name_length == 5 && memcmp(name, "title", 5) == 0,
+           "directive attributes preserve first-occurrence source order in C++");
     }
     markdown_core_node_free(document);
 }

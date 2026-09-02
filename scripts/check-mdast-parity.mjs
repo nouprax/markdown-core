@@ -72,9 +72,10 @@ function project(node) {
             node.kind === "Image" && key === "destination"
                 ? (node.fields.destination ?? node.fields.source)
                 : node.fields[key];
-        // Both sides spell a directive's attributes as sorted `key="value"`
-        // pairs now; the dump brackets the group so it reads as one field, and
-        // spells an empty container `[]` where the oracle spells it "null".
+        // Both sides spell a directive's attributes as source-ordered
+        // `key="value"` pairs; the dump brackets the group so it reads as one
+        // field, and spells an empty container `[]` where the oracle spells it
+        // "null".
         if (key === "attributes" && typeof value === "string" && value.startsWith("[")) {
             const inner = value.slice(1, -1);
             value = inner === "" ? "null" : inner;

@@ -461,8 +461,8 @@ static void directive_extension_accessors(test_batch_runner *runner) {
     /* `:-a[]` was the input here until Step 7, and it is not a directive: a
      * name may not BEGIN with a hyphen or underscore any more than it may end
      * with one. `class` is also the one name whose repeats accumulate now, so
-     * the three of them are one value rather than the last one, and Step 7.2
-     * made the sequence SORTED BY NAME rather than first-key source order. */
+     * the three of them are one value rather than the last one. The sequence
+     * keeps the first occurrence of each name in source order. */
     markdown_core_node *doc =
         parse_with_directive_extension(":a[]{id=first muted=true title=\"My Video\" bare dup=first dup=last "
                                        "class=red class=green class=blue id=123}\n");
@@ -482,12 +482,12 @@ static void directive_extension_accessors(test_batch_runner *runner) {
     INT_EQ(runner, markdown_core_extensions_directive_has_attributes(directive), 1,
            "directive reports its attribute container");
     INT_EQ(runner, (int)markdown_core_extensions_directive_attribute_count(directive), 6, "directive attribute count");
-    attribute_eq(runner, directive, 0, "bare", "", "attribute 0 sorts first and keeps its empty value");
-    attribute_eq(runner, directive, 1, "class", "red green blue", "class accumulates in source order");
-    attribute_eq(runner, directive, 2, "dup", "last", "a repeated name keeps its last value");
-    attribute_eq(runner, directive, 3, "id", "123", "id is an ordinary name and keeps its last value");
-    attribute_eq(runner, directive, 4, "muted", "true", "a bare attribute has an empty value");
-    attribute_eq(runner, directive, 5, "title", "My Video", "a quoted value keeps its spaces");
+    attribute_eq(runner, directive, 0, "id", "123", "a repeated name updates its first source position");
+    attribute_eq(runner, directive, 1, "muted", "true", "source order preserves a bare-looking value");
+    attribute_eq(runner, directive, 2, "title", "My Video", "source order preserves a quoted value");
+    attribute_eq(runner, directive, 3, "bare", "", "source order preserves a valueless attribute");
+    attribute_eq(runner, directive, 4, "dup", "last", "a repeated name keeps its last value in its first slot");
+    attribute_eq(runner, directive, 5, "class", "red green blue", "class accumulates in its first source slot");
     OK(runner, !markdown_core_extensions_directive_attribute_at(directive, 6, NULL, NULL, NULL, NULL),
        "an out-of-range attribute index is refused");
 

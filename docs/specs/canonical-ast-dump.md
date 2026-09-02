@@ -60,9 +60,9 @@ generic tree formatter to schema-specific edge names.
 - Integers use base-10 ASCII with no leading zero except zero itself.
 - Enums use their lowercase contract spelling without quotes.
 - Arrays use compact JSON punctuation with no spaces.
-- Directive attributes are normalized string-map JSON strings produced by the
-  parser from source attribute-list syntax. The dump applies normal JSON string
-  escaping around that already-normalized value and does not decode it again.
+- Directive attributes are printed as their ordered name/value pairs. Each name
+  keeps its first-occurrence source position; values use normal JSON string
+  escaping.
 - Every optional and default-bearing field is printed; fields are never
   omitted because they are null, empty, false, or default.
 - Scope is always printed immediately after the kind. Kind-specific fields

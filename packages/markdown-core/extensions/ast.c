@@ -553,7 +553,7 @@ bool markdown_core_node_table_row_is_header(const markdown_core_node *node, bool
     return true;
 }
 
-/* ATTRIBUTES ARE AN ORDERED SEQUENCE, sorted by name (Q19). The JSON string
+/* ATTRIBUTES ARE AN ORDERED SEQUENCE in first-occurrence source order. The JSON string
  * this used to hand out was a second representation of the list the parser
  * already holds, with a parser of its own to read it back; both are gone.
  * `has_attributes` distinguishes `:n` from `:n{}` -- absent from empty -- which
