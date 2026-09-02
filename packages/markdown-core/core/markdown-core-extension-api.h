@@ -308,6 +308,21 @@ typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_syntax_exten
 typedef void (*markdown_core_opaque_free_func)(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,
                                                markdown_core_node *node);
 
+/* Node-valued extension fields are owned structural relations, but they are
+ * not content children.  Keeping their enumeration on the immutable extension
+ * descriptor lets the engine's whole-tree algorithms see those nodes without
+ * folding distinct AST roles into the intrusive child list. */
+typedef size_t (*markdown_core_node_field_count_func)(const markdown_core_syntax_extension *extension,
+                                                      markdown_core_node *node);
+
+typedef markdown_core_node *(*markdown_core_node_field_at_func)(const markdown_core_syntax_extension *extension,
+                                                                markdown_core_node *node, size_t index);
+
+typedef void (*markdown_core_node_field_clear_func)(const markdown_core_syntax_extension *extension,
+                                                    markdown_core_node *node, size_t index);
+
+typedef int (*markdown_core_field_only_func)(const markdown_core_syntax_extension *extension, markdown_core_node *node);
+
 /** A syntax extension is a `static const` descriptor in a fixed compile-time
  * table (`extensions/core-extensions.c`), not an object built at run time.
  *

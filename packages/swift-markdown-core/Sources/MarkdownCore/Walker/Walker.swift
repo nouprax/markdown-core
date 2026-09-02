@@ -39,9 +39,9 @@ public struct Walker: Sendable {
     }
 }
 
-/// Every child of a node, in the order the C tree holds them. `Walker` walks
-/// with it, so a walk and a hand-written descent cannot disagree about what a
-/// node's children are.
+/// The private field-aware traversal projection used by `Walker`. A
+/// directive's `label` precedes its separate `content` and is not itself a
+/// content child.
 struct ChildrenVisitor: MarkupVisitor {
     mutating func visit(_ node: Document) -> [any Markup] { node.content }
 
@@ -65,8 +65,6 @@ struct ChildrenVisitor: MarkupVisitor {
 
     mutating func visit(_ node: Table) -> [any Markup] { [node.header] + node.rows }
 
-    // Label first, then content: they are two runs of one C child list, and
-    // the dump's `children=` counts both.
     mutating func visit(_ node: DirectiveBlock) -> [any Markup] {
         (node.label.map { [$0 as any Markup] } ?? []) + node.content
     }

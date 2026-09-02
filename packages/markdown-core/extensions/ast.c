@@ -373,12 +373,10 @@ markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
     return scope;
 }
 
-/* THE LABEL IS A NODE. It always was one in the tree; this facade used to
- * splice it out -- first_child skipped past it into its children and
- * next_sibling climbed back out -- so a directive's label reached every
- * binding as a COUNT on the parent and a run of children with no container.
- * `DirectiveLabel` is therefore a public kind, its scope spans its brackets,
- * and the dump represents it as the node already present in the tree. */
+static bool is_directive(const markdown_core_node *node) {
+    return node && (node->type == MARKDOWN_CORE_NODE_DIRECTIVE || node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK);
+}
+
 const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node) {
     return node ? node->first_child : NULL;
 }
@@ -593,6 +591,10 @@ bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, s
     value->data = (const uint8_t *)value_bytes;
     value->length = value_length;
     return true;
+}
+
+const markdown_core_node *markdown_core_node_directive_label(const markdown_core_node *node) {
+    return is_directive(node) ? markdown_core_directive_label((markdown_core_node *)node) : NULL;
 }
 
 static bool link_properties(const markdown_core_node *node, uint16_t expected, markdown_core_string *url,
@@ -930,21 +932,21 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " attributes=");
         if (!has_attributes) {
             buffer_cstr(buffer, "null");
-            break;
-        }
-        buffer_cstr(buffer, "[");
-        for (i = 0; i < count; i++) {
-            if (!markdown_core_node_directive_attribute_at(node, i, &a, &b)) {
-                continue;
+        } else {
+            buffer_cstr(buffer, "[");
+            for (i = 0; i < count; i++) {
+                if (!markdown_core_node_directive_attribute_at(node, i, &a, &b)) {
+                    continue;
+                }
+                if (i) {
+                    buffer_cstr(buffer, " ");
+                }
+                buffer_bytes(buffer, a.data, a.length);
+                buffer_cstr(buffer, "=");
+                buffer_json_string(buffer, b);
             }
-            if (i) {
-                buffer_cstr(buffer, " ");
-            }
-            buffer_bytes(buffer, a.data, a.length);
-            buffer_cstr(buffer, "=");
-            buffer_json_string(buffer, b);
+            buffer_cstr(buffer, "]");
         }
-        buffer_cstr(buffer, "]");
         break;
     /* `label=`, not `id=` (Q5). Two names for one field after unifying the
      * field is the failure mode that produced three accessors. */
@@ -1004,11 +1006,32 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     }
 }
 
+/* The debug tree shows every node-valued field, whereas the public child API
+ * represents only structural content. Keep those two contracts explicit: a
+ * directive label is dumped before content without becoming content. */
+static const markdown_core_node *dump_first_descendant(const markdown_core_node *node) {
+    const markdown_core_node *label = markdown_core_node_directive_label(node);
+    return label ? label : markdown_core_node_get_first_child(node);
+}
+
+static const markdown_core_node *dump_next_descendant(const markdown_core_node *parent,
+                                                      const markdown_core_node *node) {
+    const markdown_core_node *label = markdown_core_node_directive_label(parent);
+    if (node == label) {
+        return markdown_core_node_get_first_child(parent);
+    }
+    return markdown_core_node_get_next_sibling(node);
+}
+
+static size_t dump_descendant_count(const markdown_core_node *node) {
+    return markdown_core_node_child_count(node) + (markdown_core_node_directive_label(node) ? 1u : 0u);
+}
+
 static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_scope scope = markdown_core_node_scope(node);
     const markdown_core_node *child;
-    size_t count = markdown_core_node_child_count(node);
+    size_t count = dump_descendant_count(node);
     size_t i;
     if (kind == MARKDOWN_CORE_KIND_NONE) {
         buffer->failed = true;
@@ -1034,9 +1057,9 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     buffer_i64(buffer, (int64_t)count);
     buffer_cstr(buffer, "\n");
 
-    child = markdown_core_node_get_first_child(node);
+    child = dump_first_descendant(node);
     while (child) {
-        const markdown_core_node *next = markdown_core_node_get_next_sibling(child);
+        const markdown_core_node *next = dump_next_descendant(node, child);
         if (!ensure_more(buffer, depth)) {
             return;
         }

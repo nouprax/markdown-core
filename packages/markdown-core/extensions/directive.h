@@ -17,6 +17,7 @@ extern "C" {
 extern const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE;
 
 int markdown_core_directive_has_label(markdown_core_node *node);
+markdown_core_node *markdown_core_directive_label(markdown_core_node *node);
 
 #ifdef __cplusplus
 }

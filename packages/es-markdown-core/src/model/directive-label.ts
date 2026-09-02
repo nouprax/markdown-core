@@ -2,7 +2,8 @@ import type { MarkupBase } from "./base.js";
 import type { Markup } from "./markup.js";
 
 /**
- * A directive's bracketed label. Its scope spans the brackets, so a label
+ * A directive's bracketed label. It is Markup owned by the directive's label
+ * field, not directive content. Its scope spans the brackets, so a label
  * written empty is still a place in the source.
  */
 export interface DirectiveLabel extends MarkupBase<"directiveLabel"> {

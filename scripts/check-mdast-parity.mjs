@@ -51,8 +51,8 @@ const processor = unified().use(remarkParse).use(remarkGfm).use(remarkDirective)
 function project(node) {
     const children = [];
     for (const child of node.children) {
-        // `:red[]` carries an empty label in this repository's AST and no
-        // children at all in mdast, which cannot express the difference
+        // `:red[]` carries an empty label field in this repository's AST and
+        // no label content at all in mdast, which cannot express the difference
         // between it and `:red`. Dropping the empty node compares what both
         // models can state.
         if (child.kind === "DirectiveLabel" && child.children.length === 0) continue;

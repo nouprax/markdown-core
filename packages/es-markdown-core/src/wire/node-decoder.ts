@@ -279,17 +279,16 @@ export class NodeDecoder {
     }
 
     private directiveFields(node: number): DirectiveFields {
-        const childPointers = this.childPointers(node);
-        // The label is the first child when it is there at all. Until Step 7
-        // the C facade spliced the node out and named its count instead, and
-        // this had to slice the run out of a flat child list.
-        const first = childPointers.length > 0 ? this.copyMarkup(childPointers[0]!) : null;
-        const label = first !== null && first.kind === "directiveLabel" ? first : null;
+        const labelPointer = this.native.es_node_directive_label(node);
+        const labelValue = labelPointer ? this.copyMarkup(labelPointer) : null;
+        if (labelValue !== null && labelValue.kind !== "directiveLabel") {
+            throw new Error("directive label field contains a non-label node");
+        }
         return {
             name: this.requiredString(node, stringField.directiveName),
             attributes: this.directiveAttributes(node),
-            label,
-            content: childPointers.slice(label === null ? 0 : 1).map((child) => this.copyMarkup(child))
+            label: labelValue,
+            content: this.content(node)
         };
     }
 

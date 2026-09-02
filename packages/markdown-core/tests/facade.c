@@ -314,6 +314,76 @@ static void check_null_and_empty(void) {
     }
 }
 
+static void check_directive_label_projection(void) {
+    static const uint8_t inline_source[] = ":badge[label]\n";
+    static const uint8_t bare_source[] = ":badge\n";
+    static const uint8_t empty_source[] = ":badge[]\n";
+    static const uint8_t block_source[] = ":::note[Title]\nBody\n:::\n";
+    markdown_core_document *document;
+    const markdown_core_node *root;
+    const markdown_core_node *directive;
+    const markdown_core_node *label;
+    const markdown_core_node *label_child;
+    const markdown_core_node *content_child;
+
+    document = markdown_core_document_parse(inline_source, sizeof(inline_source) - 1, NULL, NULL);
+    check(document != NULL, "labelled inline directive parses");
+    if (document) {
+        root = markdown_core_document_semantic(document);
+        directive = markdown_core_node_get_first_child(markdown_core_node_get_first_child(root));
+        label = markdown_core_node_directive_label(directive);
+        label_child = markdown_core_node_get_first_child(label);
+        check(markdown_core_node_get_kind(label) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL &&
+                  markdown_core_node_get_kind(label_child) == MARKDOWN_CORE_KIND_TEXT &&
+                  markdown_core_node_child_count(label) == 1,
+              "directive label is an optional Markup-valued field");
+        check(markdown_core_node_get_first_child(directive) == NULL && markdown_core_node_child_count(directive) == 0 &&
+                  markdown_core_node_get_next_sibling(label) == NULL,
+              "an inline directive label is not directive content");
+        markdown_core_document_free(document);
+    }
+
+    document = markdown_core_document_parse(bare_source, sizeof(bare_source) - 1, NULL, NULL);
+    check(document != NULL, "bare inline directive parses");
+    if (document) {
+        root = markdown_core_document_semantic(document);
+        directive = markdown_core_node_get_first_child(markdown_core_node_get_first_child(root));
+        check(markdown_core_node_directive_label(directive) == NULL && markdown_core_node_child_count(directive) == 0,
+              "an absent directive label remains absent and is not content");
+        markdown_core_document_free(document);
+    }
+
+    document = markdown_core_document_parse(empty_source, sizeof(empty_source) - 1, NULL, NULL);
+    check(document != NULL, "empty-label directive parses");
+    if (document) {
+        root = markdown_core_document_semantic(document);
+        directive = markdown_core_node_get_first_child(markdown_core_node_get_first_child(root));
+        label = markdown_core_node_directive_label(directive);
+        check(markdown_core_node_get_kind(label) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL &&
+                  markdown_core_node_child_count(label) == 0,
+              "an empty label remains distinct from an absent label");
+        check(markdown_core_node_child_count(directive) == 0, "an empty directive label is not directive content");
+        markdown_core_document_free(document);
+    }
+
+    document = markdown_core_document_parse(block_source, sizeof(block_source) - 1, NULL, NULL);
+    check(document != NULL, "labelled block directive parses");
+    if (document) {
+        root = markdown_core_document_semantic(document);
+        directive = markdown_core_node_get_first_child(root);
+        label = markdown_core_node_directive_label(directive);
+        check(markdown_core_node_get_kind(label) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL &&
+                  markdown_core_node_child_count(label) == 1,
+              "block directive exposes its label through the field accessor");
+        content_child = markdown_core_node_get_first_child(directive);
+        check(markdown_core_node_get_kind(content_child) == MARKDOWN_CORE_KIND_PARAGRAPH,
+              "block directive children contain only block content");
+        check(markdown_core_node_get_next_sibling(label) == NULL && markdown_core_node_child_count(directive) == 1,
+              "block directive label is not a sibling of its content");
+        markdown_core_document_free(document);
+    }
+}
+
 static void check_api(void) {
     static const uint8_t source[] = "# Heading\n\n- [ ] task\n";
     markdown_core_parse_options options;
@@ -375,6 +445,7 @@ int main(int argc, char **argv) {
     fixture_dir = argv[2];
     check_api();
     check_null_and_empty();
+    check_directive_label_projection();
     check_source_and_lines();
     for (i = 3; i < argc; i += 2) {
         check_fixture(fixture_dir, argv[i], argv[i + 1]);

@@ -224,12 +224,10 @@ static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE: {
-        /* The label is a CHILD NODE now, so it needs no wire slot of its own:
-         * the children are written whole, exactly as for every other kind, and
-         * the decoder tells a label from content by its kind. What is still
-         * spelled out is the attribute sequence, because a count of pairs is
-         * not something write_children can carry. */
+        /* A label is a node-valued field, not directive content. Preserve that
+         * boundary on the wire instead of flattening it into the child list. */
         bool has_attributes = false;
+        const markdown_core_node *label;
         size_t count = 0;
         size_t index;
         markdown_core_node_directive_properties(node, &first, &has_attributes, &count);
@@ -247,6 +245,11 @@ static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
             }
             put_string(buffer, first, true);
             put_string(buffer, second, true);
+        }
+        label = markdown_core_node_directive_label(node);
+        put_u8(buffer, label ? 1 : 0);
+        if (label) {
+            write_node(buffer, label);
         }
         write_children(buffer, node);
         break;

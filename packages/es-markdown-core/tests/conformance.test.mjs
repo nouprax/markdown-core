@@ -104,8 +104,8 @@ test("conformance: directive labels preserve missing, empty, and populated state
 
     assert.equal(missing.label, null);
     assert.deepEqual(missing.attributes, [{ name: "id", value: "1" }]);
-    // A label written empty is a node with no children, and its scope still
-    // spans its brackets -- which is what tells it from a label never written.
+    // A label written empty is Markup in the label field, not directive
+    // content. Its scope still distinguishes it from a label never written.
     assert.equal(empty.label.kind, "directiveLabel");
     assert.deepEqual(empty.label.content, []);
     assert.equal(label.label.content[0].literal, "text");

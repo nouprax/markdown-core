@@ -257,7 +257,10 @@ MARKDOWN_CORE_API markdown_core_node_kind markdown_core_node_get_kind(const mark
 MARKDOWN_CORE_API const char *markdown_core_node_kind_name(markdown_core_node_kind kind);
 MARKDOWN_CORE_API markdown_core_scope markdown_core_node_scope(const markdown_core_node *node);
 
-/** Canonical traversal hides directive-label wrapper nodes. */
+/** A directive's `label` is a separate node-valued field and is not part of
+ * its child sequence. For a `DirectiveBlock`, these functions traverse only
+ * block `content`; an inline `Directive` has no children. Read its label with
+ * `markdown_core_node_directive_label`. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node);
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node);
 MARKDOWN_CORE_API size_t markdown_core_node_child_count(const markdown_core_node *node);
@@ -294,6 +297,10 @@ MARKDOWN_CORE_API bool markdown_core_node_directive_properties(const markdown_co
 MARKDOWN_CORE_API bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, size_t index,
                                                                  markdown_core_string *name,
                                                                  markdown_core_string *value);
+/** The directive's optional `DirectiveLabel` field. The returned node is not
+ * a directive child; its own children are the label's inline content. NULL
+ * means either no label or a non-directive input. */
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_label(const markdown_core_node *node);
 /** A destination is REQUIRED and a title is OPTIONAL (Q26, requirement 14).
  * `[a]()` and `[a](<>)` wrote a destination and wrote nothing in it, so they
  * answer with the empty string; there is no inline link whose author wrote no

@@ -182,6 +182,13 @@ static MARKDOWN_CORE_INLINE markdown_core_mem *markdown_core_node_mem(markdown_c
 }
 MARKDOWN_CORE_EXPORT int markdown_core_node_check(markdown_core_node *node, FILE *out);
 
+/* Internal structural traversal.  A node-valued field is visited before the
+ * owner's content children, but remains outside first_child/next/last_child. */
+size_t markdown_core_node_field_count(markdown_core_node *node);
+markdown_core_node *markdown_core_node_field_at(markdown_core_node *node, size_t index);
+markdown_core_node *markdown_core_node_first_descendant(markdown_core_node *node);
+markdown_core_node *markdown_core_node_next_descendant(markdown_core_node *node);
+
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_TYPE_BLOCK_P(markdown_core_node_type node_type) {
     return (node_type & MARKDOWN_CORE_NODE_TYPE_MASK) == MARKDOWN_CORE_NODE_TYPE_BLOCK;
 }

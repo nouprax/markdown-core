@@ -16,7 +16,9 @@
  * 2026-08-02 the two agree and nothing is projected.
  *
  *   - mdast splits a directive's label into children; Markdown Core carries it
- *     as a `DirectiveLabel` child. Both are compared by their content.
+ *     as a `DirectiveLabel` field. The comparison tree nests node-valued
+ *     fields, so both are compared by their content without changing AST
+ *     ownership semantics.
  */
 
 const MDAST_KIND = {
@@ -150,7 +152,8 @@ function convert(node, definitions) {
     }
 
     let children = (node.children ?? []).flatMap((child) => convert(child, definitions));
-    // A directive's label is a `DirectiveLabel` child here. mdast states it two
+    // A directive's label becomes a nested `DirectiveLabel` in this comparison
+    // tree. In the canonical AST it is a field, not directive content. mdast states it two
     // ways: for text and leaf directives it is the directive's own children,
     // and for container directives it is a first-child paragraph flagged
     // `data.directiveLabel`. Both become the same node so the label's content

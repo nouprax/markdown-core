@@ -37,6 +37,16 @@ struct markdown_core_syntax_extension {
     markdown_core_postprocess_func postprocess_func;
     markdown_core_opaque_alloc_func opaque_alloc_func;
     markdown_core_opaque_free_func opaque_free_func;
+    /* A compact, field-order sequence of owned nodes. Every returned field is
+     * non-NULL, has the owner as parent, and has no next/prev siblings. The
+     * opaque destructor frees it; clear removes the field when generic node
+     * mutation unlinks or frees it independently. */
+    markdown_core_node_field_count_func node_field_count_func;
+    markdown_core_node_field_at_func node_field_at_func;
+    markdown_core_node_field_clear_func node_field_clear_func;
+    /* A field-only node may be attached through a typed field, never through
+     * generic prepend/append/insert child mutation. */
+    markdown_core_field_only_func field_only_func;
 };
 
 #endif

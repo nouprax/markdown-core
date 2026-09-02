@@ -184,6 +184,8 @@ class WireCoverageTest {
 
         val block = assertIs<DirectiveBlock>(document.content[1])
         assertIs<DirectiveLabel>(assertNotNull(block.label))
+        assertEquals(1, block.content.size)
+        assertIs<Paragraph>(block.content.single())
         assertEquals("kind", block.attributes?.first()?.name)
 
         val inlines = assertIs<Paragraph>(document.content[2]).content

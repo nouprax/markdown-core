@@ -41,9 +41,12 @@ Connectors and prefixes are exact UTF-8:
 Output uses LF line endings and ends with exactly one LF. There is no trailing
 whitespace and no color or terminal-dependent output.
 
-`children` counts direct typed descendants. `TableRow` and `TableCell` are
-`Markup` kinds, produce Visitor/Walker callbacks, and own their descendants
-through `cells` and `content` respectively.
+For historical compatibility, the dump token is named `children`, but it
+counts direct node-valued fields in Walker order, not a generic AST child
+property. Thus `Table` contributes `header` and `rows`, while a directive
+contributes its optional `label` field before its independent `content`.
+`TableRow`, `TableCell`, and `DirectiveLabel` are `Markup` kinds and produce
+normal Visitor/Walker callbacks.
 
 The dump deliberately carries no property or array-index edge labels. Parent
 kind, sibling order, `children`, and behavior-bearing fields such as
@@ -68,9 +71,11 @@ generic tree formatter to schema-specific edge names.
 The dump prints the native C parser's public scope coordinates exactly, without
 normalizing or interpreting particular line/column combinations.
 
-A directive's label is a CHILD NODE, not a field: an absent label is a
-directive with no `DirectiveLabel` child, an empty one is a `DirectiveLabel`
-with `children=0`, and a populated one is a `DirectiveLabel` with children.
+A directive's label is a node-valued FIELD, not a member of directive content.
+The dump nests that field to visualize ownership: an absent label emits no
+`DirectiveLabel`, an empty one emits `DirectiveLabel children=0`, and a
+populated one emits the label followed by its inline descendants. This visual
+nesting does not redefine the typed AST or the C child traversal contract.
 
 ## Field order by record kind
 
@@ -78,8 +83,8 @@ Fields appear after `scope` and before `children` in exactly this order:
 
 This table is CHECKED against `canonical-ast.json` by
 `scripts/audit-ast-projections.mjs`: every kind appears exactly once and its
-fields are the contract's, in the contract's order, minus the fields that are
-the child structure itself.
+fields are the contract's, in the contract's order, minus node-valued fields
+that the dump represents as nested descendants.
 
 | Kind | Ordered fields between `scope` and `children` |
 | --- | --- |

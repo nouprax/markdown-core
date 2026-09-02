@@ -22,18 +22,17 @@ public object Walker {
         visit: (WalkEvent, Markup) -> Unit,
     ) {
         visit(WalkEvent.ENTERING, root)
-        root.children().forEach { walk(it, visit) }
+        root.directDescendants().forEach { walk(it, visit) }
         visit(WalkEvent.EXITING, root)
     }
 }
 
 /**
- * Every child of a node, in the order the C tree holds them -- which is what a
- * region's owner path counts. [Walker] walks with it and
- * so a walk and a hand-written descent cannot disagree about what a node's
- * children are.
+ * Every directly owned Markup value in field order. This is field-aware: a
+ * directive label is visited before content without being classified as a
+ * child or content element.
  */
-internal fun Markup.children(): kotlin.collections.List<Markup> =
+internal fun Markup.directDescendants(): kotlin.collections.List<Markup> =
     when (this) {
         is Document -> content
 
@@ -53,7 +52,7 @@ internal fun Markup.children(): kotlin.collections.List<Markup> =
 
         is TableCell -> content
 
-        // Label first, then content: they are two runs of one C child list.
+        // The label field precedes the independent content field.
         is DirectiveBlock -> if (label == null) content else listOf(label) + content
 
         is DirectiveLabel -> content

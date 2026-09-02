@@ -193,7 +193,8 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_previous(markdown_co
  */
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_parent(markdown_core_node *node);
 
-/** Returns the first child of 'node', or NULL if 'node' has no children.
+/** Returns the first content child of 'node', or NULL if 'node' has no
+ * children. Node-valued typed fields are not part of this sibling list.
  */
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_first_child(markdown_core_node *node);
 
@@ -206,10 +207,11 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_last_child(markdown_
  *
  * An iterator will walk through a tree of nodes, starting from a root
  * node, returning one node at a time, together with information about
- * whether the node is being entered or exited.  The iterator will
- * first descend to a child node, if there is one.  When there is no
- * child, the iterator will go to the next sibling.  When there is no
- * next sibling, the iterator will return to the parent (but with
+ * whether the node is being entered or exited. The iterator first descends
+ * through owned node-valued fields in field order, then through content
+ * children. A field node has its owner as parent but is not a member of the
+ * owner's sibling list. When there is no next structural descendant, the
+ * iterator will return to the parent (but with
  * a 'markdown_core_event_type' of `MARKDOWN_CORE_EVENT_EXIT`).  The iterator will
  * return `MARKDOWN_CORE_EVENT_DONE` when it reaches the root node again.
  * An iterator might be used to inspect or transform an AST in some systematic

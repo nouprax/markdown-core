@@ -13,6 +13,7 @@ export interface NativeExports extends WebAssembly.Exports {
     es_node_kind(node: number): number;
     es_node_first_child(node: number): number;
     es_node_next_sibling(node: number): number;
+    es_node_directive_label(node: number): number;
     es_scope_coordinate(node: number, field: number): number;
     es_node_heading_level(node: number): number;
     es_node_list_flavor(node: number): number;

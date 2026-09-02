@@ -40,27 +40,31 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
 
     /* roll forward to next item, setting both fields */
     if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
-        if (node->first_child == NULL) {
+        markdown_core_node *descendant = markdown_core_node_first_descendant(node);
+        if (descendant == NULL) {
             /* stay on this node but exit */
             iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
         } else {
             iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-            iter->next.node = node->first_child;
+            iter->next.node = descendant;
         }
     } else if (node == iter->root) {
         /* don't move past root */
         iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
         iter->next.node = NULL;
-    } else if (node->next) {
-        iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-        iter->next.node = node->next;
-    } else if (node->parent) {
-        iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
-        iter->next.node = node->parent;
     } else {
-        assert(false);
-        iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
-        iter->next.node = NULL;
+        markdown_core_node *descendant = markdown_core_node_next_descendant(node);
+        if (descendant) {
+            iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
+            iter->next.node = descendant;
+        } else if (node->parent) {
+            iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
+            iter->next.node = node->parent;
+        } else {
+            assert(false);
+            iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
+            iter->next.node = NULL;
+        }
     }
 
     return ev_type;
@@ -216,13 +220,15 @@ int markdown_core_node_own(markdown_core_node *root) {
             break;
         }
 
-        if (cur->first_child) {
-            cur = cur->first_child;
+        markdown_core_node *descendant = markdown_core_node_first_descendant(cur);
+        if (descendant) {
+            cur = descendant;
         } else {
-            while (cur != root && cur->next == NULL) {
+            markdown_core_node *next = NULL;
+            while (cur != root && (next = markdown_core_node_next_descendant(cur)) == NULL) {
                 cur = cur->parent;
             }
-            cur = (cur == root) ? NULL : cur->next;
+            cur = (cur == root) ? NULL : next;
         }
     }
     return ok;

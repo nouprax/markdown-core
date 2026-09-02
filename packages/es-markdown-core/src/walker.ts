@@ -21,7 +21,7 @@ export class Walker {
             if (frame.event === WalkEvent.exiting) continue;
 
             stack.push({ event: WalkEvent.exiting, node: frame.node });
-            const descendants = children(frame.node);
+            const descendants = directDescendants(frame.node);
             for (let index = descendants.length - 1; index >= 0; index -= 1) {
                 stack.push({ event: WalkEvent.entering, node: descendants[index]! });
             }
@@ -29,10 +29,10 @@ export class Walker {
     }
 }
 
-/** Every child of a node, in the order the C tree holds them. `Walker` walks
- * with it, so a walk and a hand-written descent cannot disagree about what a
- * node's children are. */
-export function children(node: Markup): readonly Markup[] {
+/** Every directly owned Markup value in field order. This is field-aware: a
+ * directive label is visited before content without becoming a child or
+ * content element. */
+function directDescendants(node: Markup): readonly Markup[] {
     switch (node.kind) {
         case "document":
         case "blockQuote":

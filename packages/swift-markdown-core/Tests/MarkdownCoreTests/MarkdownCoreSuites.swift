@@ -153,6 +153,8 @@ import Testing
         let block = try #require(Document.parse(source).content.first as? DirectiveBlock)
         let label = try #require(block.label)
         #expect((label.content.first as? Text)?.literal == "Title")
+        #expect(block.content.count == 1)
+        #expect(block.content.first is Paragraph)
         #expect(block.attributes?.first?.name == "kind")
 
         var kinds: [String] = []

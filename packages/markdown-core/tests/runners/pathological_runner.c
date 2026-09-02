@@ -678,8 +678,8 @@ static const markdown_core_node *pc_first_directive(const pc_context *context) {
 static int case_directive_long_label(pc_context *context) {
     const markdown_core_node *directive;
     const markdown_core_node *label;
+    const markdown_core_node *label_child;
     markdown_core_string name;
-    markdown_core_string attributes;
     markdown_core_string literal;
     bool has_attributes = false;
     size_t attribute_count = 0;
@@ -701,20 +701,21 @@ static int case_directive_long_label(pc_context *context) {
         fprintf(stderr, "directive name/attribute properties are wrong\n");
         return -1;
     }
-    /* The label is a NODE now, not a count on the parent: it is the
-     * directive's only child and the text is its child. */
-    label = markdown_core_node_get_first_child(directive);
-    if (markdown_core_node_get_kind(label) != MARKDOWN_CORE_KIND_DIRECTIVE_LABEL) {
-        fprintf(stderr, "a labelled directive's first child is its label\n");
+    label = markdown_core_node_directive_label(directive);
+    if (!label || markdown_core_node_get_kind(label) != MARKDOWN_CORE_KIND_DIRECTIVE_LABEL ||
+        markdown_core_node_get_first_child(directive) != NULL || markdown_core_node_child_count(directive) != 0 ||
+        markdown_core_node_get_next_sibling(label) != NULL) {
+        fprintf(stderr, "a directive label is Markup in a field, not directive content\n");
         return -1;
     }
-    label = markdown_core_node_get_first_child(label);
+    label_child = markdown_core_node_get_first_child(label);
     expected = ts_repeat("a", 1500, NULL);
     if (!expected) {
         return -1;
     }
-    if (markdown_core_node_get_kind(label) != MARKDOWN_CORE_KIND_TEXT || !markdown_core_node_literal(label, &literal) ||
-        literal.length != 1500 || memcmp(literal.data, expected, 1500) != 0) {
+    if (markdown_core_node_get_kind(label_child) != MARKDOWN_CORE_KIND_TEXT ||
+        !markdown_core_node_literal(label_child, &literal) || literal.length != 1500 ||
+        memcmp(literal.data, expected, 1500) != 0) {
         fprintf(stderr, "directive label text is wrong\n");
         free(expected);
         return -1;

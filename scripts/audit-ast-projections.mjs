@@ -199,11 +199,9 @@ const modelProjections = [
 const kinds = definition();
 const contract = JSON.parse(fs.readFileSync(path.join(root, CONTRACT_PATH), "utf8"));
 
-/** A field the dump cannot print, because it IS the child structure -- which
- * is any field whose type names a KIND. The predicate used to list four of
- * them by hand and the call sites carried an explicit `label` exception,
- * because a directive's label was a COUNT in the dump rather than a node;
- * Step 7 made it a node and the exception became a lie. */
+/** A node-valued field the dump represents as a nested descendant rather than
+ * a scalar token. This includes typed ownership fields such as `label`; nested
+ * dump layout does not make every such field part of a generic child list. */
 const kindNames = new Set(contract.kinds.map((kind) => kind.name));
 const structural = (field) =>
     [...field.type.matchAll(/[A-Za-z]+/g)].some((word) => word[0] === "Markup" || kindNames.has(word[0]));
@@ -343,12 +341,11 @@ for (const { label, expect, actual } of kindSurfaces) {
     }
 }
 
-/* The C dump prints every field the contract gives a kind, EXCEPT the ones that
- * are the child structure itself -- `content`, `items`, `header`, `rows`,
- * `cells` are the tree and the `children=` count. `label` is the exception to
- * the exception: it is structural and the dump prints its LENGTH, because a
- * directive's label and its content are two runs of one child list and nothing
- * else in the line says where the first one ends. */
+/* The C dump prints every scalar field the contract gives a kind. Node-valued
+ * fields -- `content`, `items`, `header`, `rows`, `cells`, and directive
+ * `label` -- are nested as graphical descendants in Walker field order. The
+ * historical `children=` token counts those dump descendants; it does not
+ * flatten the contract's distinct typed fields into one AST child list. */
 {
     const source = read("packages/markdown-core/extensions/ast.c");
     const body = source.slice(source.indexOf("static void dump_fields"));

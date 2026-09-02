@@ -62,13 +62,11 @@ internal fun WireReader.markup(): Markup {
         WireKind.DIRECTIVE_BLOCK -> {
             val name = requiredString()
             val attributes = directiveAttributes()
-            val children = markupList()
-            val label = children.firstOrNull() as? DirectiveLabel
             DirectiveBlock(
                 name,
                 attributes,
-                label,
-                if (label == null) children else children.drop(1),
+                directiveLabel(),
+                markupList(),
                 nodeScope,
             )
         }
@@ -204,10 +202,18 @@ private fun WireReader.readDirective(scope: Scope): Directive {
     // byte at Q29 and the model no longer repeats the kind.
     val name = requiredString()
     val attributes = directiveAttributes()
-    val children = markupList()
-    val label = children.firstOrNull() as? DirectiveLabel
-    require(children.size == (if (label == null) 0 else 1)) { "inline directive contains block content" }
+    val label = directiveLabel()
+    val content = markupList()
+    require(content.isEmpty()) { "inline directive contains block content" }
     return Directive(name, attributes, label, scope)
+}
+
+/** Reads the independent node-valued label field, never directive content. */
+private fun WireReader.directiveLabel(): DirectiveLabel? {
+    if (!boolean()) return null
+    val label = markup()
+    require(label is DirectiveLabel) { "directive label field contains a non-label node" }
+    return label
 }
 
 /**

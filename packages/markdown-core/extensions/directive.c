@@ -48,10 +48,10 @@ typedef struct {
 typedef struct {
     markdown_core_chunk name;
     directive_attributes attributes;
+    markdown_core_node *label;
     int fence_length;
     int closed;
     int consume_line;
-    int has_label;
     int has_attributes;
 } node_directive;
 
@@ -520,7 +520,12 @@ const char *markdown_core_extensions_get_directive_name(markdown_core_node *node
 
 int markdown_core_directive_has_label(markdown_core_node *node) {
     node_directive *directive = get_directive(node);
-    return directive ? directive->has_label : 0;
+    return directive && directive->label;
+}
+
+markdown_core_node *markdown_core_directive_label(markdown_core_node *node) {
+    node_directive *directive = get_directive(node);
+    return directive ? directive->label : NULL;
 }
 
 static int directive_name_is_valid(markdown_core_mem *mem, const char *name) {
@@ -609,9 +614,34 @@ static void directive_opaque_free(const markdown_core_syntax_extension *extensio
         return;
     }
 
+    if (directive->label) {
+        markdown_core_node_free(directive->label);
+    }
     markdown_core_chunk_free(mem, &directive->name);
     free_attribute_list(mem, &directive->attributes);
     mem->free(directive);
+    node->as.opaque = NULL;
+}
+
+static size_t directive_node_field_count(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
+    return markdown_core_directive_label(node) ? 1u : 0u;
+}
+
+static markdown_core_node *directive_node_field_at(const markdown_core_syntax_extension *extension,
+                                                   markdown_core_node *node, size_t index) {
+    return index == 0 ? markdown_core_directive_label(node) : NULL;
+}
+
+static void directive_node_field_clear(const markdown_core_syntax_extension *extension, markdown_core_node *node,
+                                       size_t index) {
+    node_directive *directive = get_directive(node);
+    if (directive && index == 0) {
+        directive->label = NULL;
+    }
+}
+
+static int directive_field_only(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
+    return node && node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
 }
 
 /* AN `=` PROMISES A VALUE. With none before the block ends the block is
@@ -818,10 +848,14 @@ static int attach_label_node(const markdown_core_syntax_extension *extension, ma
         return 0;
     }
 
-    if (!markdown_core_node_append_child(directive_node, label_node)) {
+    node_directive *directive = get_directive(directive_node);
+    if (!directive || directive->label) {
         markdown_core_node_free(label_node);
         return 0;
     }
+
+    directive->label = label_node;
+    label_node->parent = directive_node;
 
     return 1;
 }
@@ -839,7 +873,6 @@ static int apply_parsed_directive(const markdown_core_syntax_extension *extensio
     if (!set_chunk_bytes(mem, &directive->name, data + parsed->name_start, parsed->name_len)) {
         return 0;
     }
-    directive->has_label = parsed->has_label;
     directive->has_attributes = parsed->has_attributes;
 
     if (parsed->has_attributes) {
@@ -993,7 +1026,6 @@ static markdown_core_node *match_colon_directive(const markdown_core_syntax_exte
     directive = get_directive(node);
     directive->attributes = attributes;
     directive->has_attributes = has_attributes;
-    directive->has_label = has_label;
 
     if (has_label) {
         /* Consume to the `]` first and read the label's end back from the
@@ -1011,12 +1043,14 @@ static markdown_core_node *match_colon_directive(const markdown_core_syntax_exte
             return NULL;
         }
         label_node->end_line = markdown_core_inline_parser_get_line(inline_parser);
-        if (!markdown_core_node_append_child(node, label_node)) {
+        if (directive->label) {
             markdown_core_node_free(label_node);
             markdown_core_node_free(node);
             parser->oom = true;
             return NULL;
         }
+        directive->label = label_node;
+        label_node->parent = node;
     }
 
     markdown_core_inline_parser_set_offset(inline_parser, (int)pos);
@@ -1029,12 +1063,11 @@ static markdown_core_node *match_colon_directive(const markdown_core_syntax_exte
      * always had. `process_inlines`' walk cannot reach a node created during a
      * paragraph's own inline pass, so the parse is driven from here. */
     if (label_node) {
-        /* The parent link is set HERE and not left to `parse_inline`'s
-         * `append_child`, because requirement 11b's refinement walks a block's
+        /* The field's parent link is set when the label is attached, before
+         * `parse_inline`, because requirement 11b's refinement walks a block's
          * ancestors to find the region its content was cut from -- and without
          * this the label's chain stops at a directive that is still a return
-         * value, so every node inside a label would own no region at all. The
-         * link is the one `append_child` writes a moment later. */
+         * value, so every node inside a label would own no region at all. */
         node->parent = parent;
         markdown_core_parse_inlines(parser, label_node, parser->refmap, parser->options);
         /* The label's scope spans its brackets, so the brackets are the
@@ -1190,13 +1223,12 @@ static const char *get_type_string(const markdown_core_syntax_extension *extensi
 static int can_contain(const markdown_core_syntax_extension *extension, markdown_core_node *node,
                        markdown_core_node_type child_type) {
     if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE) {
-        return child_type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
+        return 0;
     }
 
     if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
-        return child_type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL ||
-               (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM &&
-                child_type != MARKDOWN_CORE_NODE_DOCUMENT);
+        return MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM &&
+               child_type != MARKDOWN_CORE_NODE_DOCUMENT;
     }
 
     if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
@@ -1238,6 +1270,10 @@ const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE = {
     .accepts_lines_func = accepts_lines,
     .opaque_alloc_func = directive_opaque_alloc,
     .opaque_free_func = directive_opaque_free,
+    .node_field_count_func = directive_node_field_count,
+    .node_field_at_func = directive_node_field_at,
+    .node_field_clear_func = directive_node_field_clear,
+    .field_only_func = directive_field_only,
     .terminates_text = ":",
     .dispatch = ":",
 };

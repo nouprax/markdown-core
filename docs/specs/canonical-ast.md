@@ -29,8 +29,9 @@ or semantics.
 - `TableRow` and `TableCell` are scoped `Markup` kinds reached through typed
   table properties. Being owned by `header`, `rows`, `cells`, and `content`
   does not make them non-node structural records.
-- A directive label is not a synthetic `Markup`. It is the typed `label`
-  property of its directive and contains inline `Markup` values.
+- `DirectiveLabel` is `Markup` owned by a directive's typed `label` field. It
+  is not an element of the directive's `content` and is not exposed through a
+  generic child/content sequence.
 - The AST contains parsing semantics only. Renderer state, security policy,
   layout, highlighting, generated HTML, and MS-private syntax are excluded.
 
@@ -129,7 +130,7 @@ error rather than silently dropping a value.
 | `Table` | `alignments: [TableAlignment]`, `header: TableRow`, `rows: [TableRow]` | one alignment per column; header is non-optional |
 | `TableRow` | `isHeader: Bool`, `cells: [TableCell]` | `isHeader` is true only for `Table.header` and false for entries in `Table.rows` |
 | `TableCell` | `content: [Markup]` | inline content |
-| `DirectiveBlock` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes is an ordered sequence of name/value pairs sorted by name; label is a node whose scope spans its brackets; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
+| `DirectiveBlock` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes is an ordered sequence of name/value pairs sorted by name; label is a node-valued field whose scope spans its brackets and is never part of content; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
 | `DirectiveLabel` | `content: [Markup]` | inline content; the scope spans the brackets, so an empty label is still a place |
 | `FootnoteDefinition` | `label: String`, `identifier: String`, `content: [Markup]` | `label` is non-empty and as written; `identifier` KEEPS the leading `^`, so a footnote and a link definition of one name cannot collide; block content |
 | `ReferenceDefinition` | `label: String`, `identifier: String`, `destination: String`, `title: String?` | `label` is the bytes between the brackets as written, delimiters excluded, escapes and character references unresolved, whitespace uncollapsed, case unfolded; `identifier` is the match key — full Unicode case fold, trimmed, internal whitespace collapsed — and is compared with memcmp over its bytes; neither derives the other; `destination` is never absent, because a definition that could not build one is not produced at all; absent and empty title remain distinct; leaf |
@@ -146,7 +147,7 @@ error rather than silently dropping a value.
 | `Image` | `source: String`, `title: String?`, `content: [Markup]` | `source` is never absent, for the reason `Link.destination` is not; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `LinkReference` | `label: String`, `identifier: String`, `form: ReferenceForm`, `content: [Markup]` | `label` and `identifier` are exactly as on `ReferenceDefinition`; the node carries NO destination — the destination is stated once, at the definition; `form` records which of the three spellings the source used, and all three resolve identically; inline content |
 | `ImageReference` | `label: String`, `identifier: String`, `form: ReferenceForm`, `content: [Markup]` | as `LinkReference`; content is parsed alt-text inline content |
-| `Directive` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?` | attributes is an ordered sequence of name/value pairs sorted by name; label is a node whose scope spans its brackets; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
+| `Directive` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?` | attributes is an ordered sequence of name/value pairs sorted by name; label is a node-valued field whose scope spans its brackets and is never a child/content element; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
 | `FootnoteReference` | `label: String`, `identifier: String` | `label` is non-empty and as written; `identifier` KEEPS the leading `^`; no form — there is one footnote call syntax; leaf |
 
 Every row above also has the final inherited field `scope: Scope`; it is not
@@ -196,9 +197,8 @@ not exist. Raw HTML, URLs, and full code info strings are always retained.
 ## Visitor and Walker
 
 The typed `Visitor<Result>` has one dispatch method for every `Markup` kind in
-the node inventory, including `TableRow` and `TableCell`. A directive label has
-no dispatch method because it is a typed collection edge, not synthetic
-`Markup`. The interface is exhaustive: every typed method is required, there is
+the node inventory, including `TableRow`, `TableCell`, and `DirectiveLabel`.
+The interface is exhaustive: every typed method is required, there is
 no `defaultVisit`, optional handler, catch-all adapter, or protocol-extension
 fallback. Adding a `Markup` kind must therefore produce compile errors in every
 visitor until the new case is handled. Visiting one node does not implicitly
@@ -214,7 +214,9 @@ structure:
 - `List` traverses `items` in order;
 - `Table` traverses `header`, then `rows`; each row traverses cells and each
   cell traverses inline content;
-- directives traverse `label` first when present, then block `content`;
+- directives traverse the `label` field first when present, then the separate
+  block `content` field; traversal order does not merge those fields or make
+  the label a content child;
 - `Link` and `Image` traverse their inline `content`.
 
 Rows and cells produce normal visitor callbacks before their descendants.

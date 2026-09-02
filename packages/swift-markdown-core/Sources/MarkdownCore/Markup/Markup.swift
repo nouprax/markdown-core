@@ -110,30 +110,11 @@ extension Markup {
         }
     }
 
-    /// A directive's label, or `nil` when the source wrote none.
-    ///
-    /// The label is the first child when it is there at all, so this is a
-    /// look, not a search. Until Step 7 the C facade spliced the label node
-    /// out of the child list and named its count on the parent, and this
-    /// walked a run of children with no container; the node is visible now.
+    /// A directive's optional Markup-valued label field. The field is read
+    /// independently because it is not part of the directive's child/content
+    /// sequence.
     static func directiveLabel(from node: OpaquePointer) -> DirectiveLabel? {
-        guard let first = markdown_core_node_get_first_child(node),
-            markdown_core_node_get_kind(first) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL
-        else { return nil }
-        return DirectiveLabel(from: first)
-    }
-
-    /// A directive block's content: every child after the label.
-    static func directiveContent(from node: OpaquePointer) -> [any Markup] {
-        var result: [any Markup] = []
-        var child = markdown_core_node_get_first_child(node)
-        if let first = child, markdown_core_node_get_kind(first) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL {
-            child = markdown_core_node_get_next_sibling(first)
-        }
-        while let current = child {
-            result.append(markup(from: current))
-            child = markdown_core_node_get_next_sibling(current)
-        }
-        return result
+        guard let label = markdown_core_node_directive_label(node) else { return nil }
+        return DirectiveLabel(from: label)
     }
 }

@@ -85,8 +85,10 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   `markdown_core_node_association`, which answers for all five kinds carrying a
   label and reports the label as written beside the normalized identifier it
   matches by. `markdown_core_node_directive_first_label_child` and
-  `markdown_core_node_directive_first_content_child` are removed: a directive's
-  label is an ordinary node in the child list. `FootnoteDefinition.id` and
+  `markdown_core_node_directive_first_content_child` are replaced by
+  `markdown_core_node_directive_label`: a directive label remains `Markup`, but
+  is a typed field rather than an element of the directive child/content list.
+  `FootnoteDefinition.id` and
   `FootnoteReference.id` become `label` and `identifier` in all three bindings
   for the same reason.
 - `ParseOptions.dollarFormulaDelimiters` and

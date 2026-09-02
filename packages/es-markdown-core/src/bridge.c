@@ -98,6 +98,10 @@ const markdown_core_node *es_node_next_sibling(const markdown_core_node *node) {
     return markdown_core_node_get_next_sibling(node);
 }
 
+const markdown_core_node *es_node_directive_label(const markdown_core_node *node) {
+    return markdown_core_node_directive_label(node);
+}
+
 int32_t es_scope_coordinate(const markdown_core_node *node, int32_t coordinate) {
     markdown_core_scope scope = markdown_core_node_scope(node);
     switch (coordinate) {

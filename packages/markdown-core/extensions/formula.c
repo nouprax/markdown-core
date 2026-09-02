@@ -694,9 +694,9 @@ static void postprocess_node(const markdown_core_syntax_extension *extension, ma
         }
     }
 
-    child = node->first_child;
+    child = markdown_core_node_first_descendant(node);
     while (child) {
-        next = child->next;
+        next = markdown_core_node_next_descendant(child);
         postprocess_node(extension, parser, child);
         child = next;
     }

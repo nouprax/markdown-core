@@ -29,7 +29,7 @@ extension DirectiveBlock {
             name: DirectiveValues(from: node).name,
             attributes: DirectiveValues(from: node).attributes,
             label: Self.directiveLabel(from: node),
-            content: Self.directiveContent(from: node)
+            content: Self.children(from: node)
         )
     }
 }

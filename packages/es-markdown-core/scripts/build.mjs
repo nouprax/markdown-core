@@ -50,6 +50,7 @@ const exported = [
     "es_node_kind",
     "es_node_first_child",
     "es_node_next_sibling",
+    "es_node_directive_label",
     "es_scope_coordinate",
     "es_node_heading_level",
     "es_node_list_flavor",
