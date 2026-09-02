@@ -101,11 +101,11 @@ bufsize_t houdini_unescape_ent(markdown_core_strbuf *ob, const uint8_t *src, buf
             }
 
             if (src[i] == ';') {
-                bufsize_t size;
-                const unsigned char *entity = S_lookup_entity(src, i, &size);
+                bufsize_t entity_size;
+                const unsigned char *entity = S_lookup_entity(src, i, &entity_size);
 
                 if (entity != NULL) {
-                    markdown_core_strbuf_put(ob, entity, size);
+                    markdown_core_strbuf_put(ob, entity, entity_size);
                     return i + 1;
                 }
 
