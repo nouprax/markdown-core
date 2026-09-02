@@ -2,7 +2,7 @@
 /**
  * Differential parity fuzzing.
  *
- * The two parity gates compare this parser against external authorities over a
+ * The parity gates compare this parser against external authorities over a
  * corpus people wrote. That corpus reaches the constructs someone thought to
  * write down; this reaches the ones nobody did — nesting, adjacency, and
  * truncation that hand-written examples do not produce.
@@ -12,7 +12,7 @@
  * same inputs. Randomness that could not be replayed would report defects
  * nobody can then look at.
  *
- *   node scripts/fuzz-parity.mjs [--oracle upstream|mdast] [--seed N]
+ *   node scripts/fuzz-parity.mjs [--oracle commonmark|gfm|remark] [--seed N]
  *                                [--iterations N] [--verbose]
  */
 
@@ -21,7 +21,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { readExamples } from "./lib/fixture-corpus.mjs";
+import { readExamples, selectExamples } from "./lib/fixture-corpus.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -29,7 +29,7 @@ function argument(name, fallback) {
     const index = process.argv.indexOf(`--${name}`);
     return index >= 0 ? process.argv[index + 1] : fallback;
 }
-const oracleName = argument("oracle", "upstream");
+const oracleName = argument("oracle", "commonmark");
 const seed = Number(argument("seed", "1"));
 const iterations = Number(argument("iterations", "300"));
 const verbose = process.argv.includes("--verbose");
@@ -58,11 +58,12 @@ function prng(state) {
  * widening a gate's corpus widens what the fuzzer recombines. A copy would
  * quietly stay narrow and still describe itself as the gate's corpus.
  */
-function fragments(entries) {
+function fragments(entries, policyPath) {
     const seen = new Set();
     for (const entry of entries) {
         const file = typeof entry === "string" ? entry : entry.file;
-        for (const example of readExamples(root, file)) {
+        const selection = typeof entry === "string" ? undefined : entry.selection;
+        for (const example of selectExamples(readExamples(root, file), selection, policyPath)) {
             for (const line of example.input.split("\n")) {
                 if (line.length && line.length < 80) seen.add(line);
             }
@@ -72,7 +73,13 @@ function fragments(entries) {
 }
 
 const ORACLES = {
-    upstream: {
+    commonmark: {
+        policy: "specs/oracles/cmark/deltas.json",
+        gate: "scripts/check-upstream-parity.mjs",
+        gateArgs: ["--oracle", "commonmark"],
+        excludeFragments: []
+    },
+    gfm: {
         policy: "specs/oracles/cmark-gfm/deltas.json",
         gate: "scripts/check-upstream-parity.mjs",
         // Upstream reads a task item's checked state with a substring search
@@ -82,21 +89,22 @@ const ORACLES = {
         // registry entry can name in advance. Checked items are exercised by
         // the corpus gate, which reads the fixtures unrecombined. `"title" ok`
         // is the corpus's one title-then-junk line: recombined under any
-        // definition line it reproduces `refdef-title-rewind` wherever that
-        // label is also referenced. `\\|` is the same shape for
-        // `table-split-lead-spelling`: any fragment carrying an escaped
-        // backslash before a pipe diverges the moment recombination parks it
-        // above a header and delimiter row. A single `\|` decodes identically
-        // on both sides and stays in the pool. `[^` is the newest and it is the
-        // mdast oracle's reason arriving here: whether a footnote call resolves
+        // definition line it can reproduce cmark-gfm's CommonMark title-rewind
+        // bug, which is outside this oracle's GFM-extension scope. `\|` is the
+        // same shape for `table-split-lead-spelling`: recombination can park it
+        // above a table delimiter, where cmark-gfm pre-unescapes even a pipe
+        // inside a code span. Both spellings are exercised unrecombined by the
+        // corpus gate. `[^` is the newest and it is the
+        // remark oracle's reason arriving here: whether a footnote call resolves
         // depends on a definition elsewhere in the document, and since Step 9a
         // an UNRESOLVED call keeps its interior where upstream flattens it
         // (`footnote-failed-call-interior`). Recombination separates a call
         // from its definition by construction, so any line carrying one
         // diverges. Both sides are exercised unrecombined by the corpus gate.
-        excludeFragments: ["[x]", "[X]", '"title" ok', "\\\\|", "[^"]
+        gateArgs: ["--oracle", "gfm"],
+        excludeFragments: ["[x]", "[X]", '"title" ok', "\\|", "[^"]
     },
-    mdast: {
+    remark: {
         policy: "specs/oracles/remark/deltas.json",
         gate: "scripts/check-mdast-parity.mjs",
         // See the note on `pool`. Dollar math: GitHub is the authority, not
@@ -107,6 +115,7 @@ const ORACLES = {
         // never closes, they reach `autolink-after-failed-label`. All three are
         // registered differences whose scope is wider than the one input each
         // entry names, which is what an input-keyed registry cannot express.
+        gateArgs: [],
         excludeFragments: ["$", "[^", "://"]
     }
 };
@@ -135,7 +144,7 @@ for (const entry of policy.expectedDivergences ?? []) {
 // disagree about the construct generally rather than on three specific
 // strings. Generating those fragments would rediscover that in every
 // recombination, so the oracle's own exclusions say where it is authoritative.
-const pool = fragments(policy.corpus ?? []).filter(
+const pool = fragments(policy.corpus ?? [], oracle.policy).filter(
     (line) => !divergentLines.has(line) && !(oracle.excludeFragments ?? []).some((pattern) => line.includes(pattern))
 );
 if (pool.length === 0) {
@@ -177,11 +186,15 @@ const fence = "`".repeat(32);
 function diverges(input) {
     fs.writeFileSync(fixture, `${fence} example\n${input}.\nplaceholder\n${fence}\n`);
     try {
-        execFileSync("node", [path.join(root, oracle.gate), "--corpus", path.relative(root, fixture)], {
-            cwd: root,
-            encoding: "utf8",
-            stdio: "pipe"
-        });
+        execFileSync(
+            "node",
+            [path.join(root, oracle.gate), ...(oracle.gateArgs ?? []), "--corpus", path.relative(root, fixture)],
+            {
+                cwd: root,
+                encoding: "utf8",
+                stdio: "pipe"
+            }
+        );
         return null;
     } catch (error) {
         return String(error.stdout ?? "") + String(error.stderr ?? "");

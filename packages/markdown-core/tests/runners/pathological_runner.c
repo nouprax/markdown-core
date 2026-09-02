@@ -349,6 +349,95 @@ static int case_deeply_nested_lists(pc_context *context) {
     return result;
 }
 
+/* cmark GHSA-66g8-4hjf-77xh regressions. These shapes distinguish a linear
+ * parser from one that repeatedly walks an already-open nesting spine. The
+ * assertions are structural so the test proves both complexity and semantics:
+ * no depth cap may turn the remaining markers back into text. */
+static int case_empty_lines_in_deeply_nested_lists(pc_context *context) {
+    const size_t depth = 10000;
+    char *cursor;
+
+    context->input_length = depth * 3 + 1;
+    context->input = (char *)malloc(context->input_length + 1);
+    if (!context->input) {
+        return -1;
+    }
+    cursor = context->input;
+    for (size_t i = 0; i < depth; i++) {
+        *cursor++ = '-';
+        *cursor++ = ' ';
+    }
+    *cursor++ = 'x';
+    memset(cursor, '\n', depth);
+    cursor += depth;
+    *cursor = 0;
+
+    if (pc_parse(context, PC_TABLE_ONLY) != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST, depth, "List") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST_ITEM, depth, "ListItem") != 0) {
+        return -1;
+    }
+    return pc_expect_text(context, "x", 1);
+}
+
+static int case_empty_lines_in_deep_list_blockquote(pc_context *context) {
+    const size_t depth = 10000;
+    char *cursor;
+
+    context->input_length = 4 * depth + 4;
+    context->input = (char *)malloc(context->input_length + 1);
+    if (!context->input) {
+        return -1;
+    }
+    cursor = context->input;
+    *cursor++ = '>';
+    *cursor++ = ' ';
+    for (size_t i = 0; i < depth; i++) {
+        *cursor++ = '-';
+        *cursor++ = ' ';
+    }
+    *cursor++ = 'x';
+    *cursor++ = '\n';
+    for (size_t i = 0; i < depth; i++) {
+        *cursor++ = '>';
+        *cursor++ = '\n';
+    }
+    *cursor = 0;
+
+    if ((size_t)(cursor - context->input) != context->input_length || pc_parse(context, PC_TABLE_ONLY) != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_BLOCK_QUOTE, 1, "BlockQuote") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST, depth, "List") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST_ITEM, depth, "ListItem") != 0) {
+        return -1;
+    }
+    return pc_expect_text(context, "x", 1);
+}
+
+static int case_emphasis_in_deep_blockquote(pc_context *context) {
+    const size_t depth = 20000;
+    char *cursor;
+
+    context->input_length = depth * 3;
+    context->input = (char *)malloc(context->input_length + 1);
+    if (!context->input) {
+        return -1;
+    }
+    cursor = context->input;
+    memset(cursor, '>', depth);
+    cursor += depth;
+    for (size_t i = 0; i < depth; i++) {
+        *cursor++ = 'a';
+        *cursor++ = '*';
+    }
+    *cursor = 0;
+
+    if (pc_parse(context, PC_TABLE_ONLY) != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_BLOCK_QUOTE, depth, "BlockQuote") != 0) {
+        return -1;
+    }
+    return 0;
+}
+
 static int case_nul_in_input(pc_context *context) {
     static const char raw[] = "abc\0de\0";
     static const char expected[] = "abc\xEF\xBF\xBD"
@@ -851,6 +940,9 @@ static const pc_case_entry PC_CASES[] = {
     {"nested_brackets", case_nested_brackets},
     {"nested_block_quotes", case_nested_block_quotes},
     {"deeply_nested_lists", case_deeply_nested_lists},
+    {"empty_lines_in_deeply_nested_lists", case_empty_lines_in_deeply_nested_lists},
+    {"empty_lines_in_deep_list_blockquote", case_empty_lines_in_deep_list_blockquote},
+    {"emphasis_in_deep_blockquote", case_emphasis_in_deep_blockquote},
     {"nul_in_input", case_nul_in_input},
     {"backticks", case_backticks},
     {"unclosed_links_a", case_unclosed_links_a},

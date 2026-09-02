@@ -2,17 +2,16 @@
 /**
  * Upstream-parity gate.
  *
- * Parses every corpus input with both this repository's parser and upstream
- * cmark-gfm, normalizes the two ASTs into one comparable form, and requires
- * them to agree except where `specs/oracles/cmark-gfm/deltas.json` registers a
- * difference.
+ * Runs one of the two C-family authorities through the same fail-closed
+ * comparison algorithm: cmark for CommonMark, cmark-gfm for its extension
+ * layer. Each has its own corpus and delta registry.
  *
- * This is the only thing in the repository that checks Markdown Core's
- * semantics against an authority outside itself. The spec fixtures cannot: the
- * expected blocks are canonical dumps this parser produced, so they pin the
- * behaviour without proving it right.
+ * Product-owned expected blocks are canonical dumps this parser produced, so
+ * they pin behaviour without independently proving it right. These external
+ * parsers provide that independent evidence within their disjoint scopes.
  *
- *   node scripts/check-upstream-parity.mjs [--limit N] [--verbose]
+ *   node scripts/check-upstream-parity.mjs --oracle commonmark|gfm
+ *                                          [--limit N] [--verbose]
  */
 
 import { execFileSync } from "node:child_process";
@@ -20,7 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { readExamples } from "./lib/fixture-corpus.mjs";
+import { readExamples, selectExamples } from "./lib/fixture-corpus.mjs";
 
 import {
     applyUpstreamFootnoteModel,
@@ -34,21 +33,49 @@ import {
 } from "./lib/upstream-cmark.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const policyPath = "specs/oracles/cmark-gfm/deltas.json";
-const policy = JSON.parse(fs.readFileSync(path.join(root, policyPath), "utf8"));
-
 const args = process.argv.slice(2);
 const verbose = args.includes("--verbose");
 const limitIndex = args.indexOf("--limit");
 const limit = limitIndex >= 0 ? Number(args[limitIndex + 1]) : Infinity;
+const oracleIndex = args.indexOf("--oracle");
+const oracleName = oracleIndex >= 0 ? args[oracleIndex + 1] : "commonmark";
+const ORACLES = {
+    commonmark: {
+        policyPath: "specs/oracles/cmark/deltas.json",
+        binary(policy) {
+            return `.tools/cmark/${policy.upstream.version}/build/src/cmark`;
+        },
+        install: "scripts/init-environment.sh --install oracle-cmark",
+        label: "cmark",
+        profile: "commonmark",
+        extensions: []
+    },
+    gfm: {
+        policyPath: "specs/oracles/cmark-gfm/deltas.json",
+        binary(policy) {
+            return `.tools/cmark-gfm/${policy.upstream.version}/build/src/cmark-gfm`;
+        },
+        install: "scripts/init-environment.sh --install oracle-cmark-gfm",
+        label: "cmark-gfm",
+        profile: "gfm",
+        extensions: ["table", "strikethrough", "autolink", "tasklist", "footnotes"]
+    }
+};
+const oracle = ORACLES[oracleName];
+if (!oracle) {
+    process.stderr.write(`upstream parity: unknown oracle ${JSON.stringify(oracleName)}; use commonmark or gfm\n`);
+    process.exit(2);
+}
+const policyPath = oracle.policyPath;
+const policy = JSON.parse(fs.readFileSync(path.join(root, policyPath), "utf8"));
 
 // Both binaries are built products of this repository's own toolchain, so a
 // missing one is a setup error with a specific fix, not a reason to skip.
 const ours = path.join(root, "build/cmake/packages/markdown-core/core/markdown-core");
-const upstream = path.join(root, `.tools/cmark-gfm/${policy.upstream.version}/build/src/cmark-gfm`);
+const upstream = path.join(root, oracle.binary(policy));
 for (const [binary, fix] of [
     [ours, "pnpm build:c"],
-    [upstream, "scripts/init-environment.sh --install upstream-cmark"]
+    [upstream, oracle.install]
 ]) {
     if (!fs.existsSync(binary)) {
         process.stderr.write(`upstream parity: missing ${path.relative(root, binary)}\nBuild it with: ${fix}\n`);
@@ -56,13 +83,9 @@ for (const [binary, fix] of [
     }
 }
 
-// The four upstream extensions this repository also ships. Its own four stay
-// off through the parser's `gfm` profile, so both sides parse one language.
-const UPSTREAM_EXTENSIONS = ["table", "strikethrough", "autolink", "tasklist", "footnotes"];
-
 function runUpstream(input, flags) {
     const argv = ["--to", "xml", ...flags];
-    for (const extension of UPSTREAM_EXTENSIONS) argv.push("-e", extension);
+    for (const extension of oracle.extensions) argv.push("-e", extension);
     return execFileSync(upstream, argv, { input, encoding: "utf8", maxBuffer: 1 << 28 });
 }
 
@@ -71,15 +94,9 @@ function runOurs(input, profile) {
 }
 
 /**
- * The corpus is policy-driven. The GFM spec fixture carries the examples the
- * upstream project is specified by; the extension fixtures are here for a
- * different reason, and it is the one that makes them worth running.
- *
- * This repository's own syntax has no external authority for what it means —
- * but it has one for what it must *not* do. `[[wiki]]` and `![[embed]]`
- * collide with CommonMark's nested-bracket link forms, so running those inputs
- * with the extensions off proves the collision is opt-in: with `--profile gfm`
- * the parse must be upstream's, byte for byte.
+ * The corpus is policy-driven. CommonMark and GFM select different sections
+ * and profiles so a parser is never treated as authoritative outside its
+ * language layer.
  */
 // `--corpus` replaces the policy's corpus for one run. It exists for
 // scripts/fuzz-parity.mjs, which feeds generated inputs through this gate
@@ -94,9 +111,11 @@ function corpus() {
     const entries = corpusOverride >= 0 ? [process.argv[corpusOverride + 1]] : (policy.corpus ?? []);
     return entries.flatMap((entry) => {
         const file = typeof entry === "string" ? entry : entry.file;
-        const profile = typeof entry === "string" ? "gfm" : entry.profile;
+        const profile = typeof entry === "string" ? oracle.profile : (entry.profile ?? oracle.profile);
         const flags = typeof entry === "string" ? [] : (entry.upstreamFlags ?? []);
-        return readExamples(root, file).map((example) => ({
+        const selection = typeof entry === "string" ? undefined : entry.selection;
+        const selected = selectExamples(readExamples(root, file), selection, policyPath);
+        return selected.map((example) => ({
             line: example.source,
             input: example.input,
             profile,
@@ -111,7 +130,7 @@ function corpus() {
  * still reproduce. */
 const fired = new Set();
 
-function compare(input, profile = "gfm", flags = []) {
+function compare(input, profile = oracle.profile, flags = []) {
     const upstreamTree = liftFootnoteDefinitions(
         normalize(parseUpstreamXml(runUpstream(input, flags)), "upstream", fired),
         fired
@@ -147,7 +166,7 @@ function compare(input, profile = "gfm", flags = []) {
  * difference that has gone away would otherwise sit here forever excusing a
  * comparison nobody has looked at since.
  */
-const NORMALIZED_DELTAS = new Set([
+const PROJECTED_DELTAS = new Set([
     "own-extensions",
     "footnote-definition-placement",
     "footnote-resolution-model",
@@ -161,7 +180,7 @@ const NORMALIZED_DELTAS = new Set([
  * projection acts on a tree and says so. */
 const UNTRACKED_PROJECTIONS = new Set(["own-extensions"]);
 for (const delta of policy.deltas) {
-    if (!NORMALIZED_DELTAS.has(delta.id) && !(policy.expectedDivergences ?? []).some((e) => e.id === delta.id)) {
+    if (!PROJECTED_DELTAS.has(delta.id) && !(policy.expectedDivergences ?? []).some((e) => e.id === delta.id)) {
         process.stderr.write(
             `upstream parity: registered delta \`${delta.id}\` is neither projected by the normalizer nor\n` +
                 "keyed to an input. A delta the gate does not act on is prose, not a rule.\n"
@@ -223,7 +242,7 @@ if (corpusOverride < 0 && limit === Infinity) {
 
 process.stdout.write(
     `upstream parity: ${String(cases.length - divergent.length)}/${String(cases.length)} inputs agree with ` +
-        `cmark-gfm ${policy.upstream.version}\n`
+        `${oracle.label} ${policy.upstream.version}\n`
 );
 process.stdout.write(`  registered deltas: ${policy.deltas.map((d) => d.id).join(", ")}\n`);
 process.stdout.write(
@@ -239,7 +258,10 @@ process.stdout.write(
  * pending input that starts diverging does. */
 if (corpusOverride < 0 && limit === Infinity) {
     const pendingIds = new Set((policy.pendingDeltas ?? []).map((delta) => delta.id));
-    const tracked = [...NORMALIZED_DELTAS].filter((id) => !UNTRACKED_PROJECTIONS.has(id) && !pendingIds.has(id));
+    const activeIds = new Set(policy.deltas.map((delta) => delta.id));
+    const tracked = [...PROJECTED_DELTAS].filter(
+        (id) => activeIds.has(id) && !UNTRACKED_PROJECTIONS.has(id) && !pendingIds.has(id)
+    );
     const silent = tracked.filter((id) => !fired.has(id));
     const pendingProjections = (policy.pendingDeltas ?? []).filter((delta) => delta.projected);
     const acting = pendingProjections.filter((delta) => fired.has(delta.id));
@@ -310,7 +332,7 @@ if (divergent.length) {
             );
             continue;
         }
-        process.stderr.write(`    --- cmark-gfm ---\n${entry.upstream.replace(/^/gm, "    ")}\n`);
+        process.stderr.write(`    --- ${oracle.label} ---\n${entry.upstream.replace(/^/gm, "    ")}\n`);
         process.stderr.write(`    --- markdown-core ---\n${entry.ours.replace(/^/gm, "    ")}\n`);
     }
     if (!verbose && divergent.length > 5) {

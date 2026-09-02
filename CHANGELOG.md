@@ -17,6 +17,11 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   parser comparison. PR comments omit the meaningless boundary column, reuse
   an exact-base-SHA artifact when available, and otherwise build and publish
   that baseline before measuring the head.
+- Synchronize the CommonMark parser from cmark 0.29 through stable cmark 0.31.2,
+  including published syntax, complexity/security, numeric-entity, Unicode 17,
+  case-folding, entity-table, and scanner changes. Current cmark is the
+  CommonMark authority; dormant cmark-gfm now judges only GFM extensions, with
+  remark/mdast used for correction and supplementation.
 - Keep the bytes of a footnote call whose label crosses a line ending, and read
   a label spelled with a character reference out of the source rather than out
   of a released buffer.
@@ -57,7 +62,7 @@ facade while removing renderer support and the caller-driven feed lifecycle.
 - A node's `scope` is a pair of line/column BOUNDARIES saying which range of the
   source an element occupies — not a byte range, and no substring is taken with
   it. A block closed by a blank line therefore ends at column 0 of that line,
-  which is what cmark-gfm reports and what an editor needs.
+  which is what the cmark-family parser reports and what an editor needs.
 - `Document.concrete` is the normalized source and its line index: the text a
   scope's coordinates are counted against, which is not the string that was
   passed in wherever it held a NUL.

@@ -209,12 +209,6 @@ void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf) {
         dst[0] = (uint8_t)(0xC0 + (uc >> 6));
         dst[1] = 0x80 + (uc & 0x3F);
         len = 2;
-    } else if (uc == 0xFFFF) {
-        dst[0] = 0xFF;
-        len = 1;
-    } else if (uc == 0xFFFE) {
-        dst[0] = 0xFE;
-        len = 1;
     } else if (uc < 0x10000) {
         dst[0] = (uint8_t)(0xE0 + (uc >> 12));
         dst[1] = 0x80 + ((uc >> 6) & 0x3F);
@@ -234,16 +228,36 @@ void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf) {
     markdown_core_strbuf_put(buf, dst, len);
 }
 
+#include "case_fold.inc"
+
+static int S_case_fold_compare(const void *left, const void *right) {
+    uint32_t left_entry = *(const uint32_t *)left;
+    uint32_t right_entry = *(const uint32_t *)right;
+
+    return (int32_t)CF_CODE_POINT(left_entry) - (int32_t)CF_CODE_POINT(right_entry);
+}
+
 void markdown_core_utf8proc_case_fold(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len) {
     int32_t c;
-
-#define bufpush(x) markdown_core_utf8proc_encode_char(x, dest)
 
     while (len > 0) {
         bufsize_t char_len = markdown_core_utf8proc_iterate(str, len, &c);
 
-        if (char_len >= 0) {
-#include "case_fold_switch.inc"
+        if (char_len == 1) {
+            if (c >= 'A' && c <= 'Z') {
+                c += 'a' - 'A';
+            }
+            markdown_core_strbuf_putc(dest, c);
+        } else if (c >= CF_MAX) {
+            markdown_core_strbuf_put(dest, str, char_len);
+        } else if (char_len >= 0) {
+            uint32_t key = (uint32_t)c;
+            uint32_t *entry = bsearch(&key, cf_table, CF_TABLE_SIZE, sizeof(uint32_t), S_case_fold_compare);
+            if (entry == NULL) {
+                markdown_core_strbuf_put(dest, str, char_len);
+            } else {
+                markdown_core_strbuf_put(dest, cf_repl + CF_REPL_IDX(*entry), CF_REPL_SIZE(*entry));
+            }
         } else {
             encode_unknown(dest);
             char_len = -char_len;
@@ -261,6 +275,8 @@ int markdown_core_utf8proc_is_space(int32_t uc) {
 }
 
 // matches anything in the P[cdefios] classes.
+#include "punctuation_or_symbol.inc"
+
 int markdown_core_utf8proc_is_punctuation(int32_t uc) {
     return ((uc < 128 && markdown_core_ispunct((char)uc)) || uc == 161 || uc == 167 || uc == 171 || uc == 182 ||
             uc == 183 || uc == 187 || uc == 191 || uc == 894 || uc == 903 || (uc >= 1370 && uc <= 1375) || uc == 1417 ||

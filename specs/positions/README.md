@@ -28,13 +28,12 @@ node ending four columns past the end of its own line still does.
 
 None of the three subsumes another, and each is blind where another sees:
 
-- Upstream cmark-gfm carries several of this engine's position defects — the
-  autolink column, the link start taken from the closing bracket, the
-  whole-run emphasis start, the consumed-definition line. It cannot be the
-  authority for them, which is why `inline-sourcepos` compares inline `Code`
-  and `HTML` **only**: those are where upstream is right and this engine is
-  known to be wrong. Widening it would make it go red on the commits that fix
-  the rest.
+- Current cmark has a different inline-scope model. The external ledger compares
+  `Code` and `HTML` only: Markdown Core deliberately includes a code span's
+  backticks and raw HTML's closing byte in the semantic element scope, while
+  cmark reports a content extent. The exact reviewed differences are ratcheted;
+  cmark is not copied wholesale where its positions contradict this AST's
+  source-ownership rules.
 - Containment is blind to a whole subtree displaced by the same amount, and
   blind to `Code scope=1:9..1:17` on a twelve-byte line. Its sibling half is
   what catches two nodes claiming one byte, which is not a containment
@@ -44,16 +43,15 @@ None of the three subsumes another, and each is blind where another sees:
   a position which is inside its parent, agrees with upstream, and still names
   no byte.
 
-Measured, on the tree these ledgers were first written against: un-gating
-`adjust_subj_node_newlines` clears all 12 `inline-sourcepos` rows, moves
-`places` by 13 out and 3 in, and moves `containment` by **nothing**. Correcting
-`S_insert_emph`'s columns clears 14 `containment` rows and moves the other two
-by **nothing**.
+This separation matters: external agreement, containment, and valid byte
+coordinates answer different questions. A tree can agree with cmark and still
+violate the local AST contract, or disagree with cmark while remaining the
+intentional source-faithful representation.
 
 ## The protocol
 
-Each ledger records the exact rows that are wrong today, grouped by the input
-that produces them, and the gate requires the measured set to match **exactly**.
+Each ledger records the exact reviewed rows, grouped by the input that produces
+them, and the gate requires the measured set to match **exactly**.
 Not a budget — a set. A count cannot tell a fix that cleared twelve rows from
 one that cleared twelve and introduced one, and that is not hypothetical: the
 un-gating above does precisely that.

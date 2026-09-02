@@ -200,9 +200,11 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}"
     ${MARKDOWN_CORE_CANONICAL_NAMES})
 
-# spec: CommonMark spec, smart punctuation, entities.  Expected results are
-# canonical AST dumps; the runner also asserts dump determinism per example.
-markdown_core_add_test(spec_commonmark spec 240 spec_runner --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
+# spec: the product-owned GFM 0.29 golden (base examples plus tagged extension
+# sections), smart punctuation, and entities. Current CommonMark authority is
+# the separately pinned cmark parity gate, not this historical golden. The
+# runner also asserts dump determinism per example.
+markdown_core_add_test(spec_gfm_golden spec 240 spec_runner --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
 markdown_core_add_test(
     spec_smart_punctuation
     spec
@@ -305,6 +307,9 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     nested_brackets
     nested_block_quotes
     deeply_nested_lists
+    empty_lines_in_deeply_nested_lists
+    empty_lines_in_deep_list_blockquote
+    emphasis_in_deep_blockquote
     nul_in_input
     backticks
     unclosed_links_a

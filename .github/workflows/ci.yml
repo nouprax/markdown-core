@@ -1124,11 +1124,10 @@ jobs:
                       exit 1
                   fi
 
-    # The two gates that check Markdown Core's semantics against authorities
-    # outside itself: cmark-gfm for the base language, and the remark ecosystem
-    # for the constructs cmark-gfm does not implement. Both build this parser,
-    # so they sit beside Coverage as their own layer rather than in the Test
-    # layer, which forbids compilers.
+    # Three disjoint external authorities: current cmark for CommonMark,
+    # cmark-gfm only for the GFM extension layer, and remark/micromark as a
+    # corrective and supplementary implementation. They build this parser, so
+    # they sit beside Coverage rather than in the compiler-free Test layer.
     upstream-parity:
         name: External parity
         needs: health-checks-ready
@@ -1146,18 +1145,20 @@ jobs:
               run: pnpm install --frozen-lockfile
             - name: Build this parser
               run: pnpm build:c
-            - name: Build the pinned upstream parser
-              run: scripts/init-environment.sh --install upstream-cmark
-            - name: Compare against upstream cmark-gfm
-              run: pnpm check:upstream-parity
-            - name: Compare against the remark ecosystem
+            - name: Build the pinned parser oracles
+              run: scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm
+            - name: Compare CommonMark against current cmark
+              run: pnpm check:commonmark-parity
+            - name: Compare GFM extensions against cmark-gfm
+              run: pnpm check:gfm-parity
+            - name: Run the corrective and supplementary remark oracle
               run: pnpm check:mdast-parity
             # The position oracles. They live here because one of the three
             # needs the pinned upstream parser this job already builds, and
             # because all three are ratchets over registered rows: they fail on
             # a row appearing AND on a row clearing, so a fix that moves one
             # without recording it fails in CI rather than in review.
-            - name: Check inline positions against upstream cmark-gfm
+            - name: Check inline positions against current cmark
               run: pnpm audit:inline-sourcepos
             - name: Check scope containment and sibling overlap
               run: pnpm audit:scope-containment
@@ -1168,13 +1169,14 @@ jobs:
             - name: Check that reference resolution is order-independent
               run: pnpm audit:reference-order
             # Bounded and seeded, so a CI failure replays locally with the seed
-            # it prints. The mdast oracle is deliberately not fuzzed here yet:
-            # it still reports divergences of mixed root cause that have not
-            # been triaged, and a gate nobody can act on is noise.
-            - name: Fuzz against upstream cmark-gfm
-              run: pnpm fuzz:parity -- --oracle upstream --iterations 400 --seed 1
+            # it prints. Each run draws only from its authority's selected
+            # corpus rather than recombining syntax outside that scope.
+            - name: Fuzz CommonMark against current cmark
+              run: pnpm fuzz:parity -- --oracle commonmark --iterations 400 --seed 1
+            - name: Fuzz GFM extensions against cmark-gfm
+              run: pnpm fuzz:parity -- --oracle gfm --iterations 400 --seed 1
             - name: Fuzz against the remark ecosystem
-              run: pnpm fuzz:parity -- --oracle mdast --iterations 400 --seed 1
+              run: pnpm fuzz:parity -- --oracle remark --iterations 400 --seed 1
 
     required-gates:
         # Push runs use an independent, non-required context. PR and

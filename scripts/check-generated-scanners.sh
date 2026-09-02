@@ -15,7 +15,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-expected_re2c="re2c 4.5.1"
+expected_re2c="re2c 4.6"
 
 if ! command -v re2c >/dev/null 2>&1; then
     echo "SKIP: re2c is not installed; committed scanners.c was NOT re-verified" >&2
@@ -32,7 +32,7 @@ temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
 
 # Exactly the Makefile maintenance rule for $(SRCDIR)/scanners.c.
-re2c -W -Werror --case-insensitive -b -i --no-generation-date -8 \
+re2c -W -Werror --case-insensitive -b -i --no-generation-date \
     --encoding-policy substitute \
     -o "$temp_dir/scanners.c" \
     "$root/packages/markdown-core/core/scanners.re"

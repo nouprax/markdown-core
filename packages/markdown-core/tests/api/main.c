@@ -856,6 +856,8 @@ static void utf8(test_batch_runner *runner) {
     test_char(runner, 0, "\xE0\x9F\xBF", "invalid utf8 E09FBF");
     test_char(runner, 1, "\xE0\xA0\x80", "valid utf8 E0A080");
     test_char(runner, 1, "\xED\x9F\xBF", "valid utf8 ED9FBF");
+    test_char(runner, 1, "\xEF\xBF\xBE", "valid utf8 U+FFFE noncharacter");
+    test_char(runner, 1, "\xEF\xBF\xBF", "valid utf8 U+FFFF noncharacter");
     test_char(runner, 0, "\xED\xA0\x80", "invalid utf8 EDA080");
     test_char(runner, 0, "\xED\xBF\xBF", "invalid utf8 EDBFBF");
     test_char(runner, 0, "\xF0\x80\x80\x80", "invalid utf8 F0808080");
@@ -993,14 +995,18 @@ static void numeric_entities(test_batch_runner *runner) {
     test_md_paragraph_text(runner, "&#57344;", "\xEE\x80\x80", "Valid numeric entity 0xE000");
     test_md_paragraph_text(runner, "&#x10FFFF;", "\xF4\x8F\xBF\xBF", "Valid numeric entity 0x10FFFF");
     test_md_paragraph_text(runner, "&#x110000;", UTF8_REPL, "Invalid numeric entity 0x110000");
-    test_md_paragraph_text(runner, "&#x80000000;", UTF8_REPL, "Invalid numeric entity 0x80000000");
-    test_md_paragraph_text(runner, "&#xFFFFFFFF;", UTF8_REPL, "Invalid numeric entity 0xFFFFFFFF");
-    test_md_paragraph_text(runner, "&#99999999;", UTF8_REPL, "Invalid numeric entity 99999999");
+    test_md_paragraph_text(runner, "&#9999999;", UTF8_REPL, "Seven-digit decimal entity is recognized");
+    test_md_paragraph_text(runner, "&#99999999;", "&#99999999;", "Eight-digit decimal entity stays literal");
+    test_md_paragraph_text(runner, "&#87654321;", "&#87654321;", "CommonMark long decimal entity stays literal");
+    test_md_paragraph_text(runner, "&#x80000000;", "&#x80000000;", "Eight-digit hexadecimal entity stays literal");
+    test_md_paragraph_text(runner, "&#xFFFFFFFF;", "&#xFFFFFFFF;", "Long hexadecimal entity stays literal");
 
     test_md_paragraph_text(runner, "&#;", "&#;", "Min decimal entity length");
     test_md_paragraph_text(runner, "&#x;", "&#x;", "Min hexadecimal entity length");
-    test_md_paragraph_text(runner, "&#999999999;", "&#999999999;", "Max decimal entity length");
-    test_md_paragraph_text(runner, "&#x000000041;", "&#x000000041;", "Max hexadecimal entity length");
+    test_md_paragraph_text(runner, "&#999999999;", "&#999999999;", "Overlong decimal entity stays literal");
+    test_md_paragraph_text(runner, "&#x000000041;", "&#x000000041;", "Overlong hexadecimal entity stays literal");
+    test_md_paragraph_text(runner, "a*\xC2\xA3*b", "a*\xC2\xA3*b",
+                           "Unicode symbols are punctuation for emphasis flanking");
 }
 
 static int count_html_comment_nodes(markdown_core_node *root) {

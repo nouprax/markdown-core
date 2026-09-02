@@ -12,12 +12,11 @@ UBSAN_BUILDDIR=build/ubsan
 TSAN_BUILDDIR=build/tsan
 MARKDOWN_CORE=$(BUILDDIR)/packages/markdown-core/core/markdown-core
 MARKDOWN_CORE_FUZZ=$(BUILDDIR)/packages/markdown-core/core/markdown-core-fuzz
-SPEC=packages/markdown-core/tests/fixtures/spec.txt
 CLANG_CHECK?=clang-check
 AFL_PATH?=/usr/local/bin
 
 .PHONY: all build test bench asan-test ubsan-test tsan-test install clean distclean \
-	afl libFuzzer clang-check archive update-spec
+	afl libFuzzer clang-check archive
 
 all: build
 
@@ -98,7 +97,7 @@ $(SRCDIR)/scanners.c: $(SRCDIR)/scanners.re
 		false; \
 		;; \
 	esac
-	re2c -W -Werror --case-insensitive -b -i --no-generation-date -8 \
+	re2c -W -Werror --case-insensitive -b -i --no-generation-date \
 		--encoding-policy substitute -o $@ $<
 
 $(EXTDIR)/ext_scanners.c: $(EXTDIR)/ext_scanners.re
@@ -110,9 +109,3 @@ $(EXTDIR)/ext_scanners.c: $(EXTDIR)/ext_scanners.re
 	esac
 	re2c --case-insensitive -b -i --no-generation-date -8 \
 		--encoding-policy substitute -o $@ $<
-
-# Explicit maintenance command; normal test and bench runs never touch the
-# network.
-update-spec:
-	curl 'https://raw.githubusercontent.com/jgm/CommonMark/master/spec.txt'\
- > $(SPEC)

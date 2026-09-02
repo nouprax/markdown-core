@@ -30,12 +30,11 @@
 #define TAB_STOP 4
 
 /**
- * Very deeply nested lists can cause quadratic performance issues.
- * This constant is used in open_new_blocks() to limit the nesting
- * depth. It is unlikely that a non-contrived markdown document will
- * be nested this deeply.
+ * cmark-gfm limits nested footnote definitions to bound its extension path.
+ * Lists are not capped: CommonMark permits arbitrary nesting and the core
+ * traversal below carries cmark's linear-time blank-line optimization.
  */
-#define MAX_LIST_DEPTH 100
+#define MAX_FOOTNOTE_DEPTH 100
 
 #ifndef MIN
 #define MIN(x, y) ((x < y) ? x : y)
@@ -1581,6 +1580,26 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
                 goto done;
             }
             break;
+        case MARKDOWN_CORE_NODE_LIST:
+            /* A second consecutive blank line inside a deeply nested list
+             * cannot open a block and all closable descendants were already
+             * closed by the first. Returning NULL avoids walking the same
+             * nesting spine for every remaining blank line. Raw-line leaves
+             * still own the blank line, including extension-provided leaves. */
+            if (parser->blank) {
+                if ((container->flags & MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK) && parser->indent == 0) {
+                    if (S_type(parser->current) == MARKDOWN_CORE_NODE_CODE_BLOCK ||
+                        S_type(parser->current) == MARKDOWN_CORE_NODE_HTML_BLOCK ||
+                        extension_accepts_lines(parser->current)) {
+                        add_line(parser->current, input, parser);
+                    }
+                    return NULL;
+                }
+                container->flags |= MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK;
+            } else {
+                container->flags &= ~MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK;
+            }
+            break;
         case MARKDOWN_CORE_NODE_LIST_ITEM:
             if (!parse_node_item_prefix(parser, input, container)) {
                 goto done;
@@ -1743,7 +1762,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
                 return;
             }
             S_advance_offset(parser, input, input->len - 1 - parser->offset, false);
-        } else if (!indented && (parser->options & MARKDOWN_CORE_OPT_FOOTNOTES) && depth < MAX_LIST_DEPTH &&
+        } else if (!indented && (parser->options & MARKDOWN_CORE_OPT_FOOTNOTES) && depth < MAX_FOOTNOTE_DEPTH &&
                    (matched = scan_footnote_definition(input, parser->first_nonspace))) {
             markdown_core_chunk c = markdown_core_chunk_dup(input, parser->first_nonspace + 2, matched - 2);
 
@@ -1798,7 +1817,6 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
 
             (*container)->internal_offset = matched;
         } else if ((!indented || cont_type == MARKDOWN_CORE_NODE_LIST) && parser->indent < 4 &&
-                   depth < MAX_LIST_DEPTH &&
                    (matched = parse_list_marker(parser, input, parser->first_nonspace,
                                                 (*container)->type == MARKDOWN_CORE_NODE_PARAGRAPH, &data))) {
 

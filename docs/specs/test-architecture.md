@@ -107,7 +107,7 @@ C 侧 CTest label taxonomy(每个测试恰有一个 label):
 | `facade` | facade 行为与并发 correctness(`facade_concurrent_first_parse`、`facade_concurrent_stress`) |
 | `conformance` | 公开 facade/schema shape 与 reviewed canonical dumps(`facade_native`、`facade_dump_cli`)；不进入 correctness preset |
 | `consumer` | C++ consumer 编译/链接/运行(`consumer_facade_cplusplus`) |
-| `spec` | CommonMark spec、smart punctuation、entities(全部为 canonical AST dump 断言) |
+| `spec` | GFM 0.29 product golden、smart punctuation、entities（全部为 canonical AST dump 断言；最新 CommonMark 由 cmark oracle 判断） |
 | `extensions` | GFM/formula/directive extension specs 与 option gates |
 | `regression` | 固定回归语料、实例生命周期与严格 OOM 语义(`regression_commonmark`、`regression_instance_lifecycle`、`regression_strict_oom`) |
 | `pathological` | 逐 case 注册的对抗输入、固定资源上界与语义断言(`pathological_*`) |
@@ -202,9 +202,10 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
 - 上述 package-local fixture 是 extension correctness requirement 的唯一副本，
   同时作为 external parity gate 的输入 corpus。`specs/` 只保存跨平台 contract、
   外部 oracle policy/delta 与 position ledger；`specs/oracles/` 按真实 authority
-  保存 cmark-gfm 与 remark/micromark 的 pin、comparison policy 和 deliberate
-  delta，不得包含本仓库 input/expected blocks 的镜像。Golden fixture 本身不是
-  独立外部 authority。
+  保存 cmark、cmark-gfm 与 remark/micromark 的 pin、comparison policy 和
+  deliberate delta。cmark 是最新稳定 CommonMark authority；cmark-gfm 只判断
+  GFM extension layer；remark/mdast 只作纠偏与补充。该目录不得包含本仓库
+  input/expected blocks 的镜像。Golden fixture 本身不是独立外部 authority。
 
 ## 6. 通用执行策略
 

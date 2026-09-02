@@ -126,11 +126,12 @@ enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__OPEN = (1 << 0),
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
     MARKDOWN_CORE_NODE__LAST_LINE_CHECKED = (1 << 2),
+    MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK = (1 << 3),
 
     // The first bit an extension may claim. Extension flags are compile-time
     // constants owned by the extension that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 3),
+    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 4),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;

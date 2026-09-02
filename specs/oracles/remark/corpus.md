@@ -9,10 +9,10 @@ remark's tree instead, so these expected blocks exist only to keep the file
 readable and to let `spec_runner` treat it as an ordinary fixture if it is ever
 registered as one.
 
-The constructs here are the ones cmark-gfm cannot judge: footnote placement,
-and reference-link resolution where the two ecosystems keep different AST
-shapes. Directive and formula inputs are not repeated — the gate reads those
-from the existing extension fixtures.
+The constructs here need corrective or supplementary evidence beyond the two
+primary C-family oracles: footnote placement and reference-link representation.
+Directive and formula inputs are not repeated — the gate reads those from the
+existing extension fixtures.
 
 Footnote definitions stay where they were written, unlike cmark-gfm which moves
 them to the document tail. remark agrees with this repository.
@@ -237,14 +237,13 @@ Document scope=1:1..2:4 children=1
 
 A definition whose title candidate is followed by non-whitespace: the title
 rewinds out of the definition entirely, and the reference resolves without
-it. remark reads it the same way (cmark-gfm keeps the scanned title in its
-map — the `refdef-title-rewind` entry in specs/oracles/cmark-gfm/deltas.json).
+it. remark reads it the same way. Current cmark keeps the scanned title in its
+map, which is the reviewed `refdef-title-rewind` entry in
+specs/oracles/cmark/deltas.json.
 
-**The title half of this is FIXED as of 0a.7** and the divergence is registered
-and reproducing; what still diverges here is only the node model, which is Step
-9b's. The expected block below is that target model — `ReferenceDefinition` and
-`LinkReference` do not exist at this engine yet — and the parity gate never
-reads it. Do not re-derive D5 from this row.
+The expected block records the current source-faithful `ReferenceDefinition`
+and `LinkReference` model. The parity gate compares remark directly and does
+not use that stored block as an oracle.
 
 ```````````````````````````````` example
 [foo]: /url

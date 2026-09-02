@@ -36,7 +36,8 @@
 void print_usage(void) {
     printf("Usage:   markdown-core [FILE*]\n");
     printf("Options:\n");
-    printf("  --profile PROFILE named option set: default | gfm | gfm-smart | gfm-extended\n");
+    printf("  --profile PROFILE named option set: commonmark | commonmark-smart | default | gfm | "
+           "gfm-smart | gfm-extended\n");
     printf("  --smart           Use smart punctuation\n");
     printf("  --validate-utf8   Replace UTF-8 invalid sequences with U+FFFD\n");
     printf("  --strip-html-comments Strip HTML comment nodes from the parsed AST\n"
@@ -140,6 +141,7 @@ int main(int argc, char *argv[]) {
 #endif
 
     bool gfm_profile = false;
+    bool commonmark_profile = false;
     unsigned requested_extensions = 0;
     unsigned extensions;
     cli_parse_setup setup = {0};
@@ -158,10 +160,10 @@ int main(int argc, char *argv[]) {
             goto success;
         } else if (strcmp(argv[i], "--profile") == 0) {
             /* A NAMED OPTION SET, so a comparison harness can ask for exactly
-             * one language without knowing which flags spell it. `gfm` is the
-             * subset shared with upstream cmark-gfm — this repository's own
-             * extensions off, so a parity run compares one language and not
-             * two. `gfm-extended` is that plus this repository's own.
+             * one language without knowing which flags spell it. `commonmark`
+             * turns every syntax extension off for the reference cmark
+             * oracle. `gfm` adds only the cmark-gfm extension set, and
+             * `gfm-extended` adds this repository's own syntax.
              *
              * Every existing invocation is unaffected: without this flag the
              * parser is built exactly as before. */
@@ -170,7 +172,20 @@ int main(int argc, char *argv[]) {
                 goto failure;
             }
             i++;
-            if (strcmp(argv[i], "gfm") == 0) {
+            /* A profile is a complete named set. If more than one is supplied,
+             * the last one replaces the previous set rather than leaving a
+             * hidden extension-selection bit behind. */
+            commonmark_profile = false;
+            gfm_profile = false;
+            if (strcmp(argv[i], "commonmark") == 0) {
+                commonmark_profile = true;
+                gfm_profile = true;
+                options = 0;
+            } else if (strcmp(argv[i], "commonmark-smart") == 0) {
+                commonmark_profile = true;
+                gfm_profile = true;
+                options = MARKDOWN_CORE_OPT_SMART;
+            } else if (strcmp(argv[i], "gfm") == 0) {
                 gfm_profile = true;
                 options = MARKDOWN_CORE_OPT_FOOTNOTES;
             } else if (strcmp(argv[i], "gfm-smart") == 0) {
@@ -181,7 +196,10 @@ int main(int argc, char *argv[]) {
                  * repository's own two extensions below -- there is no option
                  * bit left to spell it with (Q14). */
                 options = MARKDOWN_CORE_OPT_FOOTNOTES;
-            } else if (strcmp(argv[i], "default") != 0) {
+            } else if (strcmp(argv[i], "default") == 0) {
+                options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES |
+                          MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS | MARKDOWN_CORE_OPT_VALIDATE_UTF8;
+            } else {
                 fprintf(stderr, "Unknown profile %s\n", argv[i]);
                 goto failure;
             }
@@ -245,11 +263,12 @@ int main(int argc, char *argv[]) {
      * the CLI attached `directive` FIRST, the facade attached it LAST, and
      * every binding goes through the facade.
      *
-     * This repository's own two are off under the gfm profiles so a parity run
-     * against upstream compares one language; the condition is exactly the one
-     * the two old attach sites spelled between them. */
-    extensions = MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
-                 MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK | MARKDOWN_CORE_CORE_EXTENSION_TASKLIST;
+     * A CommonMark profile has no syntax extensions. This repository's own two
+     * are off under the GFM profiles, leaving exactly the extension set shared
+     * with cmark-gfm. */
+    extensions = commonmark_profile ? 0
+                                    : MARKDOWN_CORE_CORE_EXTENSION_TABLE | MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH |
+                                          MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK | MARKDOWN_CORE_CORE_EXTENSION_TASKLIST;
     if (!gfm_profile) {
         extensions |= MARKDOWN_CORE_CORE_EXTENSION_FORMULA | MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE;
     }

@@ -27,8 +27,6 @@ bufsize_t _scan_at(bufsize_t (*scanner)(const unsigned char *), markdown_core_ch
   re2c:define:YYCTXMARKER = marker;
   re2c:yyfill:enable = 0;
 
-  wordchar = [^\x00-\x20];
-
   spacechar = [ \t\v\f\r\n];
 
   reg_char     = [^\\()\x00-\x20];
@@ -37,7 +35,7 @@ bufsize_t _scan_at(bufsize_t (*scanner)(const unsigned char *), markdown_core_ch
 
   tagname = [A-Za-z][A-Za-z0-9-]*;
 
-  blocktagname = 'address'|'article'|'aside'|'base'|'basefont'|'blockquote'|'body'|'caption'|'center'|'col'|'colgroup'|'dd'|'details'|'dialog'|'dir'|'div'|'dl'|'dt'|'fieldset'|'figcaption'|'figure'|'footer'|'form'|'frame'|'frameset'|'h1'|'h2'|'h3'|'h4'|'h5'|'h6'|'head'|'header'|'hr'|'html'|'iframe'|'legend'|'li'|'link'|'main'|'menu'|'menuitem'|'nav'|'noframes'|'ol'|'optgroup'|'option'|'p'|'param'|'section'|'source'|'title'|'summary'|'table'|'tbody'|'td'|'tfoot'|'th'|'thead'|'title'|'tr'|'track'|'ul';
+  blocktagname = 'address'|'article'|'aside'|'base'|'basefont'|'blockquote'|'body'|'caption'|'center'|'col'|'colgroup'|'dd'|'details'|'dialog'|'dir'|'div'|'dl'|'dt'|'fieldset'|'figcaption'|'figure'|'footer'|'form'|'frame'|'frameset'|'h1'|'h2'|'h3'|'h4'|'h5'|'h6'|'head'|'header'|'hr'|'html'|'iframe'|'legend'|'li'|'link'|'main'|'menu'|'menuitem'|'nav'|'noframes'|'ol'|'optgroup'|'option'|'p'|'param'|'search'|'section'|'title'|'summary'|'table'|'tbody'|'td'|'tfoot'|'th'|'thead'|'title'|'tr'|'track'|'ul';
 
   attributename = [a-zA-Z_:][a-zA-Z0-9:._-]*;
 
@@ -58,7 +56,7 @@ bufsize_t _scan_at(bufsize_t (*scanner)(const unsigned char *), markdown_core_ch
 
   processinginstruction = ([^?>\x00]+ | [?][^>\x00] | [>])+;
 
-  declaration = [A-Z]+ spacechar+ [^>\x00]*;
+  declaration = [A-Za-z]+ [^>\x00]*;
 
   cdata = "CDATA[" ([^\]\x00]+ | "]" [^\]\x00] | "]]" [^>\x00])*;
 
@@ -156,6 +154,7 @@ bufsize_t _scan_html_declaration(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
+  (void) marker;
 /*!re2c
   declaration { return (bufsize_t)(p - start); }
   * { return 0; }
@@ -182,7 +181,7 @@ bufsize_t _scan_html_block_start(const unsigned char *p)
   [<] ('script'|'pre'|'textarea'|'style') (spacechar | [>]) { return 1; }
   '<!--' { return 2; }
   '<?' { return 3; }
-  '<!' [A-Z] { return 4; }
+  '<!' [A-Za-z] { return 4; }
   '<![CDATA[' { return 5; }
   [<] [/]? blocktagname (spacechar | [/]? [>])  { return 6; }
   * { return 0; }

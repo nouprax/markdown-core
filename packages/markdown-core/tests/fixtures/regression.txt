@@ -872,7 +872,7 @@ fixture, `source=""` appeared nowhere, and `destination=null` was what the dump
 printed for `[a]()`.
 
 A destination is REQUIRED (Q26): the empty parentheses ARE the destination the
-author wrote. A title is OPTIONAL and both answers are reachable. Neither
+author wrote. A title is OPTIONAL and both answers are reachable. No external
 parity oracle can see any of this -- `scripts/lib/upstream-cmark.mjs` folds `""`
 to `null` on both sides before comparing, for every field but `literal` -- so
 these rows are the only gate there is.

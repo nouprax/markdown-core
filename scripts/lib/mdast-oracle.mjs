@@ -1,12 +1,10 @@
 /**
  * mdast/remark normalization.
  *
- * cmark-gfm is the authority for the base language, but it cannot judge the
- * constructs it does not implement. For directives, math, and footnote
- * placement the authority is the unified/remark ecosystem, whose definitions
- * this repository's extensions were written against — so remark is the second
- * oracle, and this module maps its tree onto the same comparable form
- * `upstream-cmark.mjs` produces.
+ * cmark owns CommonMark and cmark-gfm owns its GFM extension layer. remark is
+ * the corrective and supplementary oracle for directives, math, footnote
+ * representation, tables, and references. This module maps mdast onto the same
+ * comparison-only form `upstream-cmark.mjs` produces.
  *
  * One model difference is normalized rather than reported, because it is a
  * choice about AST shape rather than about what the Markdown means. The
@@ -129,7 +127,7 @@ function convert(node, definitions) {
     // node, which this repository inherits. mdast keeps the line ending in the
     // node and leaves the conversion to mdast-util-to-hast at render time. The
     // two agree on what the span means; they disagree on which layer states it,
-    // and cmark-gfm is the authority for the base language.
+    // and cmark is the authority for the CommonMark layer.
     if (node.type === "inlineCode") fields.literal = (node.value ?? "").replace(/\r\n|\r|\n/g, " ");
     // mdast strips a code block's trailing line ending; the canonical dump keeps it.
     if (node.type === "code") fields.literal = `${node.value ?? ""}\n`;
@@ -172,15 +170,10 @@ function convert(node, definitions) {
 
 /**
  * Registered shape delta `empty-text-node`: a run that is only the spaces a
- * hard or soft break strips leaves an empty text node in cmark's model, which
- * this repository inherits and its goldens record. mdast has no such node.
- * Dropping empty text from both sides compares the content, which is what the
- * two models agree exists.
- *
- * Removing the node instead was tried and is wrong: upstream cmark-gfm emits
- * it, so suppressing it here would put this parser at odds with the authority
- * for the base language in order to agree with the authority for the
- * extensions.
+ * hard or soft break strips can leave an empty text node in the cmark family.
+ * Markdown Core and mdast omit a node that owns no source or content. Dropping
+ * it from both comparison trees isolates the semantic content; the cmark and
+ * cmark-gfm policies independently verify that this projection still acts.
  */
 /**
  * A directive's attribute block is most of its grammar — the name/value rules,

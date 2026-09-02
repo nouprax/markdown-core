@@ -1,23 +1,21 @@
 #!/usr/bin/env node
 /**
- * Position oracle (a): inline `Code` and `HTML` against upstream cmark-gfm.
+ * Position oracle (a): inline `Code` and `HTML` against reference cmark.
  *
- * cmark-gfm is asked for `--to xml --sourcepos` over the CommonMark spec
+ * cmark is asked for `--to xml --sourcepos` over its pinned CommonMark spec
  * fixture and its inline code and raw-HTML positions are compared with this
- * engine's. Those two kinds, and no others, for one reason each:
+ * engine's. Those two kinds, and no others, because they expose the deliberate
+ * difference between cmark's content extent and this AST's element scope:
  *
- *   they are where the engine is KNOWN to be wrong. `adjust_subj_node_newlines`
- *   is the only code that walks a consumed span's line endings, it is gated
- *   behind an option nothing sets, and inline code and raw HTML are the two
- *   core constructs that can span a line. Every disagreement this reads today
- *   is a span that crossed a newline and was reported as if it had not.
+ *   a Markdown Core element scope includes the markup bytes that create the
+ *   element. Code therefore includes its backtick delimiters, and raw HTML
+ *   includes its closing byte. cmark reports code content positions and can
+ *   leave raw HTML's final byte outside the node.
  *
- *   upstream is a usable authority for them and NOT for the rest. cmark-gfm
- *   carries this repository's autolink column defect, its closing-bracket link
- *   start, its whole-run emphasis start, and its consumed-definition line;
- *   widening this oracle to every inline kind would make it go red on the
- *   commits that FIX those. Containment and place-ness are what watch them,
- *   and they need no outside authority.
+ * The ledger is therefore a fail-closed registry of reviewed representation
+ * differences, not a list of local defects. Other node kinds are governed by
+ * the repository's containment and place-ness invariants rather than by
+ * copying cmark's source-position model wholesale.
  *
  * The comparison pairs the two sides' code/HTML nodes in document order. A
  * length mismatch is a hard error rather than a skipped example: the parity
@@ -53,22 +51,14 @@ const verbose = process.argv.includes("--verbose");
 // The upstream pin lives in one place, and it is the parity policy that states
 // it. Copying the version into this ledger would let the two drift and read as
 // agreement.
-const upstreamVersion = loadLedger(root, "specs/oracles/cmark-gfm/deltas.json").upstream.version;
+const upstreamVersion = loadLedger(root, "specs/oracles/cmark/deltas.json").upstream.version;
 
 const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdown-core", "pnpm build:c");
 const upstream = requireBinary(
     root,
-    `.tools/cmark-gfm/${upstreamVersion}/build/src/cmark-gfm`,
-    "scripts/init-environment.sh --install upstream-cmark"
+    `.tools/cmark/${upstreamVersion}/build/src/cmark`,
+    "scripts/init-environment.sh --install oracle-cmark"
 );
-
-// The same five extensions and the same profile `check-upstream-parity.mjs`
-// uses, so both sides parse one language. A position oracle that compared two
-// different languages would report their difference as a position defect.
-const UPSTREAM_FLAGS = ["table", "strikethrough", "autolink", "tasklist", "footnotes"].flatMap((extension) => [
-    "-e",
-    extension
-]);
 
 const SUBJECT = new Set(["Code", "HTML"]);
 const collect = (tree) => [...walkWithPath(tree)].filter(({ node }) => SUBJECT.has(node.kind));
@@ -79,13 +69,11 @@ const measured = [];
 let scanned = 0;
 for (const example of readExamples(root, ledger.corpus)) {
     const mine = collect(parseCanonicalDump(runBinary(ours, ["--profile", ledger.profile], example.input)));
-    const theirs = collect(
-        parseUpstreamXml(runBinary(upstream, ["--to", "xml", "--sourcepos", ...UPSTREAM_FLAGS], example.input))
-    );
+    const theirs = collect(parseUpstreamXml(runBinary(upstream, ["--to", "xml", "--sourcepos"], example.input)));
     if (mine.length !== theirs.length)
         throw new Error(
             `${example.source}: ${String(mine.length)} inline Code/HTML nodes here, ${String(theirs.length)} upstream — ` +
-                `the two trees no longer pair, so no position comparison is meaningful. Check scripts/check-upstream-parity.mjs first.`
+                `the two trees no longer pair, so no position comparison is meaningful. Run pnpm check:commonmark-parity first.`
         );
 
     const findings = [];
@@ -107,4 +95,13 @@ if (verbose)
         for (const finding of entry.findings)
             process.stdout.write(`${entry.source} ${finding.kind} ours=${finding.ours} upstream=${finding.upstream}\n`);
 
-reconcileLedger({ root, ledgerPath: LEDGER, ledger, measured, update, subject: "inline sourcepos", scanned });
+reconcileLedger({
+    root,
+    ledgerPath: LEDGER,
+    ledger,
+    measured,
+    update,
+    subject: "inline sourcepos",
+    scanned,
+    status: "still differ"
+});

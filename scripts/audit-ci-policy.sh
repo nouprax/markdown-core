@@ -367,6 +367,18 @@ fi
 
 tests_ready_job=$(job_body tests-ready "$ci")
 grep -Fq '        if: ${{ always() }}' <<<"$tests_ready_job"
+oracle_job=$(job_body upstream-parity "$ci")
+grep -Fq 'scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm' <<<"$oracle_job"
+grep -Fq 'pnpm check:commonmark-parity' <<<"$oracle_job"
+grep -Fq 'pnpm check:gfm-parity' <<<"$oracle_job"
+grep -Fq 'pnpm check:mdast-parity' <<<"$oracle_job"
+grep -Fq 'pnpm fuzz:parity -- --oracle commonmark' <<<"$oracle_job"
+grep -Fq 'pnpm fuzz:parity -- --oracle gfm' <<<"$oracle_job"
+grep -Fq 'pnpm fuzz:parity -- --oracle remark' <<<"$oracle_job"
+if grep -Eq 'check:upstream-parity|--oracle (upstream|mdast)' <<<"$oracle_job"; then
+    echo "external parity job uses a retired ambiguous oracle name" >&2
+    exit 1
+fi
 required_gate_job=$(job_body required-gates "$ci")
 grep -Fq '            - tests-ready' <<<"$required_gate_job"
 grep -Fq '            - coverage-ready' <<<"$required_gate_job"

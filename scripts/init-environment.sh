@@ -18,6 +18,10 @@ EMSCRIPTEN_COMMIT=5eb0bde7585670252e8ba05e9d361627bffd08b5
 # reviewed change, not a routine bump (see specs/oracles/cmark-gfm/deltas.json).
 CMARK_GFM_VERSION=0.29.0.gfm.13
 CMARK_GFM_COMMIT=587a12bb54d95ac37241377e6ddc93ea0e45439b
+# The newest stable CommonMark reference implementation. CommonMark parity is
+# intentionally judged by cmark itself, not by GitHub's dormant fork.
+CMARK_VERSION=0.31.2
+CMARK_COMMIT=eec0eeba6d31189fd828314576494566d539b1e3
 CLANG_FORMAT_VERSION=23.1.0
 CMAKE_FORMAT_VERSION=0.6.13
 SWIFTLINT_VERSION=0.65.1
@@ -33,7 +37,7 @@ Usage: scripts/init-environment.sh --check [component ...]
        scripts/init-environment.sh --install [component ...]
 
 Components: core node java wrappers android android-emulator swift emscripten
-            upstream-cmark dependencies tools
+            oracle-cmark oracle-cmark-gfm dependencies tools
 
 With no components, the command checks or installs the complete environment
 supported by the current host. --check never installs or downloads anything.
@@ -65,7 +69,7 @@ fi
 
 for component do
     case "$component" in
-        core | node | java | wrappers | android | android-emulator | swift | emscripten | upstream-cmark | dependencies | tools) ;;
+        core | node | java | wrappers | android | android-emulator | swift | emscripten | oracle-cmark | oracle-cmark-gfm | dependencies | tools) ;;
         *)
             echo "Unknown environment component: $component" >&2
             usage >&2
@@ -315,17 +319,35 @@ check_emscripten() {
     return 0
 }
 
+cmark_path() {
+    printf '%s\n' "$root/.tools/cmark/$CMARK_VERSION/build/src/cmark"
+}
+
 cmark_gfm_path() {
     printf '%s\n' "$root/.tools/cmark-gfm/$CMARK_GFM_VERSION/build/src/cmark-gfm"
 }
 
-check_upstream_cmark() {
-    binary=$(cmark_gfm_path)
+check_oracle_cmark() {
+    binary=$(cmark_path)
     if [ ! -x "$binary" ]; then
-        fail "upstream cmark-gfm $CMARK_GFM_VERSION is not built"
+        fail "cmark oracle $CMARK_VERSION is not built"
         return
     fi
-    ok "upstream cmark-gfm $CMARK_GFM_VERSION"
+    actual=$(git -C "$root/.tools/cmark/$CMARK_VERSION" rev-parse HEAD 2>/dev/null || true)
+    [ "$actual" = "$CMARK_COMMIT" ] || fail "cmark oracle is ${actual:-missing}, expected $CMARK_COMMIT"
+    [ "$actual" != "$CMARK_COMMIT" ] || ok "cmark oracle $CMARK_VERSION"
+    return 0
+}
+
+check_oracle_cmark_gfm() {
+    binary=$(cmark_gfm_path)
+    if [ ! -x "$binary" ]; then
+        fail "cmark-gfm oracle $CMARK_GFM_VERSION is not built"
+        return
+    fi
+    actual=$(git -C "$root/.tools/cmark-gfm/$CMARK_GFM_VERSION" rev-parse HEAD 2>/dev/null || true)
+    [ "$actual" = "$CMARK_GFM_COMMIT" ] || fail "cmark-gfm oracle is ${actual:-missing}, expected $CMARK_GFM_COMMIT"
+    [ "$actual" != "$CMARK_GFM_COMMIT" ] || ok "cmark-gfm oracle $CMARK_GFM_VERSION"
     return 0
 }
 
@@ -475,10 +497,32 @@ install_emscripten() {
     "$directory/emsdk" activate "$EMSCRIPTEN_VERSION"
 }
 
-# The upstream parser is the oracle for scripts/check-upstream-parity.mjs. It
-# is pinned to an immutable commit for the same reason emsdk is: a moved tag
-# must never change what the comparison is comparing against.
-install_upstream_cmark() {
+# The two upstream parsers have disjoint authority: cmark for CommonMark and
+# cmark-gfm for its extension layer. Both pins are immutable because a moved
+# tag must never change what the parity gates compare against.
+install_oracle_cmark() {
+    directory="$root/.tools/cmark/$CMARK_VERSION"
+    if [ ! -d "$directory/.git" ]; then
+        mkdir -p "$(dirname "$directory")"
+        git clone --filter=blob:none https://github.com/commonmark/cmark.git "$directory"
+    fi
+    git -C "$directory" rev-parse --quiet --verify "$CMARK_COMMIT^{commit}" >/dev/null \
+        || git -C "$directory" fetch --filter=blob:none origin "$CMARK_COMMIT"
+    git -C "$directory" checkout --quiet "$CMARK_COMMIT"
+    actual_commit=$(git -C "$directory" rev-parse HEAD)
+    [ "$actual_commit" = "$CMARK_COMMIT" ] || {
+        fail "cmark checkout is $actual_commit, expected $CMARK_COMMIT"
+        return
+    }
+    cmake -S "$directory" -B "$directory/build" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_TESTING=OFF \
+        -DBUILD_SHARED_LIBS=OFF >/dev/null
+    cmake --build "$directory/build" --parallel >/dev/null
+    [ -x "$(cmark_path)" ] || fail "cmark build produced no binary"
+}
+
+install_oracle_cmark_gfm() {
     directory="$root/.tools/cmark-gfm/$CMARK_GFM_VERSION"
     if [ ! -d "$directory/.git" ]; then
         mkdir -p "$(dirname "$directory")"
@@ -523,7 +567,8 @@ if [ "$mode" = --install ]; then
     has_component android-emulator "$@" && install_android_emulator
     has_component swift "$@" && check_swift
     has_component emscripten "$@" && install_emscripten
-    has_component upstream-cmark "$@" && install_upstream_cmark
+    has_component oracle-cmark "$@" && install_oracle_cmark
+    has_component oracle-cmark-gfm "$@" && install_oracle_cmark_gfm
     has_component dependencies "$@" \
         && npx --yes "pnpm@$PNPM_VERSION" install --frozen-lockfile
     has_component tools "$@" && install_tools
@@ -539,7 +584,8 @@ has_component android "$@" && check_android
 has_component android-emulator "$@" && check_android_emulator
 has_component swift "$@" && check_swift
 has_component emscripten "$@" && check_emscripten
-has_component upstream-cmark "$@" && check_upstream_cmark
+has_component oracle-cmark "$@" && check_oracle_cmark
+has_component oracle-cmark-gfm "$@" && check_oracle_cmark_gfm
 has_component dependencies "$@" && check_dependencies
 has_component tools "$@" && check_tools
 

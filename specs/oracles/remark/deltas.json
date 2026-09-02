@@ -9,11 +9,11 @@
             "footnotes and tables": "micromark-extension-gfm-* (remark-gfm)"
         },
         "astShapeFrom": "mdast-util-directive@3.1.0 and mdast-util-from-markdown; every `ast-shape` delta below originates here, not in the syntax extensions.",
-        "note": "Versions are pinned by pnpm-lock.yaml. This oracle exists for the constructs cmark-gfm does not implement: directives, math, footnote placement, and the reference-link model. cmark-gfm remains the authority for the base language.",
+        "note": "Versions are pinned by pnpm-lock.yaml. This is a corrective and supplementary oracle: cmark remains authoritative for CommonMark and cmark-gfm for GFM extensions, while remark/mdast supplies independent evidence for directives, math, footnote representation, tables, and the reference-link model.",
         "notAnAuthorityFor": [
             "Which construct wins when two extensions could claim the same line. That is decided by micromark's construct priority and by this repository's audited extension attachment order — each an artifact of its own architecture, not a rule either project specifies. Divergences of that kind are product grammar decisions rather than mdast parity deltas.",
             "LaTeX-style math delimiters. micromark-extension-math implements `$` and `$$` only, so `\\(x\\)` and `\\[x\\]` reach remark as ordinary escaped brackets. It has no opinion there to compare against, which is why packages/markdown-core/tests/fixtures/extensions-formula-latex.txt is deliberately absent from the corpus below rather than present with six registered divergences. Registering them would read as `remark disagrees`, and it does not — it was never asked.",
-            "Whether an extension is on. The gate runs one parser profile for the whole corpus, so the `*-option-gates` fixtures, which assert what the same input parses to with an extension off, cannot be judged here. cmark-gfm judges them instead: with this repository's extensions off, its parse is the expected one."
+            "Whether an extension is on. The gate runs one parser profile for the whole corpus, so the `*-option-gates` fixtures, which assert what the same input parses to with an extension off, cannot be judged here. The cmark oracle judges that negative property with every extension disabled."
         ]
     },
     "claim": "For the constructs listed above, Markdown Core's semantics are identical to the unified/remark ecosystem's, except for the AST-shape differences below. The check that enforces it is scripts/check-mdast-parity.mjs.",
@@ -26,8 +26,8 @@
         {
             "id": "directive-label-shape",
             "kind": "ast-shape",
-            "summary": "mdast puts a text directive's label content directly in the directive's children. Markdown Core wraps it in a DirectiveLabel node.",
-            "handling": "The normalizer wraps remark's side, so the label's content is compared."
+            "summary": "mdast puts a text directive's label content directly in the directive's children. Markdown Core owns a dedicated DirectiveLabel node through the label field; it is markup, but is not a semantic child of the directive body.",
+            "handling": "The comparison projects mdast's label children into the dedicated label field, so label content is compared without pretending it belongs to the directive's child sequence."
         },
         {
             "id": "soft-break-shape",
@@ -45,14 +45,14 @@
             "id": "empty-text-node",
             "kind": "ast-shape",
             "summary": "A run consisting only of the spaces a break strips left an empty text node in cmark's model, which this repository inherited until 0a.14 (D12/D13); mdast has never had one, and as of 0a.14 neither does this side. The delta is now UPSTREAM-ONLY.",
-            "handling": "Empty text is dropped from both sides before comparing. Only cmark-gfm still produces one.",
-            "evidence": "cmark-gfm emits <text></text> for CommonMark example 564. The note that \"suppressing it here failed scripts/check-upstream-parity.mjs, which is how this was classified as a shape delta rather than a defect\" is HISTORY, not present tense: 0a.14 reproduced that failure exactly -- 806/817, eleven inputs -- and then answered it as Q38, by registering the same projection on the upstream side. See specs/oracles/cmark-gfm/deltas.json."
+            "handling": "Empty text is dropped from both sides before comparing. Current cmark and cmark-gfm can still produce one.",
+            "evidence": "The fail-closed projections are registered independently in specs/oracles/cmark/deltas.json and specs/oracles/cmark-gfm/deltas.json."
         },
         {
             "id": "code-span-line-ending",
             "kind": "ast-shape",
             "summary": "A line ending inside an inline code span is a space in this repository AST and stays a line ending in mdast.",
-            "authority": "cmark-gfm. CommonMark states that a code span line ending is treated as a space; cmark applies it when it builds the node, and mdast-util-to-hast applies it at render time instead. The two agree on the span content; they disagree on which layer states it.",
+            "authority": "cmark. CommonMark states that a code span line ending is treated as a space; cmark applies it when it builds the node, and mdast-util-to-hast applies it at render time instead. The two agree on the span content; they disagree on which layer states it.",
             "handling": "The oracle converts line endings in mdast inline code before comparing, so the comparison is about the span content.",
             "evidence": "scripts/lib/mdast-oracle.mjs, inlineCode; the base-language claim is checked by scripts/check-upstream-parity.mjs over spec.txt."
         }
@@ -60,7 +60,7 @@
     "notDeltas": [
         {
             "id": "footnote-definition-placement",
-            "summary": "Both keep footnote definitions at their source position, unreferenced ones included. This is where Markdown Core follows remark rather than cmark-gfm, and it is the reason this oracle exists.",
+            "summary": "Both keep footnote definitions at their source position, unreferenced ones included. This independently corrects cmark-gfm's extension-specific destructive placement model.",
             "evidence": "docs/specs/canonical-ast.md footnote semantics; verified on in-body, out-of-order, unreferenced, and dangling cases."
         },
         {

@@ -526,14 +526,15 @@ static int scan_delims(subject *subj, unsigned char c, bool *can_open, bool *can
 
     left_flanking =
         numdelims > 0 && !markdown_core_utf8proc_is_space(after_char) &&
-        (!markdown_core_utf8proc_is_punctuation(after_char) || markdown_core_utf8proc_is_space(before_char) ||
-         markdown_core_utf8proc_is_punctuation(before_char));
-    right_flanking = numdelims > 0 && !markdown_core_utf8proc_is_space(before_char) &&
-                     (!markdown_core_utf8proc_is_punctuation(before_char) ||
-                      markdown_core_utf8proc_is_space(after_char) || markdown_core_utf8proc_is_punctuation(after_char));
+        (!markdown_core_utf8proc_is_punctuation_or_symbol(after_char) || markdown_core_utf8proc_is_space(before_char) ||
+         markdown_core_utf8proc_is_punctuation_or_symbol(before_char));
+    right_flanking =
+        numdelims > 0 && !markdown_core_utf8proc_is_space(before_char) &&
+        (!markdown_core_utf8proc_is_punctuation_or_symbol(before_char) || markdown_core_utf8proc_is_space(after_char) ||
+         markdown_core_utf8proc_is_punctuation_or_symbol(after_char));
     if (c == '_') {
-        *can_open = left_flanking && (!right_flanking || markdown_core_utf8proc_is_punctuation(before_char));
-        *can_close = right_flanking && (!left_flanking || markdown_core_utf8proc_is_punctuation(after_char));
+        *can_open = left_flanking && (!right_flanking || markdown_core_utf8proc_is_punctuation_or_symbol(before_char));
+        *can_close = right_flanking && (!left_flanking || markdown_core_utf8proc_is_punctuation_or_symbol(after_char));
     } else if (c == '\'' || c == '"') {
         *can_open = left_flanking && !right_flanking && before_char != ']' && before_char != ')';
         *can_close = right_flanking;
@@ -950,13 +951,26 @@ static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *clo
     }
 
     tmp = opener_inl->next;
-    while (tmp && tmp != closer_inl) {
-        tmpnext = tmp->next;
-        markdown_core_node_unlink(tmp);
-        append_child(emph, tmp);
-        tmp = tmpnext;
+    if (tmp && tmp != closer_inl) {
+        emph->first_child = tmp;
+        tmp->prev = NULL;
+
+        while (tmp && tmp != closer_inl) {
+            tmpnext = tmp->next;
+            tmp->parent = emph;
+            if (tmpnext == closer_inl) {
+                emph->last_child = tmp;
+                tmp->next = NULL;
+            }
+            tmp = tmpnext;
+        }
     }
-    markdown_core_node_insert_after(opener_inl, emph);
+
+    opener_inl->next = emph;
+    closer_inl->prev = emph;
+    emph->prev = opener_inl;
+    emph->next = closer_inl;
+    emph->parent = opener_inl->parent;
 
     /* REQUIREMENT 11b: the delimiters the emphasis USED are now its markers.
      * They were claimed CONTENT when they were read, because a `*` that matches
@@ -2258,8 +2272,8 @@ int markdown_core_inline_parser_scan_delimiters(markdown_core_inline_parser *par
         after_char = 10;
     }
 
-    *punct_before = markdown_core_utf8proc_is_punctuation(before_char);
-    *punct_after = markdown_core_utf8proc_is_punctuation(after_char);
+    *punct_before = markdown_core_utf8proc_is_punctuation_or_symbol(before_char);
+    *punct_after = markdown_core_utf8proc_is_punctuation_or_symbol(after_char);
     space_before = markdown_core_utf8proc_is_space(before_char) != 0;
     space_after = markdown_core_utf8proc_is_space(after_char) != 0;
 

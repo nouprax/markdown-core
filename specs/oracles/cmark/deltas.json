@@ -1,0 +1,77 @@
+{
+    "schemaVersion": 1,
+    "upstream": {
+        "repository": "https://github.com/commonmark/cmark",
+        "version": "0.31.2",
+        "commit": "eec0eeba6d31189fd828314576494566d539b1e3",
+        "released": "2026-02-14",
+        "note": "The newest stable cmark release. Its own pinned spec.txt is the CommonMark corpus, so the reference implementation and language version move atomically."
+    },
+    "claim": "For CommonMark syntax, Markdown Core tracks the newest stable cmark reference release. cmark-gfm has no authority in this scope. Deliberate AST-model differences and reviewed upstream defects are the only registered deltas.",
+    "deltas": [
+        {
+            "id": "own-extensions",
+            "kind": "excluded-from-comparison",
+            "summary": "Every syntax extension, including the GFM set, is disabled on Markdown Core's side.",
+            "handling": "The comparison uses the `commonmark` profile, which attaches no syntax extensions and enables no footnote option.",
+            "evidence": "packages/markdown-core/core/main.c, --profile commonmark"
+        },
+        {
+            "id": "refdef-title-rewind",
+            "kind": "deliberate-difference",
+            "summary": "cmark keeps a scanned title in its reference map after the definition parser rewinds it into paragraph text. Markdown Core drops the title so the map agrees with the accepted definition.",
+            "rationale": "The pinned CommonMark specification says the example is a link reference definition with no title, and remark/micromark independently resolves it without one.",
+            "handling": "Keyed to the exact specification regression input; erasing all titles would hide real title-resolution defects."
+        },
+        {
+            "id": "empty-text-node",
+            "kind": "deliberate-difference",
+            "summary": "cmark can emit a Text node with an empty literal after hard-break processing. Markdown Core and mdast omit nodes that own no content.",
+            "handling": "The shared normalizer drops empty Text nodes on both sides and records that the projection acted."
+        },
+        {
+            "id": "reference-definition-node",
+            "kind": "deliberate-difference",
+            "summary": "cmark consumes link reference definitions into a map and copies the resolved destination into Link/Image nodes. Markdown Core keeps source-faithful ReferenceDefinition and reference nodes.",
+            "handling": "The shared normalizer projects Markdown Core's source-faithful model into cmark's resolved model, preserving comparison of the selected definition, destination, title, and child content.",
+            "projected": true
+        }
+    ],
+    "expectedDivergences": [
+        {
+            "id": "refdef-title-rewind",
+            "input": "[foo]: /url\n\"title\" ok\n\n[foo]\n",
+            "note": "cmark resolves the final reference with title=\"title\" even though the title candidate was rewound into paragraph text; Markdown Core and micromark resolve it with no title."
+        }
+    ],
+    "notDeltas": [],
+    "corpus": [
+        {
+            "file": ".tools/cmark/0.31.2/test/spec.txt",
+            "profile": "commonmark",
+            "note": "The corpus comes from the same immutable cmark commit as the reference binary."
+        },
+        {
+            "file": "packages/markdown-core/tests/fixtures/regression.txt",
+            "profile": "commonmark",
+            "selection": "untagged",
+            "note": "Only regressions with no extension tag belong to the CommonMark language."
+        },
+        "packages/markdown-core/tests/fixtures/extensions-directive.txt",
+        "packages/markdown-core/tests/fixtures/extensions-directive-option-gates.txt",
+        "packages/markdown-core/tests/fixtures/extensions-conflicts.txt",
+        "packages/markdown-core/tests/fixtures/extensions-formula-github.txt",
+        "packages/markdown-core/tests/fixtures/extensions-formula-latex.txt",
+        "packages/markdown-core/tests/fixtures/extensions-formula-conflicts.txt",
+        "packages/markdown-core/tests/fixtures/extensions-formula-option-gates.txt",
+        {
+            "file": "packages/markdown-core/tests/fixtures/smart_punct.txt",
+            "profile": "commonmark-smart",
+            "upstreamFlags": ["--smart"],
+            "note": "Smart punctuation is a cmark option over the CommonMark parser, not a GFM extension."
+        }
+    ],
+    "corpusNote": "cmark is the sole primary implementation oracle for CommonMark syntax and its own pinned 0.31.2 spec is compared in full. Product-extension fixtures are also parsed with every extension off to prove that opting out returns to CommonMark rather than to a GFM-dependent fallback.",
+    "pendingDeltas": [],
+    "pendingExpectedDivergences": []
+}

@@ -9,30 +9,38 @@
 
 /* Binary tree lookup code for entities added by JGM */
 
-static const unsigned char *S_lookup(int i, int low, int hi, const unsigned char *s, int len) {
+static const unsigned char *S_lookup(int i, int low, int hi, const unsigned char *s, int len, bufsize_t *size_out) {
     int j;
-    int cmp = strncmp((const char *)s, (const char *)markdown_core_entities[i].entity, len);
-    if (cmp == 0 && markdown_core_entities[i].entity[len] == 0) {
-        return (const unsigned char *)markdown_core_entities[i].bytes;
+    uint32_t value = markdown_core_entities[i];
+    const unsigned char *ent_name = markdown_core_entity_text + ENT_TEXT_IDX(value);
+    int ent_len = ENT_NAME_SIZE(value);
+    int min_len = len < ent_len ? len : ent_len;
+    int cmp = strncmp((const char *)s, (const char *)ent_name, min_len);
+    if (cmp == 0) {
+        cmp = len - ent_len;
+    }
+    if (cmp == 0) {
+        *size_out = ENT_REPL_SIZE(value);
+        return ent_name + ent_len;
     } else if (cmp <= 0 && i > low) {
         j = i - ((i - low) / 2);
         if (j == i) {
             j -= 1;
         }
-        return S_lookup(j, low, i - 1, s, len);
+        return S_lookup(j, low, i - 1, s, len, size_out);
     } else if (cmp > 0 && i < hi) {
         j = i + ((hi - i) / 2);
         if (j == i) {
             j += 1;
         }
-        return S_lookup(j, i + 1, hi, s, len);
+        return S_lookup(j, i + 1, hi, s, len, size_out);
     } else {
         return NULL;
     }
 }
 
-static const unsigned char *S_lookup_entity(const unsigned char *s, int len) {
-    return S_lookup(MARKDOWN_CORE_NUM_ENTITIES / 2, 0, MARKDOWN_CORE_NUM_ENTITIES - 1, s, len);
+static const unsigned char *S_lookup_entity(const unsigned char *s, int len, bufsize_t *size_out) {
+    return S_lookup(ENT_TABLE_SIZE / 2, 0, ENT_TABLE_SIZE - 1, s, len, size_out);
 }
 
 bufsize_t houdini_unescape_ent(markdown_core_strbuf *ob, const uint8_t *src, bufsize_t size) {
@@ -41,6 +49,7 @@ bufsize_t houdini_unescape_ent(markdown_core_strbuf *ob, const uint8_t *src, buf
     if (size >= 3 && src[0] == '#') {
         int codepoint = 0;
         int num_digits = 0;
+        int max_digits = 7;
 
         if (_isdigit(src[1])) {
             for (i = 1; i < size && _isdigit(src[i]); ++i) {
@@ -54,6 +63,7 @@ bufsize_t houdini_unescape_ent(markdown_core_strbuf *ob, const uint8_t *src, buf
             }
 
             num_digits = i - 1;
+            max_digits = 7;
         }
 
         else if (src[1] == 'x' || src[1] == 'X') {
@@ -68,9 +78,10 @@ bufsize_t houdini_unescape_ent(markdown_core_strbuf *ob, const uint8_t *src, buf
             }
 
             num_digits = i - 2;
+            max_digits = 6;
         }
 
-        if (num_digits >= 1 && num_digits <= 8 && i < size && src[i] == ';') {
+        if (num_digits >= 1 && num_digits <= max_digits && i < size && src[i] == ';') {
             if (codepoint == 0 || (codepoint >= 0xD800 && codepoint < 0xE000) || codepoint >= 0x110000) {
                 codepoint = 0xFFFD;
             }
@@ -80,20 +91,21 @@ bufsize_t houdini_unescape_ent(markdown_core_strbuf *ob, const uint8_t *src, buf
     }
 
     else {
-        if (size > MARKDOWN_CORE_ENTITY_MAX_LENGTH) {
-            size = MARKDOWN_CORE_ENTITY_MAX_LENGTH;
+        if (size > ENT_MAX_LENGTH) {
+            size = ENT_MAX_LENGTH;
         }
 
-        for (i = MARKDOWN_CORE_ENTITY_MIN_LENGTH; i < size; ++i) {
+        for (i = ENT_MIN_LENGTH; i < size; ++i) {
             if (src[i] == ' ') {
                 break;
             }
 
             if (src[i] == ';') {
-                const unsigned char *entity = S_lookup_entity(src, i);
+                bufsize_t size;
+                const unsigned char *entity = S_lookup_entity(src, i, &size);
 
                 if (entity != NULL) {
-                    markdown_core_strbuf_puts(ob, (const char *)entity);
+                    markdown_core_strbuf_put(ob, entity, size);
                     return i + 1;
                 }
 

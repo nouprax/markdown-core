@@ -33,13 +33,11 @@ echo "public-surface    : $(bash scripts/audit-public-surface.sh 2>&1 | tail -1)
 echo "package-contents  : $(bash scripts/audit-package-contents.sh 2>&1 | tail -1)"
 echo "special-chars     : $(node scripts/audit-extension-special-chars.mjs 2>&1 | head -1)"
 echo "attach-order      : $(node scripts/audit-extension-attach-order.mjs 2>&1 | tail -1)"
-echo "fuzz-upstream     : $(node scripts/fuzz-parity.mjs --iterations 300 2>&1 | grep -E 'fuzz-parity \[upstream\]:')"
-# THE MDAST FUZZ ORACLE WAS IN SECTION 0'S LIST AND NOT IN THIS SCRIPT, which is
-# the same hole the comment above records for two other gates: a script that
-# claims to run every gate ran one fewer than section 0 names. It turned green
-# at 9b.2 and has been unrun by this loop ever since.
-echo "fuzz-mdast        : $(node scripts/fuzz-parity.mjs --oracle mdast --iterations 300 2>&1 | grep -E 'fuzz-parity \[mdast\]:')"
-echo "upstream-parity   : $(node scripts/check-upstream-parity.mjs 2>&1 | grep -E 'upstream parity:|divergences:')"
+echo "fuzz-commonmark   : $(node scripts/fuzz-parity.mjs --oracle commonmark --iterations 300 2>&1 | grep -E 'fuzz-parity \[commonmark\]:')"
+echo "fuzz-gfm          : $(node scripts/fuzz-parity.mjs --oracle gfm --iterations 300 2>&1 | grep -E 'fuzz-parity \[gfm\]:')"
+echo "fuzz-remark       : $(node scripts/fuzz-parity.mjs --oracle remark --iterations 300 2>&1 | grep -E 'fuzz-parity \[remark\]:')"
+echo "commonmark-parity : $(node scripts/check-upstream-parity.mjs --oracle commonmark 2>&1 | grep -E 'upstream parity:|divergences:')"
+echo "gfm-parity        : $(node scripts/check-upstream-parity.mjs --oracle gfm 2>&1 | grep -E 'upstream parity:|divergences:')"
 echo "mdast-parity      : $(node scripts/check-mdast-parity.mjs 2>&1 | grep -E 'mdast parity:|backlog:')"
 echo "scope-sanity      : $(node scripts/audit-scope-sanity.mjs 2>&1 | tail -1)"
 echo "inline-sourcepos  : $(node scripts/audit-inline-sourcepos.mjs 2>&1 | tail -1)"

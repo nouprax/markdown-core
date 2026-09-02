@@ -22,6 +22,8 @@ note() {
 # purpose-built oracle input. Product-owned golden dumps there would recreate
 # the dead mirror this audit removed.
 for oracle_file in \
+    specs/oracles/cmark/deltas.json \
+    specs/oracles/cmark/IMPORTS.md \
     specs/oracles/cmark-gfm/deltas.json \
     specs/oracles/remark/deltas.json \
     specs/oracles/remark/corpus.md; do
@@ -50,19 +52,17 @@ else
     note "C, SwiftPM plugin, Gradle task, and ES package lifecycle consume the shared spec"
 fi
 
-# 3. No runtime network dependency in build/test/local-benchmark plumbing. The only
-# allowed network use is the explicit `update-spec` maintenance target.
+# 3. No runtime network dependency in build/test/local-benchmark plumbing.
 if grep -n 'git clone' Makefile package.json CMakePresets.json \
     packages/markdown-core/tests/CMakeLists.txt 2>/dev/null; then
     fail "runtime git clone found in build/test plumbing"
 else
     note "no runtime clone in build/test plumbing"
 fi
-if grep -n -E 'curl|wget' Makefile | grep -v 'update-spec' | grep -v "^[0-9]*:update-spec" \
-    | grep -v 'raw.githubusercontent.com/jgm/CommonMark' >/dev/null; then
-    fail "network fetch outside the update-spec maintenance target"
+if grep -n -E 'curl|wget' Makefile >/dev/null; then
+    fail "network fetch in build/test plumbing"
 else
-    note "network fetch limited to explicit maintenance"
+    note "build/test plumbing has no network fetch"
 fi
 
 # 4. Vendored corpora must be manifested, licensed, and hash-verified.

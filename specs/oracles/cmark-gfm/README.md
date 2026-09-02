@@ -1,12 +1,15 @@
 # cmark-gfm oracle
 
-`deltas.json` registers every way Markdown Core's Markdown semantics
-deliberately differ from upstream cmark-gfm, and pins the upstream commit those
-differences are stated against.
+`deltas.json` pins cmark-gfm `0.29.0.gfm.13` and registers every reviewed
+difference in the GFM extension layer.
 
-`scripts/check-upstream-parity.mjs` enforces it: both parsers parse the same
-corpus, their ASTs are normalized into one comparable form, and anything that
-still differs fails the gate.
+`scripts/check-upstream-parity.mjs --oracle gfm` enforces it. It selects only
+GFM extension sections and extension-tagged regressions, runs Markdown Core
+with directive and formula disabled, and fails on any unregistered drift.
+
+This oracle is intentionally not an authority for CommonMark. cmark-gfm has
+not published a release since 2023; the separate cmark oracle follows the
+newest stable CommonMark reference release instead.
 
 ## Why this exists
 
@@ -16,9 +19,9 @@ specifications' examples, but their expected blocks are canonical AST dumps
 this parser produced. They pin behaviour without independently proving it, and
 a divergence introduced before those dumps were frozen would be preserved.
 
-This gate supplies the external authority for the shared CommonMark/GFM
-language. The sibling remark/micromark oracle supplies it for extension
-semantics that cmark-gfm does not implement.
+This gate supplies the primary implementation authority for tables,
+strikethrough, autolinks, task-list items, and cmark-gfm footnotes. The sibling
+remark/micromark oracle supplies corrective and supplementary evidence.
 
 ## Adding a difference
 
@@ -61,7 +64,7 @@ reproducing, so a fix upstream cannot pass unnoticed).
 ## Running it
 
 ```sh
-scripts/init-environment.sh --install upstream-cmark   # build the pinned oracle
+scripts/init-environment.sh --install oracle-cmark-gfm # build the pinned oracle
 pnpm build:c
-pnpm check:upstream-parity                             # add --verbose for every diff
+pnpm check:gfm-parity                                  # add -- --verbose for every diff
 ```

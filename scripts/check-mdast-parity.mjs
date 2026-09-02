@@ -2,11 +2,10 @@
 /**
  * mdast-parity gate.
  *
- * The second of two external oracles. cmark-gfm is the authority for the base
- * language and cannot judge the constructs it does not implement, so for
- * directives, math, footnote placement, and the reference-link model the
- * authority is the unified/remark ecosystem — the one this repository's
- * extensions were written against.
+ * The corrective and supplementary external oracle. cmark owns CommonMark and
+ * cmark-gfm owns its GFM extension layer; remark/micromark supplies independent
+ * evidence for directives, math, footnote representation, tables, and the
+ * reference-link model.
  *
  * Both parsers parse the same corpus, their trees are normalized into one
  * comparable form, and anything that still differs is either registered in

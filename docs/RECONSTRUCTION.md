@@ -18,9 +18,11 @@ to this repository.
 ## 1. Lineage and reconstruction boundary
 
 The C engine retains cmark's block parser, inline parser, UTF-8 handling,
-reference resolution, node ownership, and extension machinery. The public
-product name and symbols are `markdown-core` / `markdown_core_*`; upstream
-`cmark_*` product symbols are not a second supported API.
+reference resolution, node ownership, and extension machinery. Its CommonMark
+layer follows the newest stable cmark release rather than freezing at the
+cmark-gfm fork's 0.29 base. The public product name and symbols are
+`markdown-core` / `markdown_core_*`; upstream `cmark_*` product symbols are not
+a second supported API.
 
 The reconstruction makes four deliberate product changes:
 
@@ -74,11 +76,25 @@ Extensions participate only in parser construction. They may register block
 or inline syntax, node types, and parser-local state, but they do not create a
 second parse path or a caller-visible lifecycle.
 
-The repository-owned language includes the canonical cmark/GFM behavior plus
+The repository-owned language includes current cmark CommonMark behavior plus
 the enabled extension set represented by the current implementation and
-fixtures, including tables, strikethrough, task lists, autolinks, footnotes,
-and directives. The extension attach order is part of the grammar and is
-audited because it affects delimiter and block precedence.
+fixtures: tables, strikethrough, task lists, autolinks, footnotes, directives,
+and formula. The extension attach order is part of the grammar and is audited
+because it affects delimiter and block precedence.
+
+Upstream authority is layered. The newest stable cmark is the sole primary
+CommonMark oracle. Dormant cmark-gfm is consulted only for its GFM extension
+layer. remark/mdast is a corrective and supplementary oracle: its agreement
+can support a reviewed exception or fill a construct the C-family oracles do
+not implement, but it never wins an implicit majority vote. Every difference
+is either fixed or registered fail-closed in `specs/oracles/`.
+
+The parser-affecting cmark range from 0.29.0 through the pinned stable release
+is reviewed as one synchronization boundary. Syntax, Unicode/entity/scanner
+data, security fixes, and general complexity fixes are imported into the one
+shared parser algorithm. Renderer, streaming API, mutable tree API, CLI-format,
+and build/install changes are excluded because those surfaces do not exist in
+this product. `specs/oracles/cmark/IMPORTS.md` records the current audit.
 
 Each extension must obey the same ownership and failure contract as the core:
 an allocation failure terminates the entire parse. An extension may not omit a
@@ -201,6 +217,9 @@ bash scripts/audit-public-surface.sh
 bash scripts/audit-package-contents.sh
 bash scripts/audit-test-topology.sh
 node scripts/audit-source-lists.mjs
+pnpm check:commonmark-parity
+pnpm check:gfm-parity
+pnpm check:mdast-parity
 ```
 
 Required CI contains only reproducible quality evidence: correctness,
