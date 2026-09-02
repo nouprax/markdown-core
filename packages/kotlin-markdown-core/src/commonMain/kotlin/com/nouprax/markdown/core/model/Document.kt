@@ -11,6 +11,6 @@ public class Document internal constructor(
         public fun parse(
             source: String,
             options: ParseOptions = ParseOptions(),
-        ): Document = WireDecoder.decodeDocument(nativeParse(source.encodeToByteArray(), options))
+        ): Document = parsePlatformDocument(source.encodeToByteArray(), options)
     }
 }

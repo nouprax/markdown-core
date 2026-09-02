@@ -37,17 +37,14 @@ for (const coordinate of requiredCoordinates) {
     );
     const javadoc = files.find((file) => file.endsWith("-javadoc.jar"));
     assert.ok(javadoc, `${coordinate} is missing javadoc`);
-    // NO CONTENT ASSERTION, and it is era skew rather than an omission. `main`
-    // applies the Dokka plugin and builds the javadoc jar from
-    // `dokkaGeneratePublicationHtml`; this branch's Kotlin build is the 1.0
-    // baseline's, whose `javadocJar` packs canonical-ast.md and README.md, so
-    // the jar carries no `index.html` to find. The list this check required
-    // also named `-markup-i-d` and `-markup-walker`, and NEITHER `MarkupID` nor
-    // `MarkupWalker` exists in this branch's Kotlin source -- so adopting Dokka
-    // alone would still fail two of the five entries. Publishing a real
-    // generated API reference is a DECISION for the release step: it needs the
-    // plugin AND a required-entry list re-derived from the surface this branch
-    // actually has.
+    const javadocEntries = execFileSync("unzip", ["-Z1", path.join(directory, javadoc)], { encoding: "utf8" })
+        .trim()
+        .split("\n");
+    assert.ok(javadocEntries.includes(`${version}.md`), `${coordinate} javadoc is missing the current release notes`);
+    assert.ok(
+        javadocEntries.every((entry) => !/(?:deprecated|migration|phase-\d+)/iu.test(entry)),
+        `${coordinate} javadoc publishes retired migration documentation`
+    );
     auditPom(path.join(directory, `${coordinate}-${version}.pom`), coordinate);
     auditModule(path.join(directory, `${coordinate}-${version}.module`));
 }
@@ -228,7 +225,8 @@ function auditProductArchive(file, displayName) {
                 entry
             ) ||
             /(^|\/)[^/]*(?:test|tests|benchmark)[^/]*\.(?:class|java|kt|kotlin_metadata)$/iu.test(entry) ||
-            /(^|\/)(?:canonical-ast|manifest\.json)(\/|$)|\.ast$/iu.test(entry)
+            /(^|\/)(?:canonical-ast|manifest\.json)(\/|$)|\.ast$/iu.test(entry) ||
+            /(^|\/)native-bridge(\/|$)/iu.test(entry)
     );
     assert.deepEqual(forbidden, [], `${displayName} contains test-only entries: ${forbidden.join(", ")}`);
 

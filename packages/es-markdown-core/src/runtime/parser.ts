@@ -1,7 +1,7 @@
 import type { Document } from "../model/document.js";
 import { ParseError } from "../parse-error.js";
 import type { ParseOptions } from "../parse-options.js";
-import { NodeDecoder } from "../wire/node-decoder.js";
+import { NodeDecoder, transferHeaderSize } from "../wire/node-decoder.js";
 import { native, type NativeExports } from "./native.js";
 
 interface OptionDescriptor {
@@ -37,33 +37,27 @@ export function parseDocumentWithNative(
     validateInput(source, parseOptions);
     const bytes = utf8Encoder.encode(source);
     let sourcePointer = 0;
-    let errorOutput = 0;
-    let documentPointer = 0;
-    let errorPointer = 0;
+    let resultPointer = 0;
     try {
         sourcePointer = allocate(nativeExports, Math.max(bytes.length, 1));
-        errorOutput = allocate(nativeExports, Uint32Array.BYTES_PER_ELEMENT);
         new Uint8Array(nativeExports.memory.buffer, sourcePointer, bytes.length).set(bytes);
-        dataView(nativeExports).setUint32(errorOutput, 0, true);
-        documentPointer = nativeExports.es_document_parse(
-            sourcePointer,
-            bytes.length,
-            optionsMask(parseOptions),
-            errorOutput
-        );
-        errorPointer = dataView(nativeExports).getUint32(errorOutput, true);
+        resultPointer = nativeExports.es_parse(sourcePointer, bytes.length, optionsMask(parseOptions));
+        if (!resultPointer) throw new ParseError("allocationFailed", "failed to allocate native AST result");
 
-        const decoder = new NodeDecoder(nativeExports);
-        try {
-            if (!documentPointer) throw decoder.parseError(errorPointer);
-            return decoder.decodeDocument(nativeExports.es_document_root(documentPointer));
-        } finally {
-            decoder.dispose();
+        // es_parse may grow memory, which detaches every pre-call view. Take a
+        // fresh header view, validate its size against the current heap, then
+        // decode in place without another Wasm call. No view escapes this try.
+        const memorySize = nativeExports.memory.buffer.byteLength;
+        if (resultPointer > memorySize - transferHeaderSize) {
+            throw new Error("native result header lies outside WebAssembly memory");
         }
+        const totalSize = new DataView(nativeExports.memory.buffer).getUint32(resultPointer + 4, true);
+        if (totalSize < transferHeaderSize || totalSize > memorySize - resultPointer) {
+            throw new Error("native result lies outside WebAssembly memory");
+        }
+        return new NodeDecoder(new Uint8Array(nativeExports.memory.buffer, resultPointer, totalSize)).decodeDocument();
     } finally {
-        if (documentPointer) nativeExports.es_document_free(documentPointer);
-        if (errorPointer) nativeExports.es_error_free(errorPointer);
-        if (errorOutput) nativeExports.free(errorOutput);
+        if (resultPointer) nativeExports.es_result_free(resultPointer);
         if (sourcePointer) nativeExports.free(sourcePointer);
     }
 }
@@ -89,8 +83,4 @@ function allocate(nativeExports: NativeExports, size: number): number {
     const pointer = nativeExports.malloc(size);
     if (!pointer) throw new ParseError("allocationFailed", "failed to allocate WASM memory");
     return pointer;
-}
-
-function dataView(nativeExports: NativeExports): DataView {
-    return new DataView(nativeExports.memory.buffer);
 }

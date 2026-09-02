@@ -636,28 +636,30 @@ static markdown_core_node *new_formula_block_from_literal(const markdown_core_ex
     return formula;
 }
 
-static int replace_with_formula_block(const markdown_core_extension *extension, markdown_core_parser *parser,
-                                      markdown_core_node *oldnode, const unsigned char *literal,
-                                      bufsize_t literal_len) {
+static markdown_core_node *replace_with_formula_block(const markdown_core_extension *extension,
+                                                      markdown_core_parser *parser, markdown_core_node *oldnode,
+                                                      const unsigned char *literal, bufsize_t literal_len) {
     markdown_core_node *formula = new_formula_block_from_literal(extension, parser->mem, oldnode, literal, literal_len);
     if (!formula) {
-        return 0;
+        return NULL;
     }
 
     if (markdown_core_node_replace(oldnode, formula)) {
         /* The bytes did not change hands, the node did. Said before the free,
          * because after it there is nothing left to name. */
         markdown_core_node_free(oldnode);
-        return 1;
+        return formula;
     }
     markdown_core_node_free(formula);
-    return 0;
+    return NULL;
 }
 
-static void postprocess_node(const markdown_core_extension *extension, markdown_core_parser *parser,
-                             markdown_core_node *node) {
-    markdown_core_node *child;
-    markdown_core_node *next;
+/* Process one node and return the node that now occupies its position. The
+ * caller owns traversal: keeping it iterative makes enabled formula syntax
+ * safe for an arbitrarily deep tree even when the tree contains no formula. */
+static markdown_core_node *postprocess_node(const markdown_core_extension *extension, markdown_core_parser *parser,
+                                            markdown_core_node *node, bool *descend) {
+    *descend = false;
 
     if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(node);
@@ -670,39 +672,58 @@ static void postprocess_node(const markdown_core_extension *extension, markdown_
             }
             markdown_core_strbuf_clear(&node->content);
         }
-        return;
+        return node;
     }
 
     if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code.info)) {
-        if (!replace_with_formula_block(extension, parser, node, node->as.code.literal.data,
-                                        node->as.code.literal.len)) {
+        markdown_core_node *formula =
+            replace_with_formula_block(extension, parser, node, node->as.code.literal.data, node->as.code.literal.len);
+        if (!formula) {
             parser->oom = true;
         }
-        return;
+        return formula;
     }
 
     if (node->type == MARKDOWN_CORE_NODE_PARAGRAPH && node->first_child && node->first_child == node->last_child &&
         node->first_child->type == MARKDOWN_CORE_NODE_FORMULA && is_standalone_formula_node(node->first_child)) {
         node_formula *formula = get_formula(node->first_child);
         if (formula) {
-            if (!replace_with_formula_block(extension, parser, node, formula->literal.data, formula->literal.len)) {
+            markdown_core_node *block =
+                replace_with_formula_block(extension, parser, node, formula->literal.data, formula->literal.len);
+            if (!block) {
                 parser->oom = true;
             }
-            return;
+            return block;
         }
     }
 
-    child = node->first_child;
-    while (child) {
-        next = child->next;
-        postprocess_node(extension, parser, child);
-        child = next;
-    }
+    *descend = true;
+    return node;
 }
 
 static markdown_core_node *postprocess(const markdown_core_extension *extension, markdown_core_parser *parser,
                                        markdown_core_node *root) {
-    postprocess_node(extension, parser, root);
+    markdown_core_node *node = root;
+
+    while (node && !parser->oom) {
+        bool descend;
+        bool is_root = node == root;
+        markdown_core_node *current = postprocess_node(extension, parser, node, &descend);
+        if (!current || parser->oom) {
+            break;
+        }
+        if (is_root) {
+            root = current;
+        }
+        if (descend && current->first_child) {
+            node = current->first_child;
+            continue;
+        }
+        while (current != root && !current->next) {
+            current = current->parent;
+        }
+        node = current == root ? NULL : current->next;
+    }
     return root;
 }
 

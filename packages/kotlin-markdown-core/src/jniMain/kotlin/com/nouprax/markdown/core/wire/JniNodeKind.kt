@@ -1,6 +1,6 @@
 package com.nouprax.markdown.core
 
-internal enum class WireKind(
+internal enum class JniNodeKind(
     val rawValue: Int,
 ) {
     DOCUMENT(1),
@@ -38,8 +38,8 @@ internal enum class WireKind(
     ;
 
     companion object {
-        private val byRawValue = entries.associateBy(WireKind::rawValue)
+        private val byRawValue = entries.associateBy(JniNodeKind::rawValue)
 
-        fun from(rawValue: Int): WireKind = byRawValue[rawValue] ?: error("unsupported native node kind $rawValue")
+        fun from(rawValue: Int): JniNodeKind = byRawValue[rawValue] ?: error("unsupported native node kind $rawValue")
     }
 }

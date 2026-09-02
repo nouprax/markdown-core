@@ -7,19 +7,6 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-private fun wirePayload(vararg parts: Any): ByteArray {
-    val out = mutableListOf<Byte>()
-    for (part in parts) {
-        when (part) {
-            is String -> out += part.encodeToByteArray().toList()
-            is Byte -> out += part
-            is Int -> repeat(4) { shift -> out += ((part shr (shift * 8)) and 0xff).toByte() }
-            else -> error("unsupported payload part")
-        }
-    }
-    return out.toByteArray()
-}
-
 class ApiTest {
     @Test
     fun defaultsAndOptionGates() {
@@ -71,71 +58,6 @@ class ErrorsTest {
                 .content
                 .isEmpty(),
         )
-    }
-
-    @Test
-    fun corruptedNativePayloadFailsInsteadOfProducingAPartialTree() {
-        assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeDocument(byteArrayOf(0x4d, 0x4b, 0x43))
-        }
-    }
-
-    @Test
-    fun malformedWireValuesAreRejectedBeforeTheyEnterTheAst() {
-        // The two sides of the wire are versioned separately -- MKC6 is the
-        // current layout -- and a decoder that mapped an unknown value
-        // instead of refusing it turns a protocol mismatch into a wrong
-        // document. Nothing proved any of these fired.
-        assertFailsWith<IllegalStateException> { WireKind.from(0) }
-        assertFailsWith<IllegalStateException> { WireKind.from(33) }
-        assertEquals(WireKind.IMAGE_REFERENCE, WireKind.from(32))
-
-        // A header the decoder accepts, followed by nothing it can read.
-        assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeDocument("MKC6".encodeToByteArray())
-        }
-    }
-
-    @Test
-    fun malformedAndFailedWirePayloadsAreRejected() {
-        // A native error crosses as a code and a message, which is the only
-        // path that builds a ParseException.
-        val failure =
-            assertFailsWith<ParseException> {
-                WireDecoder.decodeDocument(wirePayload("MKC6", 1.toByte(), 1, 3, "bad"))
-            }
-        assertEquals(ParseErrorCode.INVALID_ARGUMENT, failure.code)
-        assertEquals("bad", failure.message)
-        assertEquals(
-            ParseErrorCode.INTERNAL,
-            assertFailsWith<ParseException> {
-                WireDecoder.decodeDocument(wirePayload("MKC6", 1.toByte(), 99, 1, "x"))
-            }.code,
-        )
-        val allocationFailure =
-            assertFailsWith<ParseException> {
-                WireDecoder.decodeDocument(wirePayload("MKC6", 1.toByte(), 2, 13, "out of memory"))
-            }
-        assertEquals(ParseErrorCode.ALLOCATION_FAILED, allocationFailure.code)
-        assertEquals("out of memory", allocationFailure.message)
-
-        // A status that is neither, a magic from the wrong wire version, a
-        // root that is not a document, and a payload that stops mid-value.
-        assertFailsWith<IllegalStateException> {
-            WireDecoder.decodeDocument(wirePayload("MKC6", 2.toByte()))
-        }
-        assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeDocument(wirePayload("MKC5", 0.toByte()))
-        }
-        assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeDocument(wirePayload("MKC6", 0.toByte(), 3.toByte()))
-        }
-        assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeDocument(wirePayload("MKC6", 0.toByte(), 1.toByte(), 1, 1))
-        }
-        assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeDocument(wirePayload("MKC6", 1.toByte(), 1, -2))
-        }
     }
 }
 
@@ -316,16 +238,20 @@ class RobustnessTest {
     }
 
     @Test
-    fun deepBlockQuoteNestingRemainsTraversable() {
-        val depth = 128
+    fun uncappedListNestingRemainsTraversable() {
+        val depth = 10_000
         var node: Markup =
             Document
-                .parse("> ".repeat(depth) + "leaf\n")
+                .parse("- ".repeat(depth) + "leaf\n")
                 .content
                 .single()
         repeat(depth) {
-            val quote = assertIs<BlockQuote>(node)
-            node = quote.content.first()
+            val list = assertIs<List>(node)
+            node =
+                list.items
+                    .single()
+                    .content
+                    .single()
         }
         assertIs<Paragraph>(node)
     }

@@ -17,9 +17,9 @@ public struct Heading: Markup {
 }
 
 extension Heading {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, content: [any Markup]) {
         var level: Int32 = 0
         markdown_core_node_heading_level(node, &level)
-        self.init(scope: Self.scope(from: node), content: Self.children(from: node), level: level)
+        self.init(scope: Self.scope(from: node), content: content, level: level)
     }
 }

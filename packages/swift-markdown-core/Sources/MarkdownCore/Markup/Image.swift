@@ -19,13 +19,13 @@ public struct Image: Markup {
 }
 
 extension Image {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, content: [any Markup]) {
         var source = markdown_core_string()
         var title = markdown_core_optional_string()
         markdown_core_node_image_properties(node, &source, &title)
         self.init(
             scope: Self.scope(from: node),
-            content: Self.children(from: node),
+            content: content,
             source: source.requiredString,
             title: title.string
         )

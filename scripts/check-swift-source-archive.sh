@@ -67,10 +67,8 @@ printf '%s\n' \
     '        )' \
     '    ]' \
     ')' >"$consumer/Package.swift"
-# `Document.parse` is the entry point Step 12 settled. This snippet was
-# restored from `main`, where `Document` had a throwing string initializer, and
-# it named a symbol this branch does not have -- so the gate failed on the
-# CONSUMER after the archive itself had already built clean.
+# Compile the documented one-shot parse entry point from the unpacked archive,
+# so source packaging and the external consumer surface are checked together.
 printf '%s\n' \
     'import MarkdownCore' \
     '' \

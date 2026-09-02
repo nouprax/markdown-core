@@ -90,6 +90,10 @@ do not need a separate C or Prefab package. On JDK 26 or later, JVM applications
 should launch with `--enable-native-access=ALL-UNNAMED` to avoid a restricted
 native-access warning from the package-private JNI loader.
 
+Kotlin/Native directly cinterops the read-only C facade. JVM and Android use a
+separate one-call JNI payload. Neither adapter is shared with the ES/Wasm
+linear-memory ABI; the targets share the AST contract, not a binding bridge.
+
 ### ECMAScript and TypeScript
 
 Install the ESM package with your package manager:

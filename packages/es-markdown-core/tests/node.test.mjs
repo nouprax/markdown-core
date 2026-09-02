@@ -26,7 +26,7 @@ test("api: options gate extensions", () => {
     assert.equal(Document.parse(markdown, { tables: false }).content[0].kind, "paragraph");
 });
 
-test("ast: typed fields are copied from direct WASM accessors", () => {
+test("ast: typed fields are copied from the native result", () => {
     const document = Document.parse("3. item\n\n| a |\n| :-: |\n| b |\n");
     assert.equal(document.content[0].flavor, "ordered");
     assert.equal(document.content[0].start, 3);
@@ -61,10 +61,11 @@ test("errors: allocation failure is terminal across the WASM boundary", () => {
         memory: new globalThis.WebAssembly.Memory({ initial: 1 }),
         malloc: () => 0,
         free: () => {},
-        es_document_parse: () => {
+        es_parse: () => {
             parseCalled = true;
             return 0;
-        }
+        },
+        es_result_free: () => {}
     };
     assert.throws(
         () => parseDocumentWithNative(allocationFailure, "text"),
@@ -73,42 +74,24 @@ test("errors: allocation failure is terminal across the WASM boundary", () => {
     assert.equal(parseCalled, false, "the runtime must not parse or fall back after allocation refusal");
 
     const memory = new globalThis.WebAssembly.Memory({ initial: 1 });
-    new Uint8Array(memory.buffer, 80, 13).set(new globalThis.TextEncoder().encode("out of memory"));
-    const allocations = [8, 32, 40];
+    const result = errorResult(2, "out of memory");
+    new Uint8Array(memory.buffer, 64, result.length).set(result);
     const frees = [];
-    const freedErrors = [];
-    let documentFreed = false;
+    const freedResults = [];
     const nativeFailure = {
         memory,
-        malloc: () => allocations.shift() ?? 0,
+        malloc: () => 8,
         free: (pointer) => frees.push(pointer),
-        es_document_parse: (_source, _length, _flags, errorOutput) => {
-            new DataView(memory.buffer).setUint32(errorOutput, 64, true);
-            return 0;
-        },
-        es_document_free: () => {
-            documentFreed = true;
-        },
-        es_document_root: () => {
-            throw new Error("a failed parse has no root");
-        },
-        es_error_code: () => 2,
-        es_error_free: (pointer) => freedErrors.push(pointer),
-        es_string: (_object, _field, dataOutput, lengthOutput) => {
-            const view = new DataView(memory.buffer);
-            view.setUint32(dataOutput, 80, true);
-            view.setUint32(lengthOutput, 13, true);
-            return 1;
-        }
+        es_parse: () => 64,
+        es_result_free: (pointer) => freedResults.push(pointer)
     };
     assert.throws(
         () => parseDocumentWithNative(nativeFailure, "text"),
         (error) =>
             error?.name === "ParseError" && error.code === "allocationFailed" && error.message === "out of memory"
     );
-    assert.equal(documentFreed, false);
-    assert.deepEqual(freedErrors, [64]);
-    assert.deepEqual(frees, [40, 32, 8]);
+    assert.deepEqual(freedResults, [64]);
+    assert.deepEqual(frees, [8]);
 });
 
 test("ownership: declarations are readonly without runtime freeze", () => {
@@ -117,17 +100,42 @@ test("ownership: declarations are readonly without runtime freeze", () => {
     assert.equal(Object.isFrozen(document.content), false);
 });
 
-test("robustness: large documents copy completely before native release", () => {
+test("robustness: a large document crosses the WASM boundary in one AST result", () => {
     const unit = "## Section\n\nParagraph with **strong**, [link](https://example.com), and 🚀.\n\n";
-    assert.equal(Document.parse(unit.repeat(5_000)).content.length, 10_000);
+    let parseCalls = 0;
+    let resultFrees = 0;
+    const countedNative = {
+        memory: native.memory,
+        malloc: native.malloc,
+        free: native.free,
+        es_parse: (...arguments_) => {
+            parseCalls += 1;
+            return native.es_parse(...arguments_);
+        },
+        es_result_free: (result) => {
+            resultFrees += 1;
+            native.es_result_free(result);
+        }
+    };
+    assert.equal(parseDocumentWithNative(countedNative, unit.repeat(5_000)).content.length, 10_000);
+    assert.equal(parseCalls, 1, "AST transfer must be independent of node and field count");
+    assert.equal(resultFrees, 1, "the one native result must be released exactly once");
+    assert.deepEqual(
+        Object.keys(native).filter((name) => name.startsWith("es_node_")),
+        [],
+        "per-node WASM accessors must not return through the export surface"
+    );
 });
 
-test("robustness: deep block quote nesting remains traversable", () => {
-    const depth = 128;
-    let node = Document.parse("> ".repeat(depth) + "leaf\n").content[0];
+test("robustness: uncapped list nesting remains traversable", () => {
+    // The transfer is an indexed table and the decoder constructs it in
+    // reverse order, so depth is data rather than native or JS call-stack use.
+    const depth = 10_000;
+    let node = Document.parse("- ".repeat(depth) + "leaf\n").content[0];
     for (let index = 0; index < depth; index += 1) {
-        assert.equal(node.kind, "blockQuote");
-        node = node.content[0];
+        assert.equal(node.kind, "list");
+        assert.equal(node.items.length, 1);
+        node = node.items[0].content[0];
     }
     assert.equal(node.kind, "paragraph");
 });
@@ -205,75 +213,94 @@ test("errors: malformed native values are rejected before they enter the AST", (
     // a decoder that silently mapped an unknown value would turn a protocol
     // mismatch into a wrong document. Nothing proved any of them fires, so a
     // renumbering could have removed the check and stayed green.
-    const decoder = new NodeDecoder(native);
-    try {
-        assert.throws(() => decoder.referenceForm(9), /invalid reference form 9/u);
-        assert.throws(() => decoder.placement(9), /invalid placement mode 9/u);
-        assert.throws(() => decoder.listFlavor(9), /invalid list flavor 9/u);
-        assert.throws(() => decoder.tableAlignment(9), /invalid table alignment 9/u);
-        assert.throws(() => decoder.boolean(9, "checked"), /invalid checked 9/u);
-        assert.throws(() => decoder.count(-1, "column count"), /invalid column count -1/u);
-
-        // The valid answers still map, so the guards reject rather than
-        // everything throwing for some unrelated reason.
-        assert.equal(decoder.referenceForm(3), "shortcut");
-        assert.equal(decoder.placement(2), "standalone");
-        assert.equal(decoder.listFlavor(2), "ordered");
-        assert.equal(decoder.tableAlignment(0), "none");
-        assert.equal(decoder.nullableBoolean(-1, "checked"), null);
-    } finally {
-        decoder.dispose();
-    }
-
-    // A disposed decoder holds a freed scratch pointer, and reading through it
-    // would be a use-after-free in WASM memory rather than an error.
-    assert.throws(() => decoder.requireLive(), /decoder has been disposed/u);
+    const decoder = new NodeDecoder(new Uint8Array(64));
+    assert.throws(() => decoder.referenceForm(9), /invalid reference form 9/u);
+    assert.throws(() => decoder.placement(9), /invalid placement mode 9/u);
+    assert.throws(() => decoder.listFlavor(9), /invalid list flavor 9/u);
+    assert.throws(() => decoder.tableAlignment(9), /invalid table alignment 9/u);
+    assert.throws(() => decoder.nullableBoolean(9, "checked"), /invalid checked 9/u);
+    assert.equal(decoder.referenceForm(3), "shortcut");
+    assert.equal(decoder.placement(2), "standalone");
+    assert.equal(decoder.listFlavor(2), "ordered");
+    assert.equal(decoder.tableAlignment(0), "none");
+    assert.equal(decoder.nullableBoolean(-1, "checked"), null);
 
     // Native parse failures keep their terminal category across the WASM
     // boundary. In particular, allocation failure must not be collapsed into
     // an internal error that a consumer could mistake for a recoverable path.
-    let rawErrorCode = 1;
-    const errorDecoder = new NodeDecoder({
-        memory: native.memory,
-        malloc: () => 8,
-        free: () => {},
-        es_error_code: () => rawErrorCode,
-        es_string: (_object, _field, dataOutput, lengthOutput) => {
-            const memory = new DataView(native.memory.buffer);
-            memory.setUint32(dataOutput, 0, true);
-            memory.setUint32(lengthOutput, 0, true);
-            return 0;
-        }
-    });
-    try {
-        assert.equal(errorDecoder.parseError(1).code, "invalidArgument");
-        rawErrorCode = 2;
-        assert.equal(errorDecoder.parseError(1).code, "allocationFailed");
-        rawErrorCode = 99;
-        assert.equal(errorDecoder.parseError(1).code, "internal");
-        assert.equal(errorDecoder.parseError(0).code, "internal");
-    } finally {
-        errorDecoder.dispose();
-    }
+    assert.throws(
+        () => new NodeDecoder(errorResult(1, "bad")).decodeDocument(),
+        (error) => error.code === "invalidArgument"
+    );
+    assert.throws(
+        () => new NodeDecoder(errorResult(2, "out of memory")).decodeDocument(),
+        (error) => error.code === "allocationFailed"
+    );
+    assert.throws(
+        () => new NodeDecoder(errorResult(99, "bad")).decodeDocument(),
+        (error) => error.code === "internal"
+    );
 
     // A directive label is a typed field with its own node kind. Accepting a
     // generic child here would erase the structural distinction this wire
     // contract exists to preserve.
-    const malformedDirectiveDecoder = new NodeDecoder({
-        memory: native.memory,
-        malloc: () => 8,
-        free: () => {},
-        es_node_directive_label: () => 2,
-        es_node_kind: () => 3,
-        es_node_first_child: () => 0,
-        es_scope_coordinate: () => 1
-    });
-    try {
-        assert.throws(
-            () => malformedDirectiveDecoder.directiveFields(1),
-            /directive label field contains a non-label node/u
-        );
-    } finally {
-        malformedDirectiveDecoder.dispose();
-    }
+    const malformedDirective = nativeResult(":note[label]\n");
+    const directiveOffset = findNode(malformedDirective, 25);
+    const labelIndex = new DataView(malformedDirective.buffer).getUint32(directiveOffset + 32, true);
+    const nodesOffset = new DataView(malformedDirective.buffer).getUint32(40, true);
+    new DataView(malformedDirective.buffer).setUint32(nodesOffset + labelIndex * 96, 3, true);
+    assert.throws(
+        () => new NodeDecoder(malformedDirective).decodeDocument(),
+        /directive label field contains a non-label node/u
+    );
+
+    const unknownKind = nativeResult("text\n");
+    new DataView(unknownKind.buffer).setUint32(findNode(unknownKind, 14), 99, true);
+    assert.throws(() => new NodeDecoder(unknownKind).decodeDocument(), /unknown node kind 99/u);
+
+    const badMagic = nativeResult("text\n");
+    badMagic[0] = 0;
+    assert.throws(() => new NodeDecoder(badMagic).decodeDocument(), /invalid native result/u);
 });
+
+function errorResult(code, message) {
+    const encoded = new globalThis.TextEncoder().encode(message);
+    const result = new Uint8Array(64 + encoded.length);
+    const view = new DataView(result.buffer);
+    result.set([0x4d, 0x43, 0x42, 0x31]);
+    view.setUint32(4, result.length, true);
+    view.setUint32(8, 1, true);
+    view.setInt32(12, code, true);
+    view.setUint32(16, 64, true);
+    view.setUint32(20, encoded.length, true);
+    result.set(encoded, 64);
+    return result;
+}
+
+function nativeResult(source) {
+    const encoded = new globalThis.TextEncoder().encode(source);
+    const sourcePointer = native.malloc(Math.max(encoded.length, 1));
+    assert.notEqual(sourcePointer, 0);
+    let resultPointer = 0;
+    try {
+        new Uint8Array(native.memory.buffer, sourcePointer, encoded.length).set(encoded);
+        resultPointer = native.es_parse(sourcePointer, encoded.length, 0x1ff);
+        assert.notEqual(resultPointer, 0);
+        const length = new DataView(native.memory.buffer).getUint32(resultPointer + 4, true);
+        return Uint8Array.from(new Uint8Array(native.memory.buffer, resultPointer, length));
+    } finally {
+        if (resultPointer) native.es_result_free(resultPointer);
+        native.free(sourcePointer);
+    }
+}
+
+function findNode(result, kind) {
+    const view = new DataView(result.buffer, result.byteOffset, result.byteLength);
+    const count = view.getUint32(24, true);
+    const nodesOffset = view.getUint32(40, true);
+    for (let index = 0; index < count; index += 1) {
+        const offset = nodesOffset + index * 96;
+        if (view.getUint32(offset, true) === kind) return offset;
+    }
+    throw new Error(`result does not contain kind ${kind}`);
+}

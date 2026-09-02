@@ -36,34 +36,7 @@ const extensions = [
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 const output = path.join(dist, "markdown-core.wasm");
-const exported = [
-    "malloc",
-    "free",
-    "es_document_parse",
-    "es_document_free",
-    "es_document_root",
-    "es_error_code",
-    "es_error_free",
-    "es_node_kind",
-    "es_node_first_child",
-    "es_node_next_sibling",
-    "es_node_directive_label",
-    "es_scope_coordinate",
-    "es_node_heading_level",
-    "es_node_list_flavor",
-    "es_node_list_tight",
-    "es_node_list_start_state",
-    "es_node_checked",
-    "es_node_code_flag",
-    "es_node_formula_mode",
-    "es_node_reference_form",
-    "es_node_table_column_count",
-    "es_node_table_alignment",
-    "es_node_table_row_header",
-    "es_node_directive_attribute_count",
-    "es_set_attribute_index",
-    "es_string"
-].map((name) => `_${name}`);
+const exported = ["malloc", "free", "es_parse", "es_result_free"].map((name) => `_${name}`);
 const result = spawnSync(
     "emcc",
     [

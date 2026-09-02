@@ -4,6 +4,7 @@ set -eu
 temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
 export npm_config_cache="${npm_config_cache:-$temp_dir/npm-cache}"
+release_version=$(tr -d '\r\n' <VERSION)
 
 legacy_ms_pattern='MS_''COPILOT|MS_''FORMULA|ms_''copilot|ms-''copilot|ms-''formula'
 if grep -R -I -n -E "$legacy_ms_pattern" \
@@ -371,10 +372,30 @@ while IFS= read -r archive; do
     fi
 done <"$temp_dir/c-static-archives.txt"
 
-scripts/gradle.sh :packages:kotlin-markdown-core:verifyKotlinNativePackaging >/dev/null
-kotlin_jvm_jar=$(find packages/kotlin-markdown-core/build/libs -maxdepth 1 -type f \
-    -name '*-jvm-*.jar' ! -name '*-sources.jar' | head -n 1)
-if [ -z "$kotlin_jvm_jar" ]; then
+scripts/gradle.sh \
+    :packages:kotlin-markdown-core:verifyKotlinJniPackaging \
+    :packages:kotlin-markdown-core:jvmSourcesJar >/dev/null
+kotlin_jni_library=$(find packages/kotlin-markdown-core/build/generated/jvmResources -type f \
+    \( -name 'libmarkdown_core_kotlin.dylib' -o -name 'libmarkdown_core_kotlin.so' \) | head -n 1)
+if [ -z "$kotlin_jni_library" ]; then
+    echo "Kotlin desktop JNI library is missing" >&2
+    exit 1
+fi
+case "$kotlin_jni_library" in
+    *.dylib)
+        "$nm_tool" -gU "$kotlin_jni_library" | awk '{ print $NF }' | sed 's/^_//' ;;
+    *)
+        "$nm_tool" -D --defined-only "$kotlin_jni_library" | awk '{ print $NF }' | sed 's/@.*//' ;;
+esac | sort -u >"$temp_dir/kotlin-jni-actual-exports.txt"
+printf 'JNI_OnLoad\n' >"$temp_dir/kotlin-jni-expected-exports.txt"
+if ! cmp "$temp_dir/kotlin-jni-expected-exports.txt" "$temp_dir/kotlin-jni-actual-exports.txt"; then
+    echo "Kotlin JNI library must export only JNI_OnLoad" >&2
+    diff -u "$temp_dir/kotlin-jni-expected-exports.txt" "$temp_dir/kotlin-jni-actual-exports.txt" >&2 || true
+    exit 1
+fi
+kotlin_jvm_jar="packages/kotlin-markdown-core/build/libs/kotlin-markdown-core-jvm-$release_version.jar"
+kotlin_jvm_sources="packages/kotlin-markdown-core/build/libs/kotlin-markdown-core-jvm-$release_version-sources.jar"
+if [ ! -f "$kotlin_jvm_jar" ]; then
     echo "Kotlin JVM publication JAR is missing" >&2
     exit 1
 fi
@@ -382,6 +403,28 @@ if unzip -Z1 "$kotlin_jvm_jar" | grep -E '(^|/)(canonical-ast|manifest\.json)|\.
     echo "Kotlin JVM publication contains shared conformance spec data" >&2
     exit 1
 fi
+if unzip -Z1 "$kotlin_jvm_jar" | grep -E '(^|/)(NativeBridge[^/]*|JvmNative|Walker|MarkupWalker)(\$[^/]*)?\.class$'; then
+    echo "Kotlin JVM publication contains a retired bridge or walker class" >&2
+    exit 1
+fi
+if [ ! -f "$kotlin_jvm_sources" ]; then
+    echo "Kotlin JVM source publication JAR is missing" >&2
+    exit 1
+fi
+if unzip -Z1 "$kotlin_jvm_sources" | grep -E '(^|/)(NativeBridge[^/]*|Walker|MarkupWalker|WireDecoder|WireKind|WireMarkupDecoder)[^/]*\.kt$|^commonMain/.*/(walker|wire)/|(^|/)native-bridge(/|$)'; then
+    echo "Kotlin JVM source publication contains a retired bridge, walker, or shared wire source" >&2
+    exit 1
+fi
+for required_source in \
+    jvmMain/com/nouprax/markdown/core/PlatformParser.jvm.kt \
+    jvmMain/com/nouprax/markdown/core/wire/JniPayloadDecoder.kt \
+    jvmMain/com/nouprax/markdown/core/wire/JniNodeKind.kt \
+    jvmMain/com/nouprax/markdown/core/wire/JniMarkupDecoder.kt; do
+    if ! unzip -Z1 "$kotlin_jvm_sources" | grep -qx "$required_source"; then
+        echo "Kotlin JVM source publication is missing $required_source" >&2
+        exit 1
+    fi
+done
 kotlin_aar="packages/kotlin-markdown-core/android-runtime/build/outputs/aar/android-runtime-release.aar"
 unzip -Z1 "$kotlin_aar" | while IFS= read -r artifact; do
     case "$artifact" in

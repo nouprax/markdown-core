@@ -147,6 +147,36 @@ if grep -R -n 'defaultVisit' packages/kotlin-markdown-core/src/commonMain; then
 fi
 test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/Visitor.kt)" -eq "$kind_count" \
     || fail "Kotlin Visitor is not exhaustive over all $kind_count Markup kinds"
+grep -q '^headers = markdown_core.h$' \
+    packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
+    && grep -q '^package = com.nouprax.markdown.core.internal.capi$' \
+        packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
+    && grep -q '^staticLibraries = libmarkdown-core-extensions.a libmarkdown-core.a$' \
+        packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
+    && grep -q 'markdown_core_document_parse' \
+        packages/kotlin-markdown-core/src/nativePlatformMain/kotlin/com/nouprax/markdown/core/PlatformParser.native.kt \
+    && ! grep -R -q 'markdown_core_kotlin_jni_' \
+        packages/kotlin-markdown-core/src/nativePlatformMain \
+        packages/kotlin-markdown-core/src/nativeInterop \
+    || fail "Kotlin/Native must cinterop the C facade directly, independently of JNI"
+if find packages/kotlin-markdown-core/src -type f -name 'NativeBridge*' | grep -q . \
+    || grep -R -q -E '\bnativeParse\b|internal\.nativebridge' packages/kotlin-markdown-core/src; then
+    fail "the retired cross-target NativeBridge abstraction still exists"
+fi
+if find packages/kotlin-markdown-core/src/commonMain packages/kotlin-markdown-core/src/nativePlatformMain \
+    -type f \( -name 'JniPayloadDecoder.kt' -o -name 'JniMarkupDecoder.kt' -o -name 'JniNodeKind.kt' \) | grep -q .; then
+    fail "the JVM/Android JNI wire protocol leaked into a Kotlin/Native source set"
+fi
+grep -q 'JVM/Android-only JNI payload encoder' \
+    packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni_payload.h \
+    && ! grep -q 'markdown_core_kotlin_jni_payload' \
+        packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
+    || fail "the JNI payload encoder leaked into the Kotlin/Native adapter"
+grep -qx '_JNI_OnLoad' packages/kotlin-markdown-core/src/native/markdown_core_kotlin.exports \
+    && grep -qx '    JNI_OnLoad' packages/kotlin-markdown-core/src/native/markdown_core_kotlin.def \
+    && test "$(grep -cE '^        [A-Za-z0-9_]+;' packages/kotlin-markdown-core/src/native/markdown_core_kotlin.map)" -eq 1 \
+    && grep -q '^        JNI_OnLoad;$' packages/kotlin-markdown-core/src/native/markdown_core_kotlin.map \
+    || fail "Kotlin JNI export allowlists must contain only JNI_OnLoad"
 
 if grep -R -E -n 'readonly children' packages/es-markdown-core/src/model; then
     fail "ES exposes generic children"

@@ -3,23 +3,19 @@ package com.nouprax.markdown.core
 import java.nio.file.Files
 import java.nio.file.Path
 
-internal actual fun nativeParse(
+internal actual fun parsePlatformDocument(
     source: ByteArray,
     options: ParseOptions,
-): ByteArray {
+): Document {
     DesktopNativeLoader.ensureLoaded()
-    return JvmNative.parse(source, options.toNativeMask())
+    return JniPayloadDecoder.decodeDocument(JniParser.parsePayload(source, options.toNativeMask()))
 }
 
-internal object JvmNative {
-    // `@JvmSynthetic` because `internal` IS NOT PRIVATE ON THE JVM. This object
-    // is reached from another compilation unit, so Kotlin has to emit it
-    // `public final`, and without this a Java caller can invoke the JNI entry
-    // point directly -- handing it a byte array and an options mask the decoder
-    // never sees. JNI resolves by name and descriptor and does not consult the
-    // synthetic flag, so the binding still links; only javac stops resolving it.
+private object JniParser {
+    // Kotlin `internal` is public bytecode on the JVM. Hide the raw payload
+    // method from Java source while keeping it available for JNI registration.
     @JvmSynthetic
-    external fun parse(
+    external fun parsePayload(
         source: ByteArray,
         optionsMask: Int,
     ): ByteArray

@@ -32,7 +32,7 @@ add_library(
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/directive.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/ext_scanners.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/tasklist.c"
-    "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_bridge.c"
+    "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni_payload.c"
     "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni.c")
 
 target_include_directories(

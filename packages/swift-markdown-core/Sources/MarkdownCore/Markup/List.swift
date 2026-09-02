@@ -15,9 +15,7 @@ public enum ListFlavor: String, Sendable {
 public struct List: Markup {
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
-    /// A list owns `ListItem`s and nothing else. The contract has said so since
-    /// it was written; until Step 15A this was a flat `[any Markup]`, so the
-    /// type could not.
+    /// A list owns `ListItem`s and nothing else.
     public let items: [ListItem]
     /// Bulleted or numbered.
     public let flavor: ListFlavor
@@ -34,14 +32,14 @@ public struct List: Markup {
 }
 
 extension List {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, children: [any Markup]) {
         var flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET
         var start = markdown_core_optional_i64()
         var tight = false
         markdown_core_node_list_properties(node, &flavor, &start, &tight)
         self.init(
             scope: Self.scope(from: node),
-            items: Self.typedChildren(from: node),
+            items: Self.typedChildren(children),
             flavor: flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? .ordered : .bullet,
             start: start.has_value ? start.value : nil,
             tight: tight
@@ -65,12 +63,12 @@ public struct ListItem: Markup {
 }
 
 extension ListItem {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, content: [any Markup]) {
         var checked = markdown_core_optional_bool()
         markdown_core_node_list_item_checked(node, &checked)
         self.init(
             scope: Self.scope(from: node),
-            content: Self.children(from: node),
+            content: content,
             checked: checked.has_value ? checked.value : nil
         )
     }

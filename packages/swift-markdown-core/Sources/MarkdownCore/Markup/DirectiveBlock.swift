@@ -23,13 +23,14 @@ public struct DirectiveBlock: Markup {
 }
 
 extension DirectiveBlock {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, label: DirectiveLabel?, content: [any Markup]) {
+        let values = DirectiveValues(from: node)
         self.init(
             scope: Self.scope(from: node),
-            name: DirectiveValues(from: node).name,
-            attributes: DirectiveValues(from: node).attributes,
-            label: Self.directiveLabel(from: node),
-            content: Self.children(from: node)
+            name: values.name,
+            attributes: values.attributes,
+            label: label,
+            content: content
         )
     }
 }

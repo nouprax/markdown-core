@@ -229,11 +229,12 @@ let failed = false;
     }
 }
 
-/* SIX SURFACES, and every one of them names every kind.
+/* Every projection surface names every kind.
  *
  * §4.1's Step 15A requires ONE audit over the C header, the C dump, the Kotlin
- * bridge + decoder + model, the ES bridge + export list + decoder + model, the
- * Swift model + dumper, and the canonical-AST manifest. Until 15A.3 this file
+ * platform adapters + decoders + model, the ES writer + export list + decoder
+ * + model, the Swift model + dumper, and the canonical-AST manifest. Until
+ * 15A.3 this file
  * read three of those -- the three MODELS -- so a decoder that forgot a kind, a
  * dumper that could not name one, or a wire enum that was one short was
  * invisible here and visible only if some test happened to parse that kind. */
@@ -253,10 +254,10 @@ const kindSurfaces = [
         )
     },
     {
-        label: "Kotlin wire kinds",
+        label: "Kotlin JNI node kinds",
         expect: [...kinds.keys()].map(snake),
         actual: namedKinds(
-            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/wire/WireKind.kt",
+            "packages/kotlin-markdown-core/src/jniMain/kotlin/com/nouprax/markdown/core/wire/JniNodeKind.kt",
             /^\s{4}([A-Z][A-Z_]*)\(\d+\),$/gm
         )
     },
@@ -264,8 +265,16 @@ const kindSurfaces = [
         label: "Kotlin decoder",
         expect: [...kinds.keys()].map(snake),
         actual: namedKinds(
-            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/wire/WireMarkupDecoder.kt",
-            /WireKind\.([A-Z_]+)\s*->/g
+            "packages/kotlin-markdown-core/src/jniMain/kotlin/com/nouprax/markdown/core/wire/JniMarkupDecoder.kt",
+            /JniNodeKind\.([A-Z_]+)\s*->/g
+        )
+    },
+    {
+        label: "Kotlin/Native C facade adapter",
+        expect: [...kinds.keys()].map(snake),
+        actual: namedKinds(
+            "packages/kotlin-markdown-core/src/nativePlatformMain/kotlin/com/nouprax/markdown/core/PlatformParser.native.kt",
+            /^\s+MARKDOWN_CORE_KIND_([A-Z_]+)\s*->/gm
         )
     },
     {
@@ -289,6 +298,14 @@ const kindSurfaces = [
         actual: namedKinds("packages/es-markdown-core/src/wire/kinds.ts", /"([a-zA-Z]+)"/g).filter(
             (name) => name !== "none"
         )
+    },
+    {
+        label: "ES Wasm batch writer",
+        expect: [...kinds.keys()].map(snake),
+        actual: namedKinds(
+            "packages/es-markdown-core/src/bridge.c",
+            /^\s{4}case MARKDOWN_CORE_KIND_([A-Z_]+):/gm
+        ).filter((name) => name !== "NONE")
     },
     {
         label: "ES decoder",

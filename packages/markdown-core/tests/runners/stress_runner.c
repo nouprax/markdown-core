@@ -40,7 +40,7 @@ static int large_document(void) {
 }
 
 static int deep_nesting(void) {
-    const size_t depth = 2048;
+    const size_t depth = 10000;
     uint8_t *source = (uint8_t *)malloc(depth * 2 + 6);
     size_t index;
     int result;

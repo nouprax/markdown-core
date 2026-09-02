@@ -59,7 +59,7 @@ func referenceForm(from node: OpaquePointer) -> ReferenceForm {
 }
 
 extension LinkReference {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, content: [any Markup]) {
         var label = markdown_core_string()
         var identifier = markdown_core_string()
         markdown_core_node_association(node, &label, &identifier)
@@ -68,13 +68,13 @@ extension LinkReference {
             label: label.requiredString,
             identifier: identifier.requiredString,
             form: referenceForm(from: node),
-            content: Self.children(from: node)
+            content: content
         )
     }
 }
 
 extension ImageReference {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, content: [any Markup]) {
         var label = markdown_core_string()
         var identifier = markdown_core_string()
         markdown_core_node_association(node, &label, &identifier)
@@ -83,7 +83,7 @@ extension ImageReference {
             label: label.requiredString,
             identifier: identifier.requiredString,
             form: referenceForm(from: node),
-            content: Self.children(from: node)
+            content: content
         )
     }
 }

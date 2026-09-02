@@ -8,7 +8,8 @@ plugins {
 }
 
 group = "com.nouprax"
-version = rootProject.file("VERSION").readText().trim()
+val releaseVersion = rootProject.file("VERSION").readText().trim()
+version = releaseVersion
 
 val isIdeSync =
     providers
@@ -39,14 +40,14 @@ val sourcesJar =
         archiveClassifier.set("sources")
         from("src/main")
         from(project(":packages:kotlin-markdown-core").file("src/native")) {
-            into("native-bridge")
+            into("jni")
         }
     }
 val javadocJar =
     tasks.register<Jar>("javadocJar") {
         archiveClassifier.set("javadoc")
         from(project(":packages:kotlin-markdown-core").file("README.md"))
-        from(rootProject.file("docs/deprecated/migration/2026-07-12-phase-12-kotlin-binding.md"))
+        from(rootProject.file("docs/releases/$releaseVersion.md"))
     }
 
 android {

@@ -12,7 +12,7 @@ public struct Paragraph: Markup {
 }
 
 extension Paragraph {
-    init(from node: OpaquePointer) {
-        self.init(scope: Self.scope(from: node), content: Self.children(from: node))
+    init(from node: OpaquePointer, content: [any Markup]) {
+        self.init(scope: Self.scope(from: node), content: content)
     }
 }

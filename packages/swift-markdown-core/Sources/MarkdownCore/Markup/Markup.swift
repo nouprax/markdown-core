@@ -80,39 +80,17 @@ extension Markup {
         Scope(from: markdown_core_node_scope(node))
     }
 
-    /// Every child, in source order, as the C tree holds them.
-    static func children(from node: OpaquePointer) -> [any Markup] {
-        var result: [any Markup] = []
-        result.reserveCapacity(markdown_core_node_child_count(node))
-        var child = markdown_core_node_get_first_child(node)
-        while let current = child {
-            result.append(markup(from: current))
-            child = markdown_core_node_get_next_sibling(current)
-        }
-        return result
-    }
-}
-
-extension Markup {
-    /// Every child, required to be one kind.
+    /// Narrows an already-copied content relation to its semantic element kind.
     ///
     /// A `List` owns `ListItem`s and a `TableRow` owns `TableCell`s; the C tree
     /// cannot say so and the typed model can, so the narrowing happens once,
     /// here, instead of at every use site.
-    static func typedChildren<T: Markup>(from node: OpaquePointer) -> [T] {
-        children(from: node).map { child in
+    static func typedChildren<T: Markup>(_ children: [any Markup]) -> [T] {
+        children.map { child in
             guard let typed = child as? T else {
                 preconditionFailure("\(type(of: child)) is not a \(T.self)")
             }
             return typed
         }
-    }
-
-    /// A directive's optional Markup-valued label field. The field is read
-    /// independently because it is not part of the directive's child/content
-    /// sequence.
-    static func directiveLabel(from node: OpaquePointer) -> DirectiveLabel? {
-        guard let label = markdown_core_node_directive_label(node) else { return nil }
-        return DirectiveLabel(from: label)
     }
 }

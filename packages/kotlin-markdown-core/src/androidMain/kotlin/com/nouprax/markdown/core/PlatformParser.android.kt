@@ -1,11 +1,11 @@
 package com.nouprax.markdown.core
 
-internal actual fun nativeParse(
+internal actual fun parsePlatformDocument(
     source: ByteArray,
     options: ParseOptions,
-): ByteArray {
+): Document {
     AndroidNativeLoader.ensureLoaded()
-    return JvmNative.parse(source, options.toNativeMask())
+    return JniPayloadDecoder.decodeDocument(JniParser.parsePayload(source, options.toNativeMask()))
 }
 
 private object AndroidNativeLoader {
@@ -19,8 +19,9 @@ private object AndroidNativeLoader {
     fun ensureLoaded() = loaded
 }
 
-internal object JvmNative {
-    external fun parse(
+private object JniParser {
+    @JvmSynthetic
+    external fun parsePayload(
         source: ByteArray,
         optionsMask: Int,
     ): ByteArray

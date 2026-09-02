@@ -7,6 +7,6 @@ project(markdown-core VERSION "${MARKDOWN_CORE_VERSION}")
 
 enable_testing()
 add_subdirectory(packages/markdown-core)
-if(MARKDOWN_CORE_KOTLIN_JNI OR MARKDOWN_CORE_KOTLIN_NATIVE)
+if(MARKDOWN_CORE_KOTLIN_JNI)
     add_subdirectory(packages/kotlin-markdown-core/src/native)
 endif()

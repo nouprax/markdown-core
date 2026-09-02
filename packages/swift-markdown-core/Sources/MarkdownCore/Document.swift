@@ -128,55 +128,126 @@ public struct Document: Markup {
         else {
             throw ParseError(code: .internal, message: "parser returned an invalid document tree")
         }
-        return Document(from: root)
+        return NativeTreeBuilder(root: root).document()
     }
 }
 
-extension Document {
-    init(from node: OpaquePointer) {
-        self.init(scope: Self.scope(from: node), content: Self.children(from: node))
+private struct NativeNodeRecord {
+    let node: OpaquePointer
+    var children: [Int] = []
+    var label: Int?
+}
+
+/// Copies the C tree without making Swift's call stack proportional to input
+/// depth. A directive label is recorded as its own node-valued field, never as
+/// an entry in the directive's content relation.
+private struct NativeTreeBuilder {
+    private var records: [NativeNodeRecord]
+
+    init(root: OpaquePointer) {
+        records = [NativeNodeRecord(node: root)]
+        var recordIndex = 0
+        while recordIndex < records.count {
+            let node = records[recordIndex].node
+            let expectedChildren = markdown_core_node_child_count(node)
+            records[recordIndex].children.reserveCapacity(expectedChildren)
+
+            var child = markdown_core_node_get_first_child(node)
+            while let current = child {
+                records[recordIndex].children.append(records.count)
+                records.append(NativeNodeRecord(node: current))
+                child = markdown_core_node_get_next_sibling(current)
+            }
+            precondition(
+                records[recordIndex].children.count == expectedChildren,
+                "native child count does not match its sibling chain"
+            )
+
+            switch markdown_core_node_get_kind(node) {
+            case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, MARKDOWN_CORE_KIND_DIRECTIVE:
+                if let label = markdown_core_node_directive_label(node) {
+                    records[recordIndex].label = records.count
+                    records.append(NativeNodeRecord(node: label))
+                }
+            default:
+                break
+            }
+            recordIndex += 1
+        }
+    }
+
+    func document() -> Document {
+        var values: [(any Markup)?] = Array(repeating: nil, count: records.count)
+        for index in records.indices.reversed() {
+            let record = records[index]
+            let children = record.children.map { childIndex -> any Markup in
+                guard let child = values[childIndex] else {
+                    preconditionFailure("native child was not materialized before its parent")
+                }
+                return child
+            }
+            let label: DirectiveLabel?
+            if let labelIndex = record.label {
+                guard let builtLabel = values[labelIndex] as? DirectiveLabel else {
+                    preconditionFailure("native directive label has the wrong kind")
+                }
+                label = builtLabel
+            } else {
+                label = nil
+            }
+            values[index] = markup(from: record.node, children: children, label: label)
+        }
+        guard let document = values[0] as? Document else {
+            preconditionFailure("native tree root is not a document")
+        }
+        return document
     }
 }
 
 // Keep the exhaustive native-kind switch in one place so a newly added native
 // kind cannot silently bypass value-tree copying.
 // swiftlint:disable:next cyclomatic_complexity
-func markup(from node: OpaquePointer) -> any Markup {
+func markup(
+    from node: OpaquePointer,
+    children: [any Markup],
+    label: DirectiveLabel?
+) -> any Markup {
     switch markdown_core_node_get_kind(node) {
     case MARKDOWN_CORE_KIND_DOCUMENT:
-        // A document is only ever the root built by `parse`.
-        preconditionFailure("a document node cannot be a child")
-    case MARKDOWN_CORE_KIND_BLOCK_QUOTE: BlockQuote(from: node)
-    case MARKDOWN_CORE_KIND_PARAGRAPH: Paragraph(from: node)
-    case MARKDOWN_CORE_KIND_HEADING: Heading(from: node)
+        Document(scope: Document.scope(from: node), content: children)
+    case MARKDOWN_CORE_KIND_BLOCK_QUOTE: BlockQuote(from: node, content: children)
+    case MARKDOWN_CORE_KIND_PARAGRAPH: Paragraph(from: node, content: children)
+    case MARKDOWN_CORE_KIND_HEADING: Heading(from: node, content: children)
     case MARKDOWN_CORE_KIND_THEMATIC_BREAK: ThematicBreak(from: node)
-    case MARKDOWN_CORE_KIND_LIST: List(from: node)
-    case MARKDOWN_CORE_KIND_LIST_ITEM: ListItem(from: node)
+    case MARKDOWN_CORE_KIND_LIST: List(from: node, children: children)
+    case MARKDOWN_CORE_KIND_LIST_ITEM: ListItem(from: node, content: children)
     case MARKDOWN_CORE_KIND_CODE_BLOCK: CodeBlock(from: node)
     case MARKDOWN_CORE_KIND_HTML_BLOCK: HTMLBlock(from: node)
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK: FormulaBlock(from: node)
-    case MARKDOWN_CORE_KIND_TABLE: Table(from: node)
-    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK: DirectiveBlock(from: node)
-    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION: FootnoteDefinition(from: node)
+    case MARKDOWN_CORE_KIND_TABLE: Table(from: node, children: children)
+    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
+        DirectiveBlock(from: node, label: label, content: children)
+    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION: FootnoteDefinition(from: node, content: children)
     case MARKDOWN_CORE_KIND_TEXT: Text(from: node)
     case MARKDOWN_CORE_KIND_SOFT_BREAK: SoftBreak(from: node)
     case MARKDOWN_CORE_KIND_LINE_BREAK: LineBreak(from: node)
     case MARKDOWN_CORE_KIND_CODE: Code(from: node)
     case MARKDOWN_CORE_KIND_HTML: HTML(from: node)
     case MARKDOWN_CORE_KIND_FORMULA: Formula(from: node)
-    case MARKDOWN_CORE_KIND_EMPHASIS: Emphasis(from: node)
-    case MARKDOWN_CORE_KIND_STRONG: Strong(from: node)
-    case MARKDOWN_CORE_KIND_STRIKETHROUGH: Strikethrough(from: node)
-    case MARKDOWN_CORE_KIND_LINK: Link(from: node)
-    case MARKDOWN_CORE_KIND_IMAGE: Image(from: node)
-    case MARKDOWN_CORE_KIND_DIRECTIVE: Directive(from: node)
+    case MARKDOWN_CORE_KIND_EMPHASIS: Emphasis(from: node, content: children)
+    case MARKDOWN_CORE_KIND_STRONG: Strong(from: node, content: children)
+    case MARKDOWN_CORE_KIND_STRIKETHROUGH: Strikethrough(from: node, content: children)
+    case MARKDOWN_CORE_KIND_LINK: Link(from: node, content: children)
+    case MARKDOWN_CORE_KIND_IMAGE: Image(from: node, content: children)
+    case MARKDOWN_CORE_KIND_DIRECTIVE: Directive(from: node, label: label)
     case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE: FootnoteReference(from: node)
-    case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node)
-    case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node)
-    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL: DirectiveLabel(from: node)
+    case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node, children: children)
+    case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node, content: children)
+    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
+        DirectiveLabel(scope: DirectiveLabel.scope(from: node), content: children)
     case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION: ReferenceDefinition(from: node)
-    case MARKDOWN_CORE_KIND_LINK_REFERENCE: LinkReference(from: node)
-    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: ImageReference(from: node)
+    case MARKDOWN_CORE_KIND_LINK_REFERENCE: LinkReference(from: node, content: children)
+    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: ImageReference(from: node, content: children)
     default: preconditionFailure("native parser returned an unknown node kind")
     }
 }

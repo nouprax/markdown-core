@@ -136,10 +136,14 @@ import Testing
     func workloads() throws {
         let unit = "## Section\n\nParagraph with **strong**, [link](/), and 🚀.\n\n"
         #expect(try Document.parse(String(repeating: unit, count: 5_000)).content.count == 10_000)
+        let depth = 10_000
         var node = try #require(
-            Document.parse(String(repeating: "> ", count: 128) + "leaf\n").content.first
+            Document.parse(String(repeating: "- ", count: depth) + "leaf\n").content.first
         )
-        for _ in 0..<128 { node = try #require((node as? BlockQuote)?.content.first) }
+        for _ in 0..<depth {
+            let list = try #require(node as? MarkdownCore.List)
+            node = try #require(list.items.first?.content.first)
+        }
         #expect(node is Paragraph)
         for _ in 0..<2_000 { #expect(try Document.parse("# Copy\n\n- [x] item\n").content.count == 2) }
     }

@@ -19,13 +19,13 @@ public struct FootnoteDefinition: Markup {
 }
 
 extension FootnoteDefinition {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, content: [any Markup]) {
         var label = markdown_core_string()
         var identifier = markdown_core_string()
         markdown_core_node_association(node, &label, &identifier)
         self.init(
             scope: Self.scope(from: node),
-            content: Self.children(from: node),
+            content: content,
             label: label.requiredString,
             identifier: identifier.requiredString
         )

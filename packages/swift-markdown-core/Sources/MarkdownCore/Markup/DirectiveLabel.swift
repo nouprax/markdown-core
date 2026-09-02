@@ -12,9 +12,3 @@ public struct DirectiveLabel: Markup {
     /// Dispatches to the visitor's `DirectiveLabel` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
-
-extension DirectiveLabel {
-    init(from node: OpaquePointer) {
-        self.init(scope: Self.scope(from: node), content: Self.children(from: node))
-    }
-}

@@ -33,16 +33,9 @@ fi
     -p packages/kotlin-markdown-core/consumers/kmp jvmTest
 "$gradle" --warning-mode=fail "$property" "-PconsumerRepository=$repository" \
     -p packages/kotlin-markdown-core/consumers/jvm-gradle run
-# ASSEMBLE THE DEBUG VARIANT, WHICH IS WHAT THIS CONSUMER PROJECT HAS. `main`'s
-# copy of this script drives a release-shrinking audit -- `assembleRelease
-# assembleUnused`, an AAR/mapping/dex comparison and
-# scripts/verify-android-jni-shrinking.mjs -- and NONE of the build-side half
-# exists here: consumers/android/build.gradle.kts declares no `buildTypes` and
-# therefore no `unused` variant, and packages/kotlin-markdown-core/consumer-rules.pro
-# is not in the repository. Step 0 restored scripts/ from main, so this arrived
-# asserting a build the 1.0 baseline has not got -- section 0's "scripts/ IS NOT
-# ONE THING" rule, fourth instance. Restoring the audit is a DECISION about what
-# the Android artifact promises, not a repair, and it belongs to the release step.
+# This consumer intentionally has one debug variant. Release packaging verifies
+# the library-owned JNI keep rule separately; this task exercises resolution and
+# runtime integration without pretending to be an R8 reachability benchmark.
 "$gradle" --warning-mode=fail "$property" "-PconsumerRepository=$repository" \
     -p packages/kotlin-markdown-core/consumers/android assembleDebug
 

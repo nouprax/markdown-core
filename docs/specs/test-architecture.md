@@ -129,12 +129,14 @@ Swift correctness suites:`api`、`errors`、`unicode`、`ownership`、
 C-to-Swift node/field/nullability/scope/error/ownership mapping。
 
 Kotlin correctness suites:`api`、`errors`、`unicode`、`ownership`、`robustness`、
-`consumer`、`packaging`；`AstTest` 只由具名 conformance tasks 选择。`commonTest` 复用于 JVM、Android host、Android emulator、
-macOS ARM64 与 Linux x64；`AstTest` 的 focused cases 因而在所有 runtime 上验证
-native/JNI-to-Kotlin schema mapping；consumers、
-compile contracts 与内部 `android-runtime` module 均由
-`packages/kotlin-markdown-core/` 独占。`verifyKotlinNativePackaging` 验证 desktop
-JNI payload 和 Android 四 ABI AAR。
+`consumer`、`packaging`；`AstTest` 只由具名 conformance tasks 选择。`commonTest`
+复用于 JVM、Android host、Android emulator、macOS ARM64 与 Linux x64；`AstTest`
+的 focused cases 因而在所有 runtime 上验证各自 adapter-to-Kotlin schema mapping。
+JNI wire decoder 只属于 JVM/Android source sets，其畸形 payload 测试只在 JVM
+执行，不进入 Kotlin/Native 测试或 artifact。consumers、compile contracts 与内部
+`android-runtime` module 均由 `packages/kotlin-markdown-core/` 独占。
+`verifyKotlinJniPackaging` 验证 desktop JNI payload、Android 四 ABI AAR 与 consumer
+keep rule。
 
 ES Node correctness suites:`api`、`ast`、`consumer`、`errors`、`ownership`、
 `robustness`、`unicode`、`types`、`packaging`；browser target 提供 `api`；独立
@@ -186,10 +188,13 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
 - Canonical Markdown/`.ast` conformance data 只有一份，位于
   `specs/canonical-ast/`；`manifest.json` 是唯一 case list，并显式冻结 paths、
   parse options、顺序、编码/换行和 semantic coverage tags。该目录不含 runner。
-- C、Swift、Kotlin、ES 的现有原生 conformance targets 使用各自公开
+- C、Swift、Kotlin、ES 的原生 conformance targets 使用各自公开
   parse/immutable AST 与独立的 per-node Visitor/TreeDumper 路径枚举同一
   manifest。bindings 不提供通用 Walker，不调用 C dump/test runner、不读取另一
   binding 输出，也不以 dump 构造生产 AST。
+- C 与每个 binding 的 correctness suite 都必须解析并逐层检查 10,000 层嵌套
+  list。该 case 约束 parser postprocess、native transport 和语言侧 materialization
+  都不得让调用栈随 AST 深度增长。
 - Swift test bundle 由 SwiftPM build-tool plugin 在 plugin work directory 从 root
   spec source 生成；Kotlin common tests 由 cacheable Gradle task class 从同一
   manifest 生成 build-only Kotlin data；ES package 由 `preconformance` lifecycle

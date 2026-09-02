@@ -1,41 +1,27 @@
 package com.nouprax.markdown.core
 
-internal object WireDecoder {
-    /** `MKC6` removed the retained source and line index from the payload. */
-    private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x36)
+internal object JniPayloadDecoder {
+    /** Current JVM/Android JNI payload format. */
+    private val magic = byteArrayOf(0x4d, 0x4b, 0x4a, 0x31)
 
     fun decodeDocument(bytes: ByteArray): Document {
-        val reader = WireReader(bytes)
+        val reader = JniPayloadReader(bytes)
         magic.forEachIndexed { index, expected ->
             val actual = reader.byte()
             require(actual == expected) {
-                "invalid native bridge payload at byte $index: expected ${expected.toUByte()}, got ${actual.toUByte()}"
+                "invalid JNI payload at byte $index: expected ${expected.toUByte()}, got ${actual.toUByte()}"
             }
         }
         when (reader.byte().toInt()) {
             0 -> Unit
             1 -> throw reader.error()
-            else -> error("unsupported native bridge status")
+            else -> error("unsupported JNI payload status")
         }
-        return reader.document()
+        return reader.decodeTree()
     }
 }
 
-/**
- * THE ROOT IS READ BY HAND, and it is the only node that is.
- *
- * A node is built as it is read, so the root's own fields are read here rather
- * than through `markup()`.
- */
-private fun WireReader.document(): Document {
-    require(kind() == WireKind.DOCUMENT) { "native bridge returned an invalid document tree" }
-    val rootScope = scope()
-    val content = markupList()
-    require(finished) { "native bridge returned a truncated payload" }
-    return Document(content, rootScope)
-}
-
-private fun WireReader.error(): ParseException {
+private fun JniPayloadReader.error(): ParseException {
     val code =
         when (int()) {
             1 -> ParseErrorCode.INVALID_ARGUMENT
@@ -47,26 +33,26 @@ private fun WireReader.error(): ParseException {
     return ParseException(code, message)
 }
 
-internal class WireReader(
+internal class JniPayloadReader(
     private val bytes: ByteArray,
 ) {
     private var offset = 0
     val finished: Boolean get() = offset == bytes.size
 
     fun byte(): Byte {
-        require(offset < bytes.size) { "truncated native bridge payload" }
+        require(offset < bytes.size) { "truncated JNI payload" }
         return bytes[offset++]
     }
 
     fun int(): Int {
-        require(offset <= bytes.size - Int.SIZE_BYTES) { "truncated native bridge payload" }
+        require(offset <= bytes.size - Int.SIZE_BYTES) { "truncated JNI payload" }
         var value = 0
         repeat(4) { shift -> value = value or ((bytes[offset++].toInt() and 0xff) shl (shift * 8)) }
         return value
     }
 
     fun long(): Long {
-        require(offset <= bytes.size - Long.SIZE_BYTES) { "truncated native bridge payload" }
+        require(offset <= bytes.size - Long.SIZE_BYTES) { "truncated JNI payload" }
         var value = 0L
         repeat(8) { shift -> value = value or ((bytes[offset++].toLong() and 0xff) shl (shift * 8)) }
         return value
@@ -75,7 +61,7 @@ internal class WireReader(
     fun string(): String? {
         val size = int()
         if (size == -1) return null
-        require(size >= 0 && size <= bytes.size - offset) { "invalid native bridge string" }
+        require(size >= 0 && size <= bytes.size - offset) { "invalid JNI payload string" }
         val end = offset + size
         return bytes.decodeToString(offset, end).also { offset = end }
     }
@@ -84,7 +70,7 @@ internal class WireReader(
 
     fun scope(): Scope = Scope(Position(int(), int()), Position(int(), int()))
 
-    fun kind(): WireKind = WireKind.from(byte().toInt() and 0xff)
+    fun kind(): JniNodeKind = JniNodeKind.from(byte().toInt() and 0xff)
 
     fun boolean(): Boolean =
         when (byte().toInt()) {
