@@ -6,6 +6,7 @@
 
 #include <buffer.h>
 #include <chunk.h>
+#include <iterator.h>
 #include <markdown_core_ctype.h>
 #include <node.h>
 #include <parser.h>
@@ -658,9 +659,7 @@ static markdown_core_node *replace_with_formula_block(const markdown_core_extens
  * caller owns traversal: keeping it iterative makes enabled formula syntax
  * safe for an arbitrarily deep tree even when the tree contains no formula. */
 static markdown_core_node *postprocess_node(const markdown_core_extension *extension, markdown_core_parser *parser,
-                                            markdown_core_node *node, bool *descend) {
-    *descend = false;
-
+                                            markdown_core_node *node) {
     if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(node);
         if (formula && !formula->literal.data) {
@@ -697,33 +696,40 @@ static markdown_core_node *postprocess_node(const markdown_core_extension *exten
         }
     }
 
-    *descend = true;
     return node;
 }
 
 static markdown_core_node *postprocess(const markdown_core_extension *extension, markdown_core_parser *parser,
                                        markdown_core_node *root) {
-    markdown_core_node *node = root;
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type event;
 
-    while (node && !parser->oom) {
-        bool descend;
-        bool is_root = node == root;
-        markdown_core_node *current = postprocess_node(extension, parser, node, &descend);
-        if (!current || parser->oom) {
+    if (!iter) {
+        parser->oom = true;
+        return NULL;
+    }
+    while (!parser->oom && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node;
+        markdown_core_node *processed;
+        bool is_root;
+
+        /* At EXIT the iterator has already selected the parent or following
+         * sibling as its next node, so replacing and freeing this node cannot
+         * invalidate traversal state. */
+        if (event != MARKDOWN_CORE_EVENT_EXIT) {
+            continue;
+        }
+        node = markdown_core_iter_get_node(iter);
+        is_root = node == root;
+        processed = postprocess_node(extension, parser, node);
+        if (!processed) {
             break;
         }
         if (is_root) {
-            root = current;
+            root = processed;
         }
-        if (descend && current->first_child) {
-            node = current->first_child;
-            continue;
-        }
-        while (current != root && !current->next) {
-            current = current->parent;
-        }
-        node = current == root ? NULL : current->next;
     }
+    markdown_core_iter_free(iter);
     return root;
 }
 
