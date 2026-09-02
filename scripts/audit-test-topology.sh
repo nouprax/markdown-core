@@ -16,7 +16,18 @@ note() {
     echo "ok: $1"
 }
 
-# 1. Every platform consumes the shared conformance contract.
+# 1. Test corpora have one owner. Extension correctness fixtures belong to the
+# C package and are also used as INPUT by the external parity gates. A second
+# `specs/oracles` copy is especially dangerous: its stored dumps look
+# authoritative while no runner consumes them, so every AST migration can
+# leave it silently stale.
+if [ -e specs/oracles ] || [ -L specs/oracles ]; then
+    fail "dead specs/oracles mirror exists; extension requirements belong only to packages/markdown-core/tests/fixtures"
+else
+    note "no duplicate specs/oracles fixture mirror"
+fi
+
+# 2. Every platform consumes the shared conformance contract.
 if [ ! -f specs/canonical-ast/manifest.json ]; then
     fail "root shared canonical AST manifest is missing"
 fi
@@ -31,7 +42,7 @@ else
     note "C, SwiftPM plugin, Gradle task, and ES package lifecycle consume the shared spec"
 fi
 
-# 2. No runtime network dependency in build/test/local-benchmark plumbing. The only
+# 3. No runtime network dependency in build/test/local-benchmark plumbing. The only
 # allowed network use is the explicit `update-spec` maintenance target.
 if grep -n 'git clone' Makefile package.json CMakePresets.json \
     packages/markdown-core/tests/CMakeLists.txt 2>/dev/null; then
@@ -46,7 +57,7 @@ else
     note "network fetch limited to explicit maintenance"
 fi
 
-# 3. Vendored corpora must be manifested, licensed, and hash-verified.
+# 4. Vendored corpora must be manifested, licensed, and hash-verified.
 if [ -d packages/markdown-core/tests/corpora ]; then
     for corpus in packages/markdown-core/tests/corpora/*/; do
         [ -d "$corpus" ] || continue
@@ -63,7 +74,7 @@ if [ -d packages/markdown-core/tests/corpora ]; then
     note "vendored corpora are manifested and verified"
 fi
 
-# 4. Source audit stays compilation-free. Dynamic CTest inventory is evaluated
+# 5. Source audit stays compilation-free. Dynamic CTest inventory is evaluated
 # against an already-built artifact tree when the producer passes its path and
 # optional multi-config configuration; the repository health-check must not
 # perform a duplicate platform build.
@@ -152,7 +163,7 @@ else
     note "dynamic CTest inventory deferred to the C test-artifact producer"
 fi
 
-# 5. The Swift producer performs toolchain-backed discovery after building.
+# 6. The Swift producer performs toolchain-backed discovery after building.
 # The repository-only audit checks that both owned test targets declare tests.
 if grep -R -q '@Test' packages/swift-markdown-core/Tests/MarkdownCoreTests \
     && grep -R -q '@Test' packages/swift-markdown-core/Tests/MarkdownCoreConformanceTests; then
