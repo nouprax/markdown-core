@@ -62,7 +62,7 @@ longer exists. 3.0.0 ships a different streaming surface, described below.
   two changing together or not at all — with caller-reserved prefix room, so
   a transport's versioned envelope is stamped into the payload's own
   allocation rather than copied into a second one; both managed bridges wrap
-  it in that MKC7 envelope. The Kotlin transport keeps its single JNI
+  it in that MKC8 envelope. The Kotlin transport keeps its single JNI
   crossing, and the ECMAScript runtime stops walking per-field wasm
   accessors — thousands of boundary crossings per document become one, and
   the large-document feed-seal-copy drops from 45.7ms to 27.7ms while now
@@ -74,6 +74,27 @@ longer exists. 3.0.0 ships a different streaming surface, described below.
   ECMAScript coverage ledger's unpinned surface shrinks with the walk it
   covered: the retired decoder's 22-line allowance becomes the wire
   decoder's 4-line, statically unreachable remainder.
+- A feed's payload is a DELTA against the payload before it (#162). Every
+  wire payload leads with a frame byte — `markdown_core_wire_frame`, FULL
+  or DELTA — and a session asked for DELTA answers the tree by its
+  differences from the last payload it wrote: the blocks the engine
+  retained across the two derivations are named by position and reused,
+  and only the open spine and the changed blocks cross. The bindings hand
+  the previous read's values into the new read wherever the delta says
+  nothing moved — a reused subtree is the same object, still an immutable
+  value — and ask for FULL whenever they hold no previous read. What a
+  reader still pays per feed is one reference copied per reused child into
+  the new read's child list, bounded in docs/STREAMING.md §6. In C,
+  `markdown_core_session_feed_wire` takes the frame request, and
+  `markdown_core_session_finish_wire` seals the stream on the wire in the
+  frame asked for; `markdown_core_document_wire` always writes FULL. The
+  ECMAScript feed-loop benchmark on the 158 KB document falls from 986.6 ms
+  to 27.8 ms at 256 chunks, the Kotlin one from 453.9 ms to 20.5 ms with a
+  third of the resident memory, and the feed-loop caps in both bindings
+  tighten from 32 to 4 per 16× step. The decoders' coverage ledgers shrink
+  with the change: the ECMAScript wire decoder's unpinned branches 7 → 6 and
+  the Kotlin markup decoder's 28 → 21, the delta's refusals and the table's
+  header-first rule now pinned by payload.
 - The C facade's child navigation is a BY-VALUE cursor:
   `markdown_core_node_children` opens one and `markdown_core_children_next`
   steps it, each step O(1), no allocation. The pair replaces

@@ -90,7 +90,7 @@
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/wire/WireMarkupDecoder.kt": {
                     "lines": 5,
                     "functions": 0,
-                    "branches": 28
+                    "branches": 21
                 },
                 "packages/kotlin-markdown-core/src/jvmMain/kotlin/com/nouprax/markdown/core/NativeBridge.jvm.kt": {
                     "lines": 3,
@@ -150,7 +150,7 @@
                 "packages/es-markdown-core/src/wire/wire-decoder.ts": {
                     "lines": 4,
                     "functions": 1,
-                    "branches": 7
+                    "branches": 6
                 }
             }
         }

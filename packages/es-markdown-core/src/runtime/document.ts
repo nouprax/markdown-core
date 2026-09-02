@@ -1,6 +1,8 @@
+import type { Semantic } from "../model/semantic.js";
 import { ParseError } from "../parse-error.js";
 import type { ParseOptions } from "../parse-options.js";
 import type { Read } from "../read.js";
+import { WireFrame } from "../wire/wire-decoder.js";
 import { native } from "./native.js";
 import { copyOut, discardOut, optionsMask, withHeapBytes, withHeapText } from "./parser.js";
 
@@ -41,6 +43,18 @@ export class Document {
     // "gone" this boundary uses everywhere; no native anything is part of
     // the public surface.
     #native: number;
+
+    // THE PREVIOUS READ (#162): the semantic tree of the last payload this
+    // document decoded, which the next feed's payload may be a DELTA
+    // against -- the native side keeps the tree it wrote that payload from,
+    // and names by position what did not move, so the values already built
+    // here are handed into the new read instead of decoded again. Null
+    // whenever there is nothing to be a delta against: before the first
+    // feed (the constructor's discarded read is not a payload), and after a
+    // feed that failed, whether natively or in the decoder -- the native
+    // side leaves its baseline standing on its own failures and replaces it
+    // on the decoder's, and asking for FULL is correct against either.
+    #previous: Semantic | null = null;
 
     /**
      * Opens a document; with `markdown`, feeds it in the same step — exactly
@@ -107,13 +121,17 @@ export class Document {
         if (typeof chunk === "string") {
             const session = this.#live();
             return withHeapText(chunk, (chunkPointer, length) =>
-                copyOut((output) => native.es_session_feed(session, chunkPointer, length, output, output + 4))
+                this.#read((request, output) =>
+                    native.es_session_feed(session, chunkPointer, length, request, output, output + 4)
+                )
             );
         }
         if (!(chunk instanceof Uint8Array)) throw new TypeError("chunk must be a string or a Uint8Array");
         const session = this.#live();
         return withHeapBytes(chunk, (chunkPointer) =>
-            copyOut((output) => native.es_session_feed(session, chunkPointer, chunk.length, output, output + 4))
+            this.#read((request, output) =>
+                native.es_session_feed(session, chunkPointer, chunk.length, request, output, output + 4)
+            )
         );
     }
 
@@ -131,7 +149,8 @@ export class Document {
      * could not be built; the shell then remains for `dispose`.
      */
     seal(): Read {
-        const sealed = copyOut((output) => native.es_session_finish(this.#live(), output, output + 4));
+        const session = this.#live();
+        const sealed = this.#read((request, output) => native.es_session_finish(session, request, output, output + 4));
         this.dispose();
         return sealed;
     }
@@ -143,6 +162,7 @@ export class Document {
      * are values and keep reading.
      */
     dispose(): void {
+        this.#previous = null;
         if (!this.#native) return;
         native.es_session_free(this.#native);
         this.#native = 0;
@@ -151,6 +171,19 @@ export class Document {
     #live(): number {
         if (!this.#native) throw new Error("the document is sealed or disposed");
         return this.#native;
+    }
+
+    /** One read through the wire: DELTA is asked for exactly when a previous
+     * read is in hand, the previous read is cleared before the call so that
+     * any failure leaves the next request FULL, and a decoded read becomes
+     * the previous one. */
+    #read(invoke: (request: number, output: number) => number): Read {
+        const previous = this.#previous;
+        this.#previous = null;
+        const request = previous === null ? WireFrame.full : WireFrame.delta;
+        const read = copyOut((output) => invoke(request, output), previous);
+        this.#previous = read.semantic;
+        return read;
     }
 }
 

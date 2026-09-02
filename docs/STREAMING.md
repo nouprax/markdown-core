@@ -1742,8 +1742,10 @@ vector count in `S_vec_open` (~2 Ir per block inside `derive_tree`'s
 width is counted from the CST rather than trusted from the memo, so a
 broken permanence invariant makes a slow feed instead of an overrun.
 About 5–6 Ir per closed block per feed, down from F25's ~30. The rest of
-the profile is allocator traffic (~22%) and the O(new) work itself. A
-delta-shaped consumer (#162) sidesteps even the memcpy; within the
+the profile is allocator traffic (~22%) and the O(new) work itself. ~~A
+delta-shaped consumer (#162) sidesteps even the memcpy~~ — it does not
+(F28: the delta rides on the derived tree, memcpy and count included, and
+their removal is the shared child sequence, #174); within the
 value-shaped API this is the floor worth having.
 
 ### F27 — retention reaches every closed block, and the memo reaches every open container: the feed is O(open + changed)  · VERIFIED (#161, closing round)
@@ -1943,6 +1945,187 @@ than one level, which is a hook-API change D9 permits — and it is a
 redesign of the hook contract, not a patch to this round: filed as
 #168, with a SELF-vs-SUBTREE reach declaration on the descriptor as its
 cheap half and the promotion of a hook's fresh child as its third.
+
+### F28 — the wire crosses as a DELTA against the payload before it, and the feed loop stops re-reading the document per feed: −97% on the 256-chunk stream  · VERIFIED (#162)
+
+**What was measured.** F27 made the engine's feed O(open + changed), and
+the bindings then paid the document again on every feed anyway: a feed's
+payload was the whole tree, serialized whole and decoded whole into a
+whole new value tree. The ES feed-loop benchmark (#148) on the 158 KB
+`large_document` read 24.8 / 77.6 / 986.6 ms at 1 / 16 / 256 chunks —
+3.1× and 12.7× per 16× step, quadratic in the chunk count — under a cap
+of 32 per step that tolerated exactly this. The one-shot `feed_seal_and_
+value_copy` read 22.6 ms; the seal is one payload and was never the
+problem.
+
+**What the delta is.** Every wire payload now leads with a FRAME byte
+(`markdown_core_wire_frame`): FULL, the tree whole in the layout the
+header states; or DELTA, the tree named by its differences from THE
+PREVIOUS PAYLOAD THE SAME SESSION WROTE. The session keeps that payload's
+derived tree (`prev_root`) alive, and the diff is POINTER IDENTITY between
+it and the tree just derived: a block the derivation retained (F27) is the
+same node in both trees, and the stable prefix a container consumed as a
+memo run (F26) is the same run — the memo is extended in place, so two
+trees holding one memo agree below the earlier boundary without a compare
+per entry. Three ops, tagged above every kind ordinal: NODE (the kind byte,
+then the subtree whole), SPINE (0xFE: a container's fields rewritten, its
+children rebuilt from ops), SAME (0xFF: the next n children of the
+previous payload's node at this position, unchanged). The two child lists
+pair BY POSITION, which the CST's discipline makes exact — a block closes
+in place and the blocks after it are new, so a retained child stands at the
+index it stood at — and the one shape that replaces a child at its position
+(a paragraph consumed by definitions, a lead paragraph retyped to a table)
+fails the kind compare and is written whole. Only block containers whose
+children are blocks are SPINE (document, block quote, list, list item,
+table, directive block, footnote definition), so the positions a binding is
+asked to address are the ones its per-kind child lists hold: a list's
+items, a table's header then its rows, a directive block's label then its
+content. The cost of a delta is the cost of the derivation: the open spine
+and the changed blocks, never the document.
+
+**The protocol.** The caller REQUESTS a frame; the session answers DELTA
+only when asked and a previous payload stands, FULL otherwise. The
+baseline is replaced only by a payload that BUILT — a failed feed leaves it
+standing — and the bindings clear their previous value before every call
+and adopt the decoded read after it, so a failure on either side leaves the
+next request FULL and both sides in step whichever way the failure fell.
+`markdown_core_session_feed`'s owned documents and `_advance`'s discarded
+reads are not payloads and never move the baseline. THE SEAL: a FULL seal
+is `finish`'s in-place projection serialized (F1's one-shot economy kept);
+a DELTA seal cannot take that path, since an in-place projection shares no
+node with the last derived tree, so `markdown_core_session_finish_wire`
+closes the stream without projecting (`markdown_core_parser_close`: the
+held line, `finalize_document`, the maps' oom convergence) and DERIVES the
+sealed CST as a feed derives an open one. That derivation met the one
+block no derivation had ever seen closed — the root — and the enrolled
+predicate now refuses it by its own shape (`src->parent != NULL`) rather
+than by the OPEN term that used to keep it out: a closed root would have
+enrolled, stored, and handed its holder a retained projection that
+`S_free_nodes` then released with the CST.
+
+**Why not the frame #162 proposed.** The issue's id-keyed frame — changed
+subtrees keyed by block id, tombstones, the root's child-id order — would
+have re-derived freshness on the session side from stamps and generations,
+which is the retention machinery's question answered a second time, and
+would have cost O(blocks) per frame for the child-id order where the
+positional delta costs one SAME op for a stable prefix of any length. The
+positional form has no tombstones (a SPINE's op list is the child list),
+reconstructs on the binding side as a slice of the previous value's
+children (the memcpy F26 accepted, at the value level), and recovers from
+lost state the same way (request FULL). What it gives up is nothing the
+issue asked for: a binding that lost its previous value asks for FULL
+either way.
+
+**Gates.** C, `projection_runner --case wire_delta` over every fixture
+(spec, regression, extensions, extensions-directive, extensions-formula-
+github), fed by line and again in 7-byte pieces, through two lockstep
+facade sessions — one asking DELTA, one FULL — and a byte-level
+reassembler that is the test's own reading of the header's layout (a field
+program per kind, spelled independently of the writer, and the header's
+SPINE kinds restated rather than the writer's): the reassembled frame must
+equal the FULL frame byte for byte at every boundary and at the seal, the
+first frame of a session asked for DELTA must be FULL, and EVERY BYTE OF A
+DELTA IS ACCOUNTED FOR — its length must be exactly the full frame's less
+the bytes SAME reused, plus one byte per SPINE and five per SAME — so
+nothing a SAME could have named is written whole, and nothing crosses that
+the full form does not hold. The walk is not the clean stream the
+protocol is happiest with: every fifth boundary is an owned `session_feed`
+whose document is held across the next feed, every seventh an `advance`,
+every eleventh a FULL request, and a 2,000-deep nest of block quotes is
+walked by line and in 7-byte pieces beside the corpus, its frames counted
+apart (a spine that is all open is rewritten whole per feed). Not vacuous:
+the corpus must have produced deltas, and they must have reused something.
+Whether the deltas come out smaller than the full frames is the corpus's
+fact, reported rather than gated (the earlier size gate held on
+extensions-formula-github by 21 bytes): on spec.txt, 669/669 examples,
+4,318 frames, 2,821 deltas, 387 KB of delta for the 460 KB of full frames
+they stand for, 80 KB of it reused — the examples are a few lines each, so
+the open paragraph re-sent per line is most of every delta; regression.txt,
+whose examples are longer, 54 KB for 105 KB with 52 KB reused, and
+extensions.txt 101 KB for 685 KB with 589 KB reused. Runs under ASan, UBSan
+and TSan with the rest of the streaming label. ES: every manifest case
+delta-streamed by line against a fresh document's whole read of the same
+bytes, `deepStrictEqual` on the value tree and equal dumps at every
+boundary and at the seal; unit gates for object identity of reused values
+across feeds and the seal, and one malformed payload per refusal the delta
+reader can make. Kotlin: the same manifest walk with equal dumps at every
+boundary and the manifest's dump at the seal, its own suite's source by
+line the same way, the identity gate, and the refusals. The bridge envelope
+bumps MKC7 → MKC8 on both writers and both decoders, the payload's first
+byte having changed.
+
+**Measured.** Callgrind first, since it is exact: the one-shot parse of
+the 158 KB document (`bench_runner --workload binding_baseline`) reads
+61.483M instructions before and 61.482M after, and the C feed loop over
+spec.txt (`projection_runner --case feed_loop`) 43.26M before and 43.33M
+after (+0.14%, the enrolled predicate's one extra compare per node) — the
+paths the delta does not touch cost what they cost, whatever a hosted
+runner's clock says on a given day. ES feed loop, same input, same
+machine, median of 5:
+24.8 / 77.6 / 986.6 ms → 18.0 / 21.6 / 36.6 ms at 1 / 16 / 256 chunks —
+1.20× and 1.70× per 16× step where it read 3.1× and 12.7×, the 256-chunk
+stream 27× faster; the one-shot 22.6 → 22.2 ms and deep nesting 92 → 83
+µs, unchanged within noise. Kotlin (JNI) feed loop, same input: 24.8 /
+64.9 / 453.9 ms → 18.6 / 21.5 / 22.8 ms — 1.16× and 1.06× per step where
+it read 2.6× and 7.0×, the 256-chunk stream 20× faster, its resident set
+488 → 152 MB and its heap in use 151 → 23 MB, since a read no longer
+allocates the document again per feed; the one-shot 16.6 → 14.6 ms. With
+the review round's exact fill in both decoders: ES 18.9 / 20.3 / 27.8 ms
+(1.07× and 1.36× per step, the 256-chunk stream 35× faster than before
+the delta) and Kotlin 16.3 / 22.9 / 20.5 ms, its resident set 150 MB. The
+#148 caps fall from 32 to 4 per 16× step
+in both bindings' feed-loop benchmarks: the construction bench_runner
+uses (4.0 on a 2× step), tolerating the per-feed floor that remains
+(below) and refusing a return to per-feed whole decodes, which read
+12.7×.
+
+**What remains, measured.** The delta is O(open + changed) on the wire
+and in the writer — fed one paragraph per feed for 4,000 feeds under
+callgrind, `wire_spine` reads 1.5K and `wire_payload` 1.7K instructions
+per feed at every width, where the whole-tree writer read 1.76M per feed
+at the same width on the base — but a feed keeps a floor that grows with
+the document, and it is the FEED's rather than the delta's, in three
+parts. (1) The engine's per-feed pointer terms F26 accepted: on that run
+`S_spine_consume`'s memcpy of the memo run into the derived root's vector
+is 60.7M of the 149.7M instructions and the root's child count walk
+32.0M — about 12 per closed block per feed on this shape, against the 5–6
+F26 recorded on the width harness — and `derive_tree` reads the same
+115.9M inclusive on the base and on this branch, FULL or DELTA: the delta
+rides on the derived tree, and neither adds to it nor, as F26 hoped,
+sidesteps its memcpy. (2) The reader's copy: a binding whose read is a
+value materializes the new child list, one reference per reused child —
+every closed block at the root — on every feed. The first decoders
+appended per child into a list grown by halves, twice the copy's own cost
+at 32,000 blocks; both now fill a list of exactly the counted length
+(review-found, Codex on the ES decoder). (3) The open block re-serialized,
+re-decoded and re-allocated per feed that grows it — small for a
+paragraph fed by line. ES, one paragraph fed onto N closed ones, the last
+200 feeds averaged: 38.4 / 48.3 / 122.7 / 539.7 / 935.4 µs per feed with
+the appending decoders → 31.2 / 50.4 / 80.4 / 318.1 / 783.6 with the
+exact fill, at N = 2,000 / 4,000 / 8,000 / 16,000 / 32,000; profiled over
+the run at 32,000, the engine is 58% of a feed, the decoder's fill 29%,
+collection 5%. So the 1.7× per 16× step the ES feed-loop benchmark read
+before the exact fill, and the 1.36× it reads with it (31 µs per added
+feed between 16 and 256 chunks on its 4,000-block document), is this
+floor — an earlier draft of this note laid it on the open block's re-read,
+the smallest of the three. The floor is accepted
+(§6), and its removal is one change on both sides of the wire: a child
+sequence shared by structure rather than copied — the memo run referenced
+by the derived root instead of consumed into its vector, the count kept
+at `add_child` instead of walked, and the decoders' SAME run a shared
+span of the previous read's sequence instead of a copy (#174). A diff
+INSIDE an open block's inline list is the step after that, if a stream
+ever needs it; it would cost the inline parse the derivation already pays
+and buy only the decode. The delta encoder recurses once per nesting level,
+as the whole-tree writer does, with a larger frame per level (96 against
+48 bytes at -O3): a nest of block quotes, which the block phase does not
+cap, reaches the stack's end on the delta path first — under a sanitizer
+build near 30,000 levels, where the plain build carries both encoders to
+about 74,000 (review-found). The corpus gate walks a 2,000-deep nest by
+line and by 7-byte pieces under every sanitizer, so the depth a document
+can plausibly have is covered; a document that exhausts the stack was
+already an accepted bound of the tree writers (§6), and the delta does
+not move it in a plain build.
 
 ---
 
@@ -2694,6 +2877,25 @@ Stated so they are not later mistaken for defects.
   hooks for the leaf names they act on wherever those are enough. **This
   is accepted** until sharing-aware editing (#168) changes the contract;
   F27's second review round has the measurements.
+- **A feed has a floor that grows with the document, on both sides of the
+  wire, and a session that writes the wire keeps one derived tree
+  standing.** The engine's per-feed pointer terms (F26: the memo run
+  consumed into the derived root's vector by memcpy, the root's children
+  counted from the CST to size it) are about 12 instructions per closed
+  block per feed on the one-paragraph-per-feed shape; the wire's delta
+  (F28) crosses in O(open + changed) bytes, but a binding whose read is a
+  value copies one reference per reused child into the new child list —
+  every closed block at the root — on every feed; measured together in
+  the ES binding, 50 µs per feed at 4,000 closed blocks and 784 µs at
+  32,000. And the session keeps the last payload's derived tree alive
+  whichever frame was asked for, since the next delta is pointer identity
+  against it: +156 KB and +584 KB of peak resident set for a FULL-only
+  caller on the 158 KB and 1.58 MB documents fed in 256 chunks (1.7% and
+  0.8%), where the same stream asked DELTA peaks below the owned-document
+  feed. **All three are accepted**: the two copies are the skeleton of the
+  copy-out this section already accepts, bounded by a reference per
+  closed block, and they fall together to a child sequence shared by
+  structure (#174); the tree is one tree.
 - **A feed is not monotone.** A definition arriving later changes the projection
   of a block returned earlier. That block was never wrong: it was resolved
   against the map as it then stood, and CommonMark defines the earlier outcome

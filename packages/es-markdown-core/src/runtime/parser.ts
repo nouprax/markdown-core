@@ -1,3 +1,4 @@
+import type { Semantic } from "../model/semantic.js";
 import { ParseError } from "../parse-error.js";
 import type { Read } from "../read.js";
 import type { ParseOptions } from "../parse-options.js";
@@ -62,13 +63,16 @@ export function withHeapText<Result>(text: string, action: (pointer: number, len
 
 /**
  * THE ONE WAY A READ LEAVES WASM. `invoke` runs a native call that writes an
- * MKC7 payload behind the given output slot -- a document's `feed` and its
- * `seal` both answer that way -- and this copies the payload out in ONE
- * crossing, releases the native buffer, and decodes the copy: a `Read` value,
- * or the `ParseError` the payload carried. Nothing native survives the call.
+ * MKC8 payload behind the given output slot -- a document's `feed` and its
+ * `seal` both answer that way -- and this decodes the payload off a view
+ * over WASM memory in ONE crossing, releases the native buffer, and answers
+ * a `Read` value, or throws the `ParseError` the payload carried. Nothing
+ * native survives the call. `previous` is the read the payload may be a
+ * DELTA against (#162): the values it holds are handed into the new read
+ * wherever the payload says nothing moved.
  */
-export function copyOut(invoke: (output: number) => number): Read {
-    const { semantic } = decodePayload(invoke, decodeRead);
+export function copyOut(invoke: (output: number) => number, previous: Semantic | null = null): Read {
+    const { semantic } = decodePayload(invoke, (payload) => decodeRead(payload, previous));
     return makeRead(semantic);
 }
 

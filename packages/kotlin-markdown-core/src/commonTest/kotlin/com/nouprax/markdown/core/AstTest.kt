@@ -129,6 +129,41 @@ class AstTest {
             }
         }
     }
+
+    @Test
+    fun allManifestCasesDeltaStreamedByLineEqualTheWholeReads() {
+        // THE DELTA'S GATE (#162) over the shared corpus, the ECMAScript
+        // binding's twin: a document fed one line at a time answers every
+        // feed through a DELTA against its previous read, and each such read
+        // must dump exactly as the read a fresh document answers for the
+        // same bytes in one WHOLE frame; the seal, a delta too, must answer
+        // the manifest's expected dump. A value reused in the wrong place,
+        // or a child dropped or doubled, is a difference here.
+        assertTrue(canonicalAstCases.isNotEmpty())
+        for (testCase in canonicalAstCases) {
+            Document(testCase.options).use { document ->
+                val bytes = testCase.source.encodeToByteArray()
+                var fed = 0
+                var boundary = 0
+                while (fed < bytes.size) {
+                    var end = fed
+                    while (end < bytes.size && bytes[end] != '\n'.code.toByte()) end++
+                    if (end < bytes.size) end++
+                    val read = document.feed(bytes.copyOfRange(fed, end))
+                    fed = end
+                    boundary++
+                    Document(testCase.options).use { whole ->
+                        assertEquals(
+                            whole.feed(bytes.copyOfRange(0, fed)).dump(),
+                            read.dump(),
+                            "${testCase.name} boundary $boundary",
+                        )
+                    }
+                }
+                assertEquals(testCase.expected, document.seal().dump(), testCase.name)
+            }
+        }
+    }
 }
 
 private fun flatten(root: Any): kotlin.collections.List<Any> =

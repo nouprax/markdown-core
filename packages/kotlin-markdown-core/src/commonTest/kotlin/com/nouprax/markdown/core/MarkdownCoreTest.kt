@@ -69,7 +69,7 @@ class ErrorsTest {
 
     @Test
     fun everyWireGuardFiresWhenTheNativeSideAnswersOutOfRange() {
-        // The two sides of the wire are versioned separately -- the MKC7 bump
+        // The two sides of the wire are versioned separately -- the MKC8 bump
         // is that hazard made concrete -- and a decoder that mapped an unknown value
         // instead of refusing it turns a protocol mismatch into a wrong
         // document. Nothing proved any of these fired.
@@ -79,7 +79,7 @@ class ErrorsTest {
 
         // A header the decoder accepts, followed by nothing it can read.
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeRead("MKC7".encodeToByteArray())
+            WireDecoder.decodeRead("MKC8".encodeToByteArray())
         }
     }
 
@@ -87,9 +87,10 @@ class ErrorsTest {
     fun everyRefusalTheWireReaderCanMakeIsReachedByAPayload() {
         // The reader is one `require` after another and a corpus reaches none
         // of them: every payload the bridge actually writes is well formed. So
-        // write the malformed ones by hand. `MKC7` is the magic; the byte after
+        // write the malformed ones by hand. `MKC8` is the magic; the byte after
         // it is the status, and 1 means the payload is an error rather than a
-        // document.
+        // document; a document then leads with its frame byte, 0 for a whole
+        // tree.
         fun payload(vararg parts: Any): ByteArray {
             val out = mutableListOf<Byte>()
             for (part in parts) {
@@ -107,34 +108,180 @@ class ErrorsTest {
         // path that builds a ParseException.
         val failure =
             assertFailsWith<ParseException> {
-                WireDecoder.decodeRead(payload("MKC7", 1.toByte(), 1, 3, "bad"))
+                WireDecoder.decodeRead(payload("MKC8", 1.toByte(), 1, 3, "bad"))
             }
         assertEquals(ParseErrorCode.INVALID_ARGUMENT, failure.code)
         assertEquals("bad", failure.message)
         assertEquals(
             ParseErrorCode.INTERNAL,
             assertFailsWith<ParseException> {
-                WireDecoder.decodeRead(payload("MKC7", 1.toByte(), 99, 1, "x"))
+                WireDecoder.decodeRead(payload("MKC8", 1.toByte(), 99, 1, "x"))
             }.code,
         )
 
         // A status that is neither, a magic from the wrong wire version, a
-        // root that is not a document, and a payload that stops mid-value.
+        // frame the reader does not know, a delta with nothing to be a delta
+        // against, a root that is not a document, and a payload that stops
+        // mid-value.
         assertFailsWith<IllegalStateException> {
-            WireDecoder.decodeRead(payload("MKC7", 2.toByte()))
+            WireDecoder.decodeRead(payload("MKC8", 2.toByte()))
         }
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeRead(payload("MKC5", 0.toByte()))
+            WireDecoder.decodeRead(payload("MKC7", 0.toByte(), 0.toByte()))
+        }
+        assertFailsWith<IllegalStateException> {
+            WireDecoder.decodeRead(payload("MKC8", 0.toByte(), 7.toByte()))
         }
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeRead(payload("MKC7", 0.toByte(), 3.toByte()))
+            WireDecoder.decodeRead(payload("MKC8", 0.toByte(), 1.toByte()))
         }
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeRead(payload("MKC7", 0.toByte(), 1.toByte(), 1, 1))
+            WireDecoder.decodeRead(payload("MKC8", 0.toByte(), 0.toByte(), 3.toByte()))
         }
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeRead(payload("MKC7", 1.toByte(), 1, -2))
+            WireDecoder.decodeRead(payload("MKC8", 0.toByte(), 0.toByte(), 1.toByte(), 1, 1))
         }
+        assertFailsWith<IllegalArgumentException> {
+            WireDecoder.decodeRead(payload("MKC8", 1.toByte(), 1, -2))
+        }
+    }
+
+    @Test
+    fun everyRefusalTheDeltaReaderCanMakeIsReachedByAPayload() {
+        // A DELTA frame is a tree of ops against the previous read (#162):
+        // SPINE (0xfe) rewrites a container's fields and rebuilds its
+        // children from ops, SAME (0xff) reuses the next n of the previous
+        // node's children, and any other tag is a kind byte opening a whole
+        // node. The reader refuses every way the ops can disagree with the
+        // previous read, because a delta that landed on the wrong value would
+        // be a wrong document rather than an error.
+        fun bytes(vararg parts: Any): kotlin.collections.List<Byte> {
+            val out = mutableListOf<Byte>()
+            for (part in parts) {
+                when (part) {
+                    is String -> out += part.encodeToByteArray().toList()
+                    is Byte -> out += part
+                    is Int -> repeat(4) { shift -> out += ((part shr (shift * 8)) and 0xff).toByte() }
+                    is kotlin.collections.List<*> -> out += part.map { it as Byte }
+                    else -> error("unsupported payload part")
+                }
+            }
+            return out
+        }
+
+        fun identity(
+            block: Int,
+            ordinal: Int,
+        ) = bytes(block, ordinal)
+        val scope = bytes(1, 1, 1, 1)
+
+        // A paragraph of one text node, the block's identity on both.
+        fun paragraph(
+            block: Int,
+            literal: String,
+        ): kotlin.collections.List<Byte> {
+            val text = bytes(14.toByte(), identity(block, 1), scope, literal.length, literal)
+            return bytes(3.toByte(), identity(block, 0), scope, 1, text)
+        }
+        val header = bytes("MKC8", 0.toByte())
+        // The previous read: a document holding two paragraphs.
+        val previous =
+            WireDecoder
+                .decodeRead(
+                    bytes(
+                        header,
+                        0.toByte(),
+                        1.toByte(),
+                        identity(1, 0),
+                        scope,
+                        2,
+                        paragraph(2, "one"),
+                        paragraph(3, "two"),
+                    ).toByteArray(),
+                ).semantic
+
+        fun delta(vararg ops: Any) = bytes(header, 1.toByte(), bytes(*ops)).toByteArray()
+
+        fun root(vararg ops: Any) = delta(0xfe.toByte(), 1.toByte(), identity(1, 0), scope, bytes(*ops))
+
+        // The healthy shapes: the previous children reused as the same
+        // objects, one rewritten as a spine, one written whole, in every mix.
+        val same = WireDecoder.decodeRead(root(1, 0xff.toByte(), 2), previous).semantic
+        assertEquals(2, same.content.size)
+        assertTrue(same.content[0] === previous.content[0])
+        assertTrue(same.content[1] === previous.content[1])
+        val mixed =
+            WireDecoder
+                .decodeRead(root(3, 0xff.toByte(), 1, paragraph(3, "changed"), paragraph(4, "new")), previous)
+                .semantic
+        assertEquals(3, mixed.content.size)
+        assertTrue(mixed.content[0] === previous.content[0])
+        assertEquals("changed", assertIs<Text>(assertIs<Paragraph>(mixed.content[1]).content[0]).literal)
+        assertEquals("new", assertIs<Text>(assertIs<Paragraph>(mixed.content[2]).content[0]).literal)
+        assertTrue(
+            WireDecoder
+                .decodeRead(root(0), previous)
+                .semantic.content
+                .isEmpty(),
+        )
+        // A whole-tree frame ignores the previous read entirely.
+        assertTrue(
+            WireDecoder
+                .decodeRead(bytes(header, 0.toByte(), 1.toByte(), identity(1, 0), scope, 0).toByteArray(), previous)
+                .semantic.content
+                .isEmpty(),
+        )
+
+        // A delta that does not open with the document's spine, a spine that
+        // renames the kind or the identity, a reuse or a rewrite past the
+        // previous node's children, a spine on a node that has no children
+        // to address, and an op stream that stops early.
+        assertFailsWith<IllegalArgumentException> { WireDecoder.decodeRead(delta(1.toByte()), previous) }
+        assertFailsWith<IllegalArgumentException> {
+            WireDecoder.decodeRead(delta(0xfe.toByte(), 3.toByte(), identity(1, 0), scope, 0), previous)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            WireDecoder.decodeRead(delta(0xfe.toByte(), 1.toByte(), identity(9, 0), scope, 0), previous)
+        }
+        assertFailsWith<IllegalArgumentException> { WireDecoder.decodeRead(root(1, 0xff.toByte(), 3), previous) }
+        assertFailsWith<IllegalArgumentException> {
+            WireDecoder.decodeRead(root(2, 0xff.toByte(), 2, 0xfe.toByte()), previous)
+        }
+        assertFailsWith<IllegalArgumentException> { WireDecoder.decodeRead(root(1, 0xff.toByte(), -1), previous) }
+        assertFailsWith<IllegalArgumentException> { WireDecoder.decodeRead(root(-1), previous) }
+        assertFailsWith<IllegalStateException> {
+            WireDecoder.decodeRead(root(1, 0xfe.toByte(), 3.toByte(), identity(2, 0), scope, 0), previous)
+        }
+        assertFailsWith<IllegalArgumentException> { WireDecoder.decodeRead(root(1, 0xff.toByte()), previous) }
+        assertFailsWith<IllegalArgumentException> {
+            WireDecoder.decodeRead(root(1, 0xff.toByte(), 1, 0.toByte()), previous)
+        }
+
+        // A table's header row is its FIRST child on the wire -- the engine
+        // opens a table with it, and a delta addresses the rows by position
+        // -- so a table with no header, with two, or with its header second
+        // is refused.
+        fun row(
+            block: Int,
+            header: Boolean,
+        ) = bytes(27.toByte(), identity(block, 0), scope, (if (header) 1 else 0).toByte(), 0)
+
+        fun table(vararg rows: kotlin.collections.List<Byte>): ByteArray {
+            val node = bytes(11.toByte(), identity(2, 0), scope, 0, rows.size, bytes(*rows))
+            return bytes(header, 0.toByte(), 1.toByte(), identity(1, 0), scope, 1, node).toByteArray()
+        }
+        assertEquals(
+            true,
+            assertIs<Table>(
+                WireDecoder
+                    .decodeRead(table(row(3, true), row(4, false)))
+                    .semantic.content
+                    .single(),
+            ).header.isHeader,
+        )
+        assertFailsWith<IllegalArgumentException> { WireDecoder.decodeRead(table(row(3, false))) }
+        assertFailsWith<IllegalArgumentException> { WireDecoder.decodeRead(table(row(3, true), row(4, true))) }
+        assertFailsWith<IllegalArgumentException> { WireDecoder.decodeRead(table(row(3, false), row(4, true))) }
     }
 
     @Test

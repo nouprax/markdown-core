@@ -228,6 +228,15 @@ void markdown_core_parser_mint_block_id(markdown_core_parser *parser, markdown_c
 
 markdown_core_node *markdown_core_parser_derive_tree(markdown_core_parser *parser, markdown_core_map *refmap);
 
+/* Close the stream without projecting it (#162): the held partial line is
+ * processed and every block finalized, so the CST stands sealed for a
+ * DERIVATION -- the delta seal's path, whose diff is by pointer identity
+ * against the last derived tree and so cannot use `finish`'s in-place
+ * projection. Answers false when the parse lost an allocation (nothing to
+ * derive) or was already finished. Once per parser; `finish` is not a path
+ * after it -- free the parser. Not part of the public surface. */
+bool markdown_core_parser_close(markdown_core_parser *parser);
+
 #ifdef __cplusplus
 }
 #endif

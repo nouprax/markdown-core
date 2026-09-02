@@ -5081,6 +5081,850 @@ static int case_session_documents(const ts_spec_file *file) {
     return failures ? -1 : 0;
 }
 
+/* THE DELTA WIRE'S GATE (#162): a session asked for DELTA frames must
+ * REASSEMBLE, byte for byte, to the FULL frame a second session fed the
+ * same bytes answers -- at every chunk boundary of every fixture example,
+ * fed one line at a time and again in 7-byte pieces, and at the seal,
+ * whose delta path derives the sealed CST where the full path projects it
+ * in place. The reassembler here is the test's own reading of the header's
+ * layout -- a field program per kind, spelled independently of the writer
+ * -- applied to the previous FULL frame's bytes: SAME copies the previous
+ * node's child ranges, NODE copies the delta's own bytes, SPINE rewrites a
+ * container's fields from the delta and rebuilds its children by these
+ * rules. What the gate proves is the engine's claim that pointer identity
+ * between two derivations means byte identity on the wire, over every
+ * shape the corpus can put in a tree; a divergence names its example,
+ * boundary and first differing byte. The first frame of a session asked
+ * for DELTA must be FULL, and the corpus must produce deltas at all, so
+ * the gate cannot pass vacuously. */
+typedef struct wd_cursor {
+    const uint8_t *data;
+    size_t size;
+    size_t at;
+    int failed;
+} wd_cursor;
+
+typedef struct wd_out {
+    uint8_t *data;
+    size_t size;
+    size_t capacity;
+    int failed;
+    /* THE ACCOUNTING: the bytes SAME ops reused from the previous frame,
+     * and the op counts, so that a delta's length can be checked against
+     * the full frame's -- a SPINE costs its one tag byte over the node it
+     * rewrites, a SAME its tag and count over the children it stands for,
+     * and a NODE nothing. */
+    size_t reused;
+    size_t spines;
+    size_t sames;
+} wd_out;
+
+/* Letters: I identity, S scope, i i32, l i64, b u8, s string (i32 length,
+ * -1 for absent), T table columns (i32 count, then that many u8), D
+ * directive attributes (u8 present, i32 count, then count pairs of s), C
+ * children (i32 count, then that many nodes) -- always last. */
+static const char *wd_program(uint8_t kind) {
+    switch (kind) {
+    case MARKDOWN_CORE_KIND_DOCUMENT:
+    case MARKDOWN_CORE_KIND_BLOCK_QUOTE:
+    case MARKDOWN_CORE_KIND_PARAGRAPH:
+    case MARKDOWN_CORE_KIND_EMPHASIS:
+    case MARKDOWN_CORE_KIND_STRONG:
+    case MARKDOWN_CORE_KIND_STRIKETHROUGH:
+    case MARKDOWN_CORE_KIND_TABLE_CELL:
+    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
+        return "ISC";
+    case MARKDOWN_CORE_KIND_HEADING:
+        return "ISiC";
+    case MARKDOWN_CORE_KIND_THEMATIC_BREAK:
+    case MARKDOWN_CORE_KIND_SOFT_BREAK:
+    case MARKDOWN_CORE_KIND_LINE_BREAK:
+        return "IS";
+    case MARKDOWN_CORE_KIND_LIST:
+        return "ISilbbC";
+    case MARKDOWN_CORE_KIND_LIST_ITEM:
+        return "ISbC";
+    case MARKDOWN_CORE_KIND_CODE_BLOCK:
+        return "ISsssbb";
+    case MARKDOWN_CORE_KIND_HTML_BLOCK:
+    case MARKDOWN_CORE_KIND_TEXT:
+    case MARKDOWN_CORE_KIND_CODE:
+    case MARKDOWN_CORE_KIND_HTML:
+    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
+        return "ISs";
+    case MARKDOWN_CORE_KIND_FORMULA:
+        return "ISis";
+    case MARKDOWN_CORE_KIND_TABLE:
+        return "ISTC";
+    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
+    case MARKDOWN_CORE_KIND_DIRECTIVE:
+        return "ISsDC";
+    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
+        return "ISssC";
+    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
+        return "ISssss";
+    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
+        return "ISsI";
+    case MARKDOWN_CORE_KIND_LINK_REFERENCE:
+    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE:
+        return "ISsiIC";
+    case MARKDOWN_CORE_KIND_LINK:
+    case MARKDOWN_CORE_KIND_IMAGE:
+        return "ISssC";
+    case MARKDOWN_CORE_KIND_TABLE_ROW:
+        return "ISbC";
+    default:
+        return NULL;
+    }
+}
+
+static uint8_t wd_u8(wd_cursor *cursor) {
+    if (cursor->failed || cursor->at >= cursor->size) {
+        cursor->failed = 1;
+        return 0;
+    }
+    return cursor->data[cursor->at++];
+}
+
+static int32_t wd_i32(wd_cursor *cursor) {
+    uint32_t bits;
+    if (cursor->failed || cursor->size - cursor->at < 4) {
+        cursor->failed = 1;
+        return 0;
+    }
+    bits = (uint32_t)cursor->data[cursor->at] | ((uint32_t)cursor->data[cursor->at + 1] << 8) |
+           ((uint32_t)cursor->data[cursor->at + 2] << 16) | ((uint32_t)cursor->data[cursor->at + 3] << 24);
+    cursor->at += 4;
+    return (int32_t)bits;
+}
+
+static void wd_skip(wd_cursor *cursor, size_t length) {
+    if (cursor->failed || cursor->size - cursor->at < length) {
+        cursor->failed = 1;
+        return;
+    }
+    cursor->at += length;
+}
+
+static void wd_skip_string(wd_cursor *cursor) {
+    int32_t length = wd_i32(cursor);
+    if (length == -1) {
+        return;
+    }
+    if (length < 0) {
+        cursor->failed = 1;
+        return;
+    }
+    wd_skip(cursor, (size_t)length);
+}
+
+/* Runs a kind's program up to its children, which are the caller's to
+ * handle. Answers whether children follow. */
+static int wd_skip_fields(wd_cursor *cursor, const char *program) {
+    const char *step;
+    for (step = program; *step && !cursor->failed; step++) {
+        switch (*step) {
+        case 'I':
+            wd_skip(cursor, 8);
+            break;
+        case 'S':
+            wd_skip(cursor, 16);
+            break;
+        case 'i':
+            wd_skip(cursor, 4);
+            break;
+        case 'l':
+            wd_skip(cursor, 8);
+            break;
+        case 'b':
+            wd_skip(cursor, 1);
+            break;
+        case 's':
+            wd_skip_string(cursor);
+            break;
+        case 'T': {
+            int32_t columns = wd_i32(cursor);
+            if (columns < 0) {
+                cursor->failed = 1;
+                return 0;
+            }
+            wd_skip(cursor, (size_t)columns);
+            break;
+        }
+        case 'D': {
+            int32_t pairs;
+            wd_u8(cursor);
+            pairs = wd_i32(cursor);
+            if (pairs < 0) {
+                cursor->failed = 1;
+                return 0;
+            }
+            while (pairs-- > 0 && !cursor->failed) {
+                wd_skip_string(cursor);
+                wd_skip_string(cursor);
+            }
+            break;
+        }
+        case 'C':
+            return 1;
+        default:
+            cursor->failed = 1;
+            return 0;
+        }
+    }
+    return 0;
+}
+
+static void wd_skip_node(wd_cursor *cursor) {
+    uint8_t kind = wd_u8(cursor);
+    const char *program = wd_program(kind);
+    if (!program) {
+        cursor->failed = 1;
+        return;
+    }
+    if (wd_skip_fields(cursor, program)) {
+        int32_t count = wd_i32(cursor);
+        if (count < 0) {
+            cursor->failed = 1;
+            return;
+        }
+        while (count-- > 0 && !cursor->failed) {
+            wd_skip_node(cursor);
+        }
+    }
+}
+
+static void wd_put(wd_out *out, const uint8_t *bytes, size_t length) {
+    if (out->failed) {
+        return;
+    }
+    if (out->size + length > out->capacity) {
+        size_t capacity = out->capacity ? out->capacity : 256;
+        uint8_t *grown;
+        while (capacity < out->size + length) {
+            capacity *= 2;
+        }
+        grown = (uint8_t *)realloc(out->data, capacity);
+        if (!grown) {
+            out->failed = 1;
+            return;
+        }
+        out->data = grown;
+        out->capacity = capacity;
+    }
+    if (length) {
+        memcpy(out->data + out->size, bytes, length);
+        out->size += length;
+    }
+}
+
+static void wd_put_i32(wd_out *out, int32_t value) {
+    uint32_t bits = (uint32_t)value;
+    uint8_t bytes[4];
+    bytes[0] = (uint8_t)bits;
+    bytes[1] = (uint8_t)(bits >> 8);
+    bytes[2] = (uint8_t)(bits >> 16);
+    bytes[3] = (uint8_t)(bits >> 24);
+    wd_put(out, bytes, 4);
+}
+
+static void wd_patch_i32(wd_out *out, size_t at, int32_t value) {
+    uint32_t bits = (uint32_t)value;
+    if (out->failed) {
+        return;
+    }
+    out->data[at] = (uint8_t)bits;
+    out->data[at + 1] = (uint8_t)(bits >> 8);
+    out->data[at + 2] = (uint8_t)(bits >> 16);
+    out->data[at + 3] = (uint8_t)(bits >> 24);
+}
+
+/* THE KINDS A SPINE MAY NAME, as the header states them: the block
+ * containers of blocks, which are the kinds whose children the bindings
+ * address by position. A field program ending in children is not enough
+ * -- a paragraph's or a table row's does too -- and a spine on one of those
+ * would reassemble here while both decoders refuse it (review-found), so
+ * the gate restates the header's set rather than the writer's. */
+static int wd_spine_kind(uint8_t kind) {
+    switch (kind) {
+    case MARKDOWN_CORE_KIND_DOCUMENT:
+    case MARKDOWN_CORE_KIND_BLOCK_QUOTE:
+    case MARKDOWN_CORE_KIND_LIST:
+    case MARKDOWN_CORE_KIND_LIST_ITEM:
+    case MARKDOWN_CORE_KIND_TABLE:
+    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
+    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/* A SPINE op, `delta` standing just past its 0xFE tag, against the
+ * previous frame's node at `prev_at`. */
+static void wd_spine(wd_cursor *delta, const wd_cursor *frame, size_t prev_at, wd_out *out, const char **why) {
+    uint8_t kind = wd_u8(delta);
+    const char *program = wd_program(kind);
+    wd_cursor prev = *frame;
+    size_t fields_at = delta->at;
+    size_t *starts;
+    int32_t prev_count;
+    int32_t op_count;
+    int32_t position = 0;
+    int32_t produced = 0;
+    int32_t index;
+    size_t count_at;
+
+    prev.at = prev_at;
+    if (!program || !strchr(program, 'C')) {
+        *why = "a spine op names a kind without a child list";
+        delta->failed = 1;
+        return;
+    }
+    if (!wd_spine_kind(kind)) {
+        *why = "a spine op names a kind the bindings cannot address by position";
+        delta->failed = 1;
+        return;
+    }
+    if (wd_u8(&prev) != kind) {
+        *why = "a spine op's kind differs from the previous node's";
+        delta->failed = 1;
+        return;
+    }
+    /* The identity must be the previous node's too -- the first eight bytes
+     * of the fields. */
+    if (prev.size - prev.at < 8 || delta->size - delta->at < 8 ||
+        memcmp(prev.data + prev.at, delta->data + delta->at, 8) != 0) {
+        *why = "a spine op's identity differs from the previous node's";
+        delta->failed = 1;
+        return;
+    }
+    wd_skip_fields(delta, program);
+    if (delta->failed) {
+        *why = "a spine op's fields are truncated";
+        return;
+    }
+    out->spines++;
+    wd_put(out, &kind, 1);
+    wd_put(out, delta->data + fields_at, delta->at - fields_at);
+    wd_skip_fields(&prev, program);
+    prev_count = wd_i32(&prev);
+    if (prev.failed || prev_count < 0) {
+        *why = "the previous frame does not read back";
+        delta->failed = 1;
+        return;
+    }
+    starts = (size_t *)malloc(((size_t)prev_count + 1) * sizeof(size_t));
+    if (!starts) {
+        *why = "out of memory";
+        delta->failed = 1;
+        return;
+    }
+    for (index = 0; index < prev_count; index++) {
+        starts[index] = prev.at;
+        wd_skip_node(&prev);
+    }
+    starts[prev_count] = prev.at;
+    if (prev.failed) {
+        *why = "the previous frame's children do not read back";
+        delta->failed = 1;
+        free(starts);
+        return;
+    }
+    op_count = wd_i32(delta);
+    count_at = out->size;
+    wd_put_i32(out, 0);
+    for (index = 0; index < op_count && !delta->failed; index++) {
+        uint8_t tag = wd_u8(delta);
+        if (tag == 0xFF) {
+            int32_t run = wd_i32(delta);
+            if (run < 0 || run > prev_count - position) {
+                *why = "a same run reaches past the previous node's children";
+                delta->failed = 1;
+                break;
+            }
+            wd_put(out, prev.data + starts[position], starts[position + run] - starts[position]);
+            out->sames++;
+            out->reused += starts[position + run] - starts[position];
+            position += run;
+            produced += run;
+        } else if (tag == 0xFE) {
+            if (position >= prev_count) {
+                *why = "a spine op stands past the previous node's children";
+                delta->failed = 1;
+                break;
+            }
+            wd_spine(delta, frame, starts[position], out, why);
+            position++;
+            produced++;
+        } else {
+            size_t node_at = delta->at - 1;
+            delta->at = node_at;
+            wd_skip_node(delta);
+            if (delta->failed) {
+                *why = "a node op does not read back";
+                break;
+            }
+            wd_put(out, delta->data + node_at, delta->at - node_at);
+            position++;
+            produced++;
+        }
+    }
+    if (op_count < 0) {
+        *why = "a negative op count";
+        delta->failed = 1;
+    }
+    wd_patch_i32(out, count_at, produced);
+    free(starts);
+}
+
+/* The FULL form of a payload: the payload itself for a FULL frame, the
+ * reassembly against `previous` (itself a FULL form) for a DELTA, with
+ * `*reused` the bytes of it SAME ops stood for. Malloc'd; NULL with `*why`
+ * set when the payload does not reassemble, or when its length is not
+ * exactly the full form's less the reused bytes plus the ops' own -- one
+ * byte per SPINE, five per SAME -- which is every byte of a delta
+ * accounted for: nothing a SAME could have named written whole, and
+ * nothing written that the full form does not hold. */
+static uint8_t *wd_full_form(
+    const uint8_t *payload,
+    size_t length,
+    const uint8_t *previous,
+    size_t previous_length,
+    size_t *out_length,
+    int *was_delta,
+    size_t *reused,
+    const char **why
+) {
+    wd_cursor delta;
+    wd_cursor frame;
+    wd_out out = {0};
+    uint8_t full = 0;
+
+    *was_delta = 0;
+    *reused = 0;
+    if (length < 1) {
+        *why = "an empty payload";
+        return NULL;
+    }
+    if (payload[0] == 0) {
+        uint8_t *copy = (uint8_t *)malloc(length);
+        if (!copy) {
+            *why = "out of memory";
+            return NULL;
+        }
+        memcpy(copy, payload, length);
+        *out_length = length;
+        return copy;
+    }
+    if (payload[0] != 1) {
+        *why = "an unknown frame byte";
+        return NULL;
+    }
+    if (!previous) {
+        *why = "a delta frame with no previous payload";
+        return NULL;
+    }
+    *was_delta = 1;
+    delta.data = payload;
+    delta.size = length;
+    delta.at = 1;
+    delta.failed = 0;
+    frame.data = previous;
+    frame.size = previous_length;
+    frame.at = 1;
+    frame.failed = 0;
+    wd_put(&out, &full, 1);
+    if (wd_u8(&delta) != 0xFE) {
+        *why = "a delta frame that does not open with a spine op";
+        free(out.data);
+        return NULL;
+    }
+    wd_spine(&delta, &frame, 1, &out, why);
+    if (!delta.failed && delta.at != delta.size) {
+        *why = "bytes after the delta's root op";
+        delta.failed = 1;
+    }
+    if (delta.failed || out.failed) {
+        if (out.failed) {
+            *why = "out of memory";
+        }
+        free(out.data);
+        return NULL;
+    }
+    if (length != out.size - out.reused + out.spines + 5 * out.sames) {
+        *why = "the delta's length is not the full frame's less the reused bytes plus the ops' own";
+        free(out.data);
+        return NULL;
+    }
+    *out_length = out.size;
+    *reused = out.reused;
+    return out.data;
+}
+
+typedef struct wd_stats {
+    size_t frames;
+    size_t deltas;
+    size_t delta_bytes;
+    size_t full_bytes;
+    size_t reused_bytes;
+} wd_stats;
+
+/* One boundary: the delta session's payload against the full session's,
+ * both taken with a 2-byte prefix so the envelope room is checked too.
+ * Takes over `*previous`. */
+static int wd_compare(
+    const ts_spec_case *test_case,
+    const char *label,
+    size_t boundary,
+    uint8_t *delta_payload,
+    size_t delta_length,
+    uint8_t *full_payload,
+    size_t full_length,
+    uint8_t **previous,
+    size_t *previous_length,
+    wd_stats *stats
+) {
+    const char *why = "";
+    int was_delta = 0;
+    size_t reused = 0;
+    uint8_t *form;
+    size_t form_length = 0;
+    int equal;
+
+    if (!delta_payload || !full_payload || delta_length < 3 || full_length < 3 || delta_payload[0] != 0 ||
+        delta_payload[1] != 0 || full_payload[0] != 0 || full_payload[1] != 0) {
+        fprintf(
+            stderr,
+            "example %d %s boundary %zu: a payload is missing or its prefix is not zeroed\n",
+            test_case->example,
+            label,
+            boundary
+        );
+        markdown_core_wire_free(delta_payload);
+        markdown_core_wire_free(full_payload);
+        return -1;
+    }
+    form = wd_full_form(
+        delta_payload + 2,
+        delta_length - 2,
+        *previous,
+        *previous_length,
+        &form_length,
+        &was_delta,
+        &reused,
+        &why
+    );
+    if (!form) {
+        fprintf(
+            stderr,
+            "example %d %s boundary %zu: the delta does not reassemble: %s\n",
+            test_case->example,
+            label,
+            boundary,
+            why
+        );
+        markdown_core_wire_free(delta_payload);
+        markdown_core_wire_free(full_payload);
+        return -1;
+    }
+    equal = form_length == full_length - 2 && memcmp(form, full_payload + 2, form_length) == 0;
+    if (!equal) {
+        size_t at = 0;
+        size_t limit = form_length < full_length - 2 ? form_length : full_length - 2;
+        while (at < limit && form[at] == full_payload[2 + at]) {
+            at++;
+        }
+        fprintf(
+            stderr,
+            "example %d %s boundary %zu: the reassembled frame (%zu bytes) differs from the full frame (%zu bytes) at "
+            "byte %zu\n",
+            test_case->example,
+            label,
+            boundary,
+            form_length,
+            full_length - 2,
+            at
+        );
+    }
+    if (boundary == 1 && was_delta) {
+        fprintf(stderr, "example %d %s: the first frame of a session was a delta\n", test_case->example, label);
+        equal = 0;
+    }
+    stats->frames++;
+    /* The size terms count a DELTA against the FULL frame it stands for
+     * and nothing else: a boundary the delta session answered FULL -- the
+     * first of a session, or one the walk asked FULL at -- is the same
+     * bytes twice. */
+    if (was_delta) {
+        stats->deltas++;
+        stats->delta_bytes += delta_length - 2;
+        stats->full_bytes += full_length - 2;
+        stats->reused_bytes += reused;
+    }
+    markdown_core_wire_free(delta_payload);
+    markdown_core_wire_free(full_payload);
+    free(*previous);
+    *previous = form;
+    *previous_length = form_length;
+    return equal ? 0 : -1;
+}
+
+/* One example through two lockstep sessions: `chunk` bytes per feed, or by
+ * line when `chunk` is 0; then the seal. THE BASELINE'S CONTRACT RIDES
+ * ALONG (review-found): the header says an owned document
+ * (`markdown_core_session_feed`) and a discarded read (`_advance`) are not
+ * payloads and move nothing, and that a FULL request inside a delta stream
+ * is answered whole and becomes the next baseline -- so on a fixed cadence
+ * of steps the delta session takes its chunk through one of those doors
+ * instead, the full session takes the same chunk through its own, and the
+ * next delta must still reassemble against the last PAYLOAD. The owned
+ * documents are held to the end of the example and freed after the seal,
+ * the way a consumer keeps a read across later feeds (T19). */
+#define WD_HELD_MAX 64
+
+static int wd_run_example(const ts_spec_case *test_case, size_t chunk, wd_stats *stats) {
+    const char *label = chunk ? "bytes" : "lines";
+    markdown_core_parse_options options;
+    markdown_core_session *delta;
+    markdown_core_session *full;
+    const char *text = test_case->markdown;
+    size_t length = test_case->markdown_length;
+    size_t start = 0;
+    size_t boundary = 0;
+    size_t step = 0;
+    uint8_t *previous = NULL;
+    size_t previous_length = 0;
+    uint8_t *delta_payload;
+    uint8_t *full_payload;
+    size_t delta_length;
+    size_t full_length;
+    markdown_core_document *held[WD_HELD_MAX];
+    size_t held_count = 0;
+    size_t i;
+    int failures = 0;
+
+    markdown_core_parse_options_init(&options);
+    delta = markdown_core_session_new(&options, NULL);
+    full = markdown_core_session_new(&options, NULL);
+    if (!delta || !full) {
+        markdown_core_session_free(delta);
+        markdown_core_session_free(full);
+        fprintf(stderr, "example %d: session allocation failed\n", test_case->example);
+        return -1;
+    }
+    while (start < length && !failures) {
+        size_t end;
+        const uint8_t *piece;
+        size_t piece_length;
+        markdown_core_wire_frame request = MARKDOWN_CORE_WIRE_DELTA;
+        if (chunk) {
+            end = length - start < chunk ? length : start + chunk;
+        } else {
+            const char *newline = (const char *)memchr(text + start, '\n', length - start);
+            end = newline ? (size_t)(newline - text) + 1 : length;
+        }
+        piece = (const uint8_t *)text + start;
+        piece_length = end - start;
+        step++;
+        start = end;
+        if (step % 5 == 3 && held_count < WD_HELD_MAX) {
+            /* An owned document on the delta side, the same bytes as a
+             * discarded FULL payload on the full side: neither is a
+             * payload of its session's wire. */
+            markdown_core_document *owned = markdown_core_session_feed(delta, piece, piece_length, NULL);
+            if (!owned) {
+                fprintf(stderr, "example %d %s: an owned feed failed\n", test_case->example, label);
+                failures++;
+                break;
+            }
+            held[held_count++] = owned;
+            full_payload = NULL;
+            full_length = 0;
+            markdown_core_session_feed_wire(
+                full,
+                piece,
+                piece_length,
+                0,
+                MARKDOWN_CORE_WIRE_FULL,
+                &full_payload,
+                &full_length,
+                NULL
+            );
+            markdown_core_wire_free(full_payload);
+            continue;
+        }
+        if (step % 7 == 4) {
+            if (!markdown_core_session_advance(delta, piece, piece_length, NULL) ||
+                !markdown_core_session_advance(full, piece, piece_length, NULL)) {
+                fprintf(stderr, "example %d %s: an advance failed\n", test_case->example, label);
+                failures++;
+                break;
+            }
+            continue;
+        }
+        if (step % 11 == 6) {
+            request = MARKDOWN_CORE_WIRE_FULL;
+        }
+        delta_payload = NULL;
+        full_payload = NULL;
+        delta_length = 0;
+        full_length = 0;
+        markdown_core_session_feed_wire(delta, piece, piece_length, 2, request, &delta_payload, &delta_length, NULL);
+        markdown_core_session_feed_wire(
+            full,
+            piece,
+            piece_length,
+            2,
+            MARKDOWN_CORE_WIRE_FULL,
+            &full_payload,
+            &full_length,
+            NULL
+        );
+        boundary++;
+        if (wd_compare(
+                test_case,
+                label,
+                boundary,
+                delta_payload,
+                delta_length,
+                full_payload,
+                full_length,
+                &previous,
+                &previous_length,
+                stats
+            ) != 0) {
+            failures++;
+        }
+    }
+    if (!failures) {
+        delta_payload = NULL;
+        full_payload = NULL;
+        delta_length = 0;
+        full_length = 0;
+        markdown_core_session_finish_wire(delta, 2, MARKDOWN_CORE_WIRE_DELTA, &delta_payload, &delta_length, NULL);
+        markdown_core_session_finish_wire(full, 2, MARKDOWN_CORE_WIRE_FULL, &full_payload, &full_length, NULL);
+        boundary++;
+        if (wd_compare(
+                test_case,
+                label,
+                boundary,
+                delta_payload,
+                delta_length,
+                full_payload,
+                full_length,
+                &previous,
+                &previous_length,
+                stats
+            ) != 0) {
+            failures++;
+        }
+        /* The seal ended both sessions, whatever it answered. */
+        if (markdown_core_session_finish_wire(delta, 0, MARKDOWN_CORE_WIRE_FULL, &delta_payload, &delta_length, NULL)) {
+            fprintf(stderr, "example %d %s: a second seal was answered\n", test_case->example, label);
+            markdown_core_wire_free(delta_payload);
+            failures++;
+        }
+    }
+    free(previous);
+    markdown_core_session_free(delta);
+    markdown_core_session_free(full);
+    /* The owned documents outlive the sessions and every payload (T19):
+     * they still read, and their release must find nothing shared freed. */
+    for (i = 0; i < held_count; i++) {
+        uint8_t *dump = NULL;
+        size_t dump_length = 0;
+        if (!markdown_core_document_dump(held[i], &dump, &dump_length, NULL) || dump_length == 0) {
+            fprintf(stderr, "example %d %s: a held document no longer reads\n", test_case->example, label);
+            failures++;
+        }
+        markdown_core_dump_free(dump);
+        markdown_core_document_free(held[i]);
+    }
+    return failures ? -1 : 0;
+}
+
+/* THE DEPTH THE DELTA WALKS (review-found): every open container on the
+ * spine is a SPINE op inside the one above it, so the encoder recurses
+ * once per nesting level exactly as the whole-tree writer does, and a
+ * nest no fixture reaches must still reassemble -- and not exhaust the
+ * stack under the sanitizer builds, whose frames are larger. The nest is
+ * an in-memory example fed by line and in 7-byte pieces like the others:
+ * every feed rewrites the whole spine, and the seal closes every level at
+ * once. */
+#define WD_DEEP_LEVELS 2000
+
+static int wd_run_deep(wd_stats *stats) {
+    ts_spec_case synthetic;
+    size_t length = 0;
+    char *prefix = ts_repeat("> ", WD_DEEP_LEVELS, &length);
+    char *text;
+    int failed;
+    if (!prefix) {
+        return -1;
+    }
+    text = (char *)malloc(length + 16);
+    if (!text) {
+        free(prefix);
+        return -1;
+    }
+    memcpy(text, prefix, length);
+    memcpy(text + length, "one\nand two\n", 13);
+    free(prefix);
+    memset(&synthetic, 0, sizeof(synthetic));
+    synthetic.markdown = text;
+    synthetic.markdown_length = length + 12;
+    synthetic.example = -WD_DEEP_LEVELS;
+    failed = wd_run_example(&synthetic, 0, stats) != 0 || wd_run_example(&synthetic, 7, stats) != 0;
+    free(text);
+    return failed ? -1 : 0;
+}
+
+static int case_wire_delta(const ts_spec_file *file) {
+    size_t index;
+    int failures = 0;
+    wd_stats stats = {0, 0, 0, 0};
+    wd_stats deep = {0, 0, 0, 0};
+    for (index = 0; index < file->count; index++) {
+        const ts_spec_case *test_case = &file->cases[index];
+        if (wd_run_example(test_case, 0, &stats) != 0 || wd_run_example(test_case, 7, &stats) != 0) {
+            failures++;
+        }
+    }
+    /* The nest's frames are counted apart: a spine that is all open is
+     * rewritten whole at every feed, so its deltas are no smaller than the
+     * full frames, and the corpus's size term below must not be diluted
+     * by it. */
+    if (wd_run_deep(&deep) != 0) {
+        fprintf(stderr, "wire delta: the %d-deep nest does not reassemble\n", WD_DEEP_LEVELS);
+        failures++;
+    }
+    printf(
+        "wire delta: %zu/%zu examples reassemble, %zu frames, %zu deltas, %zu delta bytes for %zu full bytes of "
+        "which %zu reused; the %d-deep nest %zu frames, %zu deltas\n",
+        file->count - (size_t)failures,
+        file->count,
+        stats.frames,
+        stats.deltas,
+        stats.delta_bytes,
+        stats.full_bytes,
+        stats.reused_bytes,
+        WD_DEEP_LEVELS,
+        deep.frames,
+        deep.deltas
+    );
+    /* Not vacuous: the corpus must have produced deltas, and they must have
+     * REUSED something -- a delta of NODE ops alone is a full frame with a
+     * tag on it. Whether the deltas come out smaller than the full frames
+     * is the corpus's fact, reported above, not the protocol's: an example
+     * of a few lines is mostly its open paragraph, re-sent per line. */
+    if (stats.deltas == 0 || stats.reused_bytes == 0) {
+        fputs("wire delta: the corpus produced no delta, or deltas that reused nothing\n", stderr);
+        failures++;
+    }
+    return failures ? -1 : 0;
+}
+
 typedef struct pr_case_entry {
     const char *name;
     int (*run)(const ts_spec_file *file);
@@ -5108,6 +5952,7 @@ static const pr_case_entry PR_CASES[] = {
     {"dump_boundaries", case_dump_boundaries, 1},
     {"feed_loop", case_feed_loop, 1},
     {"session_documents", case_session_documents, 0},
+    {"wire_delta", case_wire_delta, 1},
     {"projection_slope", case_projection_slope, 0},
     {"depth_slope", case_depth_slope, 0},
     {"spine_depth_slope", case_spine_depth_slope, 0},

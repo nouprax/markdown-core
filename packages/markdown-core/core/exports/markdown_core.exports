@@ -5,6 +5,7 @@ _markdown_core_session_new
 _markdown_core_session_feed
 _markdown_core_session_feed_wire
 _markdown_core_session_finish
+_markdown_core_session_finish_wire
 _markdown_core_session_advance
 _markdown_core_session_free
 _markdown_core_document_semantic

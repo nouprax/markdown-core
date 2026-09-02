@@ -167,7 +167,11 @@ A streaming parse opens a session with `markdown_core_session_new`, feeds
 chunks with `markdown_core_session_feed`, and seals the stream with
 `markdown_core_session_finish`. `feed` and `finish` each return an owned
 document released with `markdown_core_document_free`;
-`markdown_core_session_free` releases the session itself.
+`markdown_core_session_free` releases the session itself. A bridge whose
+boundary is expensive to cross feeds and seals through
+`markdown_core_session_feed_wire` and `markdown_core_session_finish_wire`
+instead, which answer the document as one buffer of canonical bytes -- a
+delta against the previous answer when asked for one.
 
 The library initializes itself on the first parse. Concurrent parsing and
 read-only access are safe; callers must ensure that a document is freed only

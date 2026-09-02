@@ -202,6 +202,19 @@ void markdown_core_document_free(markdown_core_document *document) {
  * itself (T19). Nothing is copied out: the tree shares. */
 struct markdown_core_session {
     markdown_core_parser *parser;
+    /* THE PREVIOUS PAYLOAD'S TREE (#162): the derived tree the last wire
+     * answer -- a feed's, or the seal's -- was written from, kept alive so
+     * the next DELTA can name what did not move by POINTER IDENTITY: a
+     * retained block (F27) is the same node in both trees, and the memo
+     * prefix (F26) is the same run, so the diff costs the open spine and
+     * the changed blocks and reads no retained subtree. Holding the tree
+     * holds every node it shares, so no address in it can be reused while
+     * the compare runs. Replaced only by a payload that BUILT: a failed
+     * feed leaves it standing, which is what lets a caller keep or drop its
+     * own previous value after a failure and stay in step either way. The
+     * owned documents of `markdown_core_session_feed` and the discarded
+     * reads of `_advance` are not payloads and never touch it. */
+    markdown_core_node *prev_root;
 };
 
 markdown_core_session *markdown_core_session_new(
@@ -274,6 +287,10 @@ markdown_core_document *markdown_core_session_finish(markdown_core_session *sess
     document->root = markdown_core_parser_finish(session->parser);
     markdown_core_parser_free(session->parser);
     session->parser = NULL;
+    if (session->prev_root) {
+        markdown_core_node_free(session->prev_root);
+        session->prev_root = NULL;
+    }
     if (!document->root) {
         free(document);
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
@@ -316,6 +333,9 @@ void markdown_core_session_free(markdown_core_session *session) {
     }
     if (session->parser) {
         markdown_core_parser_free(session->parser);
+    }
+    if (session->prev_root) {
+        markdown_core_node_free(session->prev_root);
     }
     free(session);
 }
@@ -1425,8 +1445,13 @@ static void wire_children(dump_buffer *buffer, const markdown_core_node *node) {
     }
 }
 
-static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
-    markdown_core_node_kind kind = markdown_core_node_get_kind(node);
+/* THE NODE'S OWN BYTES: identity, scope, and the kind's fields in the
+ * layout the header states, CHILDREN EXCLUDED -- what a whole node and a
+ * SPINE op share (#162): the one writes its children after these, the
+ * other its ops. Answers whether the kind carries a child list at all, so
+ * the caller knows whether anything follows; a kind this writer does not
+ * know fails the buffer. */
+static bool wire_fields(dump_buffer *buffer, const markdown_core_node *node, markdown_core_node_kind kind) {
     markdown_core_string first = {NULL, 0};
     markdown_core_string second = {NULL, 0};
     markdown_core_string third = {NULL, 0};
@@ -1435,7 +1460,6 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
     markdown_core_scope scope = markdown_core_node_scope(node);
     markdown_core_identity definition = {0, 0};
 
-    wire_u8(buffer, (uint8_t)kind);
     wire_identity(buffer, markdown_core_node_identifier(node));
     wire_i32(buffer, scope.start.line);
     wire_i32(buffer, scope.start.column);
@@ -1451,19 +1475,17 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
     case MARKDOWN_CORE_KIND_TABLE_CELL:
     case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
-        wire_children(buffer, node);
-        break;
+        return true;
     case MARKDOWN_CORE_KIND_HEADING: {
         int32_t level = 0;
         markdown_core_node_heading_level(node, &level);
         wire_i32(buffer, level);
-        wire_children(buffer, node);
-        break;
+        return true;
     }
     case MARKDOWN_CORE_KIND_THEMATIC_BREAK:
     case MARKDOWN_CORE_KIND_SOFT_BREAK:
     case MARKDOWN_CORE_KIND_LINE_BREAK:
-        break;
+        return false;
     case MARKDOWN_CORE_KIND_LIST: {
         markdown_core_list_flavor flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET;
         markdown_core_optional_i64 start = {false, 0};
@@ -1473,15 +1495,13 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
         wire_i64(buffer, start.value);
         wire_u8(buffer, start.has_value ? 1 : 0);
         wire_u8(buffer, tight ? 1 : 0);
-        wire_children(buffer, node);
-        break;
+        return true;
     }
     case MARKDOWN_CORE_KIND_LIST_ITEM: {
         markdown_core_optional_bool checked = {false, false};
         markdown_core_node_list_item_checked(node, &checked);
         wire_u8(buffer, checked.has_value ? (checked.value ? 1 : 0) : UINT8_MAX);
-        wire_children(buffer, node);
-        break;
+        return true;
     }
     case MARKDOWN_CORE_KIND_CODE_BLOCK: {
         bool fenced = false;
@@ -1492,7 +1512,7 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
         wire_string(buffer, third);
         wire_u8(buffer, fenced ? 1 : 0);
         wire_u8(buffer, closed ? 1 : 0);
-        break;
+        return false;
     }
     case MARKDOWN_CORE_KIND_HTML_BLOCK:
     case MARKDOWN_CORE_KIND_TEXT:
@@ -1500,7 +1520,7 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
     case MARKDOWN_CORE_KIND_HTML:
         markdown_core_node_literal(node, &first);
         wire_string(buffer, first);
-        break;
+        return false;
     case MARKDOWN_CORE_KIND_FORMULA: {
         /* The one kind whose mode is a fact about the source rather than about
          * the kind; the other five stopped carrying it at Q29. */
@@ -1508,13 +1528,13 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
         markdown_core_node_formula_properties(node, &mode, &first);
         wire_i32(buffer, (int32_t)mode);
         wire_string(buffer, first);
-        break;
+        return false;
     }
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK: {
         markdown_core_placement_mode mode = MARKDOWN_CORE_PLACEMENT_EMBEDDED;
         markdown_core_node_formula_properties(node, &mode, &first);
         wire_string(buffer, first);
-        break;
+        return false;
     }
     case MARKDOWN_CORE_KIND_TABLE: {
         size_t count = 0;
@@ -1522,7 +1542,7 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
         markdown_core_node_table_column_count(node, &count);
         if (count > INT32_MAX) {
             buffer->failed = true;
-            return;
+            return false;
         }
         wire_i32(buffer, (int32_t)count);
         for (index = 0; index < count; index++) {
@@ -1530,8 +1550,7 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
             markdown_core_node_table_alignment_at(node, index, &alignment);
             wire_u8(buffer, (uint8_t)alignment);
         }
-        wire_children(buffer, node);
-        break;
+        return true;
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE: {
@@ -1548,26 +1567,24 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
         wire_u8(buffer, has_attributes ? 1 : 0);
         if (count > INT32_MAX) {
             buffer->failed = true;
-            return;
+            return false;
         }
         wire_i32(buffer, has_attributes ? (int32_t)count : 0);
         for (index = 0; has_attributes && index < count; index++) {
             if (!markdown_core_node_directive_attribute_at(node, index, &first, &second)) {
                 buffer->failed = true;
-                return;
+                return false;
             }
             wire_string(buffer, first);
             wire_string(buffer, second);
         }
-        wire_children(buffer, node);
-        break;
+        return true;
     }
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
         markdown_core_node_association(node, &first, &second);
         wire_string(buffer, first);
         wire_string(buffer, second);
-        wire_children(buffer, node);
-        break;
+        return true;
     case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
         markdown_core_node_association(node, &first, &second);
         markdown_core_node_definition_resource(node, &third, &optional_first);
@@ -1575,7 +1592,7 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
         wire_string(buffer, second);
         wire_string(buffer, third);
         wire_optional_string(buffer, optional_first);
-        break;
+        return false;
     /* A reference carries its label and the identity of the definition it
      * resolved to; its own match key is not on the wire, because it equals the
      * winning definition's by construction. */
@@ -1584,7 +1601,7 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
         markdown_core_node_reference_definition(node, &definition);
         wire_string(buffer, first);
         wire_identity(buffer, definition);
-        break;
+        return false;
     case MARKDOWN_CORE_KIND_LINK_REFERENCE:
     case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: {
         markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
@@ -1594,32 +1611,226 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
         wire_string(buffer, first);
         wire_i32(buffer, (int32_t)form);
         wire_identity(buffer, definition);
-        wire_children(buffer, node);
-        break;
+        return true;
     }
     /* A DESTINATION IS REQUIRED (Q26) and always has a length on the wire. */
     case MARKDOWN_CORE_KIND_LINK:
         markdown_core_node_link_properties(node, &first, &optional_first);
         wire_string(buffer, first);
         wire_optional_string(buffer, optional_first);
-        wire_children(buffer, node);
-        break;
+        return true;
     case MARKDOWN_CORE_KIND_IMAGE:
         markdown_core_node_image_properties(node, &first, &optional_first);
         wire_string(buffer, first);
         wire_optional_string(buffer, optional_first);
-        wire_children(buffer, node);
-        break;
+        return true;
     case MARKDOWN_CORE_KIND_TABLE_ROW: {
         bool header = false;
         markdown_core_node_table_row_is_header(node, &header);
         wire_u8(buffer, header ? 1 : 0);
-        wire_children(buffer, node);
-        break;
+        return true;
     }
     default:
         buffer->failed = true;
-        break;
+        return false;
+    }
+}
+
+static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
+    markdown_core_node_kind kind = markdown_core_node_get_kind(node);
+    wire_u8(buffer, (uint8_t)kind);
+    if (wire_fields(buffer, node, kind)) {
+        wire_children(buffer, node);
+    }
+}
+
+/* THE DELTA (#162): a payload that names the tree by its differences from
+ * the previous payload the same session wrote, so a binding reuses the
+ * values it already built for everything that did not move. The engine's
+ * own retention is the diff: a block the derivation retained (F27) is the
+ * SAME NODE in both trees, and the stable prefix a container consumed as a
+ * memo run (F26) is the same run, so pointer identity -- exact, and paid
+ * for once by the derivation -- says "unchanged" without a read into the
+ * subtree, and the compare costs what the derivation cost: the open spine
+ * and the changed blocks. The two child lists pair BY POSITION, which the
+ * CST's own discipline makes stable: a block closes in place and the
+ * blocks after it are new, so a retained child stands at the index it
+ * stood at, and the one shape that replaces a child at its position -- a
+ * paragraph consumed by definitions, a lead paragraph retyped to a table
+ * -- fails the kind compare and is written whole. Three ops, tagged above
+ * every kind ordinal: a NODE is a kind byte and the whole subtree; SPINE
+ * (0xFE) rewrites a container's fields and rebuilds its children from
+ * ops; SAME (0xFF) reuses the next n children of the previous payload's
+ * node at this position. Only block containers whose children are blocks
+ * are SPINE, so the positions a binding is asked to address are the ones
+ * its per-kind child lists hold -- a list's items, a table's rows. */
+enum { WIRE_OP_SPINE = 0xFE, WIRE_OP_SAME = 0xFF };
+/* The op tags share the byte with the kind ordinals, so the enum must stay
+ * below them; a kind added past 0xFD would fail this build, not a decode. */
+typedef char wire_kinds_stay_below_the_op_tags[(int)MARKDOWN_CORE_KIND_IMAGE_REFERENCE < (int)WIRE_OP_SPINE ? 1 : -1];
+
+static bool wire_spine_kind(markdown_core_node_kind kind) {
+    switch (kind) {
+    case MARKDOWN_CORE_KIND_DOCUMENT:
+    case MARKDOWN_CORE_KIND_BLOCK_QUOTE:
+    case MARKDOWN_CORE_KIND_LIST:
+    case MARKDOWN_CORE_KIND_LIST_ITEM:
+    case MARKDOWN_CORE_KIND_TABLE:
+    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
+    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/* Two nodes at one position a SPINE may pair: the same block -- identity
+ * is minted once and never reused within a parse (D4) -- of the same kind,
+ * both containers of blocks. The `contains_inlines` term restates the kind
+ * set from the engine's side: an extension may retype a block in place, and
+ * a container whose content parses into inlines has no positions a binding
+ * could address. */
+static bool wire_spine_pair(const markdown_core_node *prev, const markdown_core_node *cur) {
+    markdown_core_node_kind kind = markdown_core_node_get_kind(cur);
+    return wire_spine_kind(kind) && kind == markdown_core_node_get_kind(prev) && cur->identifier == prev->identifier &&
+           !(cur->flags & MARKDOWN_CORE_NODE__CONTAINS_INLINES) &&
+           !(prev->flags & MARKDOWN_CORE_NODE__CONTAINS_INLINES);
+}
+
+/* The op count is known only after the ops are written, so it is patched
+ * into the room reserved for it -- by offset, since the buffer may have
+ * moved since. */
+static void wire_patch_i32(dump_buffer *buffer, size_t at, int32_t value) {
+    uint32_t bits = (uint32_t)value;
+    if (buffer->failed) {
+        return;
+    }
+    buffer->data[at] = (uint8_t)bits;
+    buffer->data[at + 1] = (uint8_t)(bits >> 8);
+    buffer->data[at + 2] = (uint8_t)(bits >> 16);
+    buffer->data[at + 3] = (uint8_t)(bits >> 24);
+}
+
+static void wire_spine(dump_buffer *buffer, const markdown_core_node *prev, const markdown_core_node *cur);
+
+static void wire_same(dump_buffer *buffer, size_t run, size_t *ops) {
+    if (run > INT32_MAX) {
+        buffer->failed = true;
+        return;
+    }
+    wire_u8(buffer, WIRE_OP_SAME);
+    wire_i32(buffer, (int32_t)run);
+    (*ops)++;
+}
+
+/* The ops that turn `prev`'s child list into `cur`'s, walked in lockstep.
+ * THE STABLE PREFIX IS ONE COMPARE (F26): two consecutive derivations of
+ * one open container consume the same memo, which only ever grows in
+ * place, so when both trees hold the same memo the entries below the
+ * earlier boundary are pointer-identical by construction and the walk
+ * starts past them; the per-entry compare then extends the run for as
+ * long as the entries still agree. The boundary is clamped to both vectors
+ * before it is trusted: a memo longer than the container it memoizes is
+ * refused by the clone (F26), and the clamp keeps this side equally
+ * closed. */
+static void wire_ops(dump_buffer *buffer, const markdown_core_node *prev, const markdown_core_node *cur) {
+    markdown_core_child_cursor prev_cursor;
+    markdown_core_child_cursor cur_cursor;
+    const markdown_core_node *p = markdown_core_child_first(prev, &prev_cursor);
+    const markdown_core_node *c = markdown_core_child_first(cur, &cur_cursor);
+    size_t count_at = buffer->size;
+    size_t ops = 0;
+    size_t same = 0;
+
+    wire_i32(buffer, 0);
+    if ((prev->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) && (cur->flags & MARKDOWN_CORE_NODE__MEMO_PREFIX) &&
+        prev->link.memo_ref->memo == cur->link.memo_ref->memo && MARKDOWN_CORE_NODE_ARRAY_P(prev) &&
+        MARKDOWN_CORE_NODE_ARRAY_P(cur)) {
+        size_t boundary = prev->link.memo_ref->boundary;
+        if (cur->link.memo_ref->boundary < boundary) {
+            boundary = cur->link.memo_ref->boundary;
+        }
+        if (prev->children.count < boundary) {
+            boundary = prev->children.count;
+        }
+        if (cur->children.count < boundary) {
+            boundary = cur->children.count;
+        }
+        same = boundary;
+        prev_cursor.index = boundary;
+        cur_cursor.index = boundary;
+        p = boundary < prev->children.count ? prev->children.vec[boundary] : NULL;
+        c = boundary < cur->children.count ? cur->children.vec[boundary] : NULL;
+    }
+    while (c && !buffer->failed) {
+        if (p == c) {
+            same++;
+        } else {
+            if (same) {
+                wire_same(buffer, same, &ops);
+                same = 0;
+            }
+            if (p && wire_spine_pair(p, c)) {
+                wire_spine(buffer, p, c);
+            } else {
+                wire_node(buffer, c);
+            }
+            ops++;
+        }
+        c = markdown_core_child_after(cur, c, &cur_cursor);
+        if (p) {
+            p = markdown_core_child_after(prev, p, &prev_cursor);
+        }
+    }
+    if (same) {
+        wire_same(buffer, same, &ops);
+    }
+    if (ops > INT32_MAX) {
+        buffer->failed = true;
+        return;
+    }
+    wire_patch_i32(buffer, count_at, (int32_t)ops);
+}
+
+static void wire_spine(dump_buffer *buffer, const markdown_core_node *prev, const markdown_core_node *cur) {
+    markdown_core_node_kind kind = markdown_core_node_get_kind(cur);
+    wire_u8(buffer, WIRE_OP_SPINE);
+    wire_u8(buffer, (uint8_t)kind);
+    if (!wire_fields(buffer, cur, kind)) {
+        buffer->failed = true;
+        return;
+    }
+    wire_ops(buffer, prev, cur);
+}
+
+/* The caller's envelope room, zeroed, IN the one allocation: a transport
+ * that wrapped the payload afterwards was allocating a second full-size
+ * buffer and copying the first into it while both were live. */
+static void wire_prefix(dump_buffer *buffer, size_t prefix) {
+    buffer_reserve(buffer, prefix);
+    if (!buffer->failed && prefix != 0) {
+        memset(buffer->data, 0, prefix);
+        buffer->size = prefix;
+    }
+}
+
+/* ONE PAYLOAD: the frame byte, then the tree whole or as a delta. DELTA is
+ * written only when it was asked for, a previous tree stands, and the two
+ * roots pair -- a hook selected by the document's name may in principle
+ * hand back a root of another kind, and then the whole tree is the
+ * answer. Any request that is not DELTA is FULL. */
+static void wire_payload(
+    dump_buffer *buffer,
+    const markdown_core_node *prev,
+    const markdown_core_node *root,
+    markdown_core_wire_frame request
+) {
+    if (request == MARKDOWN_CORE_WIRE_DELTA && prev && wire_spine_pair(prev, root)) {
+        wire_u8(buffer, (uint8_t)MARKDOWN_CORE_WIRE_DELTA);
+        wire_spine(buffer, prev, root);
+    } else {
+        wire_u8(buffer, (uint8_t)MARKDOWN_CORE_WIRE_FULL);
+        wire_node(buffer, root);
     }
 }
 
@@ -1627,10 +1838,11 @@ static void wire_node(dump_buffer *buffer, const markdown_core_node *node) {
  * call. The composed path -- `markdown_core_session_feed` then
  * `markdown_core_document_wire` then `markdown_core_document_free` -- builds
  * a fully-owned document whose only reader is the serializer, and the
- * document dies before the call returns; here the derived tree is freed
- * before returning, so the owned document's lifecycle drops out of every
- * managed feed. The bytes are the composed path's, gated byte-for-byte by
- * the equivalence test. C consumers keep `markdown_core_session_feed`'s
+ * document dies before the call returns; here the derived tree is KEPT
+ * (#162) as the baseline the next delta is written against, and the tree
+ * it replaces is freed instead: one derived tree stands per session, the
+ * last one written. The bytes are the composed path's, gated byte-for-byte
+ * by the equivalence test. C consumers keep `markdown_core_session_feed`'s
  * owned document; this entry is for bridges whose document never escapes
  * the delivering call. */
 bool markdown_core_session_feed_wire(
@@ -1638,6 +1850,7 @@ bool markdown_core_session_feed_wire(
     const uint8_t *chunk,
     size_t length,
     size_t prefix,
+    markdown_core_wire_frame request,
     uint8_t **output,
     size_t *output_length,
     markdown_core_error **error
@@ -1670,13 +1883,86 @@ bool markdown_core_session_feed_wire(
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
         return false;
     }
-    buffer_reserve(&buffer, prefix);
-    if (!buffer.failed && prefix != 0) {
-        memset(buffer.data, 0, prefix);
-        buffer.size = prefix;
+    wire_prefix(&buffer, prefix);
+    wire_payload(&buffer, session->prev_root, root, request);
+    if (buffer.failed) {
+        /* The baseline stands: the caller's previous value still names the
+         * last payload that reached it. */
+        markdown_core_node_free(root);
+        free(buffer.data);
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not serialize the document");
+        return false;
     }
-    wire_node(&buffer, root);
-    markdown_core_node_free(root);
+    if (session->prev_root) {
+        markdown_core_node_free(session->prev_root);
+    }
+    session->prev_root = root;
+    *output = buffer.data;
+    *output_length = buffer.size;
+    return true;
+}
+
+/* THE SEAL ON THE WIRE (#162). A FULL seal is `markdown_core_session_finish`'s
+ * in-place projection serialized -- the one-shot economy F1 bought, kept
+ * for the read that has no previous value. A DELTA seal cannot take that
+ * path: the delta is a pointer-identity diff against the last DERIVED tree,
+ * and a projection taken in place on the CST shares no node with it. So it
+ * closes the stream without projecting (`markdown_core_parser_close`) and
+ * derives the sealed CST exactly as a feed derives an open one, which
+ * retains every block that already stood retained and stores the ones
+ * that closed at the seal; the sealed tree is the same tree either way,
+ * gated by the reassembly test at every seal of the corpus. The session's
+ * parse ends whatever is answered, as `_finish` ends it. */
+bool markdown_core_session_finish_wire(
+    markdown_core_session *session,
+    size_t prefix,
+    markdown_core_wire_frame request,
+    uint8_t **output,
+    size_t *output_length,
+    markdown_core_error **error
+) {
+    markdown_core_parser *parser;
+    markdown_core_node *prev;
+    markdown_core_node *root = NULL;
+    dump_buffer buffer = {0};
+    bool derived;
+
+    clear_error(error);
+    if (!output || !output_length) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "output and length must not be null");
+        return false;
+    }
+    *output = NULL;
+    *output_length = 0;
+    if (!session || !session->parser) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "the session is finished or null");
+        return false;
+    }
+    parser = session->parser;
+    prev = session->prev_root;
+    session->parser = NULL;
+    session->prev_root = NULL;
+    derived = request == MARKDOWN_CORE_WIRE_DELTA && prev != NULL;
+    if (derived) {
+        if (markdown_core_parser_close(parser)) {
+            root = markdown_core_parser_derive_tree(parser, parser->refmap);
+        }
+    } else {
+        root = markdown_core_parser_finish(parser);
+    }
+    if (root) {
+        wire_prefix(&buffer, prefix);
+        wire_payload(&buffer, derived ? prev : NULL, root, request);
+        markdown_core_node_free(root);
+    }
+    if (prev) {
+        markdown_core_node_free(prev);
+    }
+    markdown_core_parser_free(parser);
+    if (!root) {
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
+        return false;
+    }
     if (buffer.failed) {
         free(buffer.data);
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not serialize the document");
@@ -1702,15 +1988,8 @@ bool markdown_core_document_wire(
     }
     *output = NULL;
     *length = 0;
-    /* The caller's envelope room, zeroed, IN the one allocation: a transport
-     * that wrapped the payload afterwards was allocating a second full-size
-     * buffer and copying the first into it while both were live. */
-    buffer_reserve(&buffer, prefix);
-    if (!buffer.failed && prefix != 0) {
-        memset(buffer.data, 0, prefix);
-        buffer.size = prefix;
-    }
-    wire_node(&buffer, document->root);
+    wire_prefix(&buffer, prefix);
+    wire_payload(&buffer, NULL, document->root, MARKDOWN_CORE_WIRE_FULL);
     if (buffer.failed) {
         free(buffer.data);
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not serialize the document");

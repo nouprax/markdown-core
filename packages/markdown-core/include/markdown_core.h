@@ -262,22 +262,47 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_session_feed(
     size_t length,
     markdown_core_error **error
 );
+/** WHAT A WIRE PAYLOAD IS RELATIVE TO (#162). Every payload the wire
+ * writes -- a feed's, a seal's, `markdown_core_document_wire`'s -- leads
+ * with one frame byte. FULL: the whole tree follows, as the layout under
+ * `markdown_core_document_wire` states it. DELTA: what follows names the
+ * tree by its differences from THE PREVIOUS PAYLOAD THIS SESSION WROTE,
+ * so a binding that decoded that payload reuses the values it already
+ * built for everything that did not move. A caller REQUESTS a frame; the
+ * session answers DELTA only when it asked for one AND a previous payload
+ * exists, and FULL otherwise -- so the first read of a stream, and every
+ * read after a caller that lost its previous value asks for FULL, are
+ * whole. The request is the binding's whole protocol: ask DELTA while the
+ * previous value is in hand, FULL when it is not. */
+typedef enum markdown_core_wire_frame {
+    MARKDOWN_CORE_WIRE_FULL = 0,
+    MARKDOWN_CORE_WIRE_DELTA = 1
+} markdown_core_wire_frame;
+
 /** Feeds exactly `length` UTF-8 bytes and answers the WIRE for the current
- * document state directly -- the same bytes `markdown_core_session_feed`
+ * document state directly -- the same tree `markdown_core_session_feed`
  * followed by `markdown_core_document_wire` would produce, without building
  * the owned document in between. For a bridge whose document never escapes
  * the delivering call, that intermediate is an allocation and a free per
  * feed for a document nothing reads; here the wire is written during
- * the synchronous call. `prefix` reserves
- * zeroed envelope room ahead of the payload, in the one allocation, exactly
- * as `markdown_core_document_wire` does; release the buffer with
- * `markdown_core_wire_free`. C consumers that read the document through
- * accessors keep using `markdown_core_session_feed`. */
+ * the synchronous call. `request` asks for a FULL or a DELTA frame
+ * (`markdown_core_wire_frame` above): the delta is against the last
+ * payload THIS entry or `markdown_core_session_finish_wire` wrote
+ * successfully -- `markdown_core_session_feed`'s owned documents and
+ * `markdown_core_session_advance` are not payloads and move nothing -- and
+ * a request the session cannot honor is answered FULL. A payload that
+ * fails to build leaves the previous one standing, so a caller may keep
+ * or drop its previous value after a failure and stay in step either way.
+ * `prefix` reserves zeroed envelope room ahead of the payload, in the one
+ * allocation, exactly as `markdown_core_document_wire` does; release the
+ * buffer with `markdown_core_wire_free`. C consumers that read the
+ * document through accessors keep using `markdown_core_session_feed`. */
 MARKDOWN_CORE_API bool markdown_core_session_feed_wire(
     markdown_core_session *session,
     const uint8_t *chunk,
     size_t length,
     size_t prefix,
+    markdown_core_wire_frame request,
     uint8_t **output,
     size_t *output_length,
     markdown_core_error **error
@@ -285,6 +310,20 @@ MARKDOWN_CORE_API bool markdown_core_session_feed_wire(
 /** Ends the stream and returns the sealed document. */
 MARKDOWN_CORE_API markdown_core_document *markdown_core_session_finish(
     markdown_core_session *session,
+    markdown_core_error **error
+);
+/** Ends the stream and answers the sealed document's WIRE directly: the
+ * same tree `markdown_core_session_finish` seals, in the frame `request`
+ * asks for, against the last payload the session wrote. Like `_finish` it
+ * ends the session's parse whatever it answers: `feed` and both `finish`
+ * entries report MARKDOWN_CORE_ERROR_INVALID_ARGUMENT after it, and only
+ * `markdown_core_session_free` remains. */
+MARKDOWN_CORE_API bool markdown_core_session_finish_wire(
+    markdown_core_session *session,
+    size_t prefix,
+    markdown_core_wire_frame request,
+    uint8_t **output,
+    size_t *output_length,
     markdown_core_error **error
 );
 /** Feeds exactly `length` UTF-8 bytes and answers NOTHING: no projection is
@@ -518,7 +557,10 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  * TEXT of a document; this is its canonical BYTES, and the two change together
  * or not at all.
  *
- * Layout, little-endian throughout, no padding. A `string` is an i32 byte
+ * Layout, little-endian throughout, no padding. The payload leads with one
+ * u8 FRAME byte (`markdown_core_wire_frame`): 0 (FULL) and the root node
+ * follows; 1 (DELTA) and one SPINE op follows, described after the node.
+ * This entry always writes FULL. A `string` is an i32 byte
  * length followed by that many UTF-8 bytes, or length -1 for an absent
  * optional string -- `null` and `""` stay two answers on the wire (requirement
  * 14). A `node` is:
@@ -546,6 +588,30 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  *     Link, Image: string destination/source, string? title, children
  *     TableRow: u8 is-header, children
  *   children: i32 count, then each child node
+ *
+ * A DELTA frame (#162) is written by the session entries against the
+ * previous payload the same session wrote, and is a tree of OPS. An op
+ * leads with a u8 tag: a tag below 0xFE is a node's kind byte and the rest
+ * of that node follows (NODE: a subtree written whole); 0xFE is SPINE: u8
+ * kind, identity, scope and the kind's own fields as above, then i32 op
+ * count and that many ops IN PLACE OF the children -- the node's fields are
+ * rewritten and its child list is rebuilt from the ops; 0xFF is SAME: i32
+ * n, standing for the next n children of the PREVIOUS payload's node at
+ * the same position, unchanged. Positions pair the two payloads' child
+ * lists index by index: a SPINE op at position i names the previous node's
+ * child i, and SAME runs are counted in the same positions. Only block
+ * containers whose children are blocks are ever SPINE -- document, block
+ * quote, list, list item, table, directive block, footnote definition --
+ * and a SPINE's kind and identity always equal the previous child's. The
+ * root of a DELTA frame is one SPINE op for the document. A node the
+ * engine retained across the two derivations (docs/STREAMING.md F27) is
+ * exactly what SAME names, so a delta is written in the open spine and
+ * the changed blocks, a stable prefix of any length crossing as one op.
+ * What a reader pays for a SAME run is its own: a binding that builds the
+ * new child list as a value copies one reference per reused child, which
+ * at the document's root is every closed block on every feed -- the
+ * value-level twin of the pointer terms the engine accepts per feed
+ * (docs/STREAMING.md §6).
  *
  * The root node ends the payload. Free the buffer with
  * `markdown_core_wire_free`. The layout changes only with the version this

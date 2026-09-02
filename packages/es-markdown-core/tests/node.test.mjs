@@ -342,11 +342,12 @@ test("errors: a discarded feed still surfaces a native failure and frees its slo
 
 test("errors: every refusal the wire reader can make is reached by a payload", () => {
     // These guards exist because the two sides of the wire are versioned
-    // separately -- the MKC7 bump is the same hazard -- and a decoder that
+    // separately -- the MKC8 bump is the same hazard -- and a decoder that
     // silently mapped an unknown value would turn a protocol mismatch into a
     // wrong document. The payloads the bridge actually writes are well
-    // formed, so the malformed ones are written by hand: `MKC7` is the magic,
-    // and the byte after it is the status -- 1 means an error follows.
+    // formed, so the malformed ones are written by hand: `MKC8` is the magic,
+    // the byte after it is the status -- 1 means an error follows -- and a
+    // healthy payload then leads with its frame byte, 0 for a whole tree.
     const payload = (...parts) => {
         const out = [];
         for (const part of parts) {
@@ -361,21 +362,24 @@ test("errors: every refusal the wire reader can make is reached by a payload", (
     // A native error crosses as a code and a message, which is the only path
     // that builds a ParseError out of a payload.
     assert.throws(
-        () => decodeRead(payload("MKC7", 1, int(1), int(3), "bad")),
+        () => decodeRead(payload("MKC8", 1, int(1), int(3), "bad")),
         (error) => error instanceof ParseError && error.code === "invalidArgument" && error.message === "bad"
     );
     assert.throws(
-        () => decodeRead(payload("MKC7", 1, int(99), int(1), "x")),
+        () => decodeRead(payload("MKC8", 1, int(99), int(1), "x")),
         (error) => error instanceof ParseError && error.code === "internal"
     );
 
-    // A status that is neither, a magic from the wrong wire version, a root
-    // that is not a document, and a payload that stops mid-value.
-    assert.throws(() => decodeRead(payload("MKC7", 2)), /unsupported native bridge status/u);
-    assert.throws(() => decodeRead(payload("MKC5", 0)), /invalid native bridge payload/u);
-    assert.throws(() => decodeRead(payload("MKC7", 0, 3)), /invalid document tree/u);
-    assert.throws(() => decodeRead(payload("MKC7", 0, 1, int(1), int(1))), /truncated native bridge payload/u);
-    assert.throws(() => decodeRead(payload("MKC7", 1, int(1), int(-2))), /invalid native bridge string/u);
+    // A status that is neither, a magic from the wrong wire version, a frame
+    // the reader does not know, a delta with nothing to be a delta against, a
+    // root that is not a document, and a payload that stops mid-value.
+    assert.throws(() => decodeRead(payload("MKC8", 2)), /unsupported native bridge status/u);
+    assert.throws(() => decodeRead(payload("MKC7", 0, 0)), /invalid native bridge payload/u);
+    assert.throws(() => decodeRead(payload("MKC8", 0, 7)), /unknown wire frame 7/u);
+    assert.throws(() => decodeRead(payload("MKC8", 0, 1)), /delta frame with no previous read/u);
+    assert.throws(() => decodeRead(payload("MKC8", 0, 0, 3)), /invalid document tree/u);
+    assert.throws(() => decodeRead(payload("MKC8", 0, 0, 1, int(1), int(1))), /truncated native bridge payload/u);
+    assert.throws(() => decodeRead(payload("MKC8", 1, int(1), int(-2))), /invalid native bridge string/u);
 });
 
 test("errors: every out-of-range value inside a node payload is refused", () => {
@@ -399,9 +403,16 @@ test("errors: every out-of-range value inside a node payload is refused", () => 
     };
     const identity = (block, ordinal) => bytes(int(block), int(ordinal));
     const scope = () => bytes(int(1), int(1), int(1), int(1));
-    // A document root carrying exactly one child, which is the malformed node.
+    // A whole-tree frame whose document root carries exactly one child, which
+    // is the malformed node.
     const wrap = (...node) =>
-        Uint8Array.from([...bytes("MKC7", 0, 1), ...identity(1, 0), ...scope(), ...bytes(int(1)), ...bytes(...node)]);
+        Uint8Array.from([
+            ...bytes("MKC8", 0, 0, 1),
+            ...identity(1, 0),
+            ...scope(),
+            ...bytes(int(1)),
+            ...bytes(...node)
+        ]);
     const child = (kind, ...fields) => wrap(kind, ...identity(2, 0), ...scope(), ...fields);
 
     assert.throws(() => decodeRead(child(99)), /unknown node kind 99/u);
@@ -423,7 +434,14 @@ test("errors: every out-of-range value inside a node payload is refused", () => 
     );
     assert.throws(() => decodeRead(child(11, int(0), int(1), ...paragraph())), /table contains a non-row node/u);
     const headerlessRow = () => bytes(27, ...identity(3, 0), ...scope(), 0, int(0));
+    const headerRow = () => bytes(27, ...identity(4, 0), ...scope(), 1, int(0));
     assert.throws(() => decodeRead(child(11, int(0), int(1), ...headerlessRow())), /contains 0 header rows/u);
+    // The header row is the table's first child on the wire -- the engine
+    // opens a table with it, and a delta addresses the rows by position.
+    assert.throws(
+        () => decodeRead(child(11, int(0), int(2), ...headerlessRow(), ...headerRow())),
+        /does not open with its header row/u
+    );
     assert.throws(() => decodeRead(child(27, 0, int(1), ...paragraph())), /table row contains a non-cell node/u);
     assert.throws(
         () => decodeRead(child(25, int(0), 0, int(1))),
@@ -437,7 +455,7 @@ test("errors: every out-of-range value inside a node payload is refused", () => 
     // A complete, healthy payload with one byte too many: the reader must
     // refuse the surplus rather than decode a prefix and call it the document.
     const complete = Uint8Array.from([
-        ...bytes("MKC7", 0, 1),
+        ...bytes("MKC8", 0, 0, 1),
         ...identity(1, 0),
         ...scope(),
         ...bytes(int(0), int(0), int(0), 0)
@@ -453,7 +471,132 @@ test("errors: every out-of-range value inside a node payload is refused", () => 
 
     // And the third error code the envelope can carry.
     assert.throws(
-        () => decodeRead(Uint8Array.from(bytes("MKC7", 1, int(2), int(1), "x"))),
+        () => decodeRead(Uint8Array.from(bytes("MKC8", 1, int(2), int(1), "x"))),
         (error) => error instanceof ParseError && error.code === "allocationFailed"
     );
+});
+
+test("api: a feed reuses the previous read's values for every block that did not move", () => {
+    // THE DELTA (#162): a feed's payload names, by position, the previous
+    // read's children that the engine retained, and the runtime hands those
+    // very values into the new read -- object identity, not a copy -- so a
+    // consumer keyed on the previous read finds the same objects. What
+    // changed is new: the open paragraph is re-read each time it grows.
+    const document = new Document();
+    try {
+        const first = document.feed("# One\n\npara\n\ntail");
+        assert.equal(first.semantic.content.length, 2);
+        const second = document.feed(" grows\n\n- item\n");
+        assert.equal(second.semantic.content.length, 4);
+        assert.equal(second.semantic.content[0], first.semantic.content[0]);
+        assert.equal(second.semantic.content[1], first.semantic.content[1]);
+        assert.equal(second.semantic.content[2].kind, "paragraph");
+        assert.equal(second.semantic.content[3].kind, "list");
+        assert.notEqual(second.semantic, first.semantic);
+        // The seal is a delta too: everything closed before it is the same
+        // value it was, and the read equals the whole-text parse.
+        const sealed = document.seal();
+        assert.equal(sealed.semantic.content[0], second.semantic.content[0]);
+        assert.equal(sealed.semantic.content[1], second.semantic.content[1]);
+        assert.equal(sealed.semantic.content[2], second.semantic.content[2]);
+        assert.equal(sealed.dump(), new Document("# One\n\npara\n\ntail grows\n\n- item\n").seal().dump());
+        // A reused value is still a value: the earlier reads are unchanged.
+        assert.equal(first.semantic.content.length, 2);
+        assert.equal(second.semantic.content.length, 4);
+    } finally {
+        document.dispose();
+    }
+});
+
+test("errors: every refusal the delta reader can make is reached by a payload", () => {
+    // A DELTA frame is a tree of ops against the previous read (#162):
+    // SPINE (0xfe) rewrites a container's fields and rebuilds its children
+    // from ops, SAME (0xff) reuses the next n of the previous node's
+    // children, and any other tag is a kind byte opening a whole node. The
+    // reader refuses every way the ops can disagree with the previous read,
+    // because a delta that landed on the wrong value would be a wrong
+    // document rather than an error.
+    const int = (value) => ({ int: value });
+    const bytes = (...parts) => {
+        const out = [];
+        for (const part of parts) {
+            if (typeof part === "string") out.push(...new TextEncoder().encode(part));
+            else if (typeof part === "number") out.push(part & 0xff);
+            else for (let shift = 0; shift < 4; shift += 1) out.push((part.int >> (shift * 8)) & 0xff);
+        }
+        return out;
+    };
+    const identity = (block, ordinal) => bytes(int(block), int(ordinal));
+    const scope = () => bytes(int(1), int(1), int(1), int(1));
+    const paragraph = (block, literal) =>
+        bytes(
+            3,
+            ...identity(block, 0),
+            ...scope(),
+            int(1),
+            14,
+            ...identity(block, 1),
+            ...scope(),
+            int(literal.length),
+            literal
+        );
+    // The previous read: a document holding two paragraphs.
+    const previous = decodeRead(
+        Uint8Array.from([
+            ...bytes("MKC8", 0, 0, 1),
+            ...identity(1, 0),
+            ...scope(),
+            ...bytes(int(2)),
+            ...paragraph(2, "one"),
+            ...paragraph(3, "two")
+        ])
+    ).semantic;
+    const delta = (...ops) => Uint8Array.from([...bytes("MKC8", 0, 1), ...bytes(...ops)]);
+    const root = (...ops) => delta(0xfe, 1, ...identity(1, 0), ...scope(), ...bytes(...ops));
+
+    // The healthy shapes: the previous children reused as the same objects,
+    // one rewritten as a spine, one written whole, in every mix.
+    const same = decodeRead(root(int(1), 0xff, int(2)), previous).semantic;
+    assert.equal(same.content.length, 2);
+    assert.equal(same.content[0], previous.content[0]);
+    assert.equal(same.content[1], previous.content[1]);
+    const mixed = decodeRead(
+        root(int(3), 0xff, int(1), ...paragraph(3, "changed"), ...paragraph(4, "new")),
+        previous
+    ).semantic;
+    assert.equal(mixed.content.length, 3);
+    assert.equal(mixed.content[0], previous.content[0]);
+    assert.equal(mixed.content[1].content[0].literal, "changed");
+    assert.equal(mixed.content[2].content[0].literal, "new");
+    assert.equal(decodeRead(root(int(0)), previous).semantic.content.length, 0);
+    // A whole-tree frame ignores the previous read entirely.
+    const whole = decodeRead(
+        Uint8Array.from([...bytes("MKC8", 0, 0, 1), ...identity(1, 0), ...scope(), ...bytes(int(0))]),
+        previous
+    ).semantic;
+    assert.equal(whole.content.length, 0);
+
+    // A delta that does not open with the document's spine, a spine that
+    // renames the kind or the identity, a reuse or a rewrite past the
+    // previous node's children, a spine on a node that has no children to
+    // address, and an op stream that stops early.
+    assert.throws(() => decodeRead(delta(1), previous), /does not open with the document's spine/u);
+    assert.throws(() => decodeRead(delta(0xfe, 3), previous), /rewrote a document as a paragraph/u);
+    assert.throws(() => decodeRead(delta(0xfe, 1, ...identity(9, 0)), previous), /under another identity/u);
+    assert.throws(
+        () => decodeRead(root(int(1), 0xff, int(3)), previous),
+        /reused children the previous read does not have/u
+    );
+    assert.throws(
+        () => decodeRead(root(int(2), 0xff, int(2), 0xfe), previous),
+        /rewrote a child the previous read does not have/u
+    );
+    assert.throws(() => decodeRead(root(int(1), 0xff, int(-1)), previous), /invalid reused child count -1/u);
+    assert.throws(() => decodeRead(root(int(-1)), previous), /invalid op count -1/u);
+    assert.throws(
+        () => decodeRead(root(int(1), 0xfe, 3, ...identity(2, 0), ...scope(), int(0)), previous),
+        /rewrote a paragraph, which has no children to reuse/u
+    );
+    assert.throws(() => decodeRead(root(int(1), 0xff), previous), /truncated native bridge payload/u);
+    assert.throws(() => decodeRead(root(int(1), 0xff, int(1), 0), previous), /returned a truncated payload/u);
 });

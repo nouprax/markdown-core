@@ -26,7 +26,7 @@ import platform.posix.size_tVar
 
 /**
  * One payload becomes one [ByteArray], whoever produced it: a session's
- * feed, advance and finish all read and free their MKC7 bytes through here.
+ * feed, advance and finish all read and free their MKC8 bytes through here.
  */
 private inline fun payload(invoke: (CPointer<CPointerVar<UByteVar>>, CPointer<size_tVar>) -> Boolean): ByteArray =
     memScoped {
@@ -54,16 +54,18 @@ internal actual fun nativeSessionNew(options: ParseOptions): Long {
 internal actual fun nativeSessionFeed(
     session: Long,
     chunk: ByteArray,
+    request: Int,
 ): ByteArray =
     payload { output, outputLength ->
         if (chunk.isEmpty()) {
-            markdown_core_kotlin_session_feed(session.toSession(), null, 0u, output, outputLength)
+            markdown_core_kotlin_session_feed(session.toSession(), null, 0u, request.toUInt(), output, outputLength)
         } else {
             chunk.usePinned { pinned ->
                 markdown_core_kotlin_session_feed(
                     session.toSession(),
                     pinned.addressOf(0).reinterpret(),
                     chunk.size.toULong(),
+                    request.toUInt(),
                     output,
                     outputLength,
                 )
@@ -91,9 +93,12 @@ internal actual fun nativeSessionAdvance(
         }
     }
 
-internal actual fun nativeSessionFinish(session: Long): ByteArray =
+internal actual fun nativeSessionFinish(
+    session: Long,
+    request: Int,
+): ByteArray =
     payload { output, outputLength ->
-        markdown_core_kotlin_session_finish(session.toSession(), output, outputLength)
+        markdown_core_kotlin_session_finish(session.toSession(), request.toUInt(), output, outputLength)
     }
 
 internal actual fun nativeSessionFree(session: Long) {
