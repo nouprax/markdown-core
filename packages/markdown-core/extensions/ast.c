@@ -971,32 +971,44 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     }
 }
 
-/* The debug tree shows every node-valued field, whereas the public child API
- * represents only structural content. Keep those two contracts explicit: a
- * directive label is dumped before content without becoming content. */
-static const markdown_core_node *dump_first_direct_descendant(const markdown_core_node *node) {
-    const markdown_core_node *label = markdown_core_node_directive_label(node);
-    return label ? label : markdown_core_node_get_first_child(node);
-}
+static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth);
 
-static const markdown_core_node *dump_next_direct_descendant(const markdown_core_node *parent,
-                                                             const markdown_core_node *node) {
-    const markdown_core_node *label = markdown_core_node_directive_label(parent);
-    if (node == label) {
-        return markdown_core_node_get_first_child(parent);
+/* The file-tree drawing can nest both child nodes and node-valued fields.  The
+ * caller states their total so connectors remain a formatting concern rather
+ * than redefining either relation as the other. */
+static void dump_nested_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth, bool has_next) {
+    if (!ensure_more(buffer, depth)) {
+        return;
     }
-    return markdown_core_node_get_next_sibling(node);
+    buffer->more[depth] = has_next;
+    dump_node(buffer, node, depth + 1);
 }
 
-static size_t dump_direct_descendant_count(const markdown_core_node *node) {
-    return markdown_core_node_child_count(node) + (markdown_core_node_directive_label(node) ? 1u : 0u);
+static void dump_children(dump_buffer *buffer, const markdown_core_node *node, size_t depth, size_t remaining_nested) {
+    const markdown_core_node *child = markdown_core_node_get_first_child(node);
+    while (child) {
+        const markdown_core_node *next = markdown_core_node_get_next_sibling(child);
+        remaining_nested--;
+        dump_nested_node(buffer, child, depth, remaining_nested != 0);
+        child = next;
+    }
+}
+
+static void dump_directive_nodes(dump_buffer *buffer, const markdown_core_node *node, size_t depth,
+                                 size_t child_count) {
+    const markdown_core_node *label = markdown_core_node_directive_label(node);
+    size_t remaining = child_count + (label ? 1u : 0u);
+    if (label) {
+        remaining--;
+        dump_nested_node(buffer, label, depth, remaining != 0);
+    }
+    dump_children(buffer, node, depth, remaining);
 }
 
 static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_scope scope = markdown_core_node_scope(node);
-    const markdown_core_node *child;
-    size_t count = dump_direct_descendant_count(node);
+    size_t child_count = markdown_core_node_child_count(node);
     size_t i;
     if (kind == MARKDOWN_CORE_KIND_NONE) {
         buffer->failed = true;
@@ -1019,18 +1031,51 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     buffer_i64(buffer, scope.end.column);
     dump_fields(buffer, node, kind);
     buffer_cstr(buffer, " children=");
-    buffer_i64(buffer, (int64_t)count);
+    buffer_i64(buffer, (int64_t)child_count);
     buffer_cstr(buffer, "\n");
 
-    child = dump_first_direct_descendant(node);
-    while (child) {
-        const markdown_core_node *next = dump_next_direct_descendant(node, child);
-        if (!ensure_more(buffer, depth)) {
-            return;
-        }
-        buffer->more[depth] = next != NULL;
-        dump_node(buffer, child, depth + 1);
-        child = next;
+    /* Like cmark's render callback, this switch belongs to the node being
+     * emitted.  Generic child traversal never discovers fields. A directive
+     * explicitly emits its label field before its independent content list. */
+    switch (kind) {
+    case MARKDOWN_CORE_KIND_DIRECTIVE:
+    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
+        dump_directive_nodes(buffer, node, depth, child_count);
+        break;
+    case MARKDOWN_CORE_KIND_DOCUMENT:
+    case MARKDOWN_CORE_KIND_BLOCK_QUOTE:
+    case MARKDOWN_CORE_KIND_PARAGRAPH:
+    case MARKDOWN_CORE_KIND_HEADING:
+    case MARKDOWN_CORE_KIND_LIST:
+    case MARKDOWN_CORE_KIND_LIST_ITEM:
+    case MARKDOWN_CORE_KIND_TABLE:
+    case MARKDOWN_CORE_KIND_TABLE_ROW:
+    case MARKDOWN_CORE_KIND_TABLE_CELL:
+    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
+    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
+    case MARKDOWN_CORE_KIND_LINK_REFERENCE:
+    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE:
+    case MARKDOWN_CORE_KIND_EMPHASIS:
+    case MARKDOWN_CORE_KIND_STRONG:
+    case MARKDOWN_CORE_KIND_STRIKETHROUGH:
+    case MARKDOWN_CORE_KIND_LINK:
+    case MARKDOWN_CORE_KIND_IMAGE:
+        dump_children(buffer, node, depth, child_count);
+        break;
+    case MARKDOWN_CORE_KIND_THEMATIC_BREAK:
+    case MARKDOWN_CORE_KIND_CODE_BLOCK:
+    case MARKDOWN_CORE_KIND_HTML_BLOCK:
+    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
+    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
+    case MARKDOWN_CORE_KIND_TEXT:
+    case MARKDOWN_CORE_KIND_SOFT_BREAK:
+    case MARKDOWN_CORE_KIND_LINE_BREAK:
+    case MARKDOWN_CORE_KIND_CODE:
+    case MARKDOWN_CORE_KIND_HTML:
+    case MARKDOWN_CORE_KIND_FORMULA:
+    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
+    case MARKDOWN_CORE_KIND_NONE:
+        break;
     }
 }
 

@@ -18,7 +18,7 @@ Document scope=1:1..5:19 children=2
 │   ├── Image scope=1:60..1:85 source="/image.png" title="image" children=1
 │   │   └── Text scope=1:62..1:64 literal="alt" children=0
 │   ├── Text scope=1:86..1:86 literal=" " children=0
-│   ├── Directive scope=1:87..1:115 name="badge" attributes=[data-kind="demo"] children=1
+│   ├── Directive scope=1:87..1:115 name="badge" attributes=[data-kind="demo"] children=0
 │   │   └── DirectiveLabel scope=1:93..1:99 children=1
 │   │       └── Text scope=1:94..1:98 literal="label" children=0
 │   ├── Text scope=1:116..1:116 literal=" " children=0

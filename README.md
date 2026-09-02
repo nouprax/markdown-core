@@ -99,12 +99,10 @@ pnpm add @nouprax/es-markdown-core
 ```
 
 ```js
-import { Document, TreeDumper, Walker } from "@nouprax/es-markdown-core";
+import { Document, TreeDumper } from "@nouprax/es-markdown-core";
 
 const document = Document.parse("# Hello", { directives: false });
-new Walker().walk(document, (event, node) => {
-  console.log(event, node.kind, node.scope);
-});
+console.log(document.content[0].kind, document.content[0].scope);
 console.log(TreeDumper.dump(document));
 ```
 

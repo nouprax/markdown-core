@@ -419,17 +419,3 @@ public abstract interface class com/nouprax/markdown/core/Visitor {
 	public abstract fun visitThematicBreak (Lcom/nouprax/markdown/core/ThematicBreak;)Ljava/lang/Object;
 }
 
-public final class com/nouprax/markdown/core/WalkEvent : java/lang/Enum {
-	public static final field ENTERING Lcom/nouprax/markdown/core/WalkEvent;
-	public static final field EXITING Lcom/nouprax/markdown/core/WalkEvent;
-	public static fun getEntries ()Lkotlin/enums/EnumEntries;
-	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/WalkEvent;
-	public static fun values ()[Lcom/nouprax/markdown/core/WalkEvent;
-}
-
-public final class com/nouprax/markdown/core/Walker {
-	public static final field INSTANCE Lcom/nouprax/markdown/core/Walker;
-	public final fun walk (Lcom/nouprax/markdown/core/Markup;Lcom/nouprax/markdown/core/Visitor;)V
-	public final fun walk (Lcom/nouprax/markdown/core/Markup;Lkotlin/jvm/functions/Function2;)V
-}
-

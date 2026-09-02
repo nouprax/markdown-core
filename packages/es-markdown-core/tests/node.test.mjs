@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Document, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
+import { Document, TreeDumper, visit } from "../dist/index.js";
 // Past index.js for the instance itself: the heap is what this asserts about,
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
@@ -8,7 +8,7 @@ import { parseDocumentWithNative } from "../dist/runtime/parser.js";
 import { NodeDecoder } from "../dist/wire/node-decoder.js";
 import { kindVisitor } from "./visitor.mjs";
 
-test("api: synchronous parse, typed visitor dispatch, and walker", () => {
+test("api: synchronous parse and typed visitor dispatch", () => {
     const document = Document.parse("# Heading\n\nBody\n");
     assert.equal(
         visit(document.content[0], {
@@ -17,10 +17,7 @@ test("api: synchronous parse, typed visitor dispatch, and walker", () => {
         }),
         "heading:1"
     );
-    const events = [];
-    new Walker().walk(document, (event, node) => events.push(`${event}-${node.kind}`));
-    assert.equal(events[0], `${WalkEvent.entering}-document`);
-    assert.equal(events.at(-1), `${WalkEvent.exiting}-document`);
+    assert.equal(visit(document, kindVisitor), "document");
 });
 
 test("api: options gate extensions", () => {

@@ -117,7 +117,7 @@ const orderValidators = {
             tree
         ),
     "directive.label-before-content": (tree) =>
-        /DirectiveBlock scope=.* children=[2-9]\d*\n[\s\S]*DirectiveLabel scope=[\s\S]*Paragraph scope=/.test(tree),
+        /DirectiveBlock scope=.* children=[1-9]\d*\n[\s\S]*DirectiveLabel scope=[\s\S]*Paragraph scope=/.test(tree),
     "directive.attributes.source-order": (tree) =>
         /DirectiveBlock scope=.*attributes=\[properties=".*" metadata=".*"\]/.test(tree),
     "inline.source-order": (tree) => /Paragraph scope=.* children=[2-9]\d*/.test(tree)

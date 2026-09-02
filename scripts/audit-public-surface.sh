@@ -62,7 +62,7 @@ for (const symbol of declared) {
 NODE
 
 # These are API identifier checks, not prose checks.
-retired_surface_terms='render|feed|stream|edit|session|snapshot|delta|diagnostic|concrete|Concrete|CST|ConcreteSyntax|Token|Trivia|Recovery'
+retired_surface_terms='render|feed|stream|edit|session|snapshot|delta|diagnostic|concrete|Concrete|CST|ConcreteSyntax|Token|Trivia|Recovery|Walker|WalkEvent'
 
 CLANG_MODULE_CACHE_PATH="$temp_dir/swift-module-cache" \
     swift package --disable-sandbox dump-package >"$temp_dir/swift-package.json"
@@ -81,14 +81,14 @@ if grep -R -n -E \
     packages/swift-markdown-core/Sources/MarkdownCore; then
     fail "Swift exports a retired API, mutation, or native implementation detail"
 fi
-grep -q 'public enum TreeDumper' packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift \
-    && grep -q 'public static func dump' packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift \
+grep -q 'public enum TreeDumper' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/TreeDumper.swift \
+    && grep -q 'public static func dump' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/TreeDumper.swift \
     && grep -q 'func dump() -> String' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Markup.swift \
     || fail "Swift does not expose the reviewed Markup debug dump API"
 grep -q 'public struct TableRow: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
     && grep -q 'public struct TableCell: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
-    && grep -q 'visit(_ node: TableRow)' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift \
-    && grep -q 'visit(_ node: TableCell)' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift \
+    && grep -q 'visit(_ node: TableRow)' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
+    && grep -q 'visit(_ node: TableCell)' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
     || fail "Swift table rows and cells are not first-class Markup visitor nodes"
 # The kind count is the CONTRACT's, not a number written here. It was 28 in
 # three places until Step 7 added a 29th kind and all three said the same wrong
@@ -98,7 +98,7 @@ kind_count=$(node -e 'process.stdout.write(String(JSON.parse(require("node:fs").
 if grep -R -n 'defaultVisit' packages/swift-markdown-core/Sources/MarkdownCore; then
     fail "Swift MarkupVisitor exposes a catch-all fallback"
 fi
-test "$(grep -c 'mutating func visit' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift)" -eq "$kind_count" \
+test "$(grep -c 'mutating func visit' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift)" -eq "$kind_count" \
     || fail "Swift MarkupVisitor is not exhaustive over all $kind_count Markup kinds"
 
 grep -q 'explicitApi()' packages/kotlin-markdown-core/build.gradle.kts \
@@ -109,21 +109,21 @@ if grep -R -n -E \
     fail "Kotlin exports a retired API, mutation, or native implementation detail"
 fi
 grep -q 'public object TreeDumper' \
-    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/TreeDumper.kt \
+    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/TreeDumper.kt \
     && grep -q 'public fun dump(root: Markup): String' \
-        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/TreeDumper.kt \
+        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/TreeDumper.kt \
     && grep -q 'public fun dump(): String' \
         packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Markup.kt \
     || fail "Kotlin does not expose the reviewed Markup debug dump API"
 grep -q 'visitor.visitTableRow(this)' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Table.kt \
     && grep -q 'visitor.visitTableCell(this)' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Table.kt \
-    && grep -q 'visitTableRow' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/Visitor.kt \
-    && grep -q 'visitTableCell' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/Visitor.kt \
+    && grep -q 'visitTableRow' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/Visitor.kt \
+    && grep -q 'visitTableCell' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/Visitor.kt \
     || fail "Kotlin table rows and cells are not first-class Markup visitor nodes"
 if grep -R -n 'defaultVisit' packages/kotlin-markdown-core/src/commonMain; then
     fail "Kotlin Visitor exposes a catch-all fallback"
 fi
-test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/Visitor.kt)" -eq "$kind_count" \
+test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/Visitor.kt)" -eq "$kind_count" \
     || fail "Kotlin Visitor is not exhaustive over all $kind_count Markup kinds"
 
 if grep -R -E -n 'readonly children' packages/es-markdown-core/src/model; then
@@ -167,7 +167,7 @@ const runtimeExports = [
         match[1].split(",").map((name) => name.trim())
     )
 ].sort();
-const expectedRuntime = ["Document", "ParseError", "TreeDumper", "WalkEvent", "Walker", "visit"].sort();
+const expectedRuntime = ["Document", "ParseError", "TreeDumper", "visit"].sort();
 if (runtimeExports.join("\n") !== expectedRuntime.join("\n")) {
     throw new Error(`Unexpected ES runtime exports: ${runtimeExports.join(", ")}`);
 }

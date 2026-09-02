@@ -195,7 +195,7 @@ and is not an option.
 Renderer-only `unsafe`, `github-pre-lang`, and `full-info-string` options do
 not exist. Raw HTML, URLs, and full code info strings are always retained.
 
-## Visitor and Walker
+## Visitor
 
 The typed `Visitor<Result>` has one dispatch method for every `Markup` kind in
 the node inventory, including `TableRow`, `TableCell`, and `DirectiveLabel`.
@@ -205,33 +205,27 @@ fallback. Adding a `Markup` kind must therefore produce compile errors in every
 visitor until the new case is handled. Visiting one node does not implicitly
 recurse.
 
-The standard read-only `Walker` performs depth-first traversal and emits
-`entering` then `exiting` events for every reachable `Markup`. Applying an
-exhaustive Visitor on `entering` invokes it exactly once per node. Walker owns
-the typed-property rules, so consumers never inspect kinds to discover
-structure:
+There is no public Walker or generic child projection. A recursive operation
+is implemented by the operation's exhaustive Visitor itself: each node-kind
+callback performs that node's work and explicitly decides whether and how to
+visit its typed fields and content. This keeps recursion subordinate to AST
+semantics instead of pretending every `Markup`-valued relation is one uniform
+child edge. In particular, a directive callback may inspect or visit `label`
+without making it directive content.
 
-- ordinary containers traverse `content` in index order;
-- `List` traverses `items` in order;
-- `Table` traverses `header`, then `rows`; each row traverses cells and each
-  cell traverses inline content;
-- directives traverse the `label` field first when present, then the separate
-  block `content` field; traversal order does not merge those fields or make
-  the label a content child;
-- `Link` and `Image` traverse their inline `content`.
-
-Rows and cells produce normal visitor callbacks before their descendants.
-Visitor and Walker expose no replace, remove, setter, parent mutation, or
+The Visitor exposes no replace, remove, setter, parent mutation, or
 native-handle callback.
 
 ## Debug dump
 
 Swift, Kotlin, and TypeScript publish `TreeDumper.dump(markup)` and a
-convenience `Markup.dump()` method. Both traverse that platform's immutable
-typed tree through its exhaustive Visitor and read-only Walker; they do not
-call the C debug dump. Dumping a non-Document Markup treats that value as
-the root and emits only its subtree. The canonical text grammar is defined in
-`canonical-ast-dump.md` and is for debugging rather than serialization.
+convenience `Markup.dump()` method. Each TreeDumper uses exhaustive per-node
+Visitor dispatch, like cmark's per-node render callback: that node's dump
+function emits its fields and decides which content or field nodes to visit.
+No binding calls the C debug dump. Dumping a non-Document Markup treats that
+value as the root and emits only its operation-defined dump projection. The
+canonical text grammar is defined in `canonical-ast-dump.md` and is for
+debugging rather than serialization.
 
 ## Kotlin `List` naming contract
 

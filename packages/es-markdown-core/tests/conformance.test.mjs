@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { Document, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
+import { Document, TreeDumper, visit } from "../dist/index.js";
 import { kindVisitor } from "./visitor.mjs";
 
 const canonicalFixtures = new URL("../build/generated/conformance/canonical-ast-fixtures.json", import.meta.url);
@@ -18,9 +18,9 @@ test("conformance: public node schema is reachable", () => {
         "$$\ny\n$$\n"
     ];
     const documents = sources.map((source) => Document.parse(source));
-    const nodes = documents.flatMap(flatten);
+    const kinds = documents.flatMap((document) => dumpKinds(document.dump()));
     assert.deepEqual(
-        new Set(nodes.map((node) => node.kind)),
+        new Set(kinds),
         new Set([
             "document",
             "blockQuote",
@@ -111,6 +111,13 @@ test("conformance: directive labels preserve missing, empty, and populated state
     assert.equal(label.label.content[0].literal, "text");
     assert.equal(block.label.content[0].literal, "title");
     assert.deepEqual(block.content, []);
+
+    assert.equal("content" in label, false);
+    assert.deepEqual(
+        label.label.content.map((node) => node.kind),
+        ["text"]
+    );
+    assert.match(TreeDumper.dump(label), /DirectiveLabel/u);
 });
 
 for (const testCase of canonicalManifest.cases) {
@@ -121,10 +128,10 @@ for (const testCase of canonicalManifest.cases) {
     });
 }
 
-function flatten(root) {
-    const nodes = [];
-    new Walker().walk(root, (event, node) => {
-        if (event === WalkEvent.entering) nodes.push(node);
-    });
-    return nodes;
+function dumpKinds(dump) {
+    return dump
+        .trimEnd()
+        .split("\n")
+        .map((line) => line.replace(/^[│ ├└─]*/u, "").split(" ", 1)[0])
+        .map((name) => (name.startsWith("HTML") ? `html${name.slice(4)}` : name[0].toLowerCase() + name.slice(1)));
 }

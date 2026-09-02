@@ -41,17 +41,15 @@ Connectors and prefixes are exact UTF-8:
 Output uses LF line endings and ends with exactly one LF. There is no trailing
 whitespace and no color or terminal-dependent output.
 
-For historical compatibility, the dump token is named `children`, but it
-counts direct node-valued fields in Walker order, not a generic AST child
-property. Thus `Table` contributes `header` and `rows`, while a directive
-contributes its optional `label` field before its independent `content`.
-`TableRow`, `TableCell`, and `DirectiveLabel` are `Markup` kinds and produce
-normal Visitor/Walker callbacks.
+`children` counts only the node's structural children. Thus a `Table` counts
+its `header` and `rows`, a `DirectiveBlock` counts only its block `content`,
+and an inline `Directive` always reports zero. A directive's optional `label`
+is a separate Markup-valued field and is not included in that number.
 
-The dump deliberately carries no property or array-index edge labels. Parent
-kind, sibling order, `children`, and behavior-bearing fields such as
-`isHeader` preserve the complete public tree semantics without coupling the
-generic tree formatter to schema-specific edge names.
+The dump deliberately carries no property or array-index edge labels. Each
+node kind's dump function decides which structural children and Markup-valued
+fields to emit, in their canonical order. The file-tree connectors visualize
+that owned output; they do not redefine every nested record as a child.
 
 ## Scalar encoding
 
@@ -72,10 +70,11 @@ The dump prints the native C parser's public scope coordinates exactly, without
 normalizing or interpreting particular line/column combinations.
 
 A directive's label is a node-valued FIELD, not a member of directive content.
-The dump nests that field to visualize ownership: an absent label emits no
-`DirectiveLabel`, an empty one emits `DirectiveLabel children=0`, and a
-populated one emits the label followed by its inline descendants. This visual
-nesting does not redefine the typed AST or the C child traversal contract.
+The directive-specific dump function nests that field before content to
+visualize ownership: an absent label emits no `DirectiveLabel`, an empty one
+emits `DirectiveLabel children=0`, and a populated one emits the label followed
+by its inline children. This visual nesting does not redefine the typed AST,
+the `children` count, or the C child traversal contract.
 
 ## Field order by record kind
 
@@ -115,7 +114,7 @@ Example:
 ```text
 Document scope=1:1..1:10 children=1
 └── Paragraph scope=1:1..1:10 children=1
-    └── Directive scope=1:1..1:10 name="badge" attributes=null children=1
+    └── Directive scope=1:1..1:10 name="badge" attributes=null children=0
         └── DirectiveLabel scope=1:7..1:10 children=1
             └── Text scope=1:8..1:9 literal="ok" children=0
 ```

@@ -2,7 +2,6 @@ import {
     Document,
     TreeDumper,
     visit,
-    Walker,
     type Heading,
     type Markup,
     type Table,
@@ -53,7 +52,6 @@ const visitor: Visitor<string> = {
     visitFootnoteReference: (node) => node.kind
 };
 visit(document, visitor);
-new Walker().walk(document, (_event, node) => visit(node, visitor));
 // @ts-expect-error recursively readonly content cannot be replaced
 document.content[0] = document;
 // @ts-expect-error readonly scope values cannot be mutated

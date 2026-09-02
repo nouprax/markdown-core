@@ -21,7 +21,7 @@ Document scope=1:1..18:8 children=6
 ├── Paragraph scope=11:1..11:17 children=3
 │   ├── Directive scope=11:1..11:6 name="plain" attributes=null children=0
 │   ├── Text scope=11:7..11:7 literal=" " children=0
-│   └── Directive scope=11:8..11:17 name="empty" attributes=[] children=1
+│   └── Directive scope=11:8..11:17 name="empty" attributes=[] children=0
 │       └── DirectiveLabel scope=11:14..11:15 children=0
 ├── Table scope=13:1..15:8 alignments=[none] children=2
 │   ├── TableRow scope=13:1..13:8 isHeader=true children=1

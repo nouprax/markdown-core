@@ -65,17 +65,6 @@ final enum class com.nouprax.markdown.core/TableAlignment : kotlin/Enum<com.noup
     final fun values(): kotlin/Array<com.nouprax.markdown.core/TableAlignment> // com.nouprax.markdown.core/TableAlignment.values|values#static(){}[0]
 }
 
-final enum class com.nouprax.markdown.core/WalkEvent : kotlin/Enum<com.nouprax.markdown.core/WalkEvent> { // com.nouprax.markdown.core/WalkEvent|null[0]
-    enum entry ENTERING // com.nouprax.markdown.core/WalkEvent.ENTERING|null[0]
-    enum entry EXITING // com.nouprax.markdown.core/WalkEvent.EXITING|null[0]
-
-    final val entries // com.nouprax.markdown.core/WalkEvent.entries|#static{}entries[0]
-        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/WalkEvent> // com.nouprax.markdown.core/WalkEvent.entries.<get-entries>|<get-entries>#static(){}[0]
-
-    final fun valueOf(kotlin/String): com.nouprax.markdown.core/WalkEvent // com.nouprax.markdown.core/WalkEvent.valueOf|valueOf#static(kotlin.String){}[0]
-    final fun values(): kotlin/Array<com.nouprax.markdown.core/WalkEvent> // com.nouprax.markdown.core/WalkEvent.values|values#static(){}[0]
-}
-
 abstract interface <#A: kotlin/Any?> com.nouprax.markdown.core/Visitor { // com.nouprax.markdown.core/Visitor|null[0]
     abstract fun visitBlockQuote(com.nouprax.markdown.core/BlockQuote): #A // com.nouprax.markdown.core/Visitor.visitBlockQuote|visitBlockQuote(com.nouprax.markdown.core.BlockQuote){}[0]
     abstract fun visitCode(com.nouprax.markdown.core/Code): #A // com.nouprax.markdown.core/Visitor.visitCode|visitCode(com.nouprax.markdown.core.Code){}[0]
@@ -560,9 +549,4 @@ final class com.nouprax.markdown.core/ThematicBreak : com.nouprax.markdown.core/
 
 final object com.nouprax.markdown.core/TreeDumper { // com.nouprax.markdown.core/TreeDumper|null[0]
     final fun dump(com.nouprax.markdown.core/Markup): kotlin/String // com.nouprax.markdown.core/TreeDumper.dump|dump(com.nouprax.markdown.core.Markup){}[0]
-}
-
-final object com.nouprax.markdown.core/Walker { // com.nouprax.markdown.core/Walker|null[0]
-    final fun walk(com.nouprax.markdown.core/Markup, com.nouprax.markdown.core/Visitor<kotlin/Unit>) // com.nouprax.markdown.core/Walker.walk|walk(com.nouprax.markdown.core.Markup;com.nouprax.markdown.core.Visitor<kotlin.Unit>){}[0]
-    final fun walk(com.nouprax.markdown.core/Markup, kotlin/Function2<com.nouprax.markdown.core/WalkEvent, com.nouprax.markdown.core/Markup, kotlin/Unit>) // com.nouprax.markdown.core/Walker.walk|walk(com.nouprax.markdown.core.Markup;kotlin.Function2<com.nouprax.markdown.core.WalkEvent,com.nouprax.markdown.core.Markup,kotlin.Unit>){}[0]
 }

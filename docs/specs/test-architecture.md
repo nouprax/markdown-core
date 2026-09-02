@@ -187,8 +187,9 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
   `specs/canonical-ast/`；`manifest.json` 是唯一 case list，并显式冻结 paths、
   parse options、顺序、编码/换行和 semantic coverage tags。该目录不含 runner。
 - C、Swift、Kotlin、ES 的现有原生 conformance targets 使用各自公开
-  parse/immutable AST/Visitor/Walker/TreeDumper 路径枚举同一 manifest；bindings
-  不调用 C dump/test runner、不读取另一 binding 输出，也不以 dump 构造生产 AST。
+  parse/immutable AST 与独立的 per-node Visitor/TreeDumper 路径枚举同一
+  manifest。bindings 不提供通用 Walker，不调用 C dump/test runner、不读取另一
+  binding 输出，也不以 dump 构造生产 AST。
 - Swift test bundle 由 SwiftPM build-tool plugin 在 plugin work directory 从 root
   spec source 生成；Kotlin common tests 由 cacheable Gradle task class 从同一
   manifest 生成 build-only Kotlin data；ES package 由 `preconformance` lifecycle

@@ -3,7 +3,7 @@ import MarkdownCore
 import Testing
 
 @Suite("conformance") struct ConformanceSuite {
-    @Test("public node kinds are reachable through Swift values")
+    @Test("public node kinds are emitted by the per-node Swift dumper")
     func schemaReachability() throws {
         let sources = [
             "# Heading\n\n> Quote\n\n---\n\n3. ordered\n\n- [x] task\n\n"
@@ -16,8 +16,7 @@ import Testing
             "$$\ny\n$$\n",
         ]
         let documents = try sources.map { try Document.parse($0) }
-        let nodes = documents.flatMap(flatten)
-        let kinds = Set(nodes.map(kindName))
+        let kinds = Set(documents.flatMap { dumpKinds($0.dump()) })
         let expected: Set<String> = [
             "Document", "BlockQuote", "Paragraph", "Heading", "ThematicBreak", "List",
             "ListItem", "CodeBlock", "HTMLBlock", "FormulaBlock", "Table",
@@ -109,14 +108,11 @@ private struct CanonicalParseOptions: Decodable {
     }
 }
 
-private func flatten(_ root: any Markup) -> [any Markup] {
-    var result: [any Markup] = []
-    Walker().walk(root) { event, node in
-        if case .entering = event { result.append(node) }
+private func dumpKinds(_ dump: String) -> [String] {
+    dump.split(separator: "\n").compactMap { line in
+        line.trimmingCharacters(in: CharacterSet(charactersIn: "│ ├└─"))
+            .split(separator: " ")
+            .first
+            .map(String.init)
     }
-    return result
-}
-
-private func kindName(_ node: any Markup) -> String {
-    String(describing: type(of: node))
 }

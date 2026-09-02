@@ -598,27 +598,6 @@ static void directive_opaque_free(const markdown_core_syntax_extension *extensio
     node->as.opaque = NULL;
 }
 
-static size_t directive_node_field_count(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
-    return markdown_core_directive_label(node) ? 1u : 0u;
-}
-
-static markdown_core_node *directive_node_field_at(const markdown_core_syntax_extension *extension,
-                                                   markdown_core_node *node, size_t index) {
-    return index == 0 ? markdown_core_directive_label(node) : NULL;
-}
-
-static void directive_node_field_clear(const markdown_core_syntax_extension *extension, markdown_core_node *node,
-                                       size_t index) {
-    node_directive *directive = get_directive(node);
-    if (directive && index == 0) {
-        directive->label = NULL;
-    }
-}
-
-static int directive_field_only(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
-    return node && node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
-}
-
 /* AN `=` PROMISES A VALUE. With none before the block ends the block is
  * malformed, because an empty value would otherwise be indistinguishable from
  * the valueless `{a}`, which means something else. `{a=}`, `{a= }` and an `=`
@@ -827,7 +806,6 @@ static int attach_label_node(const markdown_core_syntax_extension *extension, ma
     }
 
     directive->label = label_node;
-    label_node->parent = directive_node;
 
     return 1;
 }
@@ -939,6 +917,7 @@ static markdown_core_node *match_colon_directive(const markdown_core_syntax_exte
     int start_line = markdown_core_inline_parser_get_line(inline_parser);
     int start_column = markdown_core_inline_parser_get_column(inline_parser);
 
+    (void)parent;
     memset(&attributes, 0, sizeof(attributes));
 
     /* A TEXT DIRECTIVE'S COLON MAY NOT SIT NEXT TO ANOTHER COLON, on either
@@ -1022,26 +1001,16 @@ static markdown_core_node *match_colon_directive(const markdown_core_syntax_exte
             return NULL;
         }
         directive->label = label_node;
-        label_node->parent = node;
     }
 
     markdown_core_inline_parser_set_offset(inline_parser, (int)pos);
     node->end_line = markdown_core_inline_parser_get_line(inline_parser);
     node->end_column = markdown_core_inline_parser_get_column(inline_parser) - 1;
 
-    /* The label's content is its own buffer, so its inlines are parsed against
-     * it and not against the paragraph that contains it -- the same shape a
-     * table cell has, and the same one the BLOCK forms of this directive have
-     * always had. `process_inlines`' walk cannot reach a node created during a
-     * paragraph's own inline pass, so the parse is driven from here. */
+    /* The label brackets belong to the enclosing paragraph's claim run, not
+     * to the detached label content buffer. Parser phases discover the field
+     * from its live owner after this paragraph finishes. */
     if (label_node) {
-        /* The field's parent link is set when the label is attached, before
-         * `parse_inline`, because requirement 11b's refinement walks a block's
-         * ancestors to find the region its content was cut from -- and without
-         * this the label's chain stops at a directive that is still a return
-         * value, so every node inside a label would own no region at all. */
-        node->parent = parent;
-        markdown_core_parse_inlines(parser, label_node, parser->refmap, parser->options);
         /* The label's scope spans its brackets, so the brackets are the
          * label's markers (requirement 11b). They are claimed from HERE, in
          * the enclosing paragraph's claim run, because they are not part of
@@ -1228,6 +1197,16 @@ static int accepts_lines(const markdown_core_syntax_extension *extension, markdo
     return directive->fence_length == 2 || directive->consume_line;
 }
 
+static int visit_owned_subtrees(const markdown_core_syntax_extension *extension, markdown_core_node *node,
+                                markdown_core_owned_subtree_visitor visitor, void *context) {
+    node_directive *directive = get_directive(node);
+    (void)extension;
+    if (!directive || !directive->label) {
+        return 1;
+    }
+    return visitor(&directive->label, context);
+}
+
 /* `:` opens a directive. `]` is in the dispatch set for the `]` arbitration
  * `bracket_takes_close_bracket` performs, not because it terminates a text run --
  * `is_core_special_character` refuses it there. */
@@ -1242,10 +1221,7 @@ const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE = {
     .accepts_lines_func = accepts_lines,
     .opaque_alloc_func = directive_opaque_alloc,
     .opaque_free_func = directive_opaque_free,
-    .node_field_count_func = directive_node_field_count,
-    .node_field_at_func = directive_node_field_at,
-    .node_field_clear_func = directive_node_field_clear,
-    .field_only_func = directive_field_only,
+    .visit_owned_subtrees_func = visit_owned_subtrees,
     .terminates_text = ":",
     .dispatch = ":",
 };

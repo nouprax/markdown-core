@@ -104,8 +104,10 @@ order to survive OOM.
 ## 4. Immutable AST only
 
 The public result is a typed, immutable AST. Nodes describe semantic Markdown
-constructs and their source scopes. The public visitor/walker surfaces are
-exhaustive over the canonical node-kind contract.
+constructs and their source scopes. The public Visitor surface is exhaustive
+over the canonical node-kind contract. There is no generic Walker: recursive
+operations use per-node Visitor callbacks that choose each typed relation
+according to its semantics.
 
 The returned document contains only the semantic AST. The parser does not
 retain or expose source text, a normalized source copy, a line index, tokens,
@@ -172,7 +174,7 @@ Swift, Kotlin, and ECMAScript expose the same concepts:
 - immutable `Document` and typed markup nodes
 - parse options and a one-shot parse entry point
 - source scopes
-- exhaustive visitors/walkers
+- exhaustive per-node visitors
 - canonical AST debug dumping
 - terminal parse errors
 

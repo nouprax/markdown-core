@@ -475,9 +475,9 @@ static void directive_extension_accessors(test_batch_runner *runner) {
        "an explicit directive label is a typed node field");
     OK(runner, markdown_core_node_first_child(directive) == NULL, "an inline directive label is not a content child");
     OK(runner,
-       markdown_core_node_parent(label) == directive && markdown_core_node_previous(label) == NULL &&
+       markdown_core_node_parent(label) == NULL && markdown_core_node_previous(label) == NULL &&
            markdown_core_node_next(label) == NULL,
-       "a directive label is owned by its field and is not a sibling");
+       "a directive label is a detached field root, not a child or sibling");
     STR_EQ(runner, markdown_core_extensions_get_directive_name(directive), "a", "directive name getter");
     INT_EQ(runner, markdown_core_extensions_directive_has_attributes(directive), 1,
            "directive reports its attribute container");
@@ -519,8 +519,8 @@ static void directive_extension_accessors(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 
     /* A block directive has two independent node-valued relations: `label`
-     * and block content.  The iterator visits both, in field-before-content
-     * order, without making either one a sibling of the other. */
+     * and block content. The ordinary cmark iterator follows only the content
+     * child tree; callers can start a separate walk at the label field root. */
     doc = parse_with_directive_extension(":::note[Title]\nBody\n:::\n");
     directive = markdown_core_node_first_child(doc);
     label = markdown_core_directive_label(directive);
@@ -532,10 +532,11 @@ static void directive_extension_accessors(test_batch_runner *runner) {
        markdown_core_node_next(label) == NULL && markdown_core_node_previous(label) == NULL &&
            markdown_core_node_first_child(directive) == paragraph,
        "the label is not mixed into the block content list");
-    INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "directive field ownership is structurally valid");
+    OK(runner, markdown_core_node_parent(label) == NULL, "the directive label is a detached field root");
+    INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "the document child tree is structurally valid");
+    INT_EQ(runner, markdown_core_node_check(label, NULL), 0, "the label child tree is structurally valid");
     {
-        markdown_core_node *expected[] = {directive, label, markdown_core_node_first_child(label), paragraph,
-                                          markdown_core_node_first_child(paragraph)};
+        markdown_core_node *expected[] = {directive, paragraph, markdown_core_node_first_child(paragraph)};
         size_t entered = 0;
         markdown_core_iter *iter = markdown_core_iter_new(directive);
         markdown_core_event_type event;
@@ -544,36 +545,32 @@ static void directive_extension_accessors(test_batch_runner *runner) {
                 OK(runner,
                    entered < sizeof(expected) / sizeof(expected[0]) &&
                        markdown_core_iter_get_node(iter) == expected[entered],
-                   "iterator preserves field-before-content structural order");
+                   "iterator preserves structural child order");
                 entered++;
             }
         }
         INT_EQ(runner, (int)entered, (int)(sizeof(expected) / sizeof(expected[0])),
-               "iterator visits every directive field and content node once");
+               "iterator visits only directive content nodes");
         markdown_core_iter_free(iter);
     }
     {
-        markdown_core_node *sibling = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-        INT_EQ(runner, markdown_core_node_insert_before(label, sibling), 0,
-               "a node-valued field is not a sibling insertion point");
-        markdown_core_node_free(sibling);
+        markdown_core_node *expected[] = {label, markdown_core_node_first_child(label)};
+        size_t entered = 0;
+        markdown_core_iter *iter = markdown_core_iter_new(label);
+        markdown_core_event_type event;
+        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            if (event == MARKDOWN_CORE_EVENT_ENTER) {
+                OK(runner,
+                   entered < sizeof(expected) / sizeof(expected[0]) &&
+                       markdown_core_iter_get_node(iter) == expected[entered],
+                   "a walk rooted at the label follows its own child tree");
+                entered++;
+            }
+        }
+        INT_EQ(runner, (int)entered, (int)(sizeof(expected) / sizeof(expected[0])),
+               "the label tree is independently iterable");
+        markdown_core_iter_free(iter);
     }
-    INT_EQ(runner, markdown_core_node_append_child(paragraph, label), 0,
-           "a field-only node cannot be moved into a content child list");
-    INT_EQ(runner, markdown_core_node_set_type(label, MARKDOWN_CORE_NODE_PARAGRAPH), 0,
-           "a typed field cannot be changed to a content node type in place");
-    INT_EQ(runner, markdown_core_node_set_syntax_extension(label, NULL), 0,
-           "a typed field cannot discard the extension that defines its role");
-    INT_EQ(runner, markdown_core_node_set_syntax_extension(directive, NULL), 0,
-           "a field owner cannot discard its field descriptor");
-    OK(runner, markdown_core_directive_label(directive) == label && markdown_core_node_parent(label) == directive,
-       "rejected child mutation preserves field ownership");
-    markdown_core_node_unlink(label);
-    OK(runner,
-       markdown_core_directive_label(directive) == NULL && markdown_core_node_parent(label) == NULL &&
-           markdown_core_node_first_child(directive) == paragraph,
-       "unlinking a field clears its owner without disturbing content");
-    markdown_core_node_free(label);
     markdown_core_node_free(doc);
 
     /* ABSENT is not EMPTY. `:plain[]` wrote no container and `:empty{}` wrote

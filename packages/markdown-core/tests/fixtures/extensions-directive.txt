@@ -21,7 +21,7 @@ Use :cite[Smith *et al.*]{id=smith class=paper data-kind=ref} here.
 Document scope=1:1..1:67 children=1
 └── Paragraph scope=1:1..1:67 children=3
     ├── Text scope=1:1..1:4 literal="Use " children=0
-    ├── Directive scope=1:5..1:61 name="cite" attributes=[id="smith" class="paper" data-kind="ref"] children=1
+    ├── Directive scope=1:5..1:61 name="cite" attributes=[id="smith" class="paper" data-kind="ref"] children=0
     │   └── DirectiveLabel scope=1:10..1:25 children=2
     │       ├── Text scope=1:11..1:16 literal="Smith " children=0
     │       └── Emphasis scope=1:17..1:24 children=1
@@ -39,7 +39,7 @@ two"} tail
 .
 Document scope=1:1..2:10 children=1
 └── Paragraph scope=1:1..2:10 children=2
-    ├── Directive scope=1:1..2:5 name="note" attributes=[title="one\ntwo"] children=1
+    ├── Directive scope=1:1..2:5 name="note" attributes=[title="one\ntwo"] children=0
     │   └── DirectiveLabel scope=1:6..1:12 children=1
     │       └── Text scope=1:7..1:11 literal="label" children=0
     └── Text scope=2:6..2:10 literal=" tail" children=0
@@ -76,7 +76,7 @@ spaces.
 .
 Document scope=1:1..1:74 children=1
 └── Paragraph scope=1:1..1:74 children=1
-    └── Directive scope=1:1..1:74 name="data" attributes=[muted="" dup="last" unicode="中文😀" title="My Video"] children=1
+    └── Directive scope=1:1..1:74 name="data" attributes=[muted="" dup="last" unicode="中文😀" title="My Video"] children=0
         └── DirectiveLabel scope=1:6..1:12 children=1
             └── Text scope=1:7..1:11 literal="label" children=0
 ````````````````````````````````
@@ -89,7 +89,7 @@ retained. Repeated `class` values accumulate, also in their first slot.
 .
 Document scope=1:1..1:77 children=1
 └── Paragraph scope=1:1..1:77 children=1
-    └── Directive scope=1:1..1:77 name="ordinary" attributes=[id="last" class="red green blue" key="value"] children=1
+    └── Directive scope=1:1..1:77 name="ordinary" attributes=[id="last" class="red green blue" key="value"] children=0
         └── DirectiveLabel scope=1:10..1:16 children=1
             └── Text scope=1:11..1:15 literal="label" children=0
 ````````````````````````````````
@@ -131,7 +131,7 @@ Text directive labels can contain links.
 .
 Document scope=1:1..1:39 children=1
 └── Paragraph scope=1:1..1:39 children=1
-    └── Directive scope=1:1..1:39 name="note" attributes=null children=1
+    └── Directive scope=1:1..1:39 name="note" attributes=null children=0
         └── DirectiveLabel scope=1:6..1:39 children=3
             ├── Text scope=1:7..1:10 literal="See " children=0
             ├── Link scope=1:11..1:37 destination="https://example.com" title=null children=1
@@ -146,7 +146,7 @@ Text directive labels can contain bracketed text that is not a link.
 .
 Document scope=1:1..1:24 children=1
 └── Paragraph scope=1:1..1:24 children=1
-    └── Directive scope=1:1..1:24 name="note" attributes=null children=1
+    └── Directive scope=1:1..1:24 name="note" attributes=null children=0
         └── DirectiveLabel scope=1:6..1:24 children=1
             └── Text scope=1:7..1:23 literal="See [plain] text." children=0
 ````````````````````````````````
@@ -160,7 +160,7 @@ Document scope=1:1..1:27 children=1
 └── Paragraph scope=1:1..1:27 children=1
     └── Link scope=1:1..1:27 destination="/roadmap" title=null children=2
         ├── Text scope=1:2..1:4 literal="Go " children=0
-        └── Directive scope=1:5..1:16 name="badge" attributes=null children=1
+        └── Directive scope=1:5..1:16 name="badge" attributes=null children=0
             └── DirectiveLabel scope=1:11..1:16 children=1
                 └── Text scope=1:12..1:15 literal="beta" children=0
 ````````````````````````````````
@@ -179,7 +179,7 @@ Document scope=1:1..3:16 children=1
     │       └── Text scope=1:3..1:8 literal="status" children=0
     └── TableRow scope=3:1..3:16 isHeader=false children=1
         └── TableCell scope=3:2..3:15 children=1
-            └── Directive scope=3:3..3:14 name="badge" attributes=null children=1
+            └── Directive scope=3:3..3:14 name="badge" attributes=null children=0
                 └── DirectiveLabel scope=3:9..3:14 children=1
                     └── Text scope=3:10..3:13 literal="beta" children=0
 ````````````````````````````````
@@ -202,7 +202,7 @@ An empty label disambiguates a text directive before a following colon.
 .
 Document scope=1:1..1:7 children=1
 └── Paragraph scope=1:1..1:7 children=2
-    ├── Directive scope=1:1..1:6 name="red" attributes=null children=1
+    ├── Directive scope=1:1..1:6 name="red" attributes=null children=0
     │   └── DirectiveLabel scope=1:5..1:6 children=0
     └── Text scope=1:7..1:7 literal=":" children=0
 ````````````````````````````````
@@ -233,7 +233,7 @@ it -- the label ended before either was looked for.
 Document scope=1:1..1:9 children=1
 └── Paragraph scope=1:1..1:9 children=2
     ├── Text scope=1:1..1:3 literal="*a " children=0
-    └── Directive scope=1:4..1:9 name="b" attributes=null children=1
+    └── Directive scope=1:4..1:9 name="b" attributes=null children=0
         └── DirectiveLabel scope=1:6..1:9 children=1
             └── Text scope=1:7..1:8 literal="c*" children=0
 ````````````````````````````````
@@ -243,7 +243,7 @@ Document scope=1:1..1:9 children=1
 .
 Document scope=1:1..1:10 children=1
 └── Paragraph scope=1:1..1:10 children=2
-    ├── Directive scope=1:1..1:7 name="b" attributes=null children=1
+    ├── Directive scope=1:1..1:7 name="b" attributes=null children=0
     │   └── DirectiveLabel scope=1:3..1:7 children=1
     │       └── Text scope=1:4..1:6 literal="a`b" children=0
     └── Text scope=1:8..1:10 literal="`c]" children=0
@@ -258,7 +258,7 @@ nested brackets are a label and thirty-three are prose.
 .
 Document scope=1:1..1:69 children=1
 └── Paragraph scope=1:1..1:69 children=1
-    └── Directive scope=1:1..1:69 name="a" attributes=null children=1
+    └── Directive scope=1:1..1:69 name="a" attributes=null children=0
         └── DirectiveLabel scope=1:3..1:69 children=1
             └── Text scope=1:4..1:68 literal="[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]" children=0
 ````````````````````````````````
@@ -300,7 +300,7 @@ A digit may begin a name, as it may in the reference implementation.
 .
 Document scope=1:1..1:5 children=1
 └── Paragraph scope=1:1..1:5 children=1
-    └── Directive scope=1:1..1:5 name="1a" attributes=null children=1
+    └── Directive scope=1:1..1:5 name="1a" attributes=null children=0
         └── DirectiveLabel scope=1:4..1:5 children=0
 ````````````````````````````````
 
@@ -313,7 +313,7 @@ block forms read the same names the inline form does.
 .
 Document scope=1:1..1:9 children=1
 └── Paragraph scope=1:1..1:9 children=1
-    └── Directive scope=1:1..1:9 name="café" attributes=null children=1
+    └── Directive scope=1:1..1:9 name="café" attributes=null children=0
         └── DirectiveLabel scope=1:7..1:9 children=1
             └── Text scope=1:8..1:8 literal="x" children=0
 ````````````````````````````````
@@ -369,7 +369,7 @@ their last value and are not projected onto HTML.
 ::youtube[Video of a *cat*]{vid=01ab2cd3efg class=embed class=featured}
 .
 Document scope=1:1..1:71 children=1
-└── DirectiveBlock scope=1:1..1:71 name="youtube" attributes=[vid="01ab2cd3efg" class="embed featured"] children=1
+└── DirectiveBlock scope=1:1..1:71 name="youtube" attributes=[vid="01ab2cd3efg" class="embed featured"] children=0
     └── DirectiveLabel scope=1:10..1:27 children=2
         ├── Text scope=1:11..1:21 literal="Video of a " children=0
         └── Emphasis scope=1:22..1:26 children=1
@@ -547,7 +547,7 @@ block after `]` before the label is accepted.
 .
 Document scope=1:1..1:16 children=1
 └── Paragraph scope=1:1..1:16 children=1
-    └── Directive scope=1:1..1:16 name="n" attributes=[id="i" class="c"] children=1
+    └── Directive scope=1:1..1:16 name="n" attributes=[id="i" class="c"] children=0
         └── DirectiveLabel scope=1:3..1:9 children=1
             └── Text scope=1:4..1:8 literal="label" children=0
 ````````````````````````````````
@@ -751,7 +751,7 @@ continuing it, unlike a container, which runs until its fence.
 after
 .
 Document scope=1:1..2:5 children=2
-├── DirectiveBlock scope=1:1..1:14 name="leaf" attributes=[a="b"] children=1
+├── DirectiveBlock scope=1:1..1:14 name="leaf" attributes=[a="b"] children=0
 │   └── DirectiveLabel scope=1:7..1:9 children=1
 │       └── Text scope=1:8..1:8 literal="L" children=0
 └── Paragraph scope=2:1..2:5 children=1

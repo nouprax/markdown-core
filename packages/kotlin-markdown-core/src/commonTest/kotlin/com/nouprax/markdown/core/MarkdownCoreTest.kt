@@ -44,14 +44,12 @@ class ApiTest {
     }
 
     @Test
-    fun visitorAndWalkerAreTypedAndDepthFirst() {
+    fun visitorIsTypedAndDispatchesByNodeKind() {
         val document = Document.parse("# Heading\n\nBody\n")
         val visitor = KindVisitor()
         assertEquals("heading:1", document.content.first().accept(visitor))
-        val recordingVisitor = RecordingVisitor()
-        Walker.walk(document, recordingVisitor)
-        assertEquals("Document", recordingVisitor.visited.first())
-        assertTrue("Heading" in recordingVisitor.visited && "Text" in recordingVisitor.visited)
+        assertEquals("Document", document.accept(visitor))
+        assertEquals("Paragraph", document.content.last().accept(visitor))
     }
 }
 
@@ -199,18 +197,14 @@ class BindingMappingTest {
             table.alignments,
         )
 
-        // The dump and the walk both have a branch per kind, and neither is
-        // reached by a corpus that never writes one.
+        // The owning node keeps its label field separate from block content;
+        // the per-node dumper deliberately emits both relations.
         val dump = document.dump()
         for (fragment in listOf("ReferenceDefinition", "LinkReference", "ImageReference", "DirectiveLabel")) {
             assertTrue(dump.contains(fragment), "dump is missing $fragment")
         }
-        val entered = mutableListOf<String>()
-        Walker.walk(document) { event, node ->
-            if (event == WalkEvent.ENTERING) entered += node::class.simpleName.orEmpty()
-        }
-        assertTrue(entered.contains("DirectiveLabel"))
-        assertTrue(entered.contains("ReferenceDefinition"))
+        assertEquals(listOf("Paragraph"), block.content.map { it::class.simpleName })
+        assertEquals(listOf("Text"), assertNotNull(block.label).content.map { it::class.simpleName })
     }
 
     @Test

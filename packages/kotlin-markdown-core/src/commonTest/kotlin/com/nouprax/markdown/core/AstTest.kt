@@ -7,7 +7,7 @@ import kotlin.test.assertTrue
 
 class AstTest {
     @Test
-    fun publicSchemaIsReachableThroughKotlinValues() {
+    fun publicSchemaIsEmittedByThePerNodeKotlinDumper() {
         val sources =
             listOf(
                 "# Heading\n\n> Quote\n\n---\n\n3. ordered\n\n- [x] task\n\n``` swift\ncode\n```\n\n<section>raw</section>\n\n[^n]: note\n\n[ref]: /r \"t\"\n\n[a][ref] ![b][ref]\n",
@@ -16,7 +16,7 @@ class AstTest {
                 "\$\$\ny\n\$\$\n",
             )
         val documents = sources.map { Document.parse(it) }
-        val values = documents.flatMap(::flatten)
+        val kinds = documents.flatMap { dumpKinds(it.dump()) }.toSet()
         assertEquals(
             setOf(
                 "Document",
@@ -52,7 +52,7 @@ class AstTest {
                 "LinkReference",
                 "ImageReference",
             ),
-            values.mapNotNullTo(mutableSetOf()) { it::class.simpleName },
+            kinds,
         )
         assertTrue(documents.all { it.scope.start == Position(1, 1) })
     }
@@ -87,12 +87,24 @@ class AstTest {
     }
 
     @Test
-    fun walkerDispatchesTableRowsAndCellsAsMarkup() {
+    fun visitorDispatchesTableRowsAndCellsAsMarkup() {
         val document = Document.parse("| a |\n| --- |\n| b |\n")
+        val table = document.content.single() as Table
         val visitor = RecordingVisitor()
-        Walker.walk(document, visitor)
+        document.accept(visitor)
+        table.accept(visitor)
+        table.header.accept(visitor)
+        table.header.cells
+            .single()
+            .accept(visitor)
+        table.rows.single().accept(visitor)
+        table.rows
+            .single()
+            .cells
+            .single()
+            .accept(visitor)
         assertEquals(
-            listOf("Document", "Table", "TableRow", "TableCell", "Text", "TableRow", "TableCell", "Text"),
+            listOf("Document", "Table", "TableRow", "TableCell", "TableRow", "TableCell"),
             visitor.visited,
         )
     }
@@ -108,28 +120,10 @@ class AstTest {
     }
 }
 
-private fun flatten(root: Any): kotlin.collections.List<Any> =
-    listOf(root) +
-        when (root) {
-            is Document -> root.content.flatMap(::flatten)
-            is BlockQuote -> root.content.flatMap(::flatten)
-            is Paragraph -> root.content.flatMap(::flatten)
-            is Heading -> root.content.flatMap(::flatten)
-            is List -> root.items.flatMap(::flatten)
-            is ListItem -> root.content.flatMap(::flatten)
-            is Table -> flatten(root.header) + root.rows.flatMap(::flatten)
-            is TableRow -> root.cells.flatMap(::flatten)
-            is TableCell -> root.content.flatMap(::flatten)
-            is DirectiveBlock -> (listOfNotNull(root.label) + root.content).flatMap(::flatten)
-            is FootnoteDefinition -> root.content.flatMap(::flatten)
-            is LinkReference -> root.content.flatMap(::flatten)
-            is ImageReference -> root.content.flatMap(::flatten)
-            is Emphasis -> root.content.flatMap(::flatten)
-            is Strong -> root.content.flatMap(::flatten)
-            is Strikethrough -> root.content.flatMap(::flatten)
-            is Link -> root.content.flatMap(::flatten)
-            is Image -> root.content.flatMap(::flatten)
-            is Directive -> listOfNotNull(root.label).flatMap(::flatten)
-            is DirectiveLabel -> root.content.flatMap(::flatten)
-            else -> emptyList()
-        }
+private fun dumpKinds(dump: String): kotlin.collections.List<String> =
+    dump
+        .lineSequence()
+        .filter(String::isNotEmpty)
+        .map {
+            it.trimStart('│', ' ', '├', '└', '─').substringBefore(' ')
+        }.toList()

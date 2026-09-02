@@ -94,12 +94,8 @@ import Testing
 }
 
 @Suite("api") struct DirectiveLabelSuite {
-    @Test("a directive block's label is walked ahead of its content")
+    @Test("a directive label is dumped as a field but is not content")
     func labelledDirectiveBlock() throws {
-        // A directive block with BOTH halves. The label is a node in its own
-        // right and the walker has to yield it before the content -- with no
-        // label present that branch never runs, and nothing else in this suite
-        // writes one.
         let source = ":::note[Title]{kind=demo}\nBody\n:::\n"
         let block = try #require(Document.parse(source).content.first as? DirectiveBlock)
         let label = try #require(block.label)
@@ -108,26 +104,16 @@ import Testing
         #expect(block.content.first is Paragraph)
         #expect(block.attributes?.first?.name == "kind")
 
-        var kinds: [String] = []
-        let document = try Document.parse(source)
-        Walker().walk(document) { event, node in
-            if event == .entering { kinds.append(String(describing: type(of: node))) }
-        }
-        #expect(kinds.contains("DirectiveLabel"))
-        #expect(kinds.firstIndex(of: "DirectiveLabel")! < kinds.lastIndex(of: "Paragraph")!)
+        #expect(block.content.allSatisfy { !($0 is DirectiveLabel) })
+        #expect(label.content.count == 1)
+        #expect(label.content.first is Text)
+        #expect(block.dump().contains("DirectiveLabel"))
 
-        // AND ONE WITHOUT A LABEL, which is the other arm: the walker's `?? []`
-        // and the dump's `children=` both ask whether a label is there, and a
-        // suite that only ever writes one never takes the answer "no".
+        // The other field arm: no label is emitted when none was written.
         let bare = try #require(
             Document.parse(":::note\nBody\n:::\n").content.first as? DirectiveBlock
         )
         #expect(bare.label == nil)
-        var bareKinds: [String] = []
-        Walker().walk(try Document.parse(":::note\nBody\n:::\n")) { event, node in
-            if event == .entering { bareKinds.append(String(describing: type(of: node))) }
-        }
-        #expect(!bareKinds.contains("DirectiveLabel"))
         #expect(bare.dump().contains("children=1"))
     }
 

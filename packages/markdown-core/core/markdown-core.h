@@ -207,11 +207,10 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_last_child(markdown_
  *
  * An iterator will walk through a tree of nodes, starting from a root
  * node, returning one node at a time, together with information about
- * whether the node is being entered or exited. The iterator first descends
- * through owned node-valued fields in field order, then through content
- * children. A field node has its owner as parent but is not a member of the
- * owner's sibling list. When there is no next structural descendant, the
- * iterator will return to the parent (but with
+ * whether the node is being entered or exited. The iterator first descends to
+ * the first child, then advances through next siblings, and returns to the
+ * parent when no sibling remains. Node-valued fields are independent roots
+ * and are never discovered by this traversal. Returning to the parent uses
  * a 'markdown_core_event_type' of `MARKDOWN_CORE_EVENT_EXIT`).  The iterator will
  * return `MARKDOWN_CORE_EVENT_DONE` when it reaches the root node again.
  * An iterator might be used to inspect or transform an AST in some systematic
@@ -499,13 +498,6 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_append_child(markdown_core_node *nod
 /** Merges adjacent text nodes.  Returns 0 when merged text could not be
  *  materialized because an allocation failed; the tree stays valid. */
 MARKDOWN_CORE_EXPORT int markdown_core_consolidate_text_nodes(markdown_core_node *root);
-
-/** Ensures a node and all its children own their own chunk memory.
- */
-/** Converts borrowed string chunks into owned copies.  Returns 0 when a
- *  copy could not be allocated; the affected chunk is emptied rather than
- *  left borrowing the source buffer. */
-MARKDOWN_CORE_EXPORT int markdown_core_node_own(markdown_core_node *root);
 
 /**
  * ## Parsing

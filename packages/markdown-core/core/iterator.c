@@ -40,31 +40,27 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
 
     /* roll forward to next item, setting both fields */
     if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
-        markdown_core_node *descendant = markdown_core_node_first_direct_descendant(node);
-        if (descendant == NULL) {
+        if (node->first_child == NULL) {
             /* stay on this node but exit */
             iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
         } else {
             iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-            iter->next.node = descendant;
+            iter->next.node = node->first_child;
         }
     } else if (node == iter->root) {
         /* don't move past root */
         iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
         iter->next.node = NULL;
+    } else if (node->next) {
+        iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
+        iter->next.node = node->next;
+    } else if (node->parent) {
+        iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
+        iter->next.node = node->parent;
     } else {
-        markdown_core_node *descendant = markdown_core_node_next_direct_descendant(node);
-        if (descendant) {
-            iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-            iter->next.node = descendant;
-        } else if (node->parent) {
-            iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
-            iter->next.node = node->parent;
-        } else {
-            assert(false);
-            iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
-            iter->next.node = NULL;
-        }
+        assert(false);
+        iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
+        iter->next.node = NULL;
     }
 
     return ev_type;
@@ -180,56 +176,5 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
 
     markdown_core_strbuf_free(&buf);
     markdown_core_iter_free(iter);
-    return ok;
-}
-
-int markdown_core_node_own(markdown_core_node *root) {
-    int ok = 1;
-    if (root == NULL) {
-        return 1;
-    }
-    /* Traverses via the parent/next pointers instead of an iterator so that
-     * taking ownership never needs to allocate; a chunk copy that cannot be
-     * allocated is emptied rather than left borrowing the source buffer. */
-    markdown_core_mem *mem = root->content.mem;
-    markdown_core_node *cur = root;
-
-    while (cur) {
-        switch (cur->type) {
-        case MARKDOWN_CORE_NODE_TEXT:
-        case MARKDOWN_CORE_NODE_HTML:
-        case MARKDOWN_CORE_NODE_CODE:
-        case MARKDOWN_CORE_NODE_HTML_BLOCK:
-            if (!markdown_core_chunk_to_cstr(mem, &cur->as.literal)) {
-                markdown_core_chunk_set_cstr(mem, &cur->as.literal, NULL);
-                ok = 0;
-            }
-            break;
-        case MARKDOWN_CORE_NODE_LINK:
-            if (!markdown_core_chunk_to_cstr(mem, &cur->as.link.url)) {
-                markdown_core_chunk_set_cstr(mem, &cur->as.link.url, NULL);
-                ok = 0;
-            }
-            /* Only a title the source WROTE has bytes to own; an absent one
-             * has nothing to copy and losing the copy makes it absent, which
-             * would be indistinguishable from the source having written none. */
-            if (cur->as.link.title.has_value && !markdown_core_chunk_to_cstr(mem, &cur->as.link.title.value)) {
-                markdown_core_optional_chunk_free(mem, &cur->as.link.title);
-                ok = 0;
-            }
-            break;
-        }
-
-        markdown_core_node *descendant = markdown_core_node_first_direct_descendant(cur);
-        if (descendant) {
-            cur = descendant;
-        } else {
-            markdown_core_node *next = NULL;
-            while (cur != root && (next = markdown_core_node_next_direct_descendant(cur)) == NULL) {
-                cur = cur->parent;
-            }
-            cur = (cur == root) ? NULL : next;
-        }
-    }
     return ok;
 }

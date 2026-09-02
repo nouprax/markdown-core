@@ -10,53 +10,6 @@ static void S_node_unlink(markdown_core_node *node);
 
 #define NODE_MEM(node) markdown_core_node_mem(node)
 
-size_t markdown_core_node_field_count(markdown_core_node *node) {
-    if (!node || !node->extension || !node->extension->node_field_count_func || !node->extension->node_field_at_func ||
-        !node->extension->node_field_clear_func) {
-        return 0;
-    }
-    return node->extension->node_field_count_func(node->extension, node);
-}
-
-markdown_core_node *markdown_core_node_field_at(markdown_core_node *node, size_t index) {
-    if (index >= markdown_core_node_field_count(node)) {
-        return NULL;
-    }
-    return node->extension->node_field_at_func(node->extension, node, index);
-}
-
-static bool S_node_field_index(markdown_core_node *parent, markdown_core_node *node, size_t *index) {
-    size_t count = markdown_core_node_field_count(parent);
-    size_t i;
-    for (i = 0; i < count; i++) {
-        if (markdown_core_node_field_at(parent, i) == node) {
-            if (index) {
-                *index = i;
-            }
-            return true;
-        }
-    }
-    return false;
-}
-
-markdown_core_node *markdown_core_node_first_direct_descendant(markdown_core_node *node) {
-    markdown_core_node *field = markdown_core_node_field_at(node, 0);
-    return field ? field : node ? node->first_child : NULL;
-}
-
-markdown_core_node *markdown_core_node_next_direct_descendant(markdown_core_node *node) {
-    markdown_core_node *parent;
-    size_t index;
-    if (!node || !(parent = node->parent)) {
-        return NULL;
-    }
-    if (S_node_field_index(parent, node, &index)) {
-        markdown_core_node *field = markdown_core_node_field_at(parent, index + 1);
-        return field ? field : parent->first_child;
-    }
-    return node->next;
-}
-
 bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
     if (child_type == MARKDOWN_CORE_NODE_DOCUMENT) {
         return false;
@@ -100,14 +53,6 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
     if (NODE_MEM(node) != NODE_MEM(child)) {
         return 0;
     }
-    if (child->parent && S_node_field_index(child->parent, child, NULL)) {
-        return false;
-    }
-    if (child->extension && child->extension->field_only_func &&
-        child->extension->field_only_func(child->extension, child)) {
-        return false;
-    }
-
     /* `child` must not be `node` and must not be one of its ancestors.
      *
      * This used to sit behind `markdown_core_enable_safety_checks`, a
@@ -270,10 +215,6 @@ int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_typ
     if (type == node->type) {
         return 1;
     }
-    if (node->parent && S_node_field_index(node->parent, node, NULL)) {
-        return 0;
-    }
-
     initial_type = (markdown_core_node_type)node->type;
     node->type = (uint16_t)type;
 
@@ -798,10 +739,6 @@ int markdown_core_node_set_syntax_extension(markdown_core_node *node, const mark
     if (node == NULL) {
         return 0;
     }
-    if ((node->parent && S_node_field_index(node->parent, node, NULL)) || markdown_core_node_field_count(node) > 0) {
-        return 0;
-    }
-
     node->extension = extension;
     return 1;
 }
@@ -840,13 +777,6 @@ static void S_node_unlink(markdown_core_node *node) {
         return;
     }
 
-    markdown_core_node *parent = node->parent;
-    size_t field_index;
-    if (parent && S_node_field_index(parent, node, &field_index)) {
-        parent->extension->node_field_clear_func(parent->extension, parent, field_index);
-        return;
-    }
-
     if (node->prev) {
         node->prev->next = node->next;
     }
@@ -855,6 +785,7 @@ static void S_node_unlink(markdown_core_node *node) {
     }
 
     // Adjust first_child and last_child of parent.
+    markdown_core_node *parent = node->parent;
     if (parent) {
         if (parent->first_child == node) {
             parent->first_child = node->next;
@@ -889,7 +820,7 @@ int markdown_core_node_insert_before(markdown_core_node *node, markdown_core_nod
         return 0;
     }
 
-    if (!node->parent || S_node_field_index(node->parent, node, NULL) || !S_can_contain(node->parent, sibling)) {
+    if (!node->parent || !S_can_contain(node->parent, sibling)) {
         return 0;
     }
 
@@ -933,7 +864,7 @@ int markdown_core_node_insert_after(markdown_core_node *node, markdown_core_node
         return 0;
     }
 
-    if (!node->parent || S_node_field_index(node->parent, node, NULL) || !S_can_contain(node->parent, sibling)) {
+    if (!node->parent || !S_can_contain(node->parent, sibling)) {
         return 0;
     }
 
@@ -1025,42 +956,6 @@ static void S_print_error(FILE *out, markdown_core_node *node, const char *elem)
             node->start_line, node->start_column);
 }
 
-static int S_check_field(markdown_core_node *owner, markdown_core_node *field, FILE *out) {
-    int errors = 0;
-    if (field->prev != NULL) {
-        S_print_error(out, field, "prev");
-        field->prev = NULL;
-        ++errors;
-    }
-    if (field->next != NULL) {
-        S_print_error(out, field, "next");
-        field->next = NULL;
-        ++errors;
-    }
-    if (field->parent != owner) {
-        S_print_error(out, field, "parent");
-        field->parent = owner;
-        ++errors;
-    }
-    return errors;
-}
-
-static int S_check_first_child(markdown_core_node *owner, FILE *out) {
-    int errors = 0;
-    markdown_core_node *child = owner->first_child;
-    if (child->prev != NULL) {
-        S_print_error(out, child, "prev");
-        child->prev = NULL;
-        ++errors;
-    }
-    if (child->parent != owner) {
-        S_print_error(out, child, "parent");
-        child->parent = owner;
-        ++errors;
-    }
-    return errors;
-}
-
 int markdown_core_node_check(markdown_core_node *node, FILE *out) {
     markdown_core_node *cur;
     int errors = 0;
@@ -1071,14 +966,17 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
 
     cur = node;
     for (;;) {
-        markdown_core_node *field = markdown_core_node_field_at(cur, 0);
-        if (field) {
-            errors += S_check_field(cur, field, out);
-            cur = field;
-            continue;
-        }
         if (cur->first_child) {
-            errors += S_check_first_child(cur, out);
+            if (cur->first_child->prev != NULL) {
+                S_print_error(out, cur->first_child, "prev");
+                cur->first_child->prev = NULL;
+                ++errors;
+            }
+            if (cur->first_child->parent != cur) {
+                S_print_error(out, cur->first_child, "parent");
+                cur->first_child->parent = cur;
+                ++errors;
+            }
             cur = cur->first_child;
             continue;
         }
@@ -1086,25 +984,6 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
     next_sibling:
         if (cur == node) {
             break;
-        }
-        {
-            markdown_core_node *parent = cur->parent;
-            size_t field_index;
-            if (S_node_field_index(parent, cur, &field_index)) {
-                field = markdown_core_node_field_at(parent, field_index + 1);
-                if (field) {
-                    errors += S_check_field(parent, field, out);
-                    cur = field;
-                    continue;
-                }
-                if (parent->first_child) {
-                    errors += S_check_first_child(parent, out);
-                    cur = parent->first_child;
-                    continue;
-                }
-                cur = parent;
-                goto next_sibling;
-            }
         }
         if (cur->next) {
             if (cur->next->prev != cur) {

@@ -16,7 +16,7 @@ initialization, so `Document.parse` is synchronous.
 ## Parse Markdown
 
 ```js
-import { Document, TreeDumper, Walker } from "@nouprax/es-markdown-core";
+import { Document, TreeDumper } from "@nouprax/es-markdown-core";
 
 const document = Document.parse("# Hello", {
   directives: false,
@@ -34,18 +34,15 @@ override.
 
 `Document.parse` returns a discriminated `Markup` union with source scopes and
 recursively readonly TypeScript properties. The JavaScript objects are not
-runtime-frozen. The package exposes parsing and AST traversal, not rendering or
-AST mutation.
+runtime-frozen. The package exposes parsing and typed AST inspection, not
+rendering or AST mutation.
 
 ## Traverse and Inspect
 
-Use `Walker` for a read-only depth-first traversal:
-
-```js
-new Walker().walk(document, (event, node) => {
-  console.log(event, node.kind, node.scope);
-});
-```
+`visit(markup, visitor)` dispatches exactly one node to an exhaustive typed
+`Visitor`. Recursive operations belong in that visitor's per-kind callbacks,
+where each callback explicitly chooses the node's semantic fields and content.
+There is no generic Walker or uniform child projection.
 
 `TreeDumper.dump(markup)` and each Markup's non-enumerable `dump()` method emit
 the canonical debug tree for a complete document or focused subtree. The

@@ -969,10 +969,11 @@ void markdown_core_manage_extensions_special_characters(markdown_core_parser *pa
     }
 }
 
-// Walk through node and all children, recursively, parsing
-// string content into inline content where appropriate.
-static void process_inlines(markdown_core_parser *parser, markdown_core_map *refmap, int options) {
-    markdown_core_iter *iter = markdown_core_iter_new(parser->root);
+// Parse inline content in one child tree. Node-valued fields are separate
+// roots and are handed to this function independently by process_inlines.
+static void process_inline_tree(markdown_core_parser *parser, markdown_core_node *root, markdown_core_map *refmap,
+                                int options) {
+    markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_node *cur;
     markdown_core_event_type ev_type;
 
@@ -980,8 +981,6 @@ static void process_inlines(markdown_core_parser *parser, markdown_core_map *ref
         parser->oom = true;
         return;
     }
-
-    markdown_core_manage_extensions_special_characters(parser, true);
 
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
@@ -992,9 +991,72 @@ static void process_inlines(markdown_core_parser *parser, markdown_core_map *ref
         }
     }
 
-    markdown_core_manage_extensions_special_characters(parser, false);
-
     markdown_core_iter_free(iter);
+}
+
+typedef struct {
+    markdown_core_parser *parser;
+    markdown_core_map *refmap;
+    int options;
+} inline_field_context;
+
+static int process_inline_fields(markdown_core_parser *parser, markdown_core_node *root, markdown_core_map *refmap,
+                                 int options);
+
+static int process_inline_field(markdown_core_node **root_slot, void *context) {
+    inline_field_context *fields = (inline_field_context *)context;
+    markdown_core_node *root = root_slot ? *root_slot : NULL;
+    if (!root || fields->parser->oom) {
+        return !fields->parser->oom;
+    }
+    process_inline_tree(fields->parser, root, fields->refmap, fields->options);
+    if (fields->parser->oom) {
+        return 0;
+    }
+    return process_inline_fields(fields->parser, root, fields->refmap, fields->options);
+}
+
+/* Find node-valued fields from the completed child tree. The owning extension
+ * decides which slots exist; each field is parsed as an independent child
+ * tree, then scanned for nested fields of its own. */
+static int process_inline_fields(markdown_core_parser *parser, markdown_core_node *root, markdown_core_map *refmap,
+                                 int options) {
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type event;
+    inline_field_context context = {parser, refmap, options};
+
+    if (!iter) {
+        parser->oom = true;
+        return 0;
+    }
+    while (!parser->oom && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node;
+        const markdown_core_syntax_extension *extension;
+        if (event != MARKDOWN_CORE_EVENT_ENTER) {
+            continue;
+        }
+        node = markdown_core_iter_get_node(iter);
+        extension = node->extension;
+        if (extension && extension->visit_owned_subtrees_func &&
+            !extension->visit_owned_subtrees_func(extension, node, process_inline_field, &context)) {
+            parser->oom = true;
+        }
+    }
+    markdown_core_iter_free(iter);
+    return !parser->oom;
+}
+
+// Parse the structural document tree first, then every detached field tree.
+// All individual walks retain ordinary cmark child-only iterator semantics.
+static void process_inlines(markdown_core_parser *parser, markdown_core_map *refmap, int options) {
+    markdown_core_manage_extensions_special_characters(parser, true);
+
+    process_inline_tree(parser, parser->root, refmap, options);
+    if (!parser->oom) {
+        process_inline_fields(parser, parser->root, refmap, options);
+    }
+
+    markdown_core_manage_extensions_special_characters(parser, false);
 }
 
 // Attempts to parse a list item marker (bullet or enumerated).
@@ -2061,6 +2123,89 @@ finished:
     markdown_core_strbuf_clear(&parser->curline);
 }
 
+typedef int (*tree_phase_func)(markdown_core_parser *parser, markdown_core_node **root_slot, void *context);
+
+typedef struct {
+    markdown_core_parser *parser;
+    tree_phase_func phase;
+    void *phase_context;
+} tree_phase_context;
+
+static int S_apply_tree_phase(markdown_core_parser *parser, markdown_core_node **root_slot, tree_phase_func phase,
+                              void *context);
+
+static int S_apply_field_phase(markdown_core_node **root_slot, void *context) {
+    tree_phase_context *phase = (tree_phase_context *)context;
+    return S_apply_tree_phase(phase->parser, root_slot, phase->phase, phase->phase_context);
+}
+
+/* Apply one parser phase to every independent child tree, deepest fields
+ * first. Field slots are requested from their live owner and consumed
+ * immediately, so temporary inline nodes can never leave dangling registry
+ * entries and a phase may replace a field root safely. */
+static int S_apply_tree_phase(markdown_core_parser *parser, markdown_core_node **root_slot, tree_phase_func phase,
+                              void *context) {
+    markdown_core_node *root = root_slot ? *root_slot : NULL;
+    markdown_core_iter *iter;
+    markdown_core_event_type event;
+    tree_phase_context fields = {parser, phase, context};
+
+    if (!root || parser->oom) {
+        return !parser->oom;
+    }
+    iter = markdown_core_iter_new(root);
+    if (!iter) {
+        parser->oom = true;
+        return 0;
+    }
+    while (!parser->oom && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node;
+        const markdown_core_syntax_extension *extension;
+        if (event != MARKDOWN_CORE_EVENT_ENTER) {
+            continue;
+        }
+        node = markdown_core_iter_get_node(iter);
+        extension = node->extension;
+        if (extension && extension->visit_owned_subtrees_func &&
+            !extension->visit_owned_subtrees_func(extension, node, S_apply_field_phase, &fields)) {
+            parser->oom = true;
+        }
+    }
+    markdown_core_iter_free(iter);
+    if (parser->oom) {
+        return 0;
+    }
+    return phase(parser, root_slot, context);
+}
+
+static int S_consolidate_tree(markdown_core_parser *parser, markdown_core_node **root_slot, void *context) {
+    (void)context;
+    return markdown_core_consolidate_text_nodes_with_parser(parser, *root_slot);
+}
+
+#if MARKDOWN_CORE_DEBUG_NODES
+static int S_check_tree(markdown_core_parser *parser, markdown_core_node **root_slot, void *context) {
+    (void)parser;
+    (void)context;
+    return markdown_core_node_check(*root_slot, stderr) == 0;
+}
+#endif
+
+static int S_postprocess_tree(markdown_core_parser *parser, markdown_core_node **root_slot, void *context) {
+    const markdown_core_syntax_extension *extension = (const markdown_core_syntax_extension *)context;
+    markdown_core_node *processed = extension->postprocess_func(extension, parser, *root_slot);
+    if (processed) {
+        *root_slot = processed;
+    }
+    return !parser->oom;
+}
+
+static int S_strip_comments_tree(markdown_core_parser *parser, markdown_core_node **root_slot, void *context) {
+    (void)parser;
+    (void)context;
+    return S_strip_html_comments(*root_slot);
+}
+
 static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     markdown_core_node *res;
     markdown_core_llist *extensions;
@@ -2081,7 +2226,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         goto failed;
     }
 
-    if (!markdown_core_consolidate_text_nodes_with_parser(parser, parser->root)) {
+    if (!S_apply_tree_phase(parser, &parser->root, S_consolidate_tree, NULL)) {
         parser->oom = true;
     }
     if (parser->oom) {
@@ -2089,7 +2234,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     }
 
 #if MARKDOWN_CORE_DEBUG_NODES
-    if (markdown_core_node_check(parser->root, stderr)) {
+    if (!S_apply_tree_phase(parser, &parser->root, S_check_tree, NULL)) {
         abort();
     }
 #endif
@@ -2097,9 +2242,8 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     for (extensions = parser->syntax_extensions; extensions && !parser->oom; extensions = extensions->next) {
         const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
         if (ext->postprocess_func) {
-            markdown_core_node *processed = ext->postprocess_func(ext, parser, parser->root);
-            if (processed) {
-                parser->root = processed;
+            if (!S_apply_tree_phase(parser, &parser->root, S_postprocess_tree, (void *)ext)) {
+                parser->oom = true;
             }
         }
     }
@@ -2108,7 +2252,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     }
 
     if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
-        if (!S_strip_html_comments(parser->root)) {
+        if (!S_apply_tree_phase(parser, &parser->root, S_strip_comments_tree, NULL)) {
             parser->oom = true;
         }
     }

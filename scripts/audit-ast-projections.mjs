@@ -272,7 +272,7 @@ const kindSurfaces = [
         label: "Kotlin dumper",
         expect: [...kinds.keys()],
         actual: namedKinds(
-            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/TreeDumper.kt",
+            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/TreeDumper.kt",
             /override fun visit([A-Za-z]+)\(/g
         )
     },
@@ -304,15 +304,7 @@ const kindSurfaces = [
         label: "Swift dumper",
         expect: [...kinds.keys()],
         actual: namedKinds(
-            "packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift",
-            /mutating func visit\(_:? ?n?o?d?e?:? (?:MarkdownCore\.)?([A-Za-z]+)\)/g
-        )
-    },
-    {
-        label: "Swift walker",
-        expect: [...kinds.keys()],
-        actual: namedKinds(
-            "packages/swift-markdown-core/Sources/MarkdownCore/Walker/Walker.swift",
+            "packages/swift-markdown-core/Sources/MarkdownCore/Visitor/TreeDumper.swift",
             /mutating func visit\(_:? ?n?o?d?e?:? (?:MarkdownCore\.)?([A-Za-z]+)\)/g
         )
     },
@@ -341,11 +333,11 @@ for (const { label, expect, actual } of kindSurfaces) {
     }
 }
 
-/* The C dump prints every scalar field the contract gives a kind. Node-valued
- * fields -- `content`, `items`, `header`, `rows`, `cells`, and directive
- * `label` -- are nested as graphical descendants in Walker field order. The
- * historical `children=` token counts those dump descendants; it does not
- * flatten the contract's distinct typed fields into one AST child list. */
+/* The C dump prints every scalar field the contract gives a kind. Its
+ * per-kind dump dispatch nests structural children and any explicitly chosen
+ * node-valued fields as graphical descendants. `children=` still counts only
+ * structural children; in particular, a directive may visually nest its
+ * `label` field without counting or exposing that field as a child. */
 {
     const source = read("packages/markdown-core/extensions/ast.c");
     const body = source.slice(source.indexOf("static void dump_fields"));
