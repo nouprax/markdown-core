@@ -18,7 +18,7 @@
     },
     "claim": "For the constructs listed above, Markdown Core's semantics are identical to the unified/remark ecosystem's, except for the AST-shape differences below. The check that enforces it is scripts/check-mdast-parity.mjs.",
     "corpus": [
-        "specs/mdast-parity/corpus.md",
+        "specs/oracles/remark/corpus.md",
         "packages/markdown-core/tests/fixtures/extensions-directive.txt",
         "packages/markdown-core/tests/fixtures/extensions-formula-github.txt"
     ],
@@ -46,7 +46,7 @@
             "kind": "ast-shape",
             "summary": "A run consisting only of the spaces a break strips left an empty text node in cmark's model, which this repository inherited until 0a.14 (D12/D13); mdast has never had one, and as of 0a.14 neither does this side. The delta is now UPSTREAM-ONLY.",
             "handling": "Empty text is dropped from both sides before comparing. Only cmark-gfm still produces one.",
-            "evidence": "cmark-gfm emits <text></text> for CommonMark example 564. The note that \"suppressing it here failed scripts/check-upstream-parity.mjs, which is how this was classified as a shape delta rather than a defect\" is HISTORY, not present tense: 0a.14 reproduced that failure exactly -- 806/817, eleven inputs -- and then answered it as Q38, by registering the same projection on the upstream side. See specs/upstream-parity/deltas.json."
+            "evidence": "cmark-gfm emits <text></text> for CommonMark example 564. The note that \"suppressing it here failed scripts/check-upstream-parity.mjs, which is how this was classified as a shape delta rather than a defect\" is HISTORY, not present tense: 0a.14 reproduced that failure exactly -- 806/817, eleven inputs -- and then answered it as Q38, by registering the same projection on the upstream side. See specs/oracles/cmark-gfm/deltas.json."
         },
         {
             "id": "code-span-line-ending",
@@ -71,7 +71,7 @@
         {
             "id": "unresolved-footnote-reference",
             "summary": "A footnote reference whose label no document footnote defines is literal text in both, label included and unparsed. This was a registered divergence until 2026-08-02, when Markdown Core adopted the rule the two authorities already shared; it is recorded here so the corpus keeps checking that the agreement holds.",
-            "evidence": "docs/specs/canonical-ast.md footnote semantics; specs/mdast-parity/corpus.md \"dangling[^nope] tail\"."
+            "evidence": "docs/specs/canonical-ast.md footnote semantics; specs/oracles/remark/corpus.md \"dangling[^nope] tail\"."
         }
     ],
     "expectedDivergences": [

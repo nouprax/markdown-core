@@ -9,7 +9,7 @@
  * with upstream".
  *
  * Both parsers' output is normalized into one comparable tree, so a divergence
- * is either a registered difference (`specs/upstream-parity/deltas.json`) or a
+ * is either a registered difference (`specs/oracles/cmark-gfm/deltas.json`) or a
  * defect. The two ASTs are not the same shape, so the mapping below is
  * load-bearing and each rule is a claim about equivalence, not a convenience.
  */
@@ -48,7 +48,7 @@ const XML_KIND = {
  * alignments, a fenced-vs-indented code flag, a fence-closed flag, an inline
  * code placement mode, or a footnote label, so there is nothing on that side
  * to compare against. Those fields are pinned by this repository's own golden
- * dumps instead, and the gap is recorded in specs/upstream-parity/README.md.
+ * dumps instead, and the gap is recorded in specs/oracles/cmark-gfm/README.md.
  */
 const COMPARED = {
     Heading: ["level"],

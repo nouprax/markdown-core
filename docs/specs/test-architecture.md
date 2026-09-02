@@ -201,10 +201,10 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
   才能提交,不得用于隐藏未经批准的 parser drift。
 - 上述 package-local fixture 是 extension correctness requirement 的唯一副本，
   同时作为 external parity gate 的输入 corpus。`specs/` 只保存跨平台 contract、
-  外部 oracle policy/delta 与 position ledger；禁止重新建立 `specs/oracles/` 或
-  任何包含同一 input/expected blocks 的镜像。Golden fixture 本身不是独立外部
-  authority：cmark-gfm 与 remark/micromark 的独立比较分别由
-  `specs/upstream-parity/` 和 `specs/mdast-parity/` 定义。
+  外部 oracle policy/delta 与 position ledger；`specs/oracles/` 按真实 authority
+  保存 cmark-gfm 与 remark/micromark 的 pin、comparison policy 和 deliberate
+  delta，不得包含本仓库 input/expected blocks 的镜像。Golden fixture 本身不是
+  独立外部 authority。
 
 ## 6. 通用执行策略
 

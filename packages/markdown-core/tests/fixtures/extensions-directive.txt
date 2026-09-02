@@ -733,7 +733,7 @@ Document scope=1:1..1:11 children=1
 every other place a reference is decoded -- a link destination, a link title, a
 fenced block's info string. micromark-extension-directive does not, in this one
 construct and nowhere else in its own parser; the difference is registered in
-specs/mdast-parity/deltas.json and measured there.
+specs/oracles/remark/deltas.json and measured there.
 
 ```````````````````````````````` example
 :n{a=&amp b=&#65}

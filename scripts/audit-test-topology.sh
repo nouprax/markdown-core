@@ -17,14 +17,22 @@ note() {
 }
 
 # 1. Test corpora have one owner. Extension correctness fixtures belong to the
-# C package and are also used as INPUT by the external parity gates. A second
-# `specs/oracles` copy is especially dangerous: its stored dumps look
-# authoritative while no runner consumes them, so every AST migration can
-# leave it silently stale.
-if [ -e specs/oracles ] || [ -L specs/oracles ]; then
-    fail "dead specs/oracles mirror exists; extension requirements belong only to packages/markdown-core/tests/fixtures"
+# C package and are also used as INPUT by the external parity gates. The
+# `specs/oracles` tree owns only external pins, comparison policy, deltas, and
+# purpose-built oracle input. Product-owned golden dumps there would recreate
+# the dead mirror this audit removed.
+for oracle_file in \
+    specs/oracles/cmark-gfm/deltas.json \
+    specs/oracles/remark/deltas.json \
+    specs/oracles/remark/corpus.md; do
+    if [ ! -f "$oracle_file" ]; then
+        fail "external oracle file is missing: $oracle_file"
+    fi
+done
+if find specs/oracles -type f \( -name '*.txt' -o -name '*.ast' \) -print -quit | grep -q .; then
+    fail "product-owned golden fixture mirror exists inside specs/oracles"
 else
-    note "no duplicate specs/oracles fixture mirror"
+    note "external oracle policies exist without duplicate golden fixtures"
 fi
 
 # 2. Every platform consumes the shared conformance contract.

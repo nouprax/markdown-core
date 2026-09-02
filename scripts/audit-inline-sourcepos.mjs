@@ -53,7 +53,7 @@ const verbose = process.argv.includes("--verbose");
 // The upstream pin lives in one place, and it is the parity policy that states
 // it. Copying the version into this ledger would let the two drift and read as
 // agreement.
-const upstreamVersion = loadLedger(root, "specs/upstream-parity/deltas.json").upstream.version;
+const upstreamVersion = loadLedger(root, "specs/oracles/cmark-gfm/deltas.json").upstream.version;
 
 const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdown-core", "pnpm build:c");
 const upstream = requireBinary(

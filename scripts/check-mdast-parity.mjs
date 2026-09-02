@@ -10,7 +10,7 @@
  *
  * Both parsers parse the same corpus, their trees are normalized into one
  * comparable form, and anything that still differs is either registered in
- * `specs/mdast-parity/deltas.json` or a defect.
+ * `specs/oracles/remark/deltas.json` or a defect.
  *
  *   node scripts/check-mdast-parity.mjs [--verbose]
  */
@@ -31,7 +31,7 @@ import { dropEmptyText, fromMdast, MDAST_COMPARED } from "./lib/mdast-oracle.mjs
 import { liftFootnoteDefinitions, parseCanonicalDump, render } from "./lib/upstream-cmark.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const policyPath = "specs/mdast-parity/deltas.json";
+const policyPath = "specs/oracles/remark/deltas.json";
 const policy = JSON.parse(fs.readFileSync(path.join(root, policyPath), "utf8"));
 const verbose = process.argv.includes("--verbose");
 
@@ -244,7 +244,7 @@ if (divergent.length) {
         if (entry.settledBacklog) {
             process.stderr.write(
                 `    backlog entry now AGREES with remark. ${entry.settledBacklog.closedBy} has landed;\n` +
-                    "    delete this entry from specs/mdast-parity/deltas.json in that same commit.\n"
+                    `    delete this entry from ${policyPath} in that same commit.\n`
             );
             continue;
         }
@@ -274,7 +274,7 @@ if (divergent.length) {
         if (entry.settled) {
             process.stderr.write(
                 `    registered divergence \`${entry.settled.id}\` no longer reproduces: the two now agree.\n` +
-                    "    Remove the entry from specs/mdast-parity/deltas.json, with review.\n"
+                    `    Remove the entry from ${policyPath}, with review.\n`
             );
             continue;
         }
@@ -286,7 +286,7 @@ if (divergent.length) {
     }
     process.stderr.write(
         "\nEach divergence is either a defect or a deliberate difference. A deliberate one is\n" +
-            "registered in specs/mdast-parity/deltas.json and written into docs/specs/canonical-ast.md.\n"
+            `registered in ${policyPath} and written into docs/specs/canonical-ast.md.\n`
     );
     process.exit(1);
 }

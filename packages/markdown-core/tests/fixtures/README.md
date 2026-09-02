@@ -13,10 +13,9 @@ independently; they never treat our stored expected dump as external evidence.
 
 Do not mirror these files under `specs/` or another package. Cross-platform AST
 contract cases belong in `specs/canonical-ast/`; external authority pins and
-deliberate differences belong in `specs/upstream-parity/` and
-`specs/mdast-parity/`; position findings belong in their ledger directories.
-`scripts/audit-test-topology.sh` enforces the absence of the former
-`specs/oracles/` mirror.
+deliberate differences belong under `specs/oracles/`; position findings belong
+in their ledger directories. `scripts/audit-test-topology.sh` forbids golden
+fixture mirrors inside the oracle policy tree.
 
 `spec_runner --rewrite` is a maintenance command, not an acceptance mechanism.
 Every generated dump change must be reviewed together with the parser or AST

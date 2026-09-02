@@ -15,7 +15,7 @@ EMSCRIPTEN_VERSION=6.0.9
 EMSCRIPTEN_COMMIT=5eb0bde7585670252e8ba05e9d361627bffd08b5
 # The newest tag upstream cmark-gfm has published, with its immutable commit.
 # This pin defines what "parity with upstream" means, so moving it is a
-# reviewed change, not a routine bump (see specs/upstream-parity/deltas.json).
+# reviewed change, not a routine bump (see specs/oracles/cmark-gfm/deltas.json).
 CMARK_GFM_VERSION=0.29.0.gfm.13
 CMARK_GFM_COMMIT=587a12bb54d95ac37241377e6ddc93ea0e45439b
 CLANG_FORMAT_VERSION=23.1.0

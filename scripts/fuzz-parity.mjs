@@ -73,7 +73,7 @@ function fragments(entries) {
 
 const ORACLES = {
     upstream: {
-        policy: "specs/upstream-parity/deltas.json",
+        policy: "specs/oracles/cmark-gfm/deltas.json",
         gate: "scripts/check-upstream-parity.mjs",
         // Upstream reads a task item's checked state with a substring search
         // for `[x]` over the whole line, so an unchecked item that acquires a
@@ -97,7 +97,7 @@ const ORACLES = {
         excludeFragments: ["[x]", "[X]", '"title" ok', "\\\\|", "[^"]
     },
     mdast: {
-        policy: "specs/mdast-parity/deltas.json",
+        policy: "specs/oracles/remark/deltas.json",
         gate: "scripts/check-mdast-parity.mjs",
         // See the note on `pool`. Dollar math: GitHub is the authority, not
         // remark. Footnote references: whether one resolves depends on a

@@ -4,7 +4,7 @@
  *
  * Parses every corpus input with both this repository's parser and upstream
  * cmark-gfm, normalizes the two ASTs into one comparable form, and requires
- * them to agree except where `specs/upstream-parity/deltas.json` registers a
+ * them to agree except where `specs/oracles/cmark-gfm/deltas.json` registers a
  * difference.
  *
  * This is the only thing in the repository that checks Markdown Core's
@@ -34,7 +34,8 @@ import {
 } from "./lib/upstream-cmark.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const policy = JSON.parse(fs.readFileSync(path.join(root, "specs/upstream-parity/deltas.json"), "utf8"));
+const policyPath = "specs/oracles/cmark-gfm/deltas.json";
+const policy = JSON.parse(fs.readFileSync(path.join(root, policyPath), "utf8"));
 
 const args = process.argv.slice(2);
 const verbose = args.includes("--verbose");
@@ -215,7 +216,7 @@ if (corpusOverride < 0 && limit === Infinity) {
         // excusing a comparison nobody ran — which is the exact failure the
         // delta block above refuses.
         if (!reproduced.has(input)) {
-            divergent.push({ line: "specs/upstream-parity/deltas.json", input, unreachable: entry });
+            divergent.push({ line: policyPath, input, unreachable: entry });
         }
     }
 }
@@ -317,7 +318,7 @@ if (divergent.length) {
     }
     process.stderr.write(
         "\nEach divergence is either a defect or a deliberate difference. A deliberate one is\n" +
-            "registered in specs/upstream-parity/deltas.json and written into docs/specs/canonical-ast.md;\n" +
+            `registered in ${policyPath} and written into docs/specs/canonical-ast.md;\n` +
             "it is never accepted on the grounds that this implementation is obviously right.\n"
     );
     process.exit(1);

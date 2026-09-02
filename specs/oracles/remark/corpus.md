@@ -186,7 +186,7 @@ is an escaped backslash plus a literal pipe. micromark reads the lead exactly
 this way; these two inputs keep the split, the spelling, and the paragraph's
 position under the remark authority. (cmark-gfm pipe-unescapes the lead a
 second time — the `table-split-lead-spelling` entry in
-specs/upstream-parity/deltas.json.)
+specs/oracles/cmark-gfm/deltas.json.)
 
 ```````````````````````````````` example
 lead \| text
@@ -238,7 +238,7 @@ Document scope=1:1..2:4 children=1
 A definition whose title candidate is followed by non-whitespace: the title
 rewinds out of the definition entirely, and the reference resolves without
 it. remark reads it the same way (cmark-gfm keeps the scanned title in its
-map — the `refdef-title-rewind` entry in specs/upstream-parity/deltas.json).
+map — the `refdef-title-rewind` entry in specs/oracles/cmark-gfm/deltas.json).
 
 **The title half of this is FIXED as of 0a.7** and the divergence is registered
 and reproducing; what still diverges here is only the node model, which is Step
