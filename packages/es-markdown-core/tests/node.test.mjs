@@ -224,11 +224,16 @@ test("errors: every wire guard fires when the native side answers out of range",
     // an internal error that a consumer could mistake for a recoverable path.
     let rawErrorCode = 1;
     const errorDecoder = new NodeDecoder({
-        memory: new WebAssembly.Memory({ initial: 1 }),
+        memory: native.memory,
         malloc: () => 8,
         free: () => {},
         es_error_code: () => rawErrorCode,
-        es_string: () => 0
+        es_string: (_object, _field, dataOutput, lengthOutput) => {
+            const memory = new DataView(native.memory.buffer);
+            memory.setUint32(dataOutput, 0, true);
+            memory.setUint32(lengthOutput, 0, true);
+            return 0;
+        }
     });
     try {
         assert.equal(errorDecoder.parseError(1).code, "invalidArgument");
@@ -245,7 +250,7 @@ test("errors: every wire guard fires when the native side answers out of range",
     // generic child here would erase the structural distinction this wire
     // contract exists to preserve.
     const malformedDirectiveDecoder = new NodeDecoder({
-        memory: new WebAssembly.Memory({ initial: 1 }),
+        memory: native.memory,
         malloc: () => 8,
         free: () => {},
         es_node_directive_label: () => 2,
