@@ -28,7 +28,10 @@ SWIFTLINT_VERSION=0.65.1
 ANDROID_PLATFORM=android-36
 ANDROID_CMAKE_VERSION=3.22.1
 ANDROID_NDK_VERSION=28.2.13676358
-GRADLE_VERSION=9.6.1
+GRADLE_VERSION=9.7.1
+GRADLE_DISTRIBUTION_SHA256=acd53f1edaf02f1a8ff99879f8a34b302661a057d9b063ae9e35b552f804d20a
+GRADLE_WRAPPER_JAR_SHA256=7a9ce74cff467ca1bf60a4fcd9f05185acceda4d0f382434d393e17864262c5d
+GRADLE_SIGNING_KEY_FINGERPRINT=F3FF33E96F18AA62DD580F9651FBF517CE6D6B80
 MAVEN_VERSION=3.9.16
 
 usage() {
@@ -110,6 +113,14 @@ version_at_least() {
         }
         exit 0;
     }'
+}
+
+sha256_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{ print $1 }'
+    else
+        shasum -a 256 "$1" | awk '{ print $1 }'
+    fi
 }
 
 java_home() {
@@ -247,8 +258,15 @@ check_wrappers() {
         || fail "Gradle Wrapper does not select $GRADLE_VERSION"
     grep -Fq "apache-maven-$MAVEN_VERSION-bin.zip" .mvn/wrapper/maven-wrapper.properties \
         || fail "Maven Wrapper does not select $MAVEN_VERSION"
-    grep -q '^distributionSha256Sum=' gradle/wrapper/gradle-wrapper.properties \
-        || fail "Gradle Wrapper checksum is missing"
+    grep -Fqx "distributionSha256Sum=$GRADLE_DISTRIBUTION_SHA256" \
+        gradle/wrapper/gradle-wrapper.properties \
+        || fail "Gradle Wrapper checksum does not match the reviewed $GRADLE_VERSION distribution"
+    [ "$(sha256_file gradle/wrapper/gradle-wrapper.jar)" = "$GRADLE_WRAPPER_JAR_SHA256" ] \
+        || fail "Gradle Wrapper JAR does not match the reviewed $GRADLE_VERSION artifact"
+    grep -Fq \
+        "<trusted-key id=\"$GRADLE_SIGNING_KEY_FINGERPRINT\" group=\"gradle\" name=\"gradle\" version=\"$GRADLE_VERSION\"/>" \
+        gradle/verification-metadata.xml \
+        || fail "Gradle $GRADLE_VERSION signing key is not trusted at exact module scope"
     grep -q '^distributionSha256Sum=' .mvn/wrapper/maven-wrapper.properties \
         || fail "Maven Wrapper checksum is missing"
     [ "$failures" -ne "$before" ] || ok "Gradle and Maven wrappers"

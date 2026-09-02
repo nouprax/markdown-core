@@ -26,6 +26,14 @@ expect_equal() {
     [ "$actual" = "$expected" ] || fail "$label is '$actual'; expected '$expected'"
 }
 
+sha256_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{ print $1 }'
+    else
+        shasum -a 256 "$1" | awk '{ print $1 }'
+    fi
+}
+
 workflow_values() {
     action=$1
     setting=$2
@@ -74,6 +82,9 @@ android_platform=$(shell_value ANDROID_PLATFORM)
 android_cmake_version=$(shell_value ANDROID_CMAKE_VERSION)
 android_ndk_version=$(shell_value ANDROID_NDK_VERSION)
 gradle_version=$(shell_value GRADLE_VERSION)
+gradle_distribution_sha256=$(shell_value GRADLE_DISTRIBUTION_SHA256)
+gradle_wrapper_jar_sha256=$(shell_value GRADLE_WRAPPER_JAR_SHA256)
+gradle_signing_key_fingerprint=$(shell_value GRADLE_SIGNING_KEY_FINGERPRINT)
 
 expect_equal .node-version "$node_version" "$(tr -d '[:space:]' < .node-version)"
 package_versions=$(node -e '
@@ -116,6 +127,17 @@ done < <(grep -h 'sdkmanager "platforms;' "${workflow_files[@]}")
 
 expect_equal "Gradle Wrapper" "$gradle_version" \
     "$(sed -n 's#.*gradle-\([0-9][0-9.]*\)-bin\.zip#\1#p' gradle/wrapper/gradle-wrapper.properties)"
+expect_equal "Gradle Wrapper checksum" "$gradle_distribution_sha256" \
+    "$(sed -n 's/^distributionSha256Sum=//p' gradle/wrapper/gradle-wrapper.properties)"
+expect_equal "Gradle Wrapper JAR checksum" "$gradle_wrapper_jar_sha256" \
+    "$(sha256_file gradle/wrapper/gradle-wrapper.jar)"
+grep -Fq \
+    "<trusted-key id=\"$gradle_signing_key_fingerprint\" group=\"gradle\" name=\"gradle\" version=\"$gradle_version\"/>" \
+    gradle/verification-metadata.xml \
+    || fail "Gradle dependency-verification signing key is out of sync"
+gradle_signing_subkey=$(printf '%s\n' "$gradle_signing_key_fingerprint" | sed 's/.*\(................\)$/\1/')
+grep -Fqx "sub    $gradle_signing_subkey" gradle/verification-keyring.keys \
+    || fail "Gradle dependency-verification keyring is missing $gradle_signing_key_fingerprint"
 expect_equal "Gradle daemon JDK" "$java_version" \
     "$(sed -n 's/^toolchainVersion=//p' gradle/gradle-daemon-jvm.properties)"
 

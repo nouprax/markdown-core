@@ -205,6 +205,11 @@ plugins {
 group = "com.nouprax"
 val releaseVersion = rootProject.file("VERSION").readText().trim()
 version = releaseVersion
+val isIdeModelImport =
+    providers
+        .systemProperty("idea.sync.active")
+        .map(String::toBoolean)
+        .getOrElse(false)
 
 dependencyLocking {
     lockAllConfigurations()
@@ -260,6 +265,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
     val coreArchive = archiveDirectory.map { it.file("libmarkdown-core.a") }
     val extensionsArchive = archiveDirectory.map { it.file("libmarkdown-core-extensions.a") }
     val generatedDefinitionDirectory = layout.buildDirectory.dir("generated/cinterop/$name")
+    val embedNativeLibraries = !isIdeModelImport
     val configureTask =
         tasks.register<Exec>("configure${capitalizedTarget}NativeFacade") {
             inputs.files(
@@ -307,8 +313,15 @@ fun KotlinNativeTarget.configureNativeFacade() {
         tasks.register<Copy>("generate${capitalizedTarget}NativeDefinition") {
             from(layout.projectDirectory.file("src/nativeInterop/cinterop/markdown_core_kotlin.def"))
             into(generatedDefinitionDirectory)
+            inputs.property("embedNativeLibraries", embedNativeLibraries)
             filter { line: String ->
-                line.replace("@LIBRARY_PATH@", archiveDirectory.get().asFile.absolutePath)
+                if (!embedNativeLibraries &&
+                    (line.startsWith("staticLibraries =") || line.startsWith("libraryPaths ="))
+                ) {
+                    ""
+                } else {
+                    line.replace("@LIBRARY_PATH@", archiveDirectory.get().asFile.absolutePath)
+                }
             }
         }
 
@@ -316,8 +329,11 @@ fun KotlinNativeTarget.configureNativeFacade() {
         definitionFile.set(generatedDefinitionDirectory.map { it.file("markdown_core_kotlin.def") })
         compilerOpts("-I${repositoryRoot.dir("packages/markdown-core/include").asFile.absolutePath}")
         tasks.named(interopProcessingTaskName).configure {
-            dependsOn(buildTask, generateDefinition)
-            inputs.dir(archiveDirectory)
+            dependsOn(generateDefinition)
+            if (embedNativeLibraries) {
+                dependsOn(buildTask)
+                inputs.dir(archiveDirectory)
+            }
         }
     }
 }

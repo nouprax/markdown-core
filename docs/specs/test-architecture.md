@@ -184,7 +184,9 @@ benchmarks 混进 package target。仓库的真实 package 拓扑始终是
 Kotlin/KMP 与 Android runtime model；`packages/markdown-core` 在物理 Project view 中
 保持独立，C-aware IDE 直接从根 `CMakeLists.txt`/`CMakePresets.json` 导入唯一 CMake
 graph。Android runtime 的 `externalNativeBuild` 只属于实际 build/package lifecycle，
-IDE sync 必须关闭其有损的 `cpp` 虚拟投影。Kotlin library 额外提供
+IDE sync 必须关闭其有损的 `cpp` 虚拟投影。Kotlin/Native IDE import 可以从公共 header
+生成 cinterop declarations，但不得配置或构建 CMake；只有 product/test KLIB lifecycle
+构建并嵌入对应的静态库。Kotlin library 额外提供
 developer-only 根 Gradle `allKotlinTests`，聚合当前 host 可执行的具名 correctness/
 conformance tasks 与两台 Android managed-device 全量测试；shared IDE configuration
 只调用该 task，不建立 sample app。该入口不是 pnpm/CI/release routing，不能替代各

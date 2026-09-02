@@ -8,6 +8,21 @@ cd "$ROOT_DIR"
 # Download and validate the pinned distribution before locating its Tooling API.
 scripts/gradle.sh --version >/dev/null
 
+# Kotlin's IDE import must generate C declarations, but it must not build or
+# embed the native archives. Android Studio does not inherit an interactive
+# shell's PATH, and model loading is not a product-build lifecycle in any case.
+ide_import_plan=$(scripts/gradle.sh \
+    :packages:kotlin-markdown-core:prepareKotlinIdeaImport \
+    -Didea.sync.active=true \
+    --dry-run \
+    --no-configuration-cache)
+if printf '%s\n' "$ide_import_plan" | grep -Eq \
+    ':(configure|build)(LinuxX64|MacosArm64)NativeFacade'; then
+    printf '%s\n' "$ide_import_plan" >&2
+    echo "Gradle IDE import depends on a native CMake build" >&2
+    exit 1
+fi
+
 gradle_version=$(sed -n \
     's#^distributionUrl=.*gradle-\([0-9][0-9.]*\)-bin\.zip$#\1#p' \
     gradle/wrapper/gradle-wrapper.properties)
