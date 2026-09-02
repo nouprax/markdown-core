@@ -11,12 +11,6 @@ group = "com.nouprax"
 val releaseVersion = rootProject.file("VERSION").readText().trim()
 version = releaseVersion
 
-val isIdeSync =
-    providers
-        .systemProperty("idea.sync.active")
-        .map(String::toBoolean)
-        .getOrElse(false)
-
 // WHICH ABIs THE NATIVE PAYLOAD IS BUILT FOR, narrowed by the caller.
 // `scripts/build-kotlin-android-test-artifact.sh` passes
 // `-PmarkdownCore.android.abis=x86_64` and then REFUSES an artifact carrying
@@ -59,25 +53,19 @@ android {
         requestedAndroidAbis?.let { abis ->
             ndk { abiFilters += abis }
         }
-        if (!isIdeSync) {
-            externalNativeBuild {
-                cmake { arguments += "-DANDROID_STL=none" }
-            }
+        externalNativeBuild {
+            cmake { arguments += "-DANDROID_STL=none" }
         }
     }
 
-    // This CMake target intentionally compiles sources from both the C and
-    // Kotlin packages. Importing that native workspace makes Android Studio
-    // claim their common `packages/` ancestor as one native content root,
-    // which hides the KMP source-set modules. IDE sync only needs the Gradle
-    // and KMP models; real builds (including builds launched by the IDE) do
-    // not set idea.sync.active and retain the complete JNI build graph.
-    if (!isIdeSync) {
-        externalNativeBuild {
-            cmake {
-                path = file("src/main/cpp/CMakeLists.txt")
-                version = "3.22.1"
-            }
+    // Keep the real JNI target in the IDE model. Android Studio and IntelliJ
+    // therefore see the same production parser sources SwiftPM exposes, plus
+    // the JNI adapter that owns this runtime. The target deliberately excludes
+    // the C CLI, tests, fixtures, fuzzers, and benchmarks.
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 

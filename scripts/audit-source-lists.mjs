@@ -131,6 +131,32 @@ const report = (message) => {
     failed = true;
 };
 
+// Android Studio learns its native project from this target, so agreeing on
+// the parser sources is not enough: an accidental CLI, test, fuzz, fixture, or
+// benchmark source would also become part of the Android build and IDE model.
+// The only Android-specific additions are the JNI payload codec and JNI entry
+// point owned by the Kotlin package.
+const androidSources = names(ANDROID_CMAKE, "complete Android target", /"(?<file>[^"\n]+\.c)"/g);
+const expectedAndroidSources = [
+    ...authority.core.map((file) => `\${MARKDOWN_CORE_CORE_DIR}/${file}`),
+    ...authority.extensions.map((file) => `\${MARKDOWN_CORE_EXTENSIONS_DIR}/${file}`),
+    "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni_payload.c",
+    "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni.c"
+];
+const expectedAndroidSet = new Set(expectedAndroidSources);
+const actualAndroidSet = new Set(androidSources);
+const missingAndroidSources = expectedAndroidSources.filter((file) => !actualAndroidSet.has(file));
+const extraAndroidSources = androidSources.filter((file) => !expectedAndroidSet.has(file));
+if (missingAndroidSources.length > 0) {
+    report(`${ANDROID_CMAKE}: missing target sources ${missingAndroidSources.join(", ")}`);
+}
+if (extraAndroidSources.length > 0) {
+    report(`${ANDROID_CMAKE}: unexpected target sources ${extraAndroidSources.join(", ")}`);
+}
+if (androidSources.length !== actualAndroidSet.size) {
+    report(`${ANDROID_CMAKE}: contains duplicate target sources`);
+}
+
 // Existence first: a list naming a file that is not there is the failure all
 // three of the rotted lists actually had.
 const directories = { core: "packages/markdown-core/core", extensions: "packages/markdown-core/extensions" };

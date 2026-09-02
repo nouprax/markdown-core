@@ -175,8 +175,12 @@ Opt-in `bench_runner --list/--workload` 只描述本地与独立 PR 测量，不
 audit。
 
 IDE 契约:仓库提交 `CMakePresets.json`(configure/build/test presets),
-VS Code/CLion 直接消费;Xcode 通过 SwiftPM 发现 Swift Testing suites;
-IntelliJ/Android Studio 消费 Gradle test tasks(Phase 12 起)。Kotlin library 额外提供
+VS Code/CLion 直接消费;Xcode 通过 SwiftPM 发现 Swift Testing suites，并只索引
+`MarkdownCoreC` 的生产 parser/facade 源码，不把 C CLI、tests、fixtures、fuzzers 或
+benchmarks 混进 package target。IntelliJ/Android Studio 通过 Android runtime 的真实
+`externalNativeBuild` CMake target 索引同一组生产 C 源码以及 JNI adapter，同时消费
+Gradle test tasks；IDE sync 不得关闭 native model，也不得维护一份仅供 IDE 使用的源码
+清单或伪 C module。Kotlin library 额外提供
 developer-only 根 Gradle `allKotlinTests`，聚合当前 host 可执行的具名 correctness/
 conformance tasks 与两台 Android managed-device 全量测试；shared IDE configuration
 只调用该 task，不建立 sample app。该入口不是 pnpm/CI/release routing，不能替代各
