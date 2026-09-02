@@ -1,6 +1,4 @@
 #include <stdlib.h>
-#include <assert.h>
-#include <stdio.h>
 #include "node.h"
 #include "markdown-core.h"
 
@@ -8,23 +6,9 @@ int markdown_core_version(void) { return MARKDOWN_CORE_VERSION; }
 
 const char *markdown_core_version_string(void) { return MARKDOWN_CORE_VERSION_STRING; }
 
-static void *xcalloc(size_t nmem, size_t size) {
-    void *ptr = calloc(nmem, size);
-    if (!ptr) {
-        fprintf(stderr, "[markdown_core] calloc returned null pointer, aborting\n");
-        abort();
-    }
-    return ptr;
-}
+static void *xcalloc(size_t nmem, size_t size) { return calloc(nmem, size); }
 
-static void *xrealloc(void *ptr, size_t size) {
-    void *new_ptr = realloc(ptr, size);
-    if (!new_ptr) {
-        fprintf(stderr, "[markdown_core] realloc returned null pointer, aborting\n");
-        abort();
-    }
-    return new_ptr;
-}
+static void *xrealloc(void *ptr, size_t size) { return realloc(ptr, size); }
 
 static void xfree(void *ptr) { free(ptr); }
 

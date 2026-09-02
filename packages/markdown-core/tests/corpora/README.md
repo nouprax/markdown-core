@@ -7,7 +7,7 @@ data generated deterministically in-process.
 
 ## Frozen policy
 
-- Correctness, benchmark, CI, IDE, and normal build/test commands are fully
+- Correctness, local benchmark, CI, IDE, and normal build/test commands are fully
   offline.  Nothing may clone, download, or update a corpus at runtime.
 - A corpus enters the repository only through a one-shot, explicitly invoked
   maintenance import.  If the import needs a clone, it happens at a pinned
@@ -29,6 +29,7 @@ data generated deterministically in-process.
   - `SHA256SUMS` — checksums for every imported file, verified by
     `scripts/audit-test-topology.sh`.
 - Corpora are excluded from release packages.
-- The `packaging_corpus_guard` / `benchmark_corpus_guard` CTest tests fail
-  any run that finds an unmanaged checkout, loose generated input, or a
-  corpus directory missing the files above.
+- The correctness `packaging_corpus_guard` and opt-in local
+  `benchmark_corpus_guard` CTest tests fail any run that finds an unmanaged
+  checkout, loose generated input, or a corpus directory missing the files
+  above.

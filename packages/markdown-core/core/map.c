@@ -3,7 +3,6 @@
 #include "parser.h"
 
 #define KEY_INDEX_MIN_CAPACITY 16
-#define KEY_INDEX_MAX_PROBES 64
 
 static uint64_t hash_key(const unsigned char *key, bufsize_t key_len) {
     uint64_t hash = UINT64_C(1469598103934665603);
@@ -24,7 +23,7 @@ static markdown_core_key_index_slot *find_key_slot(markdown_core_key_index_slot 
                                                    const unsigned char *key, bufsize_t key_len) {
     size_t position = (size_t)hash & (capacity - 1);
     size_t probe;
-    for (probe = 0; probe < KEY_INDEX_MAX_PROBES; probe++) {
+    for (probe = 0; probe < capacity; probe++) {
         markdown_core_key_index_slot *slot = &slots[position];
         if (!slot->key ||
             (slot->hash == hash && slot->key_len == key_len && memcmp(slot->key, key, (size_t)key_len) == 0)) {
@@ -107,19 +106,12 @@ int markdown_core_key_index_insert(markdown_core_key_index *index, const unsigne
     if (existing) {
         *existing = NULL;
     }
+    if (!index || !index->slots || !index->capacity) {
+        return 0;
+    }
     slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
     if (!slot) {
-        /* A full probe run below the load-factor bound means the keys cluster
-         * in one bucket window. Doubling once disperses honest clusters via
-         * the extra mask bit; engineered identical hashes stay clustered and
-         * still fail here, which callers turn into the sorted fallback. */
-        if (!grow_key_index(index)) {
-            return 0;
-        }
-        slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
-        if (!slot) {
-            return 0;
-        }
+        return 0;
     }
     if (slot->key) {
         if (existing) {
@@ -149,10 +141,15 @@ int markdown_core_key_index_insert(markdown_core_key_index *index, const unsigne
 
 void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key,
                                      bufsize_t key_len) {
-    uint64_t hash = hash_key(key, key_len);
-    size_t position = (size_t)hash & (index->capacity - 1);
+    uint64_t hash;
+    size_t position;
     size_t probe;
-    for (probe = 0; probe < KEY_INDEX_MAX_PROBES; probe++) {
+    if (!index || !index->slots || !index->capacity) {
+        return NULL;
+    }
+    hash = hash_key(key, key_len);
+    position = (size_t)hash & (index->capacity - 1);
+    for (probe = 0; probe < index->capacity; probe++) {
         const markdown_core_key_index_slot *slot = &index->slots[position];
         if (!slot->key) {
             return NULL;
@@ -202,77 +199,9 @@ unsigned char *normalize_map_label(markdown_core_mem *mem, markdown_core_chunk *
     return result;
 }
 
-static int labelcmp(const unsigned char *a, const unsigned char *b) { return strcmp((const char *)a, (const char *)b); }
-
-static int refcmp(const void *p1, const void *p2) {
-    markdown_core_map_entry *r1 = *(markdown_core_map_entry **)p1;
-    markdown_core_map_entry *r2 = *(markdown_core_map_entry **)p2;
-    int res = labelcmp(r1->label, r2->label);
-    return res ? res : ((int)r1->age - (int)r2->age);
-}
-
-static int refsearch(const void *label, const void *p2) {
-    markdown_core_map_entry *ref = *(markdown_core_map_entry **)p2;
-    return labelcmp((const unsigned char *)label, ref->label);
-}
-
-static int sort_map(markdown_core_map *map) {
-    size_t i = 0, last = 0, size = map->size;
-    markdown_core_map_entry *r = map->refs, **sorted = NULL;
-
-    sorted = (markdown_core_map_entry **)map->mem->calloc(size, sizeof(markdown_core_map_entry *));
-    if (!sorted) {
-        return 0;
-    }
-    while (r) {
-        sorted[i++] = r;
-        r = r->next;
-    }
-
-    qsort(sorted, size, sizeof(markdown_core_map_entry *), refcmp);
-
-    for (i = 1; i < size; i++) {
-        if (labelcmp(sorted[i]->label, sorted[last]->label) != 0) {
-            sorted[++last] = sorted[i];
-        }
-    }
-
-    map->sorted = sorted;
-    map->size = last + 1;
-    map->prepared = 1;
-    return 1;
-}
-
-/* Duplicate-heavy definition lists should not pre-size the table by every
- * source occurrence. Sample up to 1024 entries; a unique-heavy sample keeps
- * the flat total-count allocation, a duplicate-heavy one starts at the
- * sampled unique count and relies on amortized growth. */
-static size_t map_index_expected_size(markdown_core_map *map) {
-    const size_t sample_limit = 1024;
-    markdown_core_key_index sample;
-    markdown_core_map_entry *ref;
-    size_t sampled = 0;
-    size_t unique;
-    if (map->size <= sample_limit) {
-        return map->size;
-    }
-    if (!markdown_core_key_index_init(&sample, map->mem, sample_limit)) {
-        return map->size;
-    }
-    for (ref = map->refs; ref && sampled < sample_limit; ref = ref->next, sampled++) {
-        if (!markdown_core_key_index_insert(&sample, ref->label, (bufsize_t)strlen((char *)ref->label), ref, 0, NULL)) {
-            markdown_core_key_index_free(&sample);
-            return map->size;
-        }
-    }
-    unique = sample.size;
-    markdown_core_key_index_free(&sample);
-    return unique > sampled / 2 ? map->size : unique;
-}
-
 static int index_map(markdown_core_map *map) {
     markdown_core_map_entry *ref;
-    if (!markdown_core_key_index_init(&map->index, map->mem, map_index_expected_size(map))) {
+    if (!markdown_core_key_index_init(&map->index, map->mem, map->size)) {
         return 0;
     }
     /* Entries are linked newest-first. Replacing while traversing therefore
@@ -286,12 +215,10 @@ static int index_map(markdown_core_map *map) {
     }
     map->size = map->index.size;
     map->prepared = 1;
-    map->indexed = 1;
     return 1;
 }
 
 markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label) {
-    markdown_core_map_entry **ref = NULL;
     markdown_core_map_entry *r = NULL;
     unsigned char *norm;
 
@@ -299,7 +226,7 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
         return NULL;
     }
 
-    if (map == NULL || !map->size) {
+    if (map == NULL || !map->size || map->oom) {
         return NULL;
     }
 
@@ -314,26 +241,14 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
         }
     }
 
-    if (!map->prepared && !index_map(map) && !sort_map(map)) {
-        /* Neither preparation path could allocate; report a miss and leave
-         * the map unprepared so a later lookup can retry. */
+    if (!map->prepared && !index_map(map)) {
         map->oom = 1;
         map->mem->free(norm);
         return NULL;
     }
 
-    if (map->indexed) {
-        r = (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, norm,
-                                                                      (bufsize_t)strlen((char *)norm));
-    } else {
-        ref = (markdown_core_map_entry **)bsearch(norm, map->sorted, map->size, sizeof(markdown_core_map_entry *),
-                                                  refsearch);
-    }
+    r = (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, norm, (bufsize_t)strlen((char *)norm));
     map->mem->free(norm);
-
-    if (r == NULL && ref != NULL) {
-        r = ref[0];
-    }
 
     return r;
 }
@@ -352,7 +267,6 @@ void markdown_core_map_free(markdown_core_map *map) {
         ref = next;
     }
 
-    map->mem->free(map->sorted);
     markdown_core_key_index_free(&map->index);
     map->mem->free(map);
 }

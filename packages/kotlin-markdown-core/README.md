@@ -57,7 +57,7 @@ Walker.walk(document) { event, node ->
 ```
 
 Every immutable `Markup` exposes `dump()`, which delegates to the public
-`TreeDumper` and returns the canonical file-tree diagnostic for that subtree:
+`TreeDumper` and returns the canonical file-tree dump for that subtree:
 
 ```kotlin
 import com.nouprax.markdown.core.TreeDumper

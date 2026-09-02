@@ -6,10 +6,17 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
-The engine is reconstructed from the 1.0 baseline. The 2.0.0 line is withdrawn:
-its major version was bought with a session and incremental parsing API that no
-longer exists.
+Reconstruct the cmark-derived engine as the renamed, parser-only Markdown Core
+product. This line adds the repository syntax extensions and immutable AST
+facade while removing renderer support and the caller-driven feed lifecycle.
 
+- Raise the Swift package contract to Swift tools 6.3 and iOS 26/macOS 26,
+  refresh the stable AGP, Kotlin, Node.js, pnpm, Emscripten, and SwiftLint
+  pins, and audit every duplicated toolchain declaration for exact agreement.
+- Replace the cross-runtime hosted-runner metrics jobs with one non-blocking C
+  parser comparison. PR comments omit the meaningless boundary column, reuse
+  an exact-base-SHA artifact when available, and otherwise build and publish
+  that baseline before measuring the head.
 - Keep the bytes of a footnote call whose label crosses a line ending, and read
   a label spelled with a character reference out of the source rather than out
   of a released buffer.
@@ -35,18 +42,18 @@ longer exists.
   all whitespace, loses one from each end. It is both ends or neither:
   `text $$ mid$$ text` reports `" mid"`, because the space the rule wants at the
   end is not there.
-- Report an ordered list of diagnostics beside the parsed document —
-  `(severity, code, scope, message)` — covering the eight places where a
-  construct the author wrote did not become one and neither the tree nor the
-  concrete records can say so: a directive's rejected label or attribute list, a
-  directive block that did not open or never closed, a table whose delimiter row
-  does not match its header, a full or collapsed reference and a footnote call
-  naming nothing the document defines, and a label the parser refused as too
-  long. Recording them changes nothing the parse builds, and an allocation the
-  list cannot make abandons the parse rather than reporting a short one.
-- Report an allocation loss as `MARKDOWN_CORE_ERROR_ALLOCATION_FAILED` rather
-  than as `MARKDOWN_CORE_ERROR_INTERNAL`, and stop the failure reporter needing
-  an allocation of its own to say so.
+- Remove the incremental parser lifecycle and file wrapper. Parsing is one
+  synchronous source-to-document transaction; there is no feed, stream, edit,
+  session, snapshot, or delta API.
+- Make every allocation failure terminal. No hash-index failure may switch to
+  sorting or a linear scan, and no allocation refusal may still return a
+  document. The facade reports `MARKDOWN_CORE_ERROR_ALLOCATION_FAILED` through
+  an immutable error value that allocates nothing itself.
+- Remove the diagnostic list and its CLI, C ABI, test census, and recording
+  hooks. Parse errors are the only failure channel.
+- Guarantee concurrent use by independent parser instances: the engine has no
+  writable process-global parser state or initialization registry, and parser,
+  option, extension, allocation, and failure state is transaction-local.
 - A node's `scope` is a pair of line/column BOUNDARIES saying which range of the
   source an element occupies — not a byte range, and no substring is taken with
   it. A block closed by a blank line therefore ends at column 0 of that line,
@@ -87,8 +94,7 @@ longer exists.
   ECMAScript. Attaching `formula` is the only switch the extension has.
 - A parse failure carries no scope. `markdown_core_error_get_scope` and
   `ParseError.scope` are removed from C, Swift, Kotlin and ECMAScript: an input
-  the parser could not turn into a document has no extent to point at, and a
-  failure the author could act on would have been a diagnostic instead.
+  the parser could not turn into a document has no extent to point at.
 - `null` and `""` are different answers everywhere, and nothing folds one into
   the other. `null` means the source did not write the field; `""` means it
   wrote it and it was empty. An optional string is reported as

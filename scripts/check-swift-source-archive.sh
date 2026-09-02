@@ -53,12 +53,12 @@ CLANG_MODULE_CACHE_PATH="$temporary/product-module-cache" \
 
 mkdir -p "$consumer/Sources/Consumer"
 printf '%s\n' \
-    '// swift-tools-version: 6.0' \
+    '// swift-tools-version: 6.3' \
     'import PackageDescription' \
     '' \
     'let package = Package(' \
     '    name: "ReleaseConsumer",' \
-    '    platforms: [.macOS(.v15)],' \
+    '    platforms: [.macOS(.v26)],' \
     '    dependencies: [.package(path: "../unpacked/markdown-core")],' \
     '    targets: [' \
     '        .executableTarget(' \

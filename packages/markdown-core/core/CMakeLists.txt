@@ -55,14 +55,6 @@ set(MARKDOWN_CORE_ENGINE_SOURCES
 set(PROGRAM "markdown-core")
 set(PROGRAM_SOURCES main.c)
 
-# The process-level once used for core-extension registration is pthread_once
-# on POSIX platforms; CMAKE_THREAD_LIBS_INIT stays a plain flag so the
-# installed export set carries no imported target dependency.
-if(NOT WIN32)
-    set(THREADS_PREFER_PTHREAD_FLAG ON)
-    find_package(Threads REQUIRED)
-endif()
-
 include_directories(. ${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR})
 
@@ -73,7 +65,7 @@ include(GenerateExportHeader)
 
 add_executable(${PROGRAM} ${PROGRAM_SOURCES})
 
-# The CLI is a repository-owned diagnostic adapter and needs private engine
+# The CLI is a repository-owned debug adapter and needs private engine
 # symbols. Keep it on the internal static graph so the installed shared facade
 # can export only the reviewed read-only API.
 target_link_libraries(${PROGRAM} libmarkdown-core-extensions_static libmarkdown-core_static)
@@ -97,10 +89,6 @@ if(MARKDOWN_CORE_STATIC OR MARKDOWN_CORE_SHARED)
     add_library(${STATICLIBRARY} STATIC ${LIBRARY_SOURCES})
     target_compile_definitions(${STATICLIBRARY} PUBLIC MARKDOWN_CORE_STATIC_DEFINE)
     set_target_properties(${STATICLIBRARY} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-    if(NOT WIN32 AND CMAKE_THREAD_LIBS_INIT)
-        target_link_libraries(${STATICLIBRARY} ${CMAKE_THREAD_LIBS_INIT})
-    endif()
 
     if(MSVC)
         set_target_properties(${STATICLIBRARY} PROPERTIES OUTPUT_NAME "markdown-core_static" VERSION ${PROJECT_VERSION})

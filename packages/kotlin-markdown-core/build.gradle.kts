@@ -507,25 +507,6 @@ tasks.named<ProcessResources>("jvmProcessResources") {
 
 val jvmTarget = kotlin.targets.getByName("jvm") as KotlinJvmTarget
 val jvmMainCompilation = jvmTarget.compilations.getByName("main")
-val benchmarkCompilation =
-    jvmTarget.compilations.create("benchmark") {
-        associateWith(jvmTarget.compilations.getByName("main"))
-    }
-
-tasks.register<JavaExec>("kotlinBenchmark") {
-    group = "benchmark"
-    description = "Runs Kotlin/JNI parse and immutable AST copy performance workloads."
-    dependsOn(benchmarkCompilation.compileTaskProvider, "jvmProcessResources")
-    classpath =
-        benchmarkCompilation.output.allOutputs +
-        jvmTarget.compilations
-            .getByName("main")
-            .output.allOutputs +
-        benchmarkCompilation.runtimeDependencyFiles
-    mainClass.set("com.nouprax.markdown.core.benchmark.BenchmarkKt")
-    jvmArgs("--enable-native-access=ALL-UNNAMED")
-}
-
 tasks.withType<Test>().configureEach {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
@@ -631,7 +612,7 @@ ktlint {
 
 // AGP 9.2.1 exposed testedAbi in the managed-device DSL but its setup-task
 // CreationAction did not copy that value into the task input. Keep the public
-// DSL declaration above and the explicit task input on AGP 9.3.0 until the
+// DSL declaration above and the explicit task input on AGP 9.3.2 until the
 // two-device remote smoke proves the upstream assignment on both page sizes.
 tasks.withType<com.android.build.gradle.internal.tasks.ManagedDeviceInstrumentationTestSetupTask>().configureEach {
     testedAbi.set(androidManagedDeviceTestAbi)
@@ -738,14 +719,6 @@ tasks.register<Sync>("stageJvmTestArtifact") {
     from(jvmMainCompilation.output.allOutputs) { into("classes") }
     from(jvmTestCompilation.output.allOutputs) { into("classes") }
     from(jvmTestCompilation.runtimeDependencyFiles.filter(File::isFile)) { into("lib") }
-}
-
-tasks.register<Sync>("stageJvmBenchmarkArtifact") {
-    dependsOn(benchmarkCompilation.compileTaskProvider, "jvmProcessResources")
-    into(layout.buildDirectory.dir("ci-test-artifact/jvm-benchmark"))
-    from(jvmMainCompilation.output.allOutputs) { into("classes") }
-    from(benchmarkCompilation.output.allOutputs) { into("classes") }
-    from(benchmarkCompilation.runtimeDependencyFiles.filter(File::isFile)) { into("lib") }
 }
 
 // The CLASSES are added in `afterEvaluate` below, not here: the Android host

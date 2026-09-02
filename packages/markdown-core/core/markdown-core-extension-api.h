@@ -300,19 +300,6 @@ typedef int (*markdown_core_accepts_lines_func)(const markdown_core_syntax_exten
 typedef markdown_core_node *(*markdown_core_postprocess_func)(const markdown_core_syntax_extension *extension,
                                                               markdown_core_parser *parser, markdown_core_node *root);
 
-/** Called once, from `finalize`, on a block of this extension's own type, after
- * its scope is settled and before anything reads its content.
- *
- * It exists because a container that the END OF THE INPUT closed and one a
- * fence closed are the same node: unlike a fenced code block, whose `closed`
- * is a field every projection carries, an extension block's close state lives
- * in its opaque payload and reaches no view. This is the only moment at which
- * the extension can still say so, and saying so is a diagnostic, not a rewrite
- * -- a close hook that changed the tree would be a second `postprocess` with a
- * worse name. */
-typedef void (*markdown_core_close_block_func)(const markdown_core_syntax_extension *extension,
-                                               markdown_core_parser *parser, markdown_core_node *node);
-
 typedef int (*markdown_core_ispunct_func)(char c);
 
 typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,
@@ -415,7 +402,7 @@ int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser);
  * `--concrete` is what finds it.
  */
 /** Declare that 'node''s content -- which the caller SET rather than the parser
- * feeding it -- begins at (line, column) in the source, and runs on from there
+ * parsing it -- begins at (line, column) in the source, and runs on from there
  * without a break. Returns 1, or 0 if it could not be recorded, in which case
  * the parse is marked lost.
  *
@@ -454,7 +441,7 @@ int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_cor
  *
  * The map is live for as long as the parse is: an extension may ask while the
  * block is open, and the inline phase may ask after every block has closed.
- * markdown_core_parser_finish releases it with the rest of the parse state.
+ * the parse transaction releases it with the rest of the parse state.
  */
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_content_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t content_offset,
@@ -543,9 +530,6 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
  */
 MARKDOWN_CORE_EXPORT
 void markdown_core_parser_advance_offset(markdown_core_parser *parser, const char *input, int count, int columns);
-
-MARKDOWN_CORE_EXPORT
-void markdown_core_parser_feed_reentrant(markdown_core_parser *parser, const char *buffer, size_t len);
 
 /** Attach the syntax 'extension' to the 'parser', to provide extra syntax
  *  rules.

@@ -29,7 +29,8 @@ Those numbers are counted against the **normalized source**, not against the
 string you passed: UTF-8 as fed, every NUL replaced by the three bytes of
 U+FFFD, every line ending a single `\n` and every line having one. `concrete`
 publishes that source and its line index, because an input containing a NUL has
-a buffer whose columns no longer agree with the parser's.
+a buffer whose columns no longer agree with the parser's. It is not a concrete
+syntax tree: it contains no tokens, trivia, recovery nodes, or editing model.
 
 A `Document` IS the AST and carries `concrete` beside its `content`. In C the
 two are siblings — a `markdown_core_document` is a handle and the root is a node
@@ -41,13 +42,13 @@ exposes an owned document with borrowed node views.
 The default parse options enable smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas (including
 dollar and LaTeX delimiters), and directives. Each option can be disabled per
-parse. `TreeDumper` and `dump()` produce a canonical diagnostic representation
+parse. `TreeDumper` and `dump()` produce a canonical debug representation
 for logs, tests, and debugging; dump text is not a persistence or interchange
 format.
 
 ### Swift
 
-The root Swift package supports iOS 18 and macOS 15 or later and exports the
+The root Swift package supports iOS 26 and macOS 26 or later and exports the
 `MarkdownCore` product and module:
 
 ```swift
@@ -143,15 +144,16 @@ document and must not outlive it. Error objects and allocated dump buffers use
 their corresponding `markdown_core_error_free` and `markdown_core_dump_free`
 functions.
 
-The library initializes itself on the first parse. Concurrent parsing and
-read-only access are safe; callers must ensure that a document is freed only
-after all access to that document has finished. The complete C contract is in
+The library has no process-level initialization or writable parser globals.
+Independent parse instances may run concurrently, including their first calls;
+read-only document access is also safe. Callers must ensure that a document is
+freed only after all access to it has finished. The complete C contract is in
 [`markdown_core.h`](packages/markdown-core/include/markdown_core.h).
 
 ## Repository layout
 
 - `packages/markdown-core`: C parser, public facade, CLI, extensions, and C tests.
-- `packages/swift-markdown-core`: Swift binding, tests, consumer fixture, and benchmarks.
+- `packages/swift-markdown-core`: Swift binding, tests, and consumer fixture.
 - `packages/kotlin-markdown-core`: Kotlin binding, platform runtimes, tests, and consumer fixtures.
 - `packages/es-markdown-core`: ECMAScript/TypeScript package and WebAssembly runtime.
 - `specs/canonical-ast`: shared, platform-independent AST conformance fixtures.
@@ -199,34 +201,31 @@ cmake --install build/cmake --prefix /path/to/prefix
 Its CLI is written to
 `build/cmake/packages/markdown-core/core/markdown-core`. The main CMake options
 are `MARKDOWN_CORE_SHARED`, `MARKDOWN_CORE_STATIC`, `MARKDOWN_CORE_TESTS`, and
-`MARKDOWN_CORE_WARNINGS_AS_ERRORS`.
+`MARKDOWN_CORE_WARNINGS_AS_ERRORS`. `MARKDOWN_CORE_BENCHMARKS` is off by
+default and exists only for an explicit local measurement build.
 
 ## Test
 
-Correctness, public-contract conformance, and benchmarks are separate task
-families. Run the targets for the platforms available on the current host:
+Correctness and public-contract conformance are the test task families. Run
+the targets for the platforms available on the current host:
 
 ```sh
 # C host
 pnpm test:c-host
 pnpm conformance:c-host
-pnpm benchmark:c-host
 
 # Swift on macOS
 pnpm test:swift-macos
 pnpm conformance:swift-macos
-pnpm benchmark:swift-macos
 
 # Kotlin/JVM
 pnpm test:kotlin-jvm
 pnpm conformance:kotlin-jvm
-pnpm benchmark:kotlin-jvm
 
 # ECMAScript
 pnpm test:es-node
 pnpm test:es-browser
 pnpm conformance:es-node
-pnpm benchmark:es-node
 ```
 
 Kotlin also has explicit Android host, Android emulator, macOS arm64, and Linux
@@ -235,6 +234,15 @@ x64 targets following the same `test:<platform>` and
 There is intentionally no cross-host aggregate: required CI runs every
 supported platform target on an appropriate host, simulator, browser, or
 device.
+
+Performance measurement is an explicit C-host experiment and never a CI gate.
+When a controlled environment is available, run `pnpm benchmark:c-host`. A
+separate PR benchmark reports one fixed parser workload and binary size against
+the exact PR base. It reuses an exact-SHA baseline artifact when one exists;
+otherwise it builds that base in the same run and publishes the result for
+later runs. Hosted-runner timing and RSS remain informational and never
+determine pass/fail. The binding packages intentionally expose no short
+wall-clock/RSS loops masquerading as cross-runtime diagnostics.
 
 Run repository-wide formatting, lint, contract, topology, and public-surface
 checks with:

@@ -40,13 +40,10 @@ typedef void (*markdown_core_map_free_f)(struct markdown_core_map *, markdown_co
 struct markdown_core_map {
     markdown_core_mem *mem;
     markdown_core_map_entry *refs;
-    markdown_core_map_entry **sorted;
     markdown_core_key_index index;
     size_t size;
     int prepared;
-    int indexed;
-    /* Sticky flag: a definition or lookup structure was lost to allocation
-     * failure; the owning parser reports the parse as failed. */
+    /* Sticky flag: any allocation failure is terminal for the owning parse. */
     int oom;
     markdown_core_map_free_f free;
 };

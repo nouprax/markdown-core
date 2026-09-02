@@ -56,7 +56,7 @@ public protocol Markup: Sendable {
     var scope: Scope { get }
     /// Dispatches to the visitor case for this element's kind.
     func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result
-    /// The canonical diagnostic dump of this element and everything under it.
+    /// The canonical debug dump of this element and everything under it.
     ///
     /// One grammar across C, Swift, Kotlin and ECMAScript, checked against the
     /// same goldens. It is a debugging and conformance surface, not a

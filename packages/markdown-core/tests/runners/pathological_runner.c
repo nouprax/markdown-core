@@ -535,6 +535,64 @@ static int case_reference_collisions(pc_context *context) {
     return 0;
 }
 
+/* A resolved reference names its definition instead of copying the
+ * destination and title into every use. This fixed-shape regression checks the
+ * resulting storage invariant directly: resource and association payload in
+ * the semantic tree must stay within a constant multiple of source bytes.
+ * No elapsed-time sample participates in the assertion. */
+typedef struct pc_reference_payload {
+    size_t bytes;
+} pc_reference_payload;
+
+static int pc_reference_payload_visit(const markdown_core_node *node, void *context) {
+    pc_reference_payload *total = (pc_reference_payload *)context;
+    markdown_core_string first;
+    markdown_core_string second;
+    markdown_core_optional_string title;
+    if (markdown_core_node_link_properties(node, &first, &title) ||
+        markdown_core_node_image_properties(node, &first, &title)) {
+        total->bytes += first.length + (title.has_value ? title.value.length : 0);
+    } else if (markdown_core_node_association(node, &first, &second)) {
+        total->bytes += first.length + second.length;
+    }
+    return 0;
+}
+
+static int case_reference_expansion_bound(pc_context *context) {
+    enum { DESTINATION_LENGTH = 1024, REFERENCE_COUNT = 131072 };
+    static const double MAX_PAYLOAD_RATIO = 8.0;
+    size_t capacity = DESTINATION_LENGTH + 32 + REFERENCE_COUNT * 8;
+    size_t written = 0;
+    size_t index;
+    pc_reference_payload total = {0};
+    double ratio;
+
+    context->input = (char *)malloc(capacity);
+    if (!context->input) {
+        return -1;
+    }
+    written += (size_t)snprintf(context->input + written, capacity - written, "[a]: /");
+    memset(context->input + written, 'u', DESTINATION_LENGTH);
+    written += DESTINATION_LENGTH;
+    written += (size_t)snprintf(context->input + written, capacity - written, "\n\n");
+    for (index = 0; index < REFERENCE_COUNT; index++) {
+        written += (size_t)snprintf(context->input + written, capacity - written, "[a]\n\n");
+    }
+    context->input_length = written;
+
+    if (pc_parse(context, NULL) != 0 ||
+        ts_ast_walk(markdown_core_document_semantic(context->document), pc_reference_payload_visit, &total) != 0) {
+        return -1;
+    }
+    ratio = (double)total.bytes / (double)context->input_length;
+    if (ratio > MAX_PAYLOAD_RATIO) {
+        fprintf(stderr, "reference payload expanded to %.3fx input (%zu payload bytes / %zu source bytes)\n", ratio,
+                total.bytes, context->input_length);
+        return -1;
+    }
+    return 0;
+}
+
 /* Directive pathological cases -------------------------------------------- */
 
 static int pc_directive_literal_case(pc_context *context, const char *unit, size_t count) {
@@ -799,6 +857,7 @@ static const pc_case_entry PC_CASES[] = {
     {"unclosed_comment", case_unclosed_comment},
     {"tables", case_tables},
     {"reference_collisions", case_reference_collisions},
+    {"reference_expansion_bound", case_reference_expansion_bound},
     {"directive_unclosed_labels", case_directive_unclosed_labels},
     {"directive_unclosed_attributes", case_directive_unclosed_attributes},
     {"directive_colon_pairs", case_directive_colon_pairs},

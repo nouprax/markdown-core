@@ -1,6 +1,6 @@
 /* Deterministic fuzz smoke suite.
  *
- * Feeds fixed corpora and seeded pseudo-random byte streams through the
+ * Runs fixed corpora and seeded pseudo-random byte sequences through the
  * read-only facade: parse, traverse every node and accessor, dump twice
  * (checking dump determinism), and free.  No renderer is involved and no
  * network or random device is read; the same inputs are generated on every
@@ -66,7 +66,7 @@ static int smoke(const uint8_t *bytes, size_t length, const char *label) {
             return -1;
         }
         if (markdown_core_error_get_message(error).length == 0) {
-            fprintf(stderr, "%s: parse error carries no diagnostic\n", label);
+            fprintf(stderr, "%s: parse error carries no message\n", label);
             markdown_core_error_free(error);
             return -1;
         }

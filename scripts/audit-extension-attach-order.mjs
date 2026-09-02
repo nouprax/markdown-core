@@ -28,9 +28,9 @@
  *
  * Tests are exempt from (1) on purpose. `extension_decline_yields_turn` in
  * `tests/api/main.c` attaches `table` and then `directive` by hand precisely so
- * that it keeps failing under any order, and the fallback runner's sweep names
- * its own list. A test that could not build a parser the product cannot build
- * would be unable to gate the product's choice.
+ * that it keeps failing under any order. The strict OOM runner similarly
+ * supplies its own setup callback. A test that could not build a parser the
+ * product cannot build would be unable to gate the product's choice.
  */
 
 import fs from "node:fs";

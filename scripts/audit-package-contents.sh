@@ -21,6 +21,25 @@ if grep -R -I -n -E "$renderer_api_pattern" \
     exit 1
 fi
 
+retired_parser_api_pattern='markdown_core_parser_(new|new_with_mem|feed|feed_reentrant|finish|free)|markdown_core_parse_file|markdown_core_document_diagnostic_(count|at)|markdown_core_diagnostic_code_name'
+if grep -R -I -n -E "$retired_parser_api_pattern" \
+    packages/markdown-core/core packages/markdown-core/extensions \
+    packages/markdown-core/include packages/swift-markdown-core/Sources \
+    packages/kotlin-markdown-core/src/commonMain packages/es-markdown-core/src; then
+    echo "Retired parser, feed, or diagnostic API remains in active source" >&2
+    exit 1
+fi
+
+for removed_component in \
+    packages/markdown-core/tests/runners/fallback_runner.c \
+    scripts/audit-diagnostics.mjs \
+    specs/diagnostics/census.json; do
+    if [ -e "$removed_component" ]; then
+        echo "Removed fallback or diagnostic component still exists: $removed_component" >&2
+        exit 1
+    fi
+done
+
 for removed_renderer in \
     packages/markdown-core/core/render.c \
     packages/markdown-core/core/render.h \
@@ -39,6 +58,15 @@ done
 
 cmp LICENSE packages/es-markdown-core/LICENSE
 node packages/es-markdown-core/scripts/build.mjs >/dev/null
+find packages/es-markdown-core/dist -type f -name '*.d.ts' \
+    ! -path '*/runtime/*' ! -path '*/wire/*' -exec grep -H -n -E \
+    '\b(render|feed|stream|edit|session|snapshot|delta|diagnostic|CST|ConcreteSyntax|Token|Trivia|Recovery|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)\b' \
+    {} + >"$temp_dir/es-retired-declarations.txt" || true
+if [ -s "$temp_dir/es-retired-declarations.txt" ]; then
+    cat "$temp_dir/es-retired-declarations.txt"
+    echo "ES declaration package exposes a retired or mutable API" >&2
+    exit 1
+fi
 npm pack ./packages/es-markdown-core --dry-run --json >"$temp_dir/npm-pack.json"
 node - "$temp_dir/npm-pack.json" <<'NODE'
 import fs from "node:fs";
@@ -160,12 +188,14 @@ cmake --build "$temp_dir/cmake-build-static" --parallel 2 >/dev/null
 cmake --install "$temp_dir/cmake-build-static" >/dev/null
 
 cli="$temp_dir/cmake-build/packages/markdown-core/core/markdown-core"
-if "$cli" --to html </dev/null >/dev/null 2>&1; then
-    echo "CLI still accepts renderer output formats" >&2
-    exit 1
-fi
-if "$cli" --help | grep -E -- '--to|--width|--unsafe|--hardbreaks|--nobreaks'; then
-    echo "CLI help still advertises renderer options" >&2
+for removed_option in --to --width --unsafe --hardbreaks --nobreaks --diagnostics --feed --stream; do
+    if "$cli" "$removed_option" </dev/null >/dev/null 2>&1; then
+        echo "CLI still accepts removed option $removed_option" >&2
+        exit 1
+    fi
+done
+if "$cli" --help | grep -E -- '--to|--width|--unsafe|--hardbreaks|--nobreaks|--diagnostics|--feed|--stream'; then
+    echo "CLI help still advertises removed renderer, feed, or diagnostic options" >&2
     exit 1
 fi
 

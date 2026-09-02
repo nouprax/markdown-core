@@ -16,20 +16,10 @@
 #include <node.h>
 #include <parser.h>
 
-/* A parse failure, and NOTHING ELSE. Requirement 13's converse is that a parse
- * failure is not a diagnostic: `markdown_core_error` means there is no
- * document, and an input the parser could not turn into a document has no
- * extent to point at. There is therefore no scope here to offer, and no
- * accessor to offer one -- the two fields that used to be here were never
- * written by any path in the library, and they went with
- * `markdown_core_error_get_scope` at Step 13.
- *
- * `message` is a STRING LITERAL and is not copied. Every one of the eight
- * failures this file can report names a constant, and the copy was the second
- * allocation in a function whose whole job is to report that an allocation
- * failed: on a `malloc` that returned NULL it freed the error and returned,
- * leaving the caller with no document AND no error. One allocation, one
- * failure mode. */
+/* A parse error means there is no document and carries no source scope. Error
+ * values are immutable process-lifetime sentinels. Reporting allocation
+ * failure must itself allocate nothing; otherwise the consumer can receive
+ * neither a document nor the error that explains its absence. */
 struct markdown_core_error {
     markdown_core_error_code code;
     const char *message;
@@ -50,18 +40,24 @@ static void clear_error(markdown_core_error **error) {
     }
 }
 
-static void set_error(markdown_core_error **error, markdown_core_error_code code, const char *message) {
-    markdown_core_error *value;
+static const markdown_core_error ERROR_INVALID_SOURCE = {MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+                                                         "source must not be null when length is nonzero"};
+static const markdown_core_error ERROR_INVALID_ALLOCATOR = {MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+                                                            "memory allocator must not be null"};
+static const markdown_core_error ERROR_DOCUMENT_ALLOCATION = {MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+                                                              "could not allocate document"};
+static const markdown_core_error ERROR_PARSE_ALLOCATION = {MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+                                                           "the parse could not complete an allocation"};
+static const markdown_core_error ERROR_INVALID_DUMP = {MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+                                                       "document, output, and length must not be null"};
+static const markdown_core_error ERROR_DUMP_ALLOCATION = {MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+                                                          "could not produce canonical AST dump"};
+
+static void set_error(markdown_core_error **error, const markdown_core_error *value) {
     if (!error) {
         return;
     }
-    value = (markdown_core_error *)calloc(1, sizeof(*value));
-    if (!value) {
-        return;
-    }
-    value->message = message;
-    value->code = code;
-    *error = value;
+    *error = (markdown_core_error *)(uintptr_t)value;
 }
 
 void markdown_core_parse_options_init(markdown_core_parse_options *options) {
@@ -79,20 +75,47 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
     options->directives = true;
 }
 
+typedef struct facade_parse_setup {
+    unsigned extensions;
+    markdown_core_concrete *concrete;
+} facade_parse_setup;
+
+static bool configure_facade_parse(markdown_core_parser *parser, void *context) {
+    facade_parse_setup *setup = (facade_parse_setup *)context;
+
+    /* The facade says WHICH extensions, never in what order;
+     * `core-extensions.c` owns the one order used by every product entry. */
+    if (!markdown_core_core_extensions_attach(parser, setup->extensions)) {
+        return false;
+    }
+    markdown_core_parser_retain_concrete(parser, setup->concrete);
+    return true;
+}
+
 markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
                                                      const markdown_core_parse_options *requested_options,
                                                      markdown_core_error **error) {
+    return markdown_core_document_parse_with_mem(source, length, requested_options,
+                                                 markdown_core_get_default_mem_allocator(), error);
+}
+
+markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *source, size_t length,
+                                                              const markdown_core_parse_options *requested_options,
+                                                              markdown_core_mem *mem, markdown_core_error **error) {
     markdown_core_parse_options defaults;
     const markdown_core_parse_options *options = requested_options;
     markdown_core_document *document;
-    markdown_core_parser *parser;
-    markdown_core_diagnostics pending_diagnostics;
+    facade_parse_setup setup = {0};
     unsigned extensions = 0;
     int native_options = MARKDOWN_CORE_OPT_VALIDATE_UTF8;
 
     clear_error(error);
     if (!source && length != 0) {
-        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "source must not be null when length is nonzero");
+        set_error(error, &ERROR_INVALID_SOURCE);
+        return NULL;
+    }
+    if (!mem) {
+        set_error(error, &ERROR_INVALID_ALLOCATOR);
         return NULL;
     }
     if (!options) {
@@ -109,16 +132,6 @@ markdown_core_document *markdown_core_document_parse(const uint8_t *source, size
         native_options |= MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
     }
 
-    parser = markdown_core_parser_new(native_options);
-    if (!parser) {
-        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate parser");
-        return NULL;
-    }
-
-    /* The facade says WHICH extensions, never in what order; `core-extensions.c`
-     * owns the order and `core/main.c` asks the same question the same way. The
-     * two used to disagree -- this side attached `directive` last and the CLI
-     * attached it first -- which is D15. */
     if (options->tables) {
         extensions |= MARKDOWN_CORE_CORE_EXTENSION_TABLE;
     }
@@ -137,47 +150,23 @@ markdown_core_document *markdown_core_document_parse(const uint8_t *source, size
     if (options->directives) {
         extensions |= MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE;
     }
-    if (!markdown_core_core_extensions_attach(parser, extensions)) {
-        markdown_core_parser_free(parser);
-        set_error(error, MARKDOWN_CORE_ERROR_INTERNAL, "required syntax extension is unavailable");
-        return NULL;
-    }
-
-    /* REQUIREMENT 13, and it is asked for BEFORE the first byte is fed because
-     * recording happens as the lines are read. Diagnostics are not optional
-     * here for the same reason the concrete view is not (Q24): they are part of
-     * the model, and the switch exists so the LAW can be checked -- the tree
-     * and the records must be byte-identical either way -- not so that a
-     * consumer can choose a different engine. */
-    markdown_core_parser_retain_diagnostics(parser, &pending_diagnostics);
-
-    if (length) {
-        markdown_core_parser_feed(parser, (const char *)source, length);
-    }
-    document = (markdown_core_document *)calloc(1, sizeof(*document));
+    document = (markdown_core_document *)mem->calloc(1, sizeof(*document));
     if (!document) {
-        markdown_core_parser_free(parser);
-        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
+        set_error(error, &ERROR_DOCUMENT_ALLOCATION);
         return NULL;
     }
-    markdown_core_parser_retain_concrete(parser, &document->concrete);
-    document->root = markdown_core_parser_finish(parser);
-    markdown_core_parser_free(parser);
+    document->mem = mem;
+
+    setup.extensions = extensions;
+    setup.concrete = &document->concrete;
+    document->root = markdown_core_parse_document_with_mem((const char *)source, length, native_options, mem,
+                                                           configure_facade_parse, &setup);
     if (!document->root) {
         markdown_core_concrete_dispose(&document->concrete);
-        markdown_core_diagnostics_dispose(&pending_diagnostics);
-        free(document);
-        /* A3, carried here from 3a: A FAILURE IS A RETURNED STATUS, and this is
-         * the vocabulary the surface has for it. `finish` returns NULL for
-         * exactly one reason on a parser that has just been fed -- every one of
-         * the sticky flag's write sites is an allocation or a size cap -- so
-         * reporting INTERNAL was reporting the commonest cause as the one code
-         * that means "no cause is known", and ALLOCATION_FAILED was unreachable
-         * from this path. */
-        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "the parse lost bytes it could not allocate for");
+        mem->free(document);
+        set_error(error, &ERROR_PARSE_ALLOCATION);
         return NULL;
     }
-    document->diagnostics = pending_diagnostics;
     return document;
 }
 
@@ -186,9 +175,8 @@ void markdown_core_document_free(markdown_core_document *document) {
         return;
     }
     markdown_core_concrete_dispose(&document->concrete);
-    markdown_core_diagnostics_dispose(&document->diagnostics);
     markdown_core_node_free(document->root);
-    free(document);
+    document->mem->free(document);
 }
 
 const markdown_core_node *markdown_core_document_semantic(const markdown_core_document *document) {
@@ -216,32 +204,6 @@ bool markdown_core_document_line_start(const markdown_core_document *document, s
     return true;
 }
 
-size_t markdown_core_document_diagnostic_count(const markdown_core_document *document) {
-    return document ? (size_t)document->diagnostics.entries_size : 0;
-}
-
-bool markdown_core_document_diagnostic_at(const markdown_core_document *document, size_t index,
-                                          markdown_core_diagnostic *diagnostic) {
-    const markdown_core_diagnostic_record *entry;
-    if (!document || !diagnostic || index >= (size_t)document->diagnostics.entries_size) {
-        return false;
-    }
-    entry = &document->diagnostics.entries[index];
-    diagnostic->severity = (markdown_core_diagnostic_severity)entry->severity;
-    diagnostic->code = (markdown_core_diagnostic_code)entry->code;
-    diagnostic->scope.start.line = entry->start_line;
-    diagnostic->scope.start.column = entry->start_column;
-    diagnostic->scope.end.line = entry->end_line;
-    diagnostic->scope.end.column = entry->end_column;
-    diagnostic->message.data = document->diagnostics.messages.ptr + entry->message_start;
-    diagnostic->message.length = (size_t)entry->message_length;
-    return true;
-}
-
-const char *markdown_core_diagnostic_code_name(markdown_core_diagnostic_code code) {
-    return markdown_core_diagnostic_code_string(code);
-}
-
 markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error) {
     return error ? error->code : MARKDOWN_CORE_ERROR_NONE;
 }
@@ -255,7 +217,7 @@ markdown_core_string markdown_core_error_get_message(const markdown_core_error *
     return value;
 }
 
-void markdown_core_error_free(markdown_core_error *error) { free(error); }
+void markdown_core_error_free(markdown_core_error *error) { (void)error; }
 
 markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *node) {
     if (!node) {
@@ -415,10 +377,8 @@ markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
  * splice it out -- first_child skipped past it into its children and
  * next_sibling climbed back out -- so a directive's label reached every
  * binding as a COUNT on the parent and a run of children with no container.
- * Step 7 stops hiding it: `DirectiveLabel` is the 29th kind, its scope spans
- * its brackets, and `label=` is gone from the dump because the node is there
- * to be seen. The two accessors that existed only to name where the label's
- * children began and ended went with it. */
+ * `DirectiveLabel` is therefore a public kind, its scope spans its brackets,
+ * and the dump represents it as the node already present in the tree. */
 const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node) {
     return node ? node->first_child : NULL;
 }
@@ -1091,7 +1051,7 @@ bool markdown_core_document_dump(const markdown_core_document *document, uint8_t
     dump_buffer buffer = {0};
     clear_error(error);
     if (!document || !document->root || !output || !length) {
-        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "document, output, and length must not be null");
+        set_error(error, &ERROR_INVALID_DUMP);
         return false;
     }
     *output = NULL;
@@ -1100,7 +1060,7 @@ bool markdown_core_document_dump(const markdown_core_document *document, uint8_t
     free(buffer.more);
     if (buffer.failed) {
         free(buffer.data);
-        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not produce canonical AST dump");
+        set_error(error, &ERROR_DUMP_ALLOCATION);
         return false;
     }
     *output = buffer.data;

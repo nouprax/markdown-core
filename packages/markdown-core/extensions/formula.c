@@ -457,7 +457,7 @@ static void free_nodes_through(markdown_core_node *first, markdown_core_node *la
  * collapse a CRLF to one byte left a `$$\r\nx\r\n$$` document byte-identical,
  * which is why those arms are gone and this one is not. A fixture cannot reach
  * either; the difference is that this one states the rule and they stated an
- * algorithm. If the feed ever stops normalising, they have to come back. */
+ * algorithm. If source-line normalization changes, they have to come back. */
 static bool formula_pad_byte(unsigned char c) { return c == ' ' || c == '\n' || c == '\r'; }
 
 static void strip_formula_padding(const unsigned char **literal, bufsize_t *len) {

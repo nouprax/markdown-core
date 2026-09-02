@@ -98,8 +98,8 @@ const stateValidators = {
        of them a real position (D26). The remaining producers of that shape are
        D13's empty Text and the split-off table lead, and pinning either as
        canonical coverage would bless a defect the stage is closing -- which is
-       exactly the trap section 4.4 of docs/RECONSTRUCTION.md names. The state is
-       therefore deleted rather than re-witnessed. This is a coverage obligation,
+       a defect rather than canonical behavior. The state is therefore deleted
+       rather than re-witnessed. This is a coverage obligation,
        not a grammar or schema change: the dump still permits 0:0..0:0, so no
        binding and no golden format moves. */
     "children.empty": (tree) => / children=0(?:\n|$)/.test(tree),

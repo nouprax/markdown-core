@@ -1,18 +1,16 @@
 # CTest is the single source of truth for the C test graph.  Suites are
 # grouped by label:
 #
-#   api facade consumer spec extensions regression pathological complexity
-#   fuzz packaging benchmark
+#   api facade consumer spec extensions regression pathological fuzz packaging
 #
-# The default correctness preset excludes conformance and benchmark; sanitizer
-# correctness presets also exclude wall-clock complexity gates.  The benchmark
-# preset selects only its label.  Every suite is native (C/C++); the test tree
-# has no scripting-language dependency and never touches the network.
+# The default correctness preset excludes conformance. Performance measurement
+# is not part of the test graph unless MARKDOWN_CORE_BENCHMARKS is explicitly
+# enabled for a local benchmark build. Every suite is native (C/C++); the test
+# tree has no scripting-language dependency and never touches the network.
 
 set(MARKDOWN_CORE_TEST_FIXTURES_DIR "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures")
 set(MARKDOWN_CORE_CANONICAL_AST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../specs/canonical-ast")
 set(MARKDOWN_CORE_CANONICAL_AST_MANIFEST "${MARKDOWN_CORE_CANONICAL_AST_DIR}/manifest.json")
-set(MARKDOWN_CORE_BENCH_SAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../benchmarks/samples")
 
 if(NOT EXISTS "${MARKDOWN_CORE_CANONICAL_AST_MANIFEST}")
     message(FATAL_ERROR "Shared canonical AST manifest is missing: ${MARKDOWN_CORE_CANONICAL_AST_MANIFEST}")
@@ -115,27 +113,24 @@ endfunction()
 
 markdown_core_add_runner(spec_runner runners/spec_runner.c)
 markdown_core_add_runner(pathological_runner runners/pathological_runner.c)
-markdown_core_add_runner(complexity_runner runners/complexity_runner.c)
 
-# fallback_runner drives core-private map symbols directly, so it links the
-# static engine instead of the shared facade and skips test-support.
+# oom_runner injects an allocator into the internal implementation of the
+# public facade transaction, so it links the static engine directly.
 if(MARKDOWN_CORE_STATIC)
-    add_executable(fallback_runner runners/fallback_runner.c)
+    add_executable(oom_runner runners/oom_runner.c)
     target_include_directories(
-        fallback_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
-                                "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
-    target_link_libraries(fallback_runner libmarkdown-core-extensions_static libmarkdown-core_static)
+        oom_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
+                           "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
+    target_link_libraries(oom_runner libmarkdown-core-extensions_static libmarkdown-core_static)
 endif()
 markdown_core_add_runner(entity_runner runners/entity_runner.c)
 markdown_core_add_runner(dump_cli_runner runners/dump_cli_runner.c)
 markdown_core_add_runner(fuzz_smoke_runner runners/fuzz_smoke_runner.c)
-markdown_core_add_runner(bench_runner runners/bench_runner.c)
 markdown_core_add_runner(concurrency_runner runners/concurrency_runner.c)
 markdown_core_add_runner(stress_runner runners/stress_runner.c)
 add_executable(corpus_guard runners/corpus_guard.c)
 
 target_include_directories(fuzz_smoke_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
-target_include_directories(bench_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_include_directories(concurrency_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_include_directories(stress_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 if(NOT WIN32)
@@ -178,16 +173,15 @@ markdown_core_add_test(
     ${MARKDOWN_CORE_CANONICAL_FACADE_ARGUMENTS})
 markdown_core_add_test(consumer_facade_cplusplus consumer 120 facade_cplusplus_test)
 
-# facade concurrency contract: the first_parse case must exercise library
-# initialization in a fresh process, so it never shares a process with a
-# prior parse; stress covers steady-state concurrent parsing with
-# disagreeing option sets.
+# Facade concurrency contract: the first_parse case releases every thread into
+# its first parse in a fresh process; stress covers concurrent instance-local
+# parsing with disagreeing option sets.
 markdown_core_add_test(facade_concurrent_first_parse facade 240 concurrency_runner --case first_parse)
 markdown_core_add_test(facade_concurrent_stress facade 600 concurrency_runner --case stress)
 
-# regression: registry lifecycle stays immutable across parse/free cycles
-# and facade failure paths.
-markdown_core_add_test(regression_registry_lifecycle regression 240 concurrency_runner --case lifecycle)
+# Repeated instance construction/destruction and facade failures must not affect
+# any later parse.
+markdown_core_add_test(regression_instance_lifecycle regression 240 concurrency_runner --case lifecycle)
 
 # Large/deep/repeated-input correctness checks are distinct from timed
 # benchmark workloads over related input shapes.
@@ -224,22 +218,10 @@ markdown_core_add_test(spec_entities spec 240 entity_runner)
 markdown_core_add_test(regression_commonmark regression 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/regression.txt")
 
-# regression: allocation-failure and probe-limit fallbacks of the shared
-# byte-key index keep hash-path duplicate semantics; probe exhaustion grows
-# the table once before falling back.
+# regression: every injected allocation failure terminates the parse and is
+# reported to the facade consumer; no lossless fallback may return a document.
 if(MARKDOWN_CORE_STATIC)
-    set(MARKDOWN_CORE_FALLBACK_CASES
-        reference_sorted_fallback
-        directive_sorted_fallback
-        key_index_probe_growth
-        map_prepare_oom
-        constructor_oom
-        oom_sweep
-        oom_sweep_chunked
-        formula_literal_borrow)
-    foreach(case IN LISTS MARKDOWN_CORE_FALLBACK_CASES)
-        markdown_core_add_test(regression_fallback_${case} regression 240 fallback_runner --case ${case})
-    endforeach()
+    markdown_core_add_test(regression_strict_oom regression 240 oom_runner --case strict_oom)
 endif()
 
 # extensions: GFM extensions, formulas, directives, and option gates.
@@ -307,7 +289,7 @@ markdown_core_add_test(extensions_conflicts extensions 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-conflicts.txt")
 # pathological: adversarial inputs, one CTest test per case so timeouts and
 # failures stay addressable.  The audit script cross-checks this list against
-# `pathological_runner --list` and `complexity_runner --list`.
+# `pathological_runner --list`.
 set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     nested_strong_emph
     many_emph_closers
@@ -330,6 +312,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     unclosed_comment
     tables
     reference_collisions
+    reference_expansion_bound
     directive_unclosed_labels
     directive_unclosed_attributes
     directive_colon_pairs
@@ -341,24 +324,6 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     formula_backslash_openers)
 foreach(case IN LISTS MARKDOWN_CORE_PATHOLOGICAL_CASES)
     markdown_core_add_test(pathological_${case} pathological 30 pathological_runner --case ${case})
-endforeach()
-
-set(MARKDOWN_CORE_COMPLEXITY_CASES
-    valid_long_quoted_value
-    valid_consecutive_backslashes
-    unclosed_long_quoted_value
-    unclosed_backslash_value
-    many_unique_attributes
-    many_duplicate_attributes
-    many_unique_references
-    many_duplicate_references
-    read_unique_attributes
-    read_duplicate_attributes
-    reference_expansion_bound)
-foreach(case IN LISTS MARKDOWN_CORE_COMPLEXITY_CASES)
-    markdown_core_add_test(pathological_complexity_${case} "pathological;complexity" 120 complexity_runner --case
-                           ${case})
-    set_tests_properties(pathological_complexity_${case} PROPERTIES RUN_SERIAL TRUE)
 endforeach()
 
 # fuzz: deterministic smoke over fixed corpora and seeded generated inputs.
@@ -386,25 +351,33 @@ markdown_core_add_test(
     --generated
     256)
 
-# packaging: corpus/workspace policy guard, also run before benchmarks.
+# packaging: corpus/workspace policy guard.
 markdown_core_add_test(packaging_corpus_guard packaging 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")
-markdown_core_add_test(benchmark_corpus_guard benchmark 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")
 
-# benchmark: independently scheduled performance workloads; serial, offline,
-# deterministic inputs, relative-scaling assertions only.
-set(MARKDOWN_CORE_BENCH_WORKLOADS binding_baseline representative large_document deep_nesting extensions adversarial)
-foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
-    markdown_core_add_test(
-        benchmark_${workload}
-        benchmark
-        600
-        bench_runner
-        --workload
-        ${workload}
-        --samples
-        "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}")
-    set_tests_properties(benchmark_${workload} PROPERTIES RUN_SERIAL TRUE)
-endforeach()
+# Performance measurement is a developer tool, not a correctness oracle. It is
+# absent from normal and sanitizer builds so CI artifacts cannot accidentally
+# promote hosted-runner timing into a merge gate. The explicit benchmark preset
+# enables this block and reports measurements without wall-clock assertions.
+if(MARKDOWN_CORE_BENCHMARKS)
+    set(MARKDOWN_CORE_BENCH_SAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../benchmarks/samples")
+    markdown_core_add_runner(bench_runner runners/bench_runner.c)
+    target_include_directories(bench_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+    markdown_core_add_test(benchmark_corpus_guard benchmark 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")
+    set(MARKDOWN_CORE_BENCH_WORKLOADS binding_baseline representative large_document deep_nesting extensions
+                                      adversarial)
+    foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
+        markdown_core_add_test(
+            benchmark_${workload}
+            benchmark
+            600
+            bench_runner
+            --workload
+            ${workload}
+            --samples
+            "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}")
+        set_tests_properties(benchmark_${workload} PROPERTIES RUN_SERIAL TRUE)
+    endforeach()
+endif()
 
 if(WIN32 AND MARKDOWN_CORE_SHARED)
     file(TO_NATIVE_PATH ${MARKDOWN_CORE_CORE_BINARY_DIR} WIN_SRC_DLL_DIR)

@@ -119,7 +119,8 @@ static MARKDOWN_CORE_INLINE bool S_is_line_end_char(char c) { return (c == '\n' 
 
 static MARKDOWN_CORE_INLINE bool S_is_space_or_tab(char c) { return (c == ' ' || c == '\t'); }
 
-static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buffer, size_t len, bool eof);
+static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length);
+static markdown_core_node *S_finish_parse(markdown_core_parser *parser);
 
 static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, bufsize_t bytes);
 
@@ -147,11 +148,8 @@ static markdown_core_node *make_document(markdown_core_mem *mem) {
     return e;
 }
 
-/* Appends and reports failure directly instead of relying on llist_append's
- * silent-drop behavior.
- *
- * Both extension lists hold pointers to the `static const` descriptors that
- * Step 3b made read-only, and every reader casts `data` straight back to a
+/* Both extension lists hold pointers to `static const` descriptors, and every
+ * reader casts `data` straight back to a
  * `const markdown_core_syntax_extension *`. The const is discarded here and
  * nowhere else because markdown_core_llist is a generic list that cannot
  * carry it; typing the parameter keeps the cast to this one line. */
@@ -188,7 +186,7 @@ int markdown_core_parser_attach_syntax_extension(markdown_core_parser *parser,
     return 1;
 }
 
-static void markdown_core_parser_dispose(markdown_core_parser *parser) {
+static void S_parser_dispose(markdown_core_parser *parser) {
     if (parser->root) {
         markdown_core_node_free(parser->root);
     }
@@ -206,11 +204,7 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     }
 
     /* The normalized source and its line index are per-parse and are released
-     * with the rest of it. Requirement 12 is where a document keeps them.
-     *
-     * `mem` guards the first call: `markdown_core_parser_new_with_mem` reaches
-     * here through `reset` on a calloc'd parser, and strbuf_free dereferences
-     * the buffer's own allocator. */
+     * with the rest unless the returned document retained them. */
     if (parser->source.mem) {
         markdown_core_strbuf_free(&parser->source);
     }
@@ -224,69 +218,51 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     parser->line_marks = NULL;
     parser->line_marks_size = 0;
     parser->line_marks_alloc = 0;
-
-    /* Requirement 13's list. Released here whether or not it was retained: a
-     * parse that FAILED never reaches the move, and the requirement's converse
-     * says a failure carries no diagnostics. */
-    markdown_core_diagnostics_dispose(&parser->diagnostics);
 }
 
-static void markdown_core_parser_reset(markdown_core_parser *parser) {
-    markdown_core_llist *saved_exts = parser->syntax_extensions;
-    markdown_core_llist *saved_inline_exts = parser->inline_syntax_extensions;
-    int saved_options = parser->options;
-    markdown_core_mem *saved_mem = parser->mem;
+static markdown_core_parser *S_parser_new(int options, markdown_core_mem *mem) {
+    markdown_core_parser *parser;
+    markdown_core_node *document;
 
-    markdown_core_parser_dispose(parser);
-
-    memset(parser, 0, sizeof(markdown_core_parser));
-    parser->mem = saved_mem;
-
-    markdown_core_strbuf_init(parser->mem, &parser->curline, 256);
-    markdown_core_strbuf_init(parser->mem, &parser->linebuf, 0);
-    markdown_core_strbuf_init(parser->mem, &parser->source, 0);
-
-    markdown_core_node *document = make_document(parser->mem);
-
-    parser->refmap = markdown_core_reference_map_new(parser->mem);
-    parser->footnote_defs = markdown_core_footnote_definition_map_new(parser->mem);
-    parser->root = document;
-    parser->current = document;
-
-    parser->syntax_extensions = saved_exts;
-    parser->inline_syntax_extensions = saved_inline_exts;
-    parser->options = saved_options;
-
-    /* A reset that could not rebuild its structures poisons the parser: feed
-     * becomes a no-op and finish reports failure. */
-    if (!parser->root || !parser->refmap || !parser->footnote_defs || parser->curline.oom || parser->source.oom) {
-        parser->oom = true;
+    if (!mem) {
+        return NULL;
     }
-
-    markdown_core_inlines_reset_special_chars(parser);
-}
-
-markdown_core_parser *markdown_core_parser_new_with_mem(int options, markdown_core_mem *mem) {
-    markdown_core_parser *parser = (markdown_core_parser *)mem->calloc(1, sizeof(markdown_core_parser));
+    parser = (markdown_core_parser *)mem->calloc(1, sizeof(*parser));
     if (!parser) {
         return NULL;
     }
     parser->mem = mem;
     parser->options = options;
-    markdown_core_parser_reset(parser);
+    markdown_core_strbuf_init(parser->mem, &parser->curline, 256);
+    markdown_core_strbuf_init(parser->mem, &parser->line_scratch, 0);
+    markdown_core_strbuf_init(parser->mem, &parser->source, 0);
+
+    document = make_document(parser->mem);
+    parser->refmap = markdown_core_reference_map_new(parser->mem);
+    parser->footnote_defs = markdown_core_footnote_definition_map_new(parser->mem);
+    parser->root = document;
+    parser->current = document;
+
+    /* A transaction that could not build its initial structures is poisoned:
+     * source processing becomes a no-op and the parse reports failure. */
+    if (!parser->root || !parser->refmap || !parser->footnote_defs || parser->curline.oom || parser->line_scratch.oom ||
+        parser->source.oom || parser->root->content.oom) {
+        parser->oom = true;
+    }
+
+    markdown_core_inlines_reset_special_chars(parser);
     return parser;
 }
 
-markdown_core_parser *markdown_core_parser_new(int options) {
-    return markdown_core_parser_new_with_mem(options, markdown_core_get_default_mem_allocator());
-}
-
-void markdown_core_parser_free(markdown_core_parser *parser) {
-    markdown_core_mem *mem = parser->mem;
-    markdown_core_parser_dispose(parser);
+static void S_parser_free(markdown_core_parser *parser) {
+    markdown_core_mem *mem;
+    if (!parser) {
+        return;
+    }
+    mem = parser->mem;
+    S_parser_dispose(parser);
     markdown_core_strbuf_free(&parser->curline);
-    markdown_core_strbuf_free(&parser->linebuf);
-    markdown_core_strbuf_free(&parser->source);
+    markdown_core_strbuf_free(&parser->line_scratch);
     markdown_core_llist_free(parser->mem, parser->syntax_extensions);
     markdown_core_llist_free(parser->mem, parser->inline_syntax_extensions);
     mem->free(parser);
@@ -354,200 +330,6 @@ static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
     }
 
     return (node->type == MARKDOWN_CORE_NODE_PARAGRAPH || node->type == MARKDOWN_CORE_NODE_HEADING);
-}
-
-/* REQUIREMENT 13 -- the diagnostic list.
- *
- * It is the concrete record set's shape with no difference at all, and the
- * sameness is the point: A GROWTH THIS LIST CANNOT AFFORD ABANDONS THE PARSE,
- * exactly as `S_claim_region`'s does.
- *
- * OWNER RULING, 2026-08-24: "we do not want fallback when OOM happens; the
- * parser should return an error rather than return a fallback." So there is no
- * truncation marker and no short list: either the parse produced its complete
- * diagnostics, or there is no document. A degraded success is a document that
- * lies about how much the engine had to say about it, and this repository has
- * spent four defects (D27, D30, and both halves of A1) learning that a lossy
- * result reported as a success is worse than no result. */
-
-/* The message pool cap. A diagnostic says what the tree cannot; it does not
- * quote the document back. Cutting at a code-point boundary is not tidiness:
- * `message` is published as a UTF-8 `markdown_core_string`, and a cut through a
- * continuation byte would hand a consumer a sequence the engine itself would
- * have replaced on input. */
-#define MARKDOWN_CORE_DIAGNOSTIC_SUBJECT_MAX 40
-
-static bufsize_t S_diagnostic_subject_fit(const unsigned char *subject, bufsize_t length) {
-    if (length <= MARKDOWN_CORE_DIAGNOSTIC_SUBJECT_MAX) {
-        return length;
-    }
-    length = MARKDOWN_CORE_DIAGNOSTIC_SUBJECT_MAX;
-    while (length > 0 && (subject[length] & 0xC0) == 0x80) {
-        length--;
-    }
-    return length;
-}
-
-const char *markdown_core_diagnostic_code_string(markdown_core_diagnostic_code code) {
-    switch (code) {
-    case MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_LABEL_REJECTED:
-        return "directive-label-rejected";
-    case MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES_REJECTED:
-        return "directive-attributes-rejected";
-    case MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_REJECTED:
-        return "directive-rejected";
-    case MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_UNCLOSED:
-        return "directive-unclosed";
-    case MARKDOWN_CORE_DIAGNOSTIC_TABLE_REJECTED:
-        return "table-rejected";
-    case MARKDOWN_CORE_DIAGNOSTIC_REFERENCE_UNDEFINED:
-        return "reference-undefined";
-    case MARKDOWN_CORE_DIAGNOSTIC_FOOTNOTE_UNDEFINED:
-        return "footnote-undefined";
-    case MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG:
-        return "label-too-long";
-    }
-    return NULL;
-}
-
-/* Record one diagnostic, at the place `start` .. `end`, with `message` and an
- * optional excerpt of the source it is about.
- *
- * NOTHING HERE MAY TOUCH `parser->oom`, and nothing here may change what the
- * parse builds. Both are the law. The three failure paths -- recording is off,
- * the entry array cannot grow, the message pool cannot grow -- all leave the
- * document exactly as it would have been, and the last two say so on the list.
- *
- * The message pool is written BEFORE the entry is committed, so a pool that
- * failed leaves no entry naming a slice of it. */
-void markdown_core_parser_diagnose(markdown_core_parser *parser, markdown_core_diagnostic_severity severity,
-                                   markdown_core_diagnostic_code code, int start_line, int start_column, int end_line,
-                                   int end_column, const char *message, const unsigned char *subject,
-                                   bufsize_t subject_length) {
-    markdown_core_diagnostics *list;
-    markdown_core_diagnostic_record *entry;
-    bufsize_t pool_start;
-
-    if (!parser || !parser->diagnostics_on || !message) {
-        return;
-    }
-    list = &parser->diagnostics;
-
-    if (list->entries_size == list->entries_alloc) {
-        bufsize_t alloc;
-        markdown_core_diagnostic_record *grown;
-        if (list->entries_alloc > (bufsize_t)(INT32_MAX / 2)) {
-            parser->oom = true;
-            return;
-        }
-        alloc = list->entries_alloc ? list->entries_alloc * 2 : 16;
-        grown = (markdown_core_diagnostic_record *)parser->mem->realloc(list->entries, (size_t)alloc * sizeof(*grown));
-        if (!grown) {
-            parser->oom = true;
-            return;
-        }
-        list->entries = grown;
-        list->entries_alloc = alloc;
-    }
-
-    pool_start = list->messages.size;
-    markdown_core_strbuf_puts(&list->messages, message);
-    if (subject && subject_length > 0) {
-        bufsize_t fit = S_diagnostic_subject_fit(subject, subject_length);
-        unsigned char excerpt[MARKDOWN_CORE_DIAGNOSTIC_SUBJECT_MAX];
-        bufsize_t i;
-        /* A CONTROL BYTE BECOMES A SPACE, and this is the wire format's
-         * requirement rather than tidiness: an excerpt is cut out of the
-         * source, a label or an attribute list may span a line ending, and one
-         * `\n` inside a message turns one diagnostic row into two. Found by the
-         * neutrality gate on `spec.txt`, which is the only reason it is a
-         * one-line fix rather than a corrupt oracle. */
-        for (i = 0; i < fit; i++) {
-            excerpt[i] = subject[i] < 0x20 || subject[i] == 0x7F ? (unsigned char)' ' : subject[i];
-        }
-        markdown_core_strbuf_puts(&list->messages, ": \"");
-        markdown_core_strbuf_put(&list->messages, excerpt, fit);
-        markdown_core_strbuf_puts(&list->messages, fit < subject_length ? "...\"" : "\"");
-    }
-    if (list->messages.oom) {
-        /* The pool is a strbuf and its failure is sticky, so the partial write
-         * above cannot be trusted -- and an entry naming a slice of it would
-         * name a message that is a prefix of what it meant to say. */
-        parser->oom = true;
-        return;
-    }
-
-    entry = &list->entries[list->entries_size++];
-    entry->start_line = (int32_t)start_line;
-    entry->start_column = (int32_t)start_column;
-    entry->end_line = (int32_t)end_line;
-    entry->end_column = (int32_t)end_column;
-    entry->message_start = pool_start;
-    entry->message_length = list->messages.size - pool_start;
-    entry->severity = (uint8_t)severity;
-    entry->code = (uint8_t)code;
-}
-
-/* The same, over the LINE IN HAND, from `from` to its last non-space byte.
- *
- * The block phase needs no projection: a line offset IS a column, and the line
- * is the one being processed. This exists because two extensions want it and a
- * second copy of the rtrim is how the two would drift. */
-void markdown_core_parser_diagnose_line(markdown_core_parser *parser, markdown_core_diagnostic_severity severity,
-                                        markdown_core_diagnostic_code code, const unsigned char *input, bufsize_t len,
-                                        bufsize_t from, const char *message, const unsigned char *subject,
-                                        bufsize_t subject_length) {
-    bufsize_t to = len;
-
-    if (!parser || !parser->diagnostics_on || !input) {
-        return;
-    }
-    while (to > from &&
-           (input[to - 1] == '\n' || input[to - 1] == '\r' || input[to - 1] == ' ' || input[to - 1] == '\t')) {
-        to--;
-    }
-    if (to <= from) {
-        return;
-    }
-    markdown_core_parser_diagnose(parser, severity, code, parser->line_number, (int)from + 1, parser->line_number,
-                                  (int)to, message, subject, subject_length);
-}
-
-void markdown_core_parser_retain_diagnostics(markdown_core_parser *parser, markdown_core_diagnostics *out) {
-    if (!parser || !out) {
-        return;
-    }
-    memset(out, 0, sizeof(*out));
-    parser->diagnostics_on = true;
-    parser->diagnostics_retain = out;
-    if (!parser->diagnostics.mem) {
-        parser->diagnostics.mem = parser->mem;
-        markdown_core_strbuf_init(parser->mem, &parser->diagnostics.messages, 0);
-    }
-}
-
-void markdown_core_diagnostics_dispose(markdown_core_diagnostics *diagnostics) {
-    if (!diagnostics || !diagnostics->mem) {
-        return;
-    }
-    markdown_core_strbuf_free(&diagnostics->messages);
-    diagnostics->mem->free(diagnostics->entries);
-    memset(diagnostics, 0, sizeof(*diagnostics));
-}
-
-void markdown_core_diagnostics_write(const markdown_core_diagnostics *diagnostics, FILE *out) {
-    bufsize_t i;
-    bufsize_t count = diagnostics ? diagnostics->entries_size : 0;
-
-    fprintf(out, "diagnostics count=%ld\n", (long)count);
-    for (i = 0; i < count; i++) {
-        const markdown_core_diagnostic_record *entry = &diagnostics->entries[i];
-        const char *name = markdown_core_diagnostic_code_string((markdown_core_diagnostic_code)entry->code);
-        fprintf(out, "diagnostic %s %s %d:%d..%d:%d %.*s\n",
-                entry->severity == (uint8_t)MARKDOWN_CORE_DIAGNOSTIC_ERROR ? "ERROR" : "WARNING",
-                name ? name : "unknown", entry->start_line, entry->start_column, entry->end_line, entry->end_column,
-                (int)entry->message_length, diagnostics->messages.ptr + entry->message_start);
-    }
 }
 
 /* THE NORMALIZED SOURCE AND ITS LINE INDEX, in the form the gate reads.
@@ -1062,9 +844,6 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
     /* The extension's one chance to read its own block as a finished thing.
      * Placed after the scope is settled and before the switch, because what a
      * close hook has to say is about the whole block. */
-    if (b->extension && b->extension->close_block_func) {
-        b->extension->close_block_func(b->extension, parser, b);
-    }
 
     markdown_core_strbuf *node_content = &b->content;
 
@@ -1102,14 +881,10 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
              * it again by testing the length, which is the fold requirement 14
              * forbids. */
             if (tmp.oom) {
-                /* THE SWEEP FOUND THIS. A buffer that could not be grown has
-                 * `size == 0` and it is NOT an absent info string -- it is an
-                 * info string the parse lost, and reporting absence here made
-                 * `fallback_runner` see a lossy document returned as a
-                 * success. `markdown_core_chunk_buf_detach` used to carry the
-                 * distinction for free by answering NULL; splitting the
-                 * length test out from it dropped that, so the length test
-                 * has to ask about the loss first. */
+                /* A buffer that could not be grown has `size == 0` and it is
+                 * NOT an absent info string -- it is an info string the parse
+                 * lost. The strict OOM sweep requires that loss to terminate
+                 * the parse. */
                 parser->oom = true;
                 markdown_core_strbuf_free(&tmp);
                 b->as.code.info = markdown_core_optional_chunk_absent();
@@ -1390,160 +1165,114 @@ static markdown_core_node *finalize_document(markdown_core_parser *parser) {
     return parser->root;
 }
 
-markdown_core_node *markdown_core_parse_file(FILE *f, int options) {
-    unsigned char buffer[4096];
-    markdown_core_parser *parser = markdown_core_parser_new(options);
-    size_t bytes;
+markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len, int options) {
+    return markdown_core_parse_document_with_mem(buffer, len, options, markdown_core_get_default_mem_allocator(), NULL,
+                                                 NULL);
+}
+
+markdown_core_node *markdown_core_parse_document_with_mem(const char *source, size_t length, int options,
+                                                          markdown_core_mem *mem, markdown_core_parser_setup_func setup,
+                                                          void *context) {
+    static const unsigned char empty[] = "";
+    markdown_core_parser *parser;
     markdown_core_node *document;
 
-    while ((bytes = fread(buffer, 1, sizeof(buffer), f)) > 0) {
-        bool eof = bytes < sizeof(buffer);
-        S_parser_feed(parser, buffer, bytes, eof);
-        if (eof) {
-            break;
-        }
+    if ((!source && length != 0) || length > (size_t)(INT32_MAX / 2)) {
+        return NULL;
+    }
+    parser = S_parser_new(options, mem);
+    if (!parser) {
+        return NULL;
+    }
+    if (setup && !setup(parser, context)) {
+        S_parser_free(parser);
+        return NULL;
     }
 
-    document = markdown_core_parser_finish(parser);
-    markdown_core_parser_free(parser);
+    S_parse_source(parser, source ? (const unsigned char *)source : empty, length);
+    document = S_finish_parse(parser);
+    S_parser_free(parser);
     return document;
 }
 
-markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len, int options) {
-    markdown_core_parser *parser = markdown_core_parser_new(options);
-    markdown_core_node *document;
-
-    S_parser_feed(parser, (const unsigned char *)buffer, len, true);
-
-    document = markdown_core_parser_finish(parser);
-    markdown_core_parser_free(parser);
-    return document;
-}
-
-void markdown_core_parser_feed(markdown_core_parser *parser, const char *buffer, size_t len) {
-    S_parser_feed(parser, (const unsigned char *)buffer, len, false);
-}
-
-void markdown_core_parser_feed_reentrant(markdown_core_parser *parser, const char *buffer, size_t len) {
-    markdown_core_strbuf saved_linebuf;
-
-    markdown_core_strbuf_init(parser->mem, &saved_linebuf, 0);
-    markdown_core_strbuf_puts(&saved_linebuf, markdown_core_strbuf_cstr(&parser->linebuf));
-    markdown_core_strbuf_clear(&parser->linebuf);
-
-    S_parser_feed(parser, (const unsigned char *)buffer, len, true);
-
-    markdown_core_strbuf_sets(&parser->linebuf, markdown_core_strbuf_cstr(&saved_linebuf));
-    markdown_core_strbuf_free(&saved_linebuf);
-}
-
-/* One reservation for the whole of this chunk's contribution to the held
- * partial line, and then a test.
- *
- * `parser->linebuf.oom` was written at six sites and read at NONE (D27). A
- * refused growth made `markdown_core_strbuf_put` a no-op, and the accumulated
- * PREFIX was then handed to `S_process_line` as though it were a whole line and
- * committed -- with `parser->oom` clear, so `finish` returned a document.
- * Measured on a 279-byte document fed in 32-byte chunks: refusing allocation 6
- * of 25 leaves 55 of 275 text bytes and reports success.
+/* One reservation for the whole contribution to a normalized line, and then
+ * a test.
  *
  * Reserving first is what makes the refusal atomic: the NUL path writes twice,
  * and a failure between the two writes leaves a line that is neither the old
  * one nor the new one. The arithmetic is done in 64 bits because `bufsize_t` is
  * int32_t and `size + add` is exactly the overflow A4 closed one level down. */
-static bool S_linebuf_reserve(markdown_core_parser *parser, int64_t add) {
-    int64_t target = (int64_t)parser->linebuf.size + add;
+static bool S_line_scratch_reserve(markdown_core_parser *parser, int64_t add) {
+    int64_t target = (int64_t)parser->line_scratch.size + add;
 
     if (add < 0 || target > (int64_t)(INT32_MAX / 2)) {
-        parser->linebuf.oom = 1;
+        parser->line_scratch.oom = 1;
     } else if (add > 0) {
-        markdown_core_strbuf_grow(&parser->linebuf, (bufsize_t)target);
+        markdown_core_strbuf_grow(&parser->line_scratch, (bufsize_t)target);
     }
-    if (parser->linebuf.oom) {
+    if (parser->line_scratch.oom) {
         parser->oom = true;
         return false;
     }
     return true;
 }
 
-static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buffer, size_t len, bool eof) {
-    const unsigned char *end = buffer + len;
+static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length) {
+    const unsigned char *cursor = source;
+    const unsigned char *end = source + length;
     static const uint8_t repl[] = {239, 191, 189};
 
-    if (len > UINT_MAX - parser->total_size) {
-        parser->total_size = UINT_MAX;
-    } else {
-        parser->total_size += len;
-    }
-
-    if (parser->last_buffer_ended_with_cr && *buffer == '\n') {
-        // skip NL if last buffer ended with CR ; see #117
-        buffer++;
-    }
-    parser->last_buffer_ended_with_cr = false;
-    while (buffer < end) {
+    while (cursor < end && !parser->oom) {
         const unsigned char *eol;
-        bufsize_t chunk_len;
-        bool process = false;
-        for (eol = buffer; eol < end; ++eol) {
-            if (S_is_line_end_char(*eol)) {
-                process = true;
-                break;
-            }
-            if (*eol == '\0' && eol < end) {
-                break;
-            }
-        }
-        if (eol >= end && eof) {
-            process = true;
-        }
+        bufsize_t segment_length;
+        bool line_complete;
 
-        chunk_len = (bufsize_t)(eol - buffer);
-        if (process) {
-            if (parser->linebuf.size > 0) {
-                if (!S_linebuf_reserve(parser, chunk_len)) {
+        for (eol = cursor; eol < end; ++eol) {
+            if (S_is_line_end_char(*eol) || *eol == '\0') {
+                break;
+            }
+        }
+        line_complete = eol == end || S_is_line_end_char(*eol);
+        segment_length = (bufsize_t)(eol - cursor);
+        if (line_complete) {
+            if (parser->line_scratch.size > 0) {
+                if (!S_line_scratch_reserve(parser, segment_length)) {
                     return;
                 }
-                markdown_core_strbuf_put(&parser->linebuf, buffer, chunk_len);
-                S_process_line(parser, parser->linebuf.ptr, parser->linebuf.size);
-                markdown_core_strbuf_clear(&parser->linebuf);
+                markdown_core_strbuf_put(&parser->line_scratch, cursor, segment_length);
+                S_process_line(parser, parser->line_scratch.ptr, parser->line_scratch.size);
+                markdown_core_strbuf_clear(&parser->line_scratch);
             } else {
-                S_process_line(parser, buffer, chunk_len);
+                S_process_line(parser, cursor, segment_length);
             }
         } else {
-            if (eol < end && *eol == '\0') {
-                // omit NULL byte, add replacement character
-                if (!S_linebuf_reserve(parser, (int64_t)chunk_len + 3)) {
-                    return;
-                }
-                markdown_core_strbuf_put(&parser->linebuf, buffer, chunk_len);
-                markdown_core_strbuf_put(&parser->linebuf, repl, 3);
-            } else {
-                if (!S_linebuf_reserve(parser, chunk_len)) {
-                    return;
-                }
-                markdown_core_strbuf_put(&parser->linebuf, buffer, chunk_len);
+            /* Omit the NUL byte and put U+FFFD in its place. */
+            if (!S_line_scratch_reserve(parser, (int64_t)segment_length + 3)) {
+                return;
             }
+            markdown_core_strbuf_put(&parser->line_scratch, cursor, segment_length);
+            markdown_core_strbuf_put(&parser->line_scratch, repl, 3);
         }
 
-        buffer += chunk_len;
-        if (buffer < end) {
-            if (*buffer == '\0') {
-                // skip over NULL
-                buffer++;
+        cursor += segment_length;
+        if (cursor < end) {
+            if (*cursor == '\0') {
+                cursor++;
             } else {
-                // skip over line ending characters
-                if (*buffer == '\r') {
-                    buffer++;
-                    if (buffer == end) {
-                        parser->last_buffer_ended_with_cr = true;
-                    }
+                if (*cursor == '\r') {
+                    cursor++;
                 }
-                if (buffer < end && *buffer == '\n') {
-                    buffer++;
+                if (cursor < end && *cursor == '\n') {
+                    cursor++;
                 }
             }
         }
+    }
+
+    /* A final NUL has no line terminator to trigger the completed line. */
+    if (!parser->oom && parser->line_scratch.size > 0) {
+        S_process_line(parser, parser->line_scratch.ptr, parser->line_scratch.size);
+        markdown_core_strbuf_clear(&parser->line_scratch);
     }
 }
 
@@ -2291,7 +2020,6 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     bool all_matched = true;
     markdown_core_node *container;
     markdown_core_chunk input;
-    markdown_core_node *current;
 
     if (parser->oom || parser->root == NULL) {
         return;
@@ -2318,7 +2046,7 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     }
 
     /* The line joins the normalized source HERE, before anything reads it, so
-     * the source is complete for lines 1..N the moment line N has been fed --
+     * the source is complete for lines 1..N the moment line N is processed --
      * which is requirement 11a's L4 and the reason nothing about the record
      * set may be built at close. */
     if (!S_record_line_start(parser, parser->source.size)) {
@@ -2358,18 +2086,13 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
 
     container = last_matched_container;
 
-    current = parser->current;
-
     open_new_blocks(parser, &container, &input, all_matched);
 
     if (container == NULL || parser->oom) {
         goto finished;
     }
 
-    /* parser->current might have changed if feed_reentrant was called */
-    if (current == parser->current) {
-        add_text_to_container(parser, container, last_matched_container, &input);
-    }
+    add_text_to_container(parser, container, last_matched_container, &input);
 
 finished:
     parser->last_line_length = input.len;
@@ -2383,33 +2106,32 @@ finished:
     markdown_core_strbuf_clear(&parser->curline);
 }
 
-markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
+static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     markdown_core_node *res;
     markdown_core_llist *extensions;
 
-    /* Parser was already finished once */
-    if (parser->root == NULL) {
+    if (parser->root == NULL || parser->oom) {
         return NULL;
-    }
-
-    /* The held partial line is the last thing the stream said. If its buffer
-     * lost bytes, what is here is a PREFIX, and processing it would commit a
-     * line the author did not write. */
-    if (parser->linebuf.oom) {
-        parser->oom = true;
-    } else if (parser->linebuf.size) {
-        S_process_line(parser, parser->linebuf.ptr, parser->linebuf.size);
-        markdown_core_strbuf_clear(&parser->linebuf);
     }
 
     finalize_document(parser);
 
+    /* Map failures are sticky on the maps because reference resolution owns
+     * those allocations. Pull them into the transaction flag at every phase
+     * boundary so no later transform runs on a failed parse. */
+    if ((parser->refmap && parser->refmap->oom) || (parser->footnote_defs && parser->footnote_defs->oom)) {
+        parser->oom = true;
+    }
+    if (parser->oom) {
+        goto failed;
+    }
+
     if (!markdown_core_consolidate_text_nodes_with_parser(parser, parser->root)) {
         parser->oom = true;
     }
-
-    markdown_core_strbuf_free(&parser->curline);
-    markdown_core_strbuf_free(&parser->linebuf);
+    if (parser->oom) {
+        goto failed;
+    }
 
 #if MARKDOWN_CORE_DEBUG_NODES
     if (markdown_core_node_check(parser->root, stderr)) {
@@ -2417,7 +2139,7 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
     }
 #endif
 
-    for (extensions = parser->syntax_extensions; extensions; extensions = extensions->next) {
+    for (extensions = parser->syntax_extensions; extensions && !parser->oom; extensions = extensions->next) {
         const markdown_core_syntax_extension *ext = (const markdown_core_syntax_extension *)extensions->data;
         if (ext->postprocess_func) {
             markdown_core_node *processed = ext->postprocess_func(ext, parser, parser->root);
@@ -2426,6 +2148,9 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
             }
         }
     }
+    if (parser->oom) {
+        goto failed;
+    }
 
     if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
         if (!S_strip_html_comments(parser->root)) {
@@ -2433,35 +2158,16 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
         }
     }
 
-    /* All allocation-loss routes converge here: block/inline structures set
-     * parser->oom directly, definition maps carry their own sticky flag. */
-    if (parser->refmap && parser->refmap->oom) {
-        parser->oom = true;
-    }
-    /* The definition set is the second such map and it converges here for the
-     * same reason: a normalization it could not allocate answers "this label is
-     * not defined", which degrades a footnote call to text and looks exactly
-     * like a document that never had one. The allocation-failure sweep caught
-     * it -- `quote with footnote[^fn] and ` came back as prose with the parse
-     * reporting success. */
-    if (parser->footnote_defs && parser->footnote_defs->oom) {
-        parser->oom = true;
-    }
     if (parser->oom) {
-        markdown_core_node_free(parser->root);
-        parser->root = NULL;
-        markdown_core_parser_reset(parser);
-        return NULL;
+        goto failed;
     }
 
     if (parser->concrete_out) {
         S_write_concrete(parser, parser->concrete_out);
     }
 
-    /* REQUIREMENT 12: the document keeps the concrete view. Moved rather than
-     * copied -- the parser is about to reset and would free all three -- and
-     * moved HERE, after every rewrite and before the reset, which is the only
-     * moment at which the view is both complete and still owned. */
+    /* The document keeps the normalized source and line index. They are moved,
+     * rather than copied, after every rewrite while the parser still owns them. */
     if (parser->concrete_retain) {
         markdown_core_concrete *out = parser->concrete_retain;
         out->mem = parser->mem;
@@ -2474,23 +2180,14 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
         parser->line_starts_alloc = 0;
     }
 
-    /* REQUIREMENT 13: the document keeps the diagnostic list, moved at the
-     * same moment and for the same reason as the concrete view -- and, like
-     * it, only on the success path. Everything above this line has already
-     * decided that there IS a document; a parse failure falls out at the `oom`
-     * test and leaves the caller's list empty, which is the requirement's
-     * converse said in code. */
-    if (parser->diagnostics_retain) {
-        *parser->diagnostics_retain = parser->diagnostics;
-        memset(&parser->diagnostics, 0, sizeof(parser->diagnostics));
-    }
-
     res = parser->root;
     parser->root = NULL;
-
-    markdown_core_parser_reset(parser);
-
     return res;
+
+failed:
+    markdown_core_node_free(parser->root);
+    parser->root = NULL;
+    return NULL;
 }
 
 int markdown_core_parser_get_line_number(markdown_core_parser *parser) { return parser->line_number; }

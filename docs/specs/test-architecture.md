@@ -1,4 +1,4 @@
-# Markdown Core 测试架构契约(Phase 7 execution-platform revision)
+# Markdown Core 测试与流水线架构契约
 
 本文档冻结全仓统一测试架构。后续 phase(尤其 Phase 8–13)必须在该契约内实现;
 修改本契约需要先评审本文档,再改实现。
@@ -12,18 +12,21 @@
 | --- | --- |
 | `pnpm test:<platform>` | 直接调用该 execution platform 的具名原生 correctness target |
 | `pnpm conformance:<platform>` | 直接调用该 execution platform 的具名原生 conformance target |
-| `pnpm benchmark:<platform>` | 直接调用该 execution platform 的具名原生 benchmark target；没有可信测量环境的平台不暴露空 target |
+| `pnpm benchmark:c-host` | 显式运行隔离的 C 本地性能测量工具；只输出观测值，不给出 correctness/回归结论 |
 
 约束:
 
 - 不提供跨 incompatible hosts 的无 platform aggregate。Required CI 直接列举并执行
   各 family 的 platform tasks；`verify` 只聚合可在单一 checkout 完成的静态检查。
 - 任何 `test:*` 必须运行该平台当前声明支持的完整 correctness suites;任何
-  `conformance:*` 必须运行该平台完整 contract checks；任何 `benchmark:*` 必须运行
-  完整 benchmark workloads。三者都不得退化为 build/lint、不得
-  静默 skip、不得用空/no-op task 为尚未实现的 target 假装通过。因此
+  `conformance:*` 必须运行该平台完整 contract checks。两者都不得退化为
+  build/lint、不得静默 skip、不得用空/no-op task 为尚未实现的 target 假装通过。因此
   platform target 必须在 product 引入的同一阶段接入。
-- pnpm 没有中间 routing layer 或 language aggregation，只拥有三个 task family 到 execution
+- `benchmark:c-host` 是 developer 实验入口，不进入 required CI、release 或 test
+  artifact。独立的 PR benchmark workflow 可以从同一个 C runner 采集固定 workload，
+  但不得以绝对时间、跨 runner 差值或少量样本比率改变退出状态。如果观测暴露风险，
+  必须把风险转化为可复现的结构、资源上界、操作计数或语义 invariant 后才可成为 gate。
+- pnpm 没有中间 routing layer 或 language aggregation，只拥有 task family 到 execution
   platform 的一层映射。平台标识包含语言，例如 `swift-macos`、`kotlin-jvm`、
   `es-browser`。禁止追加 suite、`:full`、root suite matrix 或通用 family router；suite
   discovery/filter 属于原生 target。不存在公开 `stress` task。
@@ -68,11 +71,12 @@ runner 重建第二份:
 | 平台 | 事实来源 |
 | --- | --- |
 | C | CTest(唯一 CMake graph,presets + labels) |
-| Swift | SwiftPM `MarkdownCoreTests` 与 `MarkdownCoreConformanceTests` test targets、`MarkdownCoreBenchmarks` executable；iOS 由 xcodebuild 按 target 选择 |
+| Swift | SwiftPM `MarkdownCoreTests` 与 `MarkdownCoreConformanceTests` test targets；iOS 由 xcodebuild 按 target 选择 |
 | Kotlin | Gradle/KMP 具名 correctness/conformance tasks，例如 `jvmTest`/`jvmConformanceTest`、`macosArm64Test`/`macosArm64ConformanceTest`；Android instrumentation 使用原生 class/notClass selection |
-| ES | package-native Node/browser correctness scripts、独立 conformance script 与 benchmark script |
+| ES | package-native Node/browser correctness scripts 与独立 conformance script |
 
-`make test` 委托 CTest correctness preset,`make bench` 委托 benchmark preset;
+`make test` 委托 CTest correctness preset；`make bench`/`pnpm benchmark:c-host`
+显式配置独立的 `build/benchmark` tree，普通 test build 不编译 benchmark runner。
 Makefile 不实现第二套测试或 benchmark runner。sanitizer 任务
 (`make asan-test`/`ubsan-test`/`tsan-test`、CI asan/ubsan/tsan jobs)复用同一
 graph 的 `asan`/`ubsan`/`tsan` presets。TSan preset(Phase 10)在支持的平台上
@@ -90,11 +94,10 @@ graph 的 `asan`/`ubsan`/`tsan` presets。TSan preset(Phase 10)在支持的平�
 nullability、scope 和 binding mapping contract。它不是传统 correctness suite，
 不得由 `test` 隐式发现；它仍是 required release gate，并由原生 runner 独立选择。
 
-`stress` 只描述输入压力，不是公开 task family 或 suite taxonomy。同一种 large document、
-deep nesting 或 repeated parse/release shape 必须按目的注册两份独立执行：
-correctness 下的 `robustness` cases 断言结果、错误与生命周期；benchmark 下的同名
-workloads 负责 warmup/repeat、计时、吞吐量、relative scaling 与性能基线。两者可以
-复用确定性 input generator，但不得复用测试注册、断言或执行入口。
+`stress` 只描述输入压力，不是公开 task family 或 suite taxonomy。Large document、
+deep nesting、repeated parse/release 与 adversarial shape 必须在 correctness 中断言
+结果、错误、生命周期或可计算资源上界。相似输入可以被本地 benchmark 复用，但测量
+结果不能替代这些断言，也不能建立另一份 required 注册表。
 
 C 侧 CTest label taxonomy(每个测试恰有一个 label):
 
@@ -106,11 +109,14 @@ C 侧 CTest label taxonomy(每个测试恰有一个 label):
 | `consumer` | C++ consumer 编译/链接/运行(`consumer_facade_cplusplus`) |
 | `spec` | CommonMark spec、smart punctuation、entities(全部为 canonical AST dump 断言) |
 | `extensions` | GFM/formula/directive extension specs 与 option gates |
-| `regression` | 固定回归语料与 registry 生命周期(`regression_commonmark`、`regression_registry_lifecycle`) |
-| `pathological` | 逐 case 注册的对抗输入与 directive 复杂度(`pathological_*`) |
+| `regression` | 固定回归语料、实例生命周期与严格 OOM 语义(`regression_commonmark`、`regression_instance_lifecycle`、`regression_strict_oom`) |
+| `pathological` | 逐 case 注册的对抗输入、固定资源上界与语义断言(`pathological_*`) |
 | `fuzz` | 确定性 fuzz smoke(`fuzz_smoke`) |
 | `packaging` | corpus/workspace 政策 guard(`packaging_corpus_guard`) |
-| `benchmark` | 独立调度的性能 workloads(`benchmark_*`) |
+
+`benchmark` label 只存在于显式 `MARKDOWN_CORE_BENCHMARKS=ON` 的 CMake graph；本地
+入口与独立 PR benchmark 可以创建该 graph，默认、sanitizer 与 required-CI artifact
+graph 中不存在该 label 或 runner。
 
 Swift correctness suites:`api`、`errors`、`unicode`、`ownership`、
 `robustness`、`consumer`；`ConformanceSuite` 位于独立
@@ -148,17 +154,19 @@ browser target 在真实 headless Chrome/Chromium 中通过 HTTP ESM/WASM 加载
 | 列出测试 | — | `ctest --test-dir build/cmake -N` | `swift test list` | `scripts/gradle.sh :packages:kotlin-markdown-core:tasks --group verification` | `node packages/es-markdown-core/scripts/run-tests.mjs --list` |
 | 按 suite/label 运行 | 不提供 pnpm task | `ctest --preset correctness -L spec` 等 | `swift test --filter` / `xcodebuild -only-testing` | 对应 platform test task 加 `--tests` 或 instrumentation runner arguments | package runner `--target <target> --suite <suite>` |
 | 按名称运行 | — | `ctest --preset correctness -R pathological_backticks` | `swift test --filter <test>` | `jvmTest --tests <class.method>` | Node native `--test-name-pattern` |
-| benchmark | `benchmark:<platform>` | `benchmark:c-host` | `benchmark:swift-macos` | `benchmark:kotlin-jvm` | `benchmark:es-node` |
+| 本地性能测量 | `benchmark:c-host` | `benchmark:c-host` | — | — | — |
 
-CI 必须分别调用 correctness 与 conformance 平台入口；确需按功能/成本诊断分片时直接使用
+Required CI 必须分别调用 correctness 与 conformance 平台入口，且不得调用 performance
+measurement 入口；确需按功能/成本诊断分片时直接使用
 原生 label/filter 机制(如 `-L spec`、`-L pathological`、`--tests`)，不得为
 这些 filters 新建 pnpm suite task 或另建 case 清单。
 
-C 数据驱动 runner 自身提供第二级 discovery:`spec_runner --list/--example/--section`、
-`pathological_runner --list/--case`、`complexity_runner --list/--case`、
-`bench_runner --list/--workload`、`concurrency_runner --case`(三个固定 case:
+C 数据驱动 test runner 自身提供第二级 discovery:`spec_runner --list/--example/--section`、
+`pathological_runner --list/--case`、`concurrency_runner --case`(三个固定 case:
 `first_parse`/`stress`/`lifecycle`,逐一注册为 CTest 测试)。CMake 中注册的
 case 清单由 `scripts/audit-test-topology.sh` 与 runner `--list` 输出强制一致。
+Opt-in `bench_runner --list/--workload` 只描述本地与独立 PR 测量，不参与 test topology
+audit。
 
 IDE 契约:仓库提交 `CMakePresets.json`(configure/build/test presets),
 VS Code/CLion 直接消费;Xcode 通过 SwiftPM 发现 Swift Testing suites;
@@ -200,48 +208,69 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
   规范化过程无从隐藏 drift。
 - 文本产物使用 LF 与单一 final newline。
 - Timeout 由 runner 声明层持有:CTest `TIMEOUT` 属性(pathological 30s、
-  spec/extension 120–240s、complexity 120s、fuzz 240s、benchmark 600s);Swift
+  spec/extension 120–240s、fuzz 240s);Swift
   由 Swift Testing traits 持有。
 - Expected failure 必须显式建模(当前无);禁止静默 skip;缺少必需工具时在
   configure 阶段失败(`MARKDOWN_CORE_TESTS=ON` 而无库目标时 FATAL_ERROR),不
   降级跳过。
 - 临时文件只进入 build 目录;进程清理由 runner 负责(in-process 转换,无子进
   程残留;CLI 测试通过管道等待退出)。
-- 串行/资源锁:benchmark 与 complexity 测试标记 `RUN_SERIAL`;benchmark preset
-  以单 job 执行。
-- Performance 测量固定 warmup/repeat(complexity:短样本 median-of-3、长样本
-  单次完整 parse;benchmark:warmup 1 + repeats 5 取中位数)。complexity 以
-  4 KiB → 128 MiB endpoint 的每字节成本断言渐近趋势；benchmark 使用 doubling
-  相对比率；均不使用绝对 wall-clock 阈值。
-- 诊断输出确定性:不输出指针、环境路径、locale 或时间戳(benchmark 的时间数
-  值除外,其格式固定)。
+- Build-once/run-elsewhere producer 必须从 CI 专属的空 staging/build tree 生成制品；
+  不得打包共享 `.build` 或未清理的 Gradle/CMake tree，因为已删除 target 的陈旧二进制
+  也会因此进入制品。Swift 使用 `build/ci-swift-tests` scratch paths，Kotlin 清空
+  `ci-test-artifact` staging root，C 在配置前重建对应 CTest tree。
+- Performance measurement 可固定 warmup/repeat 并输出中位数或 doubling ratio。独立 PR
+  comment 可以显示 exact-base 百分比，但只能用于提出假设，不得提供警告阈值或
+  pass/fail。复杂度门禁必须直接验证通用 invariant；当前 reference expansion 以 AST
+  payload/source byte ratio 断言，其余 adversarial cases 断言固定 AST
+  shape/content/lifecycle 并由宽松 timeout 防止失控执行。
+- 测试诊断输出确定性:不输出指针、环境路径、locale、时间戳或 wall-clock 数值。
 - 各平台 helper 使用本平台原生实现(C:`packages/markdown-core/tests/support/`;Swift:test target 内
   helper),不引入跨语言 test bridge、新 test framework 或新 package 依赖。
 
-## 7. Benchmark 与 corpus 政策
+## 7. 本地与 PR 性能观测、corpus 政策
 
-- Benchmark 是正常但独立调度的 CTest suite(label `benchmark`),覆盖
+- Benchmark 是显式 C 工具，不是测试层、required gate 或发布流水线。它使用独立
+  benchmark preset 与 build tree；本地入口覆盖
   representative documents、large input(采样块重复至历史 Pro Git 语料同一量
   级)、deep nesting、extensions 与 adversarial size-doubling cases。
+- Swift、Kotlin 与 ES 不保留原先为 PR metrics collector 服务的少量 wall-clock/RSS
+  scripts；它们既没有受控环境，也没有趋势存储，并且 Swift executable target 会被
+  `swift test` 无条件编译，直接污染测试成本与 artifact graph。
 - 输入全部离线且确定:tracked samples(`packages/markdown-core/benchmarks/samples/`)
   或进程内确定性生成;运行时禁止 clone/download,禁止把生成输入写入源码树。
-- CI 通过独立 workflow(schedule + 手动触发)调度 benchmark,不进入 PR/push
-  correctness 检查。
+- 独立 `PR Benchmark` workflow 只运行一个版本化 C parser workload 和 shared-library
+  size。它先按 exact base SHA 查找 main 发布或同一 PR 先前发布的 baseline；不存在时
+  checkout exact base、现场构建并以 `pr-benchmark-baseline-<SHA>` 发布。comparison
+  artifact 同时携带经过 schema 校验的 base/head 数值，不依赖普通 main CI 是否生成过
+  性能 artifact。
+- PR producer 只有 read 权限；privileged `workflow_run` commenter 不执行 PR 中的代码，
+  只读取名称、数量、大小和字段均受限的 JSON。评论没有 `boundary` 维度，因为固定
+  workload 只测量一个 parser operation。hosted-runner timing/RSS 只作为方向性观察，
+  binary size 只在工具链输入相同时可确定比较，任何一项都不进入 merge gate。
+- 若将来需要性能门禁，必须先提供受控且可重复的测量环境、统计设计、版本化 workload
+  与明确 false-positive budget，并通过架构评审；hosted runner 的跨 run 对比不满足要求。
 - 外部 corpus 只能按 `packages/markdown-core/tests/corpora/README.md` 的
   manifest/license/hash 政策一次性导入;
-  `packaging_corpus_guard`/`benchmark_corpus_guard` CTest tests 与
-  `scripts/audit-test-topology.sh` 强制该政策。
+  correctness 中的 `packaging_corpus_guard` 与 `scripts/audit-test-topology.sh` 强制该政策；
+  opt-in C benchmark graph 也复用同一 corpus guard。
 - 长时间 fuzz campaign 是显式非默认任务(`make afl`、`make libFuzzer`),复用
   `packages/markdown-core/tests/core/` 下的 harness 与 corpus;确定性 fuzz
   smoke(parse/traverse/dump/free)属于 correctness(label `fuzz`)。
 
 ## 8. 审计
 
-`scripts/audit-test-topology.sh`(`pnpm audit:tests`,verify 链与 CI 均执行)
-只验证会改变质量结论的事实：四个平台都接入共享 canonical contract，测试与 benchmark
-不在运行时获取可变网络输入，外部 corpus 具备 manifest/license/hash，CTest 的 required
-labels 非空且没有 disabled test，correctness/conformance/benchmark selection 互斥，runner
-discovery 与 CTest registration 一致，Swift suite discovery 非空。
+`scripts/audit-test-topology.sh` 的无参数形式(`pnpm audit:tests`、verify 链与 repository
+health-check)只做无编译的仓库契约审计；C test-artifact producer 在完成既有 build 后把
+CTest tree 路径传给同一脚本，追加动态 inventory/discovery 交叉检查。该分层禁止 health-check
+为“审计”预先重复构建 C 或 Swift。
+
+审计只验证会改变质量结论的事实：四个平台都接入共享 canonical contract，测试与性能测量
+不在运行时获取可变网络输入，外部 corpus 具备 manifest/license/hash，默认 CTest 的
+required labels 非空且没有 disabled test、没有 performance label，correctness/conformance
+selection 互斥，test runner discovery 与 CTest registration 一致，Swift suite discovery
+非空。`scripts/audit-ci-policy.sh` 另行强制 required CI 不含 benchmark job、测试制品不携带
+benchmark payload，并冻结独立 PR benchmark 的 exact-SHA fallback、artifact 和权限边界。
 
 源码目录、文件合并方式、pnpm script 的具体实现文本、router/alias 命名、Android managed
 device 的内部编排方式，以及维护时选择的 GitHub Action major 都不是 CI 合同。这些内容可在

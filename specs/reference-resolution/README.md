@@ -1,38 +1,23 @@
-# Reference resolution
+# Reference-resolution invariants
 
-`ledger.json` records D9: **whether a reference resolves depends on how many
-resolved before it.** `scripts/audit-reference-order-independence.mjs` enforces
-it, and the enforcement is unusual — **the gate is registered RED and fails if a
-row stops reproducing.**
+Reference resolution is order-independent and output-bounded.
+`scripts/audit-reference-order-independence.mjs` enforces the first property;
+`pathological_reference_expansion_bound` enforces the second without timing.
 
-That is the mdast backlog's shape, for the same reason. D9 has no local fix, and
-a gate that only caught the defect appearing would be satisfied for the wrong
-reason the day someone deletes the budget: the rows would clear, every other
-suite would stay green, and the engine would be quietly producing 134 MB of
-output from 656 KB of input.
+A `ReferenceDefinition` owns its destination and title once. `LinkReference`
+and `ImageReference` identify that definition by association and do not copy
+its resource payload. The model therefore needs neither a resolution budget
+that changes semantics nor output growth proportional to destination length
+times reference count.
 
-## The trade, measured
+`ledger.json` is intentionally empty and fail-closed. A row appearing means
+that identical references resolved differently because of their order or
+because unrelated labels consumed shared work.
 
-| | order-independent | output bounded |
-|---|---|---|
-| today, with the budget | **no** — 100 of 200 identical references resolve | yes — 0.999x |
-| budget deleted | yes | **no** — 204.678x |
-| Step 9a's model | yes | yes |
-
-The budget exists because resolving a reference **copies** the definition's
-destination and title into the node. Step 9a lets a reference *name* its
-definition instead, which removes the reason for a budget rather than the
-budget. Nothing smaller reaches both properties, which is why D9 is the one
-defect in §2 that Stage 0a pins rather than fixes.
-
-## The two gates
-
-```
-node scripts/audit-reference-order-independence.mjs   # RED, 2 rows, must stay red
-ctest --preset correctness -R pathological_complexity_reference_expansion_bound   # GREEN, must stay green
+```sh
+node scripts/audit-reference-order-independence.mjs
+ctest --preset correctness -R pathological_reference_expansion_bound
 ```
 
-Neither may be satisfied by giving up the other. The statement lives beside the
-code as well, at `packages/markdown-core/core/map.c`, so a reader who arrives at
-the three-line guard without this file finds out why it is there before deleting
-it.
+Both gates must stay green; satisfying one by giving up the other is a model
+regression.

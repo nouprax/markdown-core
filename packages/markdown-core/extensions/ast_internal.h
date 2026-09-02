@@ -15,15 +15,18 @@ extern "C" {
 #endif
 
 struct markdown_core_document {
+    markdown_core_mem *mem;
     markdown_core_node *root;
-    /* Requirement 12's other view. Moved out of the parser at `finish` and
-     * released with the tree it names. */
+    /* The normalized source and line index, released with the tree they name. */
     markdown_core_concrete concrete;
-    /* Requirement 13's list. Moved out of the parser at the same moment and on
-     * the same terms, and released with the document. Its messages borrow from
-     * its own pool, which is why it outlives nothing. */
-    markdown_core_diagnostics diagnostics;
 };
+
+/* Testable implementation of the public facade transaction. The public entry
+ * supplies the default allocator; allocation-failure tests supply an injected
+ * allocator and assert the same consumer-visible error contract. */
+markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *source, size_t length,
+                                                              const markdown_core_parse_options *requested_options,
+                                                              markdown_core_mem *mem, markdown_core_error **error);
 
 #ifdef __cplusplus
 }

@@ -2,25 +2,19 @@
 /**
  * Source-list audit.
  *
- * The C library's file list is written out by hand FIVE times, in five
- * syntaxes, because five build systems consume it and none of them can read
- * another's. Nothing has ever checked that the five agree, and on
- * 2026-08-10 three of them did not: the ES build still compiled four files
- * that had been deleted (`session.c`, `adopt.c`, `incremental.c`,
- * `lookups.c`) and was missing three that exist, so the ES package shipped
- * without `concrete.c` in it at all; the Android build was missing
- * `concrete.c`; and both SwiftPM manifests listed the same four ghosts.
- *
- * Each list rotted differently, which is the tell: they are not five copies
- * of one fact, they are five facts that happen to have been equal once.
+ * The C library's file list is written out by hand in several build-system
+ * syntaxes because none of those build systems consumes another's manifest.
+ * This audit makes the CMake graph authoritative and rejects missing, extra,
+ * or nonexistent sources in every follower. In particular, a retired parser
+ * subsystem cannot survive in only one binding build.
  *
  * The CMake graph is the authority because it is the one that is built and
  * tested on every commit. The others follow it. Order is not checked —
  * a compiler does not care — but membership is, and so is existence: a list
  * naming a file that is not there is how all three of these broke.
  *
- * FOUR of the five are here today. The fifth is registered as absent with an
- * owner and printed on every run; see `REGISTERED_ABSENT` below.
+ * Four lists are present. The optional release-only SwiftPM manifest is
+ * registered as absent and printed on every run.
  *
  *   node scripts/audit-source-lists.mjs [--fix]
  */
@@ -68,22 +62,13 @@ function names(relative, label, pattern) {
 /**
  * A follower this repository does not have yet.
  *
- * `packages/swift-markdown-core/Package.release.swift` is the trimmed SwiftPM
- * manifest the source archive is published from. It postdates `580d10c` and
- * arrived here with Step 0's wholesale `scripts/` restore, not with the
- * package — so this audit named a file the tree has never contained and DIED
- * on it, `ENOENT` out of `read()`, before comparing anything. A gate that
- * throws is a gate nobody can read, and it blocked Step 3a, whose whole
- * hazard is deleting `core/arena.c` from some of these lists and not others.
- *
- * An absence is registered, not tolerated: it must be named here with its
- * owner, it is printed on every run, and the pass line reports how many lists
- * were actually compared, so this can never read as "all five agree".
+ * An absence is registered, not silently tolerated: it is printed on every
+ * run and the pass line reports how many lists were actually compared.
  */
 const REGISTERED_ABSENT = {
     "packages/swift-markdown-core/Package.release.swift": {
-        why: "the release manifest postdates the 1.0.3 baseline; the tree has no Swift release archive yet",
-        owner: "15C — release plumbing pointing at live paths (§4.1)"
+        why: "the repository currently publishes from Package.swift and has no trimmed release manifest",
+        owner: "Swift release packaging"
     }
 };
 

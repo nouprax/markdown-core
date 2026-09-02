@@ -349,7 +349,7 @@ static void check_api(void) {
     document = markdown_core_document_parse(NULL, 1, NULL, &error);
     check(document == NULL && error != NULL, "invalid input produces an explicit error");
     check(markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "error exposes a stable code");
-    check(markdown_core_error_get_message(error).length != 0, "error exposes a UTF-8 diagnostic view");
+    check(markdown_core_error_get_message(error).length != 0, "error exposes a UTF-8 message");
     markdown_core_error_free(error);
     markdown_core_error_free(NULL);
     markdown_core_document_free(NULL);
@@ -365,109 +365,6 @@ static void check_api(void) {
     check_option_gate(GATE_STRIP_HTML_COMMENTS, "before <!-- kept --> after\n", "literal=\"before  after\"");
 }
 
-/* REQUIREMENT 13 through the PUBLIC surface, which is the only place the law's
- * two halves meet: a document that carries a diagnostic list, and an error that
- * carries no scope because there is no document at all.
- *
- * The `label-too-long` code is exercised HERE and not in a fixture, and the
- * reason is the label: the cap is 1000 bytes, so a golden that showed it would
- * carry an eleven-hundred-character line that no reviewer can read and every
- * position oracle would then measure. Built in C it is three lines. */
-static void check_diagnostics(void) {
-    static const char *const SOURCE = ":note[unclosed label\n"
-                                      "\n"
-                                      ":other{=value}\n"
-                                      "\n"
-                                      "see [text][undefined] here\n"
-                                      "\n"
-                                      "and [^undefined] too\n";
-    markdown_core_document *document;
-    markdown_core_error *error = NULL;
-    markdown_core_diagnostic diagnostic;
-    size_t count;
-    size_t i;
-    int severities[3] = {0, 0, 0};
-
-    document = markdown_core_document_parse((const uint8_t *)SOURCE, strlen(SOURCE), NULL, &error);
-    check(document != NULL && error == NULL, "the diagnostics corpus parses");
-    if (!document) {
-        markdown_core_error_free(error);
-        return;
-    }
-
-    count = markdown_core_document_diagnostic_count(document);
-    check(count == 4, "every degradation in the corpus is reported exactly once");
-
-    for (i = 0; i < count; i++) {
-        check(markdown_core_document_diagnostic_at(document, i, &diagnostic), "every index in range answers");
-        /* THE SCOPE IS RESOLVABLE WITHOUT A NODE HANDLE, which is what
-         * requirement 13 depends on 12 for: the line index turns the place
-         * back into an offset in the source the concrete view publishes. */
-        {
-            size_t offset = 0;
-            check(markdown_core_document_line_start(document, (size_t)diagnostic.scope.start.line, &offset),
-                  "a diagnostic's line is a line of the source");
-            check(offset + (size_t)diagnostic.scope.start.column - 1 < markdown_core_document_source(document).length,
-                  "a diagnostic's start is a byte of the source");
-        }
-        check(diagnostic.message.length > 0 && diagnostic.message.data != NULL, "a diagnostic carries a message");
-        check(markdown_core_diagnostic_code_name(diagnostic.code) != NULL, "every code has a name");
-        if (diagnostic.severity >= MARKDOWN_CORE_DIAGNOSTIC_WARNING &&
-            diagnostic.severity <= MARKDOWN_CORE_DIAGNOSTIC_ERROR) {
-            severities[diagnostic.severity]++;
-        }
-    }
-    check(severities[MARKDOWN_CORE_DIAGNOSTIC_WARNING] == 2 && severities[MARKDOWN_CORE_DIAGNOSTIC_ERROR] == 2,
-          "both severities are reachable, and each says what its rule says");
-    check(!markdown_core_document_diagnostic_at(document, count, &diagnostic), "an index past the end is refused");
-    check(!markdown_core_document_diagnostic_at(document, 0, NULL), "a null out-parameter is refused");
-    markdown_core_document_free(document);
-
-    /* THE ENGINE'S OWN CAP, and the code that separates it from "no such
-     * definition": the author's label is well formed and this library refused
-     * to look it up. */
-    {
-        char *source = (char *)malloc(1200);
-        markdown_core_document *capped;
-        check(source != NULL, "the long-label buffer allocates");
-        if (source) {
-            memcpy(source, "see [", 5);
-            memset(source + 5, 'a', 1100);
-            memcpy(source + 1105, "][] here\n", 9);
-            capped = markdown_core_document_parse((const uint8_t *)source, 1114, NULL, NULL);
-            check(capped != NULL, "an over-long label still parses");
-            if (capped) {
-                check(markdown_core_document_diagnostic_count(capped) == 1 &&
-                          markdown_core_document_diagnostic_at(capped, 0, &diagnostic) &&
-                          diagnostic.code == MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG,
-                      "a label the engine refused as too long says so, and does not say 'undefined'");
-                markdown_core_document_free(capped);
-            }
-            free(source);
-        }
-    }
-
-    /* THE CONVERSE. A parse failure is not a diagnostic: there is no document,
-     * so there is no list to read.
-     *
-     * "A parse failure carries no scope" USED TO BE A CHECK HERE and is now the
-     * shape of the type: `markdown_core_error_get_scope` is deleted, the two
-     * fields behind it with it, and what a caller can ask an error for is its
-     * code and its message. A check cannot assert the absence of a symbol; the
-     * header is the statement. */
-    {
-        markdown_core_error *refusal = NULL;
-        markdown_core_document *none = markdown_core_document_parse(NULL, 8, NULL, &refusal);
-        check(none == NULL && refusal != NULL, "an invalid argument produces an error and no document");
-        check(markdown_core_error_get_code(refusal) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-              "and the error says which failure it was");
-        markdown_core_error_free(refusal);
-    }
-    check(markdown_core_document_diagnostic_count(NULL) == 0, "a null document has no diagnostics");
-    check(markdown_core_diagnostic_code_name((markdown_core_diagnostic_code)99) == NULL,
-          "a code no version defines has no name");
-}
-
 int main(int argc, char **argv) {
     const char *fixture_dir;
     int i;
@@ -479,7 +376,6 @@ int main(int argc, char **argv) {
     check_api();
     check_null_and_empty();
     check_source_and_lines();
-    check_diagnostics();
     for (i = 3; i < argc; i += 2) {
         check_fixture(fixture_dir, argv[i], argv[i + 1]);
     }

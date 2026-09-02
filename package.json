@@ -2,15 +2,14 @@
     "name": "markdown-core",
     "private": true,
     "type": "module",
-    "packageManager": "pnpm@11.7.0",
+    "packageManager": "pnpm@11.25.0",
     "engines": {
-        "node": "26.5.0",
-        "pnpm": "11.7.0"
+        "node": "26.8.1",
+        "pnpm": "11.25.0"
     },
     "scripts": {
         "audit:ast-projections": "node scripts/audit-ast-projections.mjs",
         "audit:ci": "scripts/audit-ci-policy.sh",
-        "audit:diagnostics": "node scripts/audit-diagnostics.mjs",
         "audit:extension-attach-order": "node scripts/audit-extension-attach-order.mjs",
         "audit:extension-special-chars": "node scripts/audit-extension-special-chars.mjs",
         "audit:inline-sourcepos": "node scripts/audit-inline-sourcepos.mjs",
@@ -24,10 +23,8 @@
         "audit:source-lists": "node scripts/audit-source-lists.mjs",
         "audit:surface": "scripts/audit-public-surface.sh",
         "audit:tests": "scripts/audit-test-topology.sh",
-        "benchmark:c-host": "cmake --preset default && cmake --build --preset default --parallel && ctest --preset benchmark",
-        "benchmark:es-node": "node packages/es-markdown-core/scripts/build.mjs && node packages/es-markdown-core/scripts/benchmark.mjs",
-        "benchmark:kotlin-jvm": "scripts/gradle.sh :packages:kotlin-markdown-core:kotlinBenchmark",
-        "benchmark:swift-macos": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift run --disable-sandbox -c release MarkdownCoreBenchmarks",
+        "audit:toolchains": "scripts/audit-toolchain-versions.sh",
+        "benchmark:c-host": "cmake --preset benchmark && cmake --build --preset benchmark --parallel && ctest --preset benchmark",
         "build:c": "cmake --preset default && cmake --build --preset default --parallel",
         "build:swift": "swift build",
         "check:contracts": "node scripts/check-canonical-ast-fixtures.mjs && scripts/gradle.sh :packages:kotlin-markdown-core:contracts:list-naming:compileKotlin",

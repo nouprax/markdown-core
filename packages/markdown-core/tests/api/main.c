@@ -8,6 +8,7 @@
 #include "markdown-core.h"
 #include "node.h"
 #include "buffer.h"
+#include "parser.h"
 #include "syntax_extension.h"
 #include "markdown-core-extensions.h"
 
@@ -17,6 +18,31 @@
 #include "cplusplus.h"
 
 #define UTF8_REPL "\xEF\xBF\xBD"
+
+typedef struct extension_setup {
+    const markdown_core_syntax_extension *const *extensions;
+    size_t count;
+} extension_setup;
+
+static bool attach_extensions(markdown_core_parser *parser, void *context) {
+    const extension_setup *setup = (const extension_setup *)context;
+    size_t i;
+
+    for (i = 0; i < setup->count; i++) {
+        if (!markdown_core_parser_attach_syntax_extension(parser, setup->extensions[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static markdown_core_node *parse_with_extensions(const char *source, size_t length, int options,
+                                                 const markdown_core_syntax_extension *const *extensions,
+                                                 size_t extension_count) {
+    extension_setup setup = {extensions, extension_count};
+    return markdown_core_parse_document_with_mem(source, length, options, markdown_core_get_default_mem_allocator(),
+                                                 attach_extensions, &setup);
+}
 
 static const markdown_core_node_type node_types[] = {MARKDOWN_CORE_NODE_DOCUMENT,
                                                      MARKDOWN_CORE_NODE_BLOCK_QUOTE,
@@ -290,19 +316,8 @@ static void accessors(test_batch_runner *runner) {
 }
 
 static markdown_core_node *parse_with_formula_extension_options(const char *markdown, int options) {
-
-    markdown_core_parser *parser = markdown_core_parser_new(options);
     const markdown_core_syntax_extension *formula = &MARKDOWN_CORE_EXTENSION_FORMULA;
-
-    if (formula) {
-        markdown_core_parser_attach_syntax_extension(parser, formula);
-    }
-
-    markdown_core_parser_feed(parser, markdown, strlen(markdown));
-    markdown_core_node *doc = markdown_core_parser_finish(parser);
-    markdown_core_parser_free(parser);
-
-    return doc;
+    return parse_with_extensions(markdown, strlen(markdown), options, &formula, 1);
 }
 
 static markdown_core_node *parse_with_formula_extension(const char *markdown) {
@@ -314,19 +329,8 @@ static markdown_core_node *parse_with_dollar_formula_extension(const char *markd
 }
 
 static markdown_core_node *parse_with_directive_extension(const char *markdown) {
-
-    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
     const markdown_core_syntax_extension *directive = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
-
-    if (directive) {
-        markdown_core_parser_attach_syntax_extension(parser, directive);
-    }
-
-    markdown_core_parser_feed(parser, markdown, strlen(markdown));
-    markdown_core_node *doc = markdown_core_parser_finish(parser);
-    markdown_core_parser_free(parser);
-
-    return doc;
+    return parse_with_extensions(markdown, strlen(markdown), MARKDOWN_CORE_OPT_DEFAULT, &directive, 1);
 }
 
 /* ATTACHING THE EXTENSION IS THE ONLY GATE (Q14, Step 6). These two assertions
@@ -1033,71 +1037,37 @@ static void test_md_paragraph_text(test_batch_runner *runner, const char *markdo
                                    msg);
 }
 
-static void test_feed_across_line_ending(test_batch_runner *runner) {
-    // See #117
-    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
-    markdown_core_parser_feed(parser, "line1\r", 6);
-    markdown_core_parser_feed(parser, "\nline2\r\n", 8);
-    markdown_core_node *document = markdown_core_parser_finish(parser);
+static void test_crlf_line_ending(test_batch_runner *runner) {
+    const char *source = "line1\r\nline2\r\n";
+    markdown_core_node *document = markdown_core_parse_document(source, strlen(source), MARKDOWN_CORE_OPT_DEFAULT);
     OK(runner, document->first_child->next == NULL, "document has one paragraph");
-    markdown_core_parser_free(parser);
     markdown_core_node_free(document);
 }
 
-#if !defined(_WIN32) || defined(__CYGWIN__)
-#include <sys/time.h>
-static struct timeval _before, _after;
-static int _timing;
-#define START_TIMING() gettimeofday(&_before, NULL)
+static void test_pathological_parse_completion(test_batch_runner *runner, const char *pattern, size_t repetitions,
+                                               const char *msg) {
+    size_t pattern_length = strlen(pattern);
+    size_t input_length = pattern_length * repetitions;
+    char *input = (char *)malloc(input_length);
+    markdown_core_node *document;
 
-#define END_TIMING()                                                                                                   \
-    do {                                                                                                               \
-        gettimeofday(&_after, NULL);                                                                                   \
-        _timing = (_after.tv_sec - _before.tv_sec) * 1000 + (_after.tv_usec - _before.tv_usec) / 1000;                 \
-    } while (0)
+    OK(runner, input != NULL, "%s (input allocation succeeds)", msg);
+    if (!input) {
+        return;
+    }
+    for (size_t i = 0; i < repetitions; ++i) {
+        memcpy(input + i * pattern_length, pattern, pattern_length);
+    }
 
-#define TIMING _timing
-#else
-#define START_TIMING()
-#define END_TIMING()
-#define TIMING 0
-#endif
+    document = markdown_core_parse_document(input, input_length, MARKDOWN_CORE_OPT_VALIDATE_UTF8);
+    OK(runner, document != NULL, "%s (parse succeeds)", msg);
+    markdown_core_node_free(document);
+    free(input);
+}
 
 static void test_pathological_regressions(test_batch_runner *runner) {
-    {
-        // I don't care what the output is, so long as it doesn't take too long.
-        char path[] = "[a](b";
-        char *input = (char *)calloc(1, (sizeof(path) - 1) * 50000);
-        for (int i = 0; i < 50000; ++i) {
-            memcpy(input + i * (sizeof(path) - 1), path, sizeof(path) - 1);
-        }
-
-        START_TIMING();
-        markdown_core_node *doc =
-            markdown_core_parse_document(input, (sizeof(path) - 1) * 50000, MARKDOWN_CORE_OPT_VALIDATE_UTF8);
-        END_TIMING();
-        markdown_core_node_free(doc);
-        free(input);
-
-        OK(runner, TIMING < 1000, "takes less than 1000ms to run");
-    }
-
-    {
-        char path[] = "[a](<b";
-        char *input = (char *)calloc(1, (sizeof(path) - 1) * 50000);
-        for (int i = 0; i < 50000; ++i) {
-            memcpy(input + i * (sizeof(path) - 1), path, sizeof(path) - 1);
-        }
-
-        START_TIMING();
-        markdown_core_node *doc =
-            markdown_core_parse_document(input, (sizeof(path) - 1) * 50000, MARKDOWN_CORE_OPT_VALIDATE_UTF8);
-        END_TIMING();
-        markdown_core_node_free(doc);
-        free(input);
-
-        OK(runner, TIMING < 1000, "takes less than 1000ms to run");
-    }
+    test_pathological_parse_completion(runner, "[a](b", 50000, "unclosed inline destination");
+    test_pathological_parse_completion(runner, "[a](<b", 50000, "unclosed pointy inline destination");
 }
 
 /* Parses through the read-only facade and compares the canonical AST dump,
@@ -1145,24 +1115,20 @@ static void test_facade_dump(test_batch_runner *runner, const char *markdown, in
 // or not the defect is present. This one keeps failing.
 static void extension_decline_yields_turn(test_batch_runner *runner) {
     static const char *const markdown = "text\n:::note\nbody\n:::\n";
-
-    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
     const markdown_core_syntax_extension *table = &MARKDOWN_CORE_EXTENSION_TABLE;
     const markdown_core_syntax_extension *directive = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
+    const markdown_core_syntax_extension *extensions[] = {table, directive};
 
-    OK(runner, parser && table && directive, "table and directive extensions are available");
-    if (!parser || !table || !directive) {
-        if (parser) {
-            markdown_core_parser_free(parser);
-        }
+    OK(runner, table && directive, "table and directive extensions are available");
+    if (!table || !directive) {
         return;
     }
-    OK(runner, markdown_core_parser_attach_syntax_extension(parser, table) != 0, "table attaches first");
-    OK(runner, markdown_core_parser_attach_syntax_extension(parser, directive) != 0, "directive attaches second");
-
-    markdown_core_parser_feed(parser, markdown, strlen(markdown));
-    markdown_core_node *doc = markdown_core_parser_finish(parser);
-    markdown_core_parser_free(parser);
+    markdown_core_node *doc = parse_with_extensions(markdown, strlen(markdown), MARKDOWN_CORE_OPT_DEFAULT, extensions,
+                                                    sizeof(extensions) / sizeof(extensions[0]));
+    OK(runner, doc != NULL, "table and directive extensions attach in the requested test order");
+    if (!doc) {
+        return;
+    }
 
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *block = paragraph ? markdown_core_node_next(paragraph) : NULL;
@@ -1329,17 +1295,12 @@ static const markdown_core_syntax_extension STRAY_UNNAMED = {
 
 static void stray_delimiter_parse(test_batch_runner *runner, const markdown_core_syntax_extension *extension,
                                   const char *what) {
-    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
-    markdown_core_node *document;
     const char *input = "a @ b @ c\n";
-
-    markdown_core_parser_attach_syntax_extension(parser, extension);
-    markdown_core_parser_feed(parser, input, strlen(input));
-    document = markdown_core_parser_finish(parser);
+    markdown_core_node *document =
+        parse_with_extensions(input, strlen(input), MARKDOWN_CORE_OPT_DEFAULT, &extension, 1);
 
     OK(runner, document != NULL, "a delimiter with %s still finishes the parse", what);
     markdown_core_node_free(document);
-    markdown_core_parser_free(parser);
 }
 
 static void stray_delimiter(test_batch_runner *runner) {
@@ -1356,7 +1317,7 @@ static void stray_delimiter(test_batch_runner *runner) {
  * This is a property test rather than a parse test on purpose. Measured at
  * 3a.3: reverting the lift alone leaves `correctness` at 69/69 and both
  * allocation-failure sweeps green, because the two engine buffers that are
- * cleared and reused -- `parser->curline` and `parser->linebuf` -- now both
+ * cleared and reused -- `parser->curline` and `parser->line_scratch` -- now both
  * report at the transaction and abandon the parse before the reuse. The lift
  * removes the class by construction, and nothing else can see it. */
 static int strbuf_refuse_next;
@@ -1410,9 +1371,9 @@ static void strbuf_failure_is_a_transaction(test_batch_runner *runner) {
  * bytes into an eight-byte allocation.
  *
  * The forged `size` below is the largest a legitimate buffer may hold -- the
- * cap is INT32_MAX/2 -- so this is the state a single 1.07 GiB line reaches
- * through `markdown_core_parser_feed`'s `linebuf`, and the put is the next
- * chunk. It is forged rather than fed because feeding it costs 2 GiB. */
+ * cap is INT32_MAX/2 -- so this is the state the normalized-line scratch can
+ * reach after an embedded NUL in a 1.07 GiB line, and the put is the remaining
+ * segment. It is forged because constructing that source costs 2 GiB. */
 static void strbuf_overflow(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     markdown_core_strbuf buf;
@@ -1689,7 +1650,7 @@ int main(void) {
     numeric_entities(runner);
     test_cplusplus(runner);
     strip_html_comments(runner);
-    test_feed_across_line_ending(runner);
+    test_crlf_line_ending(runner);
     test_pathological_regressions(runner);
     extension_decline_yields_turn(runner);
     source_pos(runner);

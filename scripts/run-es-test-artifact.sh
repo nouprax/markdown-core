@@ -19,11 +19,8 @@ case "$suite" in
     node-conformance)
         node "$root/packages/es-markdown-core/scripts/run-conformance.mjs" --skip-build
         ;;
-    node-benchmark)
-        node "$root/packages/es-markdown-core/scripts/benchmark.mjs"
-        ;;
     *)
-        echo "usage: $0 <artifact-dir> node-correctness|browser-correctness|node-conformance|node-benchmark" >&2
+        echo "usage: $0 <artifact-dir> node-correctness|browser-correctness|node-conformance" >&2
         exit 2
         ;;
 esac

@@ -66,8 +66,8 @@ static void definition_create(markdown_core_map *map, markdown_core_chunk *label
     unsigned char *reflabel;
     int lost = 0;
 
-    /* The parser tolerates a missing map (map_new failure under a
-     * NULL-returning allocator); definitions are then dropped. */
+    /* A missing map means parser construction has already poisoned the parse;
+     * keep cleanup paths null-safe while the transaction unwinds. */
     if (map == NULL) {
         return;
     }
@@ -80,8 +80,6 @@ static void definition_create(markdown_core_map *map, markdown_core_chunk *label
         }
         return;
     }
-
-    assert(!map->prepared);
 
     entry = (markdown_core_map_entry *)map->mem->calloc(1, sizeof(*entry));
     if (!entry) {

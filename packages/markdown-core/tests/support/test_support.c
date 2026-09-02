@@ -432,7 +432,7 @@ char *ts_ast_concat_text(const markdown_core_node *root, size_t *length) {
     return buffer.data;
 }
 
-/* Comparison and diagnostics ---------------------------------------------- */
+/* Comparison and failure reporting ---------------------------------------- */
 
 static void ts_print_annotated_line(FILE *stream, const char *prefix, const char *line, size_t length) {
     fputs(prefix, stream);

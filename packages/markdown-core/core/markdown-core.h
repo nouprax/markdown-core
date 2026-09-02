@@ -1,7 +1,7 @@
 #ifndef MARKDOWN_CORE_H
 #define MARKDOWN_CORE_H
 
-#include <stdio.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "markdown-core-export.h"
 #include "markdown-core-version.h"
@@ -134,12 +134,6 @@ typedef struct _markdown_core_llist {
     struct _markdown_core_llist *next;
     void *data;
 } markdown_core_llist;
-
-/** Append an element to the linked list, return the possibly modified
- * head of the list.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_llist *markdown_core_llist_append(markdown_core_mem *mem, markdown_core_llist *head, void *data);
 
 /** Free the list starting with 'head', calling 'free_func' with the
  *  data pointer of each of its elements
@@ -518,45 +512,7 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_own(markdown_core_node *root);
  *
  *     markdown_core_node *document = markdown_core_parse_document("Hello *world*", 13,
  *                                                 MARKDOWN_CORE_OPT_DEFAULT);
- *
- * Streaming interface:
- *
- *     markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
- *     FILE *fp = fopen("myfile.md", "rb");
- *     while ((bytes = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
- *     	   markdown_core_parser_feed(parser, buffer, bytes);
- *     	   if (bytes < sizeof(buffer)) {
- *     	       break;
- *     	   }
- *     }
- *     document = markdown_core_parser_finish(parser);
- *     markdown_core_parser_free(parser);
  */
-
-/** Creates a new parser object.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_parser *markdown_core_parser_new(int options);
-
-/** Creates a new parser object with the given memory allocator
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_parser *markdown_core_parser_new_with_mem(int options, markdown_core_mem *mem);
-
-/** Frees memory allocated for a parser object.
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_parser_free(markdown_core_parser *parser);
-
-/** Feeds a string of length 'len' to 'parser'.
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_parser_feed(markdown_core_parser *parser, const char *buffer, size_t len);
-
-/** Finish parsing and return a pointer to a tree of nodes.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser);
 
 /** Parse a CommonMark document in 'buffer' of length 'len'.
  * Returns a pointer to a tree of nodes.  The memory allocated for
@@ -565,13 +521,6 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser);
  */
 MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len, int options);
-
-/** Parse a CommonMark document in file 'f', returning a pointer to
- * a tree of nodes.  The memory allocated for the node tree should be
- * released using 'markdown_core_node_free' when it is no longer needed.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_parse_file(FILE *f, int options);
 
 /**
  * ## Options

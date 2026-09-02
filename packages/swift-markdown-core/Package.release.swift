@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.3
 import PackageDescription
 
 // THE RELEASE MANIFEST: the same two targets the root `Package.swift`
@@ -19,8 +19,8 @@ import PackageDescription
 let package = Package(
     name: "swift-markdown-core",
     platforms: [
-        .iOS(.v18),
-        .macOS(.v15),
+        .iOS(.v26),
+        .macOS(.v26),
     ],
     products: [
         .library(name: "MarkdownCore", targets: ["MarkdownCore"])

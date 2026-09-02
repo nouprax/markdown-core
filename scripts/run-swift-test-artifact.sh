@@ -6,6 +6,8 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 artifact_dir=${1:-}
 suite=${2:-}
 consumer=packages/swift-markdown-core/Tests/Consumer
+root_scratch="$root/build/ci-swift-tests/root"
+consumer_scratch="$root/build/ci-swift-tests/consumer"
 
 artifact_verify "$artifact_dir" swift-test-products
 artifact_extract "$artifact_dir" swift-test-products.tar.gz "$root"
@@ -29,11 +31,12 @@ run_ios_suite() {
 
 case "$suite" in
     macos-correctness)
-        swift test --skip-build --disable-sandbox --filter '^MarkdownCoreTests\.'
-        swift test --skip-build --disable-sandbox --package-path "$consumer"
+        swift test --skip-build --disable-sandbox --scratch-path "$root_scratch" --filter '^MarkdownCoreTests\.'
+        swift test --skip-build --disable-sandbox --package-path "$consumer" --scratch-path "$consumer_scratch"
         ;;
     macos-conformance)
-        swift test --skip-build --disable-sandbox --filter '^MarkdownCoreConformanceTests\.'
+        swift test --skip-build --disable-sandbox --scratch-path "$root_scratch" \
+            --filter '^MarkdownCoreConformanceTests\.'
         ;;
     ios-correctness)
         run_ios_suite MarkdownCoreTests
@@ -41,11 +44,8 @@ case "$suite" in
     ios-conformance)
         run_ios_suite MarkdownCoreConformanceTests
         ;;
-    macos-benchmark)
-        build/ci-benchmark/swift/MarkdownCoreBenchmarks
-        ;;
     *)
-        echo "usage: $0 <artifact-dir> macos-correctness|macos-conformance|ios-correctness|ios-conformance|macos-benchmark" >&2
+        echo "usage: $0 <artifact-dir> macos-correctness|macos-conformance|ios-correctness|ios-conformance" >&2
         exit 2
         ;;
 esac

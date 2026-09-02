@@ -19,10 +19,7 @@
  * table cannot say -- the core rules, coordinates, ownership, the attribute
  * grammar -- and its own kind/field table is a SECOND copy of the contract.
  * This audit compares it against the JSON kind for kind and field for field,
- * so the two cannot drift apart. Until Step 15A the Markdown table WAS the
- * contract, it lived under `docs/deprecated/`, which
- * `docs/RECONSTRUCTION.md` says is archive and not normative, and four
- * executable policy files read it from there.
+ * so the two cannot drift apart.
  *
  * It does not check types across platforms: a `level` is `Int` in the
  * contract, `Int32` in Swift, `Int` in Kotlin and `number` in TypeScript, and
@@ -84,11 +81,8 @@ function proseDefinition() {
  * The dump grammar's field-order table: kind -> the fields the dump prints
  * between `scope` and `children`, in order.
  *
- * A THIRD copy of the contract, and until Step 9b nothing read it. It had
- * drifted three ways at once -- a `mode` on four kinds Q29 deleted at 15A.4, a
- * `label` on the two directive kinds that stopped being a scalar when Step 7
- * made it a node, and no row for `DirectiveLabel`. A normative table nobody
- * reads is prose, and this file already exists to say so.
+ * A third copy of the contract. A normative table nobody reads is only prose,
+ * so this audit checks it as data.
  */
 function dumpGrammarDefinition() {
     const lines = fs.readFileSync(path.join(root, DUMP_PATH), "utf8").split("\n");

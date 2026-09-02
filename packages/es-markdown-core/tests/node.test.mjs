@@ -36,7 +36,7 @@ test("ast: typed fields are copied from direct WASM accessors", () => {
     assert.deepEqual(document.content[1].alignments, ["center"]);
 });
 
-test("ast: every Markup exposes the canonical diagnostic dump", () => {
+test("ast: every Markup exposes the canonical debug dump", () => {
     const document = Document.parse("# Heading\n");
     assert.equal(document.dump(), TreeDumper.dump(document));
     assert.match(document.content[0].dump(), /^Heading scope=/);

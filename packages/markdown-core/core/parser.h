@@ -13,124 +13,17 @@ extern "C" {
 
 #define MAX_LINK_LABEL_LENGTH 1000
 
-/* THE DIAGNOSTIC LIST (requirement 13).
- *
- * A parse produces, beside the two total views, an ORDERED list of
- * `(severity, code, scope, message)`. One law governs it:
- *
- *   RECORDING THE LIST CHANGES NOTHING THE PARSE BUILDS.
- *
- * For every input the semantic tree and the concrete records are byte-identical
- * with recording on and off. That is the whole of it, and it is what makes the
- * list an observation rather than a second engine.
- *
- * THERE IS NO TRUNCATED LIST. An allocation this list cannot afford abandons
- * the parse, exactly as one the line index cannot afford does -- OWNER RULING,
- * 2026-08-24: "we do not want fallback when OOM happens; the parser should
- * return an error rather than return a fallback." Either the parse produced its
- * complete diagnostics, or there is no document to hang them on.
- *
- * WHAT EARNS A DIAGNOSTIC is one sentence, and it is a fact about the two
- * views rather than a list of syntax rules:
- *
- *   A DIAGNOSTIC EXISTS EXACTLY WHERE THE TWO TOTAL VIEWS CANNOT SAY WHAT
- *   HAPPENED.
- *
- * Both views omit nothing, so what is missing is never a BYTE -- it is why a
- * byte that looks like a construct is not one. `:a[b` and `:a` followed by the
- * prose `[b` are byte-identical trees with byte-identical records; nothing but
- * a diagnostic can tell them apart. Conversely an unclosed fence is NOT
- * diagnosed, because `CodeBlock.closed` already says so, and a duplicate
- * definition is not, because both definitions are nodes and "first in document
- * order wins" is derivable from the tree the consumer already has.
- *
- * The corollary that keeps this from being noise: A DIAGNOSTIC NEEDS EVIDENCE
- * THE AUTHOR MEANT THE CONSTRUCT, and the evidence is the construct's own
- * unambiguous opener. A `:` in prose is not evidence; `:name` is. A `[` is not;
- * `[^` and `][` are. */
-#ifndef MARKDOWN_CORE_DIAGNOSTIC_TYPEDEFS
-#define MARKDOWN_CORE_DIAGNOSTIC_TYPEDEFS
-/* WARNING: the author wrote something the engine did not read the way they
- *          meant, and the bytes stand as prose.
- * ERROR:   the author NAMED something that does not exist.
- *
- * Two levels because those are the two things a consumer does differently: a
- * documentation build fails on a cross-reference that names nothing and
- * reports a malformed attribute block. There is no fatal level -- a parse
- * failure is not a diagnostic (requirement 13's converse). */
-typedef enum markdown_core_diagnostic_severity {
-    MARKDOWN_CORE_DIAGNOSTIC_WARNING = 1,
-    MARKDOWN_CORE_DIAGNOSTIC_ERROR = 2
-} markdown_core_diagnostic_severity;
-
-typedef enum markdown_core_diagnostic_code {
-    /* A directive stood, and the `[` after its name did not become a label. */
-    MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_LABEL_REJECTED = 1,
-    /* A directive stood, and the `{` after it did not become an attribute
-     * list. `attributes` is then null, which is also what `:name` alone gives. */
-    MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES_REJECTED = 2,
-    /* A `::name`/`:::name` line did not open a directive block at all, so the
-     * whole line is a paragraph and reads exactly like prose. */
-    MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_REJECTED = 3,
-    /* A container directive was closed by the end of the input rather than by
-     * a fence. Nothing on the node records this; a code block's `closed` does. */
-    MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_UNCLOSED = 4,
-    /* A delimiter row was found and the header row above it has a different
-     * number of columns, so the paragraph is not a table. */
-    MARKDOWN_CORE_DIAGNOSTIC_TABLE_REJECTED = 5,
-    /* `[text][label]` or `[label][]` naming a label the document does not
-     * define. The shortcut form is deliberately absent: `[a]` is
-     * indistinguishable from ordinary bracketed prose. */
-    MARKDOWN_CORE_DIAGNOSTIC_REFERENCE_UNDEFINED = 6,
-    /* `[^label]` naming a footnote the document does not define. */
-    MARKDOWN_CORE_DIAGNOSTIC_FOOTNOTE_UNDEFINED = 7,
-    /* A label longer than MAX_LINK_LABEL_LENGTH. The author's label is
-     * well-formed and the ENGINE refused it, which is a different fact from
-     * "no such definition" and needs a different code to say so. */
-    MARKDOWN_CORE_DIAGNOSTIC_LABEL_TOO_LONG = 8
-} markdown_core_diagnostic_code;
-#endif
-
-/* One recorded diagnostic.
- *
- * The extent is stored as a PLACE and not as a byte range, because a place is
- * what the requirement's tuple names and what a consumer follows back to the
- * source; the line index turns one into the other and is complete for every
- * line already fed, which is when a diagnostic is recorded. The message is a
- * slice of the list's own pool, so a record is fixed-size and the pool grows
- * once per message rather than once per record. */
-typedef struct {
-    int32_t start_line;
-    int32_t start_column;
-    int32_t end_line;
-    int32_t end_column;
-    bufsize_t message_start;
-    bufsize_t message_length;
-    uint8_t severity;
-    uint8_t code;
-} markdown_core_diagnostic_record;
-
-/* The list itself, moved out of the parser at `finish` exactly as the concrete
- * view is, and released with the document that keeps it. */
-typedef struct {
-    markdown_core_mem *mem;
-    markdown_core_diagnostic_record *entries;
-    bufsize_t entries_size;
-    bufsize_t entries_alloc;
-    markdown_core_strbuf messages;
-} markdown_core_diagnostics;
-
 /* THE NORMALIZED SOURCE AND ITS LINE INDEX, moved out of the parser and into
  * the document.
  *
  * A scope says WHERE an element is, as a pair of (line, column) BOUNDARIES --
- * not as a byte range, and nothing takes a substring with it (owner ruling,
- * 2026-08-24). What the coordinates are COUNTED AGAINST is this: the normalized
- * source -- UTF-8 as fed, every NUL replaced by three bytes, every line ending
+ * not as a byte range, and nothing takes a substring with it. What the
+ * coordinates are COUNTED AGAINST is this: the normalized
+ * source -- the input UTF-8, every NUL replaced by three bytes, every line ending
  * one `\n` and every line having one -- which is NOT the buffer the caller
  * passed, and that difference is the whole reason a document publishes it.
  *
- * It lived and died with the parser until Step 12, which is what moves it. */
+ * The facade moves this value into the returned document on success. */
 typedef struct {
     markdown_core_mem *mem;
     markdown_core_strbuf source;
@@ -198,13 +91,11 @@ struct markdown_core_parser {
      * a single '\n' whether the author wrote one, wrote CRLF, or wrote nothing
      * at all -- concatenated in order. The document retains it because a SCOPE
      * is counted against it: `Text scope=2:2..2:4` names lines and columns of
-     * HERE, not of whatever buffer the caller fed -- an input with a NUL in it
+     * HERE, not of the source buffer the caller passed -- an input with a NUL in it
      * has different columns on that line.
      *
-     * It is NOT the caller's bytes. `markdown_core_parser_feed` may be called
-     * with any split, the caller's buffer may be freed the moment feed returns,
-     * and two different inputs normalize to the same source -- which is the
-     * point: what the tree's positions describe is this. */
+     * It is NOT the caller's bytes: two different inputs normalize to the same
+     * source. What the tree's positions describe is this normalized value. */
     markdown_core_strbuf source;
     /* Where each line begins in `source`: line N starts at line_starts[N - 1].
      * The line index the same requirement names, and the only thing that can
@@ -212,40 +103,26 @@ struct markdown_core_parser {
     bufsize_t *line_starts;
     bufsize_t line_starts_size;
     bufsize_t line_starts_alloc;
-    /* When set, markdown_core_parser_finish MOVES the normalized source and its
-     * line index here instead of releasing them, and the caller becomes their
-     * owner (requirement 12). */
+    /* When set, the parse transaction MOVES the normalized source and its line
+     * index here instead of releasing them, and the caller becomes their owner
+     * (requirement 12). */
     markdown_core_concrete *concrete_retain;
-    /* REQUIREMENT 13's list, and the switch that decides whether it is built.
-     *
-     * Recording is OFF unless a caller asks for it, and the law is stated over
-     * exactly that axis: for every input the semantic tree and the concrete
-     * records are byte-identical with `diagnostics_on` true and false. It is a
-     * RETAIN CALL and not a parse option -- Q14 deleted the option surface, and
-     * a switch that changed the parse would be a second engine (Q24's own
-     * argument). The facade always asks, so diagnostics are part of the model
-     * there, the same way the concrete view is. */
-    bool diagnostics_on;
-    markdown_core_diagnostics diagnostics;
-    markdown_core_diagnostics *diagnostics_retain;
-    /* When set, markdown_core_parser_finish writes the record set here before
+    /* When set, the parse transaction writes the record set here before
      * releasing it. There is no public reader: requirement 12 is where a
      * document keeps the concrete view, and until then the CLI's `--concrete`
      * and the gate that drives it are the only consumers. */
     FILE *concrete_out;
     /* See the documentation for markdown_core_parser_get_last_line_length() in markdown_core.h */
     bufsize_t last_line_length;
-    /* Accumulates partial feed chunks until a complete line is available;
-     * curline holds the normalized line currently being parsed. */
-    markdown_core_strbuf linebuf;
+    /* Scratch for a source line containing NUL bytes; curline holds the
+     * normalized line currently being parsed. */
+    markdown_core_strbuf line_scratch;
     /* Options set by the user, see the Options section in markdown_core.h */
     int options;
-    /* Sticky allocation-failure flag: once any parse structure is lost,
-     * markdown_core_parser_finish reports the whole parse as failed (NULL)
-     * instead of returning a silently truncated document. */
+    /* Sticky allocation-failure flag: once any parse structure is lost, the
+     * one-shot transaction reports the whole parse as failed (NULL) instead of
+     * returning a silently truncated document. */
     bool oom;
-    bool last_buffer_ended_with_cr;
-    size_t total_size;
     markdown_core_llist *syntax_extensions;
     markdown_core_llist *inline_syntax_extensions;
     markdown_core_ispunct_func backslash_ispunct;
@@ -258,55 +135,27 @@ struct markdown_core_parser {
     /* The content-to-source map (see markdown_core_line_mark): one run per
      * block that took lines, appended in parse order. It is read while the
      * parse is still running -- the block phase reads it as blocks close and
-     * the inline phase reads it before markdown_core_parser_finish resets --
-     * and it is released with the rest of the per-parse state. */
+     * the inline phase reads it before the transaction returns -- and it is
+     * released with the rest of the per-parse state. */
     markdown_core_line_mark *line_marks;
     bufsize_t line_marks_size;
     bufsize_t line_marks_alloc;
 };
 
-/* Ask `finish` to hand the normalized source and its line index over rather
- * than release them. `out` is zeroed here and filled at finish; a parse that
- * fails leaves it empty. */
+/* The engine has one parse operation. `setup`, when present, configures the
+ * fresh parser before any source is read; extension attachment and retained
+ * observations belong there. Returning false aborts the transaction. The
+ * parser never escapes this call and is destroyed before it returns. */
+typedef bool (*markdown_core_parser_setup_func)(markdown_core_parser *parser, void *context);
+markdown_core_node *markdown_core_parse_document_with_mem(const char *source, size_t length, int options,
+                                                          markdown_core_mem *mem, markdown_core_parser_setup_func setup,
+                                                          void *context);
+
+/* Ask the transaction to hand the normalized source and its line index over
+ * rather than release them. `out` is zeroed here and filled on success; a
+ * parse that fails leaves it empty. */
 void markdown_core_parser_retain_concrete(markdown_core_parser *parser, markdown_core_concrete *out);
 void markdown_core_concrete_dispose(markdown_core_concrete *concrete);
-
-/* Requirement 13. Turn diagnostic recording on and ask `finish` to hand the
- * list over rather than release it. MUST be called before any byte is fed:
- * recording happens as the lines are read, and `finish` moves what was
- * recorded. `out` is zeroed here and filled at finish; a parse that FAILS
- * leaves it empty, which is the requirement's converse -- a parse failure is
- * not a diagnostic. */
-/* Record one diagnostic at the place `start_line`:`start_column` ..
- * `end_line`:`end_column`, counted the way every other scope in the engine is.
- * `message` is a sentence the code cannot say; `subject`, when non-NULL, is an
- * excerpt of the source it is about and is appended in quotes, cut at a
- * code-point boundary.
- *
- * A no-op when recording is off. An allocation it cannot make abandons the
- * parse: see the list's own comment above. */
-void markdown_core_parser_diagnose(markdown_core_parser *parser, markdown_core_diagnostic_severity severity,
-                                   markdown_core_diagnostic_code code, int start_line, int start_column, int end_line,
-                                   int end_column, const char *message, const unsigned char *subject,
-                                   bufsize_t subject_length);
-
-/* The same over the LINE IN HAND, from line offset `from` to its last
- * non-space byte -- the block phase's form, where an offset IS a column. */
-void markdown_core_parser_diagnose_line(markdown_core_parser *parser, markdown_core_diagnostic_severity severity,
-                                        markdown_core_diagnostic_code code, const unsigned char *input, bufsize_t len,
-                                        bufsize_t from, const char *message, const unsigned char *subject,
-                                        bufsize_t subject_length);
-
-void markdown_core_parser_retain_diagnostics(markdown_core_parser *parser, markdown_core_diagnostics *out);
-void markdown_core_diagnostics_dispose(markdown_core_diagnostics *diagnostics);
-
-/* The one writer of the diagnostic wire format, shared by the CLI and by
- * anything that has to read it back. One `diagnostics` header row and one
- * `diagnostic` row per entry, in the order they were recorded. */
-void markdown_core_diagnostics_write(const markdown_core_diagnostics *diagnostics, FILE *out);
-/* The stable spelling of a code, for the wire format and for a consumer that
- * would otherwise keep its own table. NULL for a value no version defines. */
-const char *markdown_core_diagnostic_code_string(markdown_core_diagnostic_code code);
 
 #ifdef __cplusplus
 }

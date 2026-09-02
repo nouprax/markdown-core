@@ -4,23 +4,23 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
 
-NODE_VERSION=26.5.0
-PNPM_VERSION=11.7.0
+NODE_VERSION=26.8.1
+PNPM_VERSION=11.25.0
 JAVA_VERSION=26
 XCODE_VERSION=26.6
 SWIFT_VERSION=6.3.3
-EMSCRIPTEN_VERSION=4.0.23
-# The emsdk repository commit of the 4.0.23 release tag; keep the pair in
+EMSCRIPTEN_VERSION=6.0.9
+# The emsdk repository commit of the 6.0.9 release tag; keep the pair in
 # lockstep when bumping the version.
-EMSCRIPTEN_COMMIT=c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56
+EMSCRIPTEN_COMMIT=5eb0bde7585670252e8ba05e9d361627bffd08b5
 # The newest tag upstream cmark-gfm has published, with its immutable commit.
 # This pin defines what "parity with upstream" means, so moving it is a
 # reviewed change, not a routine bump (see specs/upstream-parity/deltas.json).
 CMARK_GFM_VERSION=0.29.0.gfm.13
 CMARK_GFM_COMMIT=587a12bb54d95ac37241377e6ddc93ea0e45439b
-CLANG_FORMAT_VERSION=22.1.8
+CLANG_FORMAT_VERSION=23.1.0
 CMAKE_FORMAT_VERSION=0.6.13
-SWIFTLINT_VERSION=0.65.0
+SWIFTLINT_VERSION=0.65.1
 ANDROID_PLATFORM=android-36
 ANDROID_CMAKE_VERSION=3.22.1
 ANDROID_NDK_VERSION=28.2.13676358
@@ -506,12 +506,8 @@ install_upstream_cmark() {
 
 install_tools() {
     require_command python3 || return
-    clang_directory="$root/.tools/clang-format/$CLANG_FORMAT_VERSION"
-    if [ ! -x "$clang_directory/venv/bin/clang-format" ]; then
-        python3 -m venv "$clang_directory/venv"
-        "$clang_directory/venv/bin/python" -m pip install --disable-pip-version-check --quiet \
-            --require-hashes --requirement "$root/scripts/requirements/clang-format.txt"
-    fi
+    CLANG_FORMAT_INSTALL_DIR="$root/.tools/clang-format/$CLANG_FORMAT_VERSION" \
+        scripts/install-clang-format.sh
     CMAKE_FORMAT_TOOL_DIR="$root/.tools/cmakelang/$CMAKE_FORMAT_VERSION" \
         scripts/format-cmake.sh --check
     scripts/install-swiftlint.sh

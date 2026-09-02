@@ -4,7 +4,7 @@ import MarkdownCoreC
 ///
 /// Requires the `directives` extension. A malformed label or attribute block
 /// leaves the directive standing and the punctuation as prose rather than
-/// failing the parse; a diagnostic says so.
+/// failing the parse.
 public struct DirectiveBlock: Markup {
     /// Where it is, opening fence through closing fence. See ``Scope``.
     public let scope: Scope

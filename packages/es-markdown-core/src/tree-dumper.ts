@@ -36,11 +36,11 @@ interface DumpRecord {
     readonly children: number;
 }
 
-/** Produces the canonical diagnostic tree for immutable Markdown markup. */
+/** Produces the canonical debug tree for immutable Markdown markup. */
 export class TreeDumper {
     private constructor() {}
 
-    /** Returns the canonical diagnostic dump for `root` and its descendants. */
+    /** Returns the canonical debug dump for `root` and its descendants. */
     static dump(root: Markup): string {
         const remainingChildren: number[] = [];
         const lines: string[] = [];

@@ -33,7 +33,6 @@
         "test:browser": "node scripts/run-tests.mjs --target browser",
         "bundle:conformance-fixtures": "node scripts/bundle-conformance-fixtures.mjs",
         "preconformance": "pnpm run bundle:conformance-fixtures",
-        "conformance": "node scripts/run-conformance.mjs",
-        "benchmark": "node scripts/build.mjs && node scripts/benchmark.mjs"
+        "conformance": "node scripts/run-conformance.mjs"
     }
 }

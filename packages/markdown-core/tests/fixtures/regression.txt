@@ -846,15 +846,8 @@ Document scope=1:1..4:3 children=3
         └── Text scope=4:2..4:2 literal="a" children=0
 ````````````````````````````````
 
-DIAGNOSTICS ARE IN RECORDING ORDER AND RECORDING ORDER IS NOT SOURCE ORDER.
-This is the witness. A block-level diagnostic is recorded on the line it is
-about; an inline one is recorded when its block CLOSES, which can be many
-lines later. Here the table attempt on line 3 is reported while the paragraph
-that began on line 1 is still open, so the reference on line 1 is reported
-second. The census pins the pair, and the header of
-`markdown_core_document_diagnostic_at` says the order is the order they were
-recorded rather than promising one the engine cannot give without a sort it
-must never fail to perform.
+AN UNRESOLVED FULL REFERENCE AND A NON-MATCHING TABLE DELIMITER STAY AS PROSE.
+Neither near-match creates a partial node or a second recovery representation.
 
 ```````````````````````````````` example
 see [x][nope] here

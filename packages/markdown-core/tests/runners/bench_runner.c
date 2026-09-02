@@ -1,10 +1,11 @@
-/* Benchmark workloads (CTest label: benchmark).
+/* Opt-in local benchmark workloads (CTest label: benchmark).
  *
  * Every workload is deterministic and offline: inputs come from the tracked
  * sample documents or are synthesized in-process; nothing is downloaded or
- * written to the source tree.  Timings are reported for trend tracking; the
- * only assertions are completion and relative scaling ratios across doubling
- * input sizes — never absolute wall-clock thresholds.
+ * written to the source tree. Timings and relative scaling ratios are reported
+ * as measurements only. They never decide correctness or process status;
+ * hosted-runner load and platform variance make wall-clock assertions an
+ * unreliable regression oracle.
  *
  *   bench_runner --list
  *   bench_runner --workload NAME [--samples DIR] [--repeats N] [--warmup N]
@@ -23,11 +24,6 @@
 #define BENCH_MAX_REPEATS 32
 #define BENCH_DEFAULT_REPEATS 5
 #define BENCH_DEFAULT_WARMUP 1
-/* Adjacent doubling steps may regress at most this factor before the
- * workload fails; generous enough to absorb scheduler noise while still
- * catching super-linear blowups. */
-static const double BENCH_MAX_DOUBLING_RATIO = 4.0;
-
 typedef struct bench_options {
     const char *samples_dir;
     int repeats;
@@ -142,14 +138,14 @@ static int bench_measure(const char *name, const char *input, size_t length, con
     return 0;
 }
 
-/* Measures the same generator at doubling scales and asserts the relative
- * growth stays under BENCH_MAX_DOUBLING_RATIO per step. */
+/* Measures the same generator at doubling scales and reports adjacent ratios.
+ * A reviewer may use the result to design a deterministic invariant or a
+ * controlled experiment, but the ratio itself is not a test assertion. */
 static int bench_doubling(const char *name, const bench_options *options,
                           char *(*build)(const bench_options *options, size_t scale, size_t *length),
                           const size_t *scales, size_t steps) {
     double previous_ms = 0.0;
     size_t step;
-    int failed = 0;
     for (step = 0; step < steps; step++) {
         size_t length = 0;
         char *input = build(options, scales[step], &length);
@@ -167,15 +163,11 @@ static int bench_doubling(const char *name, const bench_options *options,
         free(input);
         if (step > 0) {
             double floor_ms = previous_ms > 0.0005 ? previous_ms : 0.0005;
-            if (median_ms / floor_ms > BENCH_MAX_DOUBLING_RATIO) {
-                fprintf(stderr, "%s: scaling ratio %.2f exceeds %.2f at scale %zu\n", name, median_ms / floor_ms,
-                        BENCH_MAX_DOUBLING_RATIO, scales[step]);
-                failed = 1;
-            }
+            printf("benchmark scaling=%s scale=%zu adjacent_ratio=%.3f\n", name, scales[step], median_ms / floor_ms);
         }
         previous_ms = median_ms;
     }
-    return failed ? -1 : 0;
+    return 0;
 }
 
 /* Workloads ---------------------------------------------------------------- */
@@ -235,7 +227,7 @@ static int workload_binding_baseline(const bench_options *options) {
     result = bench_measure("binding_baseline", input, length, options, &median_ms);
     free(input);
     if (result == 0) {
-        printf("baseline runtime=c boundary=native_parse workload=representative_large"
+        printf("metric runtime=c workload=representative_large workload_version=1"
                " bytes=%zu warmup=%d repeats=%d median_ns=%.0f peak_rss_kib=%ld\n",
                length, options->warmup, options->repeats, median_ms * 1e6, peak_rss_kib());
     }

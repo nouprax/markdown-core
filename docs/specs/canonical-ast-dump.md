@@ -1,8 +1,6 @@
 # Canonical AST file-tree dump
 
-Status: frozen for Phase 5 on 2026-07-11.
-
-The dump is a deterministic public diagnostic representation of the canonical
+The dump is a deterministic public debug representation of the canonical
 AST and the reviewed expected representation used by parser tests. It is not
 JSON, XML, a renderer, or a serialization/transport API.
 
@@ -12,10 +10,10 @@ enumerate that same non-empty manifest. Swift, Kotlin, and ES each export
 `TreeDumper` and implement this tree format independently over their public
 immutable AST; they never call the native C dump or another binding output.
 Every platform `Markup` also offers `dump()`, which delegates to
-`TreeDumper.dump(markup)` and therefore supports focused subtree diagnostics.
+`TreeDumper.dump(markup)` and therefore supports focused subtree inspection.
 Dump text is never used to construct production AST values.
 
-The API is public, but the text remains a human-readable diagnostic contract,
+The API is public, but the text remains a human-readable debug contract,
 not a persistence or interchange format. Consumers that need structured data
 must traverse the typed immutable AST.
 
@@ -72,8 +70,7 @@ normalizing or interpreting particular line/column combinations.
 
 A directive's label is a CHILD NODE, not a field: an absent label is a
 directive with no `DirectiveLabel` child, an empty one is a `DirectiveLabel`
-with `children=0`, and a populated one is a `DirectiveLabel` with children. It
-was a scalar presence field until Step 7 made it a node.
+with `children=0`, and a populated one is a `DirectiveLabel` with children.
 
 ## Field order by record kind
 
@@ -82,10 +79,7 @@ Fields appear after `scope` and before `children` in exactly this order:
 This table is CHECKED against `canonical-ast.json` by
 `scripts/audit-ast-projections.mjs`: every kind appears exactly once and its
 fields are the contract's, in the contract's order, minus the fields that are
-the child structure itself. Until Step 9b nothing read it, and it had drifted
-in three ways at once -- a `mode` on four kinds that Q29 deleted at 15A.4, a
-`label` on the two directive kinds that stopped being a scalar when Step 7 made
-it a node, and no row for `DirectiveLabel` at all.
+the child structure itself.
 
 | Kind | Ordered fields between `scope` and `children` |
 | --- | --- |

@@ -67,7 +67,7 @@ export function fixtureCorpus(root) {
 /**
  * Byte length of every source line.
  *
- * Split on the same three terminators `S_parser_feed` recognizes, because a
+ * Split on the same three terminators `S_parse_source` recognizes, because a
  * fixture does carry a CRLF (regression.txt's line-ending example) and reading
  * it as one line would put every position after it on the wrong row. The empty
  * element a trailing newline leaves is dropped: a document ending in `\n` has

@@ -14,10 +14,10 @@ import {
 
 const document: Document = Document.parse("# typed", { tables: true });
 const concrete: Concrete = document.concrete;
-const diagnostic: string = document.dump();
-const explicitDiagnostic: string = TreeDumper.dump(document);
-void diagnostic;
-void explicitDiagnostic;
+const dump: string = document.dump();
+const explicitDump: string = TreeDumper.dump(document);
+void dump;
+void explicitDump;
 // The source a scope is counted against is bytes and a line index, and both
 // outlive the WASM handle.
 const source: Uint8Array = concrete.source;
@@ -72,7 +72,7 @@ new Walker().walk(document, (_event, node) => visit(node, visitor));
 document.content[0] = document;
 // @ts-expect-error readonly scope values cannot be mutated
 document.scope.start.line = 2;
-// @ts-expect-error diagnostic methods cannot be replaced
+// @ts-expect-error dump methods cannot be replaced
 document.dump = () => "replacement";
 
 declare const table: Table;

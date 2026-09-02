@@ -342,11 +342,8 @@ static int attribute_name_is_valid(const unsigned char *name, bufsize_t name_len
     return name_len > 0 && scan_attr_name(name, name_len, 0) == name_len;
 }
 
-/* The name is looked up in an index while one can be built and by scan when it
- * cannot. An insert that fails -- the map reports engineered hash clustering
- * that way -- drops to the scan for the rest of this directive rather than
- * bringing in a second algorithm, and the entries already inserted stay
- * findable because the scan does not consult the index. */
+/* Attribute names have one lookup representation. If its allocation fails,
+ * the directive parse fails and the owning parser reports OOM. */
 typedef struct {
     directive_attributes list;
     /* Maps a name to its SLOT NUMBER PLUS ONE, not to a pointer: the entries
@@ -354,24 +351,13 @@ typedef struct {
      * dangle on the next insert. Plus one because the map reports "absent" as
      * a null value and slot zero is a real slot. */
     markdown_core_key_index index;
-    int indexed;
 } attribute_builder;
 
 #define ATTRIBUTE_SLOT_NONE ((size_t)-1)
 
 static size_t attribute_find(attribute_builder *builder, const unsigned char *name, bufsize_t name_len) {
-    size_t i;
-    if (builder->indexed) {
-        void *found = markdown_core_key_index_lookup(&builder->index, name, name_len);
-        return found ? (size_t)(uintptr_t)found - 1 : ATTRIBUTE_SLOT_NONE;
-    }
-    for (i = 0; i < builder->list.count; i++) {
-        const markdown_core_chunk *have = &builder->list.items[i].name;
-        if (have->len == name_len && memcmp(have->data, name, (size_t)name_len) == 0) {
-            return i;
-        }
-    }
-    return ATTRIBUTE_SLOT_NONE;
+    void *found = markdown_core_key_index_lookup(&builder->index, name, name_len);
+    return found ? (size_t)(uintptr_t)found - 1 : ATTRIBUTE_SLOT_NONE;
 }
 
 static int attribute_reserve(markdown_core_mem *mem, directive_attributes *attrs) {
@@ -379,6 +365,9 @@ static int attribute_reserve(markdown_core_mem *mem, directive_attributes *attrs
     directive_attribute *grown;
     if (attrs->count < attrs->capacity) {
         return 1;
+    }
+    if (attrs->capacity > SIZE_MAX / 2 || (attrs->capacity ? attrs->capacity * 2 : 8) > SIZE_MAX / sizeof(*grown)) {
+        return 0;
     }
     capacity = attrs->capacity ? attrs->capacity * 2 : 8;
     grown = (directive_attribute *)mem->realloc(attrs->items, capacity * sizeof(*grown));
@@ -482,9 +471,14 @@ static int upsert_attribute(markdown_core_mem *mem, attribute_builder *builder, 
         }
         return 0;
     }
-    if (builder->indexed && !markdown_core_key_index_insert(&builder->index, slot->name.data, slot->name.len,
-                                                            (void *)(uintptr_t)(builder->list.count + 1), 0, NULL)) {
-        builder->indexed = 0;
+    if (!markdown_core_key_index_insert(&builder->index, slot->name.data, slot->name.len,
+                                        (void *)(uintptr_t)(builder->list.count + 1), 0, NULL)) {
+        markdown_core_chunk_free(mem, &slot->name);
+        markdown_core_chunk_free(mem, &slot->value);
+        if (oom) {
+            *oom = 1;
+        }
+        return 0;
     }
     builder->list.count++;
     return 1;
@@ -603,8 +597,6 @@ int markdown_core_extensions_directive_attribute_at(markdown_core_node *node, si
 
 static void directive_opaque_alloc(const markdown_core_syntax_extension *extension, markdown_core_mem *mem,
                                    markdown_core_node *node) {
-    /* A NULL payload is tolerated: every accessor goes through get_directive
-     * and treats the node as attribute-less. */
     if (is_directive_node(node)) {
         node->as.opaque = mem->calloc(1, sizeof(node_directive));
     }
@@ -682,10 +674,13 @@ static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, b
     int ok = 1;
 
     memset(&builder, 0, sizeof(builder));
-    /* An index that cannot be built is not a failure: `attribute_find` scans
-     * instead. Most `{...}` hold a handful of names and never notice. */
-    builder.indexed = markdown_core_key_index_init(&builder.index, mem, 8);
     memset(result, 0, sizeof(*result));
+    if (!markdown_core_key_index_init(&builder.index, mem, 8)) {
+        if (oom) {
+            *oom = 1;
+        }
+        return 0;
+    }
     while (pos < len) {
         bufsize_t start;
         bufsize_t name_len;
@@ -740,10 +735,7 @@ static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, b
         }
     }
 
-    if (builder.indexed) {
-        markdown_core_key_index_free(&builder.index);
-        builder.indexed = 0;
-    }
+    markdown_core_key_index_free(&builder.index);
     if (ok) {
         /* Sorting last, and only here: the index maps a name to the slot it was
          * inserted at, so it has to be gone before the entries move. */
@@ -923,32 +915,6 @@ static markdown_core_node *make_directive_node(const markdown_core_syntax_extens
  *
  * Scanning it here also means the bytes are CONSUMED here, so no other
  * extension is ever offered them. There is nothing left to protect. */
-/* Record a diagnostic about a span of the block's own CONTENT buffer.
- *
- * The place comes from requirement 10's projection and NOT from the arithmetic
- * `start_column + (at - offset)` this file uses for a directive's own start:
- * that arithmetic is exact only while nothing has crossed a line ending, and
- * the whole point of these sites is that a label or an attribute list ran off
- * the end of one (0a.10's rule, and the reason D22 was a defect). A span the
- * map cannot place is not reported at all -- a diagnostic that invents a
- * position is worse than a missing one. */
-static void directive_diagnose(markdown_core_parser *parser, markdown_core_node *block,
-                               markdown_core_diagnostic_severity severity, markdown_core_diagnostic_code code,
-                               bufsize_t from, bufsize_t to, const char *message, const unsigned char *subject,
-                               bufsize_t subject_length) {
-    int start_line;
-    int start_column;
-    int end_line;
-    int end_column;
-
-    if (!markdown_core_parser_content_place(parser, block, from, &start_line, &start_column) ||
-        !markdown_core_parser_content_place(parser, block, to, &end_line, &end_column)) {
-        return;
-    }
-    markdown_core_parser_diagnose(parser, severity, code, start_line, start_column, end_line, end_column, message,
-                                  subject, subject_length);
-}
-
 static markdown_core_node *match_colon_directive(const markdown_core_syntax_extension *extension,
                                                  markdown_core_parser *parser, markdown_core_node *parent,
                                                  markdown_core_inline_parser *inline_parser, markdown_core_chunk *chunk,
@@ -999,15 +965,6 @@ static markdown_core_node *match_colon_directive(const markdown_core_syntax_exte
             has_label = 1;
             label_open = pos;
             pos = label_end;
-        } else {
-            /* The directive still stands and the bracket run is prose, which
-             * is a tree byte-identical to the one `:name` followed by literal
-             * `[b` produces. Nothing but this can tell them apart. The bracket
-             * that was NOT closed is the extent: where it should have closed is
-             * not something the scan found out. */
-            directive_diagnose(parser, parent, MARKDOWN_CORE_DIAGNOSTIC_WARNING,
-                               MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_LABEL_REJECTED, pos, pos,
-                               "unclosed label on directive", chunk->data + name_start, name_len);
         }
     }
 
@@ -1023,19 +980,6 @@ static markdown_core_node *match_colon_directive(const markdown_core_syntax_exte
         } else if (attr_oom) {
             parser->oom = true;
             return NULL;
-        } else {
-            /* else the braces are prose; the directive stands (7.1's rule) --
-             * and `attributes=null` is then exactly what a directive with no
-             * brace block at all reports, which is why this is diagnosed.
-             *
-             * The extent is the whole block when the scan found its `}` and
-             * the opening brace alone when it did not: a list that never closed
-             * has no end to name. */
-            directive_diagnose(parser, parent, MARKDOWN_CORE_DIAGNOSTIC_WARNING,
-                               MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES_REJECTED, pos, closed ? attr_end - 1 : pos,
-                               closed ? "unrecognised attribute list on directive"
-                                      : "unclosed attribute list on directive",
-                               chunk->data + name_start, name_len);
         }
     }
 
@@ -1148,29 +1092,11 @@ static markdown_core_node *open_directive_block(const markdown_core_syntax_exten
     if (!parse_directive_suffix(parser->mem, input, (bufsize_t)len, first_nonspace + colon_count, &parsed)) {
         if (parsed.oom) {
             parser->oom = true;
-        } else if (parsed.name_len > 0) {
-            /* THE BLOCK PATH HAS NO FALLBACK, and that is what this reports.
-             * The inline form keeps the directive and gives up only the label
-             * or the attribute list; here the whole line becomes a paragraph,
-             * so one missing `]` costs everything and the tree reads exactly
-             * like prose.
-             *
-             * `name_len > 0` is the evidence rule: `::` or `:::` with nothing
-             * after it is a stray fence or a run of colons, not an attempt at
-             * a directive, and diagnosing those would report on prose. */
-            markdown_core_parser_diagnose_line(parser, MARKDOWN_CORE_DIAGNOSTIC_WARNING,
-                                               MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_REJECTED, input, (bufsize_t)len,
-                                               first_nonspace, "malformed directive block, left as text",
-                                               input + parsed.name_start, parsed.name_len);
         }
         return NULL;
     }
 
     if (!has_only_spaces_until_line_end(input, (bufsize_t)len, parsed.end)) {
-        markdown_core_parser_diagnose_line(parser, MARKDOWN_CORE_DIAGNOSTIC_WARNING,
-                                           MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_REJECTED, input, (bufsize_t)len,
-                                           first_nonspace, "content after a directive block's attributes, left as text",
-                                           input + parsed.name_start, parsed.name_len);
         free_parsed_directive(parser->mem, &parsed);
         return NULL;
     }
@@ -1298,32 +1224,6 @@ static int accepts_lines(const markdown_core_syntax_extension *extension, markdo
     return directive->fence_length == 2 || directive->consume_line;
 }
 
-/* A container that the END OF THE INPUT closed, rather than a fence.
- *
- * `CodeBlock.closed` says this for a fenced code block on the node itself, so
- * an unclosed fence is NOT diagnosed. A directive block's close state lives in
- * its opaque payload and reaches no view at all, so the two total views cannot
- * tell `:::note` with a fence from `:::note` without one -- and that is exactly
- * the gap a diagnostic fills. The extent is the OPENING FENCE, which is the
- * thing with no partner; the block's own scope is where it ended up, not what
- * is wrong with it. */
-static void close_directive_block(const markdown_core_syntax_extension *extension, markdown_core_parser *parser,
-                                  markdown_core_node *node) {
-    node_directive *directive;
-
-    if (node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
-        return;
-    }
-    directive = get_directive(node);
-    if (!directive || directive->closed) {
-        return;
-    }
-    markdown_core_parser_diagnose(
-        parser, MARKDOWN_CORE_DIAGNOSTIC_WARNING, MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_UNCLOSED, node->start_line,
-        node->start_column, node->start_line, node->start_column + directive->fence_length - 1,
-        "container directive closed by the end of the input", directive->name.data, directive->name.len);
-}
-
 /* `:` opens a directive. `]` is in the dispatch set for the `]` arbitration
  * `bracket_takes_close_bracket` performs, not because it terminates a text run --
  * `is_core_special_character` refuses it there. */
@@ -1336,7 +1236,6 @@ const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE = {
     .can_contain_func = can_contain,
     .contains_inlines_func = contains_inlines,
     .accepts_lines_func = accepts_lines,
-    .close_block_func = close_directive_block,
     .opaque_alloc_func = directive_opaque_alloc,
     .opaque_free_func = directive_opaque_free,
     .terminates_text = ":",

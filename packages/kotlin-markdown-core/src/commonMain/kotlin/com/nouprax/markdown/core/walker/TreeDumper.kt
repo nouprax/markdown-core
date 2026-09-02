@@ -1,8 +1,8 @@
 package com.nouprax.markdown.core
 
-/** Produces the canonical diagnostic tree for immutable Markdown markup. */
+/** Produces the canonical debug tree for immutable Markdown markup. */
 public object TreeDumper {
-    /** Returns the canonical diagnostic dump for [root] and its descendants. */
+    /** Returns the canonical debug dump for [root] and its descendants. */
     public fun dump(root: Markup): String {
         val visitor = DumpVisitor()
         val remainingChildren = mutableListOf<Int>()

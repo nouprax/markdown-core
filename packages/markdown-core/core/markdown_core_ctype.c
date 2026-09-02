@@ -4,6 +4,7 @@
 
 /** 1 = space, 2 = punct, 3 = digit, 4 = alpha, 0 = other
  */
+// clang-format off: the row/column table is intentionally aligned by byte value.
 static const uint8_t markdown_core_ctype_class[256] = {
     /*      0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f */
     /* 0 */ 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0,
@@ -22,6 +23,7 @@ static const uint8_t markdown_core_ctype_class[256] = {
     /* d */ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     /* e */ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     /* f */ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+// clang-format on
 
 /**
  * Returns 1 if c is a "whitespace" character as defined by the spec.

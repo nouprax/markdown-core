@@ -48,6 +48,6 @@ new Walker().walk(document, (event, node) => {
 ```
 
 `TreeDumper.dump(markup)` and each Markup's non-enumerable `dump()` method emit
-the canonical diagnostic tree for a complete document or focused subtree. The
+the canonical debug tree for a complete document or focused subtree. The
 text is intended for logs, snapshots, and debugging rather than persistence or
 data interchange.

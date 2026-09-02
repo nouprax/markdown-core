@@ -57,9 +57,7 @@ public struct ParseOptions: Sendable, Hashable {
 
 /// Why a parse produced no document.
 ///
-/// These are FAILURES, not findings about the text. Anything the author could
-/// act on is a diagnostic on a document that exists, not an error instead of
-/// one.
+/// These are failures of the parse operation itself, not syntax observations.
 public enum ParseErrorCode: Int32, Sendable {
     /// The call itself was wrong — a null source, or a length that does not
     /// describe it.
@@ -74,8 +72,7 @@ public enum ParseErrorCode: Int32, Sendable {
 /// A parse failure, and nothing else.
 ///
 /// It carries no scope: an input the parser could not turn into a document has
-/// no extent to point at, and a failure the author could act on would have been
-/// a diagnostic instead.
+/// no document extent to point at.
 public struct ParseError: Error, Sendable {
     /// Which failure it was.
     public let code: ParseErrorCode
@@ -117,8 +114,6 @@ public struct Document: Markup {
     ///   - options: which constructs to recognise. Everything, by default.
     /// - Returns: the parsed document.
     /// - Throws: ``ParseError`` when there is no document to return at all.
-    ///   Text the parser could not read the way its author meant is not an
-    ///   error: it produces a document, and the diagnostics say so.
     public static func parse(_ source: String, options: ParseOptions = .init()) throws -> Document {
         var nativeOptions = markdown_core_parse_options(
             smart_punctuation: options.smartPunctuation,

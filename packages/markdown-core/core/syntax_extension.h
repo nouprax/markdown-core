@@ -24,7 +24,8 @@ struct markdown_core_syntax_extension {
      * extension, and `'}'` sat in the list dispatching to nothing.
      *
      * Each set is a NUL-terminated byte list; NUL itself is never a member
-     * because the feed replaces it before inlines run. A NULL set is empty. */
+     * because source normalization replaces it before inlines run. A NULL set
+     * is empty. */
     const char *terminates_text;      /* ends a text run: subject_find_special_char */
     const char *dispatch;             /* offered to match_inline, and owns a delimiter tag */
     const char *flanking_transparent; /* scan_delims looks through it */
@@ -34,7 +35,6 @@ struct markdown_core_syntax_extension {
     markdown_core_contains_inlines_func contains_inlines_func;
     markdown_core_accepts_lines_func accepts_lines_func;
     markdown_core_postprocess_func postprocess_func;
-    markdown_core_close_block_func close_block_func;
     markdown_core_opaque_alloc_func opaque_alloc_func;
     markdown_core_opaque_free_func opaque_free_func;
 };

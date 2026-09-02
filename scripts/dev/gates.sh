@@ -4,11 +4,12 @@
 # NOT a CI entry point and not in package.json: it is the loop a step is worked
 # in. The presets have their own configure and build and this script runs
 # NEITHER -- build first, or a sanitizer preset with no build reports GREEN
-# having run nothing (see docs/RECONSTRUCTION.md section 0).
+# having run nothing (see docs/RECONSTRUCTION.md).
 #
 #   cmake --preset default && cmake --build --preset default --parallel
 #   cmake --preset asan    && cmake --build --preset asan    --parallel
 #   cmake --preset ubsan   && cmake --build --preset ubsan   --parallel
+#   cmake --preset tsan    && cmake --build --preset tsan    --parallel
 #   sh scripts/dev/gates.sh
 #
 # The binding suites are not here either -- they need their own toolchains:
@@ -20,6 +21,7 @@ set -u
 echo "correctness       : $(ctest --preset correctness -j 8 2>&1 | grep -oE '[0-9]+% tests passed out of [0-9]+')"
 echo "correctness-asan  : $(ctest --preset correctness-asan -j 8 2>&1 | grep -oE '[0-9]+% tests passed out of [0-9]+')"
 echo "correctness-ubsan : $(ctest --preset correctness-ubsan -j 8 2>&1 | grep -oE '[0-9]+% tests passed out of [0-9]+')"
+echo "correctness-tsan  : $(ctest --preset correctness-tsan -j 8 2>&1 | grep -oE '[0-9]+% tests passed out of [0-9]+')"
 echo "conformance       : $(ctest --preset conformance -j 8 2>&1 | grep -oE '[0-9]+% tests passed out of [0-9]+')"
 echo "canonical-ast     : $(node scripts/check-canonical-ast-fixtures.mjs 2>&1 | tail -1)"
 # Both of these are section 4.8 gates and NEITHER was in this script until Step
@@ -28,9 +30,9 @@ echo "canonical-ast     : $(node scripts/check-canonical-ast-fixtures.mjs 2>&1 |
 echo "ast-projections   : $(node scripts/audit-ast-projections.mjs 2>&1 | tail -1)"
 echo "source-lists      : $(node scripts/audit-source-lists.mjs 2>&1 | tail -1)"
 echo "public-surface    : $(bash scripts/audit-public-surface.sh 2>&1 | tail -1)"
+echo "package-contents  : $(bash scripts/audit-package-contents.sh 2>&1 | tail -1)"
 echo "special-chars     : $(node scripts/audit-extension-special-chars.mjs 2>&1 | head -1)"
 echo "attach-order      : $(node scripts/audit-extension-attach-order.mjs 2>&1 | tail -1)"
-echo "plan-graph        : $(node scripts/check-plan-graph.mjs 2>&1 | tail -1)"
 echo "fuzz-upstream     : $(node scripts/fuzz-parity.mjs --iterations 300 2>&1 | grep -E 'fuzz-parity \[upstream\]:')"
 # THE MDAST FUZZ ORACLE WAS IN SECTION 0'S LIST AND NOT IN THIS SCRIPT, which is
 # the same hole the comment above records for two other gates: a script that
@@ -43,7 +45,6 @@ echo "scope-sanity      : $(node scripts/audit-scope-sanity.mjs 2>&1 | tail -1)"
 echo "inline-sourcepos  : $(node scripts/audit-inline-sourcepos.mjs 2>&1 | tail -1)"
 echo "scope-containment : $(node scripts/audit-scope-containment.mjs 2>&1 | tail -1)"
 echo "position-places   : $(node scripts/audit-position-places.mjs 2>&1 | tail -1)"
-echo "diagnostics       : $(node scripts/audit-diagnostics.mjs 2>&1 | tail -1)"
 echo "reference-order   : $(node scripts/audit-reference-order-independence.mjs 2>&1 | tail -1)"
 echo "test-topology     : $(bash scripts/audit-test-topology.sh 2>&1 | tail -1)"
 # THE REPOSITORY AUDIT WAS IN NEITHER THIS SCRIPT NOR SECTION 0'S LIST, and it

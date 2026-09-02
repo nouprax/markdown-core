@@ -40,8 +40,7 @@ void print_usage(void) {
     printf("  --smart           Use smart punctuation\n");
     printf("  --validate-utf8   Replace UTF-8 invalid sequences with U+FFFD\n");
     printf("  --strip-html-comments Strip HTML comment nodes from the parsed AST\n"
-           "  --source-index    Print the normalized source size and line index before the tree\n"
-           "  --diagnostics     Record diagnostics and print them before the tree\n");
+           "  --source-index    Print the normalized source size and line index before the tree\n");
     printf("  --extension, -e EXTENSION_NAME  Specify an extension name to use\n");
     printf("  --list-extensions               List available extensions and quit\n");
     printf("  --strikethrough-double-tilde    Only parse strikethrough (if enabled)\n");
@@ -52,10 +51,10 @@ void print_usage(void) {
 
 static bool print_document(markdown_core_node *document) {
     /* The CLI dumps the tree only; the source and its line index are printed
-     * straight from the parser by `--source-index`, so the fields are zeroed
+     * by the parse transaction for `--source-index`, so the fields are zeroed
      * here rather than filled and `markdown_core_document_free` is never called
      * on this stack value. */
-    markdown_core_document facade_document = {document, {0}, {0}};
+    markdown_core_document facade_document = {.root = document};
     markdown_core_error *error = NULL;
     uint8_t *dump = NULL;
     size_t length = 0;
@@ -73,6 +72,34 @@ static bool print_document(markdown_core_node *document) {
     return true;
 }
 
+typedef struct cli_parse_setup {
+    unsigned extensions;
+    FILE *concrete_out;
+} cli_parse_setup;
+
+static bool configure_cli_parse(markdown_core_parser *parser, void *context) {
+    cli_parse_setup *setup = (cli_parse_setup *)context;
+
+    if (!markdown_core_core_extensions_attach(parser, setup->extensions)) {
+        return false;
+    }
+    parser->concrete_out = setup->concrete_out;
+    return true;
+}
+
+static bool read_all(markdown_core_strbuf *source, FILE *input) {
+    unsigned char buffer[4096];
+    size_t bytes;
+
+    while ((bytes = fread(buffer, 1, sizeof(buffer), input)) > 0) {
+        markdown_core_strbuf_put(source, buffer, (bufsize_t)bytes);
+        if (source->oom) {
+            return false;
+        }
+    }
+    return ferror(input) == 0;
+}
+
 static void print_extensions(void) {
     size_t i;
     const char *name;
@@ -86,12 +113,8 @@ static void print_extensions(void) {
 int main(int argc, char *argv[]) {
     int i, numfps = 0;
     int *files;
-    char buffer[4096];
-    markdown_core_parser *parser = NULL;
+    markdown_core_strbuf source;
     bool source_index = false;
-    bool diagnostics_wanted = false;
-    markdown_core_diagnostics diagnostics = {0};
-    size_t bytes;
     markdown_core_node *document = NULL;
     int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS |
                   MARKDOWN_CORE_OPT_VALIDATE_UTF8;
@@ -119,8 +142,13 @@ int main(int argc, char *argv[]) {
     bool gfm_profile = false;
     unsigned requested_extensions = 0;
     unsigned extensions;
+    cli_parse_setup setup = {0};
 
+    markdown_core_strbuf_init(markdown_core_get_default_mem_allocator(), &source, 0);
     files = (int *)calloc(argc, sizeof(*files));
+    if (!files) {
+        goto failure;
+    }
 
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--version") == 0) {
@@ -160,16 +188,8 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(argv[i], "--source-index") == 0) {
             /* What a scope's coordinates index INTO: the size of the
              * normalized source and where each of its lines begins. The
-             * document publishes both; this prints them so a gate can check
-             * that recording diagnostics changes neither. */
+             * document publishes both; this option prints them. */
             source_index = true;
-        } else if (strcmp(argv[i], "--diagnostics") == 0) {
-            /* REQUIREMENT 13. Unlike `--source-index`, which only asks `finish` to
-             * write what it already has, this has to be asked for BEFORE the
-             * first byte is fed: recording happens as the lines are read, and
-             * the law of the step is that a run without it builds the same
-             * tree and the same records as a run with it. */
-            diagnostics_wanted = true;
         } else if (strcmp(argv[i], "--list-extensions") == 0) {
             print_extensions();
             goto success;
@@ -219,11 +239,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    parser = markdown_core_parser_new(options);
-    if (parser && diagnostics_wanted) {
-        markdown_core_parser_retain_diagnostics(parser, &diagnostics);
-    }
-
     /* The CLI says WHICH extensions and cannot say in what order; the order is
      * `core-extensions.c`'s, and it is the facade's too. Before D15 was fixed
      * these were two different orders and therefore two different languages --
@@ -240,10 +255,6 @@ int main(int argc, char *argv[]) {
     }
     extensions |= requested_extensions;
 
-    if (!markdown_core_core_extensions_attach(parser, extensions)) {
-        goto failure;
-    }
-
     for (i = 0; i < numfps; i++) {
         FILE *fp = fopen(argv[files[i]], "rb");
         if (fp == NULL) {
@@ -251,23 +262,17 @@ int main(int argc, char *argv[]) {
             goto failure;
         }
 
-        while ((bytes = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
-            markdown_core_parser_feed(parser, buffer, bytes);
-            if (bytes < sizeof(buffer)) {
-                break;
-            }
+        if (!read_all(&source, fp)) {
+            fprintf(stderr, "Error reading file %s\n", argv[files[i]]);
+            fclose(fp);
+            goto failure;
         }
-
         fclose(fp);
     }
 
-    if (numfps == 0) {
-        while ((bytes = fread(buffer, 1, sizeof(buffer), stdin)) > 0) {
-            markdown_core_parser_feed(parser, buffer, bytes);
-            if (bytes < sizeof(buffer)) {
-                break;
-            }
-        }
+    if (numfps == 0 && !read_all(&source, stdin)) {
+        fputs("Error reading standard input\n", stderr);
+        goto failure;
     }
 
 #ifdef USE_PLEDGE
@@ -277,14 +282,11 @@ int main(int argc, char *argv[]) {
     }
 #endif
 
-    if (source_index) {
-        parser->concrete_out = stdout;
-    }
-    document = markdown_core_parser_finish(parser);
-
-    if (diagnostics_wanted) {
-        markdown_core_diagnostics_write(document ? &diagnostics : NULL, stdout);
-    }
+    setup.extensions = extensions;
+    setup.concrete_out = source_index ? stdout : NULL;
+    document = markdown_core_parse_document_with_mem(source.size ? (const char *)source.ptr : NULL, (size_t)source.size,
+                                                     options, markdown_core_get_default_mem_allocator(),
+                                                     configure_cli_parse, &setup);
 
     if (!document || !print_document(document)) {
         goto failure;
@@ -295,22 +297,12 @@ success:
 
 failure:
 
-    if (diagnostics_wanted) {
-        markdown_core_diagnostics_dispose(&diagnostics);
-    }
-
-    if (parser) {
-        markdown_core_parser_free(parser);
-    }
-
     if (document) {
         markdown_core_node_free(document);
     }
 
-    // Registered extensions are process-lifetime by contract; the OS reclaims
-    // them at exit.
-
     free(files);
+    markdown_core_strbuf_free(&source);
 
     return res;
 }

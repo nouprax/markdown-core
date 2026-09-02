@@ -23,7 +23,7 @@ static int is_valid_hostchar(const uint8_t *link, size_t link_len) {
 
 static int sd_autolink_issafe(const uint8_t *link, size_t link_len) {
     static const size_t valid_uris_count = 3;
-    static const char *valid_uris[] = {"http://", "https://", "ftp://"};
+    static const char *const valid_uris[] = {"http://", "https://", "ftp://"};
 
     size_t i;
 

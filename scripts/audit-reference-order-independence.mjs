@@ -23,9 +23,10 @@
  *
  * **Deleting the budget was never the fix**, which is why this was pinned
  * rather than repaired for so long: with it gone and nothing in its place,
- * `reference_expansion_bound` in `complexity_runner.c` measured 204.678x -- 656
- * KB of input producing 134 MB of copied destinations. The budget bought a
- * linear output bound by breaking resolution.
+ * 656 KB of input produced 134 MB of copied destinations. The budget bought a
+ * linear output bound by breaking resolution. `reference_expansion_bound` in
+ * `pathological_runner.c` now guards the payload ratio directly; this audit
+ * guards the independent lookup-order invariant.
  *
  * A reference that NAMES its definition instead of copying it buys both, and
  * that is Step 9b.2's model change: `LinkReference` and `ImageReference` carry

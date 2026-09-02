@@ -50,11 +50,20 @@ if (declared.join("\n") !== machOExported.join("\n")) {
     throw new Error("C header declarations and the Mach-O export list differ");
 }
 for (const symbol of declared) {
-    if (/_(set|insert|append|prepend|replace|unlink|new|render)_/.test(symbol)) {
-        throw new Error(`Mutating or rendering C symbol is public: ${symbol}`);
+    if (
+        /_(?:set|insert|append|prepend|replace|unlink|new|render)(?:_|$)/.test(symbol) ||
+        /_(?:feed|stream|edit|session|snapshot|delta|diagnostic)(?:_|$)/.test(symbol) ||
+        /_parser_(?:new|new_with_mem|feed|finish|free)$/.test(symbol) ||
+        /_parse_file$/.test(symbol)
+    ) {
+        throw new Error(`Retired or mutable C symbol is public: ${symbol}`);
     }
 }
 NODE
+
+# These are API identifier checks, not prose checks. `Concrete` is allowed: it
+# is owned source plus a line index, not a concrete syntax tree.
+retired_surface_terms='render|feed|stream|edit|session|snapshot|delta|diagnostic|CST|ConcreteSyntax|Token|Trivia|Recovery'
 
 CLANG_MODULE_CACHE_PATH="$temp_dir/swift-module-cache" \
     swift package --disable-sandbox dump-package >"$temp_dir/swift-package.json"
@@ -69,14 +78,14 @@ if (products.join("\n") !== "MarkdownCore:MarkdownCore") {
 NODE
 
 if grep -R -n -E \
-    'public (func|var|let|static func).*\b(render|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)' \
+    "public (class|struct|enum|protocol|typealias|func|var|let|static func).*\\b(${retired_surface_terms}|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)" \
     packages/swift-markdown-core/Sources/MarkdownCore; then
-    fail "Swift exports mutation, renderer, or native implementation details"
+    fail "Swift exports a retired API, mutation, or native implementation detail"
 fi
 grep -q 'public enum TreeDumper' packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift \
     && grep -q 'public static func dump' packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift \
     && grep -q 'func dump() -> String' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Markup.swift \
-    || fail "Swift does not expose the reviewed Markup diagnostic dump API"
+    || fail "Swift does not expose the reviewed Markup debug dump API"
 grep -q 'public struct TableRow: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
     && grep -q 'public struct TableCell: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
     && grep -q 'visit(_ node: TableRow)' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift \
@@ -96,9 +105,9 @@ test "$(grep -c 'mutating func visit' packages/swift-markdown-core/Sources/Markd
 grep -q 'explicitApi()' packages/kotlin-markdown-core/build.gradle.kts \
     || fail "Kotlin explicit API mode is disabled"
 if grep -R -n -E \
-    'public (fun|val|var).*\b(render|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)' \
+    "public (class|data class|sealed class|enum class|object|interface|typealias|fun|val|var).*\\b(${retired_surface_terms}|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)" \
     packages/kotlin-markdown-core/src/commonMain; then
-    fail "Kotlin exports mutation, renderer, or native implementation details"
+    fail "Kotlin exports a retired API, mutation, or native implementation detail"
 fi
 grep -q 'public object TreeDumper' \
     packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/TreeDumper.kt \
@@ -106,7 +115,7 @@ grep -q 'public object TreeDumper' \
         packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/TreeDumper.kt \
     && grep -q 'public fun dump(): String' \
         packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Markup.kt \
-    || fail "Kotlin does not expose the reviewed Markup diagnostic dump API"
+    || fail "Kotlin does not expose the reviewed Markup debug dump API"
 grep -q 'visitor.visitTableRow(this)' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Table.kt \
     && grep -q 'visitor.visitTableCell(this)' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Table.kt \
     && grep -q 'visitTableRow' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/Visitor.kt \
@@ -120,6 +129,11 @@ test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/
 
 if grep -R -E -n 'readonly children' packages/es-markdown-core/src/model; then
     fail "ES exposes generic children"
+fi
+if grep -R -n -E \
+    "^export (declare )?(class|interface|type|enum|function|const).*\\b(${retired_surface_terms}|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)" \
+    packages/es-markdown-core/src; then
+    fail "ES exports a retired API, mutation, or native implementation detail"
 fi
 grep -q 'TableRow extends MarkupBase<"tableRow">' packages/es-markdown-core/src/model/table.ts \
     && grep -q 'TableCell extends MarkupBase<"tableCell">' packages/es-markdown-core/src/model/table.ts \

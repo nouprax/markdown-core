@@ -8,13 +8,7 @@ table below is a second copy of the JSON, **checked against it by
 so the two cannot drift. Edit the JSON; the audit will tell you if this table
 disagrees.
 
-Until Step 15A this table WAS the contract and it lived under
-`docs/deprecated/`, which `docs/RECONSTRUCTION.md` says is archive and not
-normative, while four executable policy files read it from there.
-
-Status: frozen for Phase 5 on 2026-07-11.
-
-Phase 18 adds the executable repository-level conformance data at
+The executable repository-level conformance data lives at
 `specs/canonical-ast/manifest.json`. That manifest and its reviewed
 Markdown/`.ast` pairs are the sole cross-platform oracle for this contract;
 they do not change the production AST or define a serialization format.
@@ -70,8 +64,8 @@ Placement and AST containment are related but not interchangeable. In
 particular, `Formula` may be `standalone` while remaining inside a paragraph.
 
 **`Formula` is the only kind that carries a `mode`**, because it is the only
-one whose value is a fact about the source rather than about the kind. The
-other five carried one until Step 15A.4 and every one of them was a constant:
+one whose value is a fact about the source rather than about the kind. For the
+other five kinds the placement is constant and therefore implied by the kind:
 
 | Type | Its one value, now implied by the kind |
 | --- | --- |
@@ -227,14 +221,14 @@ Rows and cells produce normal visitor callbacks before their descendants.
 Visitor and Walker expose no replace, remove, setter, parent mutation, or
 native-handle callback.
 
-## Diagnostic dump
+## Debug dump
 
 Swift, Kotlin, and TypeScript publish `TreeDumper.dump(markup)` and a
 convenience `Markup.dump()` method. Both traverse that platform's immutable
 typed tree through its exhaustive Visitor and read-only Walker; they do not
-call the C diagnostic dump. Dumping a non-Document Markup treats that value as
+call the C debug dump. Dumping a non-Document Markup treats that value as
 the root and emits only its subtree. The canonical text grammar is defined in
-`canonical-ast-dump.md` and is diagnostic rather than a serialization API.
+`canonical-ast-dump.md` and is for debugging rather than serialization.
 
 ## Kotlin `List` naming contract
 

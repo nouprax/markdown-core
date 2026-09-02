@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 /* Shared native test support for the CTest suites.  Every runner links this
- * library instead of re-implementing fixture, comparison, or diagnostic
+ * library instead of re-implementing fixture, comparison, or failure-report
  * glue.  All verification goes through the read-only markdown_core facade
  * (parse, accessors, canonical AST dump); no renderer is ever invoked.  All
  * comparisons are UTF-8 byte comparisons; all diffs are line-oriented and
@@ -61,7 +61,7 @@ void ts_ast_options_none(markdown_core_parse_options *options);
  * names. */
 int ts_ast_enable(markdown_core_parse_options *options, const char *name);
 
-/* Parses through the facade; prints the facade diagnostic to stderr and
+/* Parses through the facade; prints the facade error message to stderr and
  * returns NULL on failure. */
 markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length, const markdown_core_parse_options *options);
 
@@ -85,7 +85,7 @@ int ts_ast_count_kinds(const markdown_core_node *root, size_t *counts);
  * NUL-terminated buffer (embedded NULs impossible: parser replaces them). */
 char *ts_ast_concat_text(const markdown_core_node *root, size_t *length);
 
-/* Comparison and diagnostics -------------------------------------------- */
+/* Comparison and failure reporting -------------------------------------- */
 
 /* Prints a deterministic line diff between expected and actual to stream. */
 void ts_print_line_diff(FILE *stream, const char *expected, const char *actual);

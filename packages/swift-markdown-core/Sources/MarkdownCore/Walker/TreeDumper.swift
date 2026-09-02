@@ -1,10 +1,10 @@
-/// Produces the canonical diagnostic tree for immutable Markdown markup.
+/// Produces the canonical debug tree for immutable Markdown markup.
 public enum TreeDumper {
     private struct Frame {
         var remainingChildren: Int
     }
 
-    /// Returns the canonical diagnostic dump for `root` and its descendants.
+    /// Returns the canonical debug dump for `root` and its descendants.
     public static func dump(_ root: some Markup) -> String {
         var visitor = DumpVisitor()
         var frames: [Frame] = []
@@ -36,7 +36,7 @@ public enum TreeDumper {
 }
 
 extension Markup {
-    /// Returns the canonical diagnostic dump for this markup subtree.
+    /// Returns the canonical debug dump for this markup subtree.
     public func dump() -> String { TreeDumper.dump(self) }
 }
 

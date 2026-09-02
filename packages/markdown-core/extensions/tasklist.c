@@ -10,7 +10,7 @@ typedef enum {
 } markdown_core_tasklist_type;
 
 // Local constants
-static const char *TYPE_STRING = "tasklist";
+static const char TYPE_STRING[] = "tasklist";
 
 static const char *get_type_string(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
     return TYPE_STRING;
