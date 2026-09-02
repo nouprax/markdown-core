@@ -64,42 +64,58 @@ if [ -d packages/markdown-core/tests/corpora ]; then
 fi
 
 # 4. Source audit stays compilation-free. Dynamic CTest inventory is evaluated
-# against an already-built artifact tree when the producer passes its path;
-# the repository health-check must not perform a duplicate platform build.
+# against an already-built artifact tree when the producer passes its path and
+# optional multi-config configuration; the repository health-check must not
+# perform a duplicate platform build.
 BUILD_DIR=${1:-}
+CTEST_CONFIGURATION=${2:-}
 if [ -n "$BUILD_DIR" ]; then
     if [ ! -f "$BUILD_DIR/CTestTestfile.cmake" ]; then
         fail "requested CTest tree is not configured: $BUILD_DIR"
     else
-        tests_all=$(ctest --test-dir "$BUILD_DIR" -N | sed -n 's/^  Test *#[0-9]*: //p')
+        ctest_inventory() {
+            if [ -n "$CTEST_CONFIGURATION" ]; then
+                ctest --test-dir "$BUILD_DIR" -C "$CTEST_CONFIGURATION" "$@"
+            else
+                ctest --test-dir "$BUILD_DIR" "$@"
+            fi
+        }
+        normalize_lines() {
+            tr -d '\r'
+        }
+
+        tests_all=$(ctest_inventory -N | normalize_lines | sed -n 's/^  Test *#[0-9]*: //p')
         for label in api facade conformance consumer spec extensions regression pathological fuzz packaging; do
-            count=$(ctest --test-dir "$BUILD_DIR" -N -L "^${label}$" | sed -n 's/^Total Tests: //p')
+            count=$(ctest_inventory -N -L "^${label}$" | normalize_lines | sed -n 's/^Total Tests: //p')
             if [ "${count:-0}" -lt 1 ]; then
                 fail "no CTest tests carry label '$label'"
             fi
         done
         note "every required label resolves to at least one test"
 
-        if ctest --test-dir "$BUILD_DIR" -N | grep -q 'Disabled'; then
+        if ctest_inventory -N | normalize_lines | grep -q 'Disabled'; then
             fail "disabled tests present in the CTest graph"
         else
             note "no disabled tests in the CTest graph"
         fi
 
-        correctness_list=$(ctest --test-dir "$BUILD_DIR" -N -LE '^conformance$' | sed -n 's/^  Test *#[0-9]*: //p')
+        correctness_list=$(ctest_inventory -N -LE '^conformance$' | normalize_lines \
+            | sed -n 's/^  Test *#[0-9]*: //p')
         if echo "$correctness_list" | grep -Eq '^(facade_native$|facade_dump_cli$)'; then
             fail "correctness selection includes conformance workloads"
         else
             note "correctness selection excludes conformance"
         fi
 
-        if ctest --test-dir "$BUILD_DIR" -N -L '^(benchmark|complexity)$' | grep -Eq 'Total Tests: [1-9]'; then
+        if ctest_inventory -N -L '^(benchmark|complexity)$' | normalize_lines \
+            | grep -Eq 'Total Tests: [1-9]'; then
             fail "default CTest graph contains a wall-clock performance test"
         else
             note "default CTest graph contains no wall-clock performance tests"
         fi
 
-        conformance_list=$(ctest --test-dir "$BUILD_DIR" -N -L '^conformance$' | sed -n 's/^  Test *#[0-9]*: //p')
+        conformance_list=$(ctest_inventory -N -L '^conformance$' | normalize_lines \
+            | sed -n 's/^  Test *#[0-9]*: //p')
         if [ "$conformance_list" != "facade_native
 facade_dump_cli" ]; then
             fail "C conformance selection does not contain exactly the public contract checks"
@@ -115,11 +131,11 @@ facade_dump_cli" ]; then
         if [ -z "$pathological_runner" ] || [ -z "$stress_runner" ]; then
             fail "CTest discovery runners are missing from the built tree"
         else
-            for case_name in $("$pathological_runner" --list); do
+            for case_name in $("$pathological_runner" --list | normalize_lines); do
                 echo "$tests_all" | grep -q "^pathological_${case_name}$" \
                     || fail "pathological case '$case_name' is not registered in CTest"
             done
-            for case_name in $("$stress_runner" --list); do
+            for case_name in $("$stress_runner" --list | normalize_lines); do
                 echo "$tests_all" | grep -q "^pathological_stress_${case_name}$" \
                     || fail "stress case '$case_name' is not registered in CTest"
             done

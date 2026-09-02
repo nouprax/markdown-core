@@ -178,7 +178,8 @@ done
 grep -Fq -- '-DMARKDOWN_CORE_TESTS=OFF' scripts/build-c-product-artifact.sh
 grep -Fq -- '-DMARKDOWN_CORE_TESTS=ON' scripts/build-c-test-artifact.sh
 grep -Fq 'Total Tests: [1-9][0-9]*' scripts/build-c-test-artifact.sh
-grep -Fq 'audit-test-topology.sh' scripts/build-c-test-artifact.sh
+grep -Fq 'audit-test-topology.sh" "$root/$build_dir" "$configuration"' scripts/build-c-test-artifact.sh
+grep -Fq "tr -d '\\r'" scripts/audit-test-topology.sh
 if grep -Eq 'cmake --preset|cmake --build|swift test|gradle\.sh' scripts/audit-test-topology.sh; then
     echo "repository topology health-check must not duplicate a platform build or test discovery" >&2
     exit 1

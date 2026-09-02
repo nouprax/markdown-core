@@ -42,7 +42,7 @@ if ! "${inventory[@]}" | grep -Eq 'Total Tests: [1-9][0-9]*$'; then
     echo "C test artifact contains no discovered CTest tests" >&2
     exit 1
 fi
-bash "$root/scripts/audit-test-topology.sh" "$root/$build_dir"
+bash "$root/scripts/audit-test-topology.sh" "$root/$build_dir" "$configuration"
 if find "$root/$build_dir" -type f \( -name bench_runner -o -name bench_runner.exe \) -print -quit | grep -q .; then
     echo "C test artifact tree contains a benchmark executable" >&2
     exit 1
