@@ -218,4 +218,47 @@ test("errors: every wire guard fires when the native side answers out of range",
     // A disposed decoder holds a freed scratch pointer, and reading through it
     // would be a use-after-free in WASM memory rather than an error.
     assert.throws(() => decoder.requireLive(), /decoder has been disposed/u);
+
+    // Native parse failures keep their terminal category across the WASM
+    // boundary. In particular, allocation failure must not be collapsed into
+    // an internal error that a consumer could mistake for a recoverable path.
+    let rawErrorCode = 1;
+    const errorDecoder = new NodeDecoder({
+        memory: new WebAssembly.Memory({ initial: 1 }),
+        malloc: () => 8,
+        free: () => {},
+        es_error_code: () => rawErrorCode,
+        es_string: () => 0
+    });
+    try {
+        assert.equal(errorDecoder.parseError(1).code, "invalidArgument");
+        rawErrorCode = 2;
+        assert.equal(errorDecoder.parseError(1).code, "allocationFailed");
+        rawErrorCode = 99;
+        assert.equal(errorDecoder.parseError(1).code, "internal");
+        assert.equal(errorDecoder.parseError(0).code, "internal");
+    } finally {
+        errorDecoder.dispose();
+    }
+
+    // A directive label is a typed field with its own node kind. Accepting a
+    // generic child here would erase the structural distinction this wire
+    // contract exists to preserve.
+    const malformedDirectiveDecoder = new NodeDecoder({
+        memory: new WebAssembly.Memory({ initial: 1 }),
+        malloc: () => 8,
+        free: () => {},
+        es_node_directive_label: () => 2,
+        es_node_kind: () => 3,
+        es_node_first_child: () => 0,
+        es_scope_coordinate: () => 1
+    });
+    try {
+        assert.throws(
+            () => malformedDirectiveDecoder.directiveFields(1),
+            /directive label field contains a non-label node/u
+        );
+    } finally {
+        malformedDirectiveDecoder.dispose();
+    }
 });

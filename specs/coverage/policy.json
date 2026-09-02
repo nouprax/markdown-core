@@ -109,11 +109,6 @@
             "exempt": [],
             "minimumMeasuredFiles": 11,
             "unpinned": {
-                "packages/es-markdown-core/src/parse-error.ts": {
-                    "lines": 4,
-                    "functions": 2,
-                    "branches": 1
-                },
                 "packages/es-markdown-core/src/runtime/native.ts": {
                     "lines": 8,
                     "functions": 4,
@@ -140,8 +135,8 @@
                     "branches": 1
                 },
                 "packages/es-markdown-core/src/wire/node-decoder.ts": {
-                    "lines": 30,
-                    "functions": 3,
+                    "lines": 18,
+                    "functions": 1,
                     "branches": 19
                 }
             }
