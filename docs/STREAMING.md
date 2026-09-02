@@ -2036,7 +2036,14 @@ malformed payload per refusal the delta reader can make. Kotlin: the same
 three, under the same names. The bridge envelope bumps MKC7 → MKC8 on both
 writers and both decoders, the payload's first byte having changed.
 
-**Measured.** ES feed loop, same input, same machine, median of 5:
+**Measured.** Callgrind first, since it is exact: the one-shot parse of
+the 158 KB document (`bench_runner --workload binding_baseline`) reads
+61.483M instructions before and 61.482M after, and the C feed loop over
+spec.txt (`projection_runner --case feed_loop`) 43.26M before and 43.33M
+after (+0.14%, the enrolled predicate's one extra compare per node) — the
+paths the delta does not touch cost what they cost, whatever a hosted
+runner's clock says on a given day. ES feed loop, same input, same
+machine, median of 5:
 24.8 / 77.6 / 986.6 ms → 18.0 / 21.6 / 36.6 ms at 1 / 16 / 256 chunks —
 1.20× and 1.70× per 16× step where it read 3.1× and 12.7×, the 256-chunk
 stream 27× faster; the one-shot 22.6 → 22.2 ms and deep nesting 92 → 83
