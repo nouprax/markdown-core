@@ -11,6 +11,5 @@ class KmpConsumerTest {
         val document = Document.parse("# KMP consumer\n")
         assertEquals(1, document.content.size)
         assertEquals(document.dump(), TreeDumper.dump(document))
-        assertEquals(0, document.concrete.lineStart(1))
     }
 }

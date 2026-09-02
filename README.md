@@ -20,24 +20,15 @@ divergence history, and license relationship.
 All platform APIs have one synchronous parse entry point: `Document.parse` in
 Swift, Kotlin, and ECMAScript, and `markdown_core_document_parse` in C.
 
-A parse produces the AST, and every node carries a **`scope`**: the pair of
-`(line, column)` **boundaries** the element occupies. A scope is what a consumer
-follows to map an element back to the source it came from — it is not a byte
-range, and no substring is taken with it.
+A parse produces only the AST. Every node carries a **`scope`**: the pair of
+`(line, column)` boundaries reported by the cmark-family parser. A scope is
+location metadata, not a byte range, and no substring is implied by it.
 
-Those numbers are counted against the **normalized source**, not against the
-string you passed: UTF-8 as fed, every NUL replaced by the three bytes of
-U+FFFD, every line ending a single `\n` and every line having one. `concrete`
-publishes that source and its line index, because an input containing a NUL has
-a buffer whose columns no longer agree with the parser's. It is not a concrete
-syntax tree: it contains no tokens, trivia, recovery nodes, or editing model.
-
-A `Document` IS the AST and carries `concrete` beside its `content`. In C the
-two are siblings — a `markdown_core_document` is a handle and the root is a node
-it lends out — and in the bindings they are not, because the handle is gone by
-the time `parse` returns. The Swift, Kotlin, and ECMAScript bindings copy both
-into platform values and retain no native parser handle afterwards. The C API
-exposes an owned document with borrowed node views.
+The parser does not retain or publish the input, a normalized source copy, a
+line index, tokens, trivia, recovery nodes, or an editing model. Consumers that
+need the Markdown text keep their own input. The Swift, Kotlin, and ECMAScript
+bindings copy the AST into platform values and retain no native parser handle;
+the C API exposes an owned document with borrowed node views.
 
 The default parse options enable smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas (including
@@ -63,7 +54,6 @@ let document = try Document.parse(
     options: ParseOptions(directives: false)
 )
 print(document.dump())
-print(document.concrete.lineCount)
 ```
 
 The Swift AST is an immutable, `Sendable` value tree. The module also provides
@@ -92,7 +82,6 @@ val document = Document.parse(
     ParseOptions(directives = false),
 )
 println(document.dump())
-println(document.concrete.lineCount)
 ```
 
 The published targets are Android (API 21 or later), JVM 17, macOS arm64, and
@@ -117,7 +106,6 @@ new Walker().walk(document, (event, node) => {
   console.log(event, node.kind, node.scope);
 });
 console.log(TreeDumper.dump(document));
-console.log(document.concrete.lineCount);
 ```
 
 The package supports Node.js 20 or later and browser environments that can load

@@ -18,9 +18,6 @@ public final class Main {
         if (document.getContent().size() != 1) {
             throw new IllegalStateException("Document.parse returned unexpected top-level content");
         }
-        if (document.getConcrete().getSource().length != "héllo 🚀\n".getBytes().length) {
-            throw new IllegalStateException("the concrete view did not survive the copy");
-        }
         String dump = TreeDumper.INSTANCE.dump(document);
         if (!dump.contains("héllo 🚀")) {
             throw new IllegalStateException("native payload returned an unexpected document: " + dump);

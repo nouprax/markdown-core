@@ -228,7 +228,7 @@ static int parse_and_dump(const char *input, option_variant variant, uint8_t **d
         return 1;
     }
 
-    if (!traverse(markdown_core_document_semantic(document))) {
+    if (!traverse(markdown_core_document_root(document))) {
         markdown_core_document_free(document);
         return 1;
     }

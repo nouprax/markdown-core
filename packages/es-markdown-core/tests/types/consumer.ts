@@ -1,5 +1,4 @@
 import {
-    Concrete,
     Document,
     TreeDumper,
     visit,
@@ -13,23 +12,10 @@ import {
 } from "@nouprax/es-markdown-core";
 
 const document: Document = Document.parse("# typed", { tables: true });
-const concrete: Concrete = document.concrete;
 const dump: string = document.dump();
 const explicitDump: string = TreeDumper.dump(document);
 void dump;
 void explicitDump;
-// The source a scope is counted against is bytes and a line index, and both
-// outlive the WASM handle.
-const source: Uint8Array = concrete.source;
-const lineStart: number = concrete.lineStart(1);
-const lineCount: number = concrete.lineCount;
-void source;
-void lineStart;
-void lineCount;
-// @ts-expect-error the source is readonly
-concrete.source = source;
-// @ts-expect-error the concrete view is readonly
-document.concrete = concrete;
 const visitor: Visitor<string> = {
     visitDocument: (node) => node.kind,
     visitBlockQuote: (node) => node.kind,

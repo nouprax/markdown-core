@@ -61,27 +61,7 @@ markdown_core_document *es_document_parse(const uint8_t *source, size_t length, 
 void es_document_free(markdown_core_document *document) { markdown_core_document_free(document); }
 
 const markdown_core_node *es_document_root(const markdown_core_document *document) {
-    return markdown_core_document_semantic(document);
-}
-
-void es_document_source(const markdown_core_document *document, uintptr_t *data, size_t *length) {
-    es_write_string(markdown_core_document_source(document), data, length);
-}
-
-size_t es_document_line_count(const markdown_core_document *document) {
-    return markdown_core_document_line_count(document);
-}
-
-/* Written whole rather than one call per line: the binding copies the entire
- * index anyway, and a call per line is 8410 crossings on a 674 KB document. */
-void es_document_line_starts(const markdown_core_document *document, uint32_t *out) {
-    size_t count = markdown_core_document_line_count(document);
-    size_t line;
-    for (line = 1; line <= count; line++) {
-        size_t offset = 0;
-        markdown_core_document_line_start(document, line, &offset);
-        out[line - 1] = (uint32_t)offset;
-    }
+    return markdown_core_document_root(document);
 }
 
 int32_t es_error_code(const markdown_core_error *error) { return (int32_t)markdown_core_error_get_code(error); }

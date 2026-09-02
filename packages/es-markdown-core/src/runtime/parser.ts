@@ -1,4 +1,3 @@
-import { Concrete } from "../concrete.js";
 import type { Document } from "../model/document.js";
 import { ParseError } from "../parse-error.js";
 import type { ParseOptions } from "../parse-options.js";
@@ -43,10 +42,7 @@ export function parseDocument(source: string, parseOptions: ParseOptions = {}): 
         const decoder = new NodeDecoder(native);
         try {
             if (!documentPointer) throw decoder.parseError(errorPointer);
-            return withConcrete(
-                decoder.decodeDocument(native.es_document_root(documentPointer)),
-                readConcrete(documentPointer)
-            );
+            return decoder.decodeDocument(native.es_document_root(documentPointer));
         } finally {
             decoder.dispose();
         }
@@ -55,49 +51,6 @@ export function parseDocument(source: string, parseOptions: ParseOptions = {}): 
         if (errorPointer) native.es_error_free(errorPointer);
         if (errorOutput) native.free(errorOutput);
         if (sourcePointer) native.free(sourcePointer);
-    }
-}
-
-/**
- * Copies the whole concrete view out of WASM memory, which the caller frees as
- * soon as this returns.
- *
- * Every array is read out in ONE crossing: the view is copied whole either way,
- * and a call per line or per region is tens of thousands of them on a document
- * of any size.
- */
-/**
- * The root, given the source its scopes are counted against.
- *
- * Defined ON the decoded root rather than spread into a new object: `dump` is
- * not enumerable, and a spread would leave it behind. `concrete` is data and
- * enumerates.
- */
-function withConcrete(root: Omit<Document, "concrete">, concrete: Concrete): Document {
-    const document = root as Document;
-    Object.defineProperty(document, "concrete", { enumerable: true, value: concrete });
-    return document;
-}
-
-function readConcrete(documentPointer: number): Concrete {
-    const sourceOutput = allocate(Uint32Array.BYTES_PER_ELEMENT * 2);
-    let lineOutput = 0;
-    try {
-        native.es_document_source(documentPointer, sourceOutput, sourceOutput + 4);
-        const sourcePointer = dataView().getUint32(sourceOutput, true);
-        const sourceLength = dataView().getUint32(sourceOutput + 4, true);
-        const source = new Uint8Array(native.memory.buffer, sourcePointer, sourceLength).slice();
-
-        const lineCount = native.es_document_line_count(documentPointer);
-        lineOutput = allocate(Math.max(lineCount, 1) * Uint32Array.BYTES_PER_ELEMENT);
-        native.es_document_line_starts(documentPointer, lineOutput);
-        const lineStarts = new Uint32Array(native.memory.buffer, lineOutput, lineCount).slice();
-
-        return new Concrete(source, lineStarts);
-    } finally {
-        for (const pointer of [lineOutput, sourceOutput]) {
-            if (pointer) native.free(pointer);
-        }
     }
 }
 

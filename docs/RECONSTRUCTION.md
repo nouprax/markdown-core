@@ -11,7 +11,7 @@ not expose a parser lifecycle, incremental mutation, streaming, CST, or
 diagnostic subsystem.
 
 Historical documents under `docs/deprecated/` are non-normative. If they
-describe a renderer, feed API, edit/session API, concrete syntax tree,
+describe a renderer, feed API, edit/session API, CST,
 diagnostic list, or recoverable OOM behavior, those descriptions do not apply
 to this repository.
 
@@ -101,17 +101,17 @@ an allocation failure terminates the entire parse. An extension may not omit a
 feature, switch algorithms, or return a smaller but apparently valid tree in
 order to survive OOM.
 
-## 4. Document model, not CST
+## 4. Immutable AST only
 
 The public result is a typed, immutable AST. Nodes describe semantic Markdown
 constructs and their source scopes. The public visitor/walker surfaces are
 exhaustive over the canonical node-kind contract.
 
-`Document.concrete` is not a concrete syntax tree. It is the document's owned
-source text plus its line index, used for source lookup and position
-calculation. It has no token nodes, trivia nodes, recovery nodes, editable
-records, or inverse tree-to-source machinery. The repository must not call it
-a CST or grow it into one.
+The returned document contains only the semantic AST. The parser does not
+retain or expose source text, a normalized source copy, a line index, tokens,
+trivia, recovery nodes, editable records, or inverse tree-to-source machinery.
+Scopes are location metadata calculated during parsing; they do not imply that
+the document owns the source.
 
 There is no diagnostic collection on `Document`, no diagnostic code enum, and
 no parser hook for retaining or emitting diagnostics. Grammar near-matches are
@@ -171,7 +171,7 @@ Swift, Kotlin, and ECMAScript expose the same concepts:
 
 - immutable `Document` and typed markup nodes
 - parse options and a one-shot parse entry point
-- source text, scopes, and line/position lookup
+- source scopes
 - exhaustive visitors/walkers
 - canonical AST debug dumping
 - terminal parse errors

@@ -17,8 +17,6 @@ extern "C" {
 struct markdown_core_document {
     markdown_core_mem *mem;
     markdown_core_node *root;
-    /* The normalized source and line index, released with the tree they name. */
-    markdown_core_concrete concrete;
 };
 
 /* Testable implementation of the public facade transaction. The public entry

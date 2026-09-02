@@ -170,10 +170,10 @@ validates the owning edge: the value in `Table.header` is true and values in
 ## ParseOptions
 
 `Document.parse(source, options = ParseOptions.default)` is the only parsing
-entry point. A parse is the `Document` this table describes,
-and `Document.concrete` — the normalized source its scopes are counted against,
-and that source's line index. This table is the AST's contract; `concrete` has no
-kinds and no fields of its own, and it is not a dumped field. `ParseOptions` is immutable and contains exactly these booleans:
+entry point. A parse returns exactly the `Document` this table describes. The
+document does not retain source text, a normalized source copy, a line index,
+tokens, trivia, or recovery records. `ParseOptions` is immutable and contains
+exactly these booleans:
 
 | Field | Default |
 | --- | --- |
@@ -235,7 +235,7 @@ the root and emits only its subtree. The canonical text grammar is defined in
 
 ## Kotlin `List` naming contract
 
-The concrete AST type remains `com.nouprax.markdown.core.List`. Kotlin source
+The Kotlin AST type remains `com.nouprax.markdown.core.List`. Kotlin source
 inside the library spells collection types as `kotlin.collections.List<T>`.
 Consumers resolve ambiguity with either the fully qualified AST name or an
 import alias such as:

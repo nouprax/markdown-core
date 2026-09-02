@@ -406,16 +406,6 @@ int markdown_core_parser_get_column(markdown_core_parser *parser);
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser);
 
-/** Hand every concrete record that names 'from' to 'to', keeping each one's
- * role.
- *
- * An extension that REPLACES a block -- a fenced code block whose info line
- * says the body is a formula becomes a formula block -- leaves records naming
- * a node it is about to free. This is how it says the bytes moved with the
- * construct. A record must never name a freed node: that is a map owning a
- * node (D11) one indirection further out, and AddressSanitizer over
- * `--concrete` is what finds it.
- */
 /** Declare that 'node''s content -- which the caller SET rather than the parser
  * parsing it -- begins at (line, column) in the source, and runs on from there
  * without a break. Returns 1, or 0 if it could not be recorded, in which case

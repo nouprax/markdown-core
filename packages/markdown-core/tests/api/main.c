@@ -1597,7 +1597,7 @@ static void association_accessor(test_batch_runner *runner) {
         OK(runner, 0, "association corpus parses");
         return;
     }
-    root = markdown_core_document_semantic(document);
+    root = markdown_core_document_root(document);
 
     {
         /* An explicit stack, because the walk must reach every node and the

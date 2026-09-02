@@ -1,11 +1,8 @@
 package com.nouprax.markdown.core
 
 internal object WireDecoder {
-    /**
-     * `MKC5`: an error lost its scope byte at Step 13, which deleted
-     * `markdown_core_error_get_scope` -- a parse failure carries no scope.
-     */
-    private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x35)
+    /** `MKC6` removed the retained source and line index from the payload. */
+    private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x36)
 
     fun decodeDocument(bytes: ByteArray): Document {
         val reader = WireReader(bytes)
@@ -27,28 +24,15 @@ internal object WireDecoder {
 /**
  * THE ROOT IS READ BY HAND, and it is the only node that is.
  *
- * A document carries the concrete view, the wire writes that view AFTER the
- * tree, and a node is built as it is read -- so the root's own fields are read
- * here, the view after them, and the document constructed from both.
+ * A node is built as it is read, so the root's own fields are read here rather
+ * than through `markup()`.
  */
 private fun WireReader.document(): Document {
     require(kind() == WireKind.DOCUMENT) { "native bridge returned an invalid document tree" }
     val rootScope = scope()
     val content = markupList()
-    val concrete = concrete()
     require(finished) { "native bridge returned a truncated payload" }
-    return Document(content, rootScope, concrete)
-}
-
-/**
- * The source a scope's coordinates are counted against, as `write_concrete`
- * lays it out: the source length and its bytes, then the line count and one
- * offset per line.
- */
-private fun WireReader.concrete(): Concrete {
-    val source = bytes(int())
-    val lineStarts = IntArray(count()) { int() }
-    return Concrete(source, lineStarts)
+    return Document(content, rootScope)
 }
 
 private fun WireReader.count(): Int = int().also { require(it >= 0) { "invalid native count" } }
@@ -99,12 +83,6 @@ internal class WireReader(
     }
 
     fun requiredString(): String = requireNotNull(string()) { "missing native field" }
-
-    fun bytes(size: Int): ByteArray {
-        require(size >= 0 && size <= bytes.size - offset) { "invalid native byte run" }
-        val end = offset + size
-        return bytes.copyOfRange(offset, end).also { offset = end }
-    }
 
     fun scope(): Scope = Scope(Position(int(), int()), Position(int(), int()))
 

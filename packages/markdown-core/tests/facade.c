@@ -159,56 +159,6 @@ done:
     markdown_core_error_free(error);
 }
 
-/* Is `node` in `root`'s tree? A region's owner must be, or the two views are
- * not one parse. */
-/* WHAT A SCOPE INDEXES INTO. A scope names a place in the NORMALIZED source --
- * not in the bytes the caller passed -- so a consumer that follows one back to
- * the source needs those bytes and the index that turns a line into an offset
- * into them. This asserts that the two are there, agree with each other, and
- * refuse what is not a line. */
-static void check_source_and_lines(void) {
-    static const char *const SOURCE = "# heading ##\n"
-                                      "\n"
-                                      "para *em* text\n"
-                                      "\n"
-                                      "```js\n"
-                                      "code\n"
-                                      "```\n"
-                                      "\n"
-                                      "[a]: /u\n"
-                                      "\n"
-                                      "see [a] here\n";
-    markdown_core_document *document;
-    markdown_core_string text;
-    size_t at;
-    size_t line;
-    int lines_agree = 1;
-
-    document = markdown_core_document_parse((const uint8_t *)SOURCE, strlen(SOURCE), NULL, NULL);
-    check(document != NULL, "the corpus parses");
-    if (!document) {
-        return;
-    }
-    text = markdown_core_document_source(document);
-    check(text.length == strlen(SOURCE) && memcmp(text.data, SOURCE, text.length) == 0,
-          "the source is the normalized source, byte for byte");
-    check(markdown_core_document_line_count(document) == 11, "the line index counts the source's lines");
-    for (line = 2; line <= markdown_core_document_line_count(document); line++) {
-        size_t start = 0;
-        if (!markdown_core_document_line_start(document, line, &start) || start == 0 ||
-            text.data[start - 1] != (uint8_t)'\n') {
-            lines_agree = 0;
-        }
-    }
-    check(lines_agree, "every line but the first begins after a line ending");
-    check(markdown_core_document_line_start(document, 1, &at) && at == 0, "line one begins at offset zero");
-    check(!markdown_core_document_line_start(document, 0, &at), "line zero is not a line");
-    check(!markdown_core_document_line_start(document, 12, &at), "a line past the end is not a line");
-    check(markdown_core_document_source(NULL).data == NULL, "a null document has no source");
-    check(markdown_core_document_line_count(NULL) == 0, "a null document has no lines");
-    markdown_core_document_free(document);
-}
-
 /* REQUIREMENT 14 THROUGH THE ACCESSORS, which is where it has to be checked.
  *
  * The dump renders `null` and `""` differently and the goldens pin that, but a
@@ -259,7 +209,7 @@ static void check_null_and_empty(void) {
             check(false, "requirement 14 case parses");
             continue;
         }
-        node = markdown_core_node_get_first_child(markdown_core_document_semantic(document));
+        node = markdown_core_node_get_first_child(markdown_core_document_root(document));
         if (CASES[index].kind != MARKDOWN_CORE_KIND_REFERENCE_DEFINITION) {
             node = markdown_core_node_get_first_child(node);
         }
@@ -299,7 +249,7 @@ static void check_null_and_empty(void) {
             check(false, "requirement 14 info case parses");
             continue;
         }
-        node = markdown_core_node_get_first_child(markdown_core_document_semantic(document));
+        node = markdown_core_node_get_first_child(markdown_core_document_root(document));
         check(markdown_core_node_code_block_properties(node, &info, &language, &literal, &fenced, &closed),
               "the code-block accessor answers");
         check(info.has_value == INFO_CASES[index].info_written,
@@ -329,7 +279,7 @@ static void check_directive_label_projection(void) {
     document = markdown_core_document_parse(inline_source, sizeof(inline_source) - 1, NULL, NULL);
     check(document != NULL, "labelled inline directive parses");
     if (document) {
-        root = markdown_core_document_semantic(document);
+        root = markdown_core_document_root(document);
         directive = markdown_core_node_get_first_child(markdown_core_node_get_first_child(root));
         label = markdown_core_node_directive_label(directive);
         label_child = markdown_core_node_get_first_child(label);
@@ -346,7 +296,7 @@ static void check_directive_label_projection(void) {
     document = markdown_core_document_parse(bare_source, sizeof(bare_source) - 1, NULL, NULL);
     check(document != NULL, "bare inline directive parses");
     if (document) {
-        root = markdown_core_document_semantic(document);
+        root = markdown_core_document_root(document);
         directive = markdown_core_node_get_first_child(markdown_core_node_get_first_child(root));
         check(markdown_core_node_directive_label(directive) == NULL && markdown_core_node_child_count(directive) == 0,
               "an absent directive label remains absent and is not content");
@@ -356,7 +306,7 @@ static void check_directive_label_projection(void) {
     document = markdown_core_document_parse(empty_source, sizeof(empty_source) - 1, NULL, NULL);
     check(document != NULL, "empty-label directive parses");
     if (document) {
-        root = markdown_core_document_semantic(document);
+        root = markdown_core_document_root(document);
         directive = markdown_core_node_get_first_child(markdown_core_node_get_first_child(root));
         label = markdown_core_node_directive_label(directive);
         check(markdown_core_node_get_kind(label) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL &&
@@ -369,7 +319,7 @@ static void check_directive_label_projection(void) {
     document = markdown_core_document_parse(block_source, sizeof(block_source) - 1, NULL, NULL);
     check(document != NULL, "labelled block directive parses");
     if (document) {
-        root = markdown_core_document_semantic(document);
+        root = markdown_core_document_root(document);
         directive = markdown_core_node_get_first_child(root);
         label = markdown_core_node_directive_label(directive);
         check(markdown_core_node_get_kind(label) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL &&
@@ -404,7 +354,7 @@ static void check_api(void) {
     document = markdown_core_document_parse(source, sizeof(source) - 1, &options, &error);
     check(document != NULL && error == NULL, "typed-options parse succeeds");
     if (document) {
-        root = markdown_core_document_semantic(document);
+        root = markdown_core_document_root(document);
         heading = markdown_core_node_get_first_child(root);
         check(markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT, "document root kind is typed");
         check(markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING,
@@ -446,7 +396,6 @@ int main(int argc, char **argv) {
     check_api();
     check_null_and_empty();
     check_directive_label_projection();
-    check_source_and_lines();
     for (i = 3; i < argc; i += 2) {
         check_fixture(fixture_dir, argv[i], argv[i + 1]);
     }

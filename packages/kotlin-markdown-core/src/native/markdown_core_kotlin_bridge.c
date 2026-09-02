@@ -313,34 +313,6 @@ static void write_node(bridge_buffer *buffer, const markdown_core_node *node) {
     }
 }
 
-/* THE SOURCE A SCOPE'S COORDINATES ARE COUNTED AGAINST, after the tree.
- *
- * It goes on the wire because the JVM cannot hold a native pointer past the
- * parse. Layout, little-endian throughout: the source length and its bytes,
- * then the line count and one offset per line. */
-static void write_concrete(bridge_buffer *buffer, const markdown_core_document *document) {
-    size_t lines = markdown_core_document_line_count(document);
-    markdown_core_string source = markdown_core_document_source(document);
-    size_t index;
-
-    if (source.length > INT32_MAX || lines > INT32_MAX) {
-        buffer->failed = true;
-        return;
-    }
-    put_i32(buffer, (int32_t)source.length);
-    put_bytes(buffer, source.data, source.length);
-
-    put_i32(buffer, (int32_t)lines);
-    for (index = 1; index <= lines; index++) {
-        size_t offset = 0;
-        if (!markdown_core_document_line_start(document, index, &offset)) {
-            buffer->failed = true;
-            return;
-        }
-        put_i32(buffer, (int32_t)offset);
-    }
-}
-
 static void apply_options(markdown_core_parse_options *options, uint32_t mask) {
     options->smart_punctuation = (mask & (1u << 0)) != 0;
     options->footnotes = (mask & (1u << 1)) != 0;
@@ -355,9 +327,8 @@ static void apply_options(markdown_core_parse_options *options, uint32_t mask) {
 
 bool markdown_core_kotlin_parse(const uint8_t *source, size_t length, uint32_t options_mask, uint8_t **output,
                                 size_t *output_length) {
-    /* MKC5: an error lost its scope byte when Step 13 deleted
-     * `markdown_core_error_get_scope` -- a parse failure carries no scope. */
-    static const uint8_t magic[] = {'M', 'K', 'C', '5'};
+    /* MKC6 removed the retained source and line index from the payload. */
+    static const uint8_t magic[] = {'M', 'K', 'C', '6'};
     markdown_core_parse_options options;
     markdown_core_error *error = NULL;
     markdown_core_document *document;
@@ -386,12 +357,11 @@ bool markdown_core_kotlin_parse(const uint8_t *source, size_t length, uint32_t o
         markdown_core_error_free(error);
     } else {
         put_u8(&buffer, 0);
-        root = markdown_core_document_semantic(document);
+        root = markdown_core_document_root(document);
         if (root == NULL) {
             buffer.failed = true;
         } else {
             write_node(&buffer, root);
-            write_concrete(&buffer, document);
         }
         markdown_core_document_free(document);
     }

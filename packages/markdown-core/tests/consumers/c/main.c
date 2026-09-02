@@ -13,7 +13,7 @@ int main(void) {
         markdown_core_error_free(error);
         return 1;
     }
-    root = markdown_core_document_semantic(document);
+    root = markdown_core_document_root(document);
     if (root == NULL || markdown_core_node_get_kind(root) != MARKDOWN_CORE_KIND_DOCUMENT ||
         markdown_core_node_child_count(root) != 1) {
         markdown_core_document_free(document);

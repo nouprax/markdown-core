@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { TextEncoder } from "node:util";
 import { Document, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
 // Past index.js for the instance itself: the heap is what this asserts about,
 // and it is observable without the source carrying anything for the test.
@@ -84,50 +83,6 @@ test("robustness: repeated parse and release remains stable", () => {
     }
 });
 
-// The requirement's own sentence: the concrete view survives being copied into
-// value types and the handle being freed. `parse` frees it before it returns,
-// so everything below reads a view with no WASM memory left behind it.
-test("concrete: the normalized source and its line index survive the native release", () => {
-    const source = [
-        "# Heading ##",
-        "",
-        "> quoted *em* and `code`",
-        "",
-        "| a | b |",
-        "| --- | --- |",
-        "| c | d |",
-        "",
-        ":::container[Title]{kind=demo}",
-        "Body",
-        ":::",
-        "",
-        '[a]: /u "t"',
-        "",
-        "see [a].",
-        ""
-    ].join("\n");
-    const document = Document.parse(source);
-    const concrete = document.concrete;
-    assert.deepEqual(concrete.source, new TextEncoder().encode(source));
-    assert.equal(concrete.lineCount, 15);
-    assert.equal(concrete.lineStart(1), 0);
-    assert.equal(concrete.lineStart(3), 14);
-    assert.throws(() => concrete.lineStart(0), RangeError);
-    assert.throws(() => concrete.lineStart(16), RangeError);
-
-    // Every line but the first begins after a line ending.
-    for (let line = 2; line <= concrete.lineCount; line += 1) {
-        const start = concrete.lineStart(line);
-        assert.ok(start > 0);
-        assert.equal(concrete.source[start - 1], "\n".charCodeAt(0));
-    }
-
-    // Nothing native is left: 300 more parses cannot move what was copied.
-    for (let index = 0; index < 300; index += 1) Document.parse("# copy\n");
-    assert.deepEqual(concrete.source, new TextEncoder().encode(source));
-    assert.equal(concrete.lineStart(3), 14);
-});
-
 test("robustness: the heap grows, and a document larger than the initial one parses", () => {
     // The default heap is 16 MiB and a parse needs several times its input, so
     // before -sALLOW_MEMORY_GROWTH=1 anything past about 1.6 MiB did not fail --
@@ -191,7 +146,7 @@ test("ast: the decoder's reference, formula, list and empty-string arms are exer
 
 test("errors: every wire guard fires when the native side answers out of range", () => {
     // These guards exist because the two sides of the wire are versioned
-    // separately -- the Kotlin bridge's bump to MKC5 is the same hazard -- and
+    // separately -- the Kotlin bridge's wire magic addresses the same hazard -- and
     // a decoder that silently mapped an unknown value would turn a protocol
     // mismatch into a wrong document. Nothing proved any of them fires, so a
     // renumbering could have removed the check and stayed green.

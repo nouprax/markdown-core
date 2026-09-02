@@ -321,9 +321,6 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "heading";
     case MARKDOWN_CORE_NODE_THEMATIC_BREAK:
         return "thematic_break";
-    /* Both definition kinds read `<unknown>` here until Step 9b, which is the
-     * name the concrete record set printed for the owner of every footnote
-     * definition's marker bytes. */
     case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
         return "footnote_definition";
     case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:

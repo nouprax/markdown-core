@@ -63,12 +63,9 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   source an element occupies — not a byte range, and no substring is taken with
   it. A block closed by a blank line therefore ends at column 0 of that line,
   which is what the cmark-family parser reports and what an editor needs.
-- `Document.concrete` is the normalized source and its line index: the text a
-  scope's coordinates are counted against, which is not the string that was
-  passed in wherever it held a NUL.
-- `markdown_core_document_root` is renamed `markdown_core_document_semantic`,
-  because the parse now has two total views and the old name did not say which
-  one it returned.
+- Remove source retention and the `Concrete`/line-index API. A parse returns
+  only the immutable AST; consumers that need the Markdown text retain their
+  own input.
 - A link reference definition is a node. `ReferenceDefinition` sits at the byte
   where its `[` was written, in the container it was written in, carrying
   `label`, `identifier`, `destination` and `title`, which

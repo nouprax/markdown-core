@@ -154,15 +154,6 @@ final class com.nouprax.markdown.core/CodeBlock : com.nouprax.markdown.core/Mark
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/CodeBlock.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
 }
 
-final class com.nouprax.markdown.core/Concrete { // com.nouprax.markdown.core/Concrete|null[0]
-    final val lineCount // com.nouprax.markdown.core/Concrete.lineCount|{}lineCount[0]
-        final fun <get-lineCount>(): kotlin/Int // com.nouprax.markdown.core/Concrete.lineCount.<get-lineCount>|<get-lineCount>(){}[0]
-    final val source // com.nouprax.markdown.core/Concrete.source|{}source[0]
-        final fun <get-source>(): kotlin/ByteArray // com.nouprax.markdown.core/Concrete.source.<get-source>|<get-source>(){}[0]
-
-    final fun lineStart(kotlin/Int): kotlin/Int // com.nouprax.markdown.core/Concrete.lineStart|lineStart(kotlin.Int){}[0]
-}
-
 final class com.nouprax.markdown.core/Directive : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Directive|null[0]
     final val attributes // com.nouprax.markdown.core/Directive.attributes|{}attributes[0]
         final fun <get-attributes>(): kotlin.collections/List<com.nouprax.markdown.core/DirectiveAttribute>? // com.nouprax.markdown.core/Directive.attributes.<get-attributes>|<get-attributes>(){}[0]
@@ -208,8 +199,6 @@ final class com.nouprax.markdown.core/DirectiveLabel : com.nouprax.markdown.core
 }
 
 final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Document|null[0]
-    final val concrete // com.nouprax.markdown.core/Document.concrete|{}concrete[0]
-        final fun <get-concrete>(): com.nouprax.markdown.core/Concrete // com.nouprax.markdown.core/Document.concrete.<get-concrete>|<get-concrete>(){}[0]
     final val content // com.nouprax.markdown.core/Document.content|{}content[0]
         final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/Document.content.<get-content>|<get-content>(){}[0]
     final val scope // com.nouprax.markdown.core/Document.scope|{}scope[0]

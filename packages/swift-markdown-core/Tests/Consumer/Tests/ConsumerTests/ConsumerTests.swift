@@ -8,6 +8,6 @@ import Testing
 
         #expect((document.content.first as? Heading)?.level == 2)
         #expect(document.dump() == TreeDumper.dump(document))
-        #expect(document.concrete.source == Array("## Consumer\n".utf8))
+        #expect(document.content.count == 1)
     }
 }

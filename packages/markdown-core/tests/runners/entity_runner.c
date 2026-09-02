@@ -42,7 +42,7 @@ int main(void) {
             errored++;
             continue;
         }
-        text = ts_ast_concat_text(markdown_core_document_semantic(document), &text_length);
+        text = ts_ast_concat_text(markdown_core_document_root(document), &text_length);
         if (!text) {
             fprintf(stderr, "%.*s [ERRORED (traversal)]\n", (int)entity_length, entity);
             errored++;

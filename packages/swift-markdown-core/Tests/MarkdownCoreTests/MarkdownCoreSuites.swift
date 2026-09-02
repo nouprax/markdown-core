@@ -82,7 +82,6 @@ import Testing
     @Test("values remain usable and Sendable after native release")
     func copiedAndSendable() async throws {
         requireSendable(Document.self)
-        requireSendable(Concrete.self)
         requireSendable(ParseOptions.self)
         let document = try Document.parse("parallel 🚀\n")
         let counts = await withTaskGroup(of: Int.self, returning: [Int].self) { group in
@@ -92,54 +91,6 @@ import Testing
         #expect(counts == Array(repeating: 1, count: 20))
     }
 
-}
-
-@Suite("concrete") struct ConcreteSuite {
-    /// The source a scope's coordinates are counted against, copied into value
-    /// types and read after the native handle is gone. `parse` frees the handle
-    /// before it returns, so everything below reads a value with no native
-    /// anything left behind it.
-    @Test("the normalized source and its line index survive the native release")
-    func sourceAndLines() throws {
-        let source = """
-            # Heading ##
-
-            > quoted *em* and `code`
-
-            | a | b |
-            | --- | --- |
-            | c | d |
-
-            :::container[Title]{kind=demo}
-            Body
-            :::
-
-            [a]: /u "t"
-
-            see [a].
-
-            """
-        let document = try Document.parse(source)
-        let concrete = document.concrete
-        #expect(concrete.source == Array(source.utf8))
-        #expect(concrete.lineCount == 15)
-        #expect(concrete.lineStart(1) == 0)
-        #expect(concrete.lineStart(3) == 14)
-        #expect(concrete.lineStart(0) == nil)
-        #expect(concrete.lineStart(16) == nil)
-
-        // Every line but the first begins after a line ending.
-        for line in 2...concrete.lineCount {
-            let start = try #require(concrete.lineStart(line))
-            #expect(start > 0)
-            #expect(concrete.source[start - 1] == UInt8(ascii: "\n"))
-        }
-
-        // Copying is not borrowing: 300 further parses must not disturb it.
-        for _ in 0..<300 { _ = try Document.parse("# copy\n") }
-        #expect(concrete.source == Array(source.utf8))
-        #expect(concrete.lineStart(3) == 14)
-    }
 }
 
 @Suite("api") struct DirectiveLabelSuite {

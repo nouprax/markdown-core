@@ -81,26 +81,12 @@ public struct ParseError: Error, Sendable {
     public let message: String
 }
 
-/// A parse, under two total views.
-///
-/// The document IS the semantic view -- the tree with policy applied, which may
-/// omit bytes: a fence, a bullet and a reference definition's punctuation are in
-/// no literal anywhere. ``concrete`` omits nothing. Every byte of the source is
-/// in exactly one region of the concrete view and every region has exactly one
-/// owner in this tree, so the pair is complete.
-///
-/// In C the two are siblings, because a `markdown_core_document` is a handle and
-/// the root is a node it lends out. Here they are not: the handle is gone by the
-/// time `parse` returns, the tree is a value, and the concrete view hangs off
-/// the root it names into.
+/// The immutable semantic root returned by a parse.
 public struct Document: Markup {
     /// The whole document's boundaries. See ``Scope``.
     public let scope: Scope
     /// The document's blocks. Block content, not inline.
     public let content: [any Markup]
-    /// The text every scope in this tree is counted against.
-    public let concrete: Concrete
-
     /// Dispatches to the visitor's `Document` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 
@@ -137,19 +123,18 @@ public struct Document: Markup {
         }
         defer { markdown_core_document_free(nativeDocument) }
 
-        guard let root = markdown_core_document_semantic(nativeDocument),
-            markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT,
-            let concrete = Concrete(from: nativeDocument)
+        guard let root = markdown_core_document_root(nativeDocument),
+            markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT
         else {
             throw ParseError(code: .internal, message: "parser returned an invalid document tree")
         }
-        return Document(from: root, concrete: concrete)
+        return Document(from: root)
     }
 }
 
 extension Document {
-    init(from node: OpaquePointer, concrete: Concrete) {
-        self.init(scope: Self.scope(from: node), content: Self.children(from: node), concrete: concrete)
+    init(from node: OpaquePointer) {
+        self.init(scope: Self.scope(from: node), content: Self.children(from: node))
     }
 }
 
@@ -159,8 +144,7 @@ extension Document {
 func markup(from node: OpaquePointer) -> any Markup {
     switch markdown_core_node_get_kind(node) {
     case MARKDOWN_CORE_KIND_DOCUMENT:
-        // A document is only ever the ROOT, and the root is built by `parse`,
-        // which is the only place the concrete view exists to build it with.
+        // A document is only ever the root built by `parse`.
         preconditionFailure("a document node cannot be a child")
     case MARKDOWN_CORE_KIND_BLOCK_QUOTE: BlockQuote(from: node)
     case MARKDOWN_CORE_KIND_PARAGRAPH: Paragraph(from: node)

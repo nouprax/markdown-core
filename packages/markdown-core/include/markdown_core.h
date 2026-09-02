@@ -214,38 +214,12 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_document_parse(const uin
                                                                        markdown_core_error **error);
 MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *document);
 
-/**
- * THE PARSE, AND WHAT ITS COORDINATES ARE COUNTED AGAINST.
+/** Return the immutable semantic root owned by `document`.
  *
- * `markdown_core_document_semantic` is the tree. Every node carries a `scope`,
- * and a scope exists for one purpose: SO A CONSUMER CAN MAP AN ELEMENT BACK TO
- * THE SOURCE IT CAME FROM.
- *
- * A SCOPE IS A PAIR OF BOUNDARIES, NOT A BYTE RANGE. Owner ruling, 2026-08-24:
- * a scope's line and column do not stand for any source subrange and no
- * subrange can be taken with them; what they are for is telling an editor which
- * line-and-column range an element occupies. So a line of L bytes carries
- * boundaries 1 through L+1, and an end at column 0 of line N says the element
- * stopped where line N-1 ended.
- *
- * They are counted against the NORMALIZED source -- UTF-8 as fed, every NUL
- * replaced by the three bytes of U+FFFD, every line ending a single `\n` and
- * every line having one -- and NOT against the buffer you passed, which is why
- * `markdown_core_document_source` publishes it: a caller whose input contained
- * a NUL has a buffer whose columns no longer agree with ours.
- * `_line_count` and `_line_start` are that source's line index.
- *
- * All of it ends with the document.
- */
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_semantic(const markdown_core_document *document);
-/** The normalized source: the text every scope's coordinates are counted
- * against. Empty, never null, for a document that parsed no bytes. */
-MARKDOWN_CORE_API markdown_core_string markdown_core_document_source(const markdown_core_document *document);
-/** How many lines the normalized source has. */
-MARKDOWN_CORE_API size_t markdown_core_document_line_count(const markdown_core_document *document);
-/** Where line `line` begins in the source, counting lines from 1. */
-MARKDOWN_CORE_API bool markdown_core_document_line_start(const markdown_core_document *document, size_t line,
-                                                         size_t *offset);
+ * Every node carries a `scope`: line-and-column boundaries reported by the
+ * cmark-family parser. The returned node and every string read from it borrow
+ * from `document` and end when the document is freed. */
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_root(const markdown_core_document *document);
 /** A parse failure. There is NO document, and there is no scope: an input the
  * parser could not turn into a document has no extent to point at. The value
  * is immutable and library-owned; `markdown_core_error_free` is a no-op. */

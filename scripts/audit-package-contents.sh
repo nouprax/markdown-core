@@ -21,7 +21,7 @@ if grep -R -I -n -E "$renderer_api_pattern" \
     exit 1
 fi
 
-retired_parser_api_pattern='markdown_core_parser_(new|new_with_mem|feed|feed_reentrant|finish|free)|markdown_core_parse_file|markdown_core_document_diagnostic_(count|at)|markdown_core_diagnostic_code_name'
+retired_parser_api_pattern='markdown_core_parser_(new|new_with_mem|feed|feed_reentrant|finish|free|retain_concrete)|markdown_core_parse_file|markdown_core_document_(source|line_count|line_start|diagnostic_(count|at))|markdown_core_concrete|markdown_core_diagnostic_code_name'
 if grep -R -I -n -E "$retired_parser_api_pattern" \
     packages/markdown-core/core packages/markdown-core/extensions \
     packages/markdown-core/include packages/swift-markdown-core/Sources \
@@ -60,7 +60,7 @@ cmp LICENSE packages/es-markdown-core/LICENSE
 node packages/es-markdown-core/scripts/build.mjs >/dev/null
 find packages/es-markdown-core/dist -type f -name '*.d.ts' \
     ! -path '*/runtime/*' ! -path '*/wire/*' -exec grep -H -n -E \
-    '\b(render|feed|stream|edit|session|snapshot|delta|diagnostic|CST|ConcreteSyntax|Token|Trivia|Recovery|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)\b' \
+    '\b(render|feed|stream|edit|session|snapshot|delta|diagnostic|CST|Concrete|ConcreteSyntax|Token|Trivia|Recovery|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)\b' \
     {} + >"$temp_dir/es-retired-declarations.txt" || true
 if [ -s "$temp_dir/es-retired-declarations.txt" ]; then
     cat "$temp_dir/es-retired-declarations.txt"

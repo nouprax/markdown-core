@@ -7,5 +7,4 @@ fun main() {
     val document = Document.parse("héllo 🚀\n")
     check(document.content.size == 1)
     check(document.dump() == TreeDumper.dump(document))
-    check(document.concrete.source.size == "héllo 🚀\n".encodeToByteArray().size)
 }

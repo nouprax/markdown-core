@@ -61,9 +61,8 @@ for (const symbol of declared) {
 }
 NODE
 
-# These are API identifier checks, not prose checks. `Concrete` is allowed: it
-# is owned source plus a line index, not a concrete syntax tree.
-retired_surface_terms='render|feed|stream|edit|session|snapshot|delta|diagnostic|CST|ConcreteSyntax|Token|Trivia|Recovery'
+# These are API identifier checks, not prose checks.
+retired_surface_terms='render|feed|stream|edit|session|snapshot|delta|diagnostic|concrete|Concrete|CST|ConcreteSyntax|Token|Trivia|Recovery'
 
 CLANG_MODULE_CACHE_PATH="$temp_dir/swift-module-cache" \
     swift package --disable-sandbox dump-package >"$temp_dir/swift-package.json"
@@ -168,11 +167,7 @@ const runtimeExports = [
         match[1].split(",").map((name) => name.trim())
     )
 ].sort();
-// `Concrete` joined the runtime list at Step 12.2; `RegionRole` left it with
-// the regions when 11a-11c were retired: a document
-// carries its concrete view, and a region's role is a value the caller compares
-// against rather than a type it only reads.
-const expectedRuntime = ["Concrete", "Document", "ParseError", "TreeDumper", "WalkEvent", "Walker", "visit"].sort();
+const expectedRuntime = ["Document", "ParseError", "TreeDumper", "WalkEvent", "Walker", "visit"].sort();
 if (runtimeExports.join("\n") !== expectedRuntime.join("\n")) {
     throw new Error(`Unexpected ES runtime exports: ${runtimeExports.join(", ")}`);
 }

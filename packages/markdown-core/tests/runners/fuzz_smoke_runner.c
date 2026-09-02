@@ -74,7 +74,7 @@ static int smoke(const uint8_t *bytes, size_t length, const char *label) {
         return 0;
     }
 
-    if (traverse(markdown_core_document_semantic(document)) != 0) {
+    if (traverse(markdown_core_document_root(document)) != 0) {
         fprintf(stderr, "%s: traversal produced an invalid scope\n", label);
         goto done;
     }

@@ -75,21 +75,12 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
     options->directives = true;
 }
 
-typedef struct facade_parse_setup {
-    unsigned extensions;
-    markdown_core_concrete *concrete;
-} facade_parse_setup;
-
 static bool configure_facade_parse(markdown_core_parser *parser, void *context) {
-    facade_parse_setup *setup = (facade_parse_setup *)context;
+    const unsigned extensions = *(const unsigned *)context;
 
     /* The facade says WHICH extensions, never in what order;
      * `core-extensions.c` owns the one order used by every product entry. */
-    if (!markdown_core_core_extensions_attach(parser, setup->extensions)) {
-        return false;
-    }
-    markdown_core_parser_retain_concrete(parser, setup->concrete);
-    return true;
+    return markdown_core_core_extensions_attach(parser, extensions);
 }
 
 markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
@@ -105,7 +96,6 @@ markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *sou
     markdown_core_parse_options defaults;
     const markdown_core_parse_options *options = requested_options;
     markdown_core_document *document;
-    facade_parse_setup setup = {0};
     unsigned extensions = 0;
     int native_options = MARKDOWN_CORE_OPT_VALIDATE_UTF8;
 
@@ -157,12 +147,9 @@ markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *sou
     }
     document->mem = mem;
 
-    setup.extensions = extensions;
-    setup.concrete = &document->concrete;
     document->root = markdown_core_parse_document_with_mem((const char *)source, length, native_options, mem,
-                                                           configure_facade_parse, &setup);
+                                                           configure_facade_parse, &extensions);
     if (!document->root) {
-        markdown_core_concrete_dispose(&document->concrete);
         mem->free(document);
         set_error(error, &ERROR_PARSE_ALLOCATION);
         return NULL;
@@ -174,34 +161,12 @@ void markdown_core_document_free(markdown_core_document *document) {
     if (!document) {
         return;
     }
-    markdown_core_concrete_dispose(&document->concrete);
     markdown_core_node_free(document->root);
     document->mem->free(document);
 }
 
-const markdown_core_node *markdown_core_document_semantic(const markdown_core_document *document) {
+const markdown_core_node *markdown_core_document_root(const markdown_core_document *document) {
     return document ? document->root : NULL;
-}
-
-markdown_core_string markdown_core_document_source(const markdown_core_document *document) {
-    markdown_core_string value = {NULL, 0};
-    if (document && document->concrete.source.ptr) {
-        value.data = document->concrete.source.ptr;
-        value.length = (size_t)document->concrete.source.size;
-    }
-    return value;
-}
-
-size_t markdown_core_document_line_count(const markdown_core_document *document) {
-    return document ? (size_t)document->concrete.line_starts_size : 0;
-}
-
-bool markdown_core_document_line_start(const markdown_core_document *document, size_t line, size_t *offset) {
-    if (!document || !offset || line < 1 || line > (size_t)document->concrete.line_starts_size) {
-        return false;
-    }
-    *offset = (size_t)document->concrete.line_starts[line - 1];
-    return true;
 }
 
 markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error) {

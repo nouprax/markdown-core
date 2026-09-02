@@ -2,7 +2,6 @@
 #define MARKDOWN_CORE_PARSER_H
 
 #include <stdint.h>
-#include <stdio.h>
 #include "references.h"
 #include "node.h"
 #include "buffer.h"
@@ -12,24 +11,6 @@ extern "C" {
 #endif
 
 #define MAX_LINK_LABEL_LENGTH 1000
-
-/* THE NORMALIZED SOURCE AND ITS LINE INDEX, moved out of the parser and into
- * the document.
- *
- * A scope says WHERE an element is, as a pair of (line, column) BOUNDARIES --
- * not as a byte range, and nothing takes a substring with it. What the
- * coordinates are COUNTED AGAINST is this: the normalized
- * source -- the input UTF-8, every NUL replaced by three bytes, every line ending
- * one `\n` and every line having one -- which is NOT the buffer the caller
- * passed, and that difference is the whole reason a document publishes it.
- *
- * The facade moves this value into the returned document on success. */
-typedef struct {
-    markdown_core_mem *mem;
-    markdown_core_strbuf source;
-    bufsize_t *line_starts;
-    bufsize_t line_starts_size;
-} markdown_core_concrete;
 
 /* Where one source line's bytes landed in a block's content buffer.
  *
@@ -86,32 +67,6 @@ struct markdown_core_parser {
     bool partially_consumed_tab;
     /* Contains the currently processed line */
     markdown_core_strbuf curline;
-    /* THE NORMALIZED SOURCE: every line exactly as S_process_line normalized
-     * it -- UTF-8 validated if the option is on, NUL replaced, the line ending
-     * a single '\n' whether the author wrote one, wrote CRLF, or wrote nothing
-     * at all -- concatenated in order. The document retains it because a SCOPE
-     * is counted against it: `Text scope=2:2..2:4` names lines and columns of
-     * HERE, not of the source buffer the caller passed -- an input with a NUL in it
-     * has different columns on that line.
-     *
-     * It is NOT the caller's bytes: two different inputs normalize to the same
-     * source. What the tree's positions describe is this normalized value. */
-    markdown_core_strbuf source;
-    /* Where each line begins in `source`: line N starts at line_starts[N - 1].
-     * The line index the same requirement names, and the only thing that can
-     * turn a source offset back into a (line, column) after the parse. */
-    bufsize_t *line_starts;
-    bufsize_t line_starts_size;
-    bufsize_t line_starts_alloc;
-    /* When set, the parse transaction MOVES the normalized source and its line
-     * index here instead of releasing them, and the caller becomes their owner
-     * (requirement 12). */
-    markdown_core_concrete *concrete_retain;
-    /* When set, the parse transaction writes the record set here before
-     * releasing it. There is no public reader: requirement 12 is where a
-     * document keeps the concrete view, and until then the CLI's `--concrete`
-     * and the gate that drives it are the only consumers. */
-    FILE *concrete_out;
     /* See the documentation for markdown_core_parser_get_last_line_length() in markdown_core.h */
     bufsize_t last_line_length;
     /* Scratch for a source line containing NUL bytes; curline holds the
@@ -143,19 +98,13 @@ struct markdown_core_parser {
 };
 
 /* The engine has one parse operation. `setup`, when present, configures the
- * fresh parser before any source is read; extension attachment and retained
- * observations belong there. Returning false aborts the transaction. The
+ * fresh parser before any source is read; extension attachment belongs there.
+ * Returning false aborts the transaction. The
  * parser never escapes this call and is destroyed before it returns. */
 typedef bool (*markdown_core_parser_setup_func)(markdown_core_parser *parser, void *context);
 markdown_core_node *markdown_core_parse_document_with_mem(const char *source, size_t length, int options,
                                                           markdown_core_mem *mem, markdown_core_parser_setup_func setup,
                                                           void *context);
-
-/* Ask the transaction to hand the normalized source and its line index over
- * rather than release them. `out` is zeroed here and filled on success; a
- * parse that fails leaves it empty. */
-void markdown_core_parser_retain_concrete(markdown_core_parser *parser, markdown_core_concrete *out);
-void markdown_core_concrete_dispose(markdown_core_concrete *concrete);
 
 #ifdef __cplusplus
 }

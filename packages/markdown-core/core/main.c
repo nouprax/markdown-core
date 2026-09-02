@@ -40,8 +40,7 @@ void print_usage(void) {
            "gfm-smart | gfm-extended\n");
     printf("  --smart           Use smart punctuation\n");
     printf("  --validate-utf8   Replace UTF-8 invalid sequences with U+FFFD\n");
-    printf("  --strip-html-comments Strip HTML comment nodes from the parsed AST\n"
-           "  --source-index    Print the normalized source size and line index before the tree\n");
+    printf("  --strip-html-comments Strip HTML comment nodes from the parsed AST\n");
     printf("  --extension, -e EXTENSION_NAME  Specify an extension name to use\n");
     printf("  --list-extensions               List available extensions and quit\n");
     printf("  --strikethrough-double-tilde    Only parse strikethrough (if enabled)\n");
@@ -51,10 +50,8 @@ void print_usage(void) {
 }
 
 static bool print_document(markdown_core_node *document) {
-    /* The CLI dumps the tree only; the source and its line index are printed
-     * by the parse transaction for `--source-index`, so the fields are zeroed
-     * here rather than filled and `markdown_core_document_free` is never called
-     * on this stack value. */
+    /* The CLI owns the native tree directly, so the facade handle is only a
+     * stack wrapper used by the canonical dump operation. */
     markdown_core_document facade_document = {.root = document};
     markdown_core_error *error = NULL;
     uint8_t *dump = NULL;
@@ -75,7 +72,6 @@ static bool print_document(markdown_core_node *document) {
 
 typedef struct cli_parse_setup {
     unsigned extensions;
-    FILE *concrete_out;
 } cli_parse_setup;
 
 static bool configure_cli_parse(markdown_core_parser *parser, void *context) {
@@ -84,7 +80,6 @@ static bool configure_cli_parse(markdown_core_parser *parser, void *context) {
     if (!markdown_core_core_extensions_attach(parser, setup->extensions)) {
         return false;
     }
-    parser->concrete_out = setup->concrete_out;
     return true;
 }
 
@@ -115,7 +110,6 @@ int main(int argc, char *argv[]) {
     int i, numfps = 0;
     int *files;
     markdown_core_strbuf source;
-    bool source_index = false;
     markdown_core_node *document = NULL;
     int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS |
                   MARKDOWN_CORE_OPT_VALIDATE_UTF8;
@@ -203,11 +197,6 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Unknown profile %s\n", argv[i]);
                 goto failure;
             }
-        } else if (strcmp(argv[i], "--source-index") == 0) {
-            /* What a scope's coordinates index INTO: the size of the
-             * normalized source and where each of its lines begins. The
-             * document publishes both; this option prints them. */
-            source_index = true;
         } else if (strcmp(argv[i], "--list-extensions") == 0) {
             print_extensions();
             goto success;
@@ -302,7 +291,6 @@ int main(int argc, char *argv[]) {
 #endif
 
     setup.extensions = extensions;
-    setup.concrete_out = source_index ? stdout : NULL;
     document = markdown_core_parse_document_with_mem(source.size ? (const char *)source.ptr : NULL, (size_t)source.size,
                                                      options, markdown_core_get_default_mem_allocator(),
                                                      configure_cli_parse, &setup);

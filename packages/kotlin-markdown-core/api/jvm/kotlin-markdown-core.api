@@ -23,12 +23,6 @@ public final class com/nouprax/markdown/core/CodeBlock : com/nouprax/markdown/co
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
-public final class com/nouprax/markdown/core/Concrete {
-	public final fun getLineCount ()I
-	public final fun getSource ()[B
-	public final fun lineStart (I)I
-}
-
 public final class com/nouprax/markdown/core/Directive : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
@@ -64,7 +58,6 @@ public final class com/nouprax/markdown/core/Document : com/nouprax/markdown/cor
 	public static final field Companion Lcom/nouprax/markdown/core/Document$Companion;
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
-	public final fun getConcrete ()Lcom/nouprax/markdown/core/Concrete;
 	public final fun getContent ()Ljava/util/List;
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
