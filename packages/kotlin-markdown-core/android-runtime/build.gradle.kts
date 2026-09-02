@@ -11,6 +11,12 @@ group = "com.nouprax"
 val releaseVersion = rootProject.file("VERSION").readText().trim()
 version = releaseVersion
 
+val isIdeSync =
+    providers
+        .systemProperty("idea.sync.active")
+        .map(String::toBoolean)
+        .getOrElse(false)
+
 // WHICH ABIs THE NATIVE PAYLOAD IS BUILT FOR, narrowed by the caller.
 // `scripts/build-kotlin-android-test-artifact.sh` passes
 // `-PmarkdownCore.android.abis=x86_64` and then REFUSES an artifact carrying
@@ -53,19 +59,26 @@ android {
         requestedAndroidAbis?.let { abis ->
             ndk { abiFilters += abis }
         }
-        externalNativeBuild {
-            cmake { arguments += "-DANDROID_STL=none" }
+        if (!isIdeSync) {
+            externalNativeBuild {
+                cmake { arguments += "-DANDROID_STL=none" }
+            }
         }
     }
 
-    // Keep the real JNI target in the IDE model. Android Studio and IntelliJ
-    // therefore see the same production parser sources SwiftPM exposes, plus
-    // the JNI adapter that owns this runtime. The target deliberately excludes
-    // the C CLI, tests, fixtures, fuzzers, and benchmarks.
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+    // Android Studio's native importer can only attach this CMake graph to the
+    // Android runtime module and projects every source through its synthetic
+    // `cpp` group. Because the graph spans the C package and this package's JNI
+    // adapter, the importer promotes their common `packages/` ancestor and
+    // falsely nests unrelated packages below android-runtime/cpp. Keep that
+    // lossy Android projection out of IDE sync. Normal Gradle/IDE builds do not
+    // set idea.sync.active and still compile the complete JNI graph.
+    if (!isIdeSync) {
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+                version = "3.22.1"
+            }
         }
     }
 

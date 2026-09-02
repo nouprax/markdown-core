@@ -177,10 +177,14 @@ audit。
 IDE 契约:仓库提交 `CMakePresets.json`(configure/build/test presets),
 VS Code/CLion 直接消费;Xcode 通过 SwiftPM 发现 Swift Testing suites，并只索引
 `MarkdownCoreC` 的生产 parser/facade 源码，不把 C CLI、tests、fixtures、fuzzers 或
-benchmarks 混进 package target。IntelliJ/Android Studio 通过 Android runtime 的真实
-`externalNativeBuild` CMake target 索引同一组生产 C 源码以及 JNI adapter，同时消费
-Gradle test tasks；IDE sync 不得关闭 native model，也不得维护一份仅供 IDE 使用的源码
-清单或伪 C module。Kotlin library 额外提供
+benchmarks 混进 package target。仓库的真实 package 拓扑始终是
+`packages/markdown-core` 与各 binding package 并列；不得把 C package 作为
+`android-runtime/cpp` 的子树投影，也不得为了 IDE tree 创建伪 Gradle/Android module、
+复制源码或提交 `.idea`/`.iml` state。IntelliJ/Android Studio 的 Gradle sync 只导入
+Kotlin/KMP 与 Android runtime model；`packages/markdown-core` 在物理 Project view 中
+保持独立，C-aware IDE 直接从根 `CMakeLists.txt`/`CMakePresets.json` 导入唯一 CMake
+graph。Android runtime 的 `externalNativeBuild` 只属于实际 build/package lifecycle，
+IDE sync 必须关闭其有损的 `cpp` 虚拟投影。Kotlin library 额外提供
 developer-only 根 Gradle `allKotlinTests`，聚合当前 host 可执行的具名 correctness/
 conformance tasks 与两台 Android managed-device 全量测试；shared IDE configuration
 只调用该 task，不建立 sample app。该入口不是 pnpm/CI/release routing，不能替代各

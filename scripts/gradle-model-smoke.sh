@@ -56,7 +56,10 @@ public final class GradleModelSmoke {
                 .forProjectDirectory(root)
                 .connect();
         try {
-            GradleProject model = connection.getModel(GradleProject.class);
+            GradleProject model = connection
+                    .model(GradleProject.class)
+                    .withArguments("-Didea.sync.active=true")
+                    .get();
             if (!"markdown-core".equals(model.getName())) {
                 throw new IllegalStateException("Unexpected root model: " + model.getName());
             }
@@ -69,6 +72,10 @@ public final class GradleModelSmoke {
             }
             if (find(model, ":packages:kotlin-markdown-core:android-runtime") == null) {
                 throw new IllegalStateException("Gradle model is missing the internal Android runtime");
+            }
+            if (find(model, ":packages:markdown-core") != null) {
+                throw new IllegalStateException(
+                        "The CMake-owned C package must not be represented as a synthetic Gradle project");
             }
 
             System.out.println("Loaded Gradle Tooling API model for " + model.getName());

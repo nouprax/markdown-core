@@ -131,11 +131,11 @@ const report = (message) => {
     failed = true;
 };
 
-// Android Studio learns its native project from this target, so agreeing on
-// the parser sources is not enough: an accidental CLI, test, fuzz, fixture, or
-// benchmark source would also become part of the Android build and IDE model.
+// Agreeing on the parser sources is not enough: an accidental CLI, test, fuzz,
+// fixture, or benchmark source would also become part of the Android runtime.
 // The only Android-specific additions are the JNI payload codec and JNI entry
-// point owned by the Kotlin package.
+// point owned by the Kotlin package. IDE sync deliberately does not import this
+// cross-package target through Android Studio's lossy `cpp` projection.
 const androidSources = names(ANDROID_CMAKE, "complete Android target", /"(?<file>[^"\n]+\.c)"/g);
 const expectedAndroidSources = [
     ...authority.core.map((file) => `\${MARKDOWN_CORE_CORE_DIR}/${file}`),

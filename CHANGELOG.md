@@ -13,9 +13,10 @@ facade while removing renderer support and the caller-driven feed lifecycle.
 - Raise the Swift package contract to Swift tools 6.3 and iOS 26/macOS 26,
   refresh the stable AGP, Kotlin, Node.js, pnpm, Emscripten, and SwiftLint
   pins, and audit every duplicated toolchain declaration for exact agreement.
-- Keep the Android runtime's real CMake/JNI target in the Gradle IDE model, so
-  Android Studio and IntelliJ expose the production C parser sources alongside
-  Kotlin without importing C tests, benchmarks, fuzzers, fixtures, or the CLI.
+- Keep the C and Kotlin packages independent in JetBrains workspaces. Gradle
+  IDE sync no longer projects the cross-package JNI graph through
+  `android-runtime/cpp`; normal Android builds still compile that graph, while
+  the canonical C project remains owned by CMake.
 - Replace the cross-runtime hosted-runner metrics jobs with one non-blocking C
   parser comparison. PR comments omit the meaningless boundary column, reuse
   an exact-base-SHA artifact when available, and otherwise build and publish
