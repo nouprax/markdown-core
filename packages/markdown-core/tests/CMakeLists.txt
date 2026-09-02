@@ -173,6 +173,32 @@ markdown_core_add_test(
     ${MARKDOWN_CORE_CANONICAL_FACADE_ARGUMENTS})
 markdown_core_add_test(consumer_facade_cplusplus consumer 120 facade_cplusplus_test)
 
+# A profile is a complete language selection. Earlier explicit extension
+# flags are discarded; explicit flags after the profile deliberately augment
+# it. Keep both orders covered because parity tooling relies on this boundary.
+markdown_core_add_test(
+    regression_cli_profile_replaces_extensions
+    regression
+    120
+    $<TARGET_FILE:markdown-core>
+    -e
+    directive
+    --profile
+    commonmark
+    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/profile-order.md")
+set_tests_properties(regression_cli_profile_replaces_extensions PROPERTIES FAIL_REGULAR_EXPRESSION "Directive")
+markdown_core_add_test(
+    regression_cli_extension_augments_profile
+    regression
+    120
+    $<TARGET_FILE:markdown-core>
+    --profile
+    commonmark
+    -e
+    directive
+    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/profile-order.md")
+set_tests_properties(regression_cli_extension_augments_profile PROPERTIES PASS_REGULAR_EXPRESSION "Directive")
+
 # Facade concurrency contract: the first_parse case releases every thread into
 # its first parse in a fresh process; stress covers concurrent instance-local
 # parsing with disagreeing option sets.

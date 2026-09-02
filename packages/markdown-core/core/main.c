@@ -171,6 +171,7 @@ int main(int argc, char *argv[]) {
              * hidden extension-selection bit behind. */
             commonmark_profile = false;
             gfm_profile = false;
+            requested_extensions = 0;
             if (strcmp(argv[i], "commonmark") == 0) {
                 commonmark_profile = true;
                 gfm_profile = true;
