@@ -233,7 +233,11 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
   保存 cmark、cmark-gfm 与 remark/micromark 的 pin、comparison policy 和
   deliberate delta。cmark 是最新稳定 CommonMark authority；cmark-gfm 只判断
   GFM extension layer；remark/mdast 只作纠偏与补充。该目录不得包含本仓库
-  input/expected blocks 的镜像。Golden fixture 本身不是独立外部 authority。
+  input/expected blocks 的镜像。Obsidian 的官方 Help snapshot 是 OFM 语言
+  authority；`@quartz-community/remark-obsidian` 只比较其实际实现的 wikilink、
+  embed、highlight、comment 与 custom-task 交集，不能替代官方例子或为缺失的
+  callout/block-id/inline-footnote/HTML 行为作证。Golden fixture 本身不是独立
+  external authority。
 
 ## 6. 通用执行策略
 

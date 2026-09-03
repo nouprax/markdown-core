@@ -1,0 +1,164 @@
+{
+    "schemaVersion": 1,
+    "officialSpecification": {
+        "page": "https://obsidian.md/help/obsidian-flavored-markdown",
+        "repository": "https://github.com/obsidianmd/obsidian-help",
+        "commit": "d780d6b48a92ee6a150304b40ee888f322bf43bf",
+        "readOn": "2026-09-02",
+        "closure": [
+            "en/Editing and formatting/Obsidian Flavored Markdown.md",
+            "en/Editing and formatting/Basic formatting syntax.md",
+            "en/Editing and formatting/Advanced formatting syntax.md#Tables",
+            "en/Editing and formatting/Advanced formatting syntax.md#Math",
+            "en/Editing and formatting/Callouts.md",
+            "en/Linking notes and files/Internal links.md",
+            "en/Linking notes and files/Embed files.md",
+            "en/Plugins/Search.md#Embed search results in a note"
+        ]
+    },
+    "oracle": {
+        "package": "@quartz-community/remark-obsidian",
+        "version": "0.2.4",
+        "repository": "https://github.com/quartz-community/remark-obsidian",
+        "commit": "bb36c5db9f343dd82af2ffe47b5ec271a15c080d",
+        "integrity": "sha512-R0gv8sW3IbVylrMH5kItjQVxqMfCfXvfXtLXmspZY8yFV4TLR2Cf/9T2hW0PXl2EsUcEtwcsZmYbH1BPJEsh1w==",
+        "runner": "unified@11 / remark-parse@11 / remark-gfm@4",
+        "why": "This is the direct parser used by the most-downloaded current npm Obsidian-flavored Markdown integration. npm's official point API reported 43,766 direct-package downloads for 2026-08-23..2026-08-29; the 44,174-download umbrella package delegates parsing to it.",
+        "candidateDownloads": [
+            {
+                "package": "@quartz-community/obsidian-flavored-markdown",
+                "downloads": 44174,
+                "note": "umbrella transformer; delegates parsing to the selected package"
+            },
+            {
+                "package": "@quartz-community/remark-obsidian",
+                "downloads": 43766,
+                "note": "selected direct parser"
+            },
+            {
+                "package": "remark-obsidian",
+                "downloads": 135
+            },
+            {
+                "package": "markdown-it-obsidian",
+                "downloads": 35
+            },
+            {
+                "package": "@thecae/remark-obsidian",
+                "downloads": 11
+            }
+        ],
+        "downloadWindow": {
+            "start": "2026-08-23",
+            "end": "2026-08-29",
+            "source": "https://api.npmjs.org/downloads/point/last-week/{package}"
+        },
+        "options": {
+            "wikilinks": true,
+            "highlights": true,
+            "comments": true,
+            "customTaskChars": true,
+            "tags": false,
+            "math": false
+        }
+    },
+    "claim": "For the documented constructs the selected package actually parses, Markdown Core must converge on the same semantic recognition except for explicit, general AST-model deltas. The official Obsidian documentation, not this package, owns the language contract.",
+    "corpus": ["specs/oracles/obsidian/corpus.md"],
+    "baselineGaps": [
+        {
+            "id": "wikilink-basic",
+            "input": "[[Note]]\n",
+            "oracleDigest": "3eb426ccdc26067ee8e52baedbd6c207e560b627ffbde3436949451c0ff51925",
+            "markdownCoreDigest": "4c6fd8e27beca1ffe66a0aadb4cd1f68f3bc1f0bb5cce119cfef330ace76592e",
+            "requirement": "Recognize a wikilink and expose its path instead of one literal Text node.",
+            "closedBy": "Phase 2 — one OFM inline extension"
+        },
+        {
+            "id": "wikilink-heading-label",
+            "input": "[[Folder/Note#Heading#Child|Display text]]\n",
+            "oracleDigest": "a9b715c6e771dd7f957b976ede3b39b3243f1b1a622c13ab4b6450e251964aa6",
+            "markdownCoreDigest": "96dc467eb91188957bd03b0469c812f6365d01741b90a774e6f690975cfcc47c",
+            "requirement": "Preserve the vault path, complete fragment subpath, and label text as CrossLink fields.",
+            "closedBy": "Phase 2 — one OFM inline extension"
+        },
+        {
+            "id": "wikilink-embed",
+            "input": "![[Image.png|100x145]]\n",
+            "oracleDigest": "3876933b938e06ce6a47d327c99c9141fd223957b7ff0dc070a5a8915c4dad1d",
+            "markdownCoreDigest": "b85827fe99d15228e9a5ac66dd2b97b351df3148dddd2b808bea82e526058a9c",
+            "requirement": "Recognize the shared wikilink form with embedded=true and preserve its label/size parameter.",
+            "closedBy": "Phase 2 — one OFM inline extension"
+        },
+        {
+            "id": "wikilink-block-embed",
+            "input": "![[Note#^block-id]]\n",
+            "oracleDigest": "fd372fe4c88edf337ff5bfe47c8c452f3b183a72ad95ae2183bc281285ad965f",
+            "markdownCoreDigest": "c363cff78b07b6d440245f776863926540f01bf9ccb8dd33894d25d378e08dd8",
+            "requirement": "Recognize an embedded block reference and preserve its block subpath without the #^ delimiter.",
+            "closedBy": "Phase 2 — one OFM inline extension"
+        },
+        {
+            "id": "highlight",
+            "input": "before ==marked== after\n",
+            "oracleDigest": "5ea22a361e83540a9f5bf99a33a0357a381e0d8be61f2bc1dadb897d7d776f52",
+            "markdownCoreDigest": "5335abe78e63cc877879d4382dcf94ada44f68847e894cacd04bf10efcd8d484",
+            "requirement": "Recognize highlighted content instead of retaining the delimiter bytes as text.",
+            "closedBy": "Phase 2 — one OFM inline extension"
+        },
+        {
+            "id": "comment-inline",
+            "input": "before %%hidden%% after\n",
+            "oracleDigest": "4632312c72b8bf43f132ba1d592ab74142a7f0c2bfd2fb101247734925a2a7fd",
+            "markdownCoreDigest": "4aa87b351904fa81efcd6a7e179424edf39d6708f860be81bfaf81c7c47988bc",
+            "requirement": "Recognize and, under the Obsidian preset, omit an inline comment without consuming surrounding text.",
+            "closedBy": "Phase 2 — one OFM inline extension"
+        },
+        {
+            "id": "comment-block",
+            "input": "%%\nhidden **strong**\n%%\n",
+            "oracleDigest": "d6bd8c0aeee80fedb2dbf05c973100c3db04be90c072a88572533f2684131a36",
+            "markdownCoreDigest": "e72e6e754416e1c462132b36def888d5833613d2669d0dc4c04f6e94bc49b535",
+            "requirement": "Treat a multiline comment as opaque and omit the whole construct under the Obsidian preset.",
+            "closedBy": "Phase 2 — one OFM inline extension"
+        },
+        {
+            "id": "custom-task-character",
+            "input": "- [?] custom state\n",
+            "oracleDigest": "e3e696d3ca75290972a4560ae370df8bb389c3b0256f3198cc8a39c9d29351da",
+            "markdownCoreDigest": "0ef32488e38064f3dbcc12165f67bc6d6fe64495a7477c34e3090c132f4f7523",
+            "requirement": "Recognize a non-space task character as complete and remove the marker from visible item content.",
+            "closedBy": "Phase 4 — task markers, media parameters, and tables"
+        }
+    ],
+    "modelDeltas": [
+        {
+            "id": "highlight-content-model",
+            "summary": "The oracle emits the complete highlight body as one Text child. The target Markdown Core AST parses it as inline content, like emphasis and strikethrough.",
+            "handling": "The comparison keeps children today so the basic plain-text witness agrees after recognition. Nested-format product fixtures are not projected through this oracle."
+        },
+        {
+            "id": "scope-model",
+            "summary": "mdast uses half-open unist points with JavaScript string offsets while Markdown Core publishes inherited inclusive line/column scopes.",
+            "handling": "The comparison omits scopes on both sides. Product correctness and shared canonical fixtures own positions."
+        },
+        {
+            "id": "wikilink-label-nullability",
+            "summary": "The oracle collapses an absent wikilink label delimiter to an empty alias string, while the target model distinguishes an absent label from an authored empty label.",
+            "handling": "The projection consults the node's exact source spelling and maps the oracle's empty alias to null only when no label delimiter was authored."
+        },
+        {
+            "id": "universal-callout-container",
+            "summary": "mdast names every inherited > container blockquote, while the target canonical AST uses Callout for both metadata-free and metadata-bearing quoted containers.",
+            "handling": "The semantic projection maps mdast blockquote to Callout. The inherited source grammar remains owned by CommonMark; official product fixtures own optional Obsidian metadata."
+        }
+    ],
+    "notAnAuthorityFor": [
+        "CommonMark or GFM syntax; the existing cmark and cmark-gfm policies remain primary.",
+        "Obsidian dialect changes to inherited CommonMark behavior, including suppression between paired inline HTML tags. The profile deliberately excludes them.",
+        "Tags. The package implements them, but the official OFM extension table does not include them; the gate disables them.",
+        "Math delimiter edge cases. The gate disables the package's micromark math extension; documented $ and $$ forms remain under the product formula contract.",
+        "Callouts. They are implemented by the umbrella transform after parsing, not by this direct parser package.",
+        "Block identifier attachment, inline-footnote recognition, the Cite/Citation/CitationReferent/Footnote consumer projection, or image-size semantics. The selected comparison does not implement them, so official-example product fixtures own them.",
+        "Vault resolution, rendering, styling, editor completion, or transclusion. These are outside a parser-only AST."
+    ]
+}

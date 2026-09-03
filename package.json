@@ -32,7 +32,8 @@
         "check:gfm-parity": "node scripts/check-upstream-parity.mjs --oracle gfm",
         "check:kotlin-consumers": "scripts/check-kotlin-consumers.sh",
         "check:mdast-parity": "node scripts/check-mdast-parity.mjs",
-        "check:oracle-parity": "pnpm run check:commonmark-parity && pnpm run check:gfm-parity && pnpm run check:mdast-parity",
+        "check:obsidian-parity": "node scripts/check-obsidian-parity.mjs",
+        "check:oracle-parity": "pnpm run check:commonmark-parity && pnpm run check:gfm-parity && pnpm run check:mdast-parity && pnpm run check:obsidian-parity",
         "clean:kotlin-android-emulator": "scripts/gradle.sh :packages:kotlin-markdown-core:cleanManagedDevices",
         "conformance:c-host": "cmake --preset default && cmake --build --preset default --parallel && ctest --preset conformance",
         "conformance:es-node": "pnpm --dir packages/es-markdown-core run conformance",
@@ -77,14 +78,15 @@
     },
     "devDependencies": {
         "@eslint/js": "10.0.1",
+        "@quartz-community/remark-obsidian": "0.2.4",
         "eslint": "10.0.1",
         "prettier": "3.9.5",
-        "typescript": "6.0.3",
-        "typescript-eslint": "8.63.0",
         "remark-directive": "^4.0.0",
         "remark-gfm": "^4.0.1",
         "remark-math": "^6.0.0",
         "remark-parse": "^11.0.0",
+        "typescript": "6.0.3",
+        "typescript-eslint": "8.63.0",
         "unified": "^11.0.5"
     }
 }

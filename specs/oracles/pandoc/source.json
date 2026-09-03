@@ -1,0 +1,116 @@
+{
+    "schemaVersion": 1,
+    "languageAuthority": {
+        "name": "Pandoc User's Guide",
+        "version": "3.11",
+        "repository": "https://github.com/jgm/pandoc",
+        "tag": "3.11",
+        "tagCommit": "b913622e1ff87c69ab8b1a606577122e220925cd",
+        "releasedAt": "2026-08-29T00:52:49Z",
+        "manual": {
+            "path": "MANUAL.txt",
+            "blob": "79568ea93fd6ff8e95203ca89527a7ede008dbb3",
+            "url": "https://github.com/jgm/pandoc/blob/b913622e1ff87c69ab8b1a606577122e220925cd/MANUAL.txt"
+        },
+        "reader": {
+            "path": "src/Text/Pandoc/Readers/Markdown.hs",
+            "blob": "99a3fb4348f0c37ac9e539794493f493acc29e09",
+            "url": "https://github.com/jgm/pandoc/blob/b913622e1ff87c69ab8b1a606577122e220925cd/src/Text/Pandoc/Readers/Markdown.hs"
+        },
+        "attributeMerge": {
+            "path": "src/Text/Pandoc/Shared.hs",
+            "blob": "1a5e80b5e5baca3ee71bf26572f8de4c37d07193",
+            "url": "https://github.com/jgm/pandoc/blob/b913622e1ff87c69ab8b1a606577122e220925cd/src/Text/Pandoc/Shared.hs"
+        },
+        "extensionRegistry": {
+            "path": "src/Text/Pandoc/Extensions.hs",
+            "blob": "2a0e130b14dd3700b7aa12971be746812a95b0b1",
+            "url": "https://github.com/jgm/pandoc/blob/b913622e1ff87c69ab8b1a606577122e220925cd/src/Text/Pandoc/Extensions.hs"
+        }
+    },
+    "executableOracle": {
+        "name": "official Pandoc CLI",
+        "version": "3.11",
+        "release": "https://github.com/jgm/pandoc/releases/tag/3.11",
+        "versionPrefix": "pandoc 3.11\n",
+        "writer": "json",
+        "pandocApiVersion": [1, 23, 1, 2],
+        "readerBase": "markdown_strict",
+        "defaultMarkdownProfileAllowed": false,
+        "invocation": ["pandoc", "--from", "<case.from>", "--to", "json", "--data-dir", "<empty-temporary-directory>"],
+        "forbiddenFeatures": [
+            "citeproc",
+            "defaults files",
+            "filters",
+            "templates",
+            "metadata files",
+            "bibliography lookup",
+            "network access"
+        ],
+        "portableArtifacts": [
+            {
+                "platform": "darwin-arm64",
+                "name": "pandoc-3.11-arm64-macOS.zip",
+                "url": "https://github.com/jgm/pandoc/releases/download/3.11/pandoc-3.11-arm64-macOS.zip",
+                "sha256": "15806bedf9517bfead72e88fe6a6696635c3691efbb6e152173440e9c5bb50b4"
+            },
+            {
+                "platform": "darwin-x86_64",
+                "name": "pandoc-3.11-x86_64-macOS.zip",
+                "url": "https://github.com/jgm/pandoc/releases/download/3.11/pandoc-3.11-x86_64-macOS.zip",
+                "sha256": "3b1c1b57f160112c821d02f23d946ede8b7f57a6ccf4632a25a512d334a9291f"
+            },
+            {
+                "platform": "linux-amd64",
+                "name": "pandoc-3.11-linux-amd64.tar.gz",
+                "url": "https://github.com/jgm/pandoc/releases/download/3.11/pandoc-3.11-linux-amd64.tar.gz",
+                "sha256": "37edb3bbcf722f921a009941bf5874e2e0c09263226c9b4a2d980788cb062ab6"
+            },
+            {
+                "platform": "linux-arm64",
+                "name": "pandoc-3.11-linux-arm64.tar.gz",
+                "url": "https://github.com/jgm/pandoc/releases/download/3.11/pandoc-3.11-linux-arm64.tar.gz",
+                "sha256": "56ed5566ec41d22ec9ee0704e6ac0b98ba102e92384efd5306173a22d314c79a"
+            },
+            {
+                "platform": "windows-x86_64",
+                "name": "pandoc-3.11-windows-x86_64.zip",
+                "url": "https://github.com/jgm/pandoc/releases/download/3.11/pandoc-3.11-windows-x86_64.zip",
+                "sha256": "2ab72baf2399450e148ddf7a2a8689806c42e1bba71862b57e220fd9b8456d3d"
+            }
+        ]
+    },
+    "profileBoundary": {
+        "claim": "Pandoc 3.11 owns only the explicitly enabled extension layer, including the one shared attribute grammar and consumer projection. cmark and cmark-gfm remain authoritative for inherited CommonMark and GFM behavior.",
+        "attributeContract": {
+            "authority": "Pandoc 3.11 MANUAL.txt, Markdown.hs, Shared.hs combineAttr, and native JSON Attr values at the pinned tag commit",
+            "scope": "Every braced attribute container at Remark and Pandoc attachment sites.",
+            "consumerProjection": "Pandoc Attr is named as identifier, ordered classes, and ordered key/value pairs; an empty identifier projects to null.",
+            "remarkBoundary": "remark-directive owns directive envelope and attachment syntax, but its different attribute member tokenizer is deliberately not a second grammar."
+        },
+        "publicToPandocExtensions": {
+            "auto_anchors": ["auto_identifiers", "gfm_auto_identifiers"],
+            "bracketed_spans": ["bracketed_spans"],
+            "citations": ["citations"],
+            "definition_lists": ["definition_lists"],
+            "example_lists": ["fancy_lists", "example_lists"],
+            "fancy_lists": ["fancy_lists"],
+            "fenced_code_attributes": ["fenced_code_blocks", "backtick_code_blocks", "fenced_code_attributes"],
+            "fenced_divs": ["fenced_divs"],
+            "grid_tables": ["grid_tables"],
+            "header_attributes": ["header_attributes"],
+            "implicit_header_references": ["auto_identifiers", "gfm_auto_identifiers", "implicit_header_references"],
+            "inline_code_attributes": ["inline_code_attributes"],
+            "link_attributes": ["link_attributes"],
+            "multiline_tables": ["multiline_tables"],
+            "simple_tables": ["simple_tables"],
+            "startnum": ["startnum"],
+            "subscript": ["subscript"],
+            "superscript": ["superscript"],
+            "table_captions": ["table_captions"]
+        },
+        "notAnIndependentExtension": {
+            "compact_definition_lists": "Compact and loose forms are both source shapes under definition_lists."
+        }
+    }
+}
