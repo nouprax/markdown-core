@@ -41,7 +41,9 @@ None of the three subsumes another, and each is blind where another sees:
 - Place-ness needs no authority and no model of what a node ought to cover, and
   it is the only one that reads the input. It is also the only one that can see
   a position which is inside its parent, agrees with upstream, and still names
-  no byte.
+  no byte. Its corpus is every spec-fixture example plus every Markdown input
+  named by the canonical AST manifest; the latter is parsed through the same
+  default public CLI invocation used to generate canonical candidates.
 
 This separation matters: external agreement, containment, and valid byte
 coordinates answer different questions. A tree can agree with cmark and still

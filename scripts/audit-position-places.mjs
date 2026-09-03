@@ -16,11 +16,12 @@
  * how "ended at the end of the line above" is spelled — and both are places.
  *
  * Three faults are rejected. `zero-column` is not one of them, because that
- * was this plan's rule and not the engine's: it said "there is no column 0", the 57 rows it produced were closed
- * at §4.14.11c2 by walking every such end back to the previous line's last
- * byte, and the walk is deleted with the ruling. What upstream cmark-gfm
- * reports — `code_block sourcepos="3:5-4:0"` for an indented block closed by a
- * blank line — is the boundary form, and it is correct.
+ * was this plan's rule and not the engine's: it said "there is no column 0",
+ * the 57 rows it produced were closed at §4.14.11c2 by walking every such end
+ * back to the previous line's last byte, and the walk is deleted with the
+ * ruling. What upstream cmark-gfm reports — `code_block
+ * sourcepos="3:5-4:0"` for an indented block closed by a blank line — is the
+ * boundary form, and it is correct.
  *
  *   off-line     the line is not in the document at all.
  *   off-column   the column is past the LAST BOUNDARY of a line that exists,
@@ -50,6 +51,7 @@ import { fileURLToPath } from "node:url";
 import { parseCanonicalDump } from "./lib/upstream-cmark.mjs";
 import {
     before,
+    canonicalCorpus,
     INLINE_KINDS,
     fixtureCorpus,
     formatScope,
@@ -85,8 +87,15 @@ const fault = ([line, column], lengths) => {
 const measured = [];
 const surveyed = { inline: 0, block: 0 };
 let scanned = 0;
-for (const example of fixtureCorpus(root)) {
-    const tree = parseCanonicalDump(runBinary(ours, ["--profile", ledger.profile], example.input));
+const corpus = [
+    ...fixtureCorpus(root).map((example) => ({
+        ...example,
+        args: ["--profile", ledger.fixtureProfile]
+    })),
+    ...canonicalCorpus(root)
+];
+for (const example of corpus) {
+    const tree = parseCanonicalDump(runBinary(ours, example.args, example.input));
     const lengths = lineLengths(example.input);
     const findings = [];
     for (const { node, nodePath } of walkWithPath(tree)) {

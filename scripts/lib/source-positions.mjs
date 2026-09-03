@@ -54,6 +54,7 @@ export const INLINE_KINDS = new Set([
 
 /** Every `.txt` spec fixture, in one deterministic order. */
 export const FIXTURE_DIR = "packages/markdown-core/tests/fixtures";
+export const CANONICAL_AST_DIR = "specs/canonical-ast";
 
 export function fixtureCorpus(root) {
     return fs
@@ -61,6 +62,33 @@ export function fixtureCorpus(root) {
         .filter((entry) => entry.endsWith(".txt"))
         .sort()
         .flatMap((entry) => readExamples(root, `${FIXTURE_DIR}/${entry}`));
+}
+
+/**
+ * Every Markdown input named by the canonical AST manifest, in manifest order.
+ *
+ * The public C CLI is the canonical candidate generator for this corpus. It
+ * currently represents the manifest's all-enabled ParseOptions with its
+ * default invocation. Fail here if a case introduces a different option set;
+ * silently running it under the wrong language would leave the audit looking
+ * at a dump other than the one the golden specifies.
+ */
+export function canonicalCorpus(root) {
+    const manifestPath = path.join(root, CANONICAL_AST_DIR, "manifest.json");
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+
+    return manifest.cases.map((testCase) => {
+        if (Object.values(testCase.parseOptions).some((value) => value !== true)) {
+            throw new Error(
+                `${testCase.name}: the position audit needs explicit CLI support for non-default ParseOptions`
+            );
+        }
+        return {
+            source: `${CANONICAL_AST_DIR}/${testCase.input}`,
+            input: fs.readFileSync(path.join(root, CANONICAL_AST_DIR, testCase.input), "utf8"),
+            args: []
+        };
+    });
 }
 
 /**
