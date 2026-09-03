@@ -77,6 +77,16 @@ if [ "$target_specs_missing" -eq 0 ]; then
     note "shared, Remark, Pandoc, and modular Obsidian target contracts are present"
 fi
 
+for plan_file in docs/plans/*.md; do
+    if ! grep -Eq '^- \[[ xX]\] ' "$plan_file"; then
+        fail "plan has no task-list work items: $plan_file"
+    fi
+    if grep -Eq '^[0-9]+\. ' "$plan_file"; then
+        fail "plan uses a top-level ordered list instead of task-list work items: $plan_file"
+    fi
+done
+note "all implementation plans use task-list work items"
+
 # 2. Every platform consumes the shared conformance contract.
 if [ ! -f specs/canonical-ast/manifest.json ]; then
     fail "root shared canonical AST manifest is missing"
