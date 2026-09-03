@@ -26,7 +26,9 @@ for oracle_file in \
     specs/oracles/cmark/IMPORTS.md \
     specs/oracles/cmark-gfm/deltas.json \
     specs/oracles/remark/deltas.json \
-    specs/oracles/remark/corpus.md; do
+    specs/oracles/remark/corpus.md \
+    specs/oracles/obsidian/deltas.json \
+    specs/oracles/obsidian/corpus.md; do
     if [ ! -f "$oracle_file" ]; then
         fail "external oracle file is missing: $oracle_file"
     fi

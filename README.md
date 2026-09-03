@@ -148,6 +148,8 @@ freed only after all access to it has finished. The complete C contract is in
 - `packages/kotlin-markdown-core`: Kotlin binding, platform runtimes, tests, and consumer fixtures.
 - `packages/es-markdown-core`: ECMAScript/TypeScript package and WebAssembly runtime.
 - `specs/canonical-ast`: shared, platform-independent AST conformance fixtures.
+- `docs/specs/obsidian-flavored-markdown.md`: official-source-derived target
+  contract and current OFM support audit.
 - `samples`: sample consumers and integration examples.
 - `scripts`: repository build, formatting, lint, audit, and consumer-check entry points.
 

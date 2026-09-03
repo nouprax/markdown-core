@@ -9,6 +9,9 @@ the reviewed policy that defines each comparison:
 - `remark/` pins the remark/micromark ecosystem as corrective and
   supplementary evidence for directives, formula, footnote, table, and
   reference semantics.
+- `obsidian/` pins the most-used current npm Obsidian parser for the documented
+  wikilink/embed, highlight, comment, and custom-task intersection it actually
+  implements. Official Obsidian Help remains the language authority.
 
 Each `deltas.json` records the authority version, compared corpus, deliberate
 differences, and fail-closed exceptions used by its parity gate. The remark
