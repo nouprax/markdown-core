@@ -153,7 +153,7 @@ freed only after all access to it has finished. The complete C contract is in
 - `docs/specs/anchors.md`: the universal source-independent `Markup.anchor`
   field and its population, precedence, scope, and resolution boundaries.
 - `docs/specs/destinations.md`: the shared tagged `Destination` value used by
-  ordinary `Link` URLs and `CrossLink` whole-resource/anchor addresses.
+  ordinary `Link` URLs and `CrossLink` path/anchor addresses.
 - `docs/specs/attributes.md`: the universal `Markup.attributes` field, shared
   attribute-list grammar, value model, normalization, and merge operation.
 - `docs/specs/remark.md`: Remark-family extension index; directive attribute

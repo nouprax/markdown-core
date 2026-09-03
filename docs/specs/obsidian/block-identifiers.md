@@ -7,8 +7,8 @@ at the snapshot pinned by the
 
 This module defines authored block identifiers. The `#^id` reference spelling
 inside a wikilink belongs to the wikilink module and projects to the same
-`Destination.anchor` branch as a heading reference. The declaration field and
-its source-independent meaning belong to the shared
+`Destination.cross.anchor` field as a heading reference. The declaration field
+and its source-independent meaning belong to the shared
 [anchor contract](../anchors.md).
 
 ## Identifier grammar

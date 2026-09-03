@@ -12,11 +12,8 @@ Destination =
     value: String
   )
   | cross(
-    path: String
-  )
-  | anchor(
     path: String,
-    value: String
+    anchor: String?
   )
 
 Link(
@@ -46,13 +43,14 @@ reference such as `#section`. Moving this value from `Link.destination` to
 `Link.dest = Destination.url(value)` changes the consumer shape, not the
 inherited source grammar, escaping, normalization, or resolution behavior.
 
-An Obsidian `CrossLink` owns either `cross(path)` for a whole workspace
-resource or `anchor(path, value)` for a location within that resource. An
-empty anchor path means the current document. Both `#Heading` and `#^block-id`
-source spellings construct the same `anchor` branch after removing their
-source punctuation. The tagged value deliberately does not retain a heading,
-block, or fragment discriminator: those spellings all address the universal
-target identity declared by `Markup.anchor`.
+An Obsidian `CrossLink` owns the `cross(path, anchor)` branch. A null `anchor`
+addresses the whole workspace resource and requires a non-empty `path`. A
+non-null `anchor` is non-empty and may pair with an empty path to address the
+current document. Both `#Heading` and `#^block-id` source spellings populate
+the same field after removing their source punctuation. The tagged value
+deliberately does not retain a heading, block, or fragment discriminator: those
+spellings all address the universal target identity declared by
+`Markup.anchor`.
 
 The anchor value is non-empty. It may preserve a hierarchy such as
 `Parent#Child` or a resource-specific value such as `page=3`; a parser without
@@ -73,7 +71,7 @@ collapse those nodes or turn a normal Markdown link into a `CrossLink`.
 Neither value populates or owns the other.
 
 For example, `Destination.url("#foo")` and
-`Destination.anchor(path="", value="foo")` may both resolve to a node whose
+`Destination.cross(path="", anchor="foo")` may both resolve to a node whose
 `anchor == "foo"`. Those are still two authored reference forms plus one
 declaration fact. Resolution is downstream, may require document or workspace
 context, and never rewrites the destination or target AST node.
@@ -97,9 +95,9 @@ publishing a partial destination. Traversal visits the owning `Link` or
 ## Required conformance cases
 
 Tests must cover empty, absolute, relative, and fragment-only `url` values;
-whole-resource `cross` values; empty same-document anchor paths; heading and
-block source spellings producing the same `anchor` branch; hierarchical and
-resource-specific anchor values; rejection of invalid branch/field
+whole-resource `cross` values with null anchors; empty same-document paths;
+heading and block source spellings populating the same `cross.anchor` field;
+hierarchical and resource-specific anchor values; rejection of invalid branch/field
 combinations; direct and resolved reference links producing the same `url`
 branch; declaration/reference separation; exact owner scopes; all public
 binding projections; allocation failure at every owned string; and

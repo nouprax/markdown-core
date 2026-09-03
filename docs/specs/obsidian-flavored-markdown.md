@@ -57,7 +57,7 @@ required.
 
 | Module | Sole owner of |
 | --- | --- |
-| [Wikilinks and embeds](obsidian/wikilinks-and-embeds.md) | `[[...]]` and `![[...]]` source forms normalized to `CrossLink`, with whole-resource or anchor `Destination` values, labels, and raw embed parameters |
+| [Wikilinks and embeds](obsidian/wikilinks-and-embeds.md) | `[[...]]` and `![[...]]` source forms normalized to `CrossLink`, with `Destination.cross(path, anchor)`, labels, and raw embed parameters |
 | [Block identifiers](obsidian/block-identifiers.md) | `^id` definition placement, ownership, removal, and attachment to the universal anchor field |
 | [Footnotes](obsidian/footnotes.md) | referenced and inline source forms normalized to one-item `Cite` values with `CitationReferent.footnote` and document-owned `Footnote` values |
 | [Comments](obsidian/comments.md) | inline/standalone `%%` comments and stripping |
@@ -76,8 +76,9 @@ The block-identifier module depends on the shared
 [anchor model](anchors.md); it contributes one source attachment rule and does
 not create an Obsidian-specific target identity. The wikilink and inherited-link
 modules depend on the shared [destination model](destinations.md): ordinary
-links use its `url` branch and `CrossLink` uses its `cross` or `anchor` branch.
-The footnote module depends on the shared [citation model](citation-model.md).
+links use its `url` branch and `CrossLink` uses its `cross` branch with an
+optional anchor. The footnote module depends on the shared
+[citation model](citation-model.md).
 Only its footnote referent and group/item shape are part of OFM; the same
 contract's Pandoc `@key` source syntax remains an independent extension.
 
@@ -128,7 +129,7 @@ least one documented form is not representable by the current canonical AST.
 
 The missing target surface is therefore: consumer-normalized reference links
 with shared `Destination.url` values and images, `CrossLink` values with
-shared whole-resource/anchor destinations for wikilinks/embeds, block identifiers and
+shared `Destination.cross(path, anchor)` values for wikilinks/embeds, block identifiers and
 references as structured data, the unified
 `Cite`/`Citation`/`CitationReferent`/`Footnote` model and inline source form,
 comments, highlights, non-space task markers, the universal `Callout` model and

@@ -24,9 +24,9 @@ Block identifiers populate the same universal `Markup.anchor` string used by
 other profiles; they do not introduce a block-specific target type.
 Outgoing references use the shared tagged `Destination`: ordinary Markdown
 `Link` values own `Destination.url`, while `CrossLink` values own the
-`Destination.cross` or `Destination.anchor` branch. Heading and block source
-spellings share the latter and introduce no discriminator. No destination
-populates the declaration-side anchor on its owning reference node.
+`Destination.cross(path, anchor)` branch. Heading and block source spellings
+populate the same optional anchor field and introduce no discriminator. No
+destination populates the declaration-side anchor on its owning reference node.
 
 The normative work items are the module specs linked from the
 [OFM contract index](../specs/obsidian-flavored-markdown.md): wikilinks/embeds,
@@ -68,8 +68,7 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       `docs/specs/canonical-ast.json`, `docs/specs/canonical-ast.md`, and
       `docs/specs/canonical-ast-dump.md`:
       the shared `Destination` enum and `Link.dest`; `CrossLink`, `Mark`, and
-      `Comment`; the `Destination.cross(path)` and
-      `Destination.anchor(path, value)` branches;
+      `Comment`; the `Destination.cross(path, anchor)` branch;
       the callout-fold enum; shared image dimensions; the universal nullable
       `anchor` field on every Markup kind; and `marker` on `ListItem`. Only the
       addressable kinds named by the block-identifier grammar receive a non-null
@@ -100,9 +99,9 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       source map, and extension attachment order.
 - [ ] Make `![[...]]` and `[[...]]` one scanner and one `CrossLink` payload. Split
       path, optional anchor, and label value once while scanning, then construct
-      one complete `Destination.cross` or `Destination.anchor`. Heading and
-      block punctuation must not survive as a consumer discriminator. Do not
-      rescan the completed literal in a binding or renderer.
+      one complete `Destination.cross`. Heading and block punctuation must not
+      survive as a consumer discriminator. Do not rescan the completed literal
+      in a binding or renderer.
 - [ ] Make comments opaque during scanning. Support retained `Comment` nodes and
       parser-level stripping from the same recognized construct so stripping
       cannot change where other delimiters bind.

@@ -36,9 +36,9 @@ These are one consumer fact. There is no heading/block/fragment discriminator
 and no distinct heading, attribute, directive, or Obsidian anchor type.
 Characters such as `#` and `^` describe a reference spelling or an attachment
 grammar; they do not qualify the identity declared by the target node.
-Accordingly, `[[#Heading]]` and `[[#^block-id]]` both use
-`Destination.anchor`; the parser does not reproduce their punctuation as an
-anchor-kind tag.
+Accordingly, `[[#Heading]]` and `[[#^block-id]]` both populate
+`Destination.cross.anchor`; the parser does not reproduce their punctuation as
+an anchor-kind tag.
 
 Incoming `Link`, `CrossLink`, citation, and footnote values do not populate
 their own `anchor` merely because they refer to something. A resolver may use

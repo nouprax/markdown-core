@@ -84,9 +84,9 @@ syntax and precedence where no selected Pandoc extension participates.
       [`docs/specs/destinations.md`](../specs/destinations.md) to every public
       surface. Replace `Link.destination: String` with
       `Link.dest: Destination`, require the `url` branch for ordinary links,
-      and coordinate the same canonical change with Obsidian's `cross` and
-      `anchor` branches; do not retain the old string as parallel compatibility
-      state.
+      and coordinate the same canonical change with Obsidian's `cross` branch
+      and optional anchor; do not retain the old string as parallel
+      compatibility state.
 - [ ] Add the universal nullable `anchor` field defined by
       [`docs/specs/anchors.md`](../specs/anchors.md) and the non-null
       `attributes` field defined by

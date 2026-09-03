@@ -82,12 +82,8 @@ function urlDestination(value) {
     return `url(value=${JSON.stringify(value)})`;
 }
 
-function crossDestination(path) {
-    return `cross(path=${JSON.stringify(path)})`;
-}
-
-function anchorDestination(path, value) {
-    return `anchor(path=${JSON.stringify(path)}, value=${JSON.stringify(value)})`;
+function crossDestination(path, anchor) {
+    return `cross(path=${JSON.stringify(path)}, anchor=${anchor == null ? "null" : JSON.stringify(anchor)})`;
 }
 
 function normalizeChildren(children) {
@@ -138,9 +134,7 @@ function fromMdast(node, unknown, source) {
         const bodyStart = spelling.startsWith("![[") ? 3 : 2;
         const hasLabelDelimiter = spelling.slice(bodyStart, -2).includes("|");
         fields.embedded = String(node.embedded);
-        fields.dest = node.heading
-            ? anchorDestination(node.path, node.heading.replace(/^\^/, ""))
-            : crossDestination(node.path);
+        fields.dest = crossDestination(node.path, node.heading ? node.heading.replace(/^\^/, "") : null);
         fields.label = node.alias === "" && !hasLabelDelimiter ? "null" : node.alias;
     }
 

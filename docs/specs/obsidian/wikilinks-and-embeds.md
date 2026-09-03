@@ -44,18 +44,18 @@ CrossLink(
 )
 ```
 
-Every `CrossLink.dest` is either `Destination.cross(path)` or
-`Destination.anchor(path, value)`.
+Every `CrossLink.dest` is `Destination.cross(path, anchor)`.
 The invariants are:
 
-- A target with no anchor suffix constructs `cross`; its `path` is non-empty.
-- A target with either anchor suffix constructs `anchor`. Its `path` excludes
-  the suffix, label, and outer delimiters and may be empty for the current
-  document.
+- A target with no anchor suffix stores `anchor == null`; its `path` is
+  non-empty.
+- A target with either anchor suffix stores a non-empty `anchor`. Its `path`
+  excludes the suffix, label, and outer delimiters and may be empty for the
+  current document.
 - A heading spelling removes the first `#` but retains later hierarchy
-  separators. `[[Note#Parent#Child]]` stores `value == "Parent#Child"`.
+  separators. `[[Note#Parent#Child]]` stores `anchor == "Parent#Child"`.
 - A block spelling removes `#^`. `[[Note#^block-id]]` stores
-  `value == "block-id"`. It does not produce another destination or anchor kind.
+  `anchor == "block-id"`. It does not produce another destination or anchor kind.
 - `label == null` means no `|` was authored. An authored empty label is the
   distinct empty string.
 - `scope` covers the optional `!`, both delimiter pairs, and all enclosed
@@ -63,10 +63,10 @@ The invariants are:
 - A `CrossLink` has no parsed children. `label` is an authored label/parameter,
   not another inline Markdown container.
 
-`dest` is the complete outgoing value. `Destination.anchor.value` names the
-declaration-side `Markup.anchor` sought on a target node; it does not declare an
-anchor on the `CrossLink` itself. Heading and block punctuation affects source
-recognition but is intentionally absent from the consumer value.
+`dest` is the complete outgoing value. `Destination.cross.anchor` names the
+declaration-side `Markup.anchor` sought on a target node; it does not declare
+an anchor on the `CrossLink` itself. Heading and block punctuation affects
+source recognition but is intentionally absent from the consumer value.
 
 The parser does not slug, URL-decode, case-fold, resolve, or validate a path.
 For a note, an anchor suffix may address a heading or an explicitly identified
@@ -93,19 +93,19 @@ that certain filename characters “may not work” is a vault-resolution warnin
 not a parser rejection rule.
 
 The scanner runs once from the shared inline cursor. It constructs one
-`Destination.cross` or `Destination.anchor` while recognizing the label;
+`Destination.cross` with its optional anchor while recognizing the label;
 bindings and renderers may not rescan the completed source literal.
 
 ## Required conformance cases
 
 | Input | Required fields |
 | --- | --- |
-| `[[Note]]` | `embedded=false`, `dest=cross(path="Note")`, `label=null` |
-| `[[#Heading]]` | `dest=anchor(path="", value="Heading")` |
-| `[[Folder/Note#Parent#Child|Label]]` | `dest=anchor(path="Folder/Note", value="Parent#Child")`, `label="Label"` |
-| `![[Note#^block-id]]` | `embedded=true`, `dest=anchor(path="Note", value="block-id")` |
+| `[[Note]]` | `embedded=false`, `dest=cross(path="Note", anchor=null)`, `label=null` |
+| `[[#Heading]]` | `dest=cross(path="", anchor="Heading")` |
+| `[[Folder/Note#Parent#Child|Label]]` | `dest=cross(path="Folder/Note", anchor="Parent#Child")`, `label="Label"` |
+| `![[Note#^block-id]]` | `embedded=true`, `dest=cross(path="Note", anchor="block-id")` |
 | `![[Image.png|100x145]]` | raw `label="100x145"`; no media-type inference |
-| `![[Document.pdf#page=3]]` | `dest=anchor(path="Document.pdf", value="page=3")` |
+| `![[Document.pdf#page=3]]` | `dest=cross(path="Document.pdf", anchor="page=3")` |
 | `[[Note|]]` | `label=""`, distinct from no label delimiter |
 
 Tests must also cover every malformed boundary above, all opaque contexts,
