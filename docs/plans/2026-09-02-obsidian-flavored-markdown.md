@@ -61,8 +61,8 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
 - [ ] Add the remaining target value types and kinds to
       `docs/specs/canonical-ast.json`, `docs/specs/canonical-ast.md`, and
       `docs/specs/canonical-ast-dump.md`:
-      `CrossLink`, `Mark`, and `Comment`; wikilink fragment/block-subpath and
-      callout-fold enums; shared image dimensions; the universal nullable
+      `CrossLink`, `Mark`, and `Comment`; wikilink route and destination fields;
+      the callout-fold enum; shared image dimensions; the universal nullable
       `anchor` field on every Markup kind; and `marker` on `ListItem`. Only the
       addressable kinds named by the block-identifier grammar receive a non-null
       anchor from that source rule.
@@ -91,7 +91,7 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       the existing subject cursor, delimiter/bracket infrastructure, allocator,
       source map, and extension attachment order.
 - [ ] Make `![[...]]` and `[[...]]` one scanner and one `CrossLink` payload. Split
-      path, fragment/block subpath, and label value once while scanning. Do not
+      path, route-local `dest`, and label value once while scanning. Do not
       rescan the completed literal in a binding or renderer.
 - [ ] Make comments opaque during scanning. Support retained `Comment` nodes and
       parser-level stripping from the same recognized construct so stripping

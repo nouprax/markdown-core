@@ -75,7 +75,7 @@ const comparedFields = {
     CodeBlock: ["literal", "info"],
     Link: ["destination", "title"],
     Image: ["source", "title"],
-    CrossLink: ["embedded", "path", "route", "subpath", "label"]
+    CrossLink: ["embedded", "path", "route", "dest", "label"]
 };
 
 function normalizeChildren(children) {
@@ -128,7 +128,7 @@ function fromMdast(node, unknown, source) {
         fields.embedded = String(node.embedded);
         fields.path = node.path;
         fields.route = node.heading ? (node.heading.startsWith("^") ? "block" : "fragment") : "none";
-        fields.subpath = node.heading ? node.heading.replace(/^\^/, "") : "null";
+        fields.dest = node.heading ? node.heading.replace(/^\^/, "") : "null";
         fields.label = node.alias === "" && !hasLabelDelimiter ? "null" : node.alias;
     }
 

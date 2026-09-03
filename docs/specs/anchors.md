@@ -40,8 +40,9 @@ target node.
 
 Incoming `Link`, `CrossLink`, citation, and footnote values do not populate
 their own `anchor` merely because they refer to something. A resolver may use
-their destination or referent to find a node whose anchor matches, but
-resolution remains downstream and does not mutate the AST.
+their destination, `dest`, or referent to find a node whose anchor matches, but
+the reference-side value and declaration-side anchor remain different facts.
+Resolution remains downstream and does not mutate the AST.
 
 ## Population and precedence
 

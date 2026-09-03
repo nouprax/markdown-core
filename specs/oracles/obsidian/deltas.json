@@ -68,7 +68,7 @@
         {
             "id": "wikilink-basic",
             "input": "[[Note]]\n",
-            "oracleDigest": "3eb426ccdc26067ee8e52baedbd6c207e560b627ffbde3436949451c0ff51925",
+            "oracleDigest": "136b7fa9ac344aa1cf52dd8e483680e8699d373e412c66b219c0826a12d1671d",
             "markdownCoreDigest": "4c6fd8e27beca1ffe66a0aadb4cd1f68f3bc1f0bb5cce119cfef330ace76592e",
             "requirement": "Recognize a wikilink and expose its path instead of one literal Text node.",
             "closedBy": "Phase 2 — one OFM inline extension"
@@ -76,15 +76,15 @@
         {
             "id": "wikilink-heading-label",
             "input": "[[Folder/Note#Heading#Child|Display text]]\n",
-            "oracleDigest": "a9b715c6e771dd7f957b976ede3b39b3243f1b1a622c13ab4b6450e251964aa6",
+            "oracleDigest": "86a372fe70cab81bb3bbb28c330fe9a58dea1b07a4ce2878607bd36a9e95414e",
             "markdownCoreDigest": "96dc467eb91188957bd03b0469c812f6365d01741b90a774e6f690975cfcc47c",
-            "requirement": "Preserve the vault path, complete fragment subpath, and label text as CrossLink fields.",
+            "requirement": "Preserve the vault path, complete fragment destination, and label text as CrossLink fields.",
             "closedBy": "Phase 2 — one OFM inline extension"
         },
         {
             "id": "wikilink-embed",
             "input": "![[Image.png|100x145]]\n",
-            "oracleDigest": "3876933b938e06ce6a47d327c99c9141fd223957b7ff0dc070a5a8915c4dad1d",
+            "oracleDigest": "462f71578ddcc8bede74d136056853c5e23427b31f7d0f5f14db11579b48d2ec",
             "markdownCoreDigest": "b85827fe99d15228e9a5ac66dd2b97b351df3148dddd2b808bea82e526058a9c",
             "requirement": "Recognize the shared wikilink form with embedded=true and preserve its label/size parameter.",
             "closedBy": "Phase 2 — one OFM inline extension"
@@ -92,9 +92,9 @@
         {
             "id": "wikilink-block-embed",
             "input": "![[Note#^block-id]]\n",
-            "oracleDigest": "fd372fe4c88edf337ff5bfe47c8c452f3b183a72ad95ae2183bc281285ad965f",
+            "oracleDigest": "51e97ba149d9bea5208ac05aa241c4198ab5506e1297bdbaf2a4d07d0c93045b",
             "markdownCoreDigest": "c363cff78b07b6d440245f776863926540f01bf9ccb8dd33894d25d378e08dd8",
-            "requirement": "Recognize an embedded block reference and preserve its block subpath without the #^ delimiter.",
+            "requirement": "Recognize an embedded block reference and preserve its reference-side destination without the #^ delimiter.",
             "closedBy": "Phase 2 — one OFM inline extension"
         },
         {
