@@ -19,11 +19,9 @@
  * link's start from the closing bracket the same way, so asking it would
  * return agreement on exactly the rows that are wrong.
  *
- * Nodes with no position are skipped rather than judged: the `0:0..0:0`
- * sentinel means "not recorded", and a coordinate on line zero is
- * scripts/audit-scope-sanity.mjs's subject. Comparing a coordinate that is
- * not a position produces a finding about the representation, which is that
- * ratchet's job and not this one's.
+ * Nodes with no position are skipped rather than judged here. The fail-closed
+ * position-place oracle rejects line-zero and reversed scopes; comparing one
+ * of those as geometry would only duplicate that finding.
  *
  *   node scripts/audit-scope-containment.mjs [--update] [--verbose]
  */

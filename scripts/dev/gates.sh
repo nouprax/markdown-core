@@ -39,7 +39,6 @@ echo "fuzz-remark       : $(node scripts/fuzz-parity.mjs --oracle remark --itera
 echo "commonmark-parity : $(node scripts/check-upstream-parity.mjs --oracle commonmark 2>&1 | grep -E 'upstream parity:|divergences:')"
 echo "gfm-parity        : $(node scripts/check-upstream-parity.mjs --oracle gfm 2>&1 | grep -E 'upstream parity:|divergences:')"
 echo "mdast-parity      : $(node scripts/check-mdast-parity.mjs 2>&1 | grep -E 'mdast parity:|backlog:')"
-echo "scope-sanity      : $(node scripts/audit-scope-sanity.mjs 2>&1 | tail -1)"
 echo "inline-sourcepos  : $(node scripts/audit-inline-sourcepos.mjs 2>&1 | tail -1)"
 echo "scope-containment : $(node scripts/audit-scope-containment.mjs 2>&1 | tail -1)"
 echo "position-places   : $(node scripts/audit-position-places.mjs 2>&1 | tail -1)"

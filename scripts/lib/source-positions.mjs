@@ -4,11 +4,10 @@
  * A source position in this engine is a (line, column) pair counted in BYTES
  * from 1, and the canonical dump prints one closed interval of them per node
  * as `scope=L:C..L:C`. Nothing in the repository checked that those numbers
- * name anything: the golden dumps assert them, `scripts/audit-scope-sanity.mjs`
- * classifies three shapes that are not positions at all, and both parity gates
- * compare structure and text while ignoring position entirely. A well-formed
- * but wrong position therefore sails through every existing gate — which is
- * how a position landing four columns past the end of its own line came to be
+ * name anything: the golden dumps assert them, and both parity gates compare
+ * structure and text while ignoring position entirely. A well-formed but
+ * wrong position therefore sails through those gates — which is how a
+ * position landing four columns past the end of its own line came to be
  * asserted as expected output.
  *
  * The three oracles built on this module ask three different questions, and
@@ -16,7 +15,7 @@
  *
  *   audit-inline-sourcepos    does an authority outside this repository agree?
  *   audit-scope-containment   is the tree's geometry consistent with itself?
- *   audit-position-places     does each coordinate name a byte that exists?
+ *   audit-position-places     are both coordinates valid and ordered?
  *
  * None subsumes another. Upstream cmark-gfm carries several of the same
  * position defects, so it cannot be the authority for them; containment is
@@ -79,7 +78,7 @@ export function lineLengths(input) {
     return lines;
 }
 
-const SCOPE = /^(\d+):(\d+)\.\.(\d+):(\d+)$/;
+const SCOPE = /^(-?\d+):(-?\d+)\.\.(-?\d+):(-?\d+)$/;
 
 /** `scope=L:C..L:C` -> `{ start: [line, column], end: [line, column] }`. */
 export function readScope(node) {
@@ -94,13 +93,7 @@ export const formatScope = (scope) => `${scope.start[0]}:${scope.start[1]}..${sc
 /** Document order on two coordinates. */
 export const before = (left, right) => left[0] < right[0] || (left[0] === right[0] && left[1] < right[1]);
 
-/**
- * `scripts/audit-scope-sanity.mjs` owns three shapes that are not positions:
- * the `0:0..0:0` sentinel, a range whose end precedes its start, and line zero
- * with a non-zero column. A node carrying any coordinate on line zero is
- * therefore skipped here rather than counted twice — two ratchets that both
- * claim the same row can each be satisfied by the row moving to the other.
- */
+/** A coordinate on line zero cannot participate in geometry comparisons. */
 export const onLineZero = (scope) => scope.start[0] === 0 || scope.end[0] === 0;
 
 /**

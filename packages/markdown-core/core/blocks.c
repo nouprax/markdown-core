@@ -780,8 +780,8 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
                 * Measured: `<!-- c -->` alone on line 3 gave
                 * `HTMLBlock scope=3:1..2:0` for a literal whose last byte is at
                 * 3:10, and `last_line_length` there is the length of the BLANK
-                * line before it. Four of the eleven negative rows in
-                * `specs/scope-sanity/ledger.json` were this. */
+                * line before it. Four of the eleven observed negative rows
+                * were this. */
                parser->line_number == b->start_line) {
         S_set_end_to_current_line(parser, b);
     } else {
@@ -2056,11 +2056,7 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
 
     markdown_core_strbuf_clear(&parser->curline);
 
-    if (parser->options & MARKDOWN_CORE_OPT_VALIDATE_UTF8) {
-        markdown_core_utf8proc_check(&parser->curline, buffer, bytes);
-    } else {
-        markdown_core_strbuf_put(&parser->curline, buffer, bytes);
-    }
+    markdown_core_strbuf_put(&parser->curline, buffer, bytes);
 
     bytes = parser->curline.size;
 

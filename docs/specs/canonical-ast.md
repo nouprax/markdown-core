@@ -42,6 +42,11 @@ Position(line: integer, column: integer)
 Scope(start: Position, end: Position)
 ```
 
+The C facade passes the supplied bytes to the native parser as UTF-8. Valid
+UTF-8 is a caller precondition; Markdown Core has no validation or repair mode
+for malformed input. Swift, Kotlin, and ECMAScript strings are encoded as UTF-8
+before entering that same parse path.
+
 Scopes inherit the native C parser's source-position values and semantics
 exactly. The C facade and platform bindings copy `line` and `column` without
 rescanning, normalizing, expanding, rejecting, or otherwise reinterpreting

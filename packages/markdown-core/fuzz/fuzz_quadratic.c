@@ -34,7 +34,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         memcpy(&fuzz_config, data, sizeof(fuzz_config));
 
         /* Test options that are used by GitHub. */
-        fuzz_config.options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_VALIDATE_UTF8;
+        fuzz_config.options = MARKDOWN_CORE_OPT_FOOTNOTES;
 
         /* Remainder of input is the markdown */
         const char *markdown0 = (const char *)(data + sizeof(fuzz_config));

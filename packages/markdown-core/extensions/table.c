@@ -263,6 +263,16 @@ static table_row *row_from_string(const markdown_core_extension *self, markdown_
                     --cell->start_offset;
                     ++cell->internal_offset;
                 }
+                /* An adjacent `||` cell has no byte with which to form an
+                 * inclusive span. Source positions are location metadata
+                 * rather than substring bounds, so point it at the delimiter
+                 * that completed the cell instead of manufacturing the
+                 * reversed interval `offset..offset-1`. Do this after the
+                 * start rewind: whitespace before a separator is authored
+                 * cell source and already gives the cell an ordered span. */
+                if (cell_matched == 0 && cell->start_offset == offset) {
+                    cell->end_offset = cell->start_offset;
+                }
             }
         }
 

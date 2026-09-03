@@ -19,7 +19,6 @@
         "audit:repository": "scripts/audit-repository.sh",
         "audit:repository:clean": "scripts/audit-repository.sh --clean",
         "audit:scope-containment": "node scripts/audit-scope-containment.mjs",
-        "audit:scope-sanity": "node scripts/audit-scope-sanity.mjs",
         "audit:source-lists": "node scripts/audit-source-lists.mjs",
         "audit:surface": "scripts/audit-public-surface.sh",
         "audit:tests": "scripts/audit-test-topology.sh",

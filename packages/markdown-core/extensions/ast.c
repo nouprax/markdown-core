@@ -97,7 +97,7 @@ markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *sou
     const markdown_core_parse_options *options = requested_options;
     markdown_core_document *document;
     unsigned extensions = 0;
-    int native_options = MARKDOWN_CORE_OPT_VALIDATE_UTF8;
+    int native_options = 0;
 
     clear_error(error);
     if (!source && length != 0) {
