@@ -3,7 +3,8 @@
 Status: normative target module for Markdown Core `auto_anchors` and
 `implicit_header_references`. Attribute syntax and attachment, including
 `header_attributes`, are defined only by the
-[Pandoc attribute contract](attributes.md). Authority:
+[Pandoc attribute contract](attributes.md). The consumer field is defined by
+the shared [anchor contract](../anchors.md). Authority:
 [automatic identifiers](https://pandoc.org/MANUAL.html#extension-auto_identifiers),
 [GFM automatic identifiers](https://pandoc.org/MANUAL.html#extension-gfm_auto_identifiers),
 and
@@ -16,9 +17,9 @@ algorithm is not another mode in this contract.
 
 ## GFM automatic anchors
 
-With `auto_anchors=true`, every heading whose `attributes.identifier` is null
-receives a synthesized identifier. Generate its base from the parsed heading
-inline content in this order:
+With `auto_anchors=true`, every heading whose universal `anchor` is null
+receives a synthesized anchor. Generate its base from the parsed heading inline
+content in this order:
 
 1. Project to visible plain text: remove formatting containers while retaining
    their text, retain link labels and code literals, and remove footnote
@@ -34,7 +35,7 @@ inline content in this order:
 
 Punctuation removal does not insert whitespace, so separated source fragments
 may concatenate. Formatting delimiters never contribute. For example,
-`## My Header` receives `attributes.identifier="my-header"`.
+`## My Header` receives `anchor="my-header"`.
 
 Generated and explicit IDs share one document registry. If the base already
 exists, append `-N` using the smallest positive decimal `N` not yet registered.
@@ -42,13 +43,13 @@ An explicit duplicate remains as authored and may produce a diagnostic, but it
 still occupies the registry; it is not silently renamed. Generation is in
 heading source order and is deterministic.
 
-The generated attribute has no source scope. The `Heading.scope` remains the
+The generated anchor has no source scope. The `Heading.scope` remains the
 authored heading range.
 
 ## Implicit heading references
 
 With `implicit_header_references=true`, each heading with a non-null final
-`attributes.identifier` contributes a virtual reference definition. Its key is
+`anchor` contributes a virtual reference definition. Its key is
 the authored heading-label source after removing the ATX/Setext heading syntax,
 optional ATX closing hashes, and trailing heading attributes, then applying
 inherited case-insensitive reference-label normalization. Inline markup remains

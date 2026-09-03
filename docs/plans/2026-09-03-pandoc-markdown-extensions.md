@@ -9,7 +9,7 @@ compatibility aliases for any public model that this work replaces.
 
 Add the selected Pandoc syntax as opt-in rules inside the existing block and
 inline engines. All source forms project to one consumer-oriented canonical
-AST: every Markup value has the shared Pandoc-shaped attributes field, all
+AST: every Markup value has the universal anchor and attributes fields, all
 table syntaxes produce one Table model, all ordered-list syntaxes produce one
 List model, and Pandoc bibliography calls use the shared `Cite`/`Citation`/
 `CitationReferent` model. Reader state needed only for recognition—reference
@@ -63,9 +63,9 @@ syntax and precedence where no selected Pandoc extension participates.
 - [ ] Define one semantic projection per target concept, not per example. It may
       discard source locations that Pandoc JSON does not expose and may translate
       representation-only constructors such as `Plain`; it may not erase
-      recognition, content, order, attributes, list style/start/delimiter,
-      citation mode/affixes, heading IDs, table groups, column alignment/width, or
-      cell spans.
+      recognition, content, order, anchors, attributes, list
+      style/start/delimiter, citation mode/affixes, heading anchors, table groups,
+      column alignment/width, or cell spans.
 - [ ] Keep the corpus input-only. Product expected AST belongs in the C fixtures
       and `specs/canonical-ast/`; raw Pandoc JSON and projected Markdown Core
       output are generated during comparison and never committed as product
@@ -78,16 +78,19 @@ syntax and precedence where no selected Pandoc extension participates.
 
 ## Phase 1 — freeze the public consumer model
 
-- [ ] Add the universal `attributes` field defined by
+- [ ] Add the universal nullable `anchor` field defined by
+      [`docs/specs/anchors.md`](../specs/anchors.md) and the non-null
+      `attributes` field defined by
       [`docs/specs/attributes.md`](../specs/attributes.md) to every canonical
-      Markup kind and all four public surfaces. Its one payload contains the
-      optional identifier, ordered classes, and ordered key/value pairs. Kinds
-      without an enabled attachment rule retain `Attributes.empty`; do not create
-      node-specific copies or flatten the three components.
+      Markup kind and all four public surfaces. `anchor` is one
+      source-independent string; `Attributes` contains ordered classes and
+      ordered `Record` values. Kinds without an enabled source rule retain
+      `anchor=null` and `Attributes.empty`; do not create node-specific copies.
 - [ ] Add `Span`, `Superscript`, `Subscript`, `Div`, `DefinitionList`,
       `Definition`, and `ExampleReference`, plus the ordered-list style and
-      delimiter values, `ListItem.exampleLabel`, heading IDs through attributes,
-      and the complete unified Table values defined by the module specs.
+      delimiter values, `ListItem.exampleLabel`, heading anchors through the
+      universal field, and the complete unified Table values defined by the
+      module specs.
 - [ ] Add the shared bibliography branch to `Cite`, `Citation`, and
       `CitationReferent`. Coordinate the same canonical change with the Obsidian
       footnote migration: Pandoc `@key` creates `CitationReferent.bib`, while
@@ -115,8 +118,10 @@ syntax and precedence where no selected Pandoc extension participates.
 
 - [ ] Implement the shared attribute scanner and normalization operation once.
       The pinned Pandoc 3.11 reader supplies its exact source grammar and `Attr`
-      semantics. Remark and Pandoc profile modules contribute attachment sites
-      only. No node owns a private attribute parser or storage shape.
+      semantics; project its identifier into the owner anchor and its remaining
+      components into classes and records. Remark and Pandoc profile modules
+      contribute attachment sites only. No node owns a private parser or storage
+      shape.
 - [ ] Replace the existing directive-only Remark attribute parser and pair-array
       storage with the shared Pandoc operation. Update the directive fixtures and
       add every resulting Remark-oracle grammar difference to its fail-closed
@@ -126,18 +131,18 @@ syntax and precedence where no selected Pandoc extension participates.
       fenced-Div attributes during construction of their owning node. Reference
       definitions retain attributes only in the existing parser-owned resolution
       table. Failed suffixes release source transactionally.
-- [ ] Finalize explicit and generated heading IDs in one source-ordered registry.
-      Use the specified GFM algorithm, reserve explicit IDs, resolve collisions
-      deterministically, and build virtual implicit-reference entries from the
-      same final values.
+- [ ] Finalize explicit and generated heading anchors in one source-ordered
+      registry. Use the specified GFM algorithm, reserve explicit anchors,
+      resolve collisions deterministically, and build virtual implicit-reference
+      entries from the same final values.
 - [ ] Audit every existing Link/Image, Heading, Code/CodeBlock, directive, and
       reference-definition caller. Remove repair passes or duplicated fields made
       obsolete by the shared operation.
 
 - [ ] **Exit criterion:** each authored attribute container has exactly one owner,
-      generated IDs have no fictional source, reference occurrences merge attributes
-      once, directives and Pandoc sites coexist without precedence drift, and long
-      or malformed containers remain linear.
+      generated anchors have no fictional source, reference occurrences merge
+      anchors and attributes once, directives and Pandoc sites coexist without
+      precedence drift, and long or malformed containers remain linear.
 
 ## Phase 3 — inline extensions and document resolution
 
@@ -212,8 +217,8 @@ syntax and precedence where no selected Pandoc extension participates.
       conflicts, exact scopes, allocation failures, nesting limits, and
       adversarial size-doubling inputs.
 - [ ] Extend the shared canonical AST corpus with every new kind, enum case,
-      nullable field, universal attributes state, citation branch, list form,
-      definition body shape, and table span arrangement.
+      nullable field, universal anchor and attributes state, citation branch,
+      list form, definition body shape, and table span arrangement.
 - [ ] Remove each parity gap in the implementation commit that closes it. Any
       intentional consumer-model projection must be general, documented, and
       exercised by a canary; it cannot conceal a source-recognition difference.
@@ -236,6 +241,6 @@ available on every binding and its option-off, oracle, and product conformance
 cases pass.
 
 - [ ] Publish release notes listing the exact supported extension names, the
-      absence of a monolithic Pandoc preset, the universal attributes and shared
-      citation model, the exact 3.11 source/runner pin, and every public AST
-      migration.
+      absence of a monolithic Pandoc preset, the universal anchor and attributes
+      fields, the shared citation model, the exact 3.11 source/runner pin, and
+      every public AST migration.

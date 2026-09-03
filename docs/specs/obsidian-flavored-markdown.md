@@ -58,7 +58,7 @@ required.
 | Module | Sole owner of |
 | --- | --- |
 | [Wikilinks and embeds](obsidian/wikilinks-and-embeds.md) | `[[...]]` and `![[...]]` source forms normalized to `CrossLink`, with target routes, labels, and raw embed parameters |
-| [Block identifiers](obsidian/block-identifiers.md) | `^id` definition placement, ownership, removal, and the `anchor` field |
+| [Block identifiers](obsidian/block-identifiers.md) | `^id` definition placement, ownership, removal, and attachment to the universal anchor field |
 | [Footnotes](obsidian/footnotes.md) | referenced and inline source forms normalized to one-item `Cite` values with `CitationReferent.footnote` and document-owned `Footnote` values |
 | [Comments](obsidian/comments.md) | inline/standalone `%%` comments and stripping |
 | [Highlights](obsidian/highlights.md) | `==...==` recognition and the `Mark` inline node |
@@ -72,10 +72,12 @@ that apply to the complete profile. If two modules interact, the integration
 module owns the composition rule while each feature module retains its local
 semantics.
 
-The footnote module depends on the shared
-[citation model](citation-model.md). Only its footnote referent and group/item shape
-are part of OFM; the same contract's Pandoc `@key` source syntax remains an
-independent extension.
+The block-identifier module depends on the shared
+[anchor model](anchors.md); it contributes one source attachment rule and does
+not create an Obsidian-specific target identity. The footnote module depends on
+the shared [citation model](citation-model.md). Only its footnote referent and
+group/item shape are part of OFM; the same contract's Pandoc `@key` source
+syntax remains an independent extension.
 
 ## Parser boundary
 

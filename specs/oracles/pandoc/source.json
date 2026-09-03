@@ -85,7 +85,7 @@
         "attributeContract": {
             "authority": "Pandoc 3.11 MANUAL.txt, Markdown.hs, Shared.hs combineAttr, and native JSON Attr values at the pinned tag commit",
             "scope": "Every braced attribute container at Remark and Pandoc attachment sites.",
-            "consumerProjection": "Pandoc Attr is named as identifier, ordered classes, and ordered key/value pairs; an empty identifier projects to null.",
+            "consumerProjection": "Pandoc Attr identifier projects to the owner's universal anchor, classes to Attributes.classes, and ordered key/value pairs to Attributes.records of Record values; an empty identifier projects to anchor null.",
             "remarkBoundary": "remark-directive owns directive envelope and attachment syntax, but its different attribute member tokenizer is deliberately not a second grammar."
         },
         "publicToPandocExtensions": {

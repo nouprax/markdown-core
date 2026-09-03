@@ -150,6 +150,8 @@ freed only after all access to it has finished. The complete C contract is in
 - `specs/canonical-ast`: shared, platform-independent AST conformance fixtures.
 - `docs/specs/inserted-text.md`: optional `markdown-it-ins`-compatible
   `++inserted text++` syntax and semantic `Insert` node.
+- `docs/specs/anchors.md`: the universal source-independent `Markup.anchor`
+  field and its population, precedence, scope, and resolution boundaries.
 - `docs/specs/attributes.md`: the universal `Markup.attributes` field, shared
   attribute-list grammar, value model, normalization, and merge operation.
 - `docs/specs/remark.md`: Remark-family extension index; directive attribute

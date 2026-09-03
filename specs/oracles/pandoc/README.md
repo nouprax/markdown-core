@@ -21,11 +21,13 @@ a controlled harness substrate: current cmark and cmark-gfm policies continue
 to own Markdown Core's inherited CommonMark/GFM behavior.
 
 Pandoc 3.11 is also the authority for the one shared braced-attribute grammar
-and its semantic `Attr` shape. Markdown Core names that tuple's components
-`identifier`, `classes`, and `keyValues`, projecting Pandoc's empty identifier
-to `null` without otherwise flattening or deduplicating its arrays. The same
-grammar applies at Remark directive attachment sites; Remark owns the directive
-envelope, not a second attribute member language.
+and its semantic `Attr` shape. Markdown Core projects that tuple into its
+consumer model: the identifier becomes `Markup.anchor`, classes become
+`Attributes.classes`, and ordered key/value pairs become `Attributes.records`
+of `Record` values. Pandoc's empty identifier projects to `anchor=null`; neither
+array is otherwise flattened or deduplicated. The same grammar applies at
+Remark directive attachment sites; Remark owns the directive envelope, not a
+second attribute member language.
 
 The corpus contains inputs and runner options only. It contains no Markdown
 Core expected AST and no stored Pandoc output. The planned parity gate will run
@@ -41,5 +43,5 @@ projection may translate representation-only Pandoc constructors into the
 canonical consumer model; it may not erase a syntax, ordering, content,
 attribute, citation, list, heading, or table difference. Product scopes remain
 owned by Markdown Core fixtures because Pandoc JSON does not expose compatible
-source ranges. Attribute cases compare all three components and their order;
-the projection may not collapse them into a generic name/value map.
+source ranges. Attribute cases compare all three projected components and
+their order; the records sequence may not collapse into a unique-key map.
