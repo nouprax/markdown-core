@@ -65,6 +65,66 @@ export function fixtureCorpus(root) {
 }
 
 /**
+ * Every spec fixture parsed with the exact suite configuration registered in
+ * CTest. `spec_runner --dump` generates the AST without consulting its stored
+ * expected block; its normal option handling combines the suite's base
+ * `--option` values with the selected example's fence tags.
+ *
+ * Reading CTest's JSON graph keeps that graph as the one source of truth. The
+ * coverage checks make a newly added, removed, or multiply registered `.txt`
+ * fixture fail closed instead of silently acquiring a guessed profile.
+ */
+export function configuredFixtureCorpus(root) {
+    const buildDirectory = path.join(root, "build/cmake");
+    const graph = JSON.parse(
+        execFileSync("ctest", ["--test-dir", buildDirectory, "--show-only=json-v1"], {
+            encoding: "utf8",
+            maxBuffer: 1 << 28
+        })
+    );
+    const suites = new Map();
+
+    for (const test of graph.tests ?? []) {
+        const [binary, ...args] = test.command ?? [];
+        if (!binary || !/^spec_runner(?:\.exe)?$/.test(path.basename(binary))) continue;
+        const specIndexes = args.flatMap((argument, index) => (argument === "--spec" ? [index] : []));
+        if (specIndexes.length !== 1 || specIndexes[0] + 1 >= args.length) {
+            throw new Error(`${test.name}: spec_runner must have exactly one --spec FILE argument`);
+        }
+        const specArgument = args[specIndexes[0] + 1];
+        const absolute = path.isAbsolute(specArgument) ? specArgument : path.resolve(buildDirectory, specArgument);
+        const relative = path.relative(root, absolute).split(path.sep).join("/");
+        if (!relative.startsWith(`${FIXTURE_DIR}/`) || !relative.endsWith(".txt")) {
+            throw new Error(`${test.name}: spec fixture is outside ${FIXTURE_DIR}: ${relative}`);
+        }
+        if (suites.has(relative)) throw new Error(`${relative}: registered by more than one spec_runner CTest suite`);
+        suites.set(relative, { binary, args });
+    }
+
+    const fixturePaths = fs
+        .readdirSync(path.join(root, FIXTURE_DIR))
+        .filter((entry) => entry.endsWith(".txt"))
+        .sort()
+        .map((entry) => `${FIXTURE_DIR}/${entry}`);
+    const missing = fixturePaths.filter((relative) => !suites.has(relative));
+    const stale = [...suites.keys()].filter((relative) => !fixturePaths.includes(relative));
+    if (missing.length > 0 || stale.length > 0) {
+        throw new Error(
+            `fixture/CTest registration mismatch; missing=[${missing.join(", ")}], stale=[${stale.join(", ")}]`
+        );
+    }
+
+    return fixturePaths.flatMap((relative) => {
+        const suite = suites.get(relative);
+        return readExamples(root, relative).map((example) => ({
+            ...example,
+            binary: suite.binary,
+            args: [...suite.args, "--example", String(example.example), "--dump"]
+        }));
+    });
+}
+
+/**
  * Every Markdown input named by the canonical AST manifest, in manifest order.
  *
  * The public C CLI is the canonical candidate generator for this corpus. It

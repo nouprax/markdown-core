@@ -52,8 +52,8 @@ import { parseCanonicalDump } from "./lib/upstream-cmark.mjs";
 import {
     before,
     canonicalCorpus,
+    configuredFixtureCorpus,
     INLINE_KINDS,
-    fixtureCorpus,
     formatScope,
     lineLengths,
     loadLedger,
@@ -87,15 +87,11 @@ const fault = ([line, column], lengths) => {
 const measured = [];
 const surveyed = { inline: 0, block: 0 };
 let scanned = 0;
-const corpus = [
-    ...fixtureCorpus(root).map((example) => ({
-        ...example,
-        args: ["--profile", ledger.fixtureProfile]
-    })),
-    ...canonicalCorpus(root)
-];
+const corpus = [...configuredFixtureCorpus(root), ...canonicalCorpus(root)];
 for (const example of corpus) {
-    const tree = parseCanonicalDump(runBinary(ours, example.args, example.input));
+    const tree = parseCanonicalDump(
+        example.binary ? runBinary(example.binary, example.args) : runBinary(ours, example.args, example.input)
+    );
     const lengths = lineLengths(example.input);
     const findings = [];
     for (const { node, nodePath } of walkWithPath(tree)) {

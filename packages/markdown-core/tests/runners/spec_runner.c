@@ -6,7 +6,7 @@
  * determinism.  No renderer is involved.
  *
  *   spec_runner --spec FILE [--option NAME]...
- *               [--list] [--example N] [--section TEXT]
+ *               [--list] [--example N] [--section TEXT] [--dump]
  *
  * `--rewrite` is an explicit maintenance mode that regenerates the expected
  * blocks in place from the current parser.  The resulting fixture diff must
@@ -21,7 +21,7 @@
 
 static void usage(FILE *stream) {
     fputs("usage: spec_runner --spec FILE [--option NAME]...\n"
-          "                   [--list] [--example N] [--section TEXT] [--rewrite]\n",
+          "                   [--list] [--example N] [--section TEXT] [--dump] [--rewrite]\n",
           stream);
 }
 
@@ -204,6 +204,7 @@ int main(int argc, char **argv) {
     markdown_core_parse_options base;
     ts_spec_file spec;
     int list_only = 0;
+    int dump_only = 0;
     int rewrite = 0;
     int example_filter = 0;
     int i;
@@ -222,6 +223,8 @@ int main(int argc, char **argv) {
             }
         } else if (strcmp(argv[i], "--list") == 0) {
             list_only = 1;
+        } else if (strcmp(argv[i], "--dump") == 0) {
+            dump_only = 1;
         } else if (strcmp(argv[i], "--rewrite") == 0) {
             rewrite = 1;
         } else if (strcmp(argv[i], "--example") == 0 && i + 1 < argc) {
@@ -236,6 +239,14 @@ int main(int argc, char **argv) {
 
     if (!spec_path) {
         usage(stderr);
+        return 2;
+    }
+    /* `--dump` is a machine-readable view of exactly one generated AST. It
+     * deliberately reuses this runner's base options plus the example's fence
+     * tags, rather than consulting the stored expected block. */
+    if (dump_only && (!example_filter || list_only || rewrite || section_filter)) {
+        fputs("--dump requires exactly one --example and cannot be combined with --list, --section, or --rewrite\n",
+              stderr);
         return 2;
     }
     if (rewrite) {
@@ -278,7 +289,10 @@ int main(int argc, char **argv) {
             continue;
         }
 
-        if (strlen(test_case->expected) == dump_length && memcmp(test_case->expected, dump, dump_length) == 0) {
+        if (dump_only) {
+            fwrite(dump, 1, dump_length, stdout);
+            passed++;
+        } else if (strlen(test_case->expected) == dump_length && memcmp(test_case->expected, dump, dump_length) == 0) {
             passed++;
         } else {
             fprintf(stderr, "FAILED example %d (lines %d-%d) %s\n", test_case->example, test_case->start_line,
@@ -293,6 +307,14 @@ int main(int argc, char **argv) {
 
     ts_spec_free(&spec);
     if (list_only) {
+        return 0;
+    }
+    if (dump_only) {
+        if (passed != 1 || failed != 0 || errored != 0) {
+            fprintf(stderr, "--dump selected %zu generated examples, %zu failed, %zu errored\n", passed, failed,
+                    errored);
+            return 1;
+        }
         return 0;
     }
     printf("%zu passed, %zu failed, %zu errored, %zu skipped\n", passed, failed, errored, skipped);
