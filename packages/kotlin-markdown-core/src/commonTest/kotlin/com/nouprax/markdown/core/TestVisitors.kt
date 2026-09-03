@@ -1,7 +1,7 @@
 package com.nouprax.markdown.core
 
 internal class KindVisitor : Visitor<String> {
-    override fun visitSemantic(node: Semantic): String = name(node)
+    override fun visitDocument(node: Document): String = name(node)
 
     override fun visitBlockQuote(node: BlockQuote): String = name(node)
 
@@ -69,7 +69,7 @@ internal class KindVisitor : Visitor<String> {
 internal class RecordingVisitor : Visitor<Unit> {
     val visited: MutableList<String> = mutableListOf()
 
-    override fun visitSemantic(node: Semantic): Unit = record(node)
+    override fun visitDocument(node: Document): Unit = record(node)
 
     override fun visitBlockQuote(node: BlockQuote): Unit = record(node)
 
@@ -139,13 +139,3 @@ internal class RecordingVisitor : Visitor<Unit> {
 }
 
 private fun name(node: Markup): String = node::class.simpleName ?: "unknown"
-
-/**
- * The tree of a whole-text parse: `Document(markdown, options).seal()`,
- * keeping only the semantic view. The shape tests below read trees; the
- * lifecycle tests spell the full entry out themselves.
- */
-internal fun parse(
-    markdown: String,
-    options: ParseOptions = ParseOptions(),
-): Semantic = Document(markdown, options).seal().semantic

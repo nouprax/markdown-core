@@ -5,7 +5,6 @@ public class List internal constructor(
     public val start: Long?,
     public val tight: Boolean,
     public val items: kotlin.collections.List<ListItem>,
-    override val id: Identity,
     override val scope: Scope,
 ) : Markup {
     override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitList(this)
@@ -14,7 +13,6 @@ public class List internal constructor(
 public class ListItem internal constructor(
     public val checked: Boolean?,
     public val content: kotlin.collections.List<Markup>,
-    override val id: Identity,
     override val scope: Scope,
 ) : Markup {
     override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitListItem(this)

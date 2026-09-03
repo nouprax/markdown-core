@@ -10,10 +10,9 @@ not allowed in this directory.
 
 These files are test-only product contract data. They are not a production
 serialization format, a C-to-binding transport, or a public API. Every binding
-parses the Markdown through its public entry (`Document(markdown).seal()` in
-the bindings, `markdown_core_document_parse` in C), traverses its own
-immutable public AST through its public Visitor/Walker/TreeDumper path, and
-compares the result byte for byte. No production path may consume dump text,
+parses the Markdown through its public `Document.parse` and dumps its own
+immutable public AST through per-node Visitor dispatch, then compares the
+result byte for byte. No production path may consume dump text,
 and no release artifact may contain this directory.
 
 Run `node scripts/check-canonical-ast-fixtures.mjs` to audit the schema,

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-VERSION="0.65.0"
+VERSION="0.65.1"
 INSTALL_DIR="${SWIFTLINT_INSTALL_DIR:-$PWD/.tools/swiftlint/$VERSION}"
 
 if [ -x "$INSTALL_DIR/swiftlint" ]; then
@@ -11,15 +11,15 @@ fi
 case "$(uname -s)-$(uname -m)" in
     Darwin-*)
         archive="portable_swiftlint.zip"
-        checksum="d6cb0aa7a2f5f1ef306fc9e37bcb54dc9a26facc8f7784ac0c3dd3eccf5c6ba6"
+        checksum="c1e429b0599cf1b516f369a2d9ec04eaf0e436f3c12b637df8851fa52ff694d0"
         ;;
     Linux-x86_64)
         archive="swiftlint_linux_amd64.zip"
-        checksum="79306a34e5c7cc55a220cd108cbb861dcad5f10138dcdf261e2624ae8b0a486b"
+        checksum="caeed6f4a679c35539ffaf124f6c4ab4a8416917f7d8796279dc52b74026059d"
         ;;
     Linux-aarch64 | Linux-arm64)
         archive="swiftlint_linux_arm64.zip"
-        checksum="12d3b84bc5b69ae13a99a5a5c79904f9ce25867f099f6368d0037854f9ee6c26"
+        checksum="9ffa52f478e6d8eb485d37d14715ffac90abc81c58f3370d598bf75be05605f8"
         ;;
     *)
         echo "Unsupported SwiftLint host: $(uname -s)-$(uname -m)" >&2

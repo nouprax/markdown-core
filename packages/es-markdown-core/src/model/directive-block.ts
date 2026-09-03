@@ -5,8 +5,9 @@ import type { Markup } from "./markup.js";
 
 export interface DirectiveBlock extends MarkupBase<"directiveBlock"> {
     readonly name: string;
-    /** Sorted by name, or `null` when the source wrote no `{...}` at all. */
+    /** In first-occurrence source order, or `null` when there was no `{...}`. */
     readonly attributes: readonly DirectiveAttribute[] | null;
+    /** Markup owned by the label field, never an element of `content`. */
     readonly label: DirectiveLabel | null;
     readonly content: readonly Markup[];
 }

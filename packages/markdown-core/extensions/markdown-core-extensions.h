@@ -13,9 +13,9 @@ extern "C" {
 
 /** The node types the six core extensions add, as COMPILE-TIME CONSTANTS.
  *
- * They used to be `markdown_core_node_type` globals assigned by
- * `markdown_core_syntax_extension_add_node` in whatever order
- * `core_extensions_registration` happened to call the `create_*` functions --
+ * They used to be `markdown_core_node_type` globals assigned by runtime
+ * registration in whatever order `core_extensions_registration` happened to
+ * call the `create_*` functions --
  * so a node type's numeric identity was a consequence of a call order, in a
  * different file, that nothing checked. Attach order and type numbering are
  * unrelated facts and conflating them is what made the old globals
@@ -98,28 +98,39 @@ const char *markdown_core_core_extensions_name_at(size_t index);
 MARKDOWN_CORE_EXPORT
 uint16_t markdown_core_extensions_get_table_columns(markdown_core_node *node);
 
+/** Sets the number of columns for the table, returning 1 on success and 0 on error.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_extensions_set_table_columns(markdown_core_node *node, uint16_t n_columns);
+
 MARKDOWN_CORE_EXPORT
 uint8_t *markdown_core_extensions_get_table_alignments(markdown_core_node *node);
+
+/** Sets the alignments for the table, returning 1 on success and 0 on error.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_extensions_set_table_alignments(markdown_core_node *node, uint16_t ncols, uint8_t *alignments);
 
 MARKDOWN_CORE_EXPORT
 int markdown_core_extensions_get_table_row_is_header(markdown_core_node *node);
 
+/** Sets whether the node is a table header row, returning 1 on success and 0 on error.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_extensions_set_table_row_is_header(markdown_core_node *node, int is_header);
+
+MARKDOWN_CORE_EXPORT
+bool markdown_core_extensions_get_tasklist_item_checked(markdown_core_node *node);
+
+/** Sets whether a tasklist item is "checked" (completed), returning 1 on success and 0 on error.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_extensions_set_tasklist_item_checked(markdown_core_node *node, bool is_checked);
+
 /** Returns the literal formula payload for formula extension nodes, or NULL on error.
- * MATERIALIZES a NUL-terminated private copy on first call, writing the node:
- * order access to the document around it. The facade reads the view below
- * instead, which mutates nothing.
  */
 MARKDOWN_CORE_EXPORT
 const char *markdown_core_extensions_get_formula_literal(markdown_core_node *node);
-
-/** The formula literal as a VIEW -- bytes and length, no NUL materialization
- * and NO write to the node (#153): derived documents may share their inline
- * lists across threads, and a getter that rewrites the chunk it reads races
- * with itself on the shared node. Returns 0 for a node without a formula
- * payload; the bytes stay valid for the life of the owning document and are
- * not NUL-terminated at `*length`. */
-MARKDOWN_CORE_EXPORT
-int markdown_core_extensions_formula_literal_view(const markdown_core_node *node, const char **data, size_t *length);
 
 /** Sets the literal formula payload for formula extension nodes, returning 1 on success and 0 on
  * error.
@@ -161,20 +172,15 @@ int markdown_core_extensions_directive_has_attributes(markdown_core_node *node);
 MARKDOWN_CORE_EXPORT
 size_t markdown_core_extensions_directive_attribute_count(markdown_core_node *node);
 
-/** Reads the attribute at `index`, in the order the model holds them, which is
- * sorted by name (Q19). Returns 1 on success and 0 when the node is not a
+/** Reads the attribute at `index`, in first-occurrence source order. A repeated
+ * non-class name replaces the value in its original slot; repeated `class`
+ * values accumulate there. Returns 1 on success and 0 when the node is not a
  * directive or the index is out of range. The bytes are BORROWED from the node
  * and are not NUL-terminated, which is why each comes with its length.
  */
 MARKDOWN_CORE_EXPORT
-int markdown_core_extensions_directive_attribute_at(
-    markdown_core_node *node,
-    size_t index,
-    const char **name,
-    size_t *name_length,
-    const char **value,
-    size_t *value_length
-);
+int markdown_core_extensions_directive_attribute_at(markdown_core_node *node, size_t index, const char **name,
+                                                    size_t *name_length, const char **value, size_t *value_length);
 
 #ifdef __cplusplus
 }

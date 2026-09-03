@@ -1,6 +1,6 @@
-headers = markdown_core_kotlin_bridge.h
-headerFilter = markdown_core_kotlin_bridge.h
-package = com.nouprax.markdown.core.internal.nativebridge
-staticLibraries = libmarkdown_core_kotlin.a libmarkdown-core-extensions.a libmarkdown-core.a
+headers = markdown_core.h
+headerFilter = markdown_core.h
+package = com.nouprax.markdown.core.internal.capi
+staticLibraries = libmarkdown-core-extensions.a libmarkdown-core.a
 libraryPaths = @LIBRARY_PATH@
-noStringConversion = markdown_core_kotlin_session_feed markdown_core_kotlin_session_advance
+noStringConversion = markdown_core_document_parse

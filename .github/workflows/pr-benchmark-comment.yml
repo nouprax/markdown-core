@@ -1,0 +1,367 @@
+name: PR Benchmark Comment
+
+on:
+    workflow_run:
+        workflows: [PR Benchmark]
+        types: [completed]
+
+permissions:
+    actions: read
+    contents: read
+    pull-requests: write
+
+env:
+    CC: clang
+    CXX: clang++
+
+jobs:
+    comment:
+        name: Report - PR benchmark comparison
+        if: ${{ github.event.workflow_run.event == 'pull_request' }}
+        runs-on: ubuntu-latest
+        steps:
+            - name: Resolve the pull request and validate the head artifact metadata
+              id: comparison
+              uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+              with:
+                  script: |
+                      const run = context.payload.workflow_run;
+                      const artifacts = await github.paginate(
+                          github.rest.actions.listWorkflowRunArtifacts,
+                          {
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              run_id: run.id,
+                              per_page: 100,
+                          },
+                      );
+                      let pullRequests = run.pull_requests ?? [];
+                      if (pullRequests.length !== 1) {
+                          const associated =
+                              await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                                  owner: context.repo.owner,
+                                  repo: context.repo.repo,
+                                  commit_sha: run.head_sha,
+                              });
+                          pullRequests = associated.data.filter(
+                              (pullRequest) =>
+                                  pullRequest.base.repo.full_name ===
+                                  context.payload.repository.full_name,
+                          );
+                      }
+                      if (pullRequests.length !== 1) {
+                          core.warning("No unique pull request is associated with this benchmark run.");
+                          return;
+                      }
+                      const pullRequest = await github.rest.pulls.get({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          pull_number: pullRequests[0].number,
+                      });
+                      const benchmarkArtifacts = artifacts.filter((artifact) =>
+                          artifact.name.startsWith("pr-benchmark-"),
+                      );
+                      const headArtifacts = benchmarkArtifacts.filter(
+                          (artifact) =>
+                              artifact.name === "pr-benchmark-head" &&
+                              !artifact.expired &&
+                              artifact.size_in_bytes > 0 &&
+                              artifact.size_in_bytes <= 65536,
+                      );
+                      const safe =
+                          benchmarkArtifacts.length === 1 && headArtifacts.length === 1;
+                      core.setOutput("head_artifact_safe", safe ? "true" : "false");
+                      core.setOutput("pull_number", String(pullRequest.data.number));
+                      core.setOutput("base_repository", pullRequest.data.base.repo.full_name);
+                      core.setOutput("base_sha", pullRequest.data.base.sha);
+                      core.setOutput("base_ref", pullRequest.data.base.ref);
+                      core.setOutput("head_sha", pullRequest.data.head.sha);
+                      if (pullRequest.data.head.sha !== run.head_sha) {
+                          core.warning("The benchmark run is stale for the current pull-request head.");
+                          core.setOutput("head_artifact_safe", "false");
+                          core.setOutput("current", "false");
+                      } else {
+                          core.setOutput("current", "true");
+                      }
+            - name: Check out the exact trusted PR base
+              if: ${{ steps.comparison.outputs.current == 'true' }}
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  repository: ${{ steps.comparison.outputs.base_repository }}
+                  ref: ${{ steps.comparison.outputs.base_sha }}
+                  path: baseline-source
+                  persist-credentials: false
+            - if: ${{ steps.comparison.outputs.current == 'true' }}
+              uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version: 26.8.1
+            - name: Find a trusted exact-base benchmark
+              if: ${{ steps.comparison.outputs.current == 'true' }}
+              id: published-baseline
+              uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+              env:
+                  BASE_REF: ${{ steps.comparison.outputs.base_ref }}
+                  BASE_SHA: ${{ steps.comparison.outputs.base_sha }}
+              with:
+                  script: |
+                      const artifactName = `pr-benchmark-baseline-${process.env.BASE_SHA}`;
+                      const artifacts = await github.paginate(
+                          github.rest.actions.listArtifactsForRepo,
+                          {
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              name: artifactName,
+                              per_page: 100,
+                          },
+                      );
+                      const candidates = artifacts.filter(
+                          (artifact) =>
+                              artifact.name === artifactName &&
+                              !artifact.expired &&
+                              artifact.size_in_bytes > 0 &&
+                              artifact.size_in_bytes <= 65536,
+                      );
+                      for (const artifact of candidates) {
+                          const response = await github.rest.actions.getWorkflowRun({
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              run_id: artifact.workflow_run.id,
+                          });
+                          const run = response.data;
+                          const trustedMain =
+                              run.path === ".github/workflows/pr-benchmark.yml" &&
+                              run.event === "push" &&
+                              run.head_sha === process.env.BASE_SHA &&
+                              run.head_branch === process.env.BASE_REF;
+                          const trustedFallback =
+                              run.path === ".github/workflows/pr-benchmark-comment.yml" &&
+                              run.event === "workflow_run";
+                          if (
+                              run.status === "completed" &&
+                              run.conclusion === "success" &&
+                              (trustedMain || trustedFallback)
+                          ) {
+                              core.setOutput("available", "true");
+                              core.setOutput("run_id", String(run.id));
+                              core.setOutput("artifact_name", artifactName);
+                              return;
+                          }
+                      }
+                      core.notice(`No trusted benchmark exists for exact base ${process.env.BASE_SHA}; the privileged workflow will build and publish it.`);
+                      core.setOutput("available", "false");
+            - name: Download the trusted exact-base benchmark
+              if: ${{ steps.published-baseline.outputs.available == 'true' }}
+              continue-on-error: true
+              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+              with:
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  run-id: ${{ steps.published-baseline.outputs.run_id }}
+                  name: ${{ steps.published-baseline.outputs.artifact_name }}
+                  path: trusted-baseline/downloaded
+            - name: Validate the trusted exact-base benchmark
+              if: ${{ steps.comparison.outputs.current == 'true' }}
+              id: baseline
+              env:
+                  BASE_SHA: ${{ steps.comparison.outputs.base_sha }}
+              shell: bash
+              run: |
+                  mkdir -p benchmark-results
+                  downloaded=trusted-baseline/downloaded/baseline.json
+                  if test -f "$downloaded" && \
+                      node baseline-source/scripts/pr-benchmark-result.mjs validate \
+                          --input "$downloaded" --source-sha "$BASE_SHA"; then
+                      cp "$downloaded" benchmark-results/base.json
+                      echo "usable=true" >>"$GITHUB_OUTPUT"
+                  else
+                      echo "usable=false" >>"$GITHUB_OUTPUT"
+                  fi
+            - name: Build and measure the exact PR base in the trusted workflow
+              if: ${{ steps.comparison.outputs.current == 'true' && steps.baseline.outputs.usable != 'true' }}
+              env:
+                  BASE_SHA: ${{ steps.comparison.outputs.base_sha }}
+              shell: bash
+              run: |
+                  mkdir -p trusted-baseline benchmark-results
+                  cmake -S baseline-source -B baseline-source/build/benchmark \
+                      -DCMAKE_BUILD_TYPE=Release \
+                      -DMARKDOWN_CORE_BENCHMARKS=ON
+                  cmake --build baseline-source/build/benchmark --target bench_runner --parallel 2
+                  baseline-source/build/benchmark/packages/markdown-core/tests/bench_runner \
+                      --workload binding_baseline \
+                      --samples baseline-source/packages/markdown-core/benchmarks/samples \
+                      --warmup 2 \
+                      --repeats 9 \
+                      2>&1 | tee trusted-baseline/baseline.log
+                  node baseline-source/scripts/pr-benchmark-result.mjs collect \
+                      --log trusted-baseline/baseline.log \
+                      --build-dir baseline-source/build/benchmark \
+                      --output trusted-baseline/baseline.json \
+                      --source-sha "$BASE_SHA" \
+                      --origin fallback-build
+                  cp trusted-baseline/baseline.json benchmark-results/base.json
+            - name: Publish the trusted exact-base benchmark for later PR runs
+              if: ${{ steps.comparison.outputs.current == 'true' && steps.baseline.outputs.usable != 'true' }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: pr-benchmark-baseline-${{ steps.comparison.outputs.base_sha }}
+                  path: trusted-baseline/baseline.json
+                  if-no-files-found: error
+                  retention-days: 30
+            - name: Download the PR-controlled head measurement as untrusted data
+              if: ${{ steps.comparison.outputs.head_artifact_safe == 'true' }}
+              continue-on-error: true
+              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+              with:
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  run-id: ${{ github.event.workflow_run.id }}
+                  name: pr-benchmark-head
+                  path: benchmark-results/head
+            - name: Create or update the benchmark comment
+              if: ${{ steps.comparison.outputs.current == 'true' }}
+              uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+              env:
+                  HEAD_ARTIFACT_SAFE: ${{ steps.comparison.outputs.head_artifact_safe }}
+                  BASE_SHA: ${{ steps.comparison.outputs.base_sha }}
+                  HEAD_SHA: ${{ steps.comparison.outputs.head_sha }}
+                  PULL_NUMBER: ${{ steps.comparison.outputs.pull_number }}
+              with:
+                  script: |
+                      const fs = require("node:fs");
+
+                      const marker = "<!-- markdown-core-pr-benchmark -->";
+                      const exactKeys = [
+                          "binaryBytes",
+                          "bytes",
+                          "medianNs",
+                          "memoryKiB",
+                          "origin",
+                          "repeats",
+                          "runtime",
+                          "schema",
+                          "sourceSha",
+                          "warmup",
+                          "workload",
+                          "workloadVersion",
+                      ];
+
+                      function readMetric(file, expectedSha, allowedOrigins) {
+                          if (!fs.existsSync(file) || fs.statSync(file).size > 32768) return null;
+                          try {
+                              const metric = JSON.parse(fs.readFileSync(file, "utf8"));
+                              const valid =
+                                  metric &&
+                                  Object.keys(metric).sort().join("\n") === exactKeys.join("\n") &&
+                                  metric.schema === 1 &&
+                                  metric.sourceSha === expectedSha &&
+                                  allowedOrigins.has(metric.origin) &&
+                                  metric.runtime === "c" &&
+                                  metric.workload === "representative_large" &&
+                                  metric.workloadVersion === 1 &&
+                                  Number.isSafeInteger(metric.bytes) &&
+                                  metric.bytes > 0 &&
+                                  Number.isSafeInteger(metric.warmup) &&
+                                  metric.warmup >= 0 &&
+                                  Number.isSafeInteger(metric.repeats) &&
+                                  metric.repeats > 0 &&
+                                  Number.isSafeInteger(metric.medianNs) &&
+                                  metric.medianNs > 0 &&
+                                  Number.isSafeInteger(metric.memoryKiB) &&
+                                  metric.memoryKiB >= 0 &&
+                                  Number.isSafeInteger(metric.binaryBytes) &&
+                                  metric.binaryBytes > 0 &&
+                                  !("boundary" in metric);
+                              return valid ? metric : null;
+                          } catch {
+                              return null;
+                          }
+                      }
+
+                      function percent(current, baseline) {
+                          if (!Number.isFinite(baseline) || baseline === 0) return "n/a";
+                          const value = ((current - baseline) / baseline) * 100;
+                          return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+                      }
+
+                      const issueNumber = Number(process.env.PULL_NUMBER);
+                      if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0) {
+                          core.notice("No validated pull request number is available.");
+                          return;
+                      }
+                      const headArtifactSafe = process.env.HEAD_ARTIFACT_SAFE === "true";
+                      const head = headArtifactSafe
+                          ? readMetric(
+                                "benchmark-results/head/head.json",
+                                process.env.HEAD_SHA,
+                                new Set(["head"]),
+                            )
+                          : null;
+                      const base = readMetric(
+                          "benchmark-results/base.json",
+                          process.env.BASE_SHA,
+                          new Set(["main-build", "fallback-build"]),
+                      );
+                      const lines = [marker, "## PR benchmark", ""];
+                      if (head && base) {
+                          const contractMatches =
+                              head.runtime === base.runtime &&
+                              head.workload === base.workload &&
+                              head.workloadVersion === base.workloadVersion &&
+                              head.bytes === base.bytes &&
+                              head.warmup === base.warmup &&
+                              head.repeats === base.repeats;
+                          const baselineLabel =
+                              base.origin === "main-build"
+                                  ? "published exact-base baseline"
+                                  : "published exact-base fallback baseline";
+                          lines.push(
+                              `Baseline: ${baselineLabel} at \`${process.env.BASE_SHA.slice(0, 12)}\`.`,
+                              "",
+                              "| Runtime | Workload | Input | Head median | Base median | Perf diff | Head RSS | Base RSS | RSS diff |",
+                              "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+                              `| C | ${head.workload} (v${head.workloadVersion}) | ${head.bytes.toLocaleString("en-US")} B | ${(head.medianNs / 1e6).toFixed(3)} ms | ${(base.medianNs / 1e6).toFixed(3)} ms | ${contractMatches ? percent(head.medianNs, base.medianNs) : "n/a"} | ${head.memoryKiB.toLocaleString("en-US")} KiB | ${base.memoryKiB.toLocaleString("en-US")} KiB | ${contractMatches ? percent(head.memoryKiB, base.memoryKiB) : "n/a"} |`,
+                              "",
+                              "### Binary size",
+                              "",
+                              "| Artifact | Head | Base | Diff |",
+                              "| --- | ---: | ---: | ---: |",
+                              `| libmarkdown-core | ${head.binaryBytes.toLocaleString("en-US")} B | ${base.binaryBytes.toLocaleString("en-US")} B | ${contractMatches ? percent(head.binaryBytes, base.binaryBytes) : "n/a"} |`,
+                              "",
+                          );
+                      } else {
+                          lines.push(
+                              "No validated comparison was produced. Inspect the benchmark run.",
+                              "",
+                          );
+                      }
+                      lines.push(
+                          `[Benchmark run](${context.payload.workflow_run.html_url})`,
+                          "",
+                          "Hosted-runner timing and RSS are informational observations, not merge gates or regression thresholds. Binary size is deterministic only for identical toolchain inputs.",
+                      );
+
+                      const body = lines.join("\n");
+                      const comments = await github.paginate(github.rest.issues.listComments, {
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          issue_number: issueNumber,
+                          per_page: 100,
+                      });
+                      const previous = comments.find(
+                          (comment) =>
+                              comment.user?.type === "Bot" && comment.body?.includes(marker),
+                      );
+                      if (previous) {
+                          await github.rest.issues.updateComment({
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              comment_id: previous.id,
+                              body,
+                          });
+                      } else {
+                          await github.rest.issues.createComment({
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              issue_number: issueNumber,
+                              body,
+                          });
+                      }

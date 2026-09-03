@@ -8,7 +8,8 @@
 #include "markdown-core.h"
 #include "node.h"
 #include "buffer.h"
-#include "syntax_extension.h"
+#include "parser.h"
+#include "extension.h"
 #include "markdown-core-extensions.h"
 
 #include <markdown_core.h>
@@ -18,69 +19,63 @@
 
 #define UTF8_REPL "\xEF\xBF\xBD"
 
-static const markdown_core_node_type node_types[] = {
-    MARKDOWN_CORE_NODE_DOCUMENT,
-    MARKDOWN_CORE_NODE_BLOCK_QUOTE,
-    MARKDOWN_CORE_NODE_LIST,
-    MARKDOWN_CORE_NODE_LIST_ITEM,
-    MARKDOWN_CORE_NODE_CODE_BLOCK,
-    MARKDOWN_CORE_NODE_HTML_BLOCK,
-    MARKDOWN_CORE_NODE_PARAGRAPH,
-    MARKDOWN_CORE_NODE_HEADING,
-    MARKDOWN_CORE_NODE_THEMATIC_BREAK,
-    MARKDOWN_CORE_NODE_TEXT,
-    MARKDOWN_CORE_NODE_SOFT_BREAK,
-    MARKDOWN_CORE_NODE_LINE_BREAK,
-    MARKDOWN_CORE_NODE_CODE,
-    MARKDOWN_CORE_NODE_HTML,
-    MARKDOWN_CORE_NODE_EMPHASIS,
-    MARKDOWN_CORE_NODE_STRONG,
-    MARKDOWN_CORE_NODE_LINK,
-    MARKDOWN_CORE_NODE_IMAGE,
-    MARKDOWN_CORE_NODE_REFERENCE_DEFINITION,
-    MARKDOWN_CORE_NODE_LINK_REFERENCE,
-    MARKDOWN_CORE_NODE_IMAGE_REFERENCE
-};
+typedef struct extension_setup {
+    const markdown_core_extension *const *extensions;
+    size_t count;
+} extension_setup;
+
+static bool attach_extensions(markdown_core_parser *parser, void *context) {
+    const extension_setup *setup = (const extension_setup *)context;
+    size_t i;
+
+    for (i = 0; i < setup->count; i++) {
+        if (!markdown_core_parser_attach_extension(parser, setup->extensions[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static markdown_core_node *parse_with_extensions(const char *source, size_t length, int options,
+                                                 const markdown_core_extension *const *extensions,
+                                                 size_t extension_count) {
+    extension_setup setup = {extensions, extension_count};
+    return markdown_core_parse_document_with_mem(source, length, options, markdown_core_get_default_mem_allocator(),
+                                                 attach_extensions, &setup);
+}
+
+static const markdown_core_node_type node_types[] = {MARKDOWN_CORE_NODE_DOCUMENT,
+                                                     MARKDOWN_CORE_NODE_BLOCK_QUOTE,
+                                                     MARKDOWN_CORE_NODE_LIST,
+                                                     MARKDOWN_CORE_NODE_LIST_ITEM,
+                                                     MARKDOWN_CORE_NODE_CODE_BLOCK,
+                                                     MARKDOWN_CORE_NODE_HTML_BLOCK,
+                                                     MARKDOWN_CORE_NODE_PARAGRAPH,
+                                                     MARKDOWN_CORE_NODE_HEADING,
+                                                     MARKDOWN_CORE_NODE_THEMATIC_BREAK,
+                                                     MARKDOWN_CORE_NODE_TEXT,
+                                                     MARKDOWN_CORE_NODE_SOFT_BREAK,
+                                                     MARKDOWN_CORE_NODE_LINE_BREAK,
+                                                     MARKDOWN_CORE_NODE_CODE,
+                                                     MARKDOWN_CORE_NODE_HTML,
+                                                     MARKDOWN_CORE_NODE_EMPHASIS,
+                                                     MARKDOWN_CORE_NODE_STRONG,
+                                                     MARKDOWN_CORE_NODE_LINK,
+                                                     MARKDOWN_CORE_NODE_IMAGE,
+                                                     MARKDOWN_CORE_NODE_REFERENCE_DEFINITION,
+                                                     MARKDOWN_CORE_NODE_LINK_REFERENCE,
+                                                     MARKDOWN_CORE_NODE_IMAGE_REFERENCE};
 static const char *const node_type_names[] = {
-    "document",
-    "block_quote",
-    "list",
-    "list_item",
-    "code_block",
-    "html_block",
-    "paragraph",
-    "heading",
-    "thematic_break",
-    "text",
-    "soft_break",
-    "line_break",
-    "code",
-    "html",
-    "emphasis",
-    "strong",
-    "link",
-    "image",
-    "reference_definition",
-    "link_reference",
-    "image_reference"
-};
+    "document", "block_quote",    "list", "list_item",  "code_block",           "html_block",     "paragraph",
+    "heading",  "thematic_break", "text", "soft_break", "line_break",           "code",           "html",
+    "emphasis", "strong",         "link", "image",      "reference_definition", "link_reference", "image_reference"};
 static const int num_node_types = sizeof(node_types) / sizeof(*node_types);
 
-static void test_md_paragraph_text(
-    test_batch_runner *runner,
-    const char *markdown,
-    const char *expected_text,
-    const char *msg
-);
+static void test_md_paragraph_text(test_batch_runner *runner, const char *markdown, const char *expected_text,
+                                   const char *msg);
 
-static void test_md_paragraph_text_options(
-    test_batch_runner *runner,
-    const char *markdown,
-    size_t markdown_length,
-    int options,
-    const char *expected_text,
-    const char *msg
-);
+static void test_md_paragraph_text_options(test_batch_runner *runner, const char *markdown, size_t markdown_length,
+                                           int options, const char *expected_text, const char *msg);
 
 static markdown_core_node *parse_with_formula_extension(const char *markdown);
 static markdown_core_node *parse_with_directive_extension(const char *markdown);
@@ -101,66 +96,45 @@ static void version(test_batch_runner *runner) {
 /* The extension types continue these two sequences, so listing them here means
  * the existing contiguity assertions pin every one of the nine values AND make
  * a collision or a gap impossible. Until Step 3.1 they were globals filled in
- * by `markdown_core_syntax_extension_add_node` in whatever order
- * `core_extensions_registration` called the `create_*` functions, and nothing
- * in the repository asserted a single one of them. */
+ * by runtime registration in whatever order `core_extensions_registration`
+ * called the `create_*` functions, and nothing in the repository asserted a
+ * single one of them. */
 static void node_type_values(test_batch_runner *runner) {
-    static const markdown_core_node_type block_types[] = {
-        MARKDOWN_CORE_NODE_DOCUMENT,
-        MARKDOWN_CORE_NODE_BLOCK_QUOTE,
-        MARKDOWN_CORE_NODE_LIST,
-        MARKDOWN_CORE_NODE_LIST_ITEM,
-        MARKDOWN_CORE_NODE_CODE_BLOCK,
-        MARKDOWN_CORE_NODE_HTML_BLOCK,
-        MARKDOWN_CORE_NODE_PARAGRAPH,
-        MARKDOWN_CORE_NODE_HEADING,
-        MARKDOWN_CORE_NODE_THEMATIC_BREAK,
-        MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION,
-        MARKDOWN_CORE_NODE_TABLE,
-        MARKDOWN_CORE_NODE_TABLE_ROW,
-        MARKDOWN_CORE_NODE_TABLE_CELL,
-        MARKDOWN_CORE_NODE_FORMULA_BLOCK,
-        MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
-        MARKDOWN_CORE_NODE_REFERENCE_DEFINITION
-    };
+    static const markdown_core_node_type block_types[] = {MARKDOWN_CORE_NODE_DOCUMENT,
+                                                          MARKDOWN_CORE_NODE_BLOCK_QUOTE,
+                                                          MARKDOWN_CORE_NODE_LIST,
+                                                          MARKDOWN_CORE_NODE_LIST_ITEM,
+                                                          MARKDOWN_CORE_NODE_CODE_BLOCK,
+                                                          MARKDOWN_CORE_NODE_HTML_BLOCK,
+                                                          MARKDOWN_CORE_NODE_PARAGRAPH,
+                                                          MARKDOWN_CORE_NODE_HEADING,
+                                                          MARKDOWN_CORE_NODE_THEMATIC_BREAK,
+                                                          MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION,
+                                                          MARKDOWN_CORE_NODE_TABLE,
+                                                          MARKDOWN_CORE_NODE_TABLE_ROW,
+                                                          MARKDOWN_CORE_NODE_TABLE_CELL,
+                                                          MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+                                                          MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
+                                                          MARKDOWN_CORE_NODE_REFERENCE_DEFINITION};
     static const markdown_core_node_type inline_types[] = {
-        MARKDOWN_CORE_NODE_TEXT,
-        MARKDOWN_CORE_NODE_SOFT_BREAK,
-        MARKDOWN_CORE_NODE_LINE_BREAK,
-        MARKDOWN_CORE_NODE_CODE,
-        MARKDOWN_CORE_NODE_HTML,
-        MARKDOWN_CORE_NODE_EMPHASIS,
-        MARKDOWN_CORE_NODE_STRONG,
-        MARKDOWN_CORE_NODE_LINK,
-        MARKDOWN_CORE_NODE_IMAGE,
-        MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE,
-        MARKDOWN_CORE_NODE_STRIKETHROUGH,
-        MARKDOWN_CORE_NODE_FORMULA,
-        MARKDOWN_CORE_NODE_DIRECTIVE,
-        MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
-        MARKDOWN_CORE_NODE_LINK_REFERENCE,
-        MARKDOWN_CORE_NODE_IMAGE_REFERENCE
-    };
+        MARKDOWN_CORE_NODE_TEXT,           MARKDOWN_CORE_NODE_SOFT_BREAK,
+        MARKDOWN_CORE_NODE_LINE_BREAK,     MARKDOWN_CORE_NODE_CODE,
+        MARKDOWN_CORE_NODE_HTML,           MARKDOWN_CORE_NODE_EMPHASIS,
+        MARKDOWN_CORE_NODE_STRONG,         MARKDOWN_CORE_NODE_LINK,
+        MARKDOWN_CORE_NODE_IMAGE,          MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE,
+        MARKDOWN_CORE_NODE_STRIKETHROUGH,  MARKDOWN_CORE_NODE_FORMULA,
+        MARKDOWN_CORE_NODE_DIRECTIVE,      MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
+        MARKDOWN_CORE_NODE_LINK_REFERENCE, MARKDOWN_CORE_NODE_IMAGE_REFERENCE};
 
     for (size_t i = 0; i < sizeof(block_types) / sizeof(*block_types); ++i) {
-        INT_EQ(
-            runner,
-            block_types[i] & MARKDOWN_CORE_NODE_TYPE_MASK,
-            MARKDOWN_CORE_NODE_TYPE_BLOCK,
-            "block node type class %zu",
-            i
-        );
+        INT_EQ(runner, block_types[i] & MARKDOWN_CORE_NODE_TYPE_MASK, MARKDOWN_CORE_NODE_TYPE_BLOCK,
+               "block node type class %zu", i);
         INT_EQ(runner, block_types[i] & MARKDOWN_CORE_NODE_VALUE_MASK, i + 1, "block node type value %zu", i);
     }
 
     for (size_t i = 0; i < sizeof(inline_types) / sizeof(*inline_types); ++i) {
-        INT_EQ(
-            runner,
-            inline_types[i] & MARKDOWN_CORE_NODE_TYPE_MASK,
-            MARKDOWN_CORE_NODE_TYPE_INLINE,
-            "inline node type class %zu",
-            i
-        );
+        INT_EQ(runner, inline_types[i] & MARKDOWN_CORE_NODE_TYPE_MASK, MARKDOWN_CORE_NODE_TYPE_INLINE,
+               "inline node type class %zu", i);
         INT_EQ(runner, inline_types[i] & MARKDOWN_CORE_NODE_VALUE_MASK, i + 1, "inline node type value %zu", i);
     }
 }
@@ -180,18 +154,10 @@ static void constructor(test_batch_runner *runner) {
             break;
 
         case MARKDOWN_CORE_NODE_LIST:
-            INT_EQ(
-                runner,
-                markdown_core_node_get_list_type(node),
-                MARKDOWN_CORE_BULLET_LIST,
-                "default is list type is bullet"
-            );
-            INT_EQ(
-                runner,
-                markdown_core_node_get_list_delim(node),
-                MARKDOWN_CORE_NO_DELIM,
-                "default is list delim is NO_DELIM"
-            );
+            INT_EQ(runner, markdown_core_node_get_list_type(node), MARKDOWN_CORE_BULLET_LIST,
+                   "default is list type is bullet");
+            INT_EQ(runner, markdown_core_node_get_list_delim(node), MARKDOWN_CORE_NO_DELIM,
+                   "default is list delim is NO_DELIM");
             INT_EQ(runner, markdown_core_node_get_list_start(node), 0, "default is list start is 0");
             INT_EQ(runner, markdown_core_node_get_list_tight(node), 0, "default is list is loose");
             break;
@@ -236,12 +202,8 @@ static void accessors(test_batch_runner *runner) {
 
     markdown_core_node *ordered_list = markdown_core_node_next(bullet_list);
     INT_EQ(runner, markdown_core_node_get_list_type(ordered_list), MARKDOWN_CORE_ORDERED_LIST, "get_list_type ordered");
-    INT_EQ(
-        runner,
-        markdown_core_node_get_list_delim(ordered_list),
-        MARKDOWN_CORE_PERIOD_DELIM,
-        "get_list_delim ordered"
-    );
+    INT_EQ(runner, markdown_core_node_get_list_delim(ordered_list), MARKDOWN_CORE_PERIOD_DELIM,
+           "get_list_delim ordered");
     INT_EQ(runner, markdown_core_node_get_list_start(ordered_list), 2, "get_list_start");
     INT_EQ(runner, markdown_core_node_get_list_tight(ordered_list), 0, "get_list_tight loose");
 
@@ -311,12 +273,8 @@ static void accessors(test_batch_runner *runner) {
     INT_EQ(runner, markdown_core_node_get_list_delim(bullet_list), MARKDOWN_CORE_PAREN_DELIM, "set_list_delim applied");
     INT_EQ(runner, markdown_core_node_get_list_start(bullet_list), 3, "set_list_start applied");
     INT_EQ(runner, markdown_core_node_get_list_tight(bullet_list), 0, "set_list_tight applied");
-    INT_EQ(
-        runner,
-        markdown_core_node_get_list_type(ordered_list),
-        MARKDOWN_CORE_BULLET_LIST,
-        "set_list_type bullet applied"
-    );
+    INT_EQ(runner, markdown_core_node_get_list_type(ordered_list), MARKDOWN_CORE_BULLET_LIST,
+           "set_list_type bullet applied");
     INT_EQ(runner, markdown_core_node_get_list_tight(ordered_list), 1, "set_list_tight tight applied");
     STR_EQ(runner, markdown_core_node_get_literal(code), "CODE\n", "set_literal code applied");
     STR_EQ(runner, markdown_core_node_get_literal(fenced), "FENCED\n", "set_literal fenced applied");
@@ -358,19 +316,8 @@ static void accessors(test_batch_runner *runner) {
 }
 
 static markdown_core_node *parse_with_formula_extension_options(const char *markdown, int options) {
-
-    markdown_core_parser *parser = markdown_core_parser_new(options);
-    const markdown_core_syntax_extension *formula = &MARKDOWN_CORE_EXTENSION_FORMULA;
-
-    if (formula) {
-        markdown_core_parser_attach_syntax_extension(parser, formula);
-    }
-
-    markdown_core_parser_feed(parser, markdown, strlen(markdown));
-    markdown_core_node *doc = markdown_core_parser_finish(parser);
-    markdown_core_parser_free(parser);
-
-    return doc;
+    const markdown_core_extension *formula = &MARKDOWN_CORE_EXTENSION_FORMULA;
+    return parse_with_extensions(markdown, strlen(markdown), options, &formula, 1);
 }
 
 static markdown_core_node *parse_with_formula_extension(const char *markdown) {
@@ -382,19 +329,8 @@ static markdown_core_node *parse_with_dollar_formula_extension(const char *markd
 }
 
 static markdown_core_node *parse_with_directive_extension(const char *markdown) {
-
-    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
-    const markdown_core_syntax_extension *directive = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
-
-    if (directive) {
-        markdown_core_parser_attach_syntax_extension(parser, directive);
-    }
-
-    markdown_core_parser_feed(parser, markdown, strlen(markdown));
-    markdown_core_node *doc = markdown_core_parser_finish(parser);
-    markdown_core_parser_free(parser);
-
-    return doc;
+    const markdown_core_extension *directive = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
+    return parse_with_extensions(markdown, strlen(markdown), MARKDOWN_CORE_OPT_DEFAULT, &directive, 1);
 }
 
 /* ATTACHING THE EXTENSION IS THE ONLY GATE (Q14, Step 6). These two assertions
@@ -408,26 +344,18 @@ static void formula_extension_accessors(test_batch_runner *runner) {
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *text = markdown_core_node_first_child(paragraph);
 
-    INT_EQ(
-        runner,
-        markdown_core_node_get_type(text),
-        MARKDOWN_CORE_NODE_TEXT,
-        "without the extension attached, dollar syntax is ordinary text"
-    );
-    STR_EQ(
-        runner,
-        markdown_core_node_get_literal(text),
-        "Inline $x+y$ end.",
-        "and the text keeps every byte the author wrote"
-    );
+    INT_EQ(runner, markdown_core_node_get_type(text), MARKDOWN_CORE_NODE_TEXT,
+           "without the extension attached, dollar syntax is ordinary text");
+    STR_EQ(runner, markdown_core_node_get_literal(text), "Inline $x+y$ end.",
+           "and the text keeps every byte the author wrote");
     markdown_core_node_free(doc);
 
     doc = parse_with_formula_extension("Inline $x+y$ end.\n");
     paragraph = markdown_core_node_first_child(doc);
     OK(runner,
-        markdown_core_node_get_type(markdown_core_node_next(markdown_core_node_first_child(paragraph))) ==
-            MARKDOWN_CORE_NODE_FORMULA,
-        "attaching the extension is the whole gate");
+       markdown_core_node_get_type(markdown_core_node_next(markdown_core_node_first_child(paragraph))) ==
+           MARKDOWN_CORE_NODE_FORMULA,
+       "attaching the extension is the whole gate");
     markdown_core_node_free(doc);
 
     doc = parse_with_dollar_formula_extension("Inline $x+y$ end.\n");
@@ -436,69 +364,32 @@ static void formula_extension_accessors(test_batch_runner *runner) {
 
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula", "formula type string");
     STR_EQ(runner, markdown_core_extensions_get_formula_literal(formula), "x+y", "formula inline literal");
-    INT_EQ(
-        runner,
-        markdown_core_extensions_get_formula_mode(formula),
-        MARKDOWN_CORE_FORMULA_MODE_EMBEDDED,
-        "formula inline mode is embedded"
-    );
+    INT_EQ(runner, markdown_core_extensions_get_formula_mode(formula), MARKDOWN_CORE_FORMULA_MODE_EMBEDDED,
+           "formula inline mode is embedded");
     INT_EQ(runner, markdown_core_extensions_set_formula_literal(formula, "z"), 1, "set formula literal succeeds");
-    STR_EQ(
-        runner,
-        markdown_core_extensions_get_formula_literal(formula),
-        "z",
-        "formula literal setter updates payload"
-    );
-    INT_EQ(
-        runner,
-        markdown_core_extensions_set_formula_mode(formula, MARKDOWN_CORE_FORMULA_MODE_STANDALONE),
-        1,
-        "set formula mode succeeds"
-    );
-    INT_EQ(
-        runner,
-        markdown_core_extensions_get_formula_mode(formula),
-        MARKDOWN_CORE_FORMULA_MODE_STANDALONE,
-        "formula mode setter updates mode"
-    );
-    INT_EQ(
-        runner,
-        markdown_core_extensions_set_formula_literal(paragraph, "nope"),
-        0,
-        "set formula literal rejects non-formula nodes"
-    );
-    INT_EQ(
-        runner,
-        markdown_core_extensions_set_formula_mode(paragraph, MARKDOWN_CORE_FORMULA_MODE_EMBEDDED),
-        0,
-        "set formula mode rejects non-formula nodes"
-    );
-    OK(runner,
-        markdown_core_extensions_get_formula_literal(paragraph) == NULL,
-        "get formula literal rejects non-formula nodes");
-    INT_EQ(
-        runner,
-        markdown_core_extensions_get_formula_mode(paragraph),
-        MARKDOWN_CORE_FORMULA_MODE_NONE,
-        "get formula mode rejects non-formula nodes"
-    );
+    STR_EQ(runner, markdown_core_extensions_get_formula_literal(formula), "z",
+           "formula literal setter updates payload");
+    INT_EQ(runner, markdown_core_extensions_set_formula_mode(formula, MARKDOWN_CORE_FORMULA_MODE_STANDALONE), 1,
+           "set formula mode succeeds");
+    INT_EQ(runner, markdown_core_extensions_get_formula_mode(formula), MARKDOWN_CORE_FORMULA_MODE_STANDALONE,
+           "formula mode setter updates mode");
+    INT_EQ(runner, markdown_core_extensions_set_formula_literal(paragraph, "nope"), 0,
+           "set formula literal rejects non-formula nodes");
+    INT_EQ(runner, markdown_core_extensions_set_formula_mode(paragraph, MARKDOWN_CORE_FORMULA_MODE_EMBEDDED), 0,
+           "set formula mode rejects non-formula nodes");
+    OK(runner, markdown_core_extensions_get_formula_literal(paragraph) == NULL,
+       "get formula literal rejects non-formula nodes");
+    INT_EQ(runner, markdown_core_extensions_get_formula_mode(paragraph), MARKDOWN_CORE_FORMULA_MODE_NONE,
+           "get formula mode rejects non-formula nodes");
     markdown_core_node_free(doc);
 
     doc = parse_with_dollar_formula_extension("$$x+y$$\n");
     formula = markdown_core_node_first_child(doc);
-    STR_EQ(
-        runner,
-        markdown_core_node_get_type_string(formula),
-        "formula_block",
-        "standalone formula block type string"
-    );
+    STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
+           "standalone formula block type string");
     STR_EQ(runner, markdown_core_extensions_get_formula_literal(formula), "x+y", "standalone formula block literal");
-    INT_EQ(
-        runner,
-        markdown_core_extensions_get_formula_mode(formula),
-        MARKDOWN_CORE_FORMULA_MODE_STANDALONE,
-        "formula block mode is standalone"
-    );
+    INT_EQ(runner, markdown_core_extensions_get_formula_mode(formula), MARKDOWN_CORE_FORMULA_MODE_STANDALONE,
+           "formula block mode is standalone");
     markdown_core_node_free(doc);
 
     doc = parse_with_dollar_formula_extension("Display $$a+b$$ end.\n");
@@ -506,85 +397,45 @@ static void formula_extension_accessors(test_batch_runner *runner) {
     formula = markdown_core_node_next(markdown_core_node_first_child(paragraph));
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula", "standalone formula inline type string");
     STR_EQ(runner, markdown_core_extensions_get_formula_literal(formula), "a+b", "standalone formula inline literal");
-    INT_EQ(
-        runner,
-        markdown_core_extensions_get_formula_mode(formula),
-        MARKDOWN_CORE_FORMULA_MODE_STANDALONE,
-        "formula inline mode is standalone"
-    );
+    INT_EQ(runner, markdown_core_extensions_get_formula_mode(formula), MARKDOWN_CORE_FORMULA_MODE_STANDALONE,
+           "formula inline mode is standalone");
     markdown_core_node_free(doc);
 
     doc = parse_with_formula_extension_options("Inline \\\\(x+y\\\\) end.\n", MARKDOWN_CORE_OPT_DEFAULT);
     paragraph = markdown_core_node_first_child(doc);
     formula = markdown_core_node_next(markdown_core_node_first_child(paragraph));
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula", "LaTeX embedded formula inline type string");
-    STR_EQ(
-        runner,
-        markdown_core_extensions_get_formula_literal(formula),
-        "x+y",
-        "LaTeX embedded formula inline literal"
-    );
-    INT_EQ(
-        runner,
-        markdown_core_extensions_get_formula_mode(formula),
-        MARKDOWN_CORE_FORMULA_MODE_EMBEDDED,
-        "LaTeX formula inline mode is embedded"
-    );
+    STR_EQ(runner, markdown_core_extensions_get_formula_literal(formula), "x+y",
+           "LaTeX embedded formula inline literal");
+    INT_EQ(runner, markdown_core_extensions_get_formula_mode(formula), MARKDOWN_CORE_FORMULA_MODE_EMBEDDED,
+           "LaTeX formula inline mode is embedded");
     markdown_core_node_free(doc);
 
     doc = parse_with_formula_extension_options("Display \\\\[x+y\\\\] end.\n", MARKDOWN_CORE_OPT_DEFAULT);
     paragraph = markdown_core_node_first_child(doc);
     formula = markdown_core_node_next(markdown_core_node_first_child(paragraph));
-    STR_EQ(
-        runner,
-        markdown_core_node_get_type_string(formula),
-        "formula",
-        "LaTeX standalone formula inline type string"
-    );
-    STR_EQ(
-        runner,
-        markdown_core_extensions_get_formula_literal(formula),
-        "x+y",
-        "LaTeX standalone formula inline literal"
-    );
-    INT_EQ(
-        runner,
-        markdown_core_extensions_get_formula_mode(formula),
-        MARKDOWN_CORE_FORMULA_MODE_STANDALONE,
-        "LaTeX formula inline mode is standalone"
-    );
+    STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula",
+           "LaTeX standalone formula inline type string");
+    STR_EQ(runner, markdown_core_extensions_get_formula_literal(formula), "x+y",
+           "LaTeX standalone formula inline literal");
+    INT_EQ(runner, markdown_core_extensions_get_formula_mode(formula), MARKDOWN_CORE_FORMULA_MODE_STANDALONE,
+           "LaTeX formula inline mode is standalone");
     markdown_core_node_free(doc);
 
     doc = parse_with_formula_extension_options("\\\\[x+y\\\\]\n", MARKDOWN_CORE_OPT_DEFAULT);
     formula = markdown_core_node_first_child(doc);
-    STR_EQ(
-        runner,
-        markdown_core_node_get_type_string(formula),
-        "formula_block",
-        "LaTeX standalone formula block type string"
-    );
-    STR_EQ(
-        runner,
-        markdown_core_extensions_get_formula_literal(formula),
-        "x+y",
-        "LaTeX standalone formula block literal"
-    );
-    INT_EQ(
-        runner,
-        markdown_core_extensions_get_formula_mode(formula),
-        MARKDOWN_CORE_FORMULA_MODE_STANDALONE,
-        "LaTeX formula block mode is standalone"
-    );
+    STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
+           "LaTeX standalone formula block type string");
+    STR_EQ(runner, markdown_core_extensions_get_formula_literal(formula), "x+y",
+           "LaTeX standalone formula block literal");
+    INT_EQ(runner, markdown_core_extensions_get_formula_mode(formula), MARKDOWN_CORE_FORMULA_MODE_STANDALONE,
+           "LaTeX formula block mode is standalone");
     markdown_core_node_free(doc);
 
     doc = parse_with_formula_extension("```formula\nx+y\n```\n");
     formula = markdown_core_node_first_child(doc);
-    STR_EQ(
-        runner,
-        markdown_core_node_get_type_string(formula),
-        "formula_block",
-        "formula fence becomes standalone block"
-    );
+    STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
+           "formula fence becomes standalone block");
     STR_EQ(runner, markdown_core_extensions_get_formula_literal(formula), "x+y", "formula fence literal is trimmed");
     markdown_core_node_free(doc);
 }
@@ -592,134 +443,134 @@ static void formula_extension_accessors(test_batch_runner *runner) {
 /* Reads one attribute and compares it, so a sequence can be asserted without a
  * serialization to compare against -- which is what the deleted JSON was
  * doing for these tests. */
-static void attribute_eq(
-    test_batch_runner *runner,
-    markdown_core_node *node,
-    size_t index,
-    const char *name,
-    const char *value,
-    const char *message
-) {
+static void attribute_eq(test_batch_runner *runner, markdown_core_node *node, size_t index, const char *name,
+                         const char *value, const char *message) {
     const char *actual_name = NULL;
     const char *actual_value = NULL;
     size_t name_length = 0;
     size_t value_length = 0;
-    int ok = markdown_core_extensions_directive_attribute_at(
-        node,
-        index,
-        &actual_name,
-        &name_length,
-        &actual_value,
-        &value_length
-    );
+    int ok = markdown_core_extensions_directive_attribute_at(node, index, &actual_name, &name_length, &actual_value,
+                                                             &value_length);
     OK(runner,
-        ok && name_length == strlen(name) && memcmp(actual_name, name, name_length) == 0 &&
-            value_length == strlen(value) && memcmp(actual_value, value, value_length) == 0,
-        message);
+       ok && name_length == strlen(name) && memcmp(actual_name, name, name_length) == 0 &&
+           value_length == strlen(value) && memcmp(actual_value, value, value_length) == 0,
+       message);
 }
 
 static void directive_extension_accessors(test_batch_runner *runner) {
     /* `:-a[]` was the input here until Step 7, and it is not a directive: a
      * name may not BEGIN with a hyphen or underscore any more than it may end
      * with one. `class` is also the one name whose repeats accumulate now, so
-     * the three of them are one value rather than the last one, and Step 7.2
-     * made the sequence SORTED BY NAME rather than first-key source order. */
-    markdown_core_node *doc = parse_with_directive_extension(
-        ":a[]{id=first muted=true title=\"My Video\" bare dup=first dup=last "
-        "class=red class=green class=blue id=123}\n"
-    );
+     * the three of them are one value rather than the last one. The sequence
+     * keeps the first occurrence of each name in source order. */
+    markdown_core_node *doc =
+        parse_with_directive_extension(":a[]{id=first muted=true title=\"My Video\" bare dup=first dup=last "
+                                       "class=red class=green class=blue id=123}\n");
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *directive = markdown_core_node_first_child(paragraph);
+    markdown_core_node *label = markdown_core_directive_label(directive);
 
     STR_EQ(runner, markdown_core_node_get_type_string(directive), "directive", "directive inline type string");
+    OK(runner, label != NULL && markdown_core_node_get_type(label) == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
+       "an explicit directive label is a typed node field");
+    OK(runner, markdown_core_node_first_child(directive) == NULL, "an inline directive label is not a content child");
+    OK(runner,
+       markdown_core_node_parent(label) == NULL && markdown_core_node_previous(label) == NULL &&
+           markdown_core_node_next(label) == NULL,
+       "a directive label is a detached field root, not a child or sibling");
     STR_EQ(runner, markdown_core_extensions_get_directive_name(directive), "a", "directive name getter");
-    INT_EQ(
-        runner,
-        markdown_core_extensions_directive_has_attributes(directive),
-        1,
-        "directive reports its attribute container"
-    );
+    INT_EQ(runner, markdown_core_extensions_directive_has_attributes(directive), 1,
+           "directive reports its attribute container");
     INT_EQ(runner, (int)markdown_core_extensions_directive_attribute_count(directive), 6, "directive attribute count");
-    attribute_eq(runner, directive, 0, "bare", "", "attribute 0 sorts first and keeps its empty value");
-    attribute_eq(runner, directive, 1, "class", "red green blue", "class accumulates in source order");
-    attribute_eq(runner, directive, 2, "dup", "last", "a repeated name keeps its last value");
-    attribute_eq(runner, directive, 3, "id", "123", "id is an ordinary name and keeps its last value");
-    attribute_eq(runner, directive, 4, "muted", "true", "a bare attribute has an empty value");
-    attribute_eq(runner, directive, 5, "title", "My Video", "a quoted value keeps its spaces");
-    OK(runner,
-        !markdown_core_extensions_directive_attribute_at(directive, 6, NULL, NULL, NULL, NULL),
-        "an out-of-range attribute index is refused");
+    attribute_eq(runner, directive, 0, "id", "123", "a repeated name updates its first source position");
+    attribute_eq(runner, directive, 1, "muted", "true", "source order preserves a bare-looking value");
+    attribute_eq(runner, directive, 2, "title", "My Video", "source order preserves a quoted value");
+    attribute_eq(runner, directive, 3, "bare", "", "source order preserves a valueless attribute");
+    attribute_eq(runner, directive, 4, "dup", "last", "a repeated name keeps its last value in its first slot");
+    attribute_eq(runner, directive, 5, "class", "red green blue", "class accumulates in its first source slot");
+    OK(runner, !markdown_core_extensions_directive_attribute_at(directive, 6, NULL, NULL, NULL, NULL),
+       "an out-of-range attribute index is refused");
 
-    INT_EQ(
-        runner,
-        markdown_core_extensions_set_directive_name(directive, "next_name-2"),
-        1,
-        "set directive name succeeds"
-    );
-    STR_EQ(
-        runner,
-        markdown_core_extensions_get_directive_name(directive),
-        "next_name-2",
-        "directive name setter updates payload"
-    );
-    INT_EQ(
-        runner,
-        markdown_core_extensions_set_directive_name(directive, "bad-"),
-        0,
-        "set directive name rejects trailing hyphen"
-    );
-    INT_EQ(
-        runner,
-        markdown_core_extensions_set_directive_name(directive, "-bad"),
-        0,
-        "set directive name rejects leading hyphen"
-    );
-    INT_EQ(
-        runner,
-        markdown_core_extensions_set_directive_name(directive, "_bad"),
-        0,
-        "set directive name rejects leading underscore"
-    );
-    INT_EQ(
-        runner,
-        markdown_core_extensions_set_directive_name(directive, "bad_"),
-        0,
-        "set directive name rejects trailing underscore"
-    );
-    INT_EQ(
-        runner,
-        markdown_core_extensions_set_directive_name(directive, ""),
-        0,
-        "set directive name rejects empty name"
-    );
-    STR_EQ(
-        runner,
-        markdown_core_extensions_get_directive_name(directive),
-        "next_name-2",
-        "rejected directive name leaves payload unchanged"
-    );
+    INT_EQ(runner, markdown_core_extensions_set_directive_name(directive, "next_name-2"), 1,
+           "set directive name succeeds");
+    STR_EQ(runner, markdown_core_extensions_get_directive_name(directive), "next_name-2",
+           "directive name setter updates payload");
+    INT_EQ(runner, markdown_core_extensions_set_directive_name(directive, "bad-"), 0,
+           "set directive name rejects trailing hyphen");
+    INT_EQ(runner, markdown_core_extensions_set_directive_name(directive, "-bad"), 0,
+           "set directive name rejects leading hyphen");
+    INT_EQ(runner, markdown_core_extensions_set_directive_name(directive, "_bad"), 0,
+           "set directive name rejects leading underscore");
+    INT_EQ(runner, markdown_core_extensions_set_directive_name(directive, "bad_"), 0,
+           "set directive name rejects trailing underscore");
+    INT_EQ(runner, markdown_core_extensions_set_directive_name(directive, ""), 0,
+           "set directive name rejects empty name");
+    STR_EQ(runner, markdown_core_extensions_get_directive_name(directive), "next_name-2",
+           "rejected directive name leaves payload unchanged");
 
-    INT_EQ(
-        runner,
-        markdown_core_extensions_set_directive_name(paragraph, "ok"),
-        0,
-        "set directive name rejects non-directive nodes"
-    );
+    INT_EQ(runner, markdown_core_extensions_set_directive_name(paragraph, "ok"), 0,
+           "set directive name rejects non-directive nodes");
+    OK(runner, markdown_core_extensions_get_directive_name(paragraph) == NULL,
+       "get directive name rejects non-directive nodes");
+    INT_EQ(runner, markdown_core_extensions_directive_has_attributes(paragraph), 0,
+           "a non-directive node has no attribute container");
+    INT_EQ(runner, (int)markdown_core_extensions_directive_attribute_count(paragraph), 0,
+           "a non-directive node has no attributes to count");
+    markdown_core_node_free(doc);
+
+    /* A block directive has two independent node-valued relations: `label`
+     * and block content. The ordinary cmark iterator follows only the content
+     * child tree; callers can start a separate walk at the label field root. */
+    doc = parse_with_directive_extension(":::note[Title]\nBody\n:::\n");
+    directive = markdown_core_node_first_child(doc);
+    label = markdown_core_directive_label(directive);
+    paragraph = markdown_core_node_first_child(directive);
     OK(runner,
-        markdown_core_extensions_get_directive_name(paragraph) == NULL,
-        "get directive name rejects non-directive nodes");
-    INT_EQ(
-        runner,
-        markdown_core_extensions_directive_has_attributes(paragraph),
-        0,
-        "a non-directive node has no attribute container"
-    );
-    INT_EQ(
-        runner,
-        (int)markdown_core_extensions_directive_attribute_count(paragraph),
-        0,
-        "a non-directive node has no attributes to count"
-    );
+       label != NULL && paragraph != NULL && markdown_core_node_get_type(paragraph) == MARKDOWN_CORE_NODE_PARAGRAPH,
+       "a block directive exposes label and content as distinct relations");
+    OK(runner,
+       markdown_core_node_next(label) == NULL && markdown_core_node_previous(label) == NULL &&
+           markdown_core_node_first_child(directive) == paragraph,
+       "the label is not mixed into the block content list");
+    OK(runner, markdown_core_node_parent(label) == NULL, "the directive label is a detached field root");
+    INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "the document child tree is structurally valid");
+    INT_EQ(runner, markdown_core_node_check(label, NULL), 0, "the label child tree is structurally valid");
+    {
+        markdown_core_node *expected[] = {directive, paragraph, markdown_core_node_first_child(paragraph)};
+        size_t entered = 0;
+        markdown_core_iter *iter = markdown_core_iter_new(directive);
+        markdown_core_event_type event;
+        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            if (event == MARKDOWN_CORE_EVENT_ENTER) {
+                OK(runner,
+                   entered < sizeof(expected) / sizeof(expected[0]) &&
+                       markdown_core_iter_get_node(iter) == expected[entered],
+                   "iterator preserves structural child order");
+                entered++;
+            }
+        }
+        INT_EQ(runner, (int)entered, (int)(sizeof(expected) / sizeof(expected[0])),
+               "iterator visits only directive content nodes");
+        markdown_core_iter_free(iter);
+    }
+    {
+        markdown_core_node *expected[] = {label, markdown_core_node_first_child(label)};
+        size_t entered = 0;
+        markdown_core_iter *iter = markdown_core_iter_new(label);
+        markdown_core_event_type event;
+        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            if (event == MARKDOWN_CORE_EVENT_ENTER) {
+                OK(runner,
+                   entered < sizeof(expected) / sizeof(expected[0]) &&
+                       markdown_core_iter_get_node(iter) == expected[entered],
+                   "a walk rooted at the label follows its own child tree");
+                entered++;
+            }
+        }
+        INT_EQ(runner, (int)entered, (int)(sizeof(expected) / sizeof(expected[0])),
+               "the label tree is independently iterable");
+        markdown_core_iter_free(iter);
+    }
     markdown_core_node_free(doc);
 
     /* ABSENT is not EMPTY. `:plain[]` wrote no container and `:empty{}` wrote
@@ -728,25 +579,13 @@ static void directive_extension_accessors(test_batch_runner *runner) {
     doc = parse_with_directive_extension(":plain[] :empty{}\n");
     paragraph = markdown_core_node_first_child(doc);
     directive = markdown_core_node_first_child(paragraph);
-    INT_EQ(
-        runner,
-        markdown_core_extensions_directive_has_attributes(directive),
-        0,
-        "a directive with no attribute container reports none"
-    );
+    INT_EQ(runner, markdown_core_extensions_directive_has_attributes(directive), 0,
+           "a directive with no attribute container reports none");
     directive = markdown_core_node_next(markdown_core_node_next(directive));
-    INT_EQ(
-        runner,
-        markdown_core_extensions_directive_has_attributes(directive),
-        1,
-        "an explicit empty attribute container is preserved"
-    );
-    INT_EQ(
-        runner,
-        (int)markdown_core_extensions_directive_attribute_count(directive),
-        0,
-        "an explicit empty attribute container holds nothing"
-    );
+    INT_EQ(runner, markdown_core_extensions_directive_has_attributes(directive), 1,
+           "an explicit empty attribute container is preserved");
+    INT_EQ(runner, (int)markdown_core_extensions_directive_attribute_count(directive), 0,
+           "an explicit empty attribute container holds nothing");
     markdown_core_node_free(doc);
 }
 
@@ -806,7 +645,7 @@ static void iterator_delete(test_batch_runner *runner) {
         // asserting the suppression list.
         if (ev_type == MARKDOWN_CORE_EVENT_EXIT &&
             (node->type == MARKDOWN_CORE_NODE_LIST || node->type == MARKDOWN_CORE_NODE_EMPHASIS ||
-                node->type == MARKDOWN_CORE_NODE_CODE)) {
+             node->type == MARKDOWN_CORE_NODE_CODE)) {
             markdown_core_node_free(node);
         }
     }
@@ -814,37 +653,17 @@ static void iterator_delete(test_batch_runner *runner) {
     // Both lists are gone and each paragraph keeps only its text pieces.
     markdown_core_node *first = markdown_core_node_first_child(doc);
     markdown_core_node *second = markdown_core_node_next(first);
-    INT_EQ(
-        runner,
-        markdown_core_node_get_type(first),
-        MARKDOWN_CORE_NODE_PARAGRAPH,
-        "first surviving node is a paragraph"
-    );
-    INT_EQ(
-        runner,
-        markdown_core_node_get_type(second),
-        MARKDOWN_CORE_NODE_PARAGRAPH,
-        "second surviving node is a paragraph"
-    );
+    INT_EQ(runner, markdown_core_node_get_type(first), MARKDOWN_CORE_NODE_PARAGRAPH,
+           "first surviving node is a paragraph");
+    INT_EQ(runner, markdown_core_node_get_type(second), MARKDOWN_CORE_NODE_PARAGRAPH,
+           "second surviving node is a paragraph");
     OK(runner, markdown_core_node_next(second) == NULL, "deleted lists are unlinked");
-    STR_EQ(
-        runner,
-        markdown_core_node_get_literal(markdown_core_node_first_child(first)),
-        "a ",
-        "first paragraph keeps leading text"
-    );
-    STR_EQ(
-        runner,
-        markdown_core_node_get_literal(markdown_core_node_next(markdown_core_node_first_child(first))),
-        " c",
-        "first paragraph keeps trailing text after deleted emph"
-    );
-    STR_EQ(
-        runner,
-        markdown_core_node_get_literal(markdown_core_node_next(markdown_core_node_first_child(second))),
-        " c",
-        "second paragraph keeps trailing text after deleted code"
-    );
+    STR_EQ(runner, markdown_core_node_get_literal(markdown_core_node_first_child(first)), "a ",
+           "first paragraph keeps leading text");
+    STR_EQ(runner, markdown_core_node_get_literal(markdown_core_node_next(markdown_core_node_first_child(first))), " c",
+           "first paragraph keeps trailing text after deleted emph");
+    STR_EQ(runner, markdown_core_node_get_literal(markdown_core_node_next(markdown_core_node_first_child(second))),
+           " c", "second paragraph keeps trailing text after deleted code");
 
     markdown_core_iter_free(iter);
     markdown_core_node_free(doc);
@@ -947,31 +766,27 @@ void hierarchy(test_batch_runner *runner) {
     markdown_core_node_free(bquote1);
 
     unsigned int list_item_flag[] = {MARKDOWN_CORE_NODE_LIST_ITEM, 0};
-    unsigned int top_level_blocks[] = {
-        MARKDOWN_CORE_NODE_BLOCK_QUOTE,
-        MARKDOWN_CORE_NODE_LIST,
-        MARKDOWN_CORE_NODE_CODE_BLOCK,
-        MARKDOWN_CORE_NODE_HTML_BLOCK,
-        MARKDOWN_CORE_NODE_PARAGRAPH,
-        MARKDOWN_CORE_NODE_HEADING,
-        MARKDOWN_CORE_NODE_THEMATIC_BREAK,
-        MARKDOWN_CORE_NODE_REFERENCE_DEFINITION,
-        0
-    };
-    unsigned int all_inlines[] = {
-        MARKDOWN_CORE_NODE_TEXT,
-        MARKDOWN_CORE_NODE_SOFT_BREAK,
-        MARKDOWN_CORE_NODE_LINE_BREAK,
-        MARKDOWN_CORE_NODE_CODE,
-        MARKDOWN_CORE_NODE_HTML,
-        MARKDOWN_CORE_NODE_EMPHASIS,
-        MARKDOWN_CORE_NODE_STRONG,
-        MARKDOWN_CORE_NODE_LINK,
-        MARKDOWN_CORE_NODE_IMAGE,
-        MARKDOWN_CORE_NODE_LINK_REFERENCE,
-        MARKDOWN_CORE_NODE_IMAGE_REFERENCE,
-        0
-    };
+    unsigned int top_level_blocks[] = {MARKDOWN_CORE_NODE_BLOCK_QUOTE,
+                                       MARKDOWN_CORE_NODE_LIST,
+                                       MARKDOWN_CORE_NODE_CODE_BLOCK,
+                                       MARKDOWN_CORE_NODE_HTML_BLOCK,
+                                       MARKDOWN_CORE_NODE_PARAGRAPH,
+                                       MARKDOWN_CORE_NODE_HEADING,
+                                       MARKDOWN_CORE_NODE_THEMATIC_BREAK,
+                                       MARKDOWN_CORE_NODE_REFERENCE_DEFINITION,
+                                       0};
+    unsigned int all_inlines[] = {MARKDOWN_CORE_NODE_TEXT,
+                                  MARKDOWN_CORE_NODE_SOFT_BREAK,
+                                  MARKDOWN_CORE_NODE_LINE_BREAK,
+                                  MARKDOWN_CORE_NODE_CODE,
+                                  MARKDOWN_CORE_NODE_HTML,
+                                  MARKDOWN_CORE_NODE_EMPHASIS,
+                                  MARKDOWN_CORE_NODE_STRONG,
+                                  MARKDOWN_CORE_NODE_LINK,
+                                  MARKDOWN_CORE_NODE_IMAGE,
+                                  MARKDOWN_CORE_NODE_LINK_REFERENCE,
+                                  MARKDOWN_CORE_NODE_IMAGE_REFERENCE,
+                                  0};
 
     test_content(runner, MARKDOWN_CORE_NODE_DOCUMENT, top_level_blocks);
     test_content(runner, MARKDOWN_CORE_NODE_BLOCK_QUOTE, top_level_blocks);
@@ -1038,6 +853,8 @@ static void utf8(test_batch_runner *runner) {
     test_char(runner, 0, "\xE0\x9F\xBF", "invalid utf8 E09FBF");
     test_char(runner, 1, "\xE0\xA0\x80", "valid utf8 E0A080");
     test_char(runner, 1, "\xED\x9F\xBF", "valid utf8 ED9FBF");
+    test_char(runner, 1, "\xEF\xBF\xBE", "valid utf8 U+FFFE noncharacter");
+    test_char(runner, 1, "\xEF\xBF\xBF", "valid utf8 U+FFFF noncharacter");
     test_char(runner, 0, "\xED\xA0\x80", "invalid utf8 EDA080");
     test_char(runner, 0, "\xED\xBF\xBF", "invalid utf8 EDBFBF");
     test_char(runner, 0, "\xF0\x80\x80\x80", "invalid utf8 F0808080");
@@ -1060,26 +877,16 @@ static void utf8(test_batch_runner *runner) {
 
     // Test string containing null character
     static const char string_with_null[] = "((((\0))))";
-    test_md_paragraph_text_options(
-        runner,
-        string_with_null,
-        sizeof(string_with_null) - 1,
-        MARKDOWN_CORE_OPT_DEFAULT,
-        "((((" UTF8_REPL "))))",
-        "utf8 with U+0000"
-    );
+    test_md_paragraph_text_options(runner, string_with_null, sizeof(string_with_null) - 1, MARKDOWN_CORE_OPT_DEFAULT,
+                                   "((((" UTF8_REPL "))))", "utf8 with U+0000");
 
     // Test NUL followed by newline
     static const char string_with_nul_lf[] = "```\n\0\n```\n";
     markdown_core_node *doc =
         markdown_core_parse_document(string_with_nul_lf, sizeof(string_with_nul_lf) - 1, MARKDOWN_CORE_OPT_DEFAULT);
     markdown_core_node *code_block = markdown_core_node_first_child(doc);
-    INT_EQ(
-        runner,
-        markdown_core_node_get_type(code_block),
-        MARKDOWN_CORE_NODE_CODE_BLOCK,
-        "utf8 with \\0\\n parses a code block"
-    );
+    INT_EQ(runner, markdown_core_node_get_type(code_block), MARKDOWN_CORE_NODE_CODE_BLOCK,
+           "utf8 with \\0\\n parses a code block");
     STR_EQ(runner, markdown_core_node_get_literal(code_block), UTF8_REPL "\n", "utf8 with \\0\\n");
     markdown_core_node_free(doc);
 
@@ -1140,23 +947,14 @@ static void line_endings(test_batch_runner *runner) {
         markdown_core_parse_document(list_with_endings, sizeof(list_with_endings) - 1, MARKDOWN_CORE_OPT_DEFAULT);
     markdown_core_node *list = markdown_core_node_first_child(doc);
     markdown_core_node *item = markdown_core_node_first_child(list);
-    INT_EQ(
-        runner,
-        markdown_core_node_get_type(list),
-        MARKDOWN_CORE_NODE_LIST,
-        "list with different line endings parses one list"
-    );
+    INT_EQ(runner, markdown_core_node_get_type(list), MARKDOWN_CORE_NODE_LIST,
+           "list with different line endings parses one list");
     for (size_t i = 0; i < 4; i++) {
         OK(runner, item != NULL, "list item %zu exists", i);
         if (item) {
             markdown_core_node *paragraph = markdown_core_node_first_child(item);
-            STR_EQ(
-                runner,
-                markdown_core_node_get_literal(markdown_core_node_first_child(paragraph)),
-                expected_items[i],
-                "list item %zu text",
-                i
-            );
+            STR_EQ(runner, markdown_core_node_get_literal(markdown_core_node_first_child(paragraph)), expected_items[i],
+                   "list item %zu text", i);
             item = markdown_core_node_next(item);
         }
     }
@@ -1169,35 +967,19 @@ static void line_endings(test_batch_runner *runner) {
     doc = markdown_core_parse_document(crlf_lines, sizeof(crlf_lines) - 1, MARKDOWN_CORE_OPT_DEFAULT);
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *middle = markdown_core_node_next(markdown_core_node_first_child(paragraph));
-    STR_EQ(
-        runner,
-        markdown_core_node_get_literal(markdown_core_node_first_child(paragraph)),
-        "line",
-        "crlf line splits into text"
-    );
-    INT_EQ(
-        runner,
-        markdown_core_node_get_type(middle),
-        MARKDOWN_CORE_NODE_SOFT_BREAK,
-        "crlf endings produce a softbreak"
-    );
-    STR_EQ(
-        runner,
-        markdown_core_node_get_literal(markdown_core_node_next(middle)),
-        "line",
-        "crlf trailing text follows the softbreak"
-    );
+    STR_EQ(runner, markdown_core_node_get_literal(markdown_core_node_first_child(paragraph)), "line",
+           "crlf line splits into text");
+    INT_EQ(runner, markdown_core_node_get_type(middle), MARKDOWN_CORE_NODE_SOFT_BREAK,
+           "crlf endings produce a softbreak");
+    STR_EQ(runner, markdown_core_node_get_literal(markdown_core_node_next(middle)), "line",
+           "crlf trailing text follows the softbreak");
     markdown_core_node_free(doc);
 
     static const char no_line_ending[] = "```\nline\n```";
     doc = markdown_core_parse_document(no_line_ending, sizeof(no_line_ending) - 1, MARKDOWN_CORE_OPT_DEFAULT);
     markdown_core_node *code_block = markdown_core_node_first_child(doc);
-    INT_EQ(
-        runner,
-        markdown_core_node_get_type(code_block),
-        MARKDOWN_CORE_NODE_CODE_BLOCK,
-        "fenced code block with no final newline parses"
-    );
+    INT_EQ(runner, markdown_core_node_get_type(code_block), MARKDOWN_CORE_NODE_CODE_BLOCK,
+           "fenced code block with no final newline parses");
     STR_EQ(runner, markdown_core_node_get_literal(code_block), "line\n", "fenced code block with no final newline");
     markdown_core_node_free(doc);
 }
@@ -1210,14 +992,18 @@ static void numeric_entities(test_batch_runner *runner) {
     test_md_paragraph_text(runner, "&#57344;", "\xEE\x80\x80", "Valid numeric entity 0xE000");
     test_md_paragraph_text(runner, "&#x10FFFF;", "\xF4\x8F\xBF\xBF", "Valid numeric entity 0x10FFFF");
     test_md_paragraph_text(runner, "&#x110000;", UTF8_REPL, "Invalid numeric entity 0x110000");
-    test_md_paragraph_text(runner, "&#x80000000;", UTF8_REPL, "Invalid numeric entity 0x80000000");
-    test_md_paragraph_text(runner, "&#xFFFFFFFF;", UTF8_REPL, "Invalid numeric entity 0xFFFFFFFF");
-    test_md_paragraph_text(runner, "&#99999999;", UTF8_REPL, "Invalid numeric entity 99999999");
+    test_md_paragraph_text(runner, "&#9999999;", UTF8_REPL, "Seven-digit decimal entity is recognized");
+    test_md_paragraph_text(runner, "&#99999999;", "&#99999999;", "Eight-digit decimal entity stays literal");
+    test_md_paragraph_text(runner, "&#87654321;", "&#87654321;", "CommonMark long decimal entity stays literal");
+    test_md_paragraph_text(runner, "&#x80000000;", "&#x80000000;", "Eight-digit hexadecimal entity stays literal");
+    test_md_paragraph_text(runner, "&#xFFFFFFFF;", "&#xFFFFFFFF;", "Long hexadecimal entity stays literal");
 
     test_md_paragraph_text(runner, "&#;", "&#;", "Min decimal entity length");
     test_md_paragraph_text(runner, "&#x;", "&#x;", "Min hexadecimal entity length");
-    test_md_paragraph_text(runner, "&#999999999;", "&#999999999;", "Max decimal entity length");
-    test_md_paragraph_text(runner, "&#x000000041;", "&#x000000041;", "Max hexadecimal entity length");
+    test_md_paragraph_text(runner, "&#999999999;", "&#999999999;", "Overlong decimal entity stays literal");
+    test_md_paragraph_text(runner, "&#x000000041;", "&#x000000041;", "Overlong hexadecimal entity stays literal");
+    test_md_paragraph_text(runner, "a*\xC2\xA3*b", "a*\xC2\xA3*b",
+                           "Unicode symbols are punctuation for emphasis flanking");
 }
 
 static int count_html_comment_nodes(markdown_core_node *root) {
@@ -1257,40 +1043,20 @@ static void strip_html_comments(test_batch_runner *runner) {
 
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *text = markdown_core_node_first_child(paragraph);
-    STR_EQ(
-        runner,
-        markdown_core_node_get_literal(text),
-        "before  after ",
-        "strip-html-comments preserves surrounding text"
-    );
+    STR_EQ(runner, markdown_core_node_get_literal(text), "before  after ",
+           "strip-html-comments preserves surrounding text");
 
     markdown_core_node *inline_html = markdown_core_node_next(text);
-    INT_EQ(
-        runner,
-        markdown_core_node_get_type(inline_html),
-        MARKDOWN_CORE_NODE_HTML,
-        "strip-html-comments preserves non-comment inline HTML"
-    );
-    STR_EQ(
-        runner,
-        markdown_core_node_get_literal(inline_html),
-        "<br>",
-        "strip-html-comments keeps inline HTML literal"
-    );
+    INT_EQ(runner, markdown_core_node_get_type(inline_html), MARKDOWN_CORE_NODE_HTML,
+           "strip-html-comments preserves non-comment inline HTML");
+    STR_EQ(runner, markdown_core_node_get_literal(inline_html), "<br>",
+           "strip-html-comments keeps inline HTML literal");
 
     markdown_core_node *block_html = markdown_core_node_next(paragraph);
-    INT_EQ(
-        runner,
-        markdown_core_node_get_type(block_html),
-        MARKDOWN_CORE_NODE_HTML_BLOCK,
-        "strip-html-comments preserves non-comment HTML blocks"
-    );
-    STR_EQ(
-        runner,
-        markdown_core_node_get_literal(block_html),
-        "<div>raw</div>\n",
-        "strip-html-comments keeps block HTML literal"
-    );
+    INT_EQ(runner, markdown_core_node_get_type(block_html), MARKDOWN_CORE_NODE_HTML_BLOCK,
+           "strip-html-comments preserves non-comment HTML blocks");
+    STR_EQ(runner, markdown_core_node_get_literal(block_html), "<div>raw</div>\n",
+           "strip-html-comments keeps block HTML literal");
 
     markdown_core_node_free(doc);
 }
@@ -1299,14 +1065,8 @@ static void strip_html_comments(test_batch_runner *runner) {
  * Text literals equal `expected_text`.  This replaces the retired
  * markdown_to_html comparisons: AST literals carry raw bytes, without HTML
  * escaping. */
-static void test_md_paragraph_text_options(
-    test_batch_runner *runner,
-    const char *markdown,
-    size_t markdown_length,
-    int options,
-    const char *expected_text,
-    const char *msg
-) {
+static void test_md_paragraph_text_options(test_batch_runner *runner, const char *markdown, size_t markdown_length,
+                                           int options, const char *expected_text, const char *msg) {
     markdown_core_node *doc = markdown_core_parse_document(markdown, markdown_length, options);
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     char text[4096] = "";
@@ -1340,99 +1100,50 @@ static void test_md_paragraph_text_options(
     markdown_core_node_free(doc);
 }
 
-static void test_md_paragraph_text(
-    test_batch_runner *runner,
-    const char *markdown,
-    const char *expected_text,
-    const char *msg
-) {
-    test_md_paragraph_text_options(
-        runner,
-        markdown,
-        strlen(markdown),
-        MARKDOWN_CORE_OPT_VALIDATE_UTF8,
-        expected_text,
-        msg
-    );
+static void test_md_paragraph_text(test_batch_runner *runner, const char *markdown, const char *expected_text,
+                                   const char *msg) {
+    test_md_paragraph_text_options(runner, markdown, strlen(markdown), MARKDOWN_CORE_OPT_VALIDATE_UTF8, expected_text,
+                                   msg);
 }
 
-static void test_feed_across_line_ending(test_batch_runner *runner) {
-    // See #117
-    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
-    markdown_core_parser_feed(parser, "line1\r", 6);
-    markdown_core_parser_feed(parser, "\nline2\r\n", 8);
-    markdown_core_node *document = markdown_core_parser_finish(parser);
+static void test_crlf_line_ending(test_batch_runner *runner) {
+    const char *source = "line1\r\nline2\r\n";
+    markdown_core_node *document = markdown_core_parse_document(source, strlen(source), MARKDOWN_CORE_OPT_DEFAULT);
     OK(runner, document->first_child->next == NULL, "document has one paragraph");
-    markdown_core_parser_free(parser);
     markdown_core_node_free(document);
 }
 
-#if !defined(_WIN32) || defined(__CYGWIN__)
-#include <sys/time.h>
-static struct timeval _before, _after;
-static int _timing;
-#define START_TIMING() gettimeofday(&_before, NULL)
+static void test_pathological_parse_completion(test_batch_runner *runner, const char *pattern, size_t repetitions,
+                                               const char *msg) {
+    size_t pattern_length = strlen(pattern);
+    size_t input_length = pattern_length * repetitions;
+    char *input = (char *)malloc(input_length);
+    markdown_core_node *document;
 
-#define END_TIMING()                                                                                                   \
-    do {                                                                                                               \
-        gettimeofday(&_after, NULL);                                                                                   \
-        _timing = (_after.tv_sec - _before.tv_sec) * 1000 + (_after.tv_usec - _before.tv_usec) / 1000;                 \
-    } while (0)
+    OK(runner, input != NULL, "%s (input allocation succeeds)", msg);
+    if (!input) {
+        return;
+    }
+    for (size_t i = 0; i < repetitions; ++i) {
+        memcpy(input + i * pattern_length, pattern, pattern_length);
+    }
 
-#define TIMING _timing
-#else
-#define START_TIMING()
-#define END_TIMING()
-#define TIMING 0
-#endif
+    document = markdown_core_parse_document(input, input_length, MARKDOWN_CORE_OPT_VALIDATE_UTF8);
+    OK(runner, document != NULL, "%s (parse succeeds)", msg);
+    markdown_core_node_free(document);
+    free(input);
+}
 
 static void test_pathological_regressions(test_batch_runner *runner) {
-    {
-        // I don't care what the output is, so long as it doesn't take too long.
-        char path[] = "[a](b";
-        char *input = (char *)calloc(1, (sizeof(path) - 1) * 50000);
-        for (int i = 0; i < 50000; ++i) {
-            memcpy(input + i * (sizeof(path) - 1), path, sizeof(path) - 1);
-        }
-
-        START_TIMING();
-        markdown_core_node *doc =
-            markdown_core_parse_document(input, (sizeof(path) - 1) * 50000, MARKDOWN_CORE_OPT_VALIDATE_UTF8);
-        END_TIMING();
-        markdown_core_node_free(doc);
-        free(input);
-
-        OK(runner, TIMING < 1000, "takes less than 1000ms to run");
-    }
-
-    {
-        char path[] = "[a](<b";
-        char *input = (char *)calloc(1, (sizeof(path) - 1) * 50000);
-        for (int i = 0; i < 50000; ++i) {
-            memcpy(input + i * (sizeof(path) - 1), path, sizeof(path) - 1);
-        }
-
-        START_TIMING();
-        markdown_core_node *doc =
-            markdown_core_parse_document(input, (sizeof(path) - 1) * 50000, MARKDOWN_CORE_OPT_VALIDATE_UTF8);
-        END_TIMING();
-        markdown_core_node_free(doc);
-        free(input);
-
-        OK(runner, TIMING < 1000, "takes less than 1000ms to run");
-    }
+    test_pathological_parse_completion(runner, "[a](b", 50000, "unclosed inline destination");
+    test_pathological_parse_completion(runner, "[a](<b", 50000, "unclosed pointy inline destination");
 }
 
 /* Parses through the read-only facade and compares the canonical AST dump,
  * which carries every node's scope, byte-for-byte.  This replaces the
  * retired sourcepos XML renderer assertions. */
-static void test_facade_dump(
-    test_batch_runner *runner,
-    const char *markdown,
-    int autolinks,
-    const char *expected_dump,
-    const char *msg
-) {
+static void test_facade_dump(test_batch_runner *runner, const char *markdown, int autolinks, const char *expected_dump,
+                             const char *msg) {
     markdown_core_parse_options options;
     markdown_core_error *error = NULL;
     markdown_core_document *document;
@@ -1473,40 +1184,28 @@ static void test_facade_dump(
 // or not the defect is present. This one keeps failing.
 static void extension_decline_yields_turn(test_batch_runner *runner) {
     static const char *const markdown = "text\n:::note\nbody\n:::\n";
+    const markdown_core_extension *table = &MARKDOWN_CORE_EXTENSION_TABLE;
+    const markdown_core_extension *directive = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
+    const markdown_core_extension *extensions[] = {table, directive};
 
-    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
-    const markdown_core_syntax_extension *table = &MARKDOWN_CORE_EXTENSION_TABLE;
-    const markdown_core_syntax_extension *directive = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
-
-    OK(runner, parser && table && directive, "table and directive extensions are available");
-    if (!parser || !table || !directive) {
-        if (parser) {
-            markdown_core_parser_free(parser);
-        }
+    OK(runner, table && directive, "table and directive extensions are available");
+    if (!table || !directive) {
         return;
     }
-    OK(runner, markdown_core_parser_attach_syntax_extension(parser, table) != 0, "table attaches first");
-    OK(runner, markdown_core_parser_attach_syntax_extension(parser, directive) != 0, "directive attaches second");
-
-    markdown_core_parser_feed(parser, markdown, strlen(markdown));
-    markdown_core_node *doc = markdown_core_parser_finish(parser);
-    markdown_core_parser_free(parser);
+    markdown_core_node *doc = parse_with_extensions(markdown, strlen(markdown), MARKDOWN_CORE_OPT_DEFAULT, extensions,
+                                                    sizeof(extensions) / sizeof(extensions[0]));
+    OK(runner, doc != NULL, "table and directive extensions attach in the requested test order");
+    if (!doc) {
+        return;
+    }
 
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *block = paragraph ? markdown_core_node_next(paragraph) : NULL;
-    INT_EQ(
-        runner,
-        markdown_core_node_get_type(paragraph),
-        MARKDOWN_CORE_NODE_PARAGRAPH,
-        "the lead paragraph survives table declining"
-    );
+    INT_EQ(runner, markdown_core_node_get_type(paragraph), MARKDOWN_CORE_NODE_PARAGRAPH,
+           "the lead paragraph survives table declining");
     OK(runner, block != NULL, "an extension attached after table still gets its turn");
-    STR_EQ(
-        runner,
-        block ? markdown_core_node_get_type_string(block) : "",
-        "directive_block",
-        "a declining table does not swallow the directive block"
-    );
+    STR_EQ(runner, block ? markdown_core_node_get_type_string(block) : "", "directive_block",
+           "a declining table does not swallow the directive block");
     markdown_core_node_free(doc);
 }
 
@@ -1601,317 +1300,6 @@ static void no_node_is_its_own_ancestor(test_batch_runner *runner) {
     markdown_core_node_free(r);
 }
 
-/* THE ADOPTION LAW (review-found, #165): a block whose content parses into
- * inlines never adopts a BLOCK child, whatever an extension's own
- * can_contain answers -- the engine has no representation for the hybrid
- * (the store moves an intrusive list, the clone vectorizes containers, the
- * inline parser appends through the intrusive fields). The permissive
- * extension below says yes to everything; the engine must still say no,
- * and set_type must refuse to build the same shape by mutation. */
-static int hybrid_probe_can_contain(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_node *node,
-    markdown_core_node_type child_type
-) {
-    (void)extension;
-    (void)node;
-    (void)child_type;
-    return 1;
-}
-
-static int hybrid_probe_contains_inlines(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
-    (void)extension;
-    (void)node;
-    return 1;
-}
-
-static const markdown_core_syntax_extension HYBRID_PROBE_EXTENSION = {
-    .name = "hybrid_probe",
-    .can_contain_func = hybrid_probe_can_contain,
-    .contains_inlines_func = hybrid_probe_contains_inlines,
-};
-
-/* Classifies its node as a CONTAINER (contains_inlines false) while its
- * can_contain admits everything: the legal shape whose detachment -- or
- * whose swap for a descriptor with no contains_inlines_func at all --
- * would fall back to the bare PARAGRAPH's true and rebuild the hybrid. */
-static int hybrid_probe_contains_inlines_false(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_node *node
-) {
-    (void)extension;
-    (void)node;
-    return 0;
-}
-
-static const markdown_core_syntax_extension HYBRID_CONTAINER_EXTENSION = {
-    .name = "hybrid_container_probe",
-    .can_contain_func = hybrid_probe_can_contain,
-    .contains_inlines_func = hybrid_probe_contains_inlines_false,
-};
-
-static const markdown_core_syntax_extension HYBRID_BARE_EXTENSION = {
-    .name = "hybrid_bare_probe",
-    .can_contain_func = hybrid_probe_can_contain,
-};
-
-/* Answers whatever the static says -- the stateful descriptor whose flip
- * the engine must never see: the classification is committed at the
- * validated mutations and frozen between them. */
-static int hybrid_flip_answer;
-
-static int hybrid_probe_contains_inlines_flip(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_node *node
-) {
-    (void)extension;
-    (void)node;
-    return hybrid_flip_answer;
-}
-
-static const markdown_core_syntax_extension HYBRID_FLIP_EXTENSION = {
-    .name = "hybrid_flip_probe",
-    .can_contain_func = hybrid_probe_can_contain,
-    .contains_inlines_func = hybrid_probe_contains_inlines_flip,
-};
-
-/* Answers false the FIRST time and true after -- the hook that would slip
- * a false past a validating ask and a true into a committing one, were
- * the engine to ask twice in one transaction. */
-static int hybrid_tictoc_calls;
-
-static int hybrid_probe_contains_inlines_tictoc(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_node *node
-) {
-    (void)extension;
-    (void)node;
-    return hybrid_tictoc_calls++ > 0;
-}
-
-static const markdown_core_syntax_extension HYBRID_TICTOC_EXTENSION = {
-    .name = "hybrid_tictoc_probe",
-    .can_contain_func = hybrid_probe_can_contain,
-    .contains_inlines_func = hybrid_probe_contains_inlines_tictoc,
-};
-
-/* A payload-reading classification: answers inline only when the opaque
- * payload its own allocator builds is present and initialized -- the hook
- * that froze an initialization-time answer while the attach path asked
- * before allocating. */
-static int hybrid_payload_contains_inlines(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
-    (void)extension;
-    return node->as.opaque != NULL && *(int *)node->as.opaque == 42;
-}
-
-static void hybrid_payload_alloc(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_mem *mem,
-    markdown_core_node *node
-) {
-    int *payload = (int *)mem->calloc(1, sizeof(*payload));
-    (void)extension;
-    if (payload) {
-        *payload = 42;
-    }
-    node->as.opaque = payload;
-}
-
-static void hybrid_payload_free(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_mem *mem,
-    markdown_core_node *node
-) {
-    (void)extension;
-    mem->free(node->as.opaque);
-}
-
-static const markdown_core_syntax_extension HYBRID_PAYLOAD_EXTENSION = {
-    .name = "hybrid_payload_probe",
-    .can_contain_func = hybrid_probe_can_contain,
-    .contains_inlines_func = hybrid_payload_contains_inlines,
-    .opaque_alloc_func = hybrid_payload_alloc,
-    .opaque_free_func = hybrid_payload_free,
-};
-
-/* Reads the union defaults the constructor writes -- the hook that sees
- * garbage if classification runs before the node is fully built. */
-static int hybrid_probe_reads_level(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
-    (void)extension;
-    return node->type == MARKDOWN_CORE_NODE_HEADING && node->as.heading.level == 1;
-}
-
-static const markdown_core_syntax_extension HYBRID_LEVEL_EXTENSION = {
-    .name = "hybrid_level_probe",
-    .can_contain_func = hybrid_probe_can_contain,
-    .contains_inlines_func = hybrid_probe_reads_level,
-};
-
-static void no_inline_block_hybrid(test_batch_runner *runner) {
-    markdown_core_node *parent = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-    markdown_core_node *block_child = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
-    markdown_core_node *inline_child = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
-    markdown_core_node *doc = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
-    markdown_core_node *quote = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
-    markdown_core_node *inner = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-
-    markdown_core_node_set_syntax_extension(parent, &HYBRID_PROBE_EXTENSION);
-    INT_EQ(
-        runner,
-        markdown_core_node_append_child(parent, block_child),
-        0,
-        "a contains_inlines parent refuses a block child over its extension's yes"
-    );
-    INT_EQ(runner, markdown_core_node_append_child(parent, inline_child), 1, "the same parent still takes an inline");
-
-    INT_EQ(runner, markdown_core_node_append_child(doc, quote), 1, "a document takes a quote");
-    INT_EQ(runner, markdown_core_node_append_child(quote, inner), 1, "a quote takes a paragraph");
-    INT_EQ(
-        runner,
-        markdown_core_node_set_type(quote, MARKDOWN_CORE_NODE_PARAGRAPH),
-        0,
-        "set_type refuses to build the hybrid by mutation"
-    );
-    INT_EQ(
-        runner,
-        markdown_core_node_set_syntax_extension(quote, &HYBRID_PROBE_EXTENSION),
-        0,
-        "attaching a contains_inlines descriptor over block children refuses"
-    );
-
-    /* The EFFECTIVE classification gates a descriptor change, not the new
-     * descriptor's own hook: a container-classified paragraph legally
-     * holds a block child, and detaching -- or swapping to a descriptor
-     * with no contains_inlines_func -- falls back to the bare PARAGRAPH's
-     * true, which would rebuild the hybrid. */
-    {
-        markdown_core_node *container = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-        markdown_core_node *held = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
-        INT_EQ(
-            runner,
-            markdown_core_node_set_syntax_extension(container, &HYBRID_CONTAINER_EXTENSION),
-            1,
-            "a container-classifying descriptor attaches to a bare paragraph"
-        );
-        INT_EQ(runner, markdown_core_node_append_child(container, held), 1, "the container paragraph takes a block");
-        INT_EQ(
-            runner,
-            markdown_core_node_set_syntax_extension(container, NULL),
-            0,
-            "detaching over a block child refuses: the fallback classification is true"
-        );
-        INT_EQ(
-            runner,
-            markdown_core_node_set_syntax_extension(container, &HYBRID_BARE_EXTENSION),
-            0,
-            "a descriptor without contains_inlines_func refuses the same way"
-        );
-        markdown_core_node_free(container);
-    }
-
-    /* A STATEFUL descriptor's flip moves nothing (review-found): the
-     * classification is asked at the validated mutations and FROZEN
-     * between them, so an answer that changes afterwards is never seen --
-     * the committed container still admits and adopts block children. */
-    {
-        markdown_core_node *flipper = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-        markdown_core_node *taken = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
-        hybrid_flip_answer = 0;
-        INT_EQ(
-            runner,
-            markdown_core_node_set_syntax_extension(flipper, &HYBRID_FLIP_EXTENSION),
-            1,
-            "the flip descriptor attaches while answering container"
-        );
-        hybrid_flip_answer = 1;
-        INT_EQ(
-            runner,
-            markdown_core_node_can_contain_type(flipper, MARKDOWN_CORE_NODE_BLOCK_QUOTE) ? 1 : 0,
-            1,
-            "the flipped answer is never seen: the committed container still admits blocks"
-        );
-        INT_EQ(runner, markdown_core_node_append_child(flipper, taken), 1, "and still adopts one");
-        markdown_core_node_free(flipper);
-        hybrid_flip_answer = 0;
-    }
-
-    /* ONE ASKING per transaction (review-found): the answer that validates
-     * a descriptor change is the answer committed. A hook answering false
-     * then true must not pass the children walk on the false and commit
-     * the bit on the true. */
-    {
-        markdown_core_node *ticker = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-        markdown_core_node *carried = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
-        INT_EQ(
-            runner,
-            markdown_core_node_set_syntax_extension(ticker, &HYBRID_CONTAINER_EXTENSION),
-            1,
-            "the container descriptor attaches for the tictoc setup"
-        );
-        INT_EQ(runner, markdown_core_node_append_child(ticker, carried), 1, "the container takes a block");
-        hybrid_tictoc_calls = 0;
-        INT_EQ(
-            runner,
-            markdown_core_node_set_syntax_extension(ticker, &HYBRID_TICTOC_EXTENSION),
-            1,
-            "the tictoc descriptor attaches on its validated false"
-        );
-        INT_EQ(
-            runner,
-            markdown_core_node_can_contain_type(ticker, MARKDOWN_CORE_NODE_BLOCK_QUOTE) ? 1 : 0,
-            1,
-            "the validated false is the committed answer: the container still admits blocks"
-        );
-        markdown_core_node_free(ticker);
-        hybrid_tictoc_calls = 0;
-    }
-
-    /* Attachment finishes the node before asking (review-found): the new
-     * descriptor's own opaque allocator runs inside set_syntax_extension,
-     * so a payload-reading hook classifies the payload its extension
-     * built, not the nothing that predated it. */
-    {
-        markdown_core_node *carrier = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
-        markdown_core_node *denied = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
-        INT_EQ(
-            runner,
-            markdown_core_node_set_syntax_extension(carrier, &HYBRID_PAYLOAD_EXTENSION),
-            1,
-            "the payload descriptor attaches and builds its payload"
-        );
-        INT_EQ(
-            runner,
-            markdown_core_node_append_child(carrier, denied),
-            0,
-            "the attach classified the built payload: the inline carrier refuses a block"
-        );
-        markdown_core_node_free(carrier);
-        markdown_core_node_free(denied);
-    }
-
-    /* Classification runs on the FINISHED node (review-found): a hook may
-     * read the union defaults or the opaque payload, so the constructor
-     * classifies after both are built. The probe answers true only when
-     * it sees the heading level the constructor writes. */
-    {
-        markdown_core_node *built =
-            markdown_core_node_new_with_ext(MARKDOWN_CORE_NODE_HEADING, &HYBRID_LEVEL_EXTENSION);
-        markdown_core_node *refused = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
-        INT_EQ(
-            runner,
-            markdown_core_node_append_child(built, refused),
-            0,
-            "the constructor classified the finished node: the inline heading refuses a block"
-        );
-        markdown_core_node_free(built);
-        markdown_core_node_free(refused);
-    }
-
-    markdown_core_node_free(parent);
-    markdown_core_node_free(block_child);
-    markdown_core_node_free(doc);
-}
-
 /* D33. `process_emphasis` used to choose its arm by the delimiter's BYTE:
  *
  *     if (extension)                       ... else
@@ -1934,12 +1322,9 @@ static void no_inline_block_hybrid(test_batch_runner *runner) {
  * They are `static const` descriptors, like every extension since 3.4. A test
  * may still build one -- what 3.4 removed is the ability to REGISTER one, look
  * one up by name, or mutate one after the fact. */
-static markdown_core_node *stray_delimiter_push(
-    markdown_core_parser *parser,
-    markdown_core_inline_parser *inline_parser,
-    unsigned char character,
-    markdown_core_delimiter_rule rule
-) {
+static markdown_core_node *stray_delimiter_push(markdown_core_parser *parser,
+                                                markdown_core_inline_parser *inline_parser, unsigned char character,
+                                                markdown_core_delimiter_rule rule) {
     markdown_core_node *node;
 
     (void)parser;
@@ -1956,51 +1341,35 @@ static markdown_core_node *stray_delimiter_push(
     return node;
 }
 
-static markdown_core_node *stray_unowned_match(
-    const markdown_core_syntax_extension *self,
-    markdown_core_parser *parser,
-    markdown_core_node *parent,
-    unsigned char character,
-    markdown_core_inline_parser *inline_parser
-) {
+static markdown_core_node *stray_unowned_match(const markdown_core_extension *self, markdown_core_parser *parser,
+                                               markdown_core_node *parent, unsigned char character,
+                                               markdown_core_inline_parser *inline_parser) {
     (void)self;
     (void)parent;
     return stray_delimiter_push(parser, inline_parser, character, MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH);
 }
 
-static markdown_core_node *stray_unnamed_match(
-    const markdown_core_syntax_extension *self,
-    markdown_core_parser *parser,
-    markdown_core_node *parent,
-    unsigned char character,
-    markdown_core_inline_parser *inline_parser
-) {
+static markdown_core_node *stray_unnamed_match(const markdown_core_extension *self, markdown_core_parser *parser,
+                                               markdown_core_node *parent, unsigned char character,
+                                               markdown_core_inline_parser *inline_parser) {
     (void)self;
     (void)parent;
     return stray_delimiter_push(parser, inline_parser, character, (markdown_core_delimiter_rule)200);
 }
 
-static const markdown_core_syntax_extension STRAY_UNOWNED =
-    {.name = "stray-unowned", .match_inline = stray_unowned_match, .terminates_text = "@", .dispatch = "@"};
-static const markdown_core_syntax_extension STRAY_UNNAMED =
-    {.name = "stray-unnamed", .match_inline = stray_unnamed_match, .terminates_text = "@", .dispatch = "@"};
+static const markdown_core_extension STRAY_UNOWNED = {
+    .name = "stray-unowned", .match_inline = stray_unowned_match, .terminates_text = "@", .dispatch = "@"};
+static const markdown_core_extension STRAY_UNNAMED = {
+    .name = "stray-unnamed", .match_inline = stray_unnamed_match, .terminates_text = "@", .dispatch = "@"};
 
-static void stray_delimiter_parse(
-    test_batch_runner *runner,
-    const markdown_core_syntax_extension *extension,
-    const char *what
-) {
-    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
-    markdown_core_node *document;
+static void stray_delimiter_parse(test_batch_runner *runner, const markdown_core_extension *extension,
+                                  const char *what) {
     const char *input = "a @ b @ c\n";
-
-    markdown_core_parser_attach_syntax_extension(parser, extension);
-    markdown_core_parser_feed(parser, input, strlen(input));
-    document = markdown_core_parser_finish(parser);
+    markdown_core_node *document =
+        parse_with_extensions(input, strlen(input), MARKDOWN_CORE_OPT_DEFAULT, &extension, 1);
 
     OK(runner, document != NULL, "a delimiter with %s still finishes the parse", what);
     markdown_core_node_free(document);
-    markdown_core_parser_free(parser);
 }
 
 static void stray_delimiter(test_batch_runner *runner) {
@@ -2017,7 +1386,7 @@ static void stray_delimiter(test_batch_runner *runner) {
  * This is a property test rather than a parse test on purpose. Measured at
  * 3a.3: reverting the lift alone leaves `correctness` at 69/69 and both
  * allocation-failure sweeps green, because the two engine buffers that are
- * cleared and reused -- `parser->curline` and `parser->linebuf` -- now both
+ * cleared and reused -- `parser->curline` and `parser->line_scratch` -- now both
  * report at the transaction and abandon the parse before the reuse. The lift
  * removes the class by construction, and nothing else can see it. */
 static int strbuf_refuse_next;
@@ -2071,9 +1440,9 @@ static void strbuf_failure_is_a_transaction(test_batch_runner *runner) {
  * bytes into an eight-byte allocation.
  *
  * The forged `size` below is the largest a legitimate buffer may hold -- the
- * cap is INT32_MAX/2 -- so this is the state a single 1.07 GiB line reaches
- * through `markdown_core_parser_feed`'s `linebuf`, and the put is the next
- * chunk. It is forged rather than fed because feeding it costs 2 GiB. */
+ * cap is INT32_MAX/2 -- so this is the state the normalized-line scratch can
+ * reach after an embedded NUL in a 1.07 GiB line, and the put is the remaining
+ * segment. It is forged because constructing that source costs 2 GiB. */
 static void strbuf_overflow(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     markdown_core_strbuf buf;
@@ -2121,75 +1490,67 @@ static void source_pos(test_batch_runner *runner) {
                                    "> 2. Yes, okay.\n"
                                    ">    ![ok](hi \"yes\")\n";
 
-    test_facade_dump(
-        runner,
-        markdown,
-        0,
-        "Document id=1:0 scope=1:1..10:20 children=3\n"
-        "├── Heading id=2:0 scope=1:1..1:13 level=1 children=3\n"
-        "│   ├── Text id=2:1 scope=1:3..1:5 literal=\"Hi \" children=0\n"
-        "│   ├── Emphasis id=2:2 scope=1:6..1:12 children=1\n"
-        "│   │   └── Text id=2:3 scope=1:7..1:11 literal=\"there\" children=0\n"
-        "│   └── Text id=2:4 scope=1:13..1:13 literal=\".\" children=0\n"
-        "├── Paragraph id=3:0 scope=3:1..4:42 children=8\n"
-        "│   ├── Text id=3:1 scope=3:1..3:14 literal=\"Hello “ \" children=0\n"
-        "│   ├── Link id=3:2 scope=3:15..3:37 destination=\"http://www.google.com\" "
-        "title=null children=1\n"
-        "│   │   └── Text id=3:3 scope=3:16..3:36 literal=\"http://www.google.com\" "
-        "children=0\n"
-        "│   ├── SoftBreak id=3:4 scope=3:38..3:38 children=0\n"
-        "│   ├── Text id=3:5 scope=4:1..4:6 literal=\"there \" children=0\n"
-        "│   ├── Code id=3:6 scope=4:7..4:10 literal=\"hi\" children=0\n"
-        "│   ├── Text id=3:7 scope=4:11..4:14 literal=\" -- \" children=0\n"
-        "│   ├── Link id=3:8 scope=4:15..4:41 destination=\"www.google.com\" title=\"ok\" "
-        "children=1\n"
-        "│   │   └── Text id=3:9 scope=4:16..4:19 literal=\"okay\" children=0\n"
-        "│   └── Text id=3:10 scope=4:42..4:42 literal=\".\" children=0\n"
-        "└── BlockQuote id=4:0 scope=6:1..10:20 children=1\n"
-        "    └── List id=5:0 scope=6:3..10:20 flavor=ordered start=1 tight=false children=2\n"
-        "        ├── ListItem id=6:0 scope=6:3..8:1 checked=null children=1\n"
-        "        │   └── Paragraph id=7:0 scope=6:6..7:10 children=3\n"
-        "        │       ├── Text id=7:1 scope=6:6..6:10 literal=\"Okay.\" children=0\n"
-        "        │       ├── SoftBreak id=7:2 scope=6:11..6:11 children=0\n"
-        "        │       └── Text id=7:3 scope=7:6..7:10 literal=\"Sure.\" children=0\n"
-        "        └── ListItem id=8:0 scope=9:3..10:20 checked=null children=1\n"
-        "            └── Paragraph id=9:0 scope=9:6..10:20 children=3\n"
-        "                ├── Text id=9:1 scope=9:6..9:15 literal=\"Yes, okay.\" children=0\n"
-        "                ├── SoftBreak id=9:2 scope=9:16..9:16 children=0\n"
-        "                └── Image id=9:3 scope=10:6..10:20 source=\"hi\" title=\"yes\" "
-        "children=1\n"
-        "                    └── Text id=9:4 scope=10:8..10:9 literal=\"ok\" children=0\n",
-        "scopes are as expected"
-    );
+    test_facade_dump(runner, markdown, 0,
+                     "Document scope=1:1..10:20 children=3\n"
+                     "├── Heading scope=1:1..1:13 level=1 children=3\n"
+                     "│   ├── Text scope=1:3..1:5 literal=\"Hi \" children=0\n"
+                     "│   ├── Emphasis scope=1:6..1:12 children=1\n"
+                     "│   │   └── Text scope=1:7..1:11 literal=\"there\" children=0\n"
+                     "│   └── Text scope=1:13..1:13 literal=\".\" children=0\n"
+                     "├── Paragraph scope=3:1..4:42 children=8\n"
+                     "│   ├── Text scope=3:1..3:14 literal=\"Hello “ \" children=0\n"
+                     "│   ├── Link scope=3:15..3:37 destination=\"http://www.google.com\" "
+                     "title=null children=1\n"
+                     "│   │   └── Text scope=3:16..3:36 literal=\"http://www.google.com\" "
+                     "children=0\n"
+                     "│   ├── SoftBreak scope=3:38..3:38 children=0\n"
+                     "│   ├── Text scope=4:1..4:6 literal=\"there \" children=0\n"
+                     "│   ├── Code scope=4:7..4:10 literal=\"hi\" children=0\n"
+                     "│   ├── Text scope=4:11..4:14 literal=\" -- \" children=0\n"
+                     "│   ├── Link scope=4:15..4:41 destination=\"www.google.com\" title=\"ok\" "
+                     "children=1\n"
+                     "│   │   └── Text scope=4:16..4:19 literal=\"okay\" children=0\n"
+                     "│   └── Text scope=4:42..4:42 literal=\".\" children=0\n"
+                     "└── BlockQuote scope=6:1..10:20 children=1\n"
+                     "    └── List scope=6:3..10:20 flavor=ordered start=1 tight=false children=2\n"
+                     "        ├── ListItem scope=6:3..8:1 checked=null children=1\n"
+                     "        │   └── Paragraph scope=6:6..7:10 children=3\n"
+                     "        │       ├── Text scope=6:6..6:10 literal=\"Okay.\" children=0\n"
+                     "        │       ├── SoftBreak scope=6:11..6:11 children=0\n"
+                     "        │       └── Text scope=7:6..7:10 literal=\"Sure.\" children=0\n"
+                     "        └── ListItem scope=9:3..10:20 checked=null children=1\n"
+                     "            └── Paragraph scope=9:6..10:20 children=3\n"
+                     "                ├── Text scope=9:6..9:15 literal=\"Yes, okay.\" children=0\n"
+                     "                ├── SoftBreak scope=9:16..9:16 children=0\n"
+                     "                └── Image scope=10:6..10:20 source=\"hi\" title=\"yes\" "
+                     "children=1\n"
+                     "                    └── Text scope=10:8..10:9 literal=\"ok\" children=0\n",
+                     "scopes are as expected");
 }
 
 static void source_pos_inlines(test_batch_runner *runner) {
-    test_facade_dump(
-        runner,
-        "*first*\n"
-        "second\n",
-        0,
-        "Document id=1:0 scope=1:1..2:6 children=1\n"
-        "└── Paragraph id=2:0 scope=1:1..2:6 children=3\n"
-        "    ├── Emphasis id=2:1 scope=1:1..1:7 children=1\n"
-        "    │   └── Text id=2:2 scope=1:2..1:6 literal=\"first\" children=0\n"
-        "    ├── SoftBreak id=2:3 scope=1:8..1:8 children=0\n"
-        "    └── Text id=2:4 scope=2:1..2:6 literal=\"second\" children=0\n",
-        "closed emphasis scopes are as expected"
-    );
-    test_facade_dump(
-        runner,
-        "*first\n"
-        "second*\n",
-        0,
-        "Document id=1:0 scope=1:1..2:7 children=1\n"
-        "└── Paragraph id=2:0 scope=1:1..2:7 children=1\n"
-        "    └── Emphasis id=2:1 scope=1:1..2:7 children=3\n"
-        "        ├── Text id=2:2 scope=1:2..1:6 literal=\"first\" children=0\n"
-        "        ├── SoftBreak id=2:3 scope=1:7..1:7 children=0\n"
-        "        └── Text id=2:4 scope=2:1..2:6 literal=\"second\" children=0\n",
-        "multiline emphasis scopes are as expected"
-    );
+    test_facade_dump(runner,
+                     "*first*\n"
+                     "second\n",
+                     0,
+                     "Document scope=1:1..2:6 children=1\n"
+                     "└── Paragraph scope=1:1..2:6 children=3\n"
+                     "    ├── Emphasis scope=1:1..1:7 children=1\n"
+                     "    │   └── Text scope=1:2..1:6 literal=\"first\" children=0\n"
+                     "    ├── SoftBreak scope=1:8..1:8 children=0\n"
+                     "    └── Text scope=2:1..2:6 literal=\"second\" children=0\n",
+                     "closed emphasis scopes are as expected");
+    test_facade_dump(runner,
+                     "*first\n"
+                     "second*\n",
+                     0,
+                     "Document scope=1:1..2:7 children=1\n"
+                     "└── Paragraph scope=1:1..2:7 children=1\n"
+                     "    └── Emphasis scope=1:1..2:7 children=3\n"
+                     "        ├── Text scope=1:2..1:6 literal=\"first\" children=0\n"
+                     "        ├── SoftBreak scope=1:7..1:7 children=0\n"
+                     "        └── Text scope=2:1..2:6 literal=\"second\" children=0\n",
+                     "multiline emphasis scopes are as expected");
 }
 
 /* §5.6's G7: ONE accessor answers for all five reference kinds and refuses
@@ -2222,12 +1583,8 @@ static void association_accessor(test_batch_runner *runner) {
     /* Five kinds answer. Everything else -- including the Paragraph, the Text
      * children and the Document -- refuses. */
     const markdown_core_node_kind carriers[] = {
-        MARKDOWN_CORE_KIND_REFERENCE_DEFINITION,
-        MARKDOWN_CORE_KIND_LINK_REFERENCE,
-        MARKDOWN_CORE_KIND_IMAGE_REFERENCE,
-        MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION,
-        MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE
-    };
+        MARKDOWN_CORE_KIND_REFERENCE_DEFINITION, MARKDOWN_CORE_KIND_LINK_REFERENCE, MARKDOWN_CORE_KIND_IMAGE_REFERENCE,
+        MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION, MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE};
     unsigned int found = 0;
 
     memset(&options, 0, sizeof(options));
@@ -2237,7 +1594,7 @@ static void association_accessor(test_batch_runner *runner) {
         OK(runner, 0, "association corpus parses");
         return;
     }
-    root = markdown_core_document_semantic(document);
+    root = markdown_core_document_root(document);
 
     {
         /* An explicit stack, because the walk must reach every node and the
@@ -2260,16 +1617,14 @@ static void association_accessor(test_batch_runner *runner) {
             if (markdown_core_node_association(current, &label, &identifier)) {
                 answered++;
                 INT_EQ(runner, carries, 1, "kind %d answers the association accessor", (int)kind);
-                OK(runner,
-                    label.data != NULL && identifier.data != NULL && identifier.length > 0,
-                    "kind %d carries both halves",
-                    (int)kind);
+                OK(runner, label.data != NULL && identifier.data != NULL && identifier.length > 0,
+                   "kind %d carries both halves", (int)kind);
             } else {
                 refused++;
                 INT_EQ(runner, carries, 0, "kind %d refuses the association accessor", (int)kind);
             }
-            markdown_core_children walk_cursor = markdown_core_node_children(current);
-            for (; (node = walk_cursor.child) != NULL; walk_cursor = markdown_core_children_next(walk_cursor)) {
+            for (node = markdown_core_node_get_first_child(current); node;
+                 node = markdown_core_node_get_next_sibling(node)) {
                 if (depth < sizeof(stack) / sizeof(stack[0])) {
                     stack[depth++] = node;
                 }
@@ -2282,476 +1637,65 @@ static void association_accessor(test_batch_runner *runner) {
     markdown_core_document_free(document);
 }
 
-/* D4 through the facade: every node answers the identity accessor with the
- * whole pair the dump prints as `id=`, and every reference names the FIRST
- * definition of its label while later definitions stay in the tree. */
-static void identity_accessors(test_batch_runner *runner) {
-    /* Two definitions of one label, in document order, referenced once --
-     * plus a footnote pair, so all three reference kinds carry the edge. */
-    static const char markdown[] = "See [a] and ![a] and [^n].\n"
-                                   "\n"
-                                   "[a]: /first\n"
-                                   "\n"
-                                   "[a]: /second\n"
-                                   "\n"
-                                   "[^n]: note\n";
-    markdown_core_parse_options options;
-    markdown_core_document *document;
-    const markdown_core_node *root;
-    const markdown_core_node *paragraph;
-    const markdown_core_node *node;
-    markdown_core_identity identity;
-    markdown_core_identity winner = {0, 0};
-    markdown_core_identity loser = {0, 0};
-    markdown_core_identity definition = {0, 0};
-    int references = 0;
-
-    memset(&options, 0, sizeof(options));
-    options.footnotes = true;
-    document = markdown_core_document_parse((const uint8_t *)markdown, strlen(markdown), &options, NULL);
-    if (!document) {
-        OK(runner, 0, "identity corpus parses");
-        return;
-    }
-    root = markdown_core_document_semantic(document);
-
-    identity = markdown_core_node_identifier(root);
-    OK(runner, identity.block != 0 && identity.ordinal == 0, "the root is a block with a nonzero mint");
-    identity = markdown_core_node_identifier(NULL);
-    OK(runner, identity.block == 0 && identity.ordinal == 0, "a null node has no identity");
-    OK(runner, !markdown_core_node_reference_definition(root, &definition), "a document carries no definition edge");
-
-    /* The two ReferenceDefinition siblings, in document order. Mints are
-     * monotone in document order (D4), which is what lets the map's smallest
-     * identity BE the first definition. */
-    markdown_core_children root_cursor = markdown_core_node_children(root);
-    for (; (node = root_cursor.child) != NULL; root_cursor = markdown_core_children_next(root_cursor)) {
-        if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_REFERENCE_DEFINITION) {
-            markdown_core_identity mint = markdown_core_node_identifier(node);
-            OK(runner, mint.block != 0 && mint.ordinal == 0, "a definition is a block with a nonzero mint");
-            if (!winner.block) {
-                winner = mint;
-            } else {
-                loser = mint;
-            }
-        }
-    }
-    OK(runner,
-        winner.block != 0 && loser.block != 0 && winner.block < loser.block,
-        "both definitions are in the tree and mints follow document order");
-
-    paragraph = markdown_core_node_children(root).child;
-    {
-        markdown_core_children para_cursor = markdown_core_node_children(paragraph);
-        for (; (node = para_cursor.child) != NULL; para_cursor = markdown_core_children_next(para_cursor)) {
-            markdown_core_node_kind kind = markdown_core_node_get_kind(node);
-            if (kind == MARKDOWN_CORE_KIND_LINK_REFERENCE || kind == MARKDOWN_CORE_KIND_IMAGE_REFERENCE) {
-                markdown_core_identity paragraph_identity = markdown_core_node_identifier(paragraph);
-                references++;
-                identity = markdown_core_node_identifier(node);
-                OK(runner,
-                    identity.block == paragraph_identity.block && identity.ordinal != 0,
-                    "kind %d is an inline owned by its paragraph, with a nonzero ordinal",
-                    (int)kind);
-                OK(runner,
-                    markdown_core_node_reference_definition(node, &definition) && definition.block == winner.block &&
-                        definition.ordinal == 0,
-                    "kind %d names the first definition of its label",
-                    (int)kind);
-            }
-            if (kind == MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE) {
-                references++;
-                OK(runner,
-                    markdown_core_node_reference_definition(node, &definition) && definition.block != 0 &&
-                        definition.block != winner.block && definition.block != loser.block,
-                    "a footnote call names its own definition");
-            }
-        }
-    }
-    INT_EQ(runner, references, 3, "all three reference kinds resolved");
-    markdown_core_document_free(document);
-}
-
-/* THE WIRE beside the dump: deterministic, partition-invariant, and refused
- * without a document to serialize. The per-field truth of the layout is
- * pinned by every binding's decoder against its own suites; what the C side
- * owns is that the bytes are a function of the parse alone. */
-static void wire_serialization(test_batch_runner *runner) {
-    static const char markdown[] = "# Hi\n\nSee [a] and [^n].\n\n[a]: /u \"t\"\n\n[^n]: note\n";
-    markdown_core_parse_options options;
-    markdown_core_document *document;
-    markdown_core_session *session;
-    markdown_core_error *error = NULL;
-    uint8_t *whole = NULL;
-    uint8_t *again = NULL;
-    uint8_t *streamed = NULL;
-    size_t whole_length = 0;
-    size_t again_length = 0;
-    size_t streamed_length = 0;
-    size_t index;
-
-    markdown_core_parse_options_init(&options);
-    document = markdown_core_document_parse((const uint8_t *)markdown, strlen(markdown), &options, NULL);
-    if (!document) {
-        OK(runner, 0, "wire corpus parses");
-        return;
-    }
-    OK(runner,
-        markdown_core_document_wire(document, 0, &whole, &whole_length, &error) && whole != NULL && whole_length > 0,
-        "the wire serializes a parsed document");
-    OK(runner,
-        markdown_core_document_wire(document, 0, &again, &again_length, &error) && again_length == whole_length &&
-            memcmp(whole, again, whole_length) == 0,
-        "two serializations of one document are byte-identical");
-    markdown_core_wire_free(again);
-
-    /* THE ENVELOPE ROOM: a transport's prefix rides in the one allocation,
-     * zeroed, ahead of the same payload bytes. */
-    OK(runner,
-        markdown_core_document_wire(document, 5, &again, &again_length, &error) && again_length == whole_length + 5 &&
-            again[0] == 0 && again[4] == 0 && memcmp(again + 5, whole, whole_length) == 0,
-        "a prefixed serialization reserves zeroed envelope room ahead of the payload");
-    markdown_core_wire_free(again);
-    again = NULL;
-
-    OK(runner,
-        !markdown_core_document_wire(NULL, 0, &again, &again_length, &error),
-        "the wire refuses a null document");
-    OK(runner,
-        error != NULL && markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-        "the refusal names its reason");
-    markdown_core_error_free(error);
-    error = NULL;
-
-    /* Partition invariance rides through: the sealed stream's wire equals the
-     * whole-text parse's, byte for byte, however the bytes were fed. */
-    /* Partition invariance rides through `advance` exactly as through `feed`:
-     * an advance takes the bytes and answers nothing -- no projection, no
-     * document -- which is the discarded-read lifecycle the bindings'
-     * `Document(markdown)` constructor documents. */
-    session = markdown_core_session_new(&options, NULL);
-    if (session) {
-        markdown_core_document *sealed;
-        for (index = 0; index < strlen(markdown); index += 3) {
-            size_t length = strlen(markdown) - index < 3 ? strlen(markdown) - index : 3;
-            const uint8_t *chunk = (const uint8_t *)markdown + index;
-            OK(runner, markdown_core_session_advance(session, chunk, length, NULL), "an advance takes its bytes");
-        }
-        sealed = markdown_core_session_finish(session, NULL);
-        OK(runner,
-            sealed != NULL && markdown_core_document_wire(sealed, 0, &streamed, &streamed_length, NULL) &&
-                streamed_length == whole_length && memcmp(streamed, whole, whole_length) == 0,
-            "the stream sealed after advances equals the whole-text parse");
-        markdown_core_wire_free(streamed);
-        markdown_core_document_free(sealed);
-        OK(runner,
-            !markdown_core_session_advance(session, (const uint8_t *)"x", 1, &error) && error != NULL &&
-                markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-            "an advance after finish is refused with the finished-session error");
-        markdown_core_error_free(error);
-        error = NULL;
-        markdown_core_session_free(session);
-    } else {
-        OK(runner, 0, "wire session opens");
-    }
-
-    /* THE MANAGED FEED's equivalence (#146): `session_feed_wire` answers the
-     * same bytes as feed + wire + free -- prefix room included -- at every
-     * boundary of a chunked stream, and again for a zero-length feed. Two
-     * sessions run the same chunks side by side, one through each path. */
-    {
-        markdown_core_session *composed = markdown_core_session_new(&options, NULL);
-        markdown_core_session *direct = markdown_core_session_new(&options, NULL);
-        int equal = composed != NULL && direct != NULL;
-        size_t offset = 0;
-        size_t rounds = 0;
-
-        while (equal && offset <= strlen(markdown)) {
-            size_t chunk_length = strlen(markdown) - offset < 7 ? strlen(markdown) - offset : 7;
-            const uint8_t *chunk = chunk_length ? (const uint8_t *)markdown + offset : NULL;
-            markdown_core_document *stepped;
-            uint8_t *composed_wire = NULL;
-            uint8_t *direct_wire = NULL;
-            size_t composed_length = 0;
-            size_t direct_length = 0;
-
-            stepped = markdown_core_session_feed(composed, chunk, chunk_length, NULL);
-            equal = stepped != NULL && markdown_core_document_wire(stepped, 3, &composed_wire, &composed_length, NULL);
-            markdown_core_document_free(stepped);
-            equal = equal && markdown_core_session_feed_wire(
-                                 direct,
-                                 chunk,
-                                 chunk_length,
-                                 3,
-                                 MARKDOWN_CORE_WIRE_FULL,
-                                 &direct_wire,
-                                 &direct_length,
-                                 NULL
-                             );
-            equal = equal && composed_length == direct_length &&
-                    memcmp(composed_wire, direct_wire, composed_length) == 0 && direct_wire[0] == 0 &&
-                    direct_wire[2] == 0;
-            markdown_core_wire_free(composed_wire);
-            markdown_core_wire_free(direct_wire);
-            rounds++;
-            if (chunk_length == 0) {
-                break;
-            }
-            offset += chunk_length;
-        }
-        OK(runner,
-            equal && rounds > 2,
-            "the managed feed's wire equals feed + wire + free at every boundary, zero-length feed included");
-        markdown_core_session_free(composed);
-        markdown_core_session_free(direct);
-    }
-    {
-        uint8_t *refused = NULL;
-        size_t refused_length = 0;
-        OK(runner,
-            !markdown_core_session_feed_wire(
-                NULL,
-                NULL,
-                0,
-                0,
-                MARKDOWN_CORE_WIRE_FULL,
-                &refused,
-                &refused_length,
-                &error
-            ) && error != NULL &&
-                markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-            "the managed feed wire refuses a null session with the finished-session error");
-        markdown_core_error_free(error);
-        error = NULL;
-        OK(runner,
-            !markdown_core_session_finish_wire(NULL, 0, MARKDOWN_CORE_WIRE_FULL, &refused, &refused_length, &error) &&
-                error != NULL && markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-            "the seal on the wire refuses a null session with the finished-session error");
-        markdown_core_error_free(error);
-        error = NULL;
-    }
-
-    /* THE FRAME BYTE (#162): every payload leads with one, and this entry's
-     * is FULL. THE SEAL ON THE WIRE: a DELTA asked of a session that never
-     * wrote a payload is answered FULL -- the in-place seal's bytes, the
-     * whole-text parse's behind the envelope room -- and the seal ends the
-     * session whatever it answered. */
-    OK(runner,
-        whole_length > 0 && whole[0] == MARKDOWN_CORE_WIRE_FULL,
-        "a document's wire leads with the FULL frame byte");
-    session = markdown_core_session_new(&options, NULL);
-    if (session) {
-        uint8_t *sealed_wire = NULL;
-        size_t sealed_length = 0;
-        OK(runner,
-            markdown_core_session_advance(session, (const uint8_t *)markdown, strlen(markdown), NULL),
-            "an advance takes the whole text");
-        OK(runner,
-            markdown_core_session_finish_wire(
-                session,
-                5,
-                MARKDOWN_CORE_WIRE_DELTA,
-                &sealed_wire,
-                &sealed_length,
-                &error
-            ) && sealed_length == whole_length + 5 &&
-                sealed_wire[0] == 0 && sealed_wire[4] == 0 && memcmp(sealed_wire + 5, whole, whole_length) == 0,
-            "a delta asked of a session with no previous payload seals FULL, the whole-text parse's bytes behind "
-            "zeroed envelope room");
-        markdown_core_wire_free(sealed_wire);
-        sealed_wire = NULL;
-        OK(runner,
-            !markdown_core_session_finish_wire(
-                session,
-                0,
-                MARKDOWN_CORE_WIRE_FULL,
-                &sealed_wire,
-                &sealed_length,
-                &error
-            ) && error != NULL &&
-                markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-            "a second seal is refused with the finished-session error");
-        markdown_core_error_free(error);
-        error = NULL;
-        markdown_core_session_free(session);
-    } else {
-        OK(runner, 0, "seal-on-the-wire session opens");
-    }
-
-    /* THE DELTA FRAME: the first payload of a session asked for DELTA is
-     * FULL, the next is a DELTA whose root op is a SPINE, and a FULL seal
-     * after deltas is the whole-text parse's bytes for everything fed. The
-     * byte-level reassembly of deltas over the corpus is projection_runner's
-     * wire_delta case. */
-    session = markdown_core_session_new(&options, NULL);
-    if (session) {
-        static const char more[] = "\nAnd more.\n";
-        markdown_core_session *whole_frames = markdown_core_session_new(&options, NULL);
-        uint8_t *first = NULL;
-        uint8_t *full_first = NULL;
-        uint8_t *second = NULL;
-        uint8_t *sealed_wire = NULL;
-        size_t first_length = 0;
-        size_t full_first_length = 0;
-        size_t second_length = 0;
-        size_t sealed_length = 0;
-        char *combined = (char *)malloc(strlen(markdown) + strlen(more) + 1);
-        OK(runner,
-            whole_frames != NULL &&
-                markdown_core_session_feed_wire(
-                    session,
-                    (const uint8_t *)markdown,
-                    strlen(markdown),
-                    0,
-                    MARKDOWN_CORE_WIRE_DELTA,
-                    &first,
-                    &first_length,
-                    NULL
-                ) &&
-                markdown_core_session_feed_wire(
-                    whole_frames,
-                    (const uint8_t *)markdown,
-                    strlen(markdown),
-                    0,
-                    MARKDOWN_CORE_WIRE_FULL,
-                    &full_first,
-                    &full_first_length,
-                    NULL
-                ) &&
-                first_length == full_first_length && memcmp(first, full_first, first_length) == 0 &&
-                first[0] == MARKDOWN_CORE_WIRE_FULL,
-            "the first payload of a session asked for DELTA is FULL: the same bytes a FULL request answers");
-        markdown_core_wire_free(full_first);
-        markdown_core_session_free(whole_frames);
-        OK(runner,
-            markdown_core_session_feed_wire(
-                session,
-                (const uint8_t *)more,
-                strlen(more),
-                0,
-                MARKDOWN_CORE_WIRE_DELTA,
-                &second,
-                &second_length,
-                NULL
-            ) && second_length > 2 &&
-                second[0] == MARKDOWN_CORE_WIRE_DELTA && second[1] == 0xFE &&
-                second[2] == MARKDOWN_CORE_KIND_DOCUMENT && second_length < whole_length,
-            "the next payload is a DELTA whose root op is the document's SPINE, smaller than the tree it stands for");
-        if (combined) {
-            markdown_core_document *both;
-            uint8_t *both_wire = NULL;
-            size_t both_length = 0;
-            memcpy(combined, markdown, strlen(markdown));
-            memcpy(combined + strlen(markdown), more, strlen(more) + 1);
-            both = markdown_core_document_parse((const uint8_t *)combined, strlen(combined), &options, NULL);
-            OK(runner,
-                both != NULL && markdown_core_document_wire(both, 0, &both_wire, &both_length, NULL) &&
-                    markdown_core_session_finish_wire(
-                        session,
-                        0,
-                        MARKDOWN_CORE_WIRE_FULL,
-                        &sealed_wire,
-                        &sealed_length,
-                        NULL
-                    ) &&
-                    sealed_length == both_length && memcmp(sealed_wire, both_wire, both_length) == 0,
-                "a FULL seal after deltas is the whole-text parse's bytes for everything fed");
-            markdown_core_wire_free(both_wire);
-            markdown_core_document_free(both);
-            free(combined);
-        } else {
-            OK(runner, 0, "combined text allocates");
-        }
-        markdown_core_wire_free(first);
-        markdown_core_wire_free(second);
-        markdown_core_wire_free(sealed_wire);
-        markdown_core_session_free(session);
-    } else {
-        OK(runner, 0, "delta session opens");
-    }
-    markdown_core_wire_free(whole);
-    markdown_core_document_free(document);
-}
-
 static void ref_source_pos(test_batch_runner *runner) {
     static const char markdown[] = "Let's try [reference] links.\n"
                                    "\n"
                                    "[reference]: https://github.com (GitHub)\n";
 
-    test_facade_dump(
-        runner,
-        markdown,
-        0,
-        "Document id=1:0 scope=1:1..3:40 children=2\n"
-        "├── Paragraph id=2:0 scope=1:1..1:28 children=3\n"
-        "│   ├── Text id=2:1 scope=1:1..1:10 literal=\"Let's try \" children=0\n"
-        "│   ├── LinkReference id=2:2 scope=1:11..1:21 label=\"reference\" "
-        "form=shortcut definition=3:0 children=1\n"
-        "│   │   └── Text id=2:3 scope=1:12..1:20 literal=\"reference\" children=0\n"
-        "│   └── Text id=2:4 scope=1:22..1:28 literal=\" links.\" children=0\n"
-        "└── ReferenceDefinition id=3:0 scope=3:1..3:40 label=\"reference\" norm=\"reference\" "
-        "destination=\"https://github.com\" title=\"GitHub\" children=0\n",
-        "reference link scopes are as expected"
-    );
+    test_facade_dump(runner, markdown, 0,
+                     "Document scope=1:1..3:40 children=2\n"
+                     "├── Paragraph scope=1:1..1:28 children=3\n"
+                     "│   ├── Text scope=1:1..1:10 literal=\"Let's try \" children=0\n"
+                     "│   ├── LinkReference scope=1:11..1:21 label=\"reference\" "
+                     "identifier=\"reference\" form=shortcut children=1\n"
+                     "│   │   └── Text scope=1:12..1:20 literal=\"reference\" children=0\n"
+                     "│   └── Text scope=1:22..1:28 literal=\" links.\" children=0\n"
+                     "└── ReferenceDefinition scope=3:1..3:40 label=\"reference\" identifier=\"reference\" "
+                     "destination=\"https://github.com\" title=\"GitHub\" children=0\n",
+                     "reference link scopes are as expected");
 }
 
 static void autolink_source_pos(test_batch_runner *runner) {
-    test_facade_dump(
-        runner,
-        "See www.example.com.\n",
-        1,
-        "Document id=1:0 scope=1:1..1:20 children=1\n"
-        "└── Paragraph id=2:0 scope=1:1..1:20 children=3\n"
-        "    ├── Text id=2:1 scope=1:1..1:4 literal=\"See \" children=0\n"
-        "    ├── Link id=2:2 scope=1:5..1:19 destination=\"http://www.example.com\" "
-        "title=null children=1\n"
-        "    │   └── Text id=2:3 scope=1:5..1:19 literal=\"www.example.com\" children=0\n"
-        "    └── Text id=2:4 scope=1:20..1:20 literal=\".\" children=0\n",
-        "www autolink scopes are as expected"
-    );
-    test_facade_dump(
-        runner,
-        "See http://example.com.\n",
-        1,
-        "Document id=1:0 scope=1:1..1:23 children=1\n"
-        "└── Paragraph id=2:0 scope=1:1..1:23 children=3\n"
-        "    ├── Text id=2:1 scope=1:1..1:4 literal=\"See \" children=0\n"
-        "    ├── Link id=2:2 scope=1:5..1:22 destination=\"http://example.com\" title=null "
-        "children=1\n"
-        "    │   └── Text id=2:3 scope=1:5..1:22 literal=\"http://example.com\" children=0\n"
-        "    └── Text id=2:4 scope=1:23..1:23 literal=\".\" children=0\n",
-        "scheme autolink scopes are as expected"
-    );
+    test_facade_dump(runner, "See www.example.com.\n", 1,
+                     "Document scope=1:1..1:20 children=1\n"
+                     "└── Paragraph scope=1:1..1:20 children=3\n"
+                     "    ├── Text scope=1:1..1:4 literal=\"See \" children=0\n"
+                     "    ├── Link scope=1:5..1:19 destination=\"http://www.example.com\" "
+                     "title=null children=1\n"
+                     "    │   └── Text scope=1:5..1:19 literal=\"www.example.com\" children=0\n"
+                     "    └── Text scope=1:20..1:20 literal=\".\" children=0\n",
+                     "www autolink scopes are as expected");
+    test_facade_dump(runner, "See http://example.com.\n", 1,
+                     "Document scope=1:1..1:23 children=1\n"
+                     "└── Paragraph scope=1:1..1:23 children=3\n"
+                     "    ├── Text scope=1:1..1:4 literal=\"See \" children=0\n"
+                     "    ├── Link scope=1:5..1:22 destination=\"http://example.com\" title=null "
+                     "children=1\n"
+                     "    │   └── Text scope=1:5..1:22 literal=\"http://example.com\" children=0\n"
+                     "    └── Text scope=1:23..1:23 literal=\".\" children=0\n",
+                     "scheme autolink scopes are as expected");
     /* An autolink at column one leaves NO prefix. This assertion used to pin the
      * defect -- it asserted a `Text scope=0:0..0:0 literal=""` as expected
      * output, a child with no bytes and no position, and a paragraph that said
      * it had two children when it had one thing in it. 0a.14 removes the node;
      * unpinning the assertion is the fix, the same shape as D10's
      * `regression.txt` example 24 at 0a.2. */
-    test_facade_dump(
-        runner,
-        "http://example.com\n",
-        1,
-        "Document id=1:0 scope=1:1..1:18 children=1\n"
-        "└── Paragraph id=2:0 scope=1:1..1:18 children=1\n"
-        "    └── Link id=2:1 scope=1:1..1:18 destination=\"http://example.com\" title=null "
-        "children=1\n"
-        "        └── Text id=2:2 scope=1:1..1:18 literal=\"http://example.com\" children=0\n",
-        "scheme autolink at column one scopes are as expected"
-    );
-    test_facade_dump(
-        runner,
-        "Mail user@example.com now.\n",
-        1,
-        "Document id=1:0 scope=1:1..1:26 children=1\n"
-        "└── Paragraph id=2:0 scope=1:1..1:26 children=3\n"
-        "    ├── Text id=2:1 scope=1:1..1:5 literal=\"Mail \" children=0\n"
-        "    ├── Link id=2:2 scope=1:6..1:21 destination=\"mailto:user@example.com\" "
-        "title=null children=1\n"
-        "    │   └── Text id=2:3 scope=1:6..1:21 literal=\"user@example.com\" children=0\n"
-        "    └── Text id=2:4 scope=1:22..1:26 literal=\" now.\" children=0\n",
-        "email autolink scopes are as expected"
-    );
+    test_facade_dump(runner, "http://example.com\n", 1,
+                     "Document scope=1:1..1:18 children=1\n"
+                     "└── Paragraph scope=1:1..1:18 children=1\n"
+                     "    └── Link scope=1:1..1:18 destination=\"http://example.com\" title=null "
+                     "children=1\n"
+                     "        └── Text scope=1:1..1:18 literal=\"http://example.com\" children=0\n",
+                     "scheme autolink at column one scopes are as expected");
+    test_facade_dump(runner, "Mail user@example.com now.\n", 1,
+                     "Document scope=1:1..1:26 children=1\n"
+                     "└── Paragraph scope=1:1..1:26 children=3\n"
+                     "    ├── Text scope=1:1..1:5 literal=\"Mail \" children=0\n"
+                     "    ├── Link scope=1:6..1:21 destination=\"mailto:user@example.com\" "
+                     "title=null children=1\n"
+                     "    │   └── Text scope=1:6..1:21 literal=\"user@example.com\" children=0\n"
+                     "    └── Text scope=1:22..1:26 literal=\" now.\" children=0\n",
+                     "email autolink scopes are as expected");
 }
 
 int main(void) {
@@ -2775,21 +1719,18 @@ int main(void) {
     numeric_entities(runner);
     test_cplusplus(runner);
     strip_html_comments(runner);
-    test_feed_across_line_ending(runner);
+    test_crlf_line_ending(runner);
     test_pathological_regressions(runner);
     extension_decline_yields_turn(runner);
     source_pos(runner);
     source_pos_inlines(runner);
     ref_source_pos(runner);
     association_accessor(runner);
-    identity_accessors(runner);
-    wire_serialization(runner);
     autolink_source_pos(runner);
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
     no_node_is_its_own_ancestor(runner);
-    no_inline_block_hybrid(runner);
     iterator_contract_is_total(runner);
 
     test_print_summary(runner);

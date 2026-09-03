@@ -36,6 +36,7 @@ bufsize_t _ext_scan_at(bufsize_t (*scanner)(const unsigned char *), unsigned cha
   tasklist = ("[ ]"|"[x]"|"[X]")spacechar+;
 
   formula_dollar_inline_open = [$];
+  formula_dollar_backtick_open = [$][`];
   formula_dollar_display_open = [$][$];
   formula_latex_backslash_inline_open = [\\][\\][(];
   formula_latex_backslash_display_open = [\\][\\]"[";
@@ -101,6 +102,15 @@ bufsize_t _scan_formula_dollar_inline_open(const unsigned char *p)
   const unsigned char *start = p;
   /*!re2c
     formula_dollar_inline_open { return (bufsize_t)(p - start); }
+    * { return 0; }
+  */
+}
+
+bufsize_t _scan_formula_dollar_backtick_open(const unsigned char *p)
+{
+  const unsigned char *start = p;
+  /*!re2c
+    formula_dollar_backtick_open { return (bufsize_t)(p - start); }
     * { return 0; }
   */
 }

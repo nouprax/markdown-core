@@ -1,0 +1,142 @@
+{
+    "schemaVersion": 1,
+    "upstream": {
+        "repository": "https://github.com/github/cmark-gfm",
+        "version": "0.29.0.gfm.13",
+        "commit": "587a12bb54d95ac37241377e6ddc93ea0e45439b",
+        "released": "2023-07-21",
+        "note": "The newest published cmark-gfm release. It is pinned only as the implementation oracle for the GFM extension layer; current CommonMark semantics come from the separately pinned cmark release."
+    },
+    "claim": "With Markdown Core's product extensions disabled, GFM extension constructs match cmark-gfm 0.29.0.gfm.13 except for the reviewed deltas below. cmark-gfm has no authority over the underlying CommonMark layer.",
+    "deltas": [
+        {
+            "id": "footnote-resolution-model",
+            "kind": "deliberate-difference",
+            "summary": "cmark-gfm removes unreferenced footnote definitions. Markdown Core keeps every definition at its source location.",
+            "rationale": "An unreferenced definition is authored source and must remain represented. remark independently keeps it.",
+            "handling": "The comparison projects Markdown Core's retained definitions into cmark-gfm's resolved model before comparing."
+        },
+        {
+            "id": "footnote-definition-placement",
+            "kind": "deliberate-difference",
+            "summary": "cmark-gfm moves definitions to the document tail in reference order; Markdown Core leaves them where they were written.",
+            "handling": "Both sides lift definitions into a deterministic comparison-only order, preserving their content while ignoring the representation difference."
+        },
+        {
+            "id": "footnote-call-label-bytes",
+            "kind": "deliberate-difference",
+            "summary": "cmark-gfm derives a call label from neighbouring decoded nodes using source-column lengths. Markdown Core slices the authored source between brackets.",
+            "rationale": "The upstream model loses bytes across line endings and can read a freed decode buffer when the caret came from an entity. A failed call must degrade to the bytes the author wrote.",
+            "handling": "Exact inputs are registered because erasing labels globally would hide valid label differences."
+        },
+        {
+            "id": "footnote-duplicate-definition",
+            "kind": "deliberate-difference",
+            "summary": "For nested duplicate definitions cmark-gfm keeps the one that closes first and destroys the other. Markdown Core resolves in source-opening order and retains the loser as authored content.",
+            "handling": "The nested witness is registered exactly so the gate continues checking both resolution and retention."
+        },
+        {
+            "id": "tasklist-checked-marker",
+            "kind": "deliberate-difference",
+            "summary": "cmark-gfm searches the whole line for `[x]`; Markdown Core reads only the marker the task-list scanner matched.",
+            "handling": "The exact unchecked-item witness is registered; removing `checked` from every comparison would hide real task-state drift."
+        },
+        {
+            "id": "empty-text-node",
+            "kind": "deliberate-difference",
+            "summary": "cmark-gfm can emit empty Text nodes after extension and break processing. Markdown Core and mdast omit nodes that own no source or content.",
+            "handling": "The normalizer drops empty Text nodes on both sides and records that the projection acted."
+        },
+        {
+            "id": "footnote-failed-call-interior",
+            "kind": "deliberate-difference",
+            "summary": "cmark-gfm flattens the already-parsed interior of an undefined footnote call. Markdown Core treats it as an unmatched bracket and preserves the CommonMark inline structure inside it.",
+            "rationale": "An extension construct that did not resolve must not erase structure produced by the underlying language parser. remark agrees with Markdown Core.",
+            "handling": "The emphasis and strikethrough witnesses are registered exactly."
+        },
+        {
+            "id": "table-split-lead-spelling",
+            "kind": "deliberate-difference",
+            "summary": "When a table is recovered from a multiline paragraph, cmark-gfm pipe-unescapes the split-off non-table lead twice. Markdown Core parses the lead once as an ordinary paragraph.",
+            "rationale": "The lead is not table content; remark/micromark independently preserves the same spelling as Markdown Core.",
+            "handling": "The escaped-pipe witness is registered exactly."
+        },
+        {
+            "id": "reference-definition-node",
+            "kind": "deliberate-difference",
+            "summary": "cmark-gfm consumes reference definitions into a map. Markdown Core retains source-faithful ReferenceDefinition and reference nodes.",
+            "handling": "The normalizer projects Markdown Core's representation into the upstream resolved model while still comparing which definition, destination, title, and children were selected.",
+            "projected": true
+        }
+    ],
+    "expectedDivergences": [
+        {
+            "id": "footnote-call-label-bytes",
+            "input": "x[^a\nb] tail\n",
+            "note": "The label crosses a line ending; cmark-gfm loses the label interior."
+        },
+        {
+            "id": "footnote-call-label-bytes",
+            "input": "x [&Hat;abcdefghij] y\n\n[^z]: note\n",
+            "note": "An entity-spelled caret exposes cmark-gfm's decoded-buffer lifetime and length error."
+        },
+        {
+            "id": "footnote-call-label-bytes",
+            "input": "[\\^abc] x\n",
+            "note": "An escaped caret is text, not the literal source marker that opens a footnote call."
+        },
+        {
+            "id": "footnote-duplicate-definition",
+            "input": "Ref [^dup].\n\n[^dup]: OUTER opens first\n\n    [^dup]: INNER closes first\n",
+            "note": "The nested duplicate distinguishes source order from close order and checks that the losing definition survives."
+        },
+        {
+            "id": "footnote-call-label-bytes",
+            "input": "a[^n] b\n\na[\\^n] b\n\na[&#94;n] b\n\na[&#x5E;n] b\n\na[&#x5e;n] b\n\na[&Hat;n] b\n\n[^n]: note\n",
+            "note": "Only a literal source caret opens a call; decoded or escaped spellings remain ordinary text."
+        },
+        {
+            "id": "tasklist-checked-marker",
+            "input": "- [ ] call me [x] later\n",
+            "note": "The later literal `[x]` must not change the unchecked marker at the start of the item."
+        },
+        {
+            "id": "footnote-failed-call-interior",
+            "input": "|Tot.....[^_a_]|\n",
+            "note": "Emphasis inside an undefined call remains parsed."
+        },
+        {
+            "id": "footnote-failed-call-interior",
+            "input": "[^~~is~~1]\n",
+            "note": "Strikethrough inside an undefined call remains parsed."
+        },
+        {
+            "id": "table-split-lead-spelling",
+            "input": "pre \\\\| lead\n| a | b |\n| - | - |\n",
+            "note": "The non-table lead is parsed once, so an escaped backslash remains distinct from a pipe escape."
+        }
+    ],
+    "notDeltas": [],
+    "corpus": [
+        {
+            "file": "packages/markdown-core/tests/fixtures/spec.txt",
+            "profile": "gfm",
+            "selection": "gfm-extension-sections",
+            "note": "Only headings explicitly marked `(extension)` are in cmark-gfm's authority scope."
+        },
+        {
+            "file": "packages/markdown-core/tests/fixtures/regression.txt",
+            "profile": "gfm",
+            "selection": "tagged",
+            "note": "Only regressions tagged with one or more GFM extensions are selected."
+        },
+        {
+            "file": "packages/markdown-core/tests/fixtures/extensions.txt",
+            "profile": "gfm",
+            "note": "Repository-owned tests for table, strikethrough, autolink, task-list, and footnote extensions."
+        }
+    ],
+    "corpusNote": "This gate intentionally does not compare unextended CommonMark examples. Markdown Core runs the `gfm` profile, which attaches the cmark-gfm extension set but leaves product directive and formula syntax disabled. CommonMark is checked separately against current cmark.",
+    "pendingDeltas": [],
+    "pendingExpectedDivergences": []
+}

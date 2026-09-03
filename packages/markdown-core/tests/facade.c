@@ -41,16 +41,9 @@ static uint8_t *read_file(const char *path, size_t *length) {
 
 static int parse_option_mask(const char *mask, markdown_core_parse_options *options) {
     bool *fields[] = {
-        &options->smart_punctuation,
-        &options->footnotes,
-        &options->strip_html_comments,
-        &options->tables,
-        &options->strikethrough,
-        &options->autolinks,
-        &options->task_lists,
-        &options->formulas,
-        &options->directives
-    };
+        &options->smart_punctuation, &options->footnotes, &options->strip_html_comments, &options->tables,
+        &options->strikethrough,     &options->autolinks, &options->task_lists,          &options->formulas,
+        &options->directives};
     size_t i;
     if (strlen(mask) != sizeof(fields) / sizeof(fields[0])) {
         return 0;
@@ -99,40 +92,6 @@ static void check_fixture(const char *fixture_dir, const char *name, const char 
         failures++;
     }
     markdown_core_dump_free(actual);
-    actual = NULL;
-
-    /* THE SAME BYTES, STREAMED (T12): fed in 7-byte chunks through a session,
-     * the sealed document dumps onto the same reviewed golden. The chunk size
-     * is prime so line endings, UTF-8 sequences and construct boundaries all
-     * get split. */
-    {
-        markdown_core_session *session = markdown_core_session_new(&options, &error);
-        markdown_core_document *sealed = NULL;
-        size_t offset;
-        check(session != NULL && error == NULL, "the session opens under the manifest's options");
-        for (offset = 0; session && offset < markdown_length; offset += 7) {
-            size_t chunk = markdown_length - offset < 7 ? markdown_length - offset : 7;
-            markdown_core_document *streamed = markdown_core_session_feed(session, markdown + offset, chunk, &error);
-            check(streamed != NULL && error == NULL, "every feed returns the document after those bytes");
-            markdown_core_document_free(streamed);
-        }
-        if (session) {
-            sealed = markdown_core_session_finish(session, &error);
-            check(sealed != NULL && error == NULL, "the stream seals");
-        }
-        if (sealed) {
-            check(markdown_core_document_dump(sealed, &actual, &actual_length, &error), "sealed dump succeeds");
-            if (actual && (actual_length != expected_length || memcmp(actual, expected, expected_length) != 0)) {
-                fprintf(stderr, "FAILED: %s sealed stream differs from reviewed golden\n", name);
-                fwrite(actual, 1, actual_length, stderr);
-                failures++;
-            }
-            markdown_core_dump_free(actual);
-            actual = NULL;
-            markdown_core_document_free(sealed);
-        }
-        markdown_core_session_free(session);
-    }
     markdown_core_document_free(document);
 
 done:
@@ -250,9 +209,9 @@ static void check_null_and_empty(void) {
             check(false, "requirement 14 case parses");
             continue;
         }
-        node = markdown_core_node_children(markdown_core_document_semantic(document)).child;
+        node = markdown_core_node_get_first_child(markdown_core_document_root(document));
         if (CASES[index].kind != MARKDOWN_CORE_KIND_REFERENCE_DEFINITION) {
-            node = markdown_core_node_children(node).child;
+            node = markdown_core_node_get_first_child(node);
         }
         check(markdown_core_node_get_kind(node) == CASES[index].kind, "requirement 14 case has the expected kind");
         read = CASES[index].kind == MARKDOWN_CORE_KIND_LINK
@@ -263,30 +222,23 @@ static void check_null_and_empty(void) {
         check(read, "the resource accessor answers");
         /* A DESTINATION IS NEVER ABSENT. There is no `has_value` to test,
          * because the type does not offer one -- that IS the assertion. */
-        check(
-            destination.length == strlen(CASES[index].destination) &&
-                (destination.length == 0 ||
-                    memcmp(destination.data, CASES[index].destination, destination.length) == 0),
-            "a destination is required and empty means empty"
-        );
+        check(destination.length == strlen(CASES[index].destination) &&
+                  (destination.length == 0 ||
+                   memcmp(destination.data, CASES[index].destination, destination.length) == 0),
+              "a destination is required and empty means empty");
         check(title.has_value == CASES[index].title_written, "presence is what the source wrote, not what it wrote in");
         if (title.has_value) {
             check(
                 title.value.length == strlen(CASES[index].title) &&
                     (title.value.length == 0 || memcmp(title.value.data, CASES[index].title, title.value.length) == 0),
-                "a written title keeps its bytes, including none of them"
-            );
+                "a written title keeps its bytes, including none of them");
         }
         markdown_core_document_free(document);
     }
 
     for (index = 0; index < sizeof(INFO_CASES) / sizeof(INFO_CASES[0]); ++index) {
-        markdown_core_document *document = markdown_core_document_parse(
-            (const uint8_t *)INFO_CASES[index].source,
-            strlen(INFO_CASES[index].source),
-            NULL,
-            NULL
-        );
+        markdown_core_document *document = markdown_core_document_parse((const uint8_t *)INFO_CASES[index].source,
+                                                                        strlen(INFO_CASES[index].source), NULL, NULL);
         const markdown_core_node *node;
         markdown_core_optional_string info = {false, {NULL, 0}};
         markdown_core_optional_string language = {false, {NULL, 0}};
@@ -297,23 +249,87 @@ static void check_null_and_empty(void) {
             check(false, "requirement 14 info case parses");
             continue;
         }
-        node = markdown_core_node_children(markdown_core_document_semantic(document)).child;
-        check(
-            markdown_core_node_code_block_properties(node, &info, &language, &literal, &fenced, &closed),
-            "the code-block accessor answers"
-        );
-        check(
-            info.has_value == INFO_CASES[index].info_written,
-            "a fence with only whitespace after it wrote no info string"
-        );
+        node = markdown_core_node_get_first_child(markdown_core_document_root(document));
+        check(markdown_core_node_code_block_properties(node, &info, &language, &literal, &fenced, &closed),
+              "the code-block accessor answers");
+        check(info.has_value == INFO_CASES[index].info_written,
+              "a fence with only whitespace after it wrote no info string");
         check(language.has_value == info.has_value, "language is present exactly when the info string is");
         if (info.has_value) {
-            check(
-                info.value.length == strlen(INFO_CASES[index].info) &&
-                    memcmp(info.value.data, INFO_CASES[index].info, info.value.length) == 0,
-                "a written info string keeps its bytes"
-            );
+            check(info.value.length == strlen(INFO_CASES[index].info) &&
+                      memcmp(info.value.data, INFO_CASES[index].info, info.value.length) == 0,
+                  "a written info string keeps its bytes");
         }
+        markdown_core_document_free(document);
+    }
+}
+
+static void check_directive_label_projection(void) {
+    static const uint8_t inline_source[] = ":badge[label]\n";
+    static const uint8_t bare_source[] = ":badge\n";
+    static const uint8_t empty_source[] = ":badge[]\n";
+    static const uint8_t block_source[] = ":::note[Title]\nBody\n:::\n";
+    markdown_core_document *document;
+    const markdown_core_node *root;
+    const markdown_core_node *directive;
+    const markdown_core_node *label;
+    const markdown_core_node *label_child;
+    const markdown_core_node *content_child;
+
+    document = markdown_core_document_parse(inline_source, sizeof(inline_source) - 1, NULL, NULL);
+    check(document != NULL, "labelled inline directive parses");
+    if (document) {
+        root = markdown_core_document_root(document);
+        directive = markdown_core_node_get_first_child(markdown_core_node_get_first_child(root));
+        label = markdown_core_node_directive_label(directive);
+        label_child = markdown_core_node_get_first_child(label);
+        check(markdown_core_node_get_kind(label) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL &&
+                  markdown_core_node_get_kind(label_child) == MARKDOWN_CORE_KIND_TEXT &&
+                  markdown_core_node_child_count(label) == 1,
+              "directive label is an optional Markup-valued field");
+        check(markdown_core_node_get_first_child(directive) == NULL && markdown_core_node_child_count(directive) == 0 &&
+                  markdown_core_node_get_next_sibling(label) == NULL,
+              "an inline directive label is not directive content");
+        markdown_core_document_free(document);
+    }
+
+    document = markdown_core_document_parse(bare_source, sizeof(bare_source) - 1, NULL, NULL);
+    check(document != NULL, "bare inline directive parses");
+    if (document) {
+        root = markdown_core_document_root(document);
+        directive = markdown_core_node_get_first_child(markdown_core_node_get_first_child(root));
+        check(markdown_core_node_directive_label(directive) == NULL && markdown_core_node_child_count(directive) == 0,
+              "an absent directive label remains absent and is not content");
+        markdown_core_document_free(document);
+    }
+
+    document = markdown_core_document_parse(empty_source, sizeof(empty_source) - 1, NULL, NULL);
+    check(document != NULL, "empty-label directive parses");
+    if (document) {
+        root = markdown_core_document_root(document);
+        directive = markdown_core_node_get_first_child(markdown_core_node_get_first_child(root));
+        label = markdown_core_node_directive_label(directive);
+        check(markdown_core_node_get_kind(label) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL &&
+                  markdown_core_node_child_count(label) == 0,
+              "an empty label remains distinct from an absent label");
+        check(markdown_core_node_child_count(directive) == 0, "an empty directive label is not directive content");
+        markdown_core_document_free(document);
+    }
+
+    document = markdown_core_document_parse(block_source, sizeof(block_source) - 1, NULL, NULL);
+    check(document != NULL, "labelled block directive parses");
+    if (document) {
+        root = markdown_core_document_root(document);
+        directive = markdown_core_node_get_first_child(root);
+        label = markdown_core_node_directive_label(directive);
+        check(markdown_core_node_get_kind(label) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL &&
+                  markdown_core_node_child_count(label) == 1,
+              "block directive exposes its label through the field accessor");
+        content_child = markdown_core_node_get_first_child(directive);
+        check(markdown_core_node_get_kind(content_child) == MARKDOWN_CORE_KIND_PARAGRAPH,
+              "block directive children contain only block content");
+        check(markdown_core_node_get_next_sibling(label) == NULL && markdown_core_node_child_count(directive) == 1,
+              "block directive label is not a sibling of its content");
         markdown_core_document_free(document);
     }
 }
@@ -330,26 +346,21 @@ static void check_api(void) {
 
     memset(&options, 0, sizeof(options));
     markdown_core_parse_options_init(&options);
-    check(
-        options.smart_punctuation && options.footnotes && options.strip_html_comments && options.tables &&
-            options.strikethrough && options.autolinks && options.task_lists && options.formulas && options.directives,
-        "parse option defaults are explicit and complete"
-    );
+    check(options.smart_punctuation && options.footnotes && options.strip_html_comments && options.tables &&
+              options.strikethrough && options.autolinks && options.task_lists && options.formulas &&
+              options.directives,
+          "parse option defaults are explicit and complete");
 
     document = markdown_core_document_parse(source, sizeof(source) - 1, &options, &error);
     check(document != NULL && error == NULL, "typed-options parse succeeds");
     if (document) {
-        root = markdown_core_document_semantic(document);
-        heading = markdown_core_node_children(root).child;
+        root = markdown_core_document_root(document);
+        heading = markdown_core_node_get_first_child(root);
         check(markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT, "document root kind is typed");
-        check(
-            markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING,
-            "first child traversal is read-only and typed"
-        );
-        check(
-            markdown_core_node_heading_level(heading, &level) && level == 1,
-            "heading accessor returns its behavior-bearing field"
-        );
+        check(markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING,
+              "first child traversal is read-only and typed");
+        check(markdown_core_node_heading_level(heading, &level) && level == 1,
+              "heading accessor returns its behavior-bearing field");
         scope = markdown_core_node_scope(heading);
         check(scope.start.line == 1 && scope.start.column == 1, "scope copies native coordinates");
         markdown_core_document_free(document);
@@ -358,7 +369,7 @@ static void check_api(void) {
     document = markdown_core_document_parse(NULL, 1, NULL, &error);
     check(document == NULL && error != NULL, "invalid input produces an explicit error");
     check(markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "error exposes a stable code");
-    check(markdown_core_error_get_message(error).length != 0, "error exposes a UTF-8 diagnostic view");
+    check(markdown_core_error_get_message(error).length != 0, "error exposes a UTF-8 message");
     markdown_core_error_free(error);
     markdown_core_error_free(NULL);
     markdown_core_document_free(NULL);
@@ -374,142 +385,6 @@ static void check_api(void) {
     check_option_gate(GATE_STRIP_HTML_COMMENTS, "before <!-- kept --> after\n", "literal=\"before  after\"");
 }
 
-/* THE STREAM (T12), in the order the header states it: a mid-stream document
- * is the projection as it stands; it is a value that outlives every later
- * feed and the session itself (T19's borrow); the pending line's bytes join
- * only when their ending arrives; `finish` seals -- byte-identical to the
- * one-shot parse -- and ends the parse, after
- * which `feed` and `finish` refuse and only `free` remains. */
-static void check_session(void) {
-    static const char *const FULL = "# heading\n"
-                                    "\n"
-                                    "paragraph text\n"
-                                    "\n"
-                                    "- a\n"
-                                    "- b\n";
-    markdown_core_error *error = NULL;
-    markdown_core_session *session = markdown_core_session_new(NULL, &error);
-    markdown_core_document *first = NULL;
-    markdown_core_document *second = NULL;
-    markdown_core_document *sealed = NULL;
-    markdown_core_document *oneshot = NULL;
-    uint8_t *before = NULL;
-    uint8_t *after = NULL;
-    size_t before_length = 0;
-    size_t after_length = 0;
-    uint8_t *first_dump = NULL;
-    size_t first_dump_length = 0;
-
-    check(session != NULL && error == NULL, "a session opens on the defaults");
-    if (!session) {
-        return;
-    }
-
-    /* "paragraph" has no line ending yet: the heading is in this document,
-     * the pending prefix is not. */
-    first = markdown_core_session_feed(session, (const uint8_t *)"# heading\n\nparagraph", 20, &error);
-    check(first != NULL && error == NULL, "a feed returns the document after those bytes");
-    if (first) {
-        check(
-            markdown_core_document_dump(first, &first_dump, &first_dump_length, &error),
-            "the mid-stream dump succeeds"
-        );
-        check(
-            first_dump != NULL && strstr((const char *)first_dump, "Heading") != NULL &&
-                strstr((const char *)first_dump, "Paragraph") == NULL,
-            "a line whose ending has not arrived is not yet in the document"
-        );
-    }
-
-    second = markdown_core_session_feed(session, (const uint8_t *)" text\n\n- a\n- b\n", 15, &error);
-    check(second != NULL && error == NULL, "a later feed returns a later document");
-    if (first && first_dump) {
-        uint8_t *again = NULL;
-        size_t again_length = 0;
-        check(markdown_core_document_dump(first, &again, &again_length, &error), "the earlier document still dumps");
-        check(
-            again != NULL && again_length == first_dump_length && memcmp(again, first_dump, again_length) == 0,
-            "an earlier document is a value a later feed cannot move"
-        );
-        markdown_core_dump_free(again);
-    }
-    if (second) {
-        check(markdown_core_document_dump(second, &before, &before_length, &error), "the mid-stream dump succeeds");
-    }
-
-    check(
-        markdown_core_session_feed(session, NULL, 4, &error) == NULL && error != NULL &&
-            markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-        "a null chunk with bytes is refused"
-    );
-    markdown_core_error_free(error);
-    error = NULL;
-
-    {
-        markdown_core_document *unmoved = markdown_core_session_feed(session, NULL, 0, &error);
-        check(unmoved != NULL && error == NULL, "a zero-length feed is legal and answers");
-        markdown_core_document_free(unmoved);
-    }
-
-    sealed = markdown_core_session_finish(session, &error);
-    check(sealed != NULL && error == NULL, "the stream seals");
-    check(
-        markdown_core_session_feed(session, (const uint8_t *)"x", 1, &error) == NULL && error != NULL &&
-            markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-        "a feed after the seal is refused"
-    );
-    markdown_core_error_free(error);
-    error = NULL;
-    check(
-        markdown_core_session_finish(session, &error) == NULL && error != NULL &&
-            markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-        "a second seal is refused"
-    );
-    markdown_core_error_free(error);
-    error = NULL;
-
-    /* The sealed stream and the one-shot parse are the same document. */
-    oneshot = markdown_core_document_parse((const uint8_t *)FULL, strlen(FULL), NULL, &error);
-    check(oneshot != NULL, "the control parses");
-    if (sealed && oneshot) {
-        uint8_t *sealed_dump = NULL;
-        uint8_t *oneshot_dump = NULL;
-        size_t sealed_length = 0;
-        size_t oneshot_length = 0;
-        check(
-            markdown_core_document_dump(sealed, &sealed_dump, &sealed_length, &error) &&
-                markdown_core_document_dump(oneshot, &oneshot_dump, &oneshot_length, &error),
-            "both dumps succeed"
-        );
-        check(
-            sealed_dump && oneshot_dump && sealed_length == oneshot_length &&
-                memcmp(sealed_dump, oneshot_dump, sealed_length) == 0,
-            "the sealed stream is the one-shot parse"
-        );
-        markdown_core_dump_free(sealed_dump);
-        markdown_core_dump_free(oneshot_dump);
-    }
-
-    /* T19's borrow, seen from the surface: the session is gone and the
-     * mid-stream document still dumps the same bytes. */
-    markdown_core_session_free(session);
-    if (second && before) {
-        check(markdown_core_document_dump(second, &after, &after_length, &error), "the survivor still dumps");
-        check(
-            after && after_length == before_length && memcmp(after, before, before_length) == 0,
-            "a document outlives the session that fed it"
-        );
-    }
-    markdown_core_dump_free(before);
-    markdown_core_dump_free(after);
-    markdown_core_dump_free(first_dump);
-    markdown_core_document_free(first);
-    markdown_core_document_free(second);
-    markdown_core_document_free(sealed);
-    markdown_core_document_free(oneshot);
-    markdown_core_session_free(NULL);
-}
-
 int main(int argc, char **argv) {
     const char *fixture_dir;
     int i;
@@ -520,7 +395,7 @@ int main(int argc, char **argv) {
     fixture_dir = argv[2];
     check_api();
     check_null_and_empty();
-    check_session();
+    check_directive_label_projection();
     for (i = 3; i < argc; i += 2) {
         check_fixture(fixture_dir, argv[i], argv[i + 1]);
     }

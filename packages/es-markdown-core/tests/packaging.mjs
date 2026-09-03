@@ -62,12 +62,11 @@ try {
                 "--eval",
                 [
                     "import * as api from '@nouprax/es-markdown-core';",
-                    "const d = new api.Document('# npm consumer').seal();",
-                    "if (d.semantic.content[0].kind !== 'heading') process.exit(2);",
+                    "const d = api.Document.parse('# npm consumer');",
+                    "if (d.content[0].kind !== 'heading') process.exit(2);",
                     "if ('memory' in api || 'initialize' in api) process.exit(3);",
-                    "if (d.dump() !== api.TreeDumper.dump(d.semantic)) process.exit(4);",
-                    "if ('concrete' in d) process.exit(5);",
-                    "if (new api.Document('a\\n\\nb\\n').seal().semantic.content.length !== 2) process.exit(6);"
+                    "if (d.dump() !== api.TreeDumper.dump(d)) process.exit(4);",
+                    "if ('concrete' in d || 'Concrete' in api) process.exit(5);"
                 ].join("\n")
             ],
             { cwd: temporary, encoding: "utf8" }

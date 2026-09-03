@@ -13,8 +13,8 @@ false: `specs/canonical-ast.md` still claims that link reference definitions
 neither leaves a node behind", which the reconstruction contradicts directly.
 
 The rule is deliberately blunt, because a half-true document is worse than an
-archived one. Read the live specs under [`../specs/`](../specs/) instead; where
-they and an archived document disagree, the live spec is right.
+archived one. Read [`../RECONSTRUCTION.md`](../RECONSTRUCTION.md) instead; where
+the two disagree, that one is right.
 
 A document returns to `docs/` by a commit that names the step which made it true
 again.

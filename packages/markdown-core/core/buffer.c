@@ -84,6 +84,8 @@ void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size)
     buf->asize = new_size;
 }
 
+bufsize_t markdown_core_strbuf_len(const markdown_core_strbuf *buf) { return buf->size; }
+
 void markdown_core_strbuf_free(markdown_core_strbuf *buf) {
     if (!buf) {
         return;
@@ -161,6 +163,34 @@ void markdown_core_strbuf_puts(markdown_core_strbuf *buf, const char *string) {
     markdown_core_strbuf_put(buf, (const unsigned char *)string, (bufsize_t)strlen(string));
 }
 
+void markdown_core_strbuf_copy_cstr(char *data, bufsize_t datasize, const markdown_core_strbuf *buf) {
+    bufsize_t copylen;
+
+    assert(buf);
+    if (!data || datasize <= 0) {
+        return;
+    }
+
+    data[0] = '\0';
+
+    if (buf->size == 0 || buf->asize <= 0) {
+        return;
+    }
+
+    copylen = buf->size;
+    if (copylen > datasize - 1) {
+        copylen = datasize - 1;
+    }
+    memmove(data, buf->ptr, copylen);
+    data[copylen] = '\0';
+}
+
+void markdown_core_strbuf_swap(markdown_core_strbuf *buf_a, markdown_core_strbuf *buf_b) {
+    markdown_core_strbuf t = *buf_a;
+    *buf_a = *buf_b;
+    *buf_b = t;
+}
+
 unsigned char *markdown_core_strbuf_detach(markdown_core_strbuf *buf) {
     unsigned char *data = buf->ptr;
 
@@ -178,6 +208,45 @@ unsigned char *markdown_core_strbuf_detach(markdown_core_strbuf *buf) {
 
     markdown_core_strbuf_init(buf->mem, buf, 0);
     return data;
+}
+
+int markdown_core_strbuf_cmp(const markdown_core_strbuf *a, const markdown_core_strbuf *b) {
+    int result = memcmp(a->ptr, b->ptr, MIN(a->size, b->size));
+    return (result != 0) ? result : (a->size < b->size) ? -1 : (a->size > b->size) ? 1 : 0;
+}
+
+bufsize_t markdown_core_strbuf_strchr(const markdown_core_strbuf *buf, int c, bufsize_t pos) {
+    if (pos >= buf->size) {
+        return -1;
+    }
+    if (pos < 0) {
+        pos = 0;
+    }
+
+    const unsigned char *p = (unsigned char *)memchr(buf->ptr + pos, c, buf->size - pos);
+    if (!p) {
+        return -1;
+    }
+
+    return (bufsize_t)(p - (const unsigned char *)buf->ptr);
+}
+
+bufsize_t markdown_core_strbuf_strrchr(const markdown_core_strbuf *buf, int c, bufsize_t pos) {
+    if (pos < 0 || buf->size == 0) {
+        return -1;
+    }
+    if (pos >= buf->size) {
+        pos = buf->size - 1;
+    }
+
+    bufsize_t i;
+    for (i = pos; i >= 0; i--) {
+        if (buf->ptr[i] == (unsigned char)c) {
+            return i;
+        }
+    }
+
+    return -1;
 }
 
 void markdown_core_strbuf_truncate(markdown_core_strbuf *buf, bufsize_t len) {
@@ -205,7 +274,7 @@ void markdown_core_strbuf_drop(markdown_core_strbuf *buf, bufsize_t n) {
     }
 }
 
-static void markdown_core_strbuf_rtrim(markdown_core_strbuf *buf) {
+void markdown_core_strbuf_rtrim(markdown_core_strbuf *buf) {
     if (!buf->size) {
         return;
     }
@@ -271,54 +340,4 @@ extern void markdown_core_strbuf_unescape(markdown_core_strbuf *buf) {
     }
 
     markdown_core_strbuf_truncate(buf, w);
-}
-
-/* The frozen buffer (#153); the contract lives at the declaration. Freeze
- * reuses the strbuf's allocation -- the header wraps the detached bytes, so
- * freezing is O(1) and copies nothing. */
-markdown_core_buf *markdown_core_buf_freeze(markdown_core_strbuf *buf) {
-    markdown_core_mem *mem = buf->mem;
-    unsigned char *bytes;
-    bufsize_t size = buf->size;
-    markdown_core_buf *frozen;
-
-    bytes = markdown_core_strbuf_detach(buf);
-    if (!bytes) {
-        return NULL;
-    }
-    frozen = (markdown_core_buf *)mem->calloc(1, sizeof(*frozen));
-    if (!frozen) {
-        mem->free(bytes);
-        return NULL;
-    }
-    frozen->mem = mem;
-    frozen->bytes = bytes;
-    frozen->size = size;
-    markdown_core_atomic_init(&frozen->refs, 1);
-    return frozen;
-}
-
-markdown_core_buf *markdown_core_buf_adopt(markdown_core_mem *mem, unsigned char *bytes, bufsize_t size) {
-    markdown_core_buf *frozen = (markdown_core_buf *)mem->calloc(1, sizeof(*frozen));
-    if (!frozen) {
-        return NULL;
-    }
-    frozen->mem = mem;
-    frozen->bytes = bytes;
-    frozen->size = size;
-    markdown_core_atomic_init(&frozen->refs, 1);
-    return frozen;
-}
-
-void markdown_core_buf_retain(markdown_core_buf *buf) {
-    if (buf) {
-        markdown_core_atomic_increment(&buf->refs);
-    }
-}
-
-void markdown_core_buf_release(markdown_core_buf *buf) {
-    if (buf && markdown_core_atomic_decrement(&buf->refs) == 0) {
-        buf->mem->free(buf->bytes);
-        buf->mem->free(buf);
-    }
 }

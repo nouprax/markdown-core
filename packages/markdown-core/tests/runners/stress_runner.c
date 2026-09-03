@@ -11,12 +11,8 @@ static int parse_and_release(const uint8_t *source, size_t length) {
     markdown_core_document *document = markdown_core_document_parse(source, length, NULL, &error);
     if (!document) {
         markdown_core_string message = markdown_core_error_get_message(error);
-        fprintf(
-            stderr,
-            "stress parse failed: %.*s\n",
-            (int)message.length,
-            message.data ? (const char *)message.data : "unknown"
-        );
+        fprintf(stderr, "stress parse failed: %.*s\n", (int)message.length,
+                message.data ? (const char *)message.data : "unknown");
         markdown_core_error_free(error);
         return 1;
     }
@@ -44,7 +40,7 @@ static int large_document(void) {
 }
 
 static int deep_nesting(void) {
-    const size_t depth = 2048;
+    const size_t depth = 10000;
     uint8_t *source = (uint8_t *)malloc(depth * 2 + 6);
     size_t index;
     int result;

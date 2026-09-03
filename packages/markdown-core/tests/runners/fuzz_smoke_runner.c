@@ -1,6 +1,6 @@
 /* Deterministic fuzz smoke suite.
  *
- * Feeds fixed corpora and seeded pseudo-random byte streams through the
+ * Runs fixed corpora and seeded pseudo-random byte sequences through the
  * read-only facade: parse, traverse every node and accessor, dump twice
  * (checking dump determinism), and free.  No renderer is involved and no
  * network or random device is read; the same inputs are generated on every
@@ -41,13 +41,9 @@ static int traverse(const markdown_core_node *node) {
     (void)markdown_core_node_heading_level(node, &level);
     (void)markdown_core_node_list_item_checked(node, &checked);
     (void)markdown_core_node_table_row_is_header(node, &flag);
-    {
-        markdown_core_children cursor;
-        for (cursor = markdown_core_node_children(node); (child = cursor.child) != NULL;
-            cursor = markdown_core_children_next(cursor)) {
-            if (traverse(child) != 0) {
-                return -1;
-            }
+    for (child = markdown_core_node_get_first_child(node); child; child = markdown_core_node_get_next_sibling(child)) {
+        if (traverse(child) != 0) {
+            return -1;
         }
     }
     return 0;
@@ -70,7 +66,7 @@ static int smoke(const uint8_t *bytes, size_t length, const char *label) {
             return -1;
         }
         if (markdown_core_error_get_message(error).length == 0) {
-            fprintf(stderr, "%s: parse error carries no diagnostic\n", label);
+            fprintf(stderr, "%s: parse error carries no message\n", label);
             markdown_core_error_free(error);
             return -1;
         }
@@ -78,7 +74,7 @@ static int smoke(const uint8_t *bytes, size_t length, const char *label) {
         return 0;
     }
 
-    if (traverse(markdown_core_document_semantic(document)) != 0) {
+    if (traverse(markdown_core_document_root(document)) != 0) {
         fprintf(stderr, "%s: traversal produced an invalid scope\n", label);
         goto done;
     }

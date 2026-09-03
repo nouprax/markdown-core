@@ -11,7 +11,7 @@
  * because the release CLI never reclaims what text consolidation frees.
  *
  * There is no way to see this from output. `markdown_core_consolidate_text_nodes`
- * runs inside `markdown_core_parser_finish`, before any consumer sees the tree,
+ * runs while the one-shot parse transaction closes, before any consumer sees the tree,
  * and merges the split run back carrying `end_column` forward — measured over
  * an exhaustive 37,448-case differential with zero differences. So this audit
  * reads the source, which is the only place the fact exists.
@@ -35,7 +35,7 @@
  *                                        `scan_delims` without owning it is D1
  *
  * AND THE AUDIT MUST SEE SOMETHING. The declaration used to be a run of
- * `markdown_core_llist_append` calls; when 3.2 replaced it with one
+ * generic linked-list append calls; when 3.2 replaced them with one
  * `set_byte_sets` call this reader matched nothing, skipped all four
  * extensions, printed no report and exited 0. A source-scanning audit with no
  * saw-nothing assertion is one refactor away from being a gate that cannot
@@ -54,7 +54,7 @@ const extensionsDir = path.join(root, "packages/markdown-core/extensions");
 // The one declaration: three designated initialisers in one `static const`
 // descriptor. Before 3.4 it was one `set_byte_sets` call in a `create_*`
 // function; before 3.2 it was a run of `llist_append`s.
-const DESCRIPTOR = /const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_\w+ = \{([\s\S]*?)\n\};/;
+const DESCRIPTOR = /const markdown_core_extension MARKDOWN_CORE_EXTENSION_\w+ = \{([\s\S]*?)\n\};/;
 const FIELD = (name) => new RegExp(`\\.${name}\\s*=\\s*("(?:\\\\.|[^"])*")`);
 const HOOK = /\.match_inline\s*=\s*(\w+)/;
 

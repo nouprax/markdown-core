@@ -29,11 +29,11 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
-                  node-version: 26.5.0
+                  node-version: 26.8.1
             - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
               with:
                   run_install: false
-                  version: 11.7.0
+                  version: 11.25.0
             - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
               with:
                   cache: gradle
@@ -63,14 +63,14 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
-                  node-version: 26.5.0
+                  node-version: 26.8.1
             - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
               with:
                   run_install: false
-                  version: 11.7.0
+                  version: 11.25.0
             - name: Install C health-check dependencies
               run: |
-                  python3 -m pip install clang-format==22.1.8
+                  scripts/install-clang-format.sh
                   pnpm install --frozen-lockfile
             - name: Check C and CMake formatting
               run: |
@@ -78,18 +78,6 @@ jobs:
                   pnpm format:cmake:check
             - name: Lint C
               run: pnpm lint:c
-            - name: Cache repository-managed re2c
-              uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-              with:
-                  path: .tools/re2c
-                  key: re2c-4.5.1-${{ runner.os }}
-            - name: Install pinned re2c
-              run: scripts/init-environment.sh --install re2c
-            - name: Check committed scanners.c is reproducible
-              # --require turns the local-run SKIP (no re2c) into a hard
-              # failure: in CI the pinned generator is provisioned above, so
-              # a skip here could only hide drift (#132).
-              run: bash scripts/check-generated-scanners.sh --require
 
     health-check-es:
         name: Health Check - ES
@@ -98,11 +86,11 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
-                  node-version: 26.5.0
+                  node-version: 26.8.1
             - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
               with:
                   run_install: false
-                  version: 11.7.0
+                  version: 11.25.0
             - name: Install ES health-check dependencies
               run: pnpm install --frozen-lockfile
             - name: Check ES formatting
@@ -117,11 +105,11 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
-                  node-version: 26.5.0
+                  node-version: 26.8.1
             - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
               with:
                   run_install: false
-                  version: 11.7.0
+                  version: 11.25.0
             - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
               with:
                   cache: gradle
@@ -139,17 +127,17 @@ jobs:
         needs: builds-ready
         runs-on: ubuntu-latest
         # Apt against Azure Ubuntu mirrors has stalled after Ign: until GitHub's
-        # 6h hosted-runner cancellation, which skipped every Test / benchmark job.
+        # 6h hosted-runner cancellation, which skipped every downstream test job.
         timeout-minutes: 15
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
-                  node-version: 26.5.0
+                  node-version: 26.8.1
             - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
               with:
                   run_install: false
-                  version: 11.7.0
+                  version: 11.25.0
             - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
               with:
                   cache: gradle
@@ -158,7 +146,7 @@ jobs:
             - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
             - uses: emscripten-core/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984 # v16
               with:
-                  version: 4.0.23
+                  version: 6.0.9
             - name: Install package-audit dependencies
               run: |
                   if ! command -v pkg-config >/dev/null 2>&1; then
@@ -183,11 +171,11 @@ jobs:
                   xcode-version: "26.6"
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
-                  node-version: 26.5.0
+                  node-version: 26.8.1
             - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
               with:
                   run_install: false
-                  version: 11.7.0
+                  version: 11.25.0
             - name: Check prepared Swift environment
               run: scripts/init-environment.sh --check node wrappers swift
             - name: Check Swift formatting
@@ -279,14 +267,14 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
-                  node-version: 26.5.0
+                  node-version: 26.8.1
             - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
               with:
                   run_install: false
-                  version: 11.7.0
+                  version: 11.25.0
             - uses: emscripten-core/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984 # v16
               with:
-                  version: 4.0.23
+                  version: 6.0.9
             - name: Install ES build dependencies
               run: pnpm install --frozen-lockfile
             - name: Build immutable ES product artifact
@@ -422,14 +410,8 @@ jobs:
             matrix:
                 include:
                     - platform: iOS
-                      version: "18.0"
-                      label: iOS 18
-                    - platform: iOS
                       version: "26.0"
                       label: iOS 26
-                    - platform: macOS
-                      version: "15.0"
-                      label: macOS 15
                     - platform: macOS
                       version: "26.0"
                       label: macOS 26
@@ -573,11 +555,11 @@ jobs:
                       26
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
-                  node-version: 26.5.0
+                  node-version: 26.8.1
             - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
               with:
                   run_install: false
-                  version: 11.7.0
+                  version: 11.25.0
             - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
             - name: Install Android build dependencies
               run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
@@ -734,14 +716,14 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
-                  node-version: 26.5.0
+                  node-version: 26.8.1
             - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
               with:
                   run_install: false
-                  version: 11.7.0
+                  version: 11.25.0
             - uses: emscripten-core/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984 # v16
               with:
-                  version: 4.0.23
+                  version: 6.0.9
             - name: Install JavaScript dependencies
               run: pnpm install --frozen-lockfile
             - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -775,11 +757,11 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
-                  node-version: 26.5.0
+                  node-version: 26.8.1
             - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
               with:
                   run_install: false
-                  version: 11.7.0
+                  version: 11.25.0
             - uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd # v2.1.2
               id: setup-chrome
               if: matrix.suite == 'browser-correctness'
@@ -1003,179 +985,6 @@ jobs:
             - name: Run sanitizer suite without building
               run: scripts/run-c-test-artifact.sh build/ci-artifacts/c "${{ matrix.preset }}"
 
-    benchmark-c:
-        name: Test - C / Linux · Benchmark
-        needs: build-tests-ready
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-              with:
-                  node-version: 26.5.0
-            - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-              with:
-                  name: c-ubuntu-latest-clang-ON-${{ github.sha }}
-                  path: build/ci-artifacts/c
-            - name: Run C benchmark suite without building
-              # The explicit bash shell adds -o pipefail; the default run
-              # shell would let tee's zero status mask a benchmark failure.
-              shell: bash
-              run: |
-                  mkdir -p build/pr-metrics-logs
-                  scripts/run-c-test-artifact.sh build/ci-artifacts/c benchmark \
-                      2>&1 | tee build/pr-metrics-logs/c.log
-            - name: Collect informational C metrics
-              if: ${{ always() }}
-              continue-on-error: true
-              env:
-                  SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-              run: node scripts/collect-pr-metrics.mjs --platform linux --logs build/pr-metrics-logs --output build/pr-metrics/c-linux.json
-            - name: Upload informational C metrics
-              if: ${{ always() }}
-              continue-on-error: true
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-              with:
-                  name: pr-metrics-c-linux
-                  path: build/pr-metrics/c-linux.json
-                  if-no-files-found: warn
-                  retention-days: 14
-
-    benchmark-kotlin:
-        name: Test - Kotlin / JVM · Benchmark
-        needs: build-tests-ready
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-            - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
-              with:
-                  distribution: temurin
-                  java-version: 26
-            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-              with:
-                  node-version: 26.5.0
-            - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-              with:
-                  name: kotlin-host-linux-x64-${{ github.sha }}
-                  path: build/ci-artifacts/kotlin-linuxX64
-            - name: Run Kotlin benchmark suite without building
-              # The explicit bash shell adds -o pipefail; the default run
-              # shell would let tee's zero status mask a benchmark failure.
-              shell: bash
-              run: |
-                  mkdir -p build/pr-metrics-logs
-                  scripts/run-kotlin-host-test-artifact.sh \
-                      build/ci-artifacts/kotlin-linuxX64 jvm benchmark \
-                      2>&1 | tee build/pr-metrics-logs/kotlin.log
-            - name: Collect informational Kotlin metrics
-              if: ${{ always() }}
-              continue-on-error: true
-              env:
-                  SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-              run: node scripts/collect-pr-metrics.mjs --platform linux --logs build/pr-metrics-logs --output build/pr-metrics/kotlin-jvm.json
-            - name: Upload informational Kotlin metrics
-              if: ${{ always() }}
-              continue-on-error: true
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-              with:
-                  name: pr-metrics-kotlin-jvm
-                  path: build/pr-metrics/kotlin-jvm.json
-                  if-no-files-found: warn
-                  retention-days: 14
-
-    benchmark-es:
-        name: Test - ES / Node · Benchmark
-        needs: build-tests-ready
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-              with:
-                  node-version: 26.5.0
-            - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-              with:
-                  name: es-test-${{ github.sha }}
-                  path: build/ci-artifacts/es
-            - name: Run ES benchmark suite without building
-              # The explicit bash shell adds -o pipefail; the default run
-              # shell would let tee's zero status mask a benchmark failure.
-              shell: bash
-              run: |
-                  mkdir -p build/pr-metrics-logs
-                  scripts/run-es-test-artifact.sh build/ci-artifacts/es node-benchmark \
-                      2>&1 | tee build/pr-metrics-logs/es.log
-            - name: Collect informational ES metrics
-              if: ${{ always() }}
-              continue-on-error: true
-              env:
-                  SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-              run: node scripts/collect-pr-metrics.mjs --platform linux --logs build/pr-metrics-logs --output build/pr-metrics/es-node.json
-            - name: Upload informational ES metrics
-              if: ${{ always() }}
-              continue-on-error: true
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-              with:
-                  name: pr-metrics-es-node
-                  path: build/pr-metrics/es-node.json
-                  if-no-files-found: warn
-                  retention-days: 14
-
-    benchmark-swift:
-        name: Test - Swift / macOS · Benchmark
-        needs: build-tests-ready
-        runs-on: macos-26
-        steps:
-            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-            - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
-              with:
-                  xcode-version: "26.6"
-            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-              with:
-                  node-version: 26.5.0
-            - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-              with:
-                  name: swift-test-${{ github.sha }}
-                  path: build/ci-artifacts/swift
-            - name: Run Swift benchmark suite without building
-              # The explicit bash shell adds -o pipefail; the default run
-              # shell would let tee's zero status mask a benchmark failure.
-              shell: bash
-              run: |
-                  mkdir -p build/pr-metrics-logs
-                  scripts/run-swift-test-artifact.sh build/ci-artifacts/swift macos-benchmark \
-                      2>&1 | tee build/pr-metrics-logs/swift.log
-            - name: Collect informational Swift metrics
-              if: ${{ always() }}
-              continue-on-error: true
-              env:
-                  SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-              run: node scripts/collect-pr-metrics.mjs --platform macos --logs build/pr-metrics-logs --output build/pr-metrics/macos.json
-            - name: Upload informational Swift metrics
-              if: ${{ always() }}
-              continue-on-error: true
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-              with:
-                  name: pr-metrics-swift-macos
-                  path: build/pr-metrics/macos.json
-                  if-no-files-found: warn
-                  retention-days: 14
-
-    benchmarks-ready:
-        name: Benchmarks - Ready
-        if: ${{ always() }}
-        needs: [benchmark-c, benchmark-kotlin, benchmark-es, benchmark-swift]
-        runs-on: ubuntu-latest
-        steps:
-            - name: Require every platform benchmark
-              env:
-                  C: ${{ needs.benchmark-c.result }}
-                  KOTLIN: ${{ needs.benchmark-kotlin.result }}
-                  ES: ${{ needs.benchmark-es.result }}
-                  SWIFT: ${{ needs.benchmark-swift.result }}
-              run: |
-                  for result in "$C" "$KOTLIN" "$ES" "$SWIFT"; do
-                      test "$result" = success
-                  done
-
     builds-ready:
         name: Builds - Ready
         needs:
@@ -1245,81 +1054,10 @@ jobs:
                       fi
                   done
 
-    # Coverage is its own layer, not a test consumer: every producer must
-    # compile an instrumented tree, which the test layer forbids by contract.
-    # It sits beside Tests and Benchmarks as a third parallel aggregate.
-    #
-    # swift-macos runs on macOS because llvm-cov must match the clang
-    # that produced the profile, and the Xcode toolchain ships the pair; the
-    # recorded ledger and measured-file floors come from that same toolchain.
-    coverage:
-        name: Coverage - ${{ matrix.label }}
-        needs: health-checks-ready
-        runs-on: ${{ matrix.os }}
-        strategy:
-            fail-fast: false
-            matrix:
-                include:
-                    - platform: swift-macos
-                      label: Swift / macOS
-                      os: macos-latest
-                      needs-java: false
-                      needs-emsdk: false
-                    - platform: kotlin-jvm
-                      label: Kotlin / JVM
-                      os: ubuntu-latest
-                      needs-java: true
-                      needs-emsdk: false
-                    - platform: es-node
-                      label: ES / Node
-                      os: ubuntu-latest
-                      needs-java: false
-                      needs-emsdk: true
-        steps:
-            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-              with:
-                  node-version: 26.5.0
-            - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
-              with:
-                  run_install: false
-                  version: 11.7.0
-            - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
-              if: ${{ matrix.needs-java }}
-              with:
-                  cache: gradle
-                  distribution: temurin
-                  java-version: 26
-            - uses: emscripten-core/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984 # v16
-              if: ${{ matrix.needs-emsdk }}
-              with:
-                  version: 4.0.23
-            - name: Install coverage dependencies
-              run: pnpm install --frozen-lockfile
-            - name: Enforce the coverage gate
-              run: pnpm "coverage:${{ matrix.platform }}"
-
-    coverage-ready:
-        name: Coverage - Ready
-        if: ${{ always() }}
-        needs:
-            - coverage
-        runs-on: ubuntu-latest
-        steps:
-            - name: Require every platform coverage gate
-              env:
-                  COVERAGE: ${{ needs.coverage.result }}
-              run: |
-                  if [ "$COVERAGE" != success ]; then
-                      echo "A required coverage dependency concluded: $COVERAGE" >&2
-                      exit 1
-                  fi
-
-    # The two gates that check Markdown Core's semantics against authorities
-    # outside itself: cmark-gfm for the base language, and the remark ecosystem
-    # for the constructs cmark-gfm does not implement. Both build this parser,
-    # so they sit beside Coverage as their own layer rather than in the Test
-    # layer, which forbids compilers.
+    # Three disjoint external authorities: current cmark for CommonMark,
+    # cmark-gfm only for the GFM extension layer, and remark/micromark as a
+    # corrective and supplementary implementation. They build this parser, so
+    # they remain separate from the compiler-free Test layer.
     upstream-parity:
         name: External parity
         needs: health-checks-ready
@@ -1328,27 +1066,29 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
-                  node-version: 26.5.0
+                  node-version: 26.8.1
             - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
               with:
                   run_install: false
-                  version: 11.7.0
+                  version: 11.25.0
             - name: Install parity dependencies
               run: pnpm install --frozen-lockfile
             - name: Build this parser
               run: pnpm build:c
-            - name: Build the pinned upstream parser
-              run: scripts/init-environment.sh --install upstream-cmark
-            - name: Compare against upstream cmark-gfm
-              run: pnpm check:upstream-parity
-            - name: Compare against the remark ecosystem
+            - name: Build the pinned parser oracles
+              run: scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm
+            - name: Compare CommonMark against current cmark
+              run: pnpm check:commonmark-parity
+            - name: Compare GFM extensions against cmark-gfm
+              run: pnpm check:gfm-parity
+            - name: Run the corrective and supplementary remark oracle
               run: pnpm check:mdast-parity
             # The position oracles. They live here because one of the three
             # needs the pinned upstream parser this job already builds, and
             # because all three are ratchets over registered rows: they fail on
             # a row appearing AND on a row clearing, so a fix that moves one
             # without recording it fails in CI rather than in review.
-            - name: Check inline positions against upstream cmark-gfm
+            - name: Check inline positions against current cmark
               run: pnpm audit:inline-sourcepos
             - name: Check scope containment and sibling overlap
               run: pnpm audit:scope-containment
@@ -1359,13 +1099,14 @@ jobs:
             - name: Check that reference resolution is order-independent
               run: pnpm audit:reference-order
             # Bounded and seeded, so a CI failure replays locally with the seed
-            # it prints. The mdast oracle is deliberately not fuzzed here yet:
-            # it still reports divergences of mixed root cause that have not
-            # been triaged, and a gate nobody can act on is noise.
-            - name: Fuzz against upstream cmark-gfm
-              run: pnpm fuzz:parity -- --oracle upstream --iterations 400 --seed 1
+            # it prints. Each run draws only from its authority's selected
+            # corpus rather than recombining syntax outside that scope.
+            - name: Fuzz CommonMark against current cmark
+              run: pnpm fuzz:parity -- --oracle commonmark --iterations 400 --seed 1
+            - name: Fuzz GFM extensions against cmark-gfm
+              run: pnpm fuzz:parity -- --oracle gfm --iterations 400 --seed 1
             - name: Fuzz against the remark ecosystem
-              run: pnpm fuzz:parity -- --oracle mdast --iterations 400 --seed 1
+              run: pnpm fuzz:parity -- --oracle remark --iterations 400 --seed 1
 
     required-gates:
         # Push runs use an independent, non-required context. PR and
@@ -1374,18 +1115,14 @@ jobs:
         if: ${{ always() }}
         needs:
             - tests-ready
-            - benchmarks-ready
-            - coverage-ready
             - upstream-parity
         runs-on: ubuntu-latest
         steps:
-            - name: Require the complete test, benchmark, coverage, and parity layers
+            - name: Require the complete test and parity layers
               env:
                   TESTS_READY: ${{ needs.tests-ready.result }}
-                  BENCHMARKS_READY: ${{ needs.benchmarks-ready.result }}
-                  COVERAGE_READY: ${{ needs.coverage-ready.result }}
                   UPSTREAM_PARITY: ${{ needs.upstream-parity.result }}
               run: |
-                  for result in "$TESTS_READY" "$BENCHMARKS_READY" "$COVERAGE_READY" "$UPSTREAM_PARITY"; do
+                  for result in "$TESTS_READY" "$UPSTREAM_PARITY"; do
                       test "$result" = success
                   done

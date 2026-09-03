@@ -11,24 +11,16 @@ markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_cor
 markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_core_chunk *title, int *lost);
 
 MARKDOWN_CORE_EXPORT
-void markdown_core_parse_inlines(
-    markdown_core_parser *parser,
-    markdown_core_node *parent,
-    markdown_core_map *refmap,
-    int options
-);
+void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap,
+                                 int options);
 
 /* Reads ONE link reference definition off the front of `input`, registers it in
  * `refmap`, and returns the number of bytes it consumed -- 0 if the front of
  * `input` is not a definition. `parts`, when non-NULL, is filled with the three
  * chunks AS WRITTEN, so the caller can build the node that owns those bytes
  * without parsing the line a second time. */
-bufsize_t markdown_core_parse_reference_inline(
-    markdown_core_mem *mem,
-    markdown_core_chunk *input,
-    markdown_core_map *refmap,
-    markdown_core_reference_parts *parts
-);
+bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
+                                               markdown_core_map *refmap, markdown_core_reference_parts *parts);
 
 /* The special-character tables live in the parser (parser-local, never
  * process-global); reset installs the core defaults. */

@@ -6,14 +6,17 @@ cd "$root"
 
 ci=.github/workflows/ci.yml
 codeql=.github/workflows/codeql.yml
-comment=.github/workflows/pr-metrics-comment.yml
 release=.github/workflows/release.yml
 release_dry_run=.github/workflows/release-dry-run.yml
+pr_benchmark=.github/workflows/pr-benchmark.yml
+pr_benchmark_comment=.github/workflows/pr-benchmark-comment.yml
 ruleset=.github/rulesets/main.json
 owner_review_ruleset=.github/rulesets/owner-review.json
 release_ruleset=.github/rulesets/release-tags.json
 release_environment=.github/environments/release.json
 release_environment_policy=.github/environments/release-tag-policy.json
+
+scripts/audit-toolchain-versions.sh
 
 if command -v rg >/dev/null 2>&1; then
     search() {
@@ -58,10 +61,12 @@ fi
 for required in \
     "$ci" \
     "$codeql" \
-    "$comment" \
     "$release" \
     "$release_dry_run" \
+    "$pr_benchmark" \
+    "$pr_benchmark_comment" \
     "$ruleset" \
+    "$owner_review_ruleset" \
     "$release_ruleset" \
     "$release_environment" \
     "$release_environment_policy"; do
@@ -71,6 +76,85 @@ for required in \
     fi
 done
 
+# Retire the old cross-runtime metrics pipeline. The replacement is a single C
+# parser workload in an independent workflow; it is informational, exact-base
+# keyed, and never part of required CI.
+for retired in \
+    .github/workflows/benchmark.yml \
+    .github/workflows/pr-metrics.yml \
+    .github/workflows/pr-metrics-comment.yml \
+    scripts/collect-pr-metrics.mjs; do
+    if [ -e "$retired" ]; then
+        echo "retired hosted-runner performance pipeline still exists: $retired" >&2
+        exit 1
+    fi
+done
+test -x scripts/pr-benchmark-result.mjs
+grep -Fq 'name: PR Benchmark' "$pr_benchmark"
+grep -Fq 'workflows: [PR Benchmark]' "$pr_benchmark_comment"
+grep -Fq 'pr-benchmark-baseline-${{ github.sha }}' "$pr_benchmark"
+grep -Fq 'name: pr-benchmark-head' "$pr_benchmark"
+grep -Fq 'path: build/pr-benchmark/head.json' "$pr_benchmark"
+if [ "$(grep -Fc 'mkdir -p build/pr-benchmark' "$pr_benchmark")" -ne 2 ]; then
+    echo "main and PR-head benchmark producers must create their result directory" >&2
+    exit 1
+fi
+head_benchmark_job=$(job_body measure-head "$pr_benchmark")
+if grep -Eq 'base\.json|baseline-source|pull_request\.base|pr-benchmark-baseline' <<<"$head_benchmark_job"; then
+    echo "PR-controlled benchmark job can access or publish trusted baseline data" >&2
+    exit 1
+fi
+grep -Fq 'pr-benchmark-baseline-${{ steps.comparison.outputs.base_sha }}' "$pr_benchmark_comment"
+grep -Fq 'github.rest.actions.listArtifactsForRepo' "$pr_benchmark_comment"
+grep -Fq 'const artifactName = `pr-benchmark-baseline-${process.env.BASE_SHA}`' "$pr_benchmark_comment"
+grep -Fq 'const trustedMain =' "$pr_benchmark_comment"
+grep -Fq 'const trustedFallback =' "$pr_benchmark_comment"
+grep -Fq 'run.path === ".github/workflows/pr-benchmark-comment.yml"' "$pr_benchmark_comment"
+grep -Fq 'steps.baseline.outputs.usable != '"'"'true'"'"'' "$pr_benchmark_comment"
+grep -Fq 'ref: ${{ steps.comparison.outputs.base_sha }}' "$pr_benchmark_comment"
+grep -Fq 'persist-credentials: false' "$pr_benchmark_comment"
+grep -Fq 'the privileged workflow will build and publish it' "$pr_benchmark_comment"
+if [ "$(grep -c 'uses: actions/checkout@' "$pr_benchmark_comment")" -ne 1 ]; then
+    echo "privileged benchmark workflow must checkout exactly one tree: the exact PR base" >&2
+    exit 1
+fi
+if grep -Eq '^[[:space:]]+issues: write$' "$pr_benchmark_comment"; then
+    echo "privileged benchmark workflow has unnecessary issue-wide write permission" >&2
+    exit 1
+fi
+grep -Fq '"boundary" in metric' "$pr_benchmark_comment"
+if grep -Eq '\|[^\n]*Boundary[^\n]*\|' "$pr_benchmark_comment"; then
+    echo "PR benchmark comment still renders a boundary column" >&2
+    exit 1
+fi
+if grep -Eq 'workflows: \[CI\]|run\.name === "CI"|successful main CI' \
+    "$pr_benchmark" "$pr_benchmark_comment"; then
+    echo "PR benchmark still depends on the normal main CI pipeline" >&2
+    exit 1
+fi
+for retired in \
+    packages/es-markdown-core/scripts/benchmark.mjs \
+    packages/kotlin-markdown-core/src/jvmBenchmark/kotlin/com/nouprax/markdown/core/benchmark/Benchmark.kt \
+    packages/swift-markdown-core/Benchmarks/MarkdownCoreBenchmarks/main.swift; do
+    if [ -e "$retired" ]; then
+        echo "retired binding wall-clock diagnostic still exists: $retired" >&2
+        exit 1
+    fi
+done
+if grep -Eq 'MarkdownCoreBenchmarks|kotlinBenchmark|jvmBenchmark|scripts/benchmark\.mjs|benchmark:(swift|kotlin|es)' \
+    Package.swift \
+    package.json \
+    packages/kotlin-markdown-core/build.gradle.kts \
+    packages/es-markdown-core/package.json; then
+    echo "a retired binding wall-clock diagnostic is still routed by a package graph" >&2
+    exit 1
+fi
+if grep -R -nE 'START_TIMING|END_TIMING|TIMING[[:space:]]*[<>]=?|takes less than [0-9]+ms' \
+    packages/markdown-core/tests --exclude=bench_runner.c; then
+    echo "a wall-clock assertion leaked into the C correctness graph" >&2
+    exit 1
+fi
+
 # The repo-managed installers must stay content-pinned: the emsdk manager
 # to the immutable commit of its release tag, and the Python tool venvs to
 # hash-locked requirements so an index-side replacement cannot change the
@@ -79,8 +163,16 @@ grep -q 'EMSCRIPTEN_COMMIT=[0-9a-f]\{40\}' scripts/init-environment.sh || {
     echo "init-environment.sh must pin the emsdk commit" >&2
     exit 1
 }
-grep -q -- '--require-hashes' scripts/init-environment.sh || {
-    echo "init-environment.sh must install Python tools with --require-hashes" >&2
+grep -Fq 'scripts/install-clang-format.sh' scripts/init-environment.sh || {
+    echo "init-environment.sh must use the repository clang-format installer" >&2
+    exit 1
+}
+grep -q -- '--require-hashes' scripts/install-clang-format.sh || {
+    echo "install-clang-format.sh must install from hash-locked requirements" >&2
+    exit 1
+}
+grep -Fq 'scripts/install-clang-format.sh' "$ci" || {
+    echo "CI must use the repository clang-format installer" >&2
     exit 1
 }
 grep -q -- '--require-hashes' scripts/format-cmake.sh || {
@@ -105,6 +197,12 @@ done
 grep -Fq -- '-DMARKDOWN_CORE_TESTS=OFF' scripts/build-c-product-artifact.sh
 grep -Fq -- '-DMARKDOWN_CORE_TESTS=ON' scripts/build-c-test-artifact.sh
 grep -Fq 'Total Tests: [1-9][0-9]*' scripts/build-c-test-artifact.sh
+grep -Fq 'audit-test-topology.sh" "$root/$build_dir" "$configuration"' scripts/build-c-test-artifact.sh
+grep -Fq "tr -d '\\r'" scripts/audit-test-topology.sh
+if grep -Eq 'cmake --preset|cmake --build|swift test|gradle\.sh' scripts/audit-test-topology.sh; then
+    echo "repository topology health-check must not duplicate a platform build or test discovery" >&2
+    exit 1
+fi
 grep -Fq -- 'swift build --target MarkdownCore' scripts/build-swift-product-artifact.sh
 grep -Fq -- '-DMARKDOWN_CORE_TESTS=OFF' scripts/stage-c-release.sh
 grep -Fq 'Package.release.swift' scripts/check-swift-source-archive.sh
@@ -163,11 +261,6 @@ for job in \
     c-sanitizer-test-build \
     c-test \
     c-sanitizer-test \
-    benchmark-c \
-    benchmark-kotlin \
-    benchmark-es \
-    benchmark-swift \
-    benchmarks-ready \
     builds-ready \
     build-tests-ready \
     tests-ready; do
@@ -177,10 +270,23 @@ search 'actions/upload-artifact@' "$ci"
 search 'actions/download-artifact@' "$ci"
 search 'test-without-building' scripts/run-swift-test-artifact.sh
 search -- '--skip-build' scripts/run-swift-test-artifact.sh
-grep -Fq 'macos-benchmark' scripts/run-swift-test-artifact.sh
-grep -Fq 'stageJvmBenchmarkArtifact' scripts/build-kotlin-host-test-artifact.sh
-grep -Fq 'node-benchmark' scripts/run-es-test-artifact.sh
-grep -Fq 'benchmark' scripts/run-c-test-artifact.sh
+grep -Fq -- '--scratch-path "$root_scratch"' scripts/build-swift-test-artifact.sh
+grep -Fq -- '--scratch-path "$root_scratch"' scripts/run-swift-test-artifact.sh
+grep -Fq 'remove_directory "$root/$build_dir"' scripts/build-c-test-artifact.sh
+grep -Fq 'rm -rf "$project_build/ci-test-artifact"' scripts/build-kotlin-host-test-artifact.sh
+for producer in scripts/build-c-test-artifact.sh scripts/build-kotlin-host-test-artifact.sh scripts/build-swift-test-artifact.sh; do
+    grep -Eq 'benchmark (payload|executable)' "$producer"
+done
+if grep -Eq 'node-benchmark|macos-benchmark|stageJvmBenchmarkArtifact|jvm-benchmark|ci-benchmark' \
+    scripts/build-swift-test-artifact.sh \
+    scripts/run-swift-test-artifact.sh \
+    scripts/build-kotlin-host-test-artifact.sh \
+    scripts/run-kotlin-host-test-artifact.sh \
+    scripts/run-es-test-artifact.sh \
+    scripts/run-c-test-artifact.sh; then
+    echo "CI test artifacts still route a removed benchmark payload" >&2
+    exit 1
+fi
 grep -Fq -- "-destination 'generic/platform=iOS Simulator'" scripts/build-swift-test-artifact.sh
 grep -Fq 'prepare-swift-ios-simulator.sh' scripts/run-swift-test-artifact.sh
 if grep -Eq 'name=iPhone|OS=latest' scripts/build-swift-test-artifact.sh scripts/run-swift-test-artifact.sh \
@@ -280,14 +386,35 @@ fi
 
 tests_ready_job=$(job_body tests-ready "$ci")
 grep -Fq '        if: ${{ always() }}' <<<"$tests_ready_job"
-if grep -Fq 'benchmarks-ready' <<<"$tests_ready_job"; then
-    echo "Tests - Ready must not depend on the parallel benchmark barrier" >&2
+oracle_job=$(job_body upstream-parity "$ci")
+grep -Fq 'scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm' <<<"$oracle_job"
+grep -Fq 'pnpm check:commonmark-parity' <<<"$oracle_job"
+grep -Fq 'pnpm check:gfm-parity' <<<"$oracle_job"
+grep -Fq 'pnpm check:mdast-parity' <<<"$oracle_job"
+grep -Fq 'pnpm fuzz:parity -- --oracle commonmark' <<<"$oracle_job"
+grep -Fq 'pnpm fuzz:parity -- --oracle gfm' <<<"$oracle_job"
+grep -Fq 'pnpm fuzz:parity -- --oracle remark' <<<"$oracle_job"
+if grep -Eq 'check:upstream-parity|--oracle (upstream|mdast)' <<<"$oracle_job"; then
+    echo "external parity job uses a retired ambiguous oracle name" >&2
     exit 1
 fi
 required_gate_job=$(job_body required-gates "$ci")
 grep -Fq '            - tests-ready' <<<"$required_gate_job"
-grep -Fq '            - benchmarks-ready' <<<"$required_gate_job"
-grep -Fq 'BENCHMARKS_READY: ${{ needs.benchmarks-ready.result }}' <<<"$required_gate_job"
+grep -Fq '            - upstream-parity' <<<"$required_gate_job"
+if grep -Eq 'benchmark|pr-metrics|collect-pr-metrics|binary\.size|coverage' <<<"$required_gate_job"; then
+    echo "measurement-only work leaked into the required gate" >&2
+    exit 1
+fi
+if grep -Eq '^    coverage(-ready)?:' "$ci"; then
+    echo "execution coverage must not be a CI job; use semantic contract tests" >&2
+    exit 1
+fi
+if [ -d specs/coverage ] || [ -e scripts/check-coverage.mjs ] || \
+    find scripts -maxdepth 1 -type f -name 'coverage-*' -print -quit | grep -q . || \
+    grep -Eq '"coverage:[^"]+"' package.json; then
+    echo "retired execution-coverage infrastructure returned" >&2
+    exit 1
+fi
 
 search '^    push:$' "$release"
 search '^        tags:$' "$release"
@@ -364,8 +491,8 @@ grep -Fq 'name: release-central-deployment' "$release"
 search 'gh run download "\$SOURCE_RUN_ID" --name release-central-deployment' "$release"
 grep -Fq 'test "$bound_tag" = "$RELEASE_TAG"' "$release"
 grep -Fq 'test "$bound_version" = "$(cat VERSION)"' "$release"
-grep -Fq 'test -s "docs/deprecated/releases/$(cat VERSION).md"' "$release"
-grep -Fq -- '--notes-file "docs/deprecated/releases/$(cat VERSION).md"' "$release"
+grep -Fq 'test -s "docs/releases/$(cat VERSION).md"' "$release"
+grep -Fq -- '--notes-file "docs/releases/$(cat VERSION).md"' "$release"
 if search -- '--generate-notes' "$release"; then
     echo "formal release workflow must use curated release notes" >&2
     exit 1
@@ -426,68 +553,15 @@ search '^    codeql-gate:$' "$codeql"
 search '^        name: CodeQL gate$' "$codeql"
 grep -Fq '        name: Security Scan - ${{ matrix.label }}' "$codeql"
 
-for workflow in "$ci" "$codeql" "$release" "$release_dry_run" "$comment"; do
+for workflow in "$ci" "$codeql" "$release" "$release_dry_run"; do
     if search '^        name:.*matrix\.(os|suite|compiler|shared|sanitizer|platform|version|target-id|artifact-label|language)' "$workflow"; then
         echo "matrix implementation fields leaked into a visible job name: $workflow" >&2
         exit 1
     fi
 done
 
-for benchmark_name in \
-    'Test - C / Linux · Benchmark' \
-    'Test - Kotlin / JVM · Benchmark' \
-    'Test - ES / Node · Benchmark' \
-    'Test - Swift / macOS · Benchmark' \
-    'Benchmarks - Ready'; do
-    grep -Fq "        name: $benchmark_name" "$ci"
-done
-grep -Fq '        name: Report - PR Metrics / Comment' "$comment"
-
-linux_benchmark_job=$(job_body benchmark-c "$ci")
-if grep -Eq 'setup-java|setup-android|setup-emsdk|benchmark:kotlin|benchmark:es' <<<"$linux_benchmark_job"; then
-    echo "C benchmark runner contains an unrelated platform workload" >&2
-    exit 1
-fi
-for benchmark_job in benchmark-c benchmark-kotlin benchmark-es benchmark-swift; do
-    benchmark_job_body=$(job_body "$benchmark_job" "$ci")
-    grep -Fq '        needs: build-tests-ready' <<<"$benchmark_job_body"
-    case "$benchmark_job" in
-        benchmark-c) forbidden='run-kotlin|run-es|run-swift' ;;
-        benchmark-kotlin) forbidden='run-c|run-es|run-swift' ;;
-        benchmark-es) forbidden='run-c|run-kotlin|run-swift' ;;
-        benchmark-swift) forbidden='run-c|run-kotlin|run-es' ;;
-    esac
-    if grep -Eq "$forbidden" <<<"$benchmark_job_body"; then
-        echo "benchmark runner contains an unrelated platform workload: $benchmark_job" >&2
-        exit 1
-    fi
-done
-if [ "$(grep -Fc 'SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}' "$ci")" -ne 4 ]; then
-    echo "benchmark metrics must identify PR head SHA and default-branch commit SHA explicitly" >&2
-    exit 1
-fi
-
-if search 'pr-metrics|binary.size|collect-pr-metrics|upload.*metrics' <(
-    job_body required-gates "$ci"
-); then
-    echo "non-blocking metrics leaked into the required gate" >&2
-    exit 1
-fi
-
-search '^    workflow_run:$' "$comment"
-grep -Fq '        workflows: [CI]' "$comment"
-search '^    issues: write$' "$comment"
-search '^    pull-requests: write$' "$comment"
-search 'listWorkflowRunArtifacts' "$comment"
-search 'listWorkflowRunsForRepo' "$comment"
-grep -Fq 'run.head_sha === baseSha' "$comment"
-grep -Fq 'document?.sourceSha !== expectedSha' "$comment"
-search 'artifact\.size_in_bytes <= 65536' "$comment"
-grep -Fq 'const indicator = percent <= 0 ? "✅" : "⚠️";' "$comment"
-grep -Fq 'const indicator = percent < 5 ? "✅" : "⚠️";' "$comment"
-grep -Fq 'const indicator = Math.abs(delta) < 50 * 1024 ? "✅" : "⚠️";' "$comment"
-if search 'actions/checkout|github\.event\.pull_request\.head|gh pr checkout|git fetch' "$comment"; then
-    echo "the privileged metrics commenter may not fetch or execute PR code" >&2
+if search '^    (benchmark-[A-Za-z0-9_-]+|benchmarks-ready):|collect-pr-metrics|pr-metrics|node-benchmark|macos-benchmark|stageJvmBenchmarkArtifact' "$ci"; then
+    echo "hosted-runner performance measurement is forbidden in required CI" >&2
     exit 1
 fi
 

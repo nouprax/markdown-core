@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 /* Shared native test support for the CTest suites.  Every runner links this
- * library instead of re-implementing fixture, comparison, or diagnostic
+ * library instead of re-implementing fixture, comparison, or failure-report
  * glue.  All verification goes through the read-only markdown_core facade
  * (parse, accessors, canonical AST dump); no renderer is ever invoked.  All
  * comparisons are UTF-8 byte comparisons; all diffs are line-oriented and
@@ -61,7 +61,7 @@ void ts_ast_options_none(markdown_core_parse_options *options);
  * names. */
 int ts_ast_enable(markdown_core_parse_options *options, const char *name);
 
-/* Parses through the facade; prints the facade diagnostic to stderr and
+/* Parses through the facade; prints the facade error message to stderr and
  * returns NULL on failure. */
 markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length, const markdown_core_parse_options *options);
 
@@ -85,7 +85,7 @@ int ts_ast_count_kinds(const markdown_core_node *root, size_t *counts);
  * NUL-terminated buffer (embedded NULs impossible: parser replaces them). */
 char *ts_ast_concat_text(const markdown_core_node *root, size_t *length);
 
-/* Comparison and diagnostics -------------------------------------------- */
+/* Comparison and failure reporting -------------------------------------- */
 
 /* Prints a deterministic line diff between expected and actual to stream. */
 void ts_print_line_diff(FILE *stream, const char *expected, const char *actual);
@@ -107,17 +107,6 @@ char *ts_repeat(const char *unit, size_t count, size_t *length);
 
 /* Monotonic clock in nanoseconds for relative benchmark measurements. */
 uint64_t ts_monotonic_ns(void);
-
-/* Pins the C library's arena policy so benchmarks measure the engine, not
- * the allocator's heuristics.  glibc adapts its trim threshold at runtime,
- * and the adaptation is bistable: an irrelevant nudge to an allocation size
- * class can flip a parse/free loop between keeping its arena warm and
- * returning it to the kernel after every document -- the refault storm then
- * reads as a ±50% wall-clock swing on a diff whose instruction count is
- * identical (measured on deep_nesting@32768: +54% wall, +0.1% Ir, 3.4x the
- * minor faults; pinning the threshold restored parity).  Call once at the
- * top of a benchmark entry point.  No-op off glibc. */
-void ts_bench_pin_allocator(void);
 
 #ifdef __cplusplus
 }

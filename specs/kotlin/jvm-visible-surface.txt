@@ -10,37 +10,30 @@
 # `checkKotlinAbi` does not overlap with this: its dump is the Kotlin API, and
 # every name below is absent from it by construction.
 #
-# JvmNative is deliberately NOT here -- every member it has carries
-# @JvmSynthetic (the session's five entries: new, feed, advance, finish,
-# free), so javac cannot resolve any of them, and the audit asserts that
-# separately.
+# JniParser is deliberately absent: the holder is package-private, its raw
+# payload method carries @JvmSynthetic, and the audit checks both properties.
 
 # `when` over an enum compiles to a lookup table in a nested class.
+JniTreeDecoder$WhenMappings
 DumpVisitor$WhenMappings
-TreeDumper$WhenMappings
-WireMarkupDecoderKt$WhenMappings
 
 # File facades for top-level declarations. The class is public because the file
 # has top-level members; the members themselves are internal and name-mangled.
 ImmutableListKt
-NativeBridge_jvmKt
+PlatformParser_jvmKt
 ParseOptionsKt
 TreeDumperKt
-WalkerKt
-WireDecoderKt
-WireMarkupDecoderKt
+JniPayloadDecoderKt
+JniMarkupDecoderKt
 
 # The companion of a package-private class. Reachable in name only: every
 # member is internal, and the owning class is not public.
 ReadOnlyList$Companion
 
-# The wire protocol. commonMain declares them and jvmMain reads them, so Kotlin
-# must emit them public. Calling them from Java yields raw wire bytes rather
-# than anything unsafe, but none of it is API and none of it is stable.
-WireDecoder
-WireKind
-WireKind$Companion
-WireReader
-
-# The JNI object itself. The CLASS is reachable; its members are not.
-JvmNative
+# The private JVM/Android wire protocol. The shared JNI source set declares
+# these internal types, so Kotlin emits public bytecode even though they are
+# absent from the Kotlin API. None of these names or bytes are stable API.
+JniPayloadDecoder
+JniNodeKind
+JniNodeKind$Companion
+JniPayloadReader

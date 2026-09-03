@@ -8,6 +8,21 @@ cd "$ROOT_DIR"
 # Download and validate the pinned distribution before locating its Tooling API.
 scripts/gradle.sh --version >/dev/null
 
+# Kotlin's IDE import must generate C declarations, but it must not build or
+# embed the native archives. Android Studio does not inherit an interactive
+# shell's PATH, and model loading is not a product-build lifecycle in any case.
+ide_import_plan=$(scripts/gradle.sh \
+    :packages:kotlin-markdown-core:prepareKotlinIdeaImport \
+    -Didea.sync.active=true \
+    --dry-run \
+    --no-configuration-cache)
+if printf '%s\n' "$ide_import_plan" | grep -Eq \
+    ':(configure|build)(LinuxX64|MacosArm64)NativeFacade'; then
+    printf '%s\n' "$ide_import_plan" >&2
+    echo "Gradle IDE import depends on a native CMake build" >&2
+    exit 1
+fi
+
 gradle_version=$(sed -n \
     's#^distributionUrl=.*gradle-\([0-9][0-9.]*\)-bin\.zip$#\1#p' \
     gradle/wrapper/gradle-wrapper.properties)
@@ -56,7 +71,10 @@ public final class GradleModelSmoke {
                 .forProjectDirectory(root)
                 .connect();
         try {
-            GradleProject model = connection.getModel(GradleProject.class);
+            GradleProject model = connection
+                    .model(GradleProject.class)
+                    .withArguments("-Didea.sync.active=true")
+                    .get();
             if (!"markdown-core".equals(model.getName())) {
                 throw new IllegalStateException("Unexpected root model: " + model.getName());
             }
@@ -69,6 +87,10 @@ public final class GradleModelSmoke {
             }
             if (find(model, ":packages:kotlin-markdown-core:android-runtime") == null) {
                 throw new IllegalStateException("Gradle model is missing the internal Android runtime");
+            }
+            if (find(model, ":packages:markdown-core") != null) {
+                throw new IllegalStateException(
+                        "The CMake-owned C package must not be represented as a synthetic Gradle project");
             }
 
             System.out.println("Loaded Gradle Tooling API model for " + model.getName());

@@ -57,9 +57,7 @@ public struct ParseOptions: Sendable, Hashable {
 
 /// Why a parse produced no document.
 ///
-/// These are FAILURES, not findings about the text. Anything the author could
-/// act on is a diagnostic on a document that exists, not an error instead of
-/// one.
+/// These are failures of the parse operation itself, not syntax observations.
 public enum ParseErrorCode: Int32, Sendable {
     /// The call itself was wrong — a null source, or a length that does not
     /// describe it.
@@ -74,8 +72,7 @@ public enum ParseErrorCode: Int32, Sendable {
 /// A parse failure, and nothing else.
 ///
 /// It carries no scope: an input the parser could not turn into a document has
-/// no extent to point at, and a failure the author could act on would have been
-/// a diagnostic instead.
+/// no document extent to point at.
 public struct ParseError: Error, Sendable {
     /// Which failure it was.
     public let code: ParseErrorCode
@@ -84,154 +81,173 @@ public struct ParseError: Error, Sendable {
     public let message: String
 }
 
-/// The living document: the one entry into this parser, fed in pieces and
-/// answering with ``Read`` values (docs/STREAMING.md §4 D5, under 3.0's
-/// names).
-///
-/// `feed(chunk:)` hands it the next bytes and returns THE READ AFTER
-/// THOSE BYTES — a mid-stream projection: a trailing line whose ending has not
-/// arrived is not yet in it, and an open construct is projected as it stands
-/// (a list still open has not settled its tightness). ``seal()`` ends the
-/// stream: the pending line is processed, every construct closes, and the
-/// sealed read comes back — the whole text's, identical for the same bytes
-/// however they were fed — and the native shell goes with it: a sealed
-/// document refuses every later call.
-///
-/// Every read either call returns is built the same way: the native handle is
-/// released before the call returns, so the result is a value that borrows
-/// nothing. It stays readable after every later feed, after ``seal()``, and
-/// after the document itself is gone.
-///
-/// The document itself is a native resource mid-parse, not a value: it is
-/// deliberately not `Sendable`, and feeding one document from two isolation
-/// domains is the caller's race. The reads it returns are `Sendable` like
-/// every other value this module hands out. A stream abandoned instead of
-/// sealed needs no explicit call: `deinit` frees the shell.
-public final class Document {
-    // The native session, private the way every native anything is: no
-    // handle is part of the public surface. `nil` once sealed, which is the
-    // same "gone" `deinit` leaves behind.
-    private var native: OpaquePointer?
+/// The immutable semantic root returned by a parse.
+public struct Document: Markup {
+    /// The whole document's boundaries. See ``Scope``.
+    public let scope: Scope
+    /// The document's blocks. Block content, not inline.
+    public let content: [any Markup]
+    /// Dispatches to the visitor's `Document` case.
+    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 
-    /// Opens a document.
+    /// Parses `source` and returns the whole tree as values.
     ///
-    /// - Parameter options: which constructs to recognise. Everything, by
-    ///   default.
-    /// - Throws: ``ParseError`` when the native session cannot be created,
-    ///   which is an allocation failure and nothing finer.
-    public init(options: ParseOptions = .init()) throws {
-        var nativeOptions = options.native
-        var nativeError: OpaquePointer?
-        let session = markdown_core_session_new(&nativeOptions, &nativeError)
-        guard let session else { throw ParseError.take(nativeError) }
-        native = session
-    }
-
-    /// Opens a document and feeds it `markdown` in one step — exactly
-    /// ``init(options:)`` followed by one feed whose returned read is
-    /// discarded (and, being discarded, never copied out), so the whole-text
-    /// parse is `Document(markdown: text).seal()`.
+    /// The native parse is released before this returns, so the result borrows
+    /// nothing and is safe to hold, copy and send across isolation boundaries.
     ///
     /// - Parameters:
-    ///   - markdown: the first piece of the stream, or the whole text.
+    ///   - source: the Markdown to parse. It is read as UTF-8.
     ///   - options: which constructs to recognise. Everything, by default.
-    /// - Throws: ``ParseError``, exactly as ``init(options:)`` and
-    ///   `feed(chunk:)` throw it.
-    public convenience init(markdown: String, options: ParseOptions = .init()) throws {
-        try self.init(options: options)
+    /// - Returns: the parsed document.
+    /// - Throws: ``ParseError`` when there is no document to return at all.
+    public static func parse(_ source: String, options: ParseOptions = .init()) throws -> Document {
+        var nativeOptions = markdown_core_parse_options(
+            smart_punctuation: options.smartPunctuation,
+            footnotes: options.footnotes,
+            strip_html_comments: options.stripHTMLComments,
+            tables: options.tables,
+            strikethrough: options.strikethrough,
+            autolinks: options.autolinks,
+            task_lists: options.taskLists,
+            formulas: options.formulas,
+            directives: options.directives
+        )
         var nativeError: OpaquePointer?
-        // The read this feed would produce is discarded by this very
-        // contract, so the bytes go through `advance`, which takes them and
-        // answers nothing — `session_feed` derived, copied, and returned a
-        // whole document just to be freed unread (#144). ES and Kotlin
-        // construct through their advance entries the same way, and the C
-        // header names this constructor as advance's one legitimate caller.
-        // `withUTF8` hands the string's own contiguous storage to C (#147):
-        // `Array(markdown.utf8)` allocated and copied first, for bytes read
-        // once and never kept.
-        var text = markdown
-        let advanced = text.withUTF8 { buffer in
-            markdown_core_session_advance(native, buffer.baseAddress, buffer.count, &nativeError)
+        let bytes = Array(source.utf8)
+        let nativeDocument = bytes.withUnsafeBufferPointer { buffer in
+            markdown_core_document_parse(buffer.baseAddress, buffer.count, &nativeOptions, &nativeError)
         }
-        guard advanced else { throw ParseError.take(nativeError) }
-    }
-
-    deinit {
-        if let native { markdown_core_session_free(native) }
-    }
-
-    /// Feeds exactly the bytes of `chunk` and returns the read after them.
-    ///
-    /// Bytes, not a `String`, because a chunk boundary owes the text nothing:
-    /// it may fall inside a UTF-8 sequence or between a CR and its LF, and the
-    /// stream repairs both — a split no `String` could even spell. An empty
-    /// chunk is a legal feed: the read as it stands.
-    ///
-    /// - Parameter chunk: the next bytes of the stream, read as UTF-8.
-    /// - Returns: the read after those bytes, as a value the caller keeps.
-    ///   An incomplete trailing line is not yet in it.
-    /// - Throws: ``ParseError`` — `.invalidArgument` once ``seal()`` has
-    ///   ended the stream, `.allocationFailed` when the projection could not
-    ///   be built. Text is never a failure: it produces a read.
-    public func feed(chunk: [UInt8]) throws -> Read {
-        try chunk.withUnsafeBufferPointer { buffer in try feed(buffer: buffer) }
-    }
-
-    /// Feeds a chunk that is whole text — its UTF-8 bytes, exactly as the byte
-    /// form takes them. A producer of `String` pieces never splits a scalar,
-    /// so the byte form's one extra power is not needed here; everything else
-    /// is the same call. `withUTF8` hands the string's own contiguous storage
-    /// to the same core the byte form uses (#147), where `Array(chunk.utf8)`
-    /// allocated and copied first.
-    ///
-    /// - Parameter chunk: the next piece of the stream.
-    /// - Returns: the read after those bytes, as a value the caller keeps.
-    /// - Throws: ``ParseError``, exactly as the byte form throws it.
-    public func feed(chunk: String) throws -> Read {
-        var text = chunk
-        return try text.withUTF8 { buffer in try feed(buffer: buffer) }
-    }
-
-    private func feed(buffer: UnsafeBufferPointer<UInt8>) throws -> Read {
-        let session = try live()
-        var nativeError: OpaquePointer?
-        let nativeDocument = markdown_core_session_feed(session, buffer.baseAddress, buffer.count, &nativeError)
         guard let nativeDocument else {
-            throw ParseError.take(nativeError)
+            defer { markdown_core_error_free(nativeError) }
+            throw ParseError(from: nativeError)
         }
         defer { markdown_core_document_free(nativeDocument) }
-        return try Read(copiedFrom: nativeDocument)
+
+        guard let root = markdown_core_document_root(nativeDocument),
+            markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT
+        else {
+            throw ParseError(code: .internal, message: "parser returned an invalid document tree")
+        }
+        return NativeTreeBuilder(root: root).document()
+    }
+}
+
+private struct NativeNodeRecord {
+    let node: OpaquePointer
+    var children: [Int] = []
+    var label: Int?
+}
+
+/// Copies the C tree without making Swift's call stack proportional to input
+/// depth. A directive label is recorded as its own node-valued field, never as
+/// an entry in the directive's content relation.
+private struct NativeTreeBuilder {
+    private var records: [NativeNodeRecord]
+
+    init(root: OpaquePointer) {
+        records = [NativeNodeRecord(node: root)]
+        var recordIndex = 0
+        while recordIndex < records.count {
+            let node = records[recordIndex].node
+            let expectedChildren = markdown_core_node_child_count(node)
+            records[recordIndex].children.reserveCapacity(expectedChildren)
+
+            var child = markdown_core_node_get_first_child(node)
+            while let current = child {
+                records[recordIndex].children.append(records.count)
+                records.append(NativeNodeRecord(node: current))
+                child = markdown_core_node_get_next_sibling(current)
+            }
+            precondition(
+                records[recordIndex].children.count == expectedChildren,
+                "native child count does not match its sibling chain"
+            )
+
+            switch markdown_core_node_get_kind(node) {
+            case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, MARKDOWN_CORE_KIND_DIRECTIVE:
+                if let label = markdown_core_node_directive_label(node) {
+                    records[recordIndex].label = records.count
+                    records.append(NativeNodeRecord(node: label))
+                }
+            default:
+                break
+            }
+            recordIndex += 1
+        }
     }
 
-    /// Ends the stream, returns the sealed read, and releases the native
-    /// shell.
-    ///
-    /// The pending line is processed and every construct closes, so the
-    /// result is identical for the same bytes however they were fed. Sealing
-    /// is the end of the object: after it returns, `feed(chunk:)` and
-    /// a second ``seal()`` throw `.invalidArgument`.
-    ///
-    /// - Returns: the sealed read.
-    /// - Throws: ``ParseError`` — `.invalidArgument` for a document already
-    ///   sealed, `.allocationFailed` when the final projection could not be
-    ///   built (the shell then remains, and `deinit` still frees it).
-    public func seal() throws -> Read {
-        let session = try live()
-        var nativeError: OpaquePointer?
-        guard let nativeDocument = markdown_core_session_finish(session, &nativeError) else {
-            throw ParseError.take(nativeError)
+    func document() -> Document {
+        var values: [(any Markup)?] = Array(repeating: nil, count: records.count)
+        for index in records.indices.reversed() {
+            let record = records[index]
+            let children = record.children.map { childIndex -> any Markup in
+                guard let child = values[childIndex] else {
+                    preconditionFailure("native child was not materialized before its parent")
+                }
+                return child
+            }
+            let label: DirectiveLabel?
+            if let labelIndex = record.label {
+                guard let builtLabel = values[labelIndex] as? DirectiveLabel else {
+                    preconditionFailure("native directive label has the wrong kind")
+                }
+                label = builtLabel
+            } else {
+                label = nil
+            }
+            values[index] = markup(from: record.node, children: children, label: label)
         }
-        defer { markdown_core_document_free(nativeDocument) }
-        let sealed = try Read(copiedFrom: nativeDocument)
-        markdown_core_session_free(session)
-        native = nil
-        return sealed
+        guard let document = values[0] as? Document else {
+            preconditionFailure("native tree root is not a document")
+        }
+        return document
     }
+}
 
-    private func live() throws -> OpaquePointer {
-        guard let native else {
-            throw ParseError(code: .invalidArgument, message: "the document is sealed")
-        }
-        return native
+// Keep the exhaustive native-kind switch in one place so a newly added native
+// kind cannot silently bypass value-tree copying.
+// swiftlint:disable:next cyclomatic_complexity
+func markup(
+    from node: OpaquePointer,
+    children: [any Markup],
+    label: DirectiveLabel?
+) -> any Markup {
+    switch markdown_core_node_get_kind(node) {
+    case MARKDOWN_CORE_KIND_DOCUMENT:
+        Document(scope: Document.scope(from: node), content: children)
+    case MARKDOWN_CORE_KIND_BLOCK_QUOTE: BlockQuote(from: node, content: children)
+    case MARKDOWN_CORE_KIND_PARAGRAPH: Paragraph(from: node, content: children)
+    case MARKDOWN_CORE_KIND_HEADING: Heading(from: node, content: children)
+    case MARKDOWN_CORE_KIND_THEMATIC_BREAK: ThematicBreak(from: node)
+    case MARKDOWN_CORE_KIND_LIST: List(from: node, children: children)
+    case MARKDOWN_CORE_KIND_LIST_ITEM: ListItem(from: node, content: children)
+    case MARKDOWN_CORE_KIND_CODE_BLOCK: CodeBlock(from: node)
+    case MARKDOWN_CORE_KIND_HTML_BLOCK: HTMLBlock(from: node)
+    case MARKDOWN_CORE_KIND_FORMULA_BLOCK: FormulaBlock(from: node)
+    case MARKDOWN_CORE_KIND_TABLE: Table(from: node, children: children)
+    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
+        DirectiveBlock(from: node, label: label, content: children)
+    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION: FootnoteDefinition(from: node, content: children)
+    case MARKDOWN_CORE_KIND_TEXT: Text(from: node)
+    case MARKDOWN_CORE_KIND_SOFT_BREAK: SoftBreak(from: node)
+    case MARKDOWN_CORE_KIND_LINE_BREAK: LineBreak(from: node)
+    case MARKDOWN_CORE_KIND_CODE: Code(from: node)
+    case MARKDOWN_CORE_KIND_HTML: HTML(from: node)
+    case MARKDOWN_CORE_KIND_FORMULA: Formula(from: node)
+    case MARKDOWN_CORE_KIND_EMPHASIS: Emphasis(from: node, content: children)
+    case MARKDOWN_CORE_KIND_STRONG: Strong(from: node, content: children)
+    case MARKDOWN_CORE_KIND_STRIKETHROUGH: Strikethrough(from: node, content: children)
+    case MARKDOWN_CORE_KIND_LINK: Link(from: node, content: children)
+    case MARKDOWN_CORE_KIND_IMAGE: Image(from: node, content: children)
+    case MARKDOWN_CORE_KIND_DIRECTIVE: Directive(from: node, label: label)
+    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE: FootnoteReference(from: node)
+    case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node, children: children)
+    case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node, content: children)
+    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
+        DirectiveLabel(scope: DirectiveLabel.scope(from: node), content: children)
+    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION: ReferenceDefinition(from: node)
+    case MARKDOWN_CORE_KIND_LINK_REFERENCE: LinkReference(from: node, content: children)
+    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: ImageReference(from: node, content: children)
+    default: preconditionFailure("native parser returned an unknown node kind")
     }
 }

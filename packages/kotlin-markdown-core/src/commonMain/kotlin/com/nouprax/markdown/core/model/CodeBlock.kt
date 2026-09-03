@@ -6,7 +6,6 @@ public class CodeBlock internal constructor(
     public val literal: String,
     public val fenced: Boolean,
     public val closed: Boolean,
-    override val id: Identity,
     override val scope: Scope,
 ) : Markup {
     override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitCodeBlock(this)

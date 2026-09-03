@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-VERSION="0.65.0"
+VERSION="0.65.1"
 INSTALL_DIR="${SWIFTLINT_INSTALL_DIR:-$PWD/.tools/swiftlint/$VERSION}"
 
 SWIFTLINT_INSTALL_DIR="$INSTALL_DIR" scripts/install-swiftlint.sh

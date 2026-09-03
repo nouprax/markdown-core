@@ -12,6 +12,7 @@ bufsize_t _scan_table_cell_end(const unsigned char *p);
 bufsize_t _scan_table_row_end(const unsigned char *p);
 bufsize_t _scan_tasklist(const unsigned char *p);
 bufsize_t _scan_formula_dollar_inline_open(const unsigned char *p);
+bufsize_t _scan_formula_dollar_backtick_open(const unsigned char *p);
 bufsize_t _scan_formula_dollar_display_open(const unsigned char *p);
 bufsize_t _scan_formula_latex_backslash_inline_open(const unsigned char *p);
 bufsize_t _scan_formula_latex_backslash_display_open(const unsigned char *p);
@@ -22,6 +23,7 @@ bufsize_t _scan_formula_latex_backslash_display_open(const unsigned char *p);
 #define scan_table_row_end(c, l, n) _ext_scan_at(&_scan_table_row_end, c, l, n)
 #define scan_tasklist(c, l, n) _ext_scan_at(&_scan_tasklist, c, l, n)
 #define scan_formula_dollar_inline_open(c, l, n) _ext_scan_at(&_scan_formula_dollar_inline_open, c, l, n)
+#define scan_formula_dollar_backtick_open(c, l, n) _ext_scan_at(&_scan_formula_dollar_backtick_open, c, l, n)
 #define scan_formula_dollar_display_open(c, l, n) _ext_scan_at(&_scan_formula_dollar_display_open, c, l, n)
 #define scan_formula_latex_backslash_inline_open(c, l, n)                                                              \
     _ext_scan_at(&_scan_formula_latex_backslash_inline_open, c, l, n)

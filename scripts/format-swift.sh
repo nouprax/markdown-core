@@ -26,6 +26,6 @@ esac
     {
         printf '%s\0' Package.swift
         find packages/swift-markdown-core \
-            \( -type d -name '.build' -prune \) -o \
+            \( -type d \( -name '.build' -o -name 'Generated' \) -prune \) -o \
             \( -type f -name '*.swift' -print0 \)
     } | xargs -0 swift format $swift_format_args --configuration .swift-format

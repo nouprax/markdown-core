@@ -8,13 +8,7 @@ table below is a second copy of the JSON, **checked against it by
 so the two cannot drift. Edit the JSON; the audit will tell you if this table
 disagrees.
 
-Until Step 15A this table WAS the contract and it lived under
-`docs/deprecated/`, which is archive and not normative, while four executable
-policy files read it from there.
-
-Status: frozen for Phase 5 on 2026-07-11.
-
-Phase 18 adds the executable repository-level conformance data at
+The executable repository-level conformance data lives at
 `specs/canonical-ast/manifest.json`. That manifest and its reviewed
 Markdown/`.ast` pairs are the sole cross-platform oracle for this contract;
 they do not change the production AST or define a serialization format.
@@ -27,8 +21,7 @@ or semantics.
 ## Core rules
 
 - `Markup` is the only abstract AST node type.
-- Every `Markup` has a non-optional `id: Identity` and a non-optional
-  `scope: Scope`.
+- Every `Markup` has a non-optional `scope: Scope`.
 - AST values are immutable after construction and own their strings and
   collections. No value retains a C node, document, allocator, or WASM handle.
 - Collections are ordered and read-only. Their order is source order unless a
@@ -36,35 +29,11 @@ or semantics.
 - `TableRow` and `TableCell` are scoped `Markup` kinds reached through typed
   table properties. Being owned by `header`, `rows`, `cells`, and `content`
   does not make them non-node structural records.
-- A directive label is not a synthetic `Markup`. It is the typed `label`
-  property of its directive and contains inline `Markup` values.
+- `DirectiveLabel` is `Markup` owned by a directive's typed `label` field. It
+  is not an element of the directive's `content` and is not exposed through a
+  generic child/content sequence.
 - The AST contains parsing semantics only. Renderer state, security policy,
   layout, highlighting, generated HTML, and MS-private syntax are excluded.
-
-## Identity
-
-```text
-Identity(block: integer, ordinal: integer)
-```
-
-A node's identity is the name a consumer tracks an element by across a
-stream's feeds — the render key (docs/STREAMING.md §4 D4). `block` is the
-owning block's document-unique mint — the block is the minimal update unit, so
-it alone names the region an incremental consumer re-renders — and `ordinal`
-is the node's pre-order ordinal among that block's inline descendants, 0 for
-the block itself. The pair is unique within one document and never reused
-within a parse; it is not stable across documents. The halves are opaque
-values: compare them, key maps by them, and derive nothing else from them.
-Bindings copy both halves from `markdown_core_node_identifier` without
-composing, offsetting, or reinterpreting them.
-
-The three reference kinds also carry `definition: Identity`: the identity of
-the definition the reference resolved to, which is the first definition of its
-label in document order — block mints are monotone in parse order, so it is
-also the smallest. A reference node exists only because resolution succeeded
-(a well-formed reference that resolves to nothing is prose), so the edge never
-means "unresolved", and every later definition of the same label stays in the
-tree where it was written.
 
 ## Coordinates
 
@@ -96,8 +65,8 @@ Placement and AST containment are related but not interchangeable. In
 particular, `Formula` may be `standalone` while remaining inside a paragraph.
 
 **`Formula` is the only kind that carries a `mode`**, because it is the only
-one whose value is a fact about the source rather than about the kind. The
-other five carried one until Step 15A.4 and every one of them was a constant:
+one whose value is a fact about the source rather than about the kind. For the
+other five kinds the placement is constant and therefore implied by the kind:
 
 | Type | Its one value, now implied by the kind |
 | --- | --- |
@@ -110,10 +79,11 @@ other five carried one until Step 15A.4 and every one of them was a constant:
 ### Directive attributes
 
 Directive `attributes` is an optional ordered sequence of `DirectiveAttribute`
-pairs, each a `name: String` and a `value: String`. It is **sorted by name**:
-after class-accumulation and last-value-wins the sequence is a map, and a map
-has no source order to keep. `null` means the source wrote no attribute
-container; an empty sequence means it wrote `{}`.
+pairs, each a `name: String` and a `value: String`. It preserves the source
+order of each name's first occurrence. A later occurrence updates that same
+slot instead of moving it; `class` accumulates there in source order. `null`
+means the source wrote no attribute container; an empty sequence means it
+wrote `{}`.
 
 Markdown source uses `{key=value}` attribute-list syntax. Bare attributes and
 unquoted, single-quoted or double-quoted values are supported. `#name` and
@@ -148,7 +118,7 @@ error rather than silently dropping a value.
 
 | Kind | Fields in canonical order | Nullability and invariants |
 | --- | --- | --- |
-| `Document` | `content: [Markup]` | block content; the root kind. Binding TYPES name it `Semantic` (the C enum and the dump label keep `Document`) |
+| `Document` | `content: [Markup]` | block content |
 | `BlockQuote` | `content: [Markup]` | block content |
 | `Paragraph` | `content: [Markup]` | inline content |
 | `Heading` | `level: Int`, `content: [Markup]` | `level` is 1 through 6; inline content |
@@ -161,10 +131,10 @@ error rather than silently dropping a value.
 | `Table` | `alignments: [TableAlignment]`, `header: TableRow`, `rows: [TableRow]` | one alignment per column; header is non-optional |
 | `TableRow` | `isHeader: Bool`, `cells: [TableCell]` | `isHeader` is true only for `Table.header` and false for entries in `Table.rows` |
 | `TableCell` | `content: [Markup]` | inline content |
-| `DirectiveBlock` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes is an ordered sequence of name/value pairs sorted by name; label is a node whose scope spans its brackets; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
+| `DirectiveBlock` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never part of content; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
 | `DirectiveLabel` | `content: [Markup]` | inline content; the scope spans the brackets, so an empty label is still a place |
-| `FootnoteDefinition` | `label: String`, `norm: String`, `content: [Markup]` | `label` is non-empty and as written; `norm` is the match key the label folds to and KEEPS the leading `^`, so a footnote and a link definition of one name cannot collide; block content |
-| `ReferenceDefinition` | `label: String`, `norm: String`, `destination: String`, `title: String?` | `label` is the bytes between the brackets as written, delimiters excluded, escapes and character references unresolved, whitespace uncollapsed, case unfolded; `norm` is the match key — full Unicode case fold, trimmed, internal whitespace collapsed — and is compared with memcmp over its bytes; neither derives the other; `destination` is never absent, because a definition that could not build one is not produced at all; absent and empty title remain distinct; leaf |
+| `FootnoteDefinition` | `label: String`, `identifier: String`, `content: [Markup]` | `label` is non-empty and as written; `identifier` KEEPS the leading `^`, so a footnote and a link definition of one name cannot collide; block content |
+| `ReferenceDefinition` | `label: String`, `identifier: String`, `destination: String`, `title: String?` | `label` is the bytes between the brackets as written, delimiters excluded, escapes and character references unresolved, whitespace uncollapsed, case unfolded; `identifier` is the match key — full Unicode case fold, trimmed, internal whitespace collapsed — and is compared with memcmp over its bytes; neither derives the other; `destination` is never absent, because a definition that could not build one is not produced at all; absent and empty title remain distinct; leaf |
 | `Text` | `literal: String` | leaf |
 | `SoftBreak` | none | leaf |
 | `LineBreak` | none | leaf |
@@ -176,10 +146,10 @@ error rather than silently dropping a value.
 | `Strikethrough` | `content: [Markup]` | inline content |
 | `Link` | `destination: String`, `title: String?`, `content: [Markup]` | `destination` is never absent (Q26): `[a]()` and `[a](<>)` wrote one and wrote nothing in it, and a link with no destination at all is a `LinkReference`; absent and empty title remain distinct; inline content |
 | `Image` | `source: String`, `title: String?`, `content: [Markup]` | `source` is never absent, for the reason `Link.destination` is not; absent and empty title remain distinct; content is parsed alt-text inline content |
-| `LinkReference` | `label: String`, `form: ReferenceForm`, `definition: Identity`, `content: [Markup]` | `label` is as written, exactly as on `ReferenceDefinition`; the node carries NO destination and NO match key — the destination is stated once, at the definition, and `definition` names it: the identity of the first definition of this label in document order, whose `norm` IS the match key; `form` records which of the three spellings the source used, and all three resolve identically; inline content |
-| `ImageReference` | `label: String`, `form: ReferenceForm`, `definition: Identity`, `content: [Markup]` | as `LinkReference`; content is parsed alt-text inline content |
-| `Directive` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?` | attributes is an ordered sequence of name/value pairs sorted by name; label is a node whose scope spans its brackets; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
-| `FootnoteReference` | `label: String`, `definition: Identity` | `label` is non-empty and as written; `definition` is the identity of the first `FootnoteDefinition` of this label in document order, whose `norm` — caret included — is the match key; no form — there is one footnote call syntax; leaf |
+| `LinkReference` | `label: String`, `identifier: String`, `form: ReferenceForm`, `content: [Markup]` | `label` and `identifier` are exactly as on `ReferenceDefinition`; the node carries NO destination — the destination is stated once, at the definition; `form` records which of the three spellings the source used, and all three resolve identically; inline content |
+| `ImageReference` | `label: String`, `identifier: String`, `form: ReferenceForm`, `content: [Markup]` | as `LinkReference`; content is parsed alt-text inline content |
+| `Directive` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?` | attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never a child/content element; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
+| `FootnoteReference` | `label: String`, `identifier: String` | `label` is non-empty and as written; `identifier` KEEPS the leading `^`; no form — there is one footnote call syntax; leaf |
 
 Every row above also has the final inherited field `scope: Scope`; it is not
 repeated in the table.
@@ -199,14 +169,11 @@ validates the owning edge: the value in `Table.header` is true and values in
 
 ## ParseOptions
 
-The living `Document` is the bindings' only parsing entry:
-`Document(markdown, options).seal()` for whole text, `Document(options)` plus
-`feed` for a stream. Either way a parse is a `Read` — `semantic`, the tree this
-table describes. Its scopes are counted against the normalized source — UTF-8
-as fed, every NUL replaced by U+FFFD, every line ending a single `\n` and
-every line having one — which the library does not hand back. The C
-facade keeps its own entries (`markdown_core_document_parse` and the session).
-This table is the AST's contract. `ParseOptions` is immutable and contains exactly these booleans:
+`Document.parse(source, options = ParseOptions.default)` is the only parsing
+entry point. A parse returns exactly the `Document` this table describes. The
+document does not retain source text, a normalized source copy, a line index,
+tokens, trivia, or recovery records. `ParseOptions` is immutable and contains
+exactly these booleans:
 
 | Field | Default |
 | --- | --- |
@@ -228,46 +195,41 @@ and is not an option.
 Renderer-only `unsafe`, `github-pre-lang`, and `full-info-string` options do
 not exist. Raw HTML, URLs, and full code info strings are always retained.
 
-## Visitor and Walker
+## Visitor
 
 The typed `Visitor<Result>` has one dispatch method for every `Markup` kind in
-the node inventory, including `TableRow` and `TableCell`. A directive label has
-no dispatch method because it is a typed collection edge, not synthetic
-`Markup`. The interface is exhaustive: every typed method is required, there is
+the node inventory, including `TableRow`, `TableCell`, and `DirectiveLabel`.
+The interface is exhaustive: every typed method is required, there is
 no `defaultVisit`, optional handler, catch-all adapter, or protocol-extension
 fallback. Adding a `Markup` kind must therefore produce compile errors in every
 visitor until the new case is handled. Visiting one node does not implicitly
 recurse.
 
-The standard read-only `Walker` performs depth-first traversal and emits
-`entering` then `exiting` events for every reachable `Markup`. Applying an
-exhaustive Visitor on `entering` invokes it exactly once per node. Walker owns
-the typed-property rules, so consumers never inspect kinds to discover
-structure:
+There is no public Walker or generic child projection. A recursive operation
+is implemented by the operation's exhaustive Visitor itself: each node-kind
+callback performs that node's work and explicitly decides whether and how to
+visit its typed fields and content. This keeps recursion subordinate to AST
+semantics instead of pretending every `Markup`-valued relation is one uniform
+child edge. In particular, a directive callback may inspect or visit `label`
+without making it directive content.
 
-- ordinary containers traverse `content` in index order;
-- `List` traverses `items` in order;
-- `Table` traverses `header`, then `rows`; each row traverses cells and each
-  cell traverses inline content;
-- directives traverse `label` first when present, then block `content`;
-- `Link` and `Image` traverse their inline `content`.
-
-Rows and cells produce normal visitor callbacks before their descendants.
-Visitor and Walker expose no replace, remove, setter, parent mutation, or
+The Visitor exposes no replace, remove, setter, parent mutation, or
 native-handle callback.
 
-## Diagnostic dump
+## Debug dump
 
 Swift, Kotlin, and TypeScript publish `TreeDumper.dump(markup)` and a
-convenience `Markup.dump()` method. Both traverse that platform's immutable
-typed tree through its exhaustive Visitor and read-only Walker; they do not
-call the C diagnostic dump. Dumping a non-root Markup treats that value as
-the root and emits only its subtree. The canonical text grammar is defined in
-`canonical-ast-dump.md` and is diagnostic rather than a serialization API.
+convenience `Markup.dump()` method. Each TreeDumper uses exhaustive per-node
+Visitor dispatch, like cmark's per-node render callback: that node's dump
+function emits its fields and decides which content or field nodes to visit.
+No binding calls the C debug dump. Dumping a non-Document Markup treats that
+value as the root and emits only its operation-defined dump projection. The
+canonical text grammar is defined in `canonical-ast-dump.md` and is for
+debugging rather than serialization.
 
 ## Kotlin `List` naming contract
 
-The concrete AST type remains `com.nouprax.markdown.core.List`. Kotlin source
+The Kotlin AST type remains `com.nouprax.markdown.core.List`. Kotlin source
 inside the library spells collection types as `kotlin.collections.List<T>`.
 Consumers resolve ambiguity with either the fully qualified AST name or an
 import alias such as:

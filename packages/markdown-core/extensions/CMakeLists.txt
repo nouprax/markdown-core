@@ -1,9 +1,6 @@
 set(LIBRARY "libmarkdown-core-extensions")
 set(STATICLIBRARY "libmarkdown-core-extensions_static")
 set(PUBLIC_STATIC_LIBRARY "libmarkdown-core-public-static")
-if(NOT WIN32)
-    find_package(Threads REQUIRED)
-endif()
 set(LIBRARY_SOURCES
     ast.c
     core-extensions.c
@@ -23,6 +20,7 @@ include_directories(${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_BINARY
 include_directories(. ${CMAKE_CURRENT_BINARY_DIR})
 
 set(CMAKE_C_FLAGS_PROFILE "${CMAKE_C_FLAGS_RELEASE} -pg")
+set(CMAKE_LINKER_PROFILE "${CMAKE_LINKER_FLAGS_RELEASE} -pg")
 
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     set_source_files_properties(ext_scanners.c PROPERTIES COMPILE_FLAGS "-Wno-unused-variable")
@@ -102,9 +100,6 @@ if(MARKDOWN_CORE_STATIC)
         PRIVATE ${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
         PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
                $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-    if(NOT WIN32)
-        target_link_libraries(${PUBLIC_STATIC_LIBRARY} PUBLIC Threads::Threads)
-    endif()
     list(APPEND MARKDOWN_CORE_INSTALL ${PUBLIC_STATIC_LIBRARY})
     if(NOT MARKDOWN_CORE_SHARED)
         set(MARKDOWN_CORE_EXPORT_TARGET ${PUBLIC_STATIC_LIBRARY})
@@ -134,8 +129,18 @@ if(MARKDOWN_CORE_SHARED OR MARKDOWN_CORE_STATIC)
 endif()
 
 # Feature tests
-# The feature tests live in core/CMakeLists.txt, whose configure_file is the
-# one consumer of their results; nothing in this directory reads them.
+include(CheckIncludeFile)
+include(CheckCSourceCompiles)
+include(CheckCSourceRuns)
+include(CheckSymbolExists)
+check_include_file(stdbool.h HAVE_STDBOOL_H)
+check_c_source_compiles("int main() { __builtin_expect(0,0); return 0; }" HAVE___BUILTIN_EXPECT)
+check_c_source_compiles(
+    "
+  int f(void) __attribute__ (());
+  int main() { return 0; }
+"
+    HAVE___ATTRIBUTE__)
 
 # Always compile with warnings
 if(MSVC)
@@ -147,7 +152,7 @@ if(MSVC)
     endif()
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /WX /wd4706 /wd4204 /wd4221 /wd4100 /D_CRT_SECURE_NO_WARNINGS")
 elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wno-unused-parameter -std=c11 -pedantic")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wno-unused-parameter -std=c99 -pedantic")
     # GCC folds "an anonymous enum compared with, or converted to, a named one"
     # into -Wenum-compare and -Wenum-conversion, both of which -Wall turns on.
     # Clang has the SAME diagnostic under a name of its own and puts it in no

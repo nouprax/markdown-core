@@ -1,7 +1,7 @@
 #ifndef MARKDOWN_CORE_H
 #define MARKDOWN_CORE_H
 
-#include <stdio.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "markdown-core-export.h"
 #include "markdown-core-version.h"
@@ -92,7 +92,7 @@ typedef struct markdown_core_node markdown_core_node;
 #endif
 typedef struct markdown_core_parser markdown_core_parser;
 typedef struct markdown_core_iter markdown_core_iter;
-typedef struct markdown_core_syntax_extension markdown_core_syntax_extension;
+typedef struct markdown_core_extension markdown_core_extension;
 
 /**
  * ## Custom memory allocator support
@@ -115,7 +115,7 @@ markdown_core_mem *markdown_core_get_default_mem_allocator(void);
 
 /** Callback for freeing user data with a 'markdown_core_mem' context.
  */
-typedef void (*markdown_core_free_func)(markdown_core_mem *mem, void *data);
+typedef void (*markdown_core_free_func)(markdown_core_mem *mem, void *user_data);
 
 /*
  * ## Basic data structures
@@ -139,11 +139,8 @@ typedef struct _markdown_core_llist {
  *  data pointer of each of its elements
  */
 MARKDOWN_CORE_EXPORT
-void markdown_core_llist_free_full(
-    markdown_core_mem *mem,
-    markdown_core_llist *head,
-    markdown_core_free_func free_func
-);
+void markdown_core_llist_free_full(markdown_core_mem *mem, markdown_core_llist *head,
+                                   markdown_core_free_func free_func);
 
 /** Free the list starting with 'head'
  */
@@ -164,21 +161,15 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new(markdown_core_no
  * allocator used to allocate the node.  Note:  be sure to use the same
  * allocator for every node in a tree, or bad things can happen.
  */
-MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_mem(
-    markdown_core_node_type type,
-    markdown_core_mem *mem
-);
+MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_mem(markdown_core_node_type type,
+                                                                         markdown_core_mem *mem);
 
-MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_ext(
-    markdown_core_node_type type,
-    const markdown_core_syntax_extension *extension
-);
+MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
+                                                                         const markdown_core_extension *extension);
 
-MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_mem_and_ext(
-    markdown_core_node_type type,
-    markdown_core_mem *mem,
-    const markdown_core_syntax_extension *extension
-);
+MARKDOWN_CORE_EXPORT markdown_core_node *
+markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
+                                        const markdown_core_extension *extension);
 
 /** Frees the memory allocated for a node and any children.
  */
@@ -189,46 +180,21 @@ MARKDOWN_CORE_EXPORT void markdown_core_node_free(markdown_core_node *node);
  */
 
 /** Returns the next node in the sequence after 'node', or NULL if
- * there is none. INTRUSIVE LISTS ONLY (D9): inline content and the CST.
- * A derived CONTAINER's children live in the parent's vector, where a
- * shared child cannot carry a per-tree sibling -- walk those with
- * markdown_core_node_child_begin/child_step below, which handle every
- * child shape.
+ * there is none.
  */
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_next(markdown_core_node *node);
 
 /** Returns the previous node in the sequence after 'node', or NULL if
- * there is none. Intrusive lists only, as markdown_core_node_next.
+ * there is none.
  */
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_previous(markdown_core_node *node);
-
-/** Walk 'node's children whatever their shape (D9): begin answers the
- * first child and seeds '*cursor'; step answers the one after 'child'.
- * O(1) a step, no allocation. The cursor is meaningful only to these two.
- *
- * A child in a derived container may be SHARED between reads of one
- * stream, and every node under it is too. Reading is always safe; the
- * mutation surface fails closed at any depth: free and unlink are
- * no-ops, insert/append/replace refuse shared nodes and shared parents
- * alike. The tree's hold on a shared child is released when the tree
- * itself is freed, never by freeing the child.
- *
- *     size_t cursor;
- *     markdown_core_node *child = markdown_core_node_child_begin(node, &cursor);
- *     for (; child; child = markdown_core_node_child_step(node, child, &cursor)) { ... }
- */
-MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_child_begin(markdown_core_node *node, size_t *cursor);
-MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_child_step(
-    markdown_core_node *node,
-    markdown_core_node *child,
-    size_t *cursor
-);
 
 /** Returns the parent of 'node', or NULL if there is none.
  */
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_parent(markdown_core_node *node);
 
-/** Returns the first child of 'node', or NULL if 'node' has no children.
+/** Returns the first content child of 'node', or NULL if 'node' has no
+ * children. Node-valued typed fields are not part of this sibling list.
  */
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_first_child(markdown_core_node *node);
 
@@ -241,10 +207,10 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_last_child(markdown_
  *
  * An iterator will walk through a tree of nodes, starting from a root
  * node, returning one node at a time, together with information about
- * whether the node is being entered or exited.  The iterator will
- * first descend to a child node, if there is one.  When there is no
- * child, the iterator will go to the next sibling.  When there is no
- * next sibling, the iterator will return to the parent (but with
+ * whether the node is being entered or exited. The iterator first descends to
+ * the first child, then advances through next siblings, and returns to the
+ * parent when no sibling remains. Node-valued fields are independent roots
+ * and are never discovered by this traversal. Returning to the parent uses
  * a 'markdown_core_event_type' of `MARKDOWN_CORE_EVENT_EXIT`).  The iterator will
  * return `MARKDOWN_CORE_EVENT_DONE` when it reaches the root node again.
  * An iterator might be used to inspect or transform an AST in some systematic
@@ -263,13 +229,20 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_last_child(markdown_
  *         markdown_core_iter_free(iter);
  *     }
  *
- * The event contract is total: every node in the subtree yields exactly one
- * `ENTER` and exactly one `EXIT`, whatever its type -- a childless node's
- * `EXIT` follows its `ENTER` directly.
+ * Iterators will never return `EXIT` events for leaf nodes, which are nodes
+ * of type:
  *
- * Nodes must only be modified after an `EXIT` event; the only node that may
- * be freed is the one whose `EXIT` is current.  (See `markdown_core_iter_new`
- * below for the full contract and its history.)
+ * * MARKDOWN_CORE_NODE_HTML_BLOCK
+ * * MARKDOWN_CORE_NODE_THEMATIC_BREAK
+ * * MARKDOWN_CORE_NODE_CODE_BLOCK
+ * * MARKDOWN_CORE_NODE_TEXT
+ * * MARKDOWN_CORE_NODE_SOFT_BREAK
+ * * MARKDOWN_CORE_NODE_LINE_BREAK
+ * * MARKDOWN_CORE_NODE_CODE
+ * * MARKDOWN_CORE_NODE_HTML
+ *
+ * Nodes must only be modified after an `EXIT` event, or an `ENTER` event for
+ * leaf nodes.
  */
 
 typedef enum {
@@ -319,20 +292,40 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter);
 MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter);
 
+/** Returns the current event type.
+ */
+MARKDOWN_CORE_EXPORT
+markdown_core_event_type markdown_core_iter_get_event_type(markdown_core_iter *iter);
+
+/** Returns the root node.
+ */
+MARKDOWN_CORE_EXPORT
+markdown_core_node *markdown_core_iter_get_root(markdown_core_iter *iter);
+
 /** Resets the iterator so that the current node is 'current' and
  * the event type is 'event_type'.  The new current node must be a
  * descendant of the root node or the root node itself.
  */
 MARKDOWN_CORE_EXPORT
-void markdown_core_iter_reset(
-    markdown_core_iter *iter,
-    markdown_core_node *current,
-    markdown_core_event_type event_type
-);
+void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_node *current,
+                              markdown_core_event_type event_type);
 
 /**
  * ## Accessors
  */
+
+/** Returns the user data of 'node'.
+ */
+MARKDOWN_CORE_EXPORT void *markdown_core_node_get_user_data(markdown_core_node *node);
+
+/** Sets arbitrary user data for 'node'.  Returns 1 on success,
+ * 0 on failure.
+ */
+MARKDOWN_CORE_EXPORT int markdown_core_node_set_user_data(markdown_core_node *node, void *user_data);
+
+/** Set free function for user data */
+MARKDOWN_CORE_EXPORT
+int markdown_core_node_set_user_data_free_func(markdown_core_node *node, markdown_core_free_func free_func);
 
 /** Returns the type of 'node', or `MARKDOWN_CORE_NODE_NONE` on error.
  */
@@ -347,13 +340,6 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node);
 /** Returns the string contents of 'node', or an empty
     string if none is set.  Returns NULL if called on a
     node that does not have string content.
-
-    MATERIALIZES a NUL-terminated private copy on first call, WRITING the
-    node (#153): an inline list can be shared by several derived documents,
-    so this call needs the caller to order access across every document
-    that can reach the node -- the cross-thread freedom the facade contract
-    grants applies to the facade's own accessors, which read views and
-    mutate nothing.
  */
 MARKDOWN_CORE_EXPORT const char *markdown_core_node_get_literal(markdown_core_node *node);
 
@@ -406,6 +392,13 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_get_list_tight(markdown_core_node *n
  */
 MARKDOWN_CORE_EXPORT int markdown_core_node_set_list_tight(markdown_core_node *node, int tight);
 
+/** Returns the source-order item index of 'node'. */
+MARKDOWN_CORE_EXPORT int markdown_core_node_get_list_item_index(markdown_core_node *node);
+
+/** Sets item index of 'node'. Returns 1 on success, 0 on failure.
+ */
+MARKDOWN_CORE_EXPORT int markdown_core_node_set_list_item_index(markdown_core_node *node, int idx);
+
 /** Returns the info string from a fenced code block.
  */
 MARKDOWN_CORE_EXPORT const char *markdown_core_node_get_fence_info(markdown_core_node *node);
@@ -418,6 +411,16 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_set_fence_info(markdown_core_node *n
 /** Returns 1 if a fenced code block has a closing fence, 0 otherwise.
  */
 MARKDOWN_CORE_EXPORT int markdown_core_node_get_fence_closed(markdown_core_node *node);
+
+/** Sets code blocks fencing details
+ */
+MARKDOWN_CORE_EXPORT int markdown_core_node_set_fenced(markdown_core_node *node, int fenced, int length, int offset,
+                                                       char character);
+
+/** Returns code blocks fencing details
+ */
+MARKDOWN_CORE_EXPORT int markdown_core_node_get_fenced(markdown_core_node *node, int *length, int *offset,
+                                                       char *character);
 
 /** Returns the URL of a link or image 'node', or an empty string
     if no URL is set.  Returns NULL if called on a node that is
@@ -503,45 +506,7 @@ MARKDOWN_CORE_EXPORT int markdown_core_consolidate_text_nodes(markdown_core_node
  *
  *     markdown_core_node *document = markdown_core_parse_document("Hello *world*", 13,
  *                                                 MARKDOWN_CORE_OPT_DEFAULT);
- *
- * Streaming interface:
- *
- *     markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
- *     FILE *fp = fopen("myfile.md", "rb");
- *     while ((bytes = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
- *     	   markdown_core_parser_feed(parser, buffer, bytes);
- *     	   if (bytes < sizeof(buffer)) {
- *     	       break;
- *     	   }
- *     }
- *     document = markdown_core_parser_finish(parser);
- *     markdown_core_parser_free(parser);
  */
-
-/** Creates a new parser object.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_parser *markdown_core_parser_new(int options);
-
-/** Creates a new parser object with the given memory allocator
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_parser *markdown_core_parser_new_with_mem(int options, markdown_core_mem *mem);
-
-/** Frees memory allocated for a parser object.
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_parser_free(markdown_core_parser *parser);
-
-/** Feeds a string of length 'len' to 'parser'.
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_parser_feed(markdown_core_parser *parser, const char *buffer, size_t len);
-
-/** Finish parsing and return a pointer to a tree of nodes.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser);
 
 /** Parse a CommonMark document in 'buffer' of length 'len'.
  * Returns a pointer to a tree of nodes.  The memory allocated for
@@ -559,16 +524,16 @@ markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len,
  */
 #define MARKDOWN_CORE_OPT_DEFAULT 0
 
-/* Bits (1 << 1), (1 << 8) and (1 << 12) were MARKDOWN_CORE_OPT_SOURCEPOS,
- * MARKDOWN_CORE_OPT_NORMALIZE and MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG.
- * The first two changed no behavior - position tracking is unconditional
- * in the 3.0 scope model, and NORMALIZE was inherited as a no-op. The
- * liberal-tag scan was unreachable from the frozen 3.0 facade and its
- * scanner rescanned to end of line for every '<' (quadratic); it is
- * deleted rather than memoized. All three bits stay unassigned.
+/** Track multiline inline source positions while parsing. */
+#define MARKDOWN_CORE_OPT_SOURCEPOS (1 << 1)
 
+/**
  * ### Options affecting parsing
  */
+
+/** Legacy option (no effect).
+ */
+#define MARKDOWN_CORE_OPT_NORMALIZE (1 << 8)
 
 /** Validate UTF-8 in the input before parsing, replacing illegal
  * sequences with the replacement character U+FFFD.
@@ -578,6 +543,10 @@ markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len,
 /** Convert straight quotes to curly, --- to em dashes, -- to en dashes.
  */
 #define MARKDOWN_CORE_OPT_SMART (1 << 10)
+
+/** Be liberal in interpreting inline HTML tags.
+ */
+#define MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG (1 << 12)
 
 /** Strip HTML comment nodes from the parsed AST.
  */

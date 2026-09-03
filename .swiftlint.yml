@@ -1,10 +1,12 @@
 included:
     - Package.swift
     - packages/swift-markdown-core
+    - tests/consumers/swift
 
 excluded:
     - .build
     - "**/.build"
+    - packages/swift-markdown-core/Sources/Generated
 
 # swift-format owns layout; SwiftLint covers correctness and API conventions.
 disabled_rules:

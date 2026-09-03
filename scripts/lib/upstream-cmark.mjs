@@ -9,7 +9,7 @@
  * with upstream".
  *
  * Both parsers' output is normalized into one comparable tree, so a divergence
- * is either a registered difference (`specs/upstream-parity/deltas.json`) or a
+ * is either a registered difference (`specs/oracles/cmark-gfm/deltas.json`) or a
  * defect. The two ASTs are not the same shape, so the mapping below is
  * load-bearing and each rule is a claim about equivalence, not a convenience.
  */
@@ -48,7 +48,7 @@ const XML_KIND = {
  * alignments, a fenced-vs-indented code flag, a fence-closed flag, an inline
  * code placement mode, or a footnote label, so there is nothing on that side
  * to compare against. Those fields are pinned by this repository's own golden
- * dumps instead, and the gap is recorded in specs/upstream-parity/README.md.
+ * dumps instead, and the gap is recorded in specs/oracles/cmark-gfm/README.md.
  */
 const COMPARED = {
     Heading: ["level"],
@@ -283,16 +283,18 @@ export function applyUpstreamReferenceModel(root, fired) {
     const survey = (node) => {
         if (node.kind === "ReferenceDefinition") {
             fired?.add("reference-definition-node");
-            // KEYED BY THE DEFINITION'S OWN IDENTITY. A reference stopped
-            // carrying a match key and NAMES its definition instead
-            // (`definition=` is the winning definition's `id=`), so following
-            // the edge IS the projection — and the check got stronger for it:
-            // upstream resolves by its own label fold, this walk resolves by
-            // the engine's stated edge, and a reference whose edge names the
-            // wrong definition shows up as a destination difference on an
-            // input cmark gets right. One that resolved to none stays `Text`
-            // where upstream has a `Link`.
-            definitions.set(node.fields.id ?? "", node.fields);
+            // GROUPED BY `identifier`, WHICH THE ENGINE STATES. Folding the raw
+            // label here instead would need the full Unicode case fold: `[SS]`
+            // defines the label `[\u1e9e]` refers to, and JavaScript has no
+            // full case fold — `toLowerCase()` maps \u1e9e to \u00df, not to
+            // `ss`, so the projection would resolve to the wrong definition on
+            // an input cmark gets right. The check is not weakened by trusting
+            // the key: a reference that resolved to the WRONG definition names
+            // that one here, and its destination is still compared; one that
+            // resolved to none stays `Text` where upstream has a `Link`.
+            const key = node.fields.identifier ?? "";
+            // The earliest definition of a label wins, in both models.
+            if (!definitions.has(key)) definitions.set(key, node.fields);
         }
         for (const child of node.children) survey(child);
     };
@@ -304,7 +306,7 @@ export function applyUpstreamReferenceModel(root, fired) {
             .map((child) => {
                 if (child.kind === "LinkReference" || child.kind === "ImageReference") {
                     fired?.add("reference-definition-node");
-                    const found = definitions.get(child.fields.definition ?? "");
+                    const found = definitions.get(child.fields.identifier ?? "");
                     rewrite(child);
                     return {
                         kind: child.kind === "LinkReference" ? "Link" : "Image",

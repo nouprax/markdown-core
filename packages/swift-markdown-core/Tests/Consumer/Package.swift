@@ -1,9 +1,9 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.3
 import PackageDescription
 
 let package = Package(
     name: "MarkdownCoreConsumer",
-    platforms: [.iOS(.v18), .macOS(.v15)],
+    platforms: [.iOS(.v26), .macOS(.v26)],
     dependencies: [.package(path: "../../../..")],
     targets: [
         .testTarget(

@@ -1,7 +1,8 @@
 # Convenience wrapper around the single CMake/CTest graph.  This Makefile
 # never implements a second test or benchmark runner: `make test` runs the
-# CTest `correctness` preset, `make bench` runs the CTest `benchmark` preset,
-# and the sanitizer targets reuse the same graph through their presets.
+# CTest `correctness` preset, `make bench` explicitly creates the isolated
+# local benchmark graph, and sanitizer targets reuse the test graph through
+# their presets.
 
 SRCDIR=packages/markdown-core/core
 EXTDIR=packages/markdown-core/extensions
@@ -11,11 +12,11 @@ UBSAN_BUILDDIR=build/ubsan
 TSAN_BUILDDIR=build/tsan
 MARKDOWN_CORE=$(BUILDDIR)/packages/markdown-core/core/markdown-core
 MARKDOWN_CORE_FUZZ=$(BUILDDIR)/packages/markdown-core/core/markdown-core-fuzz
-SPEC=packages/markdown-core/tests/fixtures/spec.txt
+CLANG_CHECK?=clang-check
 AFL_PATH?=/usr/local/bin
 
-.PHONY: all build test bench asan-test ubsan-test tsan-test install clean \
-	afl libFuzzer update-spec
+.PHONY: all build test bench asan-test ubsan-test tsan-test install clean distclean \
+	afl libFuzzer clang-check archive
 
 all: build
 
@@ -26,7 +27,9 @@ build:
 test: build
 	ctest --preset correctness
 
-bench: build
+bench:
+	cmake --preset benchmark
+	cmake --build --preset benchmark --parallel
 	ctest --preset benchmark
 
 asan-test:
@@ -71,8 +74,19 @@ libFuzzer:
 	cmake --build --preset default --parallel --target markdown-core-fuzz
 	packages/markdown-core/tests/core/run-markdown-core-fuzz $(MARKDOWN_CORE_FUZZ)
 
+clang-check: all
+	${CLANG_CHECK} -p $(BUILDDIR) -analyze $(SRCDIR)/*.c
+
+archive:
+	git archive --prefix=markdown-core/ -o markdown-core.tar.gz HEAD
+	git archive --prefix=markdown-core/ -o markdown-core.zip HEAD
+
 clean:
 	rm -rf build
+
+distclean: clean
+	-rm -rf *.dSYM
+	-rm -f README.html
 
 # Maintenance-only source generation; the generated files are tracked, so
 # these never run during normal build or test.
@@ -83,7 +97,7 @@ $(SRCDIR)/scanners.c: $(SRCDIR)/scanners.re
 		false; \
 		;; \
 	esac
-	re2c -W -Werror --case-insensitive -b -i --no-generation-date -8 \
+	re2c -W -Werror --case-insensitive -b -i --no-generation-date \
 		--encoding-policy substitute -o $@ $<
 
 $(EXTDIR)/ext_scanners.c: $(EXTDIR)/ext_scanners.re
@@ -93,11 +107,5 @@ $(EXTDIR)/ext_scanners.c: $(EXTDIR)/ext_scanners.re
 		false; \
 		;; \
 	esac
-	re2c -W -Werror --case-insensitive -b -i --no-generation-date -8 \
+	re2c --case-insensitive -b -i --no-generation-date -8 \
 		--encoding-policy substitute -o $@ $<
-
-# Explicit maintenance command; normal test and bench runs never touch the
-# network.
-update-spec:
-	curl 'https://raw.githubusercontent.com/jgm/CommonMark/master/spec.txt'\
- > $(SPEC)

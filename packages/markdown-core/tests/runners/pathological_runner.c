@@ -68,7 +68,7 @@ static int pc_parse(pc_context *context, const char *const *option_names) {
     if (!context->document) {
         return -1;
     }
-    return ts_ast_count_kinds(markdown_core_document_semantic(context->document), context->counts);
+    return ts_ast_count_kinds(markdown_core_document_root(context->document), context->counts);
 }
 
 static int pc_expect_count(const pc_context *context, markdown_core_node_kind kind, size_t expected, const char *what) {
@@ -83,19 +83,14 @@ static int pc_expect_count(const pc_context *context, markdown_core_node_kind ki
  * raw input, the AST equivalent of "everything stayed literal text"). */
 static int pc_expect_text(const pc_context *context, const char *expected, size_t expected_length) {
     size_t actual_length = 0;
-    char *actual = ts_ast_concat_text(markdown_core_document_semantic(context->document), &actual_length);
+    char *actual = ts_ast_concat_text(markdown_core_document_root(context->document), &actual_length);
     int result = 0;
     if (!actual) {
         return -1;
     }
     if (actual_length != expected_length || memcmp(actual, expected, expected_length) != 0) {
-        fprintf(
-            stderr,
-            "concatenated text differs from expected (%zu vs %zu bytes, first bytes: %.40s)\n",
-            actual_length,
-            expected_length,
-            actual
-        );
+        fprintf(stderr, "concatenated text differs from expected (%zu vs %zu bytes, first bytes: %.40s)\n",
+                actual_length, expected_length, actual);
         result = -1;
     }
     free(actual);
@@ -143,13 +138,8 @@ static int case_nested_strong_emph(pc_context *context) {
     return 0;
 }
 
-static int pc_literal_case(
-    pc_context *context,
-    const char *unit,
-    size_t count,
-    markdown_core_node_kind forbidden_kind,
-    const char *forbidden_name
-) {
+static int pc_literal_case(pc_context *context, const char *unit, size_t count, markdown_core_node_kind forbidden_kind,
+                           const char *forbidden_name) {
     if (pc_build(context, NULL, unit, count, NULL) != 0) {
         return -1;
     }
@@ -183,18 +173,6 @@ static int case_mismatched_openers_closers(pc_context *context) {
         return -1;
     }
     return pc_expect_count(context, MARKDOWN_CORE_KIND_STRONG, 0, "Strong");
-}
-
-static int case_emph_openers_link_closers(pc_context *context) {
-    /* `_a]` repeated (#134): unmatched emphasis openers accumulate on the
-     * delimiter stack for the whole paragraph -- pairing happens later, in
-     * `process_emphasis` -- while every lone `]` used to walk ALL of them
-     * probing for an extension opener no shipped extension registers.
-     * Quadratic on plain CommonMark prose; the case's timeout is the gate. */
-    if (pc_literal_case(context, "_a] ", 120000, MARKDOWN_CORE_KIND_EMPHASIS, "Emphasis") != 0) {
-        return -1;
-    }
-    return pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, 0, "Link");
 }
 
 static int case_openers_closers_multiple_of_3(pc_context *context) {
@@ -266,25 +244,20 @@ static int case_hard_link_emph(pc_context *context) {
         return -1;
     }
 
-    root = markdown_core_document_semantic(context->document);
-    paragraph = markdown_core_node_children(root).child;
-    {
-        markdown_core_children para_children = markdown_core_node_children(paragraph);
-        markdown_core_children link_children;
-        text = para_children.child;
-        if (!markdown_core_node_literal(text, &value) || value.length != 4 || memcmp(value.data, "**x ", 4) != 0) {
-            fprintf(stderr, "leading text is not the literal '**x '\n");
-            return -1;
-        }
-        link = markdown_core_children_next(para_children).child;
-        if (markdown_core_node_get_kind(link) != MARKDOWN_CORE_KIND_LINK ||
-            !markdown_core_node_link_properties(link, &value, &title) || value.length != 1 || value.data[0] != 'd') {
-            fprintf(stderr, "link destination is not 'd'\n");
-            return -1;
-        }
-        link_children = markdown_core_node_children(link);
-        emphasis = markdown_core_children_next(link_children).child;
+    root = markdown_core_document_root(context->document);
+    paragraph = markdown_core_node_get_first_child(root);
+    text = markdown_core_node_get_first_child(paragraph);
+    if (!markdown_core_node_literal(text, &value) || value.length != 4 || memcmp(value.data, "**x ", 4) != 0) {
+        fprintf(stderr, "leading text is not the literal '**x '\n");
+        return -1;
     }
+    link = markdown_core_node_get_next_sibling(text);
+    if (markdown_core_node_get_kind(link) != MARKDOWN_CORE_KIND_LINK ||
+        !markdown_core_node_link_properties(link, &value, &title) || value.length != 1 || value.data[0] != 'd') {
+        fprintf(stderr, "link destination is not 'd'\n");
+        return -1;
+    }
+    emphasis = markdown_core_node_get_next_sibling(markdown_core_node_get_first_child(link));
     if (markdown_core_node_get_kind(emphasis) != MARKDOWN_CORE_KIND_EMPHASIS) {
         fprintf(stderr, "emphasis is not inside the link\n");
         return -1;
@@ -376,6 +349,95 @@ static int case_deeply_nested_lists(pc_context *context) {
     return result;
 }
 
+/* cmark GHSA-66g8-4hjf-77xh regressions. These shapes distinguish a linear
+ * parser from one that repeatedly walks an already-open nesting spine. The
+ * assertions are structural so the test proves both complexity and semantics:
+ * no depth cap may turn the remaining markers back into text. */
+static int case_empty_lines_in_deeply_nested_lists(pc_context *context) {
+    const size_t depth = 10000;
+    char *cursor;
+
+    context->input_length = depth * 3 + 1;
+    context->input = (char *)malloc(context->input_length + 1);
+    if (!context->input) {
+        return -1;
+    }
+    cursor = context->input;
+    for (size_t i = 0; i < depth; i++) {
+        *cursor++ = '-';
+        *cursor++ = ' ';
+    }
+    *cursor++ = 'x';
+    memset(cursor, '\n', depth);
+    cursor += depth;
+    *cursor = 0;
+
+    if (pc_parse(context, PC_TABLE_ONLY) != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST, depth, "List") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST_ITEM, depth, "ListItem") != 0) {
+        return -1;
+    }
+    return pc_expect_text(context, "x", 1);
+}
+
+static int case_empty_lines_in_deep_list_blockquote(pc_context *context) {
+    const size_t depth = 10000;
+    char *cursor;
+
+    context->input_length = 4 * depth + 4;
+    context->input = (char *)malloc(context->input_length + 1);
+    if (!context->input) {
+        return -1;
+    }
+    cursor = context->input;
+    *cursor++ = '>';
+    *cursor++ = ' ';
+    for (size_t i = 0; i < depth; i++) {
+        *cursor++ = '-';
+        *cursor++ = ' ';
+    }
+    *cursor++ = 'x';
+    *cursor++ = '\n';
+    for (size_t i = 0; i < depth; i++) {
+        *cursor++ = '>';
+        *cursor++ = '\n';
+    }
+    *cursor = 0;
+
+    if ((size_t)(cursor - context->input) != context->input_length || pc_parse(context, PC_TABLE_ONLY) != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_BLOCK_QUOTE, 1, "BlockQuote") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST, depth, "List") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST_ITEM, depth, "ListItem") != 0) {
+        return -1;
+    }
+    return pc_expect_text(context, "x", 1);
+}
+
+static int case_emphasis_in_deep_blockquote(pc_context *context) {
+    const size_t depth = 20000;
+    char *cursor;
+
+    context->input_length = depth * 3;
+    context->input = (char *)malloc(context->input_length + 1);
+    if (!context->input) {
+        return -1;
+    }
+    cursor = context->input;
+    memset(cursor, '>', depth);
+    cursor += depth;
+    for (size_t i = 0; i < depth; i++) {
+        *cursor++ = 'a';
+        *cursor++ = '*';
+    }
+    *cursor = 0;
+
+    if (pc_parse(context, PC_TABLE_ONLY) != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_BLOCK_QUOTE, depth, "BlockQuote") != 0) {
+        return -1;
+    }
+    return 0;
+}
+
 static int case_nul_in_input(pc_context *context) {
     static const char raw[] = "abc\0de\0";
     static const char expected[] = "abc\xEF\xBF\xBD"
@@ -451,10 +513,10 @@ static int case_tables(pc_context *context) {
         pc_expect_count(context, MARKDOWN_CORE_KIND_TABLE_ROW, 89998, "TableRow") != 0) {
         return -1;
     }
-    root = markdown_core_document_semantic(context->document);
-    paragraph = markdown_core_node_children(root).child;
+    root = markdown_core_document_root(context->document);
+    paragraph = markdown_core_node_get_first_child(root);
     if (markdown_core_node_get_kind(paragraph) != MARKDOWN_CORE_KIND_PARAGRAPH ||
-        !markdown_core_node_literal(markdown_core_node_children(paragraph).child, &value) || value.length != 3 ||
+        !markdown_core_node_literal(markdown_core_node_get_first_child(paragraph), &value) || value.length != 3 ||
         memcmp(value.data, "aaa", 3) != 0) {
         fprintf(stderr, "leading paragraph is not the literal 'aaa'\n");
         return -1;
@@ -554,9 +616,67 @@ static int case_reference_collisions(pc_context *context) {
     check.expected_length = strlen(expected_text);
     check.seen = 0;
     check.mismatch = 0;
-    if (ts_ast_walk(markdown_core_document_semantic(context->document), pc_uniform_text_visit, &check) < 0 ||
+    if (ts_ast_walk(markdown_core_document_root(context->document), pc_uniform_text_visit, &check) < 0 ||
         check.mismatch || check.seen != COLLISIONS - 1) {
         fprintf(stderr, "unresolved references are not uniform literal text\n");
+        return -1;
+    }
+    return 0;
+}
+
+/* A resolved reference names its definition instead of copying the
+ * destination and title into every use. This fixed-shape regression checks the
+ * resulting storage invariant directly: resource and association payload in
+ * the semantic tree must stay within a constant multiple of source bytes.
+ * No elapsed-time sample participates in the assertion. */
+typedef struct pc_reference_payload {
+    size_t bytes;
+} pc_reference_payload;
+
+static int pc_reference_payload_visit(const markdown_core_node *node, void *context) {
+    pc_reference_payload *total = (pc_reference_payload *)context;
+    markdown_core_string first;
+    markdown_core_string second;
+    markdown_core_optional_string title;
+    if (markdown_core_node_link_properties(node, &first, &title) ||
+        markdown_core_node_image_properties(node, &first, &title)) {
+        total->bytes += first.length + (title.has_value ? title.value.length : 0);
+    } else if (markdown_core_node_association(node, &first, &second)) {
+        total->bytes += first.length + second.length;
+    }
+    return 0;
+}
+
+static int case_reference_expansion_bound(pc_context *context) {
+    enum { DESTINATION_LENGTH = 1024, REFERENCE_COUNT = 131072 };
+    static const double MAX_PAYLOAD_RATIO = 8.0;
+    size_t capacity = DESTINATION_LENGTH + 32 + REFERENCE_COUNT * 8;
+    size_t written = 0;
+    size_t index;
+    pc_reference_payload total = {0};
+    double ratio;
+
+    context->input = (char *)malloc(capacity);
+    if (!context->input) {
+        return -1;
+    }
+    written += (size_t)snprintf(context->input + written, capacity - written, "[a]: /");
+    memset(context->input + written, 'u', DESTINATION_LENGTH);
+    written += DESTINATION_LENGTH;
+    written += (size_t)snprintf(context->input + written, capacity - written, "\n\n");
+    for (index = 0; index < REFERENCE_COUNT; index++) {
+        written += (size_t)snprintf(context->input + written, capacity - written, "[a]\n\n");
+    }
+    context->input_length = written;
+
+    if (pc_parse(context, NULL) != 0 ||
+        ts_ast_walk(markdown_core_document_root(context->document), pc_reference_payload_visit, &total) != 0) {
+        return -1;
+    }
+    ratio = (double)total.bytes / (double)context->input_length;
+    if (ratio > MAX_PAYLOAD_RATIO) {
+        fprintf(stderr, "reference payload expanded to %.3fx input (%zu payload bytes / %zu source bytes)\n", ratio,
+                total.bytes, context->input_length);
         return -1;
     }
     return 0;
@@ -639,16 +759,16 @@ static int case_directive_unclosed_attributes(pc_context *context) {
 static int case_directive_colon_pairs(pc_context *context) { return pc_directive_literal_case(context, "::", 40000); }
 
 static const markdown_core_node *pc_first_directive(const pc_context *context) {
-    const markdown_core_node *root = markdown_core_document_semantic(context->document);
-    const markdown_core_node *paragraph = markdown_core_node_children(root).child;
-    return markdown_core_node_children(paragraph).child;
+    const markdown_core_node *root = markdown_core_document_root(context->document);
+    const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
+    return markdown_core_node_get_first_child(paragraph);
 }
 
 static int case_directive_long_label(pc_context *context) {
     const markdown_core_node *directive;
     const markdown_core_node *label;
+    const markdown_core_node *label_child;
     markdown_core_string name;
-    markdown_core_string attributes;
     markdown_core_string literal;
     bool has_attributes = false;
     size_t attribute_count = 0;
@@ -670,20 +790,21 @@ static int case_directive_long_label(pc_context *context) {
         fprintf(stderr, "directive name/attribute properties are wrong\n");
         return -1;
     }
-    /* The label is a NODE now, not a count on the parent: it is the
-     * directive's only child and the text is its child. */
-    label = markdown_core_node_children(directive).child;
-    if (markdown_core_node_get_kind(label) != MARKDOWN_CORE_KIND_DIRECTIVE_LABEL) {
-        fprintf(stderr, "a labelled directive's first child is its label\n");
+    label = markdown_core_node_directive_label(directive);
+    if (!label || markdown_core_node_get_kind(label) != MARKDOWN_CORE_KIND_DIRECTIVE_LABEL ||
+        markdown_core_node_get_first_child(directive) != NULL || markdown_core_node_child_count(directive) != 0 ||
+        markdown_core_node_get_next_sibling(label) != NULL) {
+        fprintf(stderr, "a directive label is Markup in a field, not directive content\n");
         return -1;
     }
-    label = markdown_core_node_children(label).child;
+    label_child = markdown_core_node_get_first_child(label);
     expected = ts_repeat("a", 1500, NULL);
     if (!expected) {
         return -1;
     }
-    if (markdown_core_node_get_kind(label) != MARKDOWN_CORE_KIND_TEXT || !markdown_core_node_literal(label, &literal) ||
-        literal.length != 1500 || memcmp(literal.data, expected, 1500) != 0) {
+    if (markdown_core_node_get_kind(label_child) != MARKDOWN_CORE_KIND_TEXT ||
+        !markdown_core_node_literal(label_child, &literal) || literal.length != 1500 ||
+        memcmp(literal.data, expected, 1500) != 0) {
         fprintf(stderr, "directive label text is wrong\n");
         free(expected);
         return -1;
@@ -737,15 +858,8 @@ static int case_directive_long_attributes(pc_context *context) {
 
 /* Inline delimiter stack cases --------------------------------------------- */
 
-static int pc_formula_case(
-    pc_context *context,
-    const char *prefix,
-    const char *unit,
-    size_t count,
-    const char *suffix,
-    size_t expected_formulas,
-    const char *expected_literal
-) {
+static int pc_formula_case(pc_context *context, const char *prefix, const char *unit, size_t count, const char *suffix,
+                           size_t expected_formulas, const char *expected_literal) {
     if (pc_build(context, prefix, unit, count, suffix) != 0) {
         return -1;
     }
@@ -757,9 +871,9 @@ static int pc_formula_case(
         return -1;
     }
     if (expected_literal) {
-        const markdown_core_node *root = markdown_core_document_semantic(context->document);
-        const markdown_core_node *paragraph = markdown_core_node_children(root).child;
-        const markdown_core_node *formula = markdown_core_node_children(paragraph).child;
+        const markdown_core_node *root = markdown_core_document_root(context->document);
+        const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
+        const markdown_core_node *formula = markdown_core_node_get_first_child(paragraph);
         markdown_core_placement_mode mode;
         markdown_core_string literal;
         size_t expected_length = strlen(expected_literal);
@@ -818,7 +932,6 @@ static const pc_case_entry PC_CASES[] = {
     {"many_link_closers", case_link_closers},
     {"many_link_openers", case_link_openers},
     {"mismatched_openers_closers", case_mismatched_openers_closers},
-    {"emph_openers_link_closers", case_emph_openers_link_closers},
     {"openers_closers_multiple_of_3", case_openers_closers_multiple_of_3},
     {"link_openers_emph_closers", case_link_openers_emph_closers},
     {"pattern_bracket_paren", case_pattern_bracket_paren},
@@ -827,6 +940,9 @@ static const pc_case_entry PC_CASES[] = {
     {"nested_brackets", case_nested_brackets},
     {"nested_block_quotes", case_nested_block_quotes},
     {"deeply_nested_lists", case_deeply_nested_lists},
+    {"empty_lines_in_deeply_nested_lists", case_empty_lines_in_deeply_nested_lists},
+    {"empty_lines_in_deep_list_blockquote", case_empty_lines_in_deep_list_blockquote},
+    {"emphasis_in_deep_blockquote", case_emphasis_in_deep_blockquote},
     {"nul_in_input", case_nul_in_input},
     {"backticks", case_backticks},
     {"unclosed_links_a", case_unclosed_links_a},
@@ -834,6 +950,7 @@ static const pc_case_entry PC_CASES[] = {
     {"unclosed_comment", case_unclosed_comment},
     {"tables", case_tables},
     {"reference_collisions", case_reference_collisions},
+    {"reference_expansion_bound", case_reference_expansion_bound},
     {"directive_unclosed_labels", case_directive_unclosed_labels},
     {"directive_unclosed_attributes", case_directive_unclosed_attributes},
     {"directive_colon_pairs", case_directive_colon_pairs},

@@ -28,7 +28,7 @@ if (!chrome) throw new Error("browser suite requires Chrome/Chromium; set CHROME
 const html = `<!doctype html><meta charset="utf-8"><title>RUNNING</title><body id="result">RUNNING<script type="module">
   try {
     const api = await import('/index.js');
-    const parsed = new api.Document('# Browser 🌍').seal().semantic;
+    const parsed = api.Document.parse('# Browser 🌍');
     const valid = parsed.content[0].kind === 'heading' &&
       parsed.content[0].content[0].literal === 'Browser 🌍' &&
       !('memory' in api) && !('initialize' in api);
@@ -47,6 +47,11 @@ const server = createServer(async (request, response) => {
         if (request.url === "/") {
             response.setHeader("content-type", "text/html; charset=utf-8");
             response.end(html);
+            return;
+        }
+        if (request.url === "/favicon.ico") {
+            response.statusCode = 204;
+            response.end();
             return;
         }
         if (request.url.startsWith("/result?")) {

@@ -1,9 +1,8 @@
-import type { Semantic } from "../model/semantic.js";
+import type { Document } from "../model/document.js";
 import { ParseError } from "../parse-error.js";
-import type { Read } from "../read.js";
 import type { ParseOptions } from "../parse-options.js";
-import { decodeDiscarded, decodeRead } from "../wire/wire-decoder.js";
-import { native } from "./native.js";
+import { NodeDecoder, transferHeaderSize } from "../wire/node-decoder.js";
+import { native, type NativeExports } from "./native.js";
 
 interface OptionDescriptor {
     readonly name: keyof ParseOptions;
@@ -23,117 +22,54 @@ const options = [
     { name: "directives", defaultValue: true, mask: 1 << 8 }
 ] as const satisfies readonly OptionDescriptor[];
 
-/**
- * Copies `bytes` into WASM memory for the duration of `action`, and frees the
- * copy on the way out. The pointer is valid for exactly `bytes.length` bytes
- * (one byte is still reserved for an empty input, because `malloc(0)` may
- * answer 0 and 0 is this boundary's failure value).
- */
-export function withHeapBytes<Result>(bytes: Uint8Array, action: (pointer: number) => Result): Result {
-    const pointer = allocate(Math.max(bytes.length, 1));
-    try {
-        new Uint8Array(native.memory.buffer, pointer, bytes.length).set(bytes);
-        return action(pointer);
-    } finally {
-        native.free(pointer);
-    }
-}
-
 const utf8Encoder = new TextEncoder();
 
-/**
- * Encodes `text` straight into WASM memory for the duration of `action`
- * (#147): `TextEncoder.encodeInto` writes into a view over the allocation,
- * so the string crosses in its one mandatory copy instead of being encoded
- * into a throwaway array that a second copy then moves. The allocation is
- * sized for the worst case -- three bytes per UTF-16 code unit covers every
- * code point, since an astral character spends two units on its four bytes
- * -- and `action` is told the length actually written.
- */
-export function withHeapText<Result>(text: string, action: (pointer: number, length: number) => Result): Result {
-    const capacity = Math.max(text.length * 3, 1);
-    const pointer = allocate(capacity);
+export function parseDocument(source: string, parseOptions: ParseOptions = {}): Document {
+    return parseDocumentWithNative(native, source, parseOptions);
+}
+
+/** Internal dependency boundary used to verify terminal native failures. */
+export function parseDocumentWithNative(
+    nativeExports: NativeExports,
+    source: string,
+    parseOptions: ParseOptions = {}
+): Document {
+    validateInput(source, parseOptions);
+    const bytes = utf8Encoder.encode(source);
+    let sourcePointer = 0;
+    let resultPointer = 0;
     try {
-        const { written } = utf8Encoder.encodeInto(text, new Uint8Array(native.memory.buffer, pointer, capacity));
-        return action(pointer, written);
-    } finally {
-        native.free(pointer);
-    }
-}
+        sourcePointer = allocate(nativeExports, Math.max(bytes.length, 1));
+        new Uint8Array(nativeExports.memory.buffer, sourcePointer, bytes.length).set(bytes);
+        resultPointer = nativeExports.es_parse(sourcePointer, bytes.length, optionsMask(parseOptions));
+        if (!resultPointer) throw new ParseError("allocationFailed", "failed to allocate native AST result");
 
-/**
- * THE ONE WAY A READ LEAVES WASM. `invoke` runs a native call that writes an
- * MKC8 payload behind the given output slot -- a document's `feed` and its
- * `seal` both answer that way -- and this decodes the payload off a view
- * over WASM memory in ONE crossing, releases the native buffer, and answers
- * a `Read` value, or throws the `ParseError` the payload carried. Nothing
- * native survives the call. `previous` is the read the payload may be a
- * DELTA against (#162): the values it holds are handed into the new read
- * wherever the payload says nothing moved.
- */
-export function copyOut(invoke: (output: number) => number, previous: Semantic | null = null): Read {
-    const { semantic } = decodePayload(invoke, (payload) => decodeRead(payload, previous));
-    return makeRead(semantic);
-}
-
-/**
- * Runs a native call whose read is DISCARDED -- the `Document` constructor's
- * initial feed -- so an error still surfaces and a healthy tree is not
- * decoded just to be thrown away. Only the payload's envelope is read.
- */
-export function discardOut(invoke: (output: number) => number): void {
-    decodePayload(invoke, decodeDiscarded);
-}
-
-/** Runs the native call and DECODES its payload off a view over WASM memory,
- * freeing the native buffer only after the decode returns (#147). The old
- * shape `.slice()`d the whole payload first, purely because the free ran
- * before the decode -- but the decoder is pure JS, nothing re-enters WASM
- * mid-decode to grow or detach the buffer, and everything it returns owns
- * its bytes (strings and plain values), so the full-payload copy bought
- * nothing. A zero return from
- * `invoke` is the one failure with no payload to decode: the buffer itself
- * could not be built. */
-function decodePayload<Result>(invoke: (output: number) => number, decode: (payload: Uint8Array) => Result): Result {
-    const output = allocate(2 * Uint32Array.BYTES_PER_ELEMENT);
-    let payloadPointer = 0;
-    try {
-        const view = dataView();
-        view.setUint32(output, 0, true);
-        view.setUint32(output + 4, 0, true);
-        if (!invoke(output)) {
-            throw new ParseError("allocationFailed", "failed to serialize the native document");
+        // es_parse may grow memory, which detaches every pre-call view. Take a
+        // fresh header view, validate its size against the current heap, then
+        // decode in place without another Wasm call. No view escapes this try.
+        const memorySize = nativeExports.memory.buffer.byteLength;
+        if (resultPointer > memorySize - transferHeaderSize) {
+            throw new Error("native result header lies outside WebAssembly memory");
         }
-        const after = dataView();
-        payloadPointer = after.getUint32(output, true);
-        const payloadLength = after.getUint32(output + 4, true);
-        return decode(new Uint8Array(native.memory.buffer, payloadPointer, payloadLength));
+        const totalSize = new DataView(nativeExports.memory.buffer).getUint32(resultPointer + 4, true);
+        if (totalSize < transferHeaderSize || totalSize > memorySize - resultPointer) {
+            throw new Error("native result lies outside WebAssembly memory");
+        }
+        return new NodeDecoder(new Uint8Array(nativeExports.memory.buffer, resultPointer, totalSize)).decodeDocument();
     } finally {
-        if (payloadPointer) native.es_wire_free(payloadPointer);
-        native.free(output);
+        if (resultPointer) nativeExports.es_result_free(resultPointer);
+        if (sourcePointer) nativeExports.free(sourcePointer);
     }
 }
 
-/**
- * The read, sealed shut: `semantic` is data and enumerates; `dump` is a
- * convenience and does not.
- */
-function makeRead(semantic: Read["semantic"]): Read {
-    const read = { semantic } as { semantic: Read["semantic"]; dump?: () => string };
-    Object.defineProperty(read, "dump", {
-        enumerable: false,
-        value: () => semantic.dump()
-    });
-    return read as Read;
-}
-
-/** The option flags the C bridge reads, validated on the way: the one
- * checking and encoding of `ParseOptions`, whether a parse or a session is
- * about to read them. */
-export function optionsMask(parseOptions: ParseOptions): number {
+function validateInput(source: string, parseOptions: ParseOptions): void {
+    if (typeof source !== "string") throw new TypeError("source must be a string");
     if (parseOptions === null || typeof parseOptions !== "object") {
         throw new TypeError("options must be an object");
     }
+}
+
+function optionsMask(parseOptions: ParseOptions): number {
     let flags = 0;
     for (const option of options) {
         const value = Object.hasOwn(parseOptions, option.name) ? parseOptions[option.name] : option.defaultValue;
@@ -143,12 +79,8 @@ export function optionsMask(parseOptions: ParseOptions): number {
     return flags;
 }
 
-function allocate(size: number): number {
-    const pointer = native.malloc(size);
+function allocate(nativeExports: NativeExports, size: number): number {
+    const pointer = nativeExports.malloc(size);
     if (!pointer) throw new ParseError("allocationFailed", "failed to allocate WASM memory");
     return pointer;
-}
-
-function dataView(): DataView {
-    return new DataView(native.memory.buffer);
 }

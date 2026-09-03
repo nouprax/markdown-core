@@ -19,11 +19,16 @@ if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_BINARY_DIR}")
 endif()
 
 option(MARKDOWN_CORE_TESTS "Build markdown-core tests and enable testing" ON)
+option(MARKDOWN_CORE_BENCHMARKS "Build opt-in local benchmark tools" OFF)
 option(MARKDOWN_CORE_STATIC "Build static libmarkdown-core library" ON)
 option(MARKDOWN_CORE_SHARED "Build shared libmarkdown-core library" ON)
 option(MARKDOWN_CORE_LIB_FUZZER "Build libFuzzer fuzzing harness" OFF)
 option(MARKDOWN_CORE_FUZZ_QUADRATIC "Build quadratic fuzzing harness" OFF)
 option(MARKDOWN_CORE_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+
+if(MARKDOWN_CORE_BENCHMARKS AND NOT MARKDOWN_CORE_TESTS)
+    message(FATAL_ERROR "MARKDOWN_CORE_BENCHMARKS=ON requires MARKDOWN_CORE_TESTS=ON")
+endif()
 
 if(MARKDOWN_CORE_WARNINGS_AS_ERRORS)
     if(MSVC)

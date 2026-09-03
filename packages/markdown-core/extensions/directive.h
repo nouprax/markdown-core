@@ -14,7 +14,10 @@ extern "C" {
 
 /** The one, immutable descriptor. `core-extensions.c`'s table is the only
  * place its position in the attach order is written down. */
-extern const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE;
+extern const markdown_core_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE;
+
+int markdown_core_directive_has_label(markdown_core_node *node);
+markdown_core_node *markdown_core_directive_label(markdown_core_node *node);
 
 #ifdef __cplusplus
 }

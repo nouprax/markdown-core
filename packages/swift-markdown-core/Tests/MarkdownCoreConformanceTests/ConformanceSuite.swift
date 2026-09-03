@@ -2,15 +2,8 @@ import Foundation
 import MarkdownCore
 import Testing
 
-/// The tree of a whole-text parse: `Document(markdown:options:).seal()`,
-/// keeping only the semantic view; the streamed cases spell the full entry
-/// out themselves.
-private func parse(_ source: String, options: ParseOptions = .init()) throws -> Semantic {
-    try Document(markdown: source, options: options).seal().semantic
-}
-
 @Suite("conformance") struct ConformanceSuite {
-    @Test("public node kinds are reachable through Swift values")
+    @Test("public node kinds are emitted by the per-node Swift dumper")
     func schemaReachability() throws {
         let sources = [
             "# Heading\n\n> Quote\n\n---\n\n3. ordered\n\n- [x] task\n\n"
@@ -22,11 +15,10 @@ private func parse(_ source: String, options: ParseOptions = .init()) throws -> 
                 + ":::container[Title]{kind=demo}\nBody\n:::\n",
             "$$\ny\n$$\n",
         ]
-        let documents = try sources.map { try parse($0) }
-        let nodes = documents.flatMap(flatten)
-        let kinds = Set(nodes.map(kindName))
+        let documents = try sources.map { try Document.parse($0) }
+        let kinds = Set(documents.flatMap { dumpKinds($0.dump()) })
         let expected: Set<String> = [
-            "Semantic", "BlockQuote", "Paragraph", "Heading", "ThematicBreak", "List",
+            "Document", "BlockQuote", "Paragraph", "Heading", "ThematicBreak", "List",
             "ListItem", "CodeBlock", "HTMLBlock", "FormulaBlock", "Table",
             "DirectiveBlock", "DirectiveLabel", "FootnoteDefinition", "Text", "SoftBreak",
             "LineBreak",
@@ -40,7 +32,7 @@ private func parse(_ source: String, options: ParseOptions = .init()) throws -> 
 
     @Test("field and nullability mapping uses Swift-native types")
     func fieldsAndNullability() throws {
-        let document = try parse(
+        let document = try Document.parse(
             "3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image \"title\")\n"
         )
         let ordered = try #require(document.content[0] as? MarkdownCore.List)
@@ -62,46 +54,20 @@ private func parse(_ source: String, options: ParseOptions = .init()) throws -> 
 
     @Test("all manifest cases match the shared canonical AST spec")
     func sharedCanonicalAST() throws {
-        for testCase in try canonicalCases() {
-            let document = try parse(testCase.source, options: testCase.parseOptions.value)
+        let resource = try #require(
+            Bundle.module.url(forResource: "canonical-ast-fixtures", withExtension: "json")
+        )
+        let manifestData = try Data(contentsOf: resource)
+        let manifest = try JSONDecoder().decode(CanonicalManifest.self, from: manifestData)
+        #expect(manifest.schemaVersion == 1)
+        #expect(!manifest.cases.isEmpty)
+
+        for testCase in manifest.cases {
+            let document = try Document.parse(testCase.source, options: testCase.parseOptions.value)
             #expect(TreeDumper.dump(document) == testCase.expected, Comment(rawValue: testCase.name))
             #expect(document.dump() == testCase.expected, Comment(rawValue: testCase.name))
         }
     }
-
-    @Test("all manifest cases, streamed in 7-byte chunks, seal to the same goldens")
-    func sharedCanonicalASTStreamed() throws {
-        // THE STREAM'S corpus is the one-shot corpus (docs/STREAMING.md D6:
-        // T14 extends the corpora rather than adding a channel). 7 is prime,
-        // so the chunk boundary drifts through every alignment and splits
-        // line endings and construct delimiters somewhere in every case.
-        for testCase in try canonicalCases() {
-            let options = testCase.parseOptions.value
-            let document = try Document(options: options)
-            let bytes = Array(testCase.source.utf8)
-            var start = 0
-            while start < bytes.count {
-                let end = min(start + 7, bytes.count)
-                _ = try document.feed(chunk: Array(bytes[start..<end]))
-                start = end
-            }
-            let sealed = try document.seal()
-            #expect(TreeDumper.dump(sealed.semantic) == testCase.expected, Comment(rawValue: testCase.name))
-            #expect(sealed.dump() == testCase.expected, Comment(rawValue: testCase.name))
-            let wholeText = try Document(markdown: testCase.source, options: options).seal()
-        }
-    }
-}
-
-private func canonicalCases() throws -> [CanonicalCase] {
-    let resource = try #require(
-        Bundle.module.url(forResource: "canonical-ast-fixtures", withExtension: "json")
-    )
-    let manifestData = try Data(contentsOf: resource)
-    let manifest = try JSONDecoder().decode(CanonicalManifest.self, from: manifestData)
-    #expect(manifest.schemaVersion == 1)
-    #expect(!manifest.cases.isEmpty)
-    return manifest.cases
 }
 
 private struct CanonicalManifest: Decodable {
@@ -142,14 +108,11 @@ private struct CanonicalParseOptions: Decodable {
     }
 }
 
-private func flatten(_ root: any Markup) -> [any Markup] {
-    var result: [any Markup] = []
-    Walker().walk(root) { event, node in
-        if case .entering = event { result.append(node) }
+private func dumpKinds(_ dump: String) -> [String] {
+    dump.split(separator: "\n").compactMap { line in
+        line.trimmingCharacters(in: CharacterSet(charactersIn: "│ ├└─"))
+            .split(separator: " ")
+            .first
+            .map(String.init)
     }
-    return result
-}
-
-private func kindName(_ node: any Markup) -> String {
-    String(describing: type(of: node))
 }

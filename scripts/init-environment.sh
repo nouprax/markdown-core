@@ -4,33 +4,34 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
 
-NODE_VERSION=26.5.0
-PNPM_VERSION=11.7.0
+NODE_VERSION=26.8.1
+PNPM_VERSION=11.25.0
 JAVA_VERSION=26
 XCODE_VERSION=26.6
 SWIFT_VERSION=6.3.3
-EMSCRIPTEN_VERSION=4.0.23
-# The emsdk repository commit of the 4.0.23 release tag; keep the pair in
+EMSCRIPTEN_VERSION=6.0.9
+# The emsdk repository commit of the 6.0.9 release tag; keep the pair in
 # lockstep when bumping the version.
-EMSCRIPTEN_COMMIT=c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56
+EMSCRIPTEN_COMMIT=5eb0bde7585670252e8ba05e9d361627bffd08b5
 # The newest tag upstream cmark-gfm has published, with its immutable commit.
 # This pin defines what "parity with upstream" means, so moving it is a
-# reviewed change, not a routine bump (see specs/upstream-parity/deltas.json).
+# reviewed change, not a routine bump (see specs/oracles/cmark-gfm/deltas.json).
 CMARK_GFM_VERSION=0.29.0.gfm.13
 CMARK_GFM_COMMIT=587a12bb54d95ac37241377e6ddc93ea0e45439b
-CLANG_FORMAT_VERSION=22.1.8
+# The newest stable CommonMark reference implementation. CommonMark parity is
+# intentionally judged by cmark itself, not by GitHub's dormant fork.
+CMARK_VERSION=0.31.2
+CMARK_COMMIT=eec0eeba6d31189fd828314576494566d539b1e3
+CLANG_FORMAT_VERSION=23.1.0
 CMAKE_FORMAT_VERSION=0.6.13
-# The generator of the committed scanners.c (see
-# scripts/check-generated-scanners.sh). The release tarball is pinned by
-# content hash for the same reason emsdk and cmark-gfm pin commits: a
-# re-tagged release must never change the bytes this installer builds.
-RE2C_VERSION=4.5.1
-RE2C_SHA256=ffea067c11aa668bcb42885be6e6cd000302000b7747d2bb213299ec66b7864e
-SWIFTLINT_VERSION=0.65.0
+SWIFTLINT_VERSION=0.65.1
 ANDROID_PLATFORM=android-36
 ANDROID_CMAKE_VERSION=3.22.1
 ANDROID_NDK_VERSION=28.2.13676358
-GRADLE_VERSION=9.6.1
+GRADLE_VERSION=9.7.1
+GRADLE_DISTRIBUTION_SHA256=acd53f1edaf02f1a8ff99879f8a34b302661a057d9b063ae9e35b552f804d20a
+GRADLE_WRAPPER_JAR_SHA256=7a9ce74cff467ca1bf60a4fcd9f05185acceda4d0f382434d393e17864262c5d
+GRADLE_SIGNING_KEY_FINGERPRINT=F3FF33E96F18AA62DD580F9651FBF517CE6D6B80
 MAVEN_VERSION=3.9.16
 
 usage() {
@@ -39,7 +40,7 @@ Usage: scripts/init-environment.sh --check [component ...]
        scripts/init-environment.sh --install [component ...]
 
 Components: core node java wrappers android android-emulator swift emscripten
-            upstream-cmark re2c dependencies tools
+            oracle-cmark oracle-cmark-gfm dependencies tools
 
 With no components, the command checks or installs the complete environment
 supported by the current host. --check never installs or downloads anything.
@@ -71,7 +72,7 @@ fi
 
 for component do
     case "$component" in
-        core | node | java | wrappers | android | android-emulator | swift | emscripten | upstream-cmark | re2c | dependencies | tools) ;;
+        core | node | java | wrappers | android | android-emulator | swift | emscripten | oracle-cmark | oracle-cmark-gfm | dependencies | tools) ;;
         *)
             echo "Unknown environment component: $component" >&2
             usage >&2
@@ -112,6 +113,14 @@ version_at_least() {
         }
         exit 0;
     }'
+}
+
+sha256_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{ print $1 }'
+    else
+        shasum -a 256 "$1" | awk '{ print $1 }'
+    fi
 }
 
 java_home() {
@@ -249,8 +258,15 @@ check_wrappers() {
         || fail "Gradle Wrapper does not select $GRADLE_VERSION"
     grep -Fq "apache-maven-$MAVEN_VERSION-bin.zip" .mvn/wrapper/maven-wrapper.properties \
         || fail "Maven Wrapper does not select $MAVEN_VERSION"
-    grep -q '^distributionSha256Sum=' gradle/wrapper/gradle-wrapper.properties \
-        || fail "Gradle Wrapper checksum is missing"
+    grep -Fqx "distributionSha256Sum=$GRADLE_DISTRIBUTION_SHA256" \
+        gradle/wrapper/gradle-wrapper.properties \
+        || fail "Gradle Wrapper checksum does not match the reviewed $GRADLE_VERSION distribution"
+    [ "$(sha256_file gradle/wrapper/gradle-wrapper.jar)" = "$GRADLE_WRAPPER_JAR_SHA256" ] \
+        || fail "Gradle Wrapper JAR does not match the reviewed $GRADLE_VERSION artifact"
+    grep -Fq \
+        "<trusted-key id=\"$GRADLE_SIGNING_KEY_FINGERPRINT\" group=\"gradle\" name=\"gradle\" version=\"$GRADLE_VERSION\"/>" \
+        gradle/verification-metadata.xml \
+        || fail "Gradle $GRADLE_VERSION signing key is not trusted at exact module scope"
     grep -q '^distributionSha256Sum=' .mvn/wrapper/maven-wrapper.properties \
         || fail "Maven Wrapper checksum is missing"
     [ "$failures" -ne "$before" ] || ok "Gradle and Maven wrappers"
@@ -321,37 +337,35 @@ check_emscripten() {
     return 0
 }
 
+cmark_path() {
+    printf '%s\n' "$root/.tools/cmark/$CMARK_VERSION/build/src/cmark"
+}
+
 cmark_gfm_path() {
     printf '%s\n' "$root/.tools/cmark-gfm/$CMARK_GFM_VERSION/build/src/cmark-gfm"
 }
 
-re2c_path() {
-    if [ -x "$root/.tools/re2c/$RE2C_VERSION/bin/re2c" ]; then
-        printf '%s\n' "$root/.tools/re2c/$RE2C_VERSION/bin/re2c"
-    else
-        command -v re2c 2>/dev/null || true
-    fi
-}
-
-check_upstream_cmark() {
-    binary=$(cmark_gfm_path)
+check_oracle_cmark() {
+    binary=$(cmark_path)
     if [ ! -x "$binary" ]; then
-        fail "upstream cmark-gfm $CMARK_GFM_VERSION is not built"
+        fail "cmark oracle $CMARK_VERSION is not built"
         return
     fi
-    ok "upstream cmark-gfm $CMARK_GFM_VERSION"
+    actual=$(git -C "$root/.tools/cmark/$CMARK_VERSION" rev-parse HEAD 2>/dev/null || true)
+    [ "$actual" = "$CMARK_COMMIT" ] || fail "cmark oracle is ${actual:-missing}, expected $CMARK_COMMIT"
+    [ "$actual" != "$CMARK_COMMIT" ] || ok "cmark oracle $CMARK_VERSION"
     return 0
 }
 
-check_re2c() {
-    binary=$(re2c_path)
-    if [ -z "$binary" ]; then
-        fail "re2c $RE2C_VERSION is not available"
+check_oracle_cmark_gfm() {
+    binary=$(cmark_gfm_path)
+    if [ ! -x "$binary" ]; then
+        fail "cmark-gfm oracle $CMARK_GFM_VERSION is not built"
         return
     fi
-    actual=$("$binary" --version)
-    [ "$actual" = "re2c $RE2C_VERSION" ] || fail "re2c $RE2C_VERSION is required; found ${actual:-unknown}"
-    [ "$actual" != "re2c $RE2C_VERSION" ] || ok "re2c $RE2C_VERSION"
+    actual=$(git -C "$root/.tools/cmark-gfm/$CMARK_GFM_VERSION" rev-parse HEAD 2>/dev/null || true)
+    [ "$actual" = "$CMARK_GFM_COMMIT" ] || fail "cmark-gfm oracle is ${actual:-missing}, expected $CMARK_GFM_COMMIT"
+    [ "$actual" != "$CMARK_GFM_COMMIT" ] || ok "cmark-gfm oracle $CMARK_GFM_VERSION"
     return 0
 }
 
@@ -501,10 +515,32 @@ install_emscripten() {
     "$directory/emsdk" activate "$EMSCRIPTEN_VERSION"
 }
 
-# The upstream parser is the oracle for scripts/check-upstream-parity.mjs. It
-# is pinned to an immutable commit for the same reason emsdk is: a moved tag
-# must never change what the comparison is comparing against.
-install_upstream_cmark() {
+# The two upstream parsers have disjoint authority: cmark for CommonMark and
+# cmark-gfm for its extension layer. Both pins are immutable because a moved
+# tag must never change what the parity gates compare against.
+install_oracle_cmark() {
+    directory="$root/.tools/cmark/$CMARK_VERSION"
+    if [ ! -d "$directory/.git" ]; then
+        mkdir -p "$(dirname "$directory")"
+        git clone --filter=blob:none https://github.com/commonmark/cmark.git "$directory"
+    fi
+    git -C "$directory" rev-parse --quiet --verify "$CMARK_COMMIT^{commit}" >/dev/null \
+        || git -C "$directory" fetch --filter=blob:none origin "$CMARK_COMMIT"
+    git -C "$directory" checkout --quiet "$CMARK_COMMIT"
+    actual_commit=$(git -C "$directory" rev-parse HEAD)
+    [ "$actual_commit" = "$CMARK_COMMIT" ] || {
+        fail "cmark checkout is $actual_commit, expected $CMARK_COMMIT"
+        return
+    }
+    cmake -S "$directory" -B "$directory/build" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_TESTING=OFF \
+        -DBUILD_SHARED_LIBS=OFF >/dev/null
+    cmake --build "$directory/build" --parallel >/dev/null
+    [ -x "$(cmark_path)" ] || fail "cmark build produced no binary"
+}
+
+install_oracle_cmark_gfm() {
     directory="$root/.tools/cmark-gfm/$CMARK_GFM_VERSION"
     if [ ! -d "$directory/.git" ]; then
         mkdir -p "$(dirname "$directory")"
@@ -530,49 +566,10 @@ install_upstream_cmark() {
     [ -x "$(cmark_gfm_path)" ] || fail "cmark-gfm build produced no binary"
 }
 
-install_re2c() {
-    directory="$root/.tools/re2c/$RE2C_VERSION"
-    binary="$directory/bin/re2c"
-    if [ -x "$binary" ] && [ "$("$binary" --version)" = "re2c $RE2C_VERSION" ]; then
-        return
-    fi
-    require_command cmake || return
-    mkdir -p "$directory"
-    tarball="$directory/re2c-$RE2C_VERSION.tar.xz"
-    [ -f "$tarball" ] || curl -fsSL -o "$tarball" \
-        "https://github.com/skvadrik/re2c/releases/download/$RE2C_VERSION/re2c-$RE2C_VERSION.tar.xz"
-    if command -v sha256sum >/dev/null 2>&1; then
-        actual_sha256=$(sha256sum "$tarball" | awk '{print $1}')
-    else
-        actual_sha256=$(shasum -a 256 "$tarball" | awk '{print $1}')
-    fi
-    [ "$actual_sha256" = "$RE2C_SHA256" ] || {
-        rm -f "$tarball"
-        fail "re2c tarball hash is $actual_sha256, expected $RE2C_SHA256"
-        return
-    }
-    tar -xf "$tarball" -C "$directory"
-    # Build ONLY the re2c binary: the default target set adds every
-    # code-generation sub-backend (re2go, re2java, re2d, ...) plus the test
-    # binaries, and `--parallel` with no count becomes an unbounded `make -j`
-    # that can wedge a memory-limited container.
-    jobs=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
-    cmake -S "$directory/re2c-$RE2C_VERSION" -B "$directory/build" \
-        -DCMAKE_BUILD_TYPE=Release >/dev/null
-    cmake --build "$directory/build" --parallel "$jobs" --target re2c >/dev/null
-    mkdir -p "$directory/bin"
-    cp "$directory/build/re2c" "$binary"
-    [ -x "$binary" ] || fail "re2c build produced no binary"
-}
-
 install_tools() {
     require_command python3 || return
-    clang_directory="$root/.tools/clang-format/$CLANG_FORMAT_VERSION"
-    if [ ! -x "$clang_directory/venv/bin/clang-format" ]; then
-        python3 -m venv "$clang_directory/venv"
-        "$clang_directory/venv/bin/python" -m pip install --disable-pip-version-check --quiet \
-            --require-hashes --requirement "$root/scripts/requirements/clang-format.txt"
-    fi
+    CLANG_FORMAT_INSTALL_DIR="$root/.tools/clang-format/$CLANG_FORMAT_VERSION" \
+        scripts/install-clang-format.sh
     CMAKE_FORMAT_TOOL_DIR="$root/.tools/cmakelang/$CMAKE_FORMAT_VERSION" \
         scripts/format-cmake.sh --check
     scripts/install-swiftlint.sh
@@ -588,8 +585,8 @@ if [ "$mode" = --install ]; then
     has_component android-emulator "$@" && install_android_emulator
     has_component swift "$@" && check_swift
     has_component emscripten "$@" && install_emscripten
-    has_component upstream-cmark "$@" && install_upstream_cmark
-    has_component re2c "$@" && install_re2c
+    has_component oracle-cmark "$@" && install_oracle_cmark
+    has_component oracle-cmark-gfm "$@" && install_oracle_cmark_gfm
     has_component dependencies "$@" \
         && npx --yes "pnpm@$PNPM_VERSION" install --frozen-lockfile
     has_component tools "$@" && install_tools
@@ -605,8 +602,8 @@ has_component android "$@" && check_android
 has_component android-emulator "$@" && check_android_emulator
 has_component swift "$@" && check_swift
 has_component emscripten "$@" && check_emscripten
-has_component upstream-cmark "$@" && check_upstream_cmark
-has_component re2c "$@" && check_re2c
+has_component oracle-cmark "$@" && check_oracle_cmark
+has_component oracle-cmark-gfm "$@" && check_oracle_cmark_gfm
 has_component dependencies "$@" && check_dependencies
 has_component tools "$@" && check_tools
 

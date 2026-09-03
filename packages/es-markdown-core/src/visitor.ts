@@ -4,6 +4,7 @@ import type { Code } from "./model/code.js";
 import type { DirectiveBlock } from "./model/directive-block.js";
 import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
+import type { Document } from "./model/document.js";
 import type { Emphasis } from "./model/emphasis.js";
 import type { FootnoteDefinition, FootnoteReference } from "./model/footnote.js";
 import type { FormulaBlock } from "./model/formula-block.js";
@@ -17,7 +18,6 @@ import type { Link } from "./model/link.js";
 import type { List, ListItem } from "./model/list.js";
 import type { Markup } from "./model/markup.js";
 import type { Paragraph } from "./model/paragraph.js";
-import type { Semantic } from "./model/semantic.js";
 import type { ReferenceDefinition } from "./model/reference-definition.js";
 import type { ImageReference, LinkReference } from "./model/reference.js";
 import type { SoftBreak } from "./model/soft-break.js";
@@ -28,7 +28,7 @@ import type { Text } from "./model/text.js";
 import type { ThematicBreak } from "./model/thematic-break.js";
 
 export interface Visitor<Result> {
-    visitSemantic(this: void, node: Semantic): Result;
+    visitDocument(this: void, node: Document): Result;
     visitBlockQuote(this: void, node: BlockQuote): Result;
     visitParagraph(this: void, node: Paragraph): Result;
     visitHeading(this: void, node: Heading): Result;
@@ -65,7 +65,7 @@ export interface Visitor<Result> {
 export function visit<Result>(node: Markup, visitor: Visitor<Result>): Result {
     switch (node.kind) {
         case "document":
-            return visitor.visitSemantic(node);
+            return visitor.visitDocument(node);
         case "blockQuote":
             return visitor.visitBlockQuote(node);
         case "paragraph":

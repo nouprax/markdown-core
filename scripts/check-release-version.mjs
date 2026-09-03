@@ -26,7 +26,7 @@ assert.equal(npmManifest.publishConfig?.access, "public");
 assert.equal(npmManifest.repository?.url, "git+https://github.com/nouprax/markdown-core.git");
 assert.equal(npmManifest.repository?.directory, "packages/es-markdown-core");
 
-const releaseNotes = text(`docs/deprecated/releases/${version}.md`);
+const releaseNotes = text(`docs/releases/${version}.md`);
 assert.ok(releaseNotes.startsWith(`# Markdown Core ${version}\n`), "release notes must match VERSION");
 assert.doesNotMatch(
     releaseNotes,
@@ -83,7 +83,10 @@ if (!process.argv.includes("--skip-swift")) {
     assert.deepEqual(product.targets, ["MarkdownCore"]);
 }
 
-const tags = execFileSync("git", ["tag", "--list"], { cwd: root, encoding: "utf8" }).trim().split("\n").filter(Boolean);
+const tags = execFileSync("git", ["tag", "--list", "v*"], { cwd: root, encoding: "utf8" })
+    .trim()
+    .split("\n")
+    .filter(Boolean);
 for (const tag of tags) {
     assert.match(tag, /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/, `unexpected legacy tag: ${tag}`);
 }

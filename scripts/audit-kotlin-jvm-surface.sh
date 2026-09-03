@@ -13,8 +13,8 @@
 #   MINUS the classes the Kotlin ABI dump declares
 #   == what Java can reach and nobody meant to publish
 #
-# The remainder is pinned below. It may SHRINK freely; anything new fails, which
-# is the point -- a new leak is otherwise invisible in review.
+# The remainder is pinned below exactly. Additions expose a new implementation
+# class; removals leave a stale exception. Either change requires review.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -47,26 +47,27 @@ comm -23 "$work/jvm-public.txt" "$work/kotlin-api.txt" >"$work/leaked.txt"
 
 grep -vE '^\s*(#|$)' "$pinned" | sort -u >"$work/pinned.txt"
 
-if ! added=$(comm -23 "$work/leaked.txt" "$work/pinned.txt") || [ -n "$added" ]; then
-    echo "Kotlin JVM surface audit failed: these are visible to Java and not pinned:" >&2
-    printf '%s\n' "$added" >&2
-    echo "Each one is callable from Java. Make it unreachable, or pin it in $pinned with a reason." >&2
+if ! cmp -s "$work/leaked.txt" "$work/pinned.txt"; then
+    echo "Kotlin JVM surface audit failed: the Java-visible implementation surface changed:" >&2
+    diff -u "$work/pinned.txt" "$work/leaked.txt" >&2 || true
+    echo "Make additions unreachable or document them; remove stale exceptions." >&2
     exit 1
 fi
 
-# THE ONES THAT WERE CLOSED RATHER THAN PINNED, and the claim is mechanised:
-# every JNI entry point must stay hidden from javac. JNI resolves by name and
-# descriptor and ignores ACC_SYNTHETIC, so this costs the binding nothing. A
-# missing method fails too - if the session surface changes, this list is
-# part of the change.
-"$javap" -v -cp "$classes" com.nouprax.markdown.core.JvmNative >"$work/jvmnative.txt" 2>/dev/null
-for entry in sessionNew sessionFeed sessionAdvance sessionFinish sessionFree; do
-    if ! grep -A3 -E "native .*\b$entry\(" "$work/jvmnative.txt" | grep -q ACC_SYNTHETIC; then
-        echo "Kotlin JVM surface audit failed: JvmNative.$entry is resolvable from Java." >&2
-        echo "It needs @JvmSynthetic: internal is public on the JVM." >&2
-        exit 1
-    fi
-done
+# The raw JNI holder must be package-private and its method hidden from javac.
+# JNI registration uses the bytecode name and descriptor and is unaffected by
+# either access flag.
+jni_declaration=$("$javap" -cp "$classes" com.nouprax.markdown.core.JniParser 2>/dev/null | sed -n '2p')
+if [ -z "$jni_declaration" ] || [[ "$jni_declaration" == public* ]]; then
+    echo "Kotlin JVM surface audit failed: JniParser is a public bytecode class." >&2
+    exit 1
+fi
+if ! "$javap" -v -cp "$classes" com.nouprax.markdown.core.JniParser 2>/dev/null |
+    grep -A3 'native byte\[\] parsePayload' | grep -q ACC_SYNTHETIC; then
+    echo "Kotlin JVM surface audit failed: JniParser.parsePayload is resolvable from Java." >&2
+    echo "It needs @JvmSynthetic: internal is public on the JVM." >&2
+    exit 1
+fi
 
 printf 'Kotlin JVM surface audit passed: %s Java-visible classes, %s in the Kotlin API, %s pinned as unreachable-by-intent.\n' \
     "$(wc -l <"$work/jvm-public.txt" | tr -d ' ')" \

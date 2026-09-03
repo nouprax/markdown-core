@@ -8,7 +8,8 @@ plugins {
 }
 
 group = "com.nouprax"
-version = rootProject.file("VERSION").readText().trim()
+val releaseVersion = rootProject.file("VERSION").readText().trim()
+version = releaseVersion
 
 val isIdeSync =
     providers
@@ -39,14 +40,14 @@ val sourcesJar =
         archiveClassifier.set("sources")
         from("src/main")
         from(project(":packages:kotlin-markdown-core").file("src/native")) {
-            into("native-bridge")
+            into("jni")
         }
     }
 val javadocJar =
     tasks.register<Jar>("javadocJar") {
         archiveClassifier.set("javadoc")
         from(project(":packages:kotlin-markdown-core").file("README.md"))
-        from(rootProject.file("docs/specs/canonical-ast.md"))
+        from(rootProject.file("docs/releases/$releaseVersion.md"))
     }
 
 android {
@@ -65,12 +66,13 @@ android {
         }
     }
 
-    // This CMake target intentionally compiles sources from both the C and
-    // Kotlin packages. Importing that native workspace makes Android Studio
-    // claim their common `packages/` ancestor as one native content root,
-    // which hides the KMP source-set modules. IDE sync only needs the Gradle
-    // and KMP models; real builds (including builds launched by the IDE) do
-    // not set idea.sync.active and retain the complete JNI build graph.
+    // Android Studio's native importer can only attach this CMake graph to the
+    // Android runtime module and projects every source through its synthetic
+    // `cpp` group. Because the graph spans the C package and this package's JNI
+    // adapter, the importer promotes their common `packages/` ancestor and
+    // falsely nests unrelated packages below android-runtime/cpp. Keep that
+    // lossy Android projection out of IDE sync. Normal Gradle/IDE builds do not
+    // set idea.sync.active and still compile the complete JNI graph.
     if (!isIdeSync) {
         externalNativeBuild {
             cmake {

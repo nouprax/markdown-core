@@ -7,7 +7,17 @@
             "displayName": "Release",
             "binaryDir": "${sourceDir}/build/cmake",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
+                "CMAKE_BUILD_TYPE": "Release",
+                "MARKDOWN_CORE_BENCHMARKS": "OFF"
+            }
+        },
+        {
+            "name": "benchmark",
+            "displayName": "Local benchmark tools",
+            "binaryDir": "${sourceDir}/build/benchmark",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "MARKDOWN_CORE_BENCHMARKS": "ON"
             }
         },
         {
@@ -16,6 +26,7 @@
             "binaryDir": "${sourceDir}/build/asan",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Asan",
+                "MARKDOWN_CORE_BENCHMARKS": "OFF",
                 "MARKDOWN_CORE_SHARED": "OFF"
             }
         },
@@ -26,6 +37,7 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Ubsan",
                 "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=undefined",
+                "MARKDOWN_CORE_BENCHMARKS": "OFF",
                 "MARKDOWN_CORE_SHARED": "OFF"
             }
         },
@@ -35,12 +47,14 @@
             "binaryDir": "${sourceDir}/build/tsan",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Tsan",
+                "MARKDOWN_CORE_BENCHMARKS": "OFF",
                 "MARKDOWN_CORE_SHARED": "OFF"
             }
         }
     ],
     "buildPresets": [
         { "name": "default", "configurePreset": "default" },
+        { "name": "benchmark", "configurePreset": "benchmark" },
         { "name": "asan", "configurePreset": "asan" },
         { "name": "ubsan", "configurePreset": "ubsan" },
         { "name": "tsan", "configurePreset": "tsan" }
@@ -48,10 +62,10 @@
     "testPresets": [
         {
             "name": "correctness",
-            "displayName": "Correctness suites (excludes conformance and benchmark)",
+            "displayName": "Correctness suites (excludes conformance)",
             "configurePreset": "default",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^(benchmark|conformance)$" } }
+            "filter": { "exclude": { "label": "^conformance$" } }
         },
         {
             "name": "conformance",
@@ -62,35 +76,35 @@
         },
         {
             "name": "benchmark",
-            "displayName": "Benchmark workloads (benchmark label only, serial)",
-            "configurePreset": "default",
+            "displayName": "Opt-in local measurements (never a CI gate)",
+            "configurePreset": "benchmark",
             "output": { "outputOnFailure": true, "verbosity": "verbose" },
             "filter": { "include": { "label": "^benchmark$" } },
             "execution": { "jobs": 1 }
         },
         {
             "name": "correctness-asan",
-            "displayName": "Correctness suites under AddressSanitizer (excludes timing gates)",
+            "displayName": "Correctness suites under AddressSanitizer",
             "configurePreset": "asan",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } }
+            "filter": { "exclude": { "label": "^conformance$" } }
         },
         {
             "name": "correctness-ubsan",
-            "displayName": "Correctness suites under UndefinedBehaviorSanitizer (excludes timing gates)",
+            "displayName": "Correctness suites under UndefinedBehaviorSanitizer",
             "configurePreset": "ubsan",
             "environment": {
                 "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
             },
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } }
+            "filter": { "exclude": { "label": "^conformance$" } }
         },
         {
             "name": "correctness-tsan",
-            "displayName": "Correctness suites under ThreadSanitizer (excludes timing gates)",
+            "displayName": "Correctness suites under ThreadSanitizer",
             "configurePreset": "tsan",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } }
+            "filter": { "exclude": { "label": "^conformance$" } }
         }
     ]
 }

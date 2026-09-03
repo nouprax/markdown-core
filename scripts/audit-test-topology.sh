@@ -16,7 +16,28 @@ note() {
     echo "ok: $1"
 }
 
-# 1. Every platform consumes the shared conformance contract.
+# 1. Test corpora have one owner. Extension correctness fixtures belong to the
+# C package and are also used as INPUT by the external parity gates. The
+# `specs/oracles` tree owns only external pins, comparison policy, deltas, and
+# purpose-built oracle input. Product-owned golden dumps there would recreate
+# the dead mirror this audit removed.
+for oracle_file in \
+    specs/oracles/cmark/deltas.json \
+    specs/oracles/cmark/IMPORTS.md \
+    specs/oracles/cmark-gfm/deltas.json \
+    specs/oracles/remark/deltas.json \
+    specs/oracles/remark/corpus.md; do
+    if [ ! -f "$oracle_file" ]; then
+        fail "external oracle file is missing: $oracle_file"
+    fi
+done
+if find specs/oracles -type f \( -name '*.txt' -o -name '*.ast' \) -print -quit | grep -q .; then
+    fail "product-owned golden fixture mirror exists inside specs/oracles"
+else
+    note "external oracle policies exist without duplicate golden fixtures"
+fi
+
+# 2. Every platform consumes the shared conformance contract.
 if [ ! -f specs/canonical-ast/manifest.json ]; then
     fail "root shared canonical AST manifest is missing"
 fi
@@ -31,22 +52,20 @@ else
     note "C, SwiftPM plugin, Gradle task, and ES package lifecycle consume the shared spec"
 fi
 
-# 2. No runtime network dependency in build/test/bench plumbing.  The only
-# allowed network use is the explicit `update-spec` maintenance target.
+# 3. No runtime network dependency in build/test/local-benchmark plumbing.
 if grep -n 'git clone' Makefile package.json CMakePresets.json \
     packages/markdown-core/tests/CMakeLists.txt 2>/dev/null; then
     fail "runtime git clone found in build/test plumbing"
 else
     note "no runtime clone in build/test plumbing"
 fi
-if grep -n -E 'curl|wget' Makefile | grep -v 'update-spec' | grep -v "^[0-9]*:update-spec" \
-    | grep -v 'raw.githubusercontent.com/jgm/CommonMark' >/dev/null; then
-    fail "network fetch outside the update-spec maintenance target"
+if grep -n -E 'curl|wget' Makefile >/dev/null; then
+    fail "network fetch in build/test plumbing"
 else
-    note "network fetch limited to explicit maintenance"
+    note "build/test plumbing has no network fetch"
 fi
 
-# 3. Vendored corpora must be manifested, licensed, and hash-verified.
+# 4. Vendored corpora must be manifested, licensed, and hash-verified.
 if [ -d packages/markdown-core/tests/corpora ]; then
     for corpus in packages/markdown-core/tests/corpora/*/; do
         [ -d "$corpus" ] || continue
@@ -63,98 +82,102 @@ if [ -d packages/markdown-core/tests/corpora ]; then
     note "vendored corpora are manifested and verified"
 fi
 
-# 4. CTest topology: configure/build if needed, then cross-check labels and
-# per-case registrations against runner discovery.
-BUILD_DIR=build/cmake
-if [ ! -f "$BUILD_DIR/CTestTestfile.cmake" ]; then
-    cmake --preset default >/dev/null
-    cmake --build --preset default --parallel >/dev/null
-fi
-
-tests_all=$("ctest" --test-dir "$BUILD_DIR" -N | sed -n 's/^  Test *#[0-9]*: //p')
-for label in api facade conformance consumer spec extensions regression pathological complexity fuzz packaging benchmark; do
-    count=$(ctest --test-dir "$BUILD_DIR" -N -L "^${label}$" | sed -n 's/^Total Tests: //p')
-    if [ "${count:-0}" -lt 1 ]; then
-        fail "no CTest tests carry label '$label'"
-    fi
-done
-note "every required label resolves to at least one test"
-
-if ctest --test-dir "$BUILD_DIR" -N | grep -q 'Disabled'; then
-    fail "disabled tests present in the CTest graph"
-else
-    note "no disabled tests in the CTest graph"
-fi
-
-correctness_list=$(ctest --test-dir "$BUILD_DIR" -N -LE '^(benchmark|conformance)$' | sed -n 's/^  Test *#[0-9]*: //p')
-if echo "$correctness_list" | grep -Eq '^(benchmark_|facade_native$|facade_dump_cli$)'; then
-    fail "correctness selection includes conformance or benchmark workloads"
-else
-    note "correctness selection excludes conformance and benchmark"
-fi
-
-for preset in correctness-asan correctness-ubsan correctness-tsan; do
-    if ctest --preset "$preset" -N | grep -q 'pathological_complexity_'; then
-        fail "$preset includes wall-clock complexity gates"
-    fi
-done
-note "sanitizer presets exclude wall-clock complexity gates"
-
-conformance_list=$(ctest --test-dir "$BUILD_DIR" -N -L '^conformance$' | sed -n 's/^  Test *#[0-9]*: //p')
-if [ "$conformance_list" != "facade_native
-facade_dump_cli" ]; then
-    fail "C conformance selection does not contain exactly the public contract checks"
-else
-    note "C conformance selection is isolated from correctness"
-fi
-benchmark_list=$(ctest --test-dir "$BUILD_DIR" -N -L '^benchmark$' | sed -n 's/^  Test *#[0-9]*: //p')
-if echo "$benchmark_list" | grep -v '^benchmark_' | grep -q .; then
-    fail "benchmark selection includes non-benchmark tests"
-else
-    note "benchmark selection contains only benchmark workloads"
-fi
-
-runner_dir="$BUILD_DIR/packages/markdown-core/tests"
-# A MISSING runner is a failure, not a skip: `$(missing --list)` is the empty
-# string, the loop body never runs, and the check passes while checking
-# nothing. A runner sat in a list like this for many commits after it was
-# deleted, doing exactly that.
-for runner in pathological_runner complexity_runner stress_runner fallback_runner bench_runner; do
-    if [ ! -x "$runner_dir/$runner" ]; then
-        fail "$runner is in the discovery list but was not built; add it back or drop it from this list"
-    fi
-done
-for case_name in $("$runner_dir/pathological_runner" --list); do
-    echo "$tests_all" | grep -q "^pathological_${case_name}$" \
-        || fail "pathological case '$case_name' is not registered in CTest"
-done
-for case_name in $("$runner_dir/complexity_runner" --list); do
-    echo "$tests_all" | grep -q "^pathological_complexity_${case_name}$" \
-        || fail "complexity case '$case_name' is not registered in CTest"
-done
-for case_name in $("$runner_dir/stress_runner" --list); do
-    echo "$tests_all" | grep -q "^pathological_stress_${case_name}$" \
-        || fail "stress case '$case_name' is not registered in CTest"
-done
-for case_name in $("$runner_dir/fallback_runner" --list); do
-    echo "$tests_all" | grep -q "^regression_fallback_${case_name}$" \
-        || fail "fallback case '$case_name' is not registered in CTest"
-done
-for workload in $("$runner_dir/bench_runner" --list); do
-    echo "$tests_all" | grep -q "^benchmark_${workload}$" \
-        || fail "benchmark workload '$workload' is not registered in CTest"
-done
-note "runner discovery matches CTest registration"
-
-# 5. Swift suites must be real (not build-only) when a toolchain is present;
-# CI additionally executes them on the Swift platform job.
-if command -v swift >/dev/null 2>&1; then
-    if [ "$(CLANG_MODULE_CACHE_PATH="$BUILD_DIR/swift-module-cache" \
-        swift test --disable-sandbox list 2>/dev/null | wc -l)" -lt 1 ]; then
-        fail "swift test discovers no Swift Testing suites"
+# 5. Source audit stays compilation-free. Dynamic CTest inventory is evaluated
+# against an already-built artifact tree when the producer passes its path and
+# optional multi-config configuration; the repository health-check must not
+# perform a duplicate platform build.
+BUILD_DIR=${1:-}
+CTEST_CONFIGURATION=${2:-}
+if [ -n "$BUILD_DIR" ]; then
+    if [ ! -f "$BUILD_DIR/CTestTestfile.cmake" ]; then
+        fail "requested CTest tree is not configured: $BUILD_DIR"
     else
-        note "swift test discovers Swift Testing suites"
+        ctest_inventory() {
+            if [ -n "$CTEST_CONFIGURATION" ]; then
+                ctest --test-dir "$BUILD_DIR" -C "$CTEST_CONFIGURATION" "$@"
+            else
+                ctest --test-dir "$BUILD_DIR" "$@"
+            fi
+        }
+        normalize_lines() {
+            tr -d '\r'
+        }
+
+        tests_all=$(ctest_inventory -N | normalize_lines | sed -n 's/^  Test *#[0-9]*: //p')
+        for label in api facade conformance consumer spec extensions regression pathological fuzz packaging; do
+            count=$(ctest_inventory -N -L "^${label}$" | normalize_lines | sed -n 's/^Total Tests: //p')
+            if [ "${count:-0}" -lt 1 ]; then
+                fail "no CTest tests carry label '$label'"
+            fi
+        done
+        note "every required label resolves to at least one test"
+
+        if ctest_inventory -N | normalize_lines | grep -q 'Disabled'; then
+            fail "disabled tests present in the CTest graph"
+        else
+            note "no disabled tests in the CTest graph"
+        fi
+
+        correctness_list=$(ctest_inventory -N -LE '^conformance$' | normalize_lines \
+            | sed -n 's/^  Test *#[0-9]*: //p')
+        if echo "$correctness_list" | grep -Eq '^(facade_native$|facade_dump_cli$)'; then
+            fail "correctness selection includes conformance workloads"
+        else
+            note "correctness selection excludes conformance"
+        fi
+
+        if ctest_inventory -N -L '^(benchmark|complexity)$' | normalize_lines \
+            | grep -Eq 'Total Tests: [1-9]'; then
+            fail "default CTest graph contains a wall-clock performance test"
+        else
+            note "default CTest graph contains no wall-clock performance tests"
+        fi
+
+        conformance_list=$(ctest_inventory -N -L '^conformance$' | normalize_lines \
+            | sed -n 's/^  Test *#[0-9]*: //p')
+        if [ "$conformance_list" != "facade_native
+facade_dump_cli" ]; then
+            fail "C conformance selection does not contain exactly the public contract checks"
+        else
+            note "C conformance selection is isolated from correctness"
+        fi
+
+        runner_dir="$BUILD_DIR/packages/markdown-core/tests"
+        pathological_runner=$(find "$runner_dir" -maxdepth 2 -type f \
+            \( -name pathological_runner -o -name pathological_runner.exe \) -print -quit)
+        stress_runner=$(find "$runner_dir" -maxdepth 2 -type f \
+            \( -name stress_runner -o -name stress_runner.exe \) -print -quit)
+        if [ -z "$pathological_runner" ] || [ -z "$stress_runner" ]; then
+            fail "CTest discovery runners are missing from the built tree"
+        else
+            for case_name in $("$pathological_runner" --list | normalize_lines); do
+                echo "$tests_all" | grep -q "^pathological_${case_name}$" \
+                    || fail "pathological case '$case_name' is not registered in CTest"
+            done
+            for case_name in $("$stress_runner" --list | normalize_lines); do
+                echo "$tests_all" | grep -q "^pathological_stress_${case_name}$" \
+                    || fail "stress case '$case_name' is not registered in CTest"
+            done
+        fi
+        echo "$tests_all" | grep -q '^regression_strict_oom$' \
+            || fail "strict OOM case is not registered in CTest"
+        for concurrency_case in facade_concurrent_first_parse facade_concurrent_stress regression_instance_lifecycle; do
+            echo "$tests_all" | grep -q "^${concurrency_case}$" \
+                || fail "multi-instance concurrency case '$concurrency_case' is not registered in CTest"
+        done
+        note "runner discovery, strict OOM, and multi-instance concurrency match CTest registration"
     fi
+else
+    note "dynamic CTest inventory deferred to the C test-artifact producer"
+fi
+
+# 6. The Swift producer performs toolchain-backed discovery after building.
+# The repository-only audit checks that both owned test targets declare tests.
+if grep -R -q '@Test' packages/swift-markdown-core/Tests/MarkdownCoreTests \
+    && grep -R -q '@Test' packages/swift-markdown-core/Tests/MarkdownCoreConformanceTests; then
+    note "Swift correctness and conformance targets declare Swift Testing tests"
+else
+    fail "Swift correctness or conformance target declares no Swift Testing tests"
 fi
 
 if [ "$failures" -gt 0 ]; then

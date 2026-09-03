@@ -2,26 +2,24 @@ package consumer;
 
 import com.nouprax.markdown.core.Document;
 import com.nouprax.markdown.core.ParseOptions;
-import com.nouprax.markdown.core.Read;
 import com.nouprax.markdown.core.TreeDumper;
 
 public final class Main {
     private Main() {}
 
     public static void main(String[] args) {
-        // Nine, not eleven: Step 6 deleted dollarFormulaDelimiters and
-        // latexFormulaDelimiters, because attaching `formulas` is the only
-        // switch the extension has. A Java caller has no default arguments, so
-        // this positional call is what pins the arity from outside Kotlin.
+        // A Java caller has no default arguments, so this positional call pins
+        // the complete nine-option constructor from outside Kotlin. Formula
+        // syntax has one gate rather than delimiter-specific sub-options.
         ParseOptions options = new ParseOptions(
                 true, true, true, true, true, true, true, true, true);
-        Read read = new Document("héllo 🚀\n", options).seal();
-        if (read.getSemantic().getContent().size() != 1) {
-            throw new IllegalStateException("the sealed read returned unexpected top-level content");
+        Document document = Document.Companion.parse("héllo 🚀\n", options);
+        if (document.getContent().size() != 1) {
+            throw new IllegalStateException("Document.parse returned unexpected top-level content");
         }
-        String dump = TreeDumper.INSTANCE.dump(read.getSemantic());
+        String dump = TreeDumper.INSTANCE.dump(document);
         if (!dump.contains("héllo 🚀")) {
-            throw new IllegalStateException("native payload returned an unexpected document: " + dump);
+            throw new IllegalStateException("JNI payload returned an unexpected document: " + dump);
         }
     }
 }

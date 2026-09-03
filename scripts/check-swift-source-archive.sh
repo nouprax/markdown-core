@@ -53,12 +53,12 @@ CLANG_MODULE_CACHE_PATH="$temporary/product-module-cache" \
 
 mkdir -p "$consumer/Sources/Consumer"
 printf '%s\n' \
-    '// swift-tools-version: 6.0' \
+    '// swift-tools-version: 6.3' \
     'import PackageDescription' \
     '' \
     'let package = Package(' \
     '    name: "ReleaseConsumer",' \
-    '    platforms: [.macOS(.v15)],' \
+    '    platforms: [.macOS(.v26)],' \
     '    dependencies: [.package(path: "../unpacked/markdown-core")],' \
     '    targets: [' \
     '        .executableTarget(' \
@@ -67,16 +67,14 @@ printf '%s\n' \
     '        )' \
     '    ]' \
     ')' >"$consumer/Package.swift"
-# `Document(markdown:).seal()` is the whole-text entry the 3.0 surface
-# settled: the living document is the one way in, and the sealed read carries
-# the two views. Keep this snippet in lockstep with the public API -- it has
-# already caught one restore that named a symbol the branch did not have.
+# Compile the documented one-shot parse entry point from the unpacked archive,
+# so source packaging and the external consumer surface are checked together.
 printf '%s\n' \
     'import MarkdownCore' \
     '' \
-    'let read = try Document(markdown: "## archived consumer").seal()' \
-    'guard (read.semantic.content.first as? Heading)?.level == 2 else { fatalError("parse failed") }' \
-    'print(read.dump())' >"$consumer/Sources/Consumer/main.swift"
+    'let document = try Document.parse("## archived consumer")' \
+    'guard (document.content.first as? Heading)?.level == 2 else { fatalError("parse failed") }' \
+    'print(document.dump())' >"$consumer/Sources/Consumer/main.swift"
 
 CLANG_MODULE_CACHE_PATH="$temporary/consumer-module-cache" \
     swift run --disable-sandbox --package-path "$consumer" Consumer >/dev/null
@@ -85,7 +83,7 @@ CLANG_MODULE_CACHE_PATH="$temporary/consumer-module-cache" \
 # this repository's test and benchmark content reaching the product build.
 if find "$consumer/.build" -type f \
     -not -path '*/index/*' \
-    \( -iname '*test*' -o -iname '*benchmark*' \
+    \( -iname '*test*' -o -iname '*benchmark*' -o -name 'CanonicalAstCases.swift' \
     -o -name manifest.json -o -name '*.ast' \) -print | grep -q .; then
     echo "product-only Swift consumer built or carried test or benchmark content" >&2
     exit 1

@@ -19,9 +19,7 @@
  * table cannot say -- the core rules, coordinates, ownership, the attribute
  * grammar -- and its own kind/field table is a SECOND copy of the contract.
  * This audit compares it against the JSON kind for kind and field for field,
- * so the two cannot drift apart. Until Step 15A the Markdown table WAS the
- * contract, it lived under `docs/deprecated/`, which is archive and not
- * normative, and four executable policy files read it from there.
+ * so the two cannot drift apart.
  *
  * It does not check types across platforms: a `level` is `Int` in the
  * contract, `Int32` in Swift, `Int` in Kotlin and `number` in TypeScript, and
@@ -83,11 +81,8 @@ function proseDefinition() {
  * The dump grammar's field-order table: kind -> the fields the dump prints
  * between `scope` and `children`, in order.
  *
- * A THIRD copy of the contract, and until Step 9b nothing read it. It had
- * drifted three ways at once -- a `mode` on four kinds Q29 deleted at 15A.4, a
- * `label` on the two directive kinds that stopped being a scalar when Step 7
- * made it a node, and no row for `DirectiveLabel`. A normative table nobody
- * reads is prose, and this file already exists to say so.
+ * A third copy of the contract. A normative table nobody reads is only prose,
+ * so this audit checks it as data.
  */
 function dumpGrammarDefinition() {
     const lines = fs.readFileSync(path.join(root, DUMP_PATH), "utf8").split("\n");
@@ -172,8 +167,9 @@ const modelProjections = [
     projection({
         label: "Swift model",
         directories: ["packages/swift-markdown-core/Sources/MarkdownCore"],
-        // Every kind is a struct today; the class alternation survives from
-        // the era when the root owned the native parse, and it costs nothing.
+        // Document is a final class — it owns the native parse, which a value
+        // type cannot release — while every other kind is a struct. Both are
+        // declarations; only the keyword differs.
         declaration: (kind) => new RegExp(`public (?:final class|struct) ${kind}\\b[^\\n]*\\{`),
         field: /public (?:let|var) ([A-Za-z]+)\s*:\s*([^\n]+)/g,
         optional: (m) => m[2].trim().endsWith("?")
@@ -203,18 +199,9 @@ const modelProjections = [
 const kinds = definition();
 const contract = JSON.parse(fs.readFileSync(path.join(root, CONTRACT_PATH), "utf8"));
 
-/** The type name a binding declares for a kind. The contract carries a
- * `bindingType` where the ruled type name differs from the kind -- the root
- * is `Semantic` in every binding while the C enum, the wire, the manifest,
- * and the dump label keep `Document`. */
-const bindingName = new Map(contract.kinds.map((kind) => [kind.name, kind.bindingType ?? kind.name]));
-const bindingNames = () => [...kinds.keys()].map((kind) => bindingName.get(kind));
-
-/** A field the dump cannot print, because it IS the child structure -- which
- * is any field whose type names a KIND. The predicate used to list four of
- * them by hand and the call sites carried an explicit `label` exception,
- * because a directive's label was a COUNT in the dump rather than a node;
- * Step 7 made it a node and the exception became a lie. */
+/** A node-valued field the dump represents as a nested descendant rather than
+ * a scalar token. This includes typed ownership fields such as `label`; nested
+ * dump layout does not make every such field part of a generic child list. */
 const kindNames = new Set(contract.kinds.map((kind) => kind.name));
 const structural = (field) =>
     [...field.type.matchAll(/[A-Za-z]+/g)].some((word) => word[0] === "Markup" || kindNames.has(word[0]));
@@ -242,11 +229,12 @@ let failed = false;
     }
 }
 
-/* SIX SURFACES, and every one of them names every kind.
+/* Every projection surface names every kind.
  *
  * §4.1's Step 15A requires ONE audit over the C header, the C dump, the Kotlin
- * bridge + decoder + model, the ES bridge + export list + decoder + model, the
- * Swift model + dumper, and the canonical-AST manifest. Until 15A.3 this file
+ * platform adapters + decoders + model, the ES writer + export list + decoder
+ * + model, the Swift model + dumper, and the canonical-AST manifest. Until
+ * 15A.3 this file
  * read three of those -- the three MODELS -- so a decoder that forgot a kind, a
  * dumper that could not name one, or a wire enum that was one short was
  * invisible here and visible only if some test happened to parse that kind. */
@@ -261,15 +249,15 @@ const kindSurfaces = [
     {
         label: "C dump kind names",
         expect: [...kinds.keys()],
-        actual: namedKinds("packages/markdown-core/extensions/ast.c", /^\s+"([A-Za-z]+)",?\s*$/gm).filter(
+        actual: namedKinds("packages/markdown-core/extensions/ast.c", /^\s+"([A-Za-z]+)"[,}]/gm).filter(
             (name) => name !== "None"
         )
     },
     {
-        label: "Kotlin wire kinds",
+        label: "Kotlin JNI node kinds",
         expect: [...kinds.keys()].map(snake),
         actual: namedKinds(
-            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/wire/WireKind.kt",
+            "packages/kotlin-markdown-core/src/jniMain/kotlin/com/nouprax/markdown/core/wire/JniNodeKind.kt",
             /^\s{4}([A-Z][A-Z_]*)\(\d+\),$/gm
         )
     },
@@ -277,24 +265,32 @@ const kindSurfaces = [
         label: "Kotlin decoder",
         expect: [...kinds.keys()].map(snake),
         actual: namedKinds(
-            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/wire/WireMarkupDecoder.kt",
-            /WireKind\.([A-Z_]+)\s*->/g
+            "packages/kotlin-markdown-core/src/jniMain/kotlin/com/nouprax/markdown/core/wire/JniMarkupDecoder.kt",
+            /JniNodeKind\.([A-Z_]+)\s*->/g
+        )
+    },
+    {
+        label: "Kotlin/Native C facade adapter",
+        expect: [...kinds.keys()].map(snake),
+        actual: namedKinds(
+            "packages/kotlin-markdown-core/src/nativePlatformMain/kotlin/com/nouprax/markdown/core/PlatformParser.native.kt",
+            /^\s+MARKDOWN_CORE_KIND_([A-Z_]+)\s*->/gm
         )
     },
     {
         label: "Kotlin dumper",
-        expect: bindingNames(),
+        expect: [...kinds.keys()],
         actual: namedKinds(
-            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/TreeDumper.kt",
+            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/TreeDumper.kt",
             /override fun visit([A-Za-z]+)\(/g
         )
     },
     {
         label: "ES export list",
-        expect: bindingNames(),
+        expect: [...kinds.keys()],
         actual: namedKinds("packages/es-markdown-core/src/index.ts", /export (?:type )?\{([^}]*)\}/g, (m) => m[1])
             .flatMap((names) => names.split(",").map((n) => n.trim()))
-            .filter((name) => bindingNames().includes(name))
+            .filter((name) => kinds.has(name))
     },
     {
         label: "ES wire kinds",
@@ -304,28 +300,28 @@ const kindSurfaces = [
         )
     },
     {
+        label: "ES Wasm batch writer",
+        expect: [...kinds.keys()].map(snake),
+        actual: namedKinds(
+            "packages/es-markdown-core/src/bridge.c",
+            /^\s{4}case MARKDOWN_CORE_KIND_([A-Z_]+):/gm
+        ).filter((name) => name !== "NONE")
+    },
+    {
         label: "ES decoder",
         expect: [...kinds.keys()].map(camel),
-        actual: namedKinds("packages/es-markdown-core/src/wire/wire-decoder.ts", /case "([a-zA-Z]+)":/g)
+        actual: namedKinds("packages/es-markdown-core/src/wire/node-decoder.ts", /case "([a-zA-Z]+)":/g)
     },
     {
         label: "ES dumper",
-        expect: bindingNames(),
+        expect: [...kinds.keys()],
         actual: namedKinds("packages/es-markdown-core/src/tree-dumper.ts", /^\s+visit([A-Za-z]+): \(/gm)
     },
     {
         label: "Swift dumper",
-        expect: bindingNames(),
+        expect: [...kinds.keys()],
         actual: namedKinds(
-            "packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift",
-            /mutating func visit\(_:? ?n?o?d?e?:? (?:MarkdownCore\.)?([A-Za-z]+)\)/g
-        )
-    },
-    {
-        label: "Swift walker",
-        expect: bindingNames(),
-        actual: namedKinds(
-            "packages/swift-markdown-core/Sources/MarkdownCore/Walker/Walker.swift",
+            "packages/swift-markdown-core/Sources/MarkdownCore/Visitor/TreeDumper.swift",
             /mutating func visit\(_:? ?n?o?d?e?:? (?:MarkdownCore\.)?([A-Za-z]+)\)/g
         )
     },
@@ -354,12 +350,11 @@ for (const { label, expect, actual } of kindSurfaces) {
     }
 }
 
-/* The C dump prints every field the contract gives a kind, EXCEPT the ones that
- * are the child structure itself -- `content`, `items`, `header`, `rows`,
- * `cells` are the tree and the `children=` count. `label` is the exception to
- * the exception: it is structural and the dump prints its LENGTH, because a
- * directive's label and its content are two runs of one child list and nothing
- * else in the line says where the first one ends. */
+/* The C dump prints every scalar field the contract gives a kind. Its
+ * per-kind dump dispatch nests structural children and any explicitly chosen
+ * node-valued fields as graphical descendants. `children=` still counts only
+ * structural children; in particular, a directive may visually nest its
+ * `label` field without counting or exposing that field as a child. */
 {
     const source = read("packages/markdown-core/extensions/ast.c");
     const body = source.slice(source.indexOf("static void dump_fields"));
@@ -446,7 +441,7 @@ const optionality = new Map(
 
 for (const { label, fieldsOf } of modelProjections) {
     for (const [kind, expected] of kinds) {
-        const declared = fieldsOf(bindingName.get(kind));
+        const declared = fieldsOf(kind);
         if (declared === null) {
             console.error(`${label}: no declaration for ${kind}`);
             failed = true;

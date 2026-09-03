@@ -4,6 +4,7 @@ endif()
 
 include(GNUInstallDirs)
 
+set(LIBRARY "libmarkdown-core")
 set(STATICLIBRARY "libmarkdown-core_static")
 set(HEADERS
     markdown-core.h
@@ -20,8 +21,7 @@ set(HEADERS
     inlines.h
     houdini.h
     markdown_core_ctype.h
-    markdown_core_atomic.h
-    syntax_extension.h
+    extension.h
     delimiter.h)
 set(LIBRARY_SOURCES
     markdown_core.c
@@ -55,14 +55,6 @@ set(MARKDOWN_CORE_ENGINE_SOURCES
 set(PROGRAM "markdown-core")
 set(PROGRAM_SOURCES main.c)
 
-# The process-level once used for core-extension registration is pthread_once
-# on POSIX platforms; CMAKE_THREAD_LIBS_INIT stays a plain flag so the
-# installed export set carries no imported target dependency.
-if(NOT WIN32)
-    set(THREADS_PREFER_PTHREAD_FLAG ON)
-    find_package(Threads REQUIRED)
-endif()
-
 include_directories(. ${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR})
 
@@ -73,7 +65,7 @@ include(GenerateExportHeader)
 
 add_executable(${PROGRAM} ${PROGRAM_SOURCES})
 
-# The CLI is a repository-owned diagnostic adapter and needs private engine
+# The CLI is a repository-owned debug adapter and needs private engine
 # symbols. Keep it on the internal static graph so the installed shared facade
 # can export only the reviewed read-only API.
 target_link_libraries(${PROGRAM} libmarkdown-core-extensions_static libmarkdown-core_static)
@@ -84,10 +76,10 @@ set_target_properties(${PROGRAM} PROPERTIES COMPILE_FLAGS
 
 # Check integrity of node structure when compiled as debug:
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DMARKDOWN_CORE_DEBUG_NODES -DDEBUG")
+set(CMAKE_LINKER_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG}")
 
-# Profile builds reach the link line through the compile flags CMake places
-# in the link command; no CMAKE_LINKER_* variable exists to set.
 set(CMAKE_C_FLAGS_PROFILE "${CMAKE_C_FLAGS_RELEASE} -pg")
+set(CMAKE_LINKER_PROFILE "${CMAKE_LINKER_FLAGS_RELEASE} -pg")
 
 # -fvisibility=hidden
 set(CMAKE_C_VISIBILITY_PRESET hidden)
@@ -97,10 +89,6 @@ if(MARKDOWN_CORE_STATIC OR MARKDOWN_CORE_SHARED)
     add_library(${STATICLIBRARY} STATIC ${LIBRARY_SOURCES})
     target_compile_definitions(${STATICLIBRARY} PUBLIC MARKDOWN_CORE_STATIC_DEFINE)
     set_target_properties(${STATICLIBRARY} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-    if(NOT WIN32 AND CMAKE_THREAD_LIBS_INIT)
-        target_link_libraries(${STATICLIBRARY} ${CMAKE_THREAD_LIBS_INIT})
-    endif()
 
     if(MSVC)
         set_target_properties(${STATICLIBRARY} PROPERTIES OUTPUT_NAME "markdown-core_static" VERSION ${PROJECT_VERSION})
@@ -143,6 +131,12 @@ include(CheckCSourceRuns)
 include(CheckSymbolExists)
 check_include_file(stdbool.h HAVE_STDBOOL_H)
 check_c_source_compiles("int main() { __builtin_expect(0,0); return 0; }" HAVE___BUILTIN_EXPECT)
+check_c_source_compiles(
+    "
+  int f(void) __attribute__ (());
+  int main() { return 0; }
+"
+    HAVE___ATTRIBUTE__)
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
@@ -156,7 +150,7 @@ if(MSVC)
     endif()
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /WX /wd4706 /wd4204 /wd4221 /wd4100 /D_CRT_SECURE_NO_WARNINGS")
 elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wno-unused-parameter -std=c11 -pedantic")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wno-unused-parameter -std=c99 -pedantic")
     # GCC folds "an anonymous enum compared with, or converted to, a named one"
     # into -Wenum-compare and -Wenum-conversion, both of which -Wall turns on.
     # Clang has the SAME diagnostic under a name of its own and puts it in no

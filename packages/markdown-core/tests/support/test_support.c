@@ -9,10 +9,6 @@
 #include <time.h>
 #endif
 
-#if defined(__GLIBC__)
-#include <malloc.h>
-#endif
-
 /* File IO -------------------------------------------------------------- */
 
 uint8_t *ts_read_file(const char *path, size_t *length) {
@@ -366,34 +362,28 @@ int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *con
     stack[depth++] = root;
     while (depth > 0) {
         const markdown_core_node *node = stack[--depth];
-        markdown_core_children cursor;
-        size_t first = depth;
-        size_t tail;
+        const markdown_core_node *sibling = markdown_core_node_get_next_sibling(node);
+        const markdown_core_node *child = markdown_core_node_get_first_child(node);
         result = visit(node, context);
         if (result != 0) {
             break;
         }
-        for (cursor = markdown_core_node_children(node); cursor.child; cursor = markdown_core_children_next(cursor)) {
-            if (depth == capacity) {
-                const markdown_core_node **grown;
-                capacity *= 2;
-                grown = (const markdown_core_node **)realloc((void *)stack, capacity * sizeof(*stack));
-                if (!grown) {
-                    result = -1;
-                    break;
-                }
-                stack = grown;
+        if (depth + 2 > capacity) {
+            const markdown_core_node **grown;
+            capacity *= 2;
+            grown = (const markdown_core_node **)realloc((void *)stack, capacity * sizeof(*stack));
+            if (!grown) {
+                result = -1;
+                break;
             }
-            stack[depth++] = cursor.child;
+            stack = grown;
         }
-        if (result != 0) {
-            break;
+        /* Push the sibling first so the child is visited before it. */
+        if (sibling) {
+            stack[depth++] = sibling;
         }
-        /* Reverse the run so the first child pops first: pre-order kept. */
-        for (tail = depth; first + 1 < tail; first++, tail--) {
-            const markdown_core_node *swap = stack[first];
-            stack[first] = stack[tail - 1];
-            stack[tail - 1] = swap;
+        if (child) {
+            stack[depth++] = child;
         }
     }
     free((void *)stack);
@@ -442,7 +432,7 @@ char *ts_ast_concat_text(const markdown_core_node *root, size_t *length) {
     return buffer.data;
 }
 
-/* Comparison and diagnostics ---------------------------------------------- */
+/* Comparison and failure reporting ---------------------------------------- */
 
 static void ts_print_annotated_line(FILE *stream, const char *prefix, const char *line, size_t length) {
     fputs(prefix, stream);
@@ -505,14 +495,6 @@ char *ts_repeat(const char *unit, size_t count, size_t *length) {
         *length = total;
     }
     return buffer;
-}
-
-void ts_bench_pin_allocator(void) {
-#if defined(__GLIBC__)
-    /* A fixed threshold larger than any workload's arena; setting it also
-     * turns off glibc's dynamic threshold adjustment, which is the point. */
-    mallopt(M_TRIM_THRESHOLD, 128 * 1024 * 1024);
-#endif
 }
 
 uint64_t ts_monotonic_ns(void) {

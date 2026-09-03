@@ -13,14 +13,9 @@ public enum ListFlavor: String, Sendable {
 
 /// A bulleted or numbered list.
 public struct List: Markup {
-    /// The node's identity: the name a consumer tracks this element by across
-    /// a stream's feeds — the render key. See ``Identity``.
-    public let id: Identity
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
-    /// A list owns `ListItem`s and nothing else. The contract has said so since
-    /// it was written; until Step 15A this was a flat `[any Markup]`, so the
-    /// type could not.
+    /// A list owns `ListItem`s and nothing else.
     public let items: [ListItem]
     /// Bulleted or numbered.
     public let flavor: ListFlavor
@@ -33,20 +28,18 @@ public struct List: Markup {
     public let tight: Bool
 
     /// Dispatches to the visitor's `List` case.
-    public func accept<V: Visitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension List {
-    init(from node: OpaquePointer) {
-        let id = Self.identity(from: node)
+    init(from node: OpaquePointer, children: [any Markup]) {
         var flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET
         var start = markdown_core_optional_i64()
         var tight = false
         markdown_core_node_list_properties(node, &flavor, &start, &tight)
         self.init(
-            id: id,
             scope: Self.scope(from: node),
-            items: Self.typedChildren(from: node),
+            items: Self.typedChildren(children),
             flavor: flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? .ordered : .bullet,
             start: start.has_value ? start.value : nil,
             tight: tight
@@ -56,9 +49,6 @@ extension List {
 
 /// One item of a ``List``.
 public struct ListItem: Markup {
-    /// The node's identity: the name a consumer tracks this element by across
-    /// a stream's feeds — the render key. See ``Identity``.
-    public let id: Identity
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
     /// The item's blocks. Block content, not inline.
@@ -69,18 +59,16 @@ public struct ListItem: Markup {
     public let checked: Bool?
 
     /// Dispatches to the visitor's `ListItem` case.
-    public func accept<V: Visitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension ListItem {
-    init(from node: OpaquePointer) {
-        let id = Self.identity(from: node)
+    init(from node: OpaquePointer, content: [any Markup]) {
         var checked = markdown_core_optional_bool()
         markdown_core_node_list_item_checked(node, &checked)
         self.init(
-            id: id,
             scope: Self.scope(from: node),
-            content: Self.children(from: node),
+            content: content,
             checked: checked.has_value ? checked.value : nil
         )
     }

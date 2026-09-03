@@ -6,116 +6,34 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
-The engine is reconstructed from the 1.0 baseline. The 2.0.0 line is withdrawn:
-its major version was bought with a session and incremental parsing API that no
-longer exists. 3.0.0 ships a different streaming surface, described below.
+Reconstruct the cmark-derived engine as the renamed, parser-only Markdown Core
+product. This line adds the repository parser extensions and immutable AST
+facade while removing renderer support and the caller-driven feed lifecycle.
 
-- The bindings' one entry is the living `Document`, fed in pieces and
-  answering with `Read` values. Every `feed` returns the read after those
-  bytes — a mid-stream projection whose incomplete trailing line is not yet in
-  it and whose open constructs are projected as they stand — and `seal` ends
-  the stream and releases the native shell, returning the sealed read,
-  identical for the same bytes however they were fed. The whole-text parse is
-  `Document(markdown).seal()`: a one-chunk stream, so the bindings'
-  `Document.parse` one-shot entries are deleted and feed/seal partition
-  invariance is the only identity there is. Every read is a plain value that
-  retains nothing native and outlives the document. The block is the minimal
-  update unit; the model is specified in `docs/STREAMING.md`. This is not the
-  withdrawn 2.0.0 surface: there is no edit, no fork, and no snapshot handle —
-  the returned read is the only answer there is. In C the surface keeps both
-  entries under its own names: `markdown_core_document_parse`, and
-  `markdown_core_session_new`, `_feed`, `_finish` and `_free`.
-- A `Read` is the parse: `semantic`, the tree. Scopes are counted against
-  the normalized source — UTF-8 as fed, every NUL replaced by U+FFFD, every
-  line ending a single `\n` and every line having one — which the library
-  does not hand back: a caller whose input can differ from it applies the
-  same normalization to its own copy before resolving a scope. The root node
-  type is renamed `Document` → `Semantic` in all three bindings; it is an
-  ordinary `Markup` carrying
-  nothing but `content` and `scope`, and the visitor case is `visitSemantic`
-  (Swift: `visit(_: Semantic)`). The C node kind and the canonical dump label
-  keep `document`/`Document`. Swift's visitor protocol `MarkupVisitor` is
-  renamed `Visitor`, matching Kotlin and ECMAScript.
-- Every `Markup` carries **`id: Identity`** — the pair `(block, ordinal)`,
-  the name a consumer tracks an element by across a stream's feeds: the
-  render key. `block` is the owning block's document-unique mint — the block
-  is the minimal update unit, so it alone names the region an incremental
-  consumer re-renders — and `ordinal` is the node's pre-order ordinal among
-  that block's inline descendants, 0 for the block itself. A block keeps its
-  identity across feeds however the bytes arrive; the halves are opaque
-  values. The C facade answers it whole (`markdown_core_node_identifier`), and
-  the canonical dump leads every line with `id=block:ordinal`.
-- A reference names the definition it resolved to: `LinkReference`,
-  `ImageReference` and `FootnoteReference` carry **`definition: Identity`**,
-  the identity of the FIRST definition of their label in document order,
-  while every later definition of the same label stays in the tree where it
-  was written. The reference kinds stop carrying `identifier`: their match
-  key equals the winning definition's by construction. The definitions
-  rename `identifier` to **`norm`** — the match key their label folds to,
-  still compared by bytes, the footnote kinds still keeping the leading `^`.
-  In C, `markdown_core_node_reference_definition` reads the edge and
-  `markdown_core_node_association` keeps its five-kind contract under its
-  own names.
-- The whole read crosses a binding boundary as ONE buffer, in ONE
-  allocation. `markdown_core_document_wire` serializes the document —
-  the canonical BYTES beside the canonical dump's TEXT, the
-  two changing together or not at all — with caller-reserved prefix room, so
-  a transport's versioned envelope is stamped into the payload's own
-  allocation rather than copied into a second one; both managed bridges wrap
-  it in that MKC8 envelope. The Kotlin transport keeps its single JNI
-  crossing, and the ECMAScript runtime stops walking per-field wasm
-  accessors — thousands of boundary crossings per document become one, and
-  the large-document feed-seal-copy drops from 45.7ms to 27.7ms while now
-  carrying the identity data. A read the caller's contract DISCARDS — the
-  `Document(markdown)` constructor's initial feed — stops being built at
-  all: `markdown_core_session_advance` takes the bytes without projecting or
-  serializing a document nothing would decode, which is what takes the
-  Kotlin large-document number from 26.6ms to 18.1ms. The
-  ECMAScript coverage ledger's unpinned surface shrinks with the walk it
-  covered: the retired decoder's 22-line allowance becomes the wire
-  decoder's 4-line, statically unreachable remainder.
-- A feed's payload is a DELTA against the payload before it (#162). Every
-  wire payload leads with a frame byte — `markdown_core_wire_frame`, FULL
-  or DELTA — and a session asked for DELTA answers the tree by its
-  differences from the last payload it wrote: the blocks the engine
-  retained across the two derivations are named by position and reused,
-  and only the open spine and the changed blocks cross. The bindings hand
-  the previous read's values into the new read wherever the delta says
-  nothing moved — a reused subtree is the same object, still an immutable
-  value — and ask for FULL whenever they hold no previous read. What a
-  reader still pays per feed is one reference copied per reused child into
-  the new read's child list, bounded in docs/STREAMING.md §6. In C,
-  `markdown_core_session_feed_wire` takes the frame request, and
-  `markdown_core_session_finish_wire` seals the stream on the wire in the
-  frame asked for; `markdown_core_document_wire` always writes FULL. The
-  ECMAScript feed-loop benchmark on the 158 KB document falls from 986.6 ms
-  to 27.8 ms at 256 chunks, the Kotlin one from 453.9 ms to 20.5 ms with a
-  third of the resident memory, and the feed-loop caps in both bindings
-  tighten from 32 to 4 per 16× step. The decoders' coverage ledgers shrink
-  with the change: the ECMAScript wire decoder's unpinned branches 7 → 6 and
-  the Kotlin markup decoder's 28 → 21, the delta's refusals and the table's
-  header-first rule now pinned by payload.
-- The C facade's child navigation is a BY-VALUE cursor:
-  `markdown_core_node_children` opens one and `markdown_core_children_next`
-  steps it, each step O(1), no allocation. The pair replaces
-  `markdown_core_node_get_first_child`/`markdown_core_node_get_next_sibling`
-  (D9): sibling order is the parent's fact, so the cursor carries the parent
-  and the position, and asking a bare node what follows it — the one
-  question a node shared between two reads of a stream cannot answer — is no
-  longer asked. The bindings' surfaces are unchanged: ECMAScript and Kotlin
-  read the wire, and Swift's `Markup` builders moved to the cursor
-  internally.
-- The ECMAScript `Document` also implements `Symbol.dispose`, so
-  `using document = new Document()` releases an abandoned stream at scope
-  exit; `dispose()` remains, is idempotent, and is only owed for a stream
-  abandoned before `seal`. Because sealing releases the shell, no public call
-  can reach a native session error any more, and the coverage ledgers'
-  unpinned defensive surface moved with it: in ECMAScript, `session.ts`'s
-  allowance is retired and `document.ts` and `parser.ts` carry the
-  unreachable allocation-failure and error-release arms; in Swift,
-  `NativeValues.swift`'s native-error constructors join for the same reason,
-  and the root's precondition arms move from `Document.swift` to
-  `Semantic.swift` beside `Read.swift`'s copy-in guard.
+- Raise the Swift package contract to Swift tools 6.3 and iOS 26/macOS 26,
+  refresh Gradle, AGP, Kotlin, Node.js, pnpm, Emscripten, and SwiftLint
+  pins, and audit every duplicated toolchain declaration for exact agreement.
+  The Gradle 9.7.1 distribution checksum and rotated release-signing subkey are
+  both pinned for wrapper and IDE-source dependency verification.
+- Keep the C and Kotlin packages independent in JetBrains workspaces. Gradle
+  IDE sync no longer projects the cross-package JNI graph through
+  `android-runtime/cpp`; normal Android builds still compile that graph, while
+  the canonical C project remains owned by CMake. Kotlin/Native IDE import
+  generates declarations from the public header without building C archives;
+  product and test KLIBs still build and embed those archives.
+- Replace the cross-runtime hosted-runner metrics jobs with one non-blocking C
+  parser comparison. PR comments omit the meaningless boundary column, reuse
+  an exact-base-SHA artifact when available, and otherwise build and publish
+  that baseline before measuring the head.
+- Remove the obsolete line/branch coverage ratchet and its instrumented CI
+  builds. Canonical AST cases, parser corpora, parity oracles, strict OOM and
+  lifecycle tests remain the required semantic evidence instead of treating
+  compiler, loader, and defensive wire branches as one quality score.
+- Synchronize the CommonMark parser from cmark 0.29 through stable cmark 0.31.2,
+  including published syntax, complexity/security, numeric-entity, Unicode 17,
+  case-folding, entity-table, and scanner changes. Current cmark is the
+  CommonMark authority; dormant cmark-gfm now judges only GFM extensions, with
+  remark/mdast used for correction and supplementation.
 - Keep the bytes of a footnote call whose label crosses a line ending, and read
   a label spelled with a character reference out of the source rather than out
   of a released buffer.
@@ -141,15 +59,25 @@ longer exists. 3.0.0 ships a different streaming surface, described below.
   all whitespace, loses one from each end. It is both ends or neither:
   `text $$ mid$$ text` reports `" mid"`, because the space the rule wants at the
   end is not there.
-- Report an allocation loss as `MARKDOWN_CORE_ERROR_ALLOCATION_FAILED` rather
-  than as `MARKDOWN_CORE_ERROR_INTERNAL`, and stop the failure reporter needing
-  an allocation of its own to say so.
+- Remove the incremental parser lifecycle and file wrapper. Parsing is one
+  synchronous source-to-document transaction; there is no feed, stream, edit,
+  session, snapshot, or delta API.
+- Make every allocation failure terminal. No hash-index failure may switch to
+  sorting or a linear scan, and no allocation refusal may still return a
+  document. The facade reports `MARKDOWN_CORE_ERROR_ALLOCATION_FAILED` through
+  an immutable error value that allocates nothing itself.
+- Remove the diagnostic list and its CLI, C ABI, test census, and recording
+  hooks. Parse errors are the only failure channel.
+- Guarantee concurrent use by independent parser instances: the engine has no
+  writable process-global parser state or initialization registry, and parser,
+  option, extension, allocation, and failure state is transaction-local.
 - A node's `scope` is a pair of line/column BOUNDARIES saying which range of the
   source an element occupies — not a byte range, and no substring is taken with
   it. A block closed by a blank line therefore ends at column 0 of that line,
-  which is what cmark-gfm reports and what an editor needs.
-- `markdown_core_document_root` is renamed `markdown_core_document_semantic`,
-  naming the view it returns.
+  which is what the cmark-family parser reports and what an editor needs.
+- Remove source retention and the `Concrete`/line-index API. A parse returns
+  only the immutable AST; consumers that need the Markdown text retain their
+  own input.
 - A link reference definition is a node. `ReferenceDefinition` sits at the byte
   where its `[` was written, in the container it was written in, carrying
   `label`, `identifier`, `destination` and `title`, which
@@ -161,9 +89,11 @@ longer exists. 3.0.0 ships a different streaming surface, described below.
   `Link` or an `Image` with the definition's destination copied into them.
   `markdown_core_node_reference_form` reads the form.
 - A directive's label is a node of its own, `DirectiveLabel`, and its attributes
-  are a list of name/value pairs rather than a string of normalized JSON.
+  are a list of name/value pairs rather than a string of normalized JSON. The
+  list preserves each name's first-occurrence source order; duplicate values
+  update or accumulate in that original slot instead of triggering a sort.
   `markdown_core_node_directive_attribute_at` reads one pair, and the dump
-  prints `attributes=[class="x" k="v"]` where it printed JSON object text.
+  prints `attributes=[k="v" class="x"]` where it printed JSON object text.
 - `mode` is removed from `Code`, `CodeBlock`, `Directive`, `DirectiveBlock` and
   `FormulaBlock`, where it could only ever hold the one value its kind implies.
   `Formula` keeps it, because a formula is the one kind where it varies.
@@ -171,8 +101,10 @@ longer exists. 3.0.0 ships a different streaming surface, described below.
   `markdown_core_node_association`, which answers for all five kinds carrying a
   label and reports the label as written beside the normalized identifier it
   matches by. `markdown_core_node_directive_first_label_child` and
-  `markdown_core_node_directive_first_content_child` are removed: a directive's
-  label is an ordinary node in the child list. `FootnoteDefinition.id` and
+  `markdown_core_node_directive_first_content_child` are replaced by
+  `markdown_core_node_directive_label`: a directive label remains `Markup`, but
+  is a typed field rather than an element of the directive child/content list.
+  `FootnoteDefinition.id` and
   `FootnoteReference.id` become `label` and `identifier` in all three bindings
   for the same reason.
 - `ParseOptions.dollarFormulaDelimiters` and

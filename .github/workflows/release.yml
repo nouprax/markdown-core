@@ -35,7 +35,7 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
-                  node-version: 26.5.0
+                  node-version: 26.8.1
             - name: Validate exact SemVer tag and coordinated versions
               run: node scripts/check-release-version.mjs --skip-swift --tag="$GITHUB_REF_NAME"
             - name: Require the tag commit to be on main
@@ -43,7 +43,7 @@ jobs:
                   git fetch --no-tags origin main
                   git merge-base --is-ancestor HEAD origin/main
             - name: Validate curated release notes
-              run: test -s "docs/deprecated/releases/$(cat VERSION).md"
+              run: test -s "docs/releases/$(cat VERSION).md"
 
     quality:
         name: Quality Gate - Release
@@ -103,14 +103,14 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
-                  node-version: 26.5.0
+                  node-version: 26.8.1
             - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
               with:
                   run_install: false
-                  version: 11.7.0
+                  version: 11.25.0
             - uses: emscripten-core/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984 # v16
               with:
-                  version: 4.0.23
+                  version: 6.0.9
             - run: pnpm install --frozen-lockfile
             - name: Check prepared npm release environment
               run: scripts/init-environment.sh --check node emscripten dependencies
@@ -181,7 +181,7 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
-                  node-version: 26.5.0
+                  node-version: 26.8.1
             - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
               with:
                   distribution: temurin
@@ -290,7 +290,7 @@ jobs:
         steps:
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
-                  node-version: 26.5.0
+                  node-version: 26.8.1
                   registry-url: https://registry.npmjs.org
             - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
               with:
@@ -358,7 +358,7 @@ jobs:
                   gh release create "$GITHUB_REF_NAME" \
                       --verify-tag \
                       --title "Markdown Core $(cat VERSION)" \
-                      --notes-file "docs/deprecated/releases/$(cat VERSION).md" \
+                      --notes-file "docs/releases/$(cat VERSION).md" \
                       release-files/*
 
     resume-publish:
@@ -381,12 +381,12 @@ jobs:
                   ref: ${{ inputs.release-tag }}
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
-                  node-version: 26.5.0
+                  node-version: 26.8.1
                   registry-url: https://registry.npmjs.org
             - name: Validate the protected release tag
               run: |
                   node scripts/check-release-version.mjs --skip-swift --tag="$RELEASE_TAG"
-                  test -s "docs/deprecated/releases/$(cat VERSION).md"
+                  test -s "docs/releases/$(cat VERSION).md"
                   git fetch --no-tags origin main
                   git merge-base --is-ancestor HEAD origin/main
             - name: Validate the source run against the tag
@@ -469,5 +469,5 @@ jobs:
                   gh release create "$RELEASE_TAG" \
                       --verify-tag \
                       --title "Markdown Core $(cat VERSION)" \
-                      --notes-file "docs/deprecated/releases/$(cat VERSION).md" \
+                      --notes-file "docs/releases/$(cat VERSION).md" \
                       release-files/*

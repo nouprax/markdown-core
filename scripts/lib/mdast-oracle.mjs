@@ -1,12 +1,10 @@
 /**
  * mdast/remark normalization.
  *
- * cmark-gfm is the authority for the base language, but it cannot judge the
- * constructs it does not implement. For directives, math, and footnote
- * placement the authority is the unified/remark ecosystem, whose definitions
- * this repository's extensions were written against — so remark is the second
- * oracle, and this module maps its tree onto the same comparable form
- * `upstream-cmark.mjs` produces.
+ * cmark owns CommonMark and cmark-gfm owns its GFM extension layer. remark is
+ * the corrective and supplementary oracle for directives, math, footnote
+ * representation, tables, and references. This module maps mdast onto the same
+ * comparison-only form `upstream-cmark.mjs` produces.
  *
  * One model difference is normalized rather than reported, because it is a
  * choice about AST shape rather than about what the Markdown means. The
@@ -16,7 +14,9 @@
  * 2026-08-02 the two agree and nothing is projected.
  *
  *   - mdast splits a directive's label into children; Markdown Core carries it
- *     as a `DirectiveLabel` child. Both are compared by their content.
+ *     as a `DirectiveLabel` field. The comparison tree nests node-valued
+ *     fields, so both are compared by their content without changing AST
+ *     ownership semantics.
  */
 
 const MDAST_KIND = {
@@ -127,7 +127,7 @@ function convert(node, definitions) {
     // node, which this repository inherits. mdast keeps the line ending in the
     // node and leaves the conversion to mdast-util-to-hast at render time. The
     // two agree on what the span means; they disagree on which layer states it,
-    // and cmark-gfm is the authority for the base language.
+    // and cmark is the authority for the CommonMark layer.
     if (node.type === "inlineCode") fields.literal = (node.value ?? "").replace(/\r\n|\r|\n/g, " ");
     // mdast strips a code block's trailing line ending; the canonical dump keeps it.
     if (node.type === "code") fields.literal = `${node.value ?? ""}\n`;
@@ -150,7 +150,8 @@ function convert(node, definitions) {
     }
 
     let children = (node.children ?? []).flatMap((child) => convert(child, definitions));
-    // A directive's label is a `DirectiveLabel` child here. mdast states it two
+    // A directive's label becomes a nested `DirectiveLabel` in this comparison
+    // tree. In the canonical AST it is a field, not directive content. mdast states it two
     // ways: for text and leaf directives it is the directive's own children,
     // and for container directives it is a first-child paragraph flagged
     // `data.directiveLabel`. Both become the same node so the label's content
@@ -169,15 +170,10 @@ function convert(node, definitions) {
 
 /**
  * Registered shape delta `empty-text-node`: a run that is only the spaces a
- * hard or soft break strips leaves an empty text node in cmark's model, which
- * this repository inherits and its goldens record. mdast has no such node.
- * Dropping empty text from both sides compares the content, which is what the
- * two models agree exists.
- *
- * Removing the node instead was tried and is wrong: upstream cmark-gfm emits
- * it, so suppressing it here would put this parser at odds with the authority
- * for the base language in order to agree with the authority for the
- * extensions.
+ * hard or soft break strips can leave an empty text node in the cmark family.
+ * Markdown Core and mdast omit a node that owns no source or content. Dropping
+ * it from both comparison trees isolates the semantic content; the cmark and
+ * cmark-gfm policies independently verify that this projection still acts.
  */
 /**
  * A directive's attribute block is most of its grammar — the name/value rules,
@@ -186,15 +182,13 @@ function convert(node, definitions) {
  * the unquoted-value rules came to differ from the authority's without anything
  * noticing.
  *
- * mdast holds attributes as an object; the canonical dump prints a JSON object
- * or `null`. Both are rendered here as one sorted `key=value` string so the
- * comparison is about the attributes rather than about key order or the two
- * spellings of "none".
+ * mdast holds attributes as an insertion-ordered object. The canonical dump
+ * prints the same first-occurrence order, so this comparison deliberately does
+ * not normalize away an ordering defect.
  */
 export function renderAttributes(attributes) {
     const entries = Object.entries(attributes ?? {}).filter(([, value]) => value !== null && value !== undefined);
     if (!entries.length) return "null";
-    entries.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
     return entries.map(([key, value]) => `${key}=${JSON.stringify(String(value))}`).join(" ");
 }
 
@@ -238,15 +232,9 @@ export const MDAST_COMPARED = {
     Link: ["destination", "title"],
     Image: ["destination", "title"],
     TableRow: ["isHeader"],
-    // `identifier` is mdast's name for the match key; this side renamed the
-    // definition's copy `norm`, and the projection maps one onto the other.
-    // A REFERENCE no longer carries the key at all -- it names its definition
-    // by identity, which mdast cannot express -- so the references compare on
-    // the label bytes and the form, and the key is compared once, at the
-    // definition.
     ReferenceDefinition: ["label", "identifier", "destination", "title"],
-    LinkReference: ["label", "form"],
-    ImageReference: ["label", "form"],
+    LinkReference: ["label", "identifier", "form"],
+    ImageReference: ["label", "identifier", "form"],
     // §5.6: footnote label bytes used to be compared by NOBODY, on either
     // side. mdast's `label` is the authored spelling and so is this side's, so
     // there is something to compare as of Step 9b.2. `identifier` is NOT

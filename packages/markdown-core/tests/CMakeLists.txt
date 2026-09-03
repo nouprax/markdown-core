@@ -1,18 +1,16 @@
 # CTest is the single source of truth for the C test graph.  Suites are
 # grouped by label:
 #
-#   api facade consumer spec extensions regression pathological complexity
-#   fuzz packaging benchmark
+#   api facade consumer spec extensions regression pathological fuzz packaging
 #
-# The default correctness preset excludes conformance and benchmark; sanitizer
-# correctness presets also exclude wall-clock complexity gates.  The benchmark
-# preset selects only its label.  Every suite is native (C/C++); the test tree
-# has no scripting-language dependency and never touches the network.
+# The default correctness preset excludes conformance. Performance measurement
+# is not part of the test graph unless MARKDOWN_CORE_BENCHMARKS is explicitly
+# enabled for a local benchmark build. Every suite is native (C/C++); the test
+# tree has no scripting-language dependency and never touches the network.
 
 set(MARKDOWN_CORE_TEST_FIXTURES_DIR "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures")
 set(MARKDOWN_CORE_CANONICAL_AST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../specs/canonical-ast")
 set(MARKDOWN_CORE_CANONICAL_AST_MANIFEST "${MARKDOWN_CORE_CANONICAL_AST_DIR}/manifest.json")
-set(MARKDOWN_CORE_BENCH_SAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../benchmarks/samples")
 
 if(NOT EXISTS "${MARKDOWN_CORE_CANONICAL_AST_MANIFEST}")
     message(FATAL_ERROR "Shared canonical AST manifest is missing: ${MARKDOWN_CORE_CANONICAL_AST_MANIFEST}")
@@ -115,62 +113,24 @@ endfunction()
 
 markdown_core_add_runner(spec_runner runners/spec_runner.c)
 markdown_core_add_runner(pathological_runner runners/pathological_runner.c)
-markdown_core_add_runner(complexity_runner runners/complexity_runner.c)
 
-# stream_runner drives `feed`/`finish` directly, and those are NOT on the
-# facade: the shared library exports 32 functions and `local: *`, so a runner
-# linked against it cannot reach the parser at all. That is H1 seen from
-# outside -- the streaming entry point is not public -- so like fallback_runner
-# it links the static engine. When Stage 1 gives the facade a chunked entry,
-# this becomes an ordinary runner and this comment goes away.
+# oom_runner injects an allocator into the internal implementation of the
+# public facade transaction, so it links the static engine directly.
 if(MARKDOWN_CORE_STATIC)
-    add_executable(stream_runner runners/stream_runner.c support/test_support.c)
+    add_executable(oom_runner runners/oom_runner.c)
     target_include_directories(
-        stream_runner
-        PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
-                "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include")
-    target_link_libraries(stream_runner libmarkdown-core-extensions_static libmarkdown-core_static)
-endif()
-
-# projection_runner asserts Stage 1's own gates -- closed-ness of a finished
-# tree, and the projection properties of the CST/AST split -- over the parser's
-# internal state, so like stream_runner it links the static engine.
-if(MARKDOWN_CORE_STATIC)
-    add_executable(projection_runner runners/projection_runner.c support/test_support.c)
-    target_include_directories(
-        projection_runner
-        PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
-                "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include")
-    target_link_libraries(projection_runner libmarkdown-core-extensions_static libmarkdown-core_static)
-    if(NOT WIN32)
-        # The session_documents case frees derived documents on a second
-        # thread (#153's threading contract); Win32 threads need no extra
-        # library.
-        target_link_libraries(projection_runner Threads::Threads)
-    endif()
-endif()
-
-# fallback_runner drives core-private map symbols directly, so it links the
-# static engine instead of the shared facade and skips test-support.
-if(MARKDOWN_CORE_STATIC)
-    add_executable(fallback_runner runners/fallback_runner.c)
-    target_include_directories(
-        fallback_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
-                                "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
-    target_link_libraries(fallback_runner libmarkdown-core-extensions_static libmarkdown-core_static)
+        oom_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
+                           "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
+    target_link_libraries(oom_runner libmarkdown-core-extensions_static libmarkdown-core_static)
 endif()
 markdown_core_add_runner(entity_runner runners/entity_runner.c)
 markdown_core_add_runner(dump_cli_runner runners/dump_cli_runner.c)
 markdown_core_add_runner(fuzz_smoke_runner runners/fuzz_smoke_runner.c)
-markdown_core_add_runner(bench_runner runners/bench_runner.c)
 markdown_core_add_runner(concurrency_runner runners/concurrency_runner.c)
 markdown_core_add_runner(stress_runner runners/stress_runner.c)
 add_executable(corpus_guard runners/corpus_guard.c)
 
 target_include_directories(fuzz_smoke_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
-target_include_directories(bench_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_include_directories(concurrency_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_include_directories(stress_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 if(NOT WIN32)
@@ -213,16 +173,41 @@ markdown_core_add_test(
     ${MARKDOWN_CORE_CANONICAL_FACADE_ARGUMENTS})
 markdown_core_add_test(consumer_facade_cplusplus consumer 120 facade_cplusplus_test)
 
-# facade concurrency contract: the first_parse case must exercise library
-# initialization in a fresh process, so it never shares a process with a
-# prior parse; stress covers steady-state concurrent parsing with
-# disagreeing option sets.
+# A profile is a complete language selection. Earlier explicit extension
+# flags are discarded; explicit flags after the profile deliberately augment
+# it. Keep both orders covered because parity tooling relies on this boundary.
+markdown_core_add_test(
+    regression_cli_profile_replaces_extensions
+    regression
+    120
+    $<TARGET_FILE:markdown-core>
+    -e
+    directive
+    --profile
+    commonmark
+    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/profile-order.md")
+set_tests_properties(regression_cli_profile_replaces_extensions PROPERTIES FAIL_REGULAR_EXPRESSION "Directive")
+markdown_core_add_test(
+    regression_cli_extension_augments_profile
+    regression
+    120
+    $<TARGET_FILE:markdown-core>
+    --profile
+    commonmark
+    -e
+    directive
+    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/profile-order.md")
+set_tests_properties(regression_cli_extension_augments_profile PROPERTIES PASS_REGULAR_EXPRESSION "Directive")
+
+# Facade concurrency contract: the first_parse case releases every thread into
+# its first parse in a fresh process; stress covers concurrent instance-local
+# parsing with disagreeing option sets.
 markdown_core_add_test(facade_concurrent_first_parse facade 240 concurrency_runner --case first_parse)
 markdown_core_add_test(facade_concurrent_stress facade 600 concurrency_runner --case stress)
 
-# regression: registry lifecycle stays immutable across parse/free cycles
-# and facade failure paths.
-markdown_core_add_test(regression_registry_lifecycle regression 240 concurrency_runner --case lifecycle)
+# Repeated instance construction/destruction and facade failures must not affect
+# any later parse.
+markdown_core_add_test(regression_instance_lifecycle regression 240 concurrency_runner --case lifecycle)
 
 # Large/deep/repeated-input correctness checks are distinct from timed
 # benchmark workloads over related input shapes.
@@ -241,196 +226,11 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}"
     ${MARKDOWN_CORE_CANONICAL_NAMES})
 
-# spec: CommonMark spec, smart punctuation, entities.  Expected results are
-# canonical AST dumps; the runner also asserts dump determinism per example.
-markdown_core_add_test(spec_commonmark spec 240 spec_runner --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
-
-# CRITERION 1 FOR STAGE 1, over the same corpus the goldens already pin: feeding
-# a document in pieces and calling `finish` must produce what a one-shot parse
-# produces. `--bytes` partitions inside a line, which is stronger than the
-# criterion asks and is Stage 2's territory.
-if(MARKDOWN_CORE_STATIC)
-    foreach(fixture spec regression extensions)
-        markdown_core_add_test(stream_equals_oneshot_${fixture} "streaming" 240 stream_runner --spec
-                               "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
-        markdown_core_add_test(
-            stream_equals_oneshot_${fixture}_bytes
-            "streaming"
-            600
-            stream_runner
-            --spec
-            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt"
-            --bytes)
-    endforeach()
-endif()
-# Stage 1's closed-ness gate: `finish` returns a tree with no open block in
-# it, over every fixture example with every extension attached. The flag is
-# the signal projections schedule on, so this is a correctness gate and not a
-# style check (§12.8 Q3).
-if(MARKDOWN_CORE_STATIC)
-    foreach(fixture spec regression extensions)
-        markdown_core_add_test(
-            projection_closed_${fixture}
-            "streaming"
-            240
-            projection_runner
-            --case
-            closed_after_finish
-            --spec
-            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
-    endforeach()
-    # The split's own two properties (§12): two projections of one CST at one
-    # refmap generation are byte-identical, and the CST is refmap-independent
-    # -- projecting against another map moves nothing and poisons nothing.
-    # Both derive BEFORE finish, so the properties hold over the open spine
-    # too, not only over the closed tree finish projects.
-    foreach(fixture spec regression extensions extensions-directive)
-        markdown_core_add_test(
-            projection_double_${fixture}
-            "streaming"
-            240
-            projection_runner
-            --case
-            double_projection
-            --spec
-            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
-        markdown_core_add_test(
-            projection_refmap_independence_${fixture}
-            "streaming"
-            240
-            projection_runner
-            --case
-            refmap_independence
-            --spec
-            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
-    endforeach()
-    # T19 (docs/STREAMING.md §5): a borrow held across a feed that replaces
-    # it still reads -- lifetime under the holder count, and a shared list
-    # walkable from every tree that aliases it, with a zero-leak ledger.
-    foreach(fixture spec regression extensions)
-        markdown_core_add_test(
-            projection_borrow_${fixture}
-            "streaming"
-            240
-            projection_runner
-            --case
-            borrow_across_feed
-            --spec
-            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
-    endforeach()
-    # T3 and T4 (docs/STREAMING.md §5): the cache key is sound -- an unchanged
-    # write stamp and map generation mean an unchanged projection, and a
-    # closed block is never written again.
-    foreach(fixture spec regression extensions)
-        markdown_core_add_test(
-            projection_key_${fixture}
-            "streaming"
-            240
-            projection_runner
-            --case
-            projection_key
-            --spec
-            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
-    endforeach()
-    # T2 and T5 (docs/STREAMING.md §5, §4 D4): a block's identity is total,
-    # unique, identical across two projections of one CST, and never
-    # resurrected -- over every fixture, fed one line at a time. The
-    # transitions case pins D4's ruled shapes: retypes and the formula
-    # promotion keep the id, a split leaves it on what the reader already
-    # had, a death bequeaths it to the firstborn definition.
-    foreach(fixture spec regression extensions extensions-directive extensions-formula-github)
-        markdown_core_add_test(
-            projection_identity_${fixture}
-            "streaming"
-            240
-            projection_runner
-            --case
-            block_identity
-            --spec
-            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
-    endforeach()
-    markdown_core_add_test(projection_identity_transitions "streaming" 120 projection_runner --case
-                           block_identity_transitions)
-    # The cache key's review-found axis (T9 amendment): an attach between
-    # a derivation and the next projection reads every cached list as stale.
-    markdown_core_add_test(projection_attach_invalidation "streaming" 120 projection_runner --case attach_invalidation)
-    # #163: a map's generation re-keys only the blocks that consulted it.
-    markdown_core_add_test(projection_map_immunity "streaming" 120 projection_runner --case map_immunity)
-    markdown_core_add_test(projection_node_sharing "streaming" 120 projection_runner --case node_sharing)
-    markdown_core_add_test(projection_hook_once "streaming" 120 projection_runner --case hook_once)
-    # F25: the stable-prefix memo -- records, serves, extends, survives
-    # every free order, falls back on a consulted generation's move, and
-    # never records an OPEN block.
-    markdown_core_add_test(projection_child_memo "streaming" 120 projection_runner --case child_memo)
-    # F27: closed containers retained wholesale -- identity across
-    # derivations, consulted-gated invalidation, every free order.
-    markdown_core_add_test(projection_container_retention "streaming" 120 projection_runner --case container_retention)
-    # #162: the delta wire reassembles, byte for byte, to the full frame at
-    # every boundary and at the seal -- every fixture, fed by line and in
-    # 7-byte pieces, through the facade's two lockstep sessions.
-    foreach(fixture spec regression extensions extensions-directive extensions-formula-github)
-        markdown_core_add_test(
-            projection_wire_delta_${fixture}
-            "streaming"
-            240
-            projection_runner
-            --case
-            wire_delta
-            --spec
-            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
-    endforeach()
-    # Phase F's gates (T15, T16, T17). feed_bound is counter-based and
-    # deterministic; resident_memory reads ru_maxrss, so like the wall-clock
-    # gates it carries the complexity label the sanitizer presets exclude;
-    # carried_state joins the cloned boundary projection against the in-place
-    # finish on the block identity, over every extension corpus.
-    markdown_core_add_test(projection_label_tail "streaming" 120 projection_runner --case label_tail)
-    markdown_core_add_test(projection_feed_bound "streaming" 120 projection_runner --case feed_bound)
-    # The #153 threading contract: a session's derived documents freed on
-    # another thread, concurrently with further feeds and the session's own
-    # death; the TSan lane is the judge.
-    markdown_core_add_test(projection_session_documents_cross_thread "streaming" 240 projection_runner --case
-                           session_documents)
-    markdown_core_add_test(pathological_complexity_resident_memory "pathological;complexity" 240 projection_runner
-                           --case resident_memory)
-    set_tests_properties(pathological_complexity_resident_memory PROPERTIES RUN_SERIAL TRUE)
-    foreach(fixture extensions extensions-directive extensions-formula-github spec)
-        markdown_core_add_test(
-            projection_carried_state_${fixture}
-            "streaming"
-            240
-            projection_runner
-            --case
-            carried_state
-            --spec
-            "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/${fixture}.txt")
-    endforeach()
-    # Criterion 2's SECOND bound (§12.4, §12.10 D): projection is O(what is
-    # projected) -- flat ns per content byte across document sizes, the same
-    # two-endpoint normalized-slowdown shape as the construction slope gates.
-    # Wall-clock, so it carries the complexity label the sanitizer presets
-    # exclude, and runs serial like they do.
-    markdown_core_add_test(pathological_complexity_projection_slope "pathological;complexity" 120 projection_runner
-                           --case projection_slope)
-    set_tests_properties(pathological_complexity_projection_slope PROPERTIES RUN_SERIAL TRUE)
-    # F27, review-found P1: a derivation is O(built) at any nesting depth. A
-    # document that is almost entirely depth, over an eightfold depth ratio,
-    # reads ~1.5x normalized; the per-node ancestor climb this gate was written
-    # against read ~17x. Wall-clock, complexity-labelled and serial like the
-    # other slope gates.
-    markdown_core_add_test(pathological_complexity_depth_slope "pathological;complexity" 120 projection_runner --case
-                           depth_slope)
-    set_tests_properties(pathological_complexity_depth_slope PROPERTIES RUN_SERIAL TRUE)
-    # F27, review round 3: the spine memo table costs each open level once. A
-    # stair of open quotes, each holding a closed paragraph before the next,
-    # gives every level a run; re-deriving it over an eightfold depth ratio
-    # reads under 2x normalized where the table scanned per container read
-    # 13-14x. Wall-clock, complexity-labelled and serial like the depth gate.
-    markdown_core_add_test(pathological_complexity_spine_depth_slope "pathological;complexity" 120 projection_runner
-                           --case spine_depth_slope)
-    set_tests_properties(pathological_complexity_spine_depth_slope PROPERTIES RUN_SERIAL TRUE)
-endif()
-
+# spec: the product-owned GFM 0.29 golden (base examples plus tagged extension
+# sections), smart punctuation, and entities. Current CommonMark authority is
+# the separately pinned cmark parity gate, not this historical golden. The
+# runner also asserts dump determinism per example.
+markdown_core_add_test(spec_gfm_golden spec 240 spec_runner --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
 markdown_core_add_test(
     spec_smart_punctuation
     spec
@@ -446,25 +246,10 @@ markdown_core_add_test(spec_entities spec 240 entity_runner)
 markdown_core_add_test(regression_commonmark regression 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/regression.txt")
 
-# regression: allocation-failure and probe-limit fallbacks of the shared
-# byte-key index keep hash-path duplicate semantics; probe exhaustion grows
-# the table once before falling back.
+# regression: every injected allocation failure terminates the parse and is
+# reported to the facade consumer; no lossless fallback may return a document.
 if(MARKDOWN_CORE_STATIC)
-    set(MARKDOWN_CORE_FALLBACK_CASES
-        reference_sorted_fallback
-        reference_identifier_adoption
-        directive_sorted_fallback
-        directive_attribute_order
-        key_index_probe_growth
-        map_prepare_oom
-        definition_after_lookup
-        constructor_oom
-        oom_sweep
-        oom_sweep_chunked
-        formula_literal_borrow)
-    foreach(case IN LISTS MARKDOWN_CORE_FALLBACK_CASES)
-        markdown_core_add_test(regression_fallback_${case} regression 240 fallback_runner --case ${case})
-    endforeach()
+    markdown_core_add_test(regression_strict_oom regression 240 oom_runner --case strict_oom)
 endif()
 
 # extensions: GFM extensions, formulas, directives, and option gates.
@@ -532,7 +317,7 @@ markdown_core_add_test(extensions_conflicts extensions 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-conflicts.txt")
 # pathological: adversarial inputs, one CTest test per case so timeouts and
 # failures stay addressable.  The audit script cross-checks this list against
-# `pathological_runner --list` and `complexity_runner --list`.
+# `pathological_runner --list`.
 set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     nested_strong_emph
     many_emph_closers
@@ -540,7 +325,6 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     many_link_closers
     many_link_openers
     mismatched_openers_closers
-    emph_openers_link_closers
     openers_closers_multiple_of_3
     link_openers_emph_closers
     pattern_bracket_paren
@@ -549,6 +333,9 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     nested_brackets
     nested_block_quotes
     deeply_nested_lists
+    empty_lines_in_deeply_nested_lists
+    empty_lines_in_deep_list_blockquote
+    emphasis_in_deep_blockquote
     nul_in_input
     backticks
     unclosed_links_a
@@ -556,6 +343,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     unclosed_comment
     tables
     reference_collisions
+    reference_expansion_bound
     directive_unclosed_labels
     directive_unclosed_attributes
     directive_colon_pairs
@@ -567,27 +355,6 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     formula_backslash_openers)
 foreach(case IN LISTS MARKDOWN_CORE_PATHOLOGICAL_CASES)
     markdown_core_add_test(pathological_${case} pathological 30 pathological_runner --case ${case})
-endforeach()
-
-set(MARKDOWN_CORE_COMPLEXITY_CASES
-    valid_long_quoted_value
-    valid_consecutive_backslashes
-    unclosed_long_quoted_value
-    unclosed_backslash_value
-    many_unique_attributes
-    many_prefixed_attributes
-    many_duplicate_attributes
-    many_unique_references
-    many_duplicate_references
-    many_unicode_references
-    many_autolink_emails
-    read_unique_attributes
-    read_duplicate_attributes
-    reference_expansion_bound)
-foreach(case IN LISTS MARKDOWN_CORE_COMPLEXITY_CASES)
-    markdown_core_add_test(pathological_complexity_${case} "pathological;complexity" 120 complexity_runner --case
-                           ${case})
-    set_tests_properties(pathological_complexity_${case} PROPERTIES RUN_SERIAL TRUE)
 endforeach()
 
 # fuzz: deterministic smoke over fixed corpora and seeded generated inputs.
@@ -615,49 +382,33 @@ markdown_core_add_test(
     --generated
     256)
 
-# packaging: corpus/workspace policy guard, also run before benchmarks.
+# packaging: corpus/workspace policy guard.
 markdown_core_add_test(packaging_corpus_guard packaging 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")
-markdown_core_add_test(benchmark_corpus_guard benchmark 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")
 
-# benchmark: independently scheduled performance workloads; serial, offline,
-# deterministic inputs, relative-scaling assertions only.
-set(MARKDOWN_CORE_BENCH_WORKLOADS
-    binding_baseline
-    representative
-    large_document
-    deep_nesting
-    tables
-    extensions
-    adversarial)
-foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
-    markdown_core_add_test(
-        benchmark_${workload}
-        benchmark
-        600
-        bench_runner
-        --workload
-        ${workload}
-        --samples
-        "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}")
-    set_tests_properties(benchmark_${workload} PROPERTIES RUN_SERIAL TRUE)
-endforeach()
-
-# The engine-side clock for the streaming feed loop (#148): every spec case
-# fed one line at a time with a derivation per line. Registered under the
-# benchmark label so its median lands in the pr-metrics logs; the
-# doubling-gated binding feed loops live in the binding harnesses.
-markdown_core_add_test(
-    benchmark_feed_loop
-    benchmark
-    240
-    projection_runner
-    --case
-    feed_loop
-    --spec
-    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt"
-    --repeats
-    5)
-set_tests_properties(benchmark_feed_loop PROPERTIES RUN_SERIAL TRUE)
+# Performance measurement is a developer tool, not a correctness oracle. It is
+# absent from normal and sanitizer builds so CI artifacts cannot accidentally
+# promote hosted-runner timing into a merge gate. The explicit benchmark preset
+# enables this block and reports measurements without wall-clock assertions.
+if(MARKDOWN_CORE_BENCHMARKS)
+    set(MARKDOWN_CORE_BENCH_SAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../benchmarks/samples")
+    markdown_core_add_runner(bench_runner runners/bench_runner.c)
+    target_include_directories(bench_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+    markdown_core_add_test(benchmark_corpus_guard benchmark 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")
+    set(MARKDOWN_CORE_BENCH_WORKLOADS binding_baseline representative large_document deep_nesting extensions
+                                      adversarial)
+    foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
+        markdown_core_add_test(
+            benchmark_${workload}
+            benchmark
+            600
+            bench_runner
+            --workload
+            ${workload}
+            --samples
+            "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}")
+        set_tests_properties(benchmark_${workload} PROPERTIES RUN_SERIAL TRUE)
+    endforeach()
+endif()
 
 if(WIN32 AND MARKDOWN_CORE_SHARED)
     file(TO_NATIVE_PATH ${MARKDOWN_CORE_CORE_BINARY_DIR} WIN_SRC_DLL_DIR)

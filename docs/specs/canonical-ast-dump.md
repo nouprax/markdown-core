@@ -1,8 +1,6 @@
 # Canonical AST file-tree dump
 
-Status: frozen for Phase 5 on 2026-07-11.
-
-The dump is a deterministic public diagnostic representation of the canonical
+The dump is a deterministic public debug representation of the canonical
 AST and the reviewed expected representation used by parser tests. It is not
 JSON, XML, a renderer, or a serialization/transport API.
 
@@ -12,10 +10,10 @@ enumerate that same non-empty manifest. Swift, Kotlin, and ES each export
 `TreeDumper` and implement this tree format independently over their public
 immutable AST; they never call the native C dump or another binding output.
 Every platform `Markup` also offers `dump()`, which delegates to
-`TreeDumper.dump(markup)` and therefore supports focused subtree diagnostics.
+`TreeDumper.dump(markup)` and therefore supports focused subtree inspection.
 Dump text is never used to construct production AST values.
 
-The API is public, but the text remains a human-readable diagnostic contract,
+The API is public, but the text remains a human-readable debug contract,
 not a persistence or interchange format. Consumers that need structured data
 must traverse the typed immutable AST.
 
@@ -24,13 +22,13 @@ must traverse the typed immutable AST.
 The root line is:
 
 ```text
-Kind id=B:O scope=L:C..L:C <fields> children=N
+Kind scope=L:C..L:C <fields> children=N
 ```
 
 Every descendant line is:
 
 ```text
-<ancestor-prefix><connector>Kind id=B:O scope=L:C..L:C <fields> children=N
+<ancestor-prefix><connector>Kind scope=L:C..L:C <fields> children=N
 ```
 
 Connectors and prefixes are exact UTF-8:
@@ -43,14 +41,15 @@ Connectors and prefixes are exact UTF-8:
 Output uses LF line endings and ends with exactly one LF. There is no trailing
 whitespace and no color or terminal-dependent output.
 
-`children` counts direct typed descendants. `TableRow` and `TableCell` are
-`Markup` kinds, produce Visitor/Walker callbacks, and own their descendants
-through `cells` and `content` respectively.
+`children` counts only the node's structural children. Thus a `Table` counts
+its `header` and `rows`, a `DirectiveBlock` counts only its block `content`,
+and an inline `Directive` always reports zero. A directive's optional `label`
+is a separate Markup-valued field and is not included in that number.
 
-The dump deliberately carries no property or array-index edge labels. Parent
-kind, sibling order, `children`, and behavior-bearing fields such as
-`isHeader` preserve the complete public tree semantics without coupling the
-generic tree formatter to schema-specific edge names.
+The dump deliberately carries no property or array-index edge labels. Each
+node kind's dump function decides which structural children and Markup-valued
+fields to emit, in their canonical order. The file-tree connectors visualize
+that owned output; they do not redefine every nested record as a child.
 
 ## Scalar encoding
 
@@ -59,38 +58,32 @@ generic tree formatter to schema-specific edge names.
 - Integers use base-10 ASCII with no leading zero except zero itself.
 - Enums use their lowercase contract spelling without quotes.
 - Arrays use compact JSON punctuation with no spaces.
-- Directive attributes are normalized string-map JSON strings produced by the
-  parser from source attribute-list syntax. The dump applies normal JSON string
-  escaping around that already-normalized value and does not decode it again.
-- An identity prints as `block:ordinal`, two base-10 integers — the same
-  pair everywhere it appears, whether as a node's own `id=` or as the
-  `definition=` a reference names.
+- Directive attributes are printed as their ordered name/value pairs. Each name
+  keeps its first-occurrence source position; values use normal JSON string
+  escaping.
 - Every optional and default-bearing field is printed; fields are never
   omitted because they are null, empty, false, or default.
-- `id` is always printed immediately after the kind and `scope` immediately
-  after it. Kind-specific fields follow, and `children` is always last.
+- Scope is always printed immediately after the kind. Kind-specific fields
+  follow it, and `children` is always last.
 
 The dump prints the native C parser's public scope coordinates exactly, without
 normalizing or interpreting particular line/column combinations.
 
-A directive's label is a CHILD NODE, not a field: an absent label is a
-directive with no `DirectiveLabel` child, an empty one is a `DirectiveLabel`
-with `children=0`, and a populated one is a `DirectiveLabel` with children. It
-was a scalar presence field until Step 7 made it a node.
+A directive's label is a node-valued FIELD, not a member of directive content.
+The directive-specific dump function nests that field before content to
+visualize ownership: an absent label emits no `DirectiveLabel`, an empty one
+emits `DirectiveLabel children=0`, and a populated one emits the label followed
+by its inline children. This visual nesting does not redefine the typed AST,
+the `children` count, or the C child traversal contract.
 
 ## Field order by record kind
 
-`id` and `scope` are inherited fields and lead every line; the table below
-names what follows them. Fields appear after `scope` and before `children` in
-exactly this order:
+Fields appear after `scope` and before `children` in exactly this order:
 
 This table is CHECKED against `canonical-ast.json` by
 `scripts/audit-ast-projections.mjs`: every kind appears exactly once and its
-fields are the contract's, in the contract's order, minus the fields that are
-the child structure itself. Until Step 9b nothing read it, and it had drifted
-in three ways at once -- a `mode` on four kinds that Q29 deleted at 15A.4, a
-`label` on the two directive kinds that stopped being a scalar when Step 7 made
-it a node, and no row for `DirectiveLabel` at all.
+fields are the contract's, in the contract's order, minus node-valued fields
+that the dump represents as nested descendants.
 
 | Kind | Ordered fields between `scope` and `children` |
 | --- | --- |
@@ -104,26 +97,26 @@ it a node, and no row for `DirectiveLabel` at all.
 | `Table` | `alignments` |
 | `TableRow` | `isHeader` |
 | `DirectiveBlock` | `name`, `attributes` |
-| `FootnoteDefinition` | `label`, `norm` |
-| `ReferenceDefinition` | `label`, `norm`, `destination`, `title` |
+| `FootnoteDefinition` | `label`, `identifier` |
+| `ReferenceDefinition` | `label`, `identifier`, `destination`, `title` |
 | `Text` | `literal` |
 | `Code` | `literal` |
 | `HTML` | `literal` |
 | `Formula` | `mode`, `literal` |
 | `Link` | `destination`, `title` |
 | `Image` | `source`, `title` |
-| `LinkReference`, `ImageReference` | `label`, `form`, `definition` |
+| `LinkReference`, `ImageReference` | `label`, `identifier`, `form` |
 | `Directive` | `name`, `attributes` |
-| `FootnoteReference` | `label`, `definition` |
+| `FootnoteReference` | `label`, `identifier` |
 
 Example:
 
 ```text
-Document id=1:0 scope=1:1..1:10 children=1
-└── Paragraph id=2:0 scope=1:1..1:10 children=1
-    └── Directive id=2:1 scope=1:1..1:10 name="badge" attributes=null children=1
-        └── DirectiveLabel id=2:2 scope=1:7..1:10 children=1
-            └── Text id=2:3 scope=1:8..1:9 literal="ok" children=0
+Document scope=1:1..1:10 children=1
+└── Paragraph scope=1:1..1:10 children=1
+    └── Directive scope=1:1..1:10 name="badge" attributes=null children=0
+        └── DirectiveLabel scope=1:7..1:10 children=1
+            └── Text scope=1:8..1:9 literal="ok" children=0
 ```
 
 Any public behavior-bearing field added later must be added to this table, the

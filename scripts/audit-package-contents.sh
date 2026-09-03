@@ -4,6 +4,7 @@ set -eu
 temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
 export npm_config_cache="${npm_config_cache:-$temp_dir/npm-cache}"
+release_version=$(tr -d '\r\n' <VERSION)
 
 legacy_ms_pattern='MS_''COPILOT|MS_''FORMULA|ms_''copilot|ms-''copilot|ms-''formula'
 if grep -R -I -n -E "$legacy_ms_pattern" \
@@ -20,6 +21,25 @@ if grep -R -I -n -E "$renderer_api_pattern" \
     echo "Renderer API remains in repository source" >&2
     exit 1
 fi
+
+retired_parser_api_pattern='markdown_core_parser_(new|new_with_mem|feed|feed_reentrant|finish|free|retain_concrete)|markdown_core_parse_file|markdown_core_document_(source|line_count|line_start|diagnostic_(count|at))|markdown_core_concrete|markdown_core_diagnostic_code_name'
+if grep -R -I -n -E "$retired_parser_api_pattern" \
+    packages/markdown-core/core packages/markdown-core/extensions \
+    packages/markdown-core/include packages/swift-markdown-core/Sources \
+    packages/kotlin-markdown-core/src/commonMain packages/es-markdown-core/src; then
+    echo "Retired parser, feed, or diagnostic API remains in active source" >&2
+    exit 1
+fi
+
+for removed_component in \
+    packages/markdown-core/tests/runners/fallback_runner.c \
+    scripts/audit-diagnostics.mjs \
+    specs/diagnostics/census.json; do
+    if [ -e "$removed_component" ]; then
+        echo "Removed fallback or diagnostic component still exists: $removed_component" >&2
+        exit 1
+    fi
+done
 
 for removed_renderer in \
     packages/markdown-core/core/render.c \
@@ -39,6 +59,15 @@ done
 
 cmp LICENSE packages/es-markdown-core/LICENSE
 node packages/es-markdown-core/scripts/build.mjs >/dev/null
+find packages/es-markdown-core/dist -type f -name '*.d.ts' \
+    ! -path '*/runtime/*' ! -path '*/wire/*' -exec grep -H -n -E \
+    '\b(render|feed|stream|edit|session|snapshot|delta|diagnostic|CST|Concrete|ConcreteSyntax|Token|Trivia|Recovery|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)\b' \
+    {} + >"$temp_dir/es-retired-declarations.txt" || true
+if [ -s "$temp_dir/es-retired-declarations.txt" ]; then
+    cat "$temp_dir/es-retired-declarations.txt"
+    echo "ES declaration package exposes a retired or mutable API" >&2
+    exit 1
+fi
 npm pack ./packages/es-markdown-core --dry-run --json >"$temp_dir/npm-pack.json"
 node - "$temp_dir/npm-pack.json" <<'NODE'
 import fs from "node:fs";
@@ -160,12 +189,14 @@ cmake --build "$temp_dir/cmake-build-static" --parallel 2 >/dev/null
 cmake --install "$temp_dir/cmake-build-static" >/dev/null
 
 cli="$temp_dir/cmake-build/packages/markdown-core/core/markdown-core"
-if "$cli" --to html </dev/null >/dev/null 2>&1; then
-    echo "CLI still accepts renderer output formats" >&2
-    exit 1
-fi
-if "$cli" --help | grep -E -- '--to|--width|--unsafe|--hardbreaks|--nobreaks'; then
-    echo "CLI help still advertises renderer options" >&2
+for removed_option in --to --width --unsafe --hardbreaks --nobreaks --diagnostics --feed --stream; do
+    if "$cli" "$removed_option" </dev/null >/dev/null 2>&1; then
+        echo "CLI still accepts removed option $removed_option" >&2
+        exit 1
+    fi
+done
+if "$cli" --help | grep -E -- '--to|--width|--unsafe|--hardbreaks|--nobreaks|--diagnostics|--feed|--stream'; then
+    echo "CLI help still advertises removed renderer, feed, or diagnostic options" >&2
     exit 1
 fi
 
@@ -341,31 +372,30 @@ while IFS= read -r archive; do
     fi
 done <"$temp_dir/c-static-archives.txt"
 
-# The static archive has no version-script boundary: any global it defines is
-# linkable by a consumer that declares it. Its surface is therefore pinned by
-# an explicit allowlist, symmetric to the shared facade's export-map check
-# above. The canonical surface is audited on the ELF lane; Mach-O nm reports
-# private-extern symbols differently, so the Darwin run skips this check
-# rather than encode a second normalization.
-if [ "$(uname -s)" != "Darwin" ]; then
-    archive_allowlist="packages/markdown-core/core/exports/static_archive.symbols"
-    while IFS= read -r archive; do
-        "$nm_tool" --defined-only -g "$archive" 2>/dev/null \
-            | awk 'NF >= 3 && $2 ~ /^[TDRuVW]$/ { print $3 }' \
-            | sort -u >"$temp_dir/c-archive-actual.txt"
-        sort -u "$archive_allowlist" >"$temp_dir/c-archive-expected.txt"
-        if ! cmp -s "$temp_dir/c-archive-expected.txt" "$temp_dir/c-archive-actual.txt"; then
-            echo "Static archive global symbols differ from $archive_allowlist" >&2
-            diff -u "$temp_dir/c-archive-expected.txt" "$temp_dir/c-archive-actual.txt" >&2 || true
-            exit 1
-        fi
-    done <"$temp_dir/c-static-archives.txt"
+scripts/gradle.sh \
+    :packages:kotlin-markdown-core:verifyKotlinJniPackaging \
+    :packages:kotlin-markdown-core:jvmSourcesJar >/dev/null
+kotlin_jni_library=$(find packages/kotlin-markdown-core/build/generated/jvmResources -type f \
+    \( -name 'libmarkdown_core_kotlin.dylib' -o -name 'libmarkdown_core_kotlin.so' \) | head -n 1)
+if [ -z "$kotlin_jni_library" ]; then
+    echo "Kotlin desktop JNI library is missing" >&2
+    exit 1
 fi
-
-scripts/gradle.sh :packages:kotlin-markdown-core:verifyKotlinNativePackaging >/dev/null
-kotlin_jvm_jar=$(find packages/kotlin-markdown-core/build/libs -maxdepth 1 -type f \
-    -name '*-jvm-*.jar' ! -name '*-sources.jar' | head -n 1)
-if [ -z "$kotlin_jvm_jar" ]; then
+case "$kotlin_jni_library" in
+    *.dylib)
+        "$nm_tool" -gU "$kotlin_jni_library" | awk '{ print $NF }' | sed 's/^_//' ;;
+    *)
+        "$nm_tool" -D --defined-only "$kotlin_jni_library" | awk '{ print $NF }' | sed 's/@.*//' ;;
+esac | sort -u >"$temp_dir/kotlin-jni-actual-exports.txt"
+printf 'JNI_OnLoad\n' >"$temp_dir/kotlin-jni-expected-exports.txt"
+if ! cmp "$temp_dir/kotlin-jni-expected-exports.txt" "$temp_dir/kotlin-jni-actual-exports.txt"; then
+    echo "Kotlin JNI library must export only JNI_OnLoad" >&2
+    diff -u "$temp_dir/kotlin-jni-expected-exports.txt" "$temp_dir/kotlin-jni-actual-exports.txt" >&2 || true
+    exit 1
+fi
+kotlin_jvm_jar="packages/kotlin-markdown-core/build/libs/kotlin-markdown-core-jvm-$release_version.jar"
+kotlin_jvm_sources="packages/kotlin-markdown-core/build/libs/kotlin-markdown-core-jvm-$release_version-sources.jar"
+if [ ! -f "$kotlin_jvm_jar" ]; then
     echo "Kotlin JVM publication JAR is missing" >&2
     exit 1
 fi
@@ -373,6 +403,28 @@ if unzip -Z1 "$kotlin_jvm_jar" | grep -E '(^|/)(canonical-ast|manifest\.json)|\.
     echo "Kotlin JVM publication contains shared conformance spec data" >&2
     exit 1
 fi
+if unzip -Z1 "$kotlin_jvm_jar" | grep -E '(^|/)(NativeBridge[^/]*|JvmNative|Walker|MarkupWalker)(\$[^/]*)?\.class$'; then
+    echo "Kotlin JVM publication contains a retired bridge or walker class" >&2
+    exit 1
+fi
+if [ ! -f "$kotlin_jvm_sources" ]; then
+    echo "Kotlin JVM source publication JAR is missing" >&2
+    exit 1
+fi
+if unzip -Z1 "$kotlin_jvm_sources" | grep -E '(^|/)(NativeBridge[^/]*|Walker|MarkupWalker|WireDecoder|WireKind|WireMarkupDecoder)[^/]*\.kt$|^commonMain/.*/(walker|wire)/|(^|/)native-bridge(/|$)'; then
+    echo "Kotlin JVM source publication contains a retired bridge, walker, or shared wire source" >&2
+    exit 1
+fi
+for required_source in \
+    jvmMain/com/nouprax/markdown/core/PlatformParser.jvm.kt \
+    jvmMain/com/nouprax/markdown/core/wire/JniPayloadDecoder.kt \
+    jvmMain/com/nouprax/markdown/core/wire/JniNodeKind.kt \
+    jvmMain/com/nouprax/markdown/core/wire/JniMarkupDecoder.kt; do
+    if ! unzip -Z1 "$kotlin_jvm_sources" | grep -qx "$required_source"; then
+        echo "Kotlin JVM source publication is missing $required_source" >&2
+        exit 1
+    fi
+done
 kotlin_aar="packages/kotlin-markdown-core/android-runtime/build/outputs/aar/android-runtime-release.aar"
 unzip -Z1 "$kotlin_aar" | while IFS= read -r artifact; do
     case "$artifact" in

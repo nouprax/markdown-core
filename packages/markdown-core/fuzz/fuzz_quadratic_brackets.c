@@ -3,6 +3,7 @@
 #include <string.h>
 #include "markdown-core.h"
 #include "markdown-core-extensions.h"
+#include "parser.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -16,6 +17,10 @@ const char *extension_names[] = {
 };
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) { return 0; }
+
+static bool attach_core_extensions(markdown_core_parser *parser, void *context) {
+    return markdown_core_core_extensions_attach(parser, *(const unsigned *)context) != 0;
+}
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     struct __attribute__((packed)) {
@@ -77,8 +82,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 memcpy(markdown, markdown0, markdown_size);
             }
 
-            markdown_core_parser *parser = markdown_core_parser_new(fuzz_config.options);
-
             /* A name selects a BIT; only the fixed table turns a set of bits
              * into a sequence. Attaching from the name list directly was a
              * second attach order, which is D15's shape. */
@@ -86,15 +89,17 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             for (const char **it = extension_names; *it; ++it) {
                 unsigned bit = markdown_core_core_extensions_bit(*it);
                 if (!bit) {
-                    fprintf(stderr, "%s is not a valid syntax extension\n", *it);
+                    fprintf(stderr, "%s is not a valid parser extension\n", *it);
                     abort();
                 }
                 extension_mask |= bit;
             }
-            markdown_core_core_extensions_attach(parser, extension_mask);
-
-            markdown_core_parser_feed(parser, markdown, markdown_size);
-            markdown_core_node *doc = markdown_core_parser_finish(parser);
+            markdown_core_node *doc = markdown_core_parse_document_with_mem(
+                markdown, markdown_size, fuzz_config.options, markdown_core_get_default_mem_allocator(),
+                attach_core_extensions, &extension_mask);
+            if (!doc) {
+                return 0;
+            }
 
             /* Exercise the tree instead of the retired renderers. */
             markdown_core_iter *iter = markdown_core_iter_new(doc);
@@ -106,7 +111,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             markdown_core_iter_free(iter);
 
             markdown_core_node_free(doc);
-            markdown_core_parser_free(parser);
         }
     }
     return 0;

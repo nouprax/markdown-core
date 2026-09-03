@@ -1,27 +1,51 @@
 #include "tasklist.h"
-#include "syntax_extension.h"
+#include "extension.h"
 #include <assert.h>
 #include <parser.h>
 #include "ext_scanners.h"
 
-// Local constants
-static const char *TYPE_STRING = "tasklist";
+typedef enum {
+    MARKDOWN_CORE_TASKLIST_NOCHECKED,
+    MARKDOWN_CORE_TASKLIST_CHECKED,
+} markdown_core_tasklist_type;
 
-static const char *get_type_string(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
+// Local constants
+static const char TYPE_STRING[] = "tasklist";
+
+static const char *get_type_string(const markdown_core_extension *extension, markdown_core_node *node) {
     return TYPE_STRING;
 }
 
 // Return 1 if state was set, 0 otherwise
+int markdown_core_extensions_set_tasklist_item_checked(markdown_core_node *node, bool is_checked) {
+    // The node has to exist, and be an extension, and actually be the right type in order to get
+    // the value.
+    if (!node || !node->extension || strcmp(markdown_core_node_get_type_string(node), TYPE_STRING)) {
+        return 0;
+    }
+
+    node->as.list.checked = is_checked;
+    return 1;
+}
+
+bool markdown_core_extensions_get_tasklist_item_checked(markdown_core_node *node) {
+    if (!node || !node->extension || strcmp(markdown_core_node_get_type_string(node), TYPE_STRING)) {
+        return false;
+    }
+
+    if (node->as.list.checked) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
 static bool parse_node_item_prefix(markdown_core_parser *parser, const char *input, markdown_core_node *container) {
     bool res = false;
 
     if (parser->indent >= container->as.list.marker_offset + container->as.list.padding) {
-        markdown_core_parser_advance_offset(
-            parser,
-            input,
-            container->as.list.marker_offset + container->as.list.padding,
-            true
-        );
+        markdown_core_parser_advance_offset(parser, input,
+                                            container->as.list.marker_offset + container->as.list.padding, true);
         res = true;
     } else if (parser->blank && container->first_child != NULL) {
         // if container->first_child is NULL, then the opening line
@@ -33,32 +57,19 @@ static bool parse_node_item_prefix(markdown_core_parser *parser, const char *inp
     return res;
 }
 
-static int matches(
-    const markdown_core_syntax_extension *self,
-    markdown_core_parser *parser,
-    unsigned char *input,
-    int len,
-    markdown_core_node *parent_container
-) {
+static int matches(const markdown_core_extension *self, markdown_core_parser *parser, unsigned char *input, int len,
+                   markdown_core_node *parent_container) {
     return parse_node_item_prefix(parser, (const char *)input, parent_container);
 }
 
-static int can_contain(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_node *node,
-    markdown_core_node_type child_type
-) {
+static int can_contain(const markdown_core_extension *extension, markdown_core_node *node,
+                       markdown_core_node_type child_type) {
     return (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) ? 1 : 0;
 }
 
-static markdown_core_node *open_tasklist_item(
-    const markdown_core_syntax_extension *self,
-    int indented,
-    markdown_core_parser *parser,
-    markdown_core_node *parent_container,
-    unsigned char *input,
-    int len
-) {
+static markdown_core_node *open_tasklist_item(const markdown_core_extension *self, int indented,
+                                              markdown_core_parser *parser, markdown_core_node *parent_container,
+                                              unsigned char *input, int len) {
     markdown_core_node_type node_type = markdown_core_node_get_type(parent_container);
     if (node_type != MARKDOWN_CORE_NODE_LIST_ITEM) {
         return NULL;
@@ -74,10 +85,7 @@ static markdown_core_node *open_tasklist_item(
         return NULL;
     }
 
-    markdown_core_node_set_syntax_extension(parent_container, self);
-    /* The item's type does not move, but what a consumer sees does (F11) --
-     * a write for T3's purposes. */
-    markdown_core_parser_touch(parser, parent_container);
+    markdown_core_node_set_extension(parent_container, self);
     markdown_core_parser_advance_offset(parser, (char *)input, 3, false);
 
     // Either an upper or lower case X means the task is completed -- read from
@@ -99,7 +107,7 @@ static markdown_core_node *open_tasklist_item(
 }
 
 /* A block-only extension; see the note in extensions/table.c. */
-const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_TASKLIST = {
+const markdown_core_extension MARKDOWN_CORE_EXTENSION_TASKLIST = {
     .name = "tasklist",
     .last_block_matches = matches,
     .get_type_string_func = get_type_string,

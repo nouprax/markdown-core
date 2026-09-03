@@ -36,16 +36,7 @@ const extensions = [
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 const output = path.join(dist, "markdown-core.wasm");
-const exported = [
-    "malloc",
-    "free",
-    "es_session_new",
-    "es_session_feed",
-    "es_session_finish",
-    "es_session_advance",
-    "es_session_free",
-    "es_wire_free"
-].map((name) => `_${name}`);
+const exported = ["malloc", "free", "es_parse", "es_result_free"].map((name) => `_${name}`);
 const result = spawnSync(
     "emcc",
     [
@@ -53,12 +44,13 @@ const result = spawnSync(
         ...extensions,
         path.join(packageDirectory, "src/bridge.c"),
         "-O3",
-        "-std=c11",
+        "-std=c99",
         "-sSTANDALONE_WASM=1",
         // A FIXED HEAP ONLY MOVES THE CLIFF. Without this the heap is
         // pinned at the 16 MiB default and a document over about 1.6 MiB
         // does not fail -- it stops returning. Reserving more just picks a
-        // larger input to fail on, and a long stream reaches any bound.
+        // larger source to fail on, and a sufficiently large source reaches
+        // any fixed bound.
         // The loader supplies `emscripten_notify_memory_growth`, which a
         // standalone module with a growing heap will not instantiate
         // without.

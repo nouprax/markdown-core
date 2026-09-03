@@ -67,7 +67,7 @@ export function fixtureCorpus(root) {
 /**
  * Byte length of every source line.
  *
- * Split on the same three terminators `S_parser_feed` recognizes, because a
+ * Split on the same three terminators `S_parse_source` recognizes, because a
  * fixture does carry a CRLF (regression.txt's line-ending example) and reading
  * it as one line would put every position after it on the wrong row. The empty
  * element a trailing newline leaves is dropped: a document ending in `\n` has
@@ -141,7 +141,16 @@ export const runBinary = (binary, args, input) =>
  */
 export const ANNOTATIONS = ["class", "closedBy"];
 
-export function reconcileLedger({ root, ledgerPath, ledger, measured, update, subject, scanned }) {
+export function reconcileLedger({
+    root,
+    ledgerPath,
+    ledger,
+    measured,
+    update,
+    subject,
+    scanned,
+    status = "still wrong"
+}) {
     // A row's identity is what was MEASURED. `class` and `closedBy` are
     // annotations written by hand, so they neither distinguish two rows nor
     // survive being recomputed — an update carries them across instead.
@@ -193,7 +202,7 @@ export function reconcileLedger({ root, ledgerPath, ledger, measured, update, su
         );
     }
     process.stdout.write(
-        `${subject}: ${String(measuredRows.size)} registered rows still wrong (${String(scanned)} scanned) — ledger holds.\n`
+        `${subject}: ${String(measuredRows.size)} registered rows ${status} (${String(scanned)} scanned) — ledger holds.\n`
     );
 }
 

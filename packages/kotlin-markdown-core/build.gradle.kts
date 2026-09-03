@@ -13,8 +13,6 @@ import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.TaskAction
 import org.gradle.jvm.tasks.Jar
 import org.gradle.language.jvm.tasks.ProcessResources
-import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
-import org.gradle.testing.jacoco.tasks.JacocoReport
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 import org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation
@@ -201,12 +199,17 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.ktlint)
-    jacoco
     `maven-publish`
 }
 
 group = "com.nouprax"
-version = rootProject.file("VERSION").readText().trim()
+val releaseVersion = rootProject.file("VERSION").readText().trim()
+version = releaseVersion
+val isIdeModelImport =
+    providers
+        .systemProperty("idea.sync.active")
+        .map(String::toBoolean)
+        .getOrElse(false)
 
 dependencyLocking {
     lockAllConfigurations()
@@ -230,23 +233,22 @@ val jvmNativeBuildDirectory = layout.buildDirectory.dir("native/jvm")
 val jvmNativeResourceDirectory = layout.buildDirectory.dir("generated/jvmResources")
 val desktopPlatform =
     when {
-        System.getProperty("os.name").lowercase().contains("mac") &&
+        hostOs.contains("mac") &&
             hostArchitecture in setOf("aarch64", "arm64") -> "macos-arm64"
 
-        System.getProperty("os.name").lowercase().contains("mac") -> "macos-x64"
+        hostOs.contains("linux") && hostArchitecture in setOf("x86_64", "amd64") -> "linux-x64"
 
-        System.getProperty("os.name").lowercase().contains("windows") -> "windows-x64"
-
-        else -> "linux-x64"
+        else -> null
     }
 val nativeOutputDirectory =
     jvmNativeResourceDirectory.map {
-        it.dir("com/nouprax/markdown/core/native/$desktopPlatform")
+        it.dir("com/nouprax/markdown/core/native/${desktopPlatform ?: "unsupported"}")
     }
 val androidRuntimeAar =
     project(":packages:kotlin-markdown-core:android-runtime")
         .layout.buildDirectory
         .file("outputs/aar/android-runtime-release.aar")
+val kotlinAndroidAar = layout.buildDirectory.file("outputs/aar/kotlin-markdown-core.aar")
 
 val generateCanonicalAstCommonTest =
     tasks.register<GenerateCanonicalAstFixtures>("generateCanonicalAstCommonTest") {
@@ -256,20 +258,23 @@ val generateCanonicalAstCommonTest =
         outputFile.set(generatedCanonicalAstSource)
     }
 
-fun KotlinNativeTarget.configureNativeBridge() {
+fun KotlinNativeTarget.configureNativeFacade() {
     val capitalizedTarget = name.replaceFirstChar { it.uppercase() }
     val buildDirectory = layout.buildDirectory.dir("native/$name")
     val archiveDirectory = layout.buildDirectory.dir("native/$name/archives")
+    val coreArchive = archiveDirectory.map { it.file("libmarkdown-core.a") }
+    val extensionsArchive = archiveDirectory.map { it.file("libmarkdown-core-extensions.a") }
     val generatedDefinitionDirectory = layout.buildDirectory.dir("generated/cinterop/$name")
+    val embedNativeLibraries = !isIdeModelImport
     val configureTask =
-        tasks.register<Exec>("configure${capitalizedTarget}NativeBridge") {
+        tasks.register<Exec>("configure${capitalizedTarget}NativeFacade") {
             inputs.files(
                 repositoryRoot.files("CMakeLists.txt"),
                 repositoryRoot.dir("packages/markdown-core/core"),
                 repositoryRoot.dir("packages/markdown-core/extensions"),
                 layout.projectDirectory.dir("src/native"),
             )
-            outputs.dir(buildDirectory)
+            outputs.file(buildDirectory.map { it.file("CMakeCache.txt") })
             commandLine(
                 "cmake",
                 "-S",
@@ -279,20 +284,19 @@ fun KotlinNativeTarget.configureNativeBridge() {
                 "-DMARKDOWN_CORE_TESTS=OFF",
                 "-DMARKDOWN_CORE_SHARED=OFF",
                 "-DMARKDOWN_CORE_STATIC=ON",
-                "-DMARKDOWN_CORE_KOTLIN_NATIVE=ON",
                 "-DCMAKE_BUILD_TYPE=Release",
                 "-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=${archiveDirectory.get().asFile.absolutePath}",
             )
         }
     val buildTask =
-        tasks.register<Exec>("build${capitalizedTarget}NativeBridge") {
+        tasks.register<Exec>("build${capitalizedTarget}NativeFacade") {
             dependsOn(configureTask)
             inputs.files(
                 repositoryRoot.dir("packages/markdown-core/core"),
                 repositoryRoot.dir("packages/markdown-core/extensions"),
                 layout.projectDirectory.dir("src/native"),
             )
-            outputs.dir(archiveDirectory)
+            outputs.files(coreArchive, extensionsArchive)
             commandLine(
                 "cmake",
                 "--build",
@@ -300,7 +304,8 @@ fun KotlinNativeTarget.configureNativeBridge() {
                 "--config",
                 "Release",
                 "--target",
-                "markdown_core_kotlin_native",
+                "libmarkdown-core-extensions_static",
+                "libmarkdown-core_static",
                 "--parallel",
             )
         }
@@ -308,68 +313,92 @@ fun KotlinNativeTarget.configureNativeBridge() {
         tasks.register<Copy>("generate${capitalizedTarget}NativeDefinition") {
             from(layout.projectDirectory.file("src/nativeInterop/cinterop/markdown_core_kotlin.def"))
             into(generatedDefinitionDirectory)
+            inputs.property("embedNativeLibraries", embedNativeLibraries)
             filter { line: String ->
-                line.replace("@LIBRARY_PATH@", archiveDirectory.get().asFile.absolutePath)
+                if (!embedNativeLibraries &&
+                    (line.startsWith("staticLibraries =") || line.startsWith("libraryPaths ="))
+                ) {
+                    ""
+                } else {
+                    line.replace("@LIBRARY_PATH@", archiveDirectory.get().asFile.absolutePath)
+                }
             }
         }
 
     compilations.getByName("main").cinterops.create("markdownCoreKotlin") {
         definitionFile.set(generatedDefinitionDirectory.map { it.file("markdown_core_kotlin.def") })
-        compilerOpts("-I${layout.projectDirectory.dir("src/native").asFile.absolutePath}")
+        compilerOpts("-I${repositoryRoot.dir("packages/markdown-core/include").asFile.absolutePath}")
         tasks.named(interopProcessingTaskName).configure {
-            dependsOn(buildTask, generateDefinition)
-            inputs.dir(archiveDirectory)
+            dependsOn(generateDefinition)
+            if (embedNativeLibraries) {
+                dependsOn(buildTask)
+                inputs.dir(archiveDirectory)
+            }
         }
     }
 }
 
 val hostNativeTest =
-    when {
-        hostOs.contains("mac") -> "macosArm64Test"
-        hostOs.contains("linux") -> "linuxX64Test"
+    when (desktopPlatform) {
+        "macos-arm64" -> "macosArm64Test"
+        "linux-x64" -> "linuxX64Test"
         else -> null
     }
 val hostNativeConformanceTest =
-    when {
-        hostOs.contains("mac") -> "macosArm64ConformanceTest"
-        hostOs.contains("linux") -> "linuxX64ConformanceTest"
+    when (desktopPlatform) {
+        "macos-arm64" -> "macosArm64ConformanceTest"
+        "linux-x64" -> "linuxX64ConformanceTest"
         else -> null
     }
 
-val configureJvmNative =
-    tasks.register<Exec>("configureJvmNative") {
+val configureDesktopJni =
+    tasks.register<Exec>("configureDesktopJni") {
         inputs.files(
             repositoryRoot.files("CMakeLists.txt"),
             repositoryRoot.dir("packages/markdown-core/core"),
             repositoryRoot.dir("packages/markdown-core/extensions"),
             layout.projectDirectory.dir("src/native"),
         )
-        outputs.dir(jvmNativeBuildDirectory)
-        commandLine(
-            "cmake",
-            "-S",
-            repositoryRoot.asFile.absolutePath,
-            "-B",
-            jvmNativeBuildDirectory.get().asFile.absolutePath,
-            "-DMARKDOWN_CORE_TESTS=OFF",
-            "-DMARKDOWN_CORE_SHARED=OFF",
-            "-DMARKDOWN_CORE_STATIC=ON",
-            "-DMARKDOWN_CORE_KOTLIN_JNI=ON",
-            "-DCMAKE_BUILD_TYPE=Release",
-            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${nativeOutputDirectory.get().asFile.absolutePath}",
-            "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=${nativeOutputDirectory.get().asFile.absolutePath}",
-        )
+        inputs.property("desktopPlatform", desktopPlatform ?: "unsupported")
+        outputs.file(jvmNativeBuildDirectory.map { it.file("CMakeCache.txt") })
+        if (desktopPlatform == null) {
+            description = "Unsupported JVM native host: $hostOs/$hostArchitecture"
+            commandLine("cmake", "-E", "false")
+        } else {
+            commandLine(
+                "cmake",
+                "-S",
+                repositoryRoot.asFile.absolutePath,
+                "-B",
+                jvmNativeBuildDirectory.get().asFile.absolutePath,
+                "-DMARKDOWN_CORE_TESTS=OFF",
+                "-DMARKDOWN_CORE_SHARED=OFF",
+                "-DMARKDOWN_CORE_STATIC=ON",
+                "-DMARKDOWN_CORE_KOTLIN_JNI=ON",
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${nativeOutputDirectory.get().asFile.absolutePath}",
+                "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=${nativeOutputDirectory.get().asFile.absolutePath}",
+            )
+        }
     }
 
-val buildJvmNative =
-    tasks.register<Exec>("buildJvmNative") {
-        dependsOn(configureJvmNative)
+val buildDesktopJni =
+    tasks.register<Exec>("buildDesktopJni") {
+        dependsOn(configureDesktopJni)
         inputs.files(
             repositoryRoot.dir("packages/markdown-core/core"),
             repositoryRoot.dir("packages/markdown-core/extensions"),
             layout.projectDirectory.dir("src/native"),
         )
-        outputs.dir(nativeOutputDirectory)
+        val libraryName =
+            if (desktopPlatform?.startsWith("macos") ==
+                true
+            ) {
+                "libmarkdown_core_kotlin.dylib"
+            } else {
+                "libmarkdown_core_kotlin.so"
+            }
+        outputs.file(nativeOutputDirectory.map { it.file(libraryName) })
         commandLine(
             "cmake",
             "--build",
@@ -426,6 +455,12 @@ kotlin {
             libs.versions.android.min.sdk
                 .get()
                 .toInt()
+        optimization {
+            consumerKeepRules.apply {
+                publish = true
+                file("consumer-rules.pro")
+            }
+        }
         withJava()
         withHostTestBuilder {}.configure {}
         withDeviceTestBuilder { sourceSetTreeName = "test" }.configure {
@@ -464,11 +499,11 @@ kotlin {
     }
 
     macosArm64 {
-        configureNativeBridge()
+        configureNativeFacade()
         testRuns.create("conformance")
     }
     linuxX64 {
-        configureNativeBridge()
+        configureNativeFacade()
         testRuns.create("conformance")
     }
 
@@ -478,15 +513,19 @@ kotlin {
             kotlin.srcDir(layout.buildDirectory.dir("generated/canonicalAstCommonTest/kotlin"))
             dependencies { implementation(kotlin("test")) }
         }
+        jvmMain { kotlin.srcDir("src/jniMain/kotlin") }
         jvmTest.dependencies { implementation(kotlin("test-junit5")) }
         getByName("androidDeviceTest").dependencies {
             implementation("androidx.test.ext:junit:1.3.0")
             implementation("androidx.test:runner:1.7.0")
         }
-        androidMain.dependencies {
-            implementation(
-                project.dependencies.project(":packages:kotlin-markdown-core:android-runtime"),
-            )
+        androidMain {
+            kotlin.srcDir("src/jniMain/kotlin")
+            dependencies {
+                implementation(
+                    project.dependencies.project(":packages:kotlin-markdown-core:android-runtime"),
+                )
+            }
         }
         macosArm64Main { kotlin.srcDir("src/nativePlatformMain/kotlin") }
         linuxX64Main { kotlin.srcDir("src/nativePlatformMain/kotlin") }
@@ -501,31 +540,12 @@ tasks.matching { it.name.startsWith("runKtlint") && it.name.contains("CommonTest
 }
 
 tasks.named<ProcessResources>("jvmProcessResources") {
-    dependsOn(buildJvmNative)
+    dependsOn(buildDesktopJni)
     from(jvmNativeResourceDirectory)
 }
 
 val jvmTarget = kotlin.targets.getByName("jvm") as KotlinJvmTarget
 val jvmMainCompilation = jvmTarget.compilations.getByName("main")
-val benchmarkCompilation =
-    jvmTarget.compilations.create("benchmark") {
-        associateWith(jvmTarget.compilations.getByName("main"))
-    }
-
-tasks.register<JavaExec>("kotlinBenchmark") {
-    group = "benchmark"
-    description = "Runs Kotlin/JNI parse and immutable AST copy performance workloads."
-    dependsOn(benchmarkCompilation.compileTaskProvider, "jvmProcessResources")
-    classpath =
-        benchmarkCompilation.output.allOutputs +
-        jvmTarget.compilations
-            .getByName("main")
-            .output.allOutputs +
-        benchmarkCompilation.runtimeDependencyFiles
-    mainClass.set("com.nouprax.markdown.core.benchmark.BenchmarkKt")
-    jvmArgs("--enable-native-access=ALL-UNNAMED")
-}
-
 tasks.withType<Test>().configureEach {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
@@ -544,16 +564,14 @@ val hostNativeLibraryPath =
         .get()
         .asFile
         .resolve(
-            if (desktopPlatform.startsWith("macos")) {
+            if (desktopPlatform == "macos-arm64") {
                 "libmarkdown_core_kotlin.dylib"
-            } else if (desktopPlatform.startsWith("windows")) {
-                "markdown_core_kotlin.dll"
             } else {
                 "libmarkdown_core_kotlin.so"
             },
         ).absolutePath
 tasks.withType<Test>().matching { it.name == "testAndroidHostTest" }.configureEach {
-    dependsOn(buildJvmNative)
+    dependsOn(buildDesktopJni)
     filter.excludeTestsMatching("*AstTest*")
     systemProperty("markdown.core.hostNativeLibrary", hostNativeLibraryPath)
 }
@@ -561,7 +579,7 @@ val androidHostConformanceTest =
     tasks.register<Test>("androidHostConformanceTest") {
         group = "verification"
         description = "Runs Android host public-contract conformance checks."
-        dependsOn(buildJvmNative, "compileAndroidHostTest")
+        dependsOn(buildDesktopJni, "compileAndroidHostTest")
         filter.includeTestsMatching("*AstTest*")
         systemProperty("markdown.core.hostNativeLibrary", hostNativeLibraryPath)
     }
@@ -582,6 +600,7 @@ val javadocJar =
     tasks.register<Jar>("javadocJar") {
         archiveClassifier.set("javadoc")
         from(repositoryRoot.file("docs/specs/canonical-ast.md"))
+        from(repositoryRoot.file("docs/releases/$releaseVersion.md"))
         from(layout.projectDirectory.file("README.md"))
     }
 
@@ -631,7 +650,7 @@ ktlint {
 
 // AGP 9.2.1 exposed testedAbi in the managed-device DSL but its setup-task
 // CreationAction did not copy that value into the task input. Keep the public
-// DSL declaration above and the explicit task input on AGP 9.3.0 until the
+// DSL declaration above and the explicit task input on AGP 9.3.2 until the
 // two-device remote smoke proves the upstream assignment on both page sizes.
 tasks.withType<com.android.build.gradle.internal.tasks.ManagedDeviceInstrumentationTestSetupTask>().configureEach {
     testedAbi.set(androidManagedDeviceTestAbi)
@@ -640,7 +659,7 @@ tasks.withType<com.android.build.gradle.internal.tasks.ManagedDeviceInstrumentat
 tasks.register("kotlinTest") {
     group = "verification"
     description = "Runs JVM, Android host, and the current host's Kotlin/Native correctness suites."
-    dependsOn(listOfNotNull("jvmTest", "testAndroidHostTest", hostNativeTest, "verifyKotlinNativePackaging"))
+    dependsOn(listOfNotNull("jvmTest", "testAndroidHostTest", hostNativeTest, "verifyKotlinJniPackaging"))
 }
 
 tasks.register("allKotlinTests") {
@@ -662,16 +681,19 @@ tasks.register("allKotlinTests") {
     )
 }
 
-tasks.register("verifyKotlinNativePackaging") {
+tasks.register("verifyKotlinJniPackaging") {
     group = "verification"
-    description = "Verifies the current desktop JNI payload and all supported Android ABIs."
-    dependsOn("jvmJar", ":packages:kotlin-markdown-core:android-runtime:assembleRelease")
+    description = "Verifies desktop/Android JNI payloads and Android consumer keep rules."
+    dependsOn("jvmJar", "assembleAndroidMain", ":packages:kotlin-markdown-core:android-runtime:assembleRelease")
     val runtimeAarFile = androidRuntimeAar.get().asFile
+    val kotlinAarFile = kotlinAndroidAar.get().asFile
+    val consumerRulesFile = layout.projectDirectory.file("consumer-rules.pro").asFile
     val desktopOutputDirectory = nativeOutputDirectory.get().asFile
-    val expectedDesktopPlatform = desktopPlatform
-    inputs.file(runtimeAarFile)
+    val expectedDesktopPlatform = desktopPlatform ?: "unsupported"
+    inputs.files(runtimeAarFile, kotlinAarFile, consumerRulesFile)
 
     doLast {
+        check(expectedDesktopPlatform != "unsupported") { "JVM native packaging is unsupported on this host" }
         val expectedAndroidEntries =
             setOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64").map {
                 "jni/$it/libmarkdown_core_kotlin.so"
@@ -687,11 +709,17 @@ tasks.register("verifyKotlinNativePackaging") {
                 "Android runtime AAR is missing: ${expectedAndroidEntries - entries}"
             }
         }
+        ZipFile(kotlinAarFile).use { archive ->
+            val rules = requireNotNull(archive.getEntry("proguard.txt")) { "Kotlin Android AAR has no consumer rules" }
+            val packaged = archive.getInputStream(rules).bufferedReader().use { it.readText() }
+            check(packaged == consumerRulesFile.readText()) {
+                "Kotlin Android AAR does not contain the reviewed JNI keep rule"
+            }
+        }
 
         val desktopLibrary =
             when {
                 expectedDesktopPlatform.startsWith("macos") -> "libmarkdown_core_kotlin.dylib"
-                expectedDesktopPlatform.startsWith("windows") -> "markdown_core_kotlin.dll"
                 else -> "libmarkdown_core_kotlin.so"
             }
         check(desktopOutputDirectory.resolve(desktopLibrary).isFile) {
@@ -711,25 +739,22 @@ tasks.register("publishKotlinToMavenLocal") {
     group = "publishing"
     description = "Publishes KMP metadata and all target artifacts buildable on this host."
     dependsOn(
-        "publishKotlinMultiplatformPublicationToMavenLocal",
-        "publishJvmPublicationToMavenLocal",
-        "publishAndroidPublicationToMavenLocal",
-        if (hostOs.contains("mac")) {
-            "publishMacosArm64PublicationToMavenLocal"
-        } else {
-            "publishLinuxX64PublicationToMavenLocal"
-        },
-        ":packages:kotlin-markdown-core:android-runtime:publishToMavenLocal",
+        listOfNotNull(
+            "publishKotlinMultiplatformPublicationToMavenLocal",
+            "publishJvmPublicationToMavenLocal",
+            "publishAndroidPublicationToMavenLocal",
+            when (desktopPlatform) {
+                "macos-arm64" -> "publishMacosArm64PublicationToMavenLocal"
+                "linux-x64" -> "publishLinuxX64PublicationToMavenLocal"
+                else -> null
+            },
+            ":packages:kotlin-markdown-core:android-runtime:publishToMavenLocal",
+        ),
     )
 }
 
-// STAGING FOR THE BUILD-ONCE / RUN-ELSEWHERE CI SPLIT. `ci.yml` builds test
-// artifacts in one job and runs them in another, and
-// scripts/build-kotlin-host-test-artifact.sh names these three tasks -- but the
-// 1.0 baseline's build defines none of them, so Step 0's scripts/ restore left
-// the workflow calling into nothing. Third instance of section 0's "scripts/ IS
-// NOT ONE THING" rule, and unlike checkKotlinAbi there is no baseline shape to
-// restore to: the whole artifact split postdates 580d10c.
+// Explicit staging tasks support CI's build-once/run-elsewhere split without
+// publishing test classes or relying on a shared Gradle build directory.
 val jvmTestCompilation = jvmTarget.compilations.getByName("test")
 
 tasks.register<Sync>("stageJvmTestArtifact") {
@@ -740,69 +765,14 @@ tasks.register<Sync>("stageJvmTestArtifact") {
     from(jvmTestCompilation.runtimeDependencyFiles.filter(File::isFile)) { into("lib") }
 }
 
-tasks.register<Sync>("stageJvmBenchmarkArtifact") {
-    dependsOn(benchmarkCompilation.compileTaskProvider, "jvmProcessResources")
-    into(layout.buildDirectory.dir("ci-test-artifact/jvm-benchmark"))
-    from(jvmMainCompilation.output.allOutputs) { into("classes") }
-    from(benchmarkCompilation.output.allOutputs) { into("classes") }
-    from(benchmarkCompilation.runtimeDependencyFiles.filter(File::isFile)) { into("lib") }
-}
-
 // The CLASSES are added in `afterEvaluate` below, not here: the Android host
 // test task does not exist yet at this point, and staging only the native
 // payload produces an artifact whose runner finds no tests -- which is exactly
 // what CI reported.
 val stageAndroidHostTestArtifact =
     tasks.register<Sync>("stageAndroidHostTestArtifact") {
-        dependsOn(buildJvmNative, "compileAndroidHostTest")
+        dependsOn(buildDesktopJni, "compileAndroidHostTest")
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
         into(layout.buildDirectory.dir("ci-test-artifact/android-host"))
         from(nativeOutputDirectory) { into("native") }
     }
-
-jacoco { toolVersion = libs.versions.jacoco.get() }
-
-// INSTRUMENTATION IS OPT-IN so that adding a coverage gate cannot silently
-// change what `pnpm test:kotlin-jvm` executes. The frozen test architecture
-// owns that path and a coverage tool is not entitled to alter it.
-val coverageRequested = providers.gradleProperty("markdownCoreCoverage").isPresent()
-
-tasks.withType<Test>().configureEach {
-    extensions.configure<JacocoTaskExtension> { isEnabled = coverageRequested }
-}
-
-tasks.register<JacocoReport>("jvmCoverageReport") {
-    group = "verification"
-    description = "Aggregates JVM correctness and conformance coverage into one JaCoCo XML report."
-    val correctness = tasks.named<Test>("jvmTest")
-    val conformance = tasks.named<Test>("jvmConformanceTest")
-    dependsOn(correctness, conformance)
-    // A local, not a reference to this build script, which the configuration
-    // cache rejects.
-    val instrumented = coverageRequested
-    // Declaring the switch as an input is what makes the check below
-    // reachable: without it the task stays up to date across a toggle and
-    // hands back a report an earlier instrumented run produced.
-    inputs.property("markdownCoreCoverage", instrumented)
-    doFirst {
-        check(instrumented) {
-            "jvmCoverageReport needs instrumentation: run it with -PmarkdownCoreCoverage, " +
-                "or through scripts/coverage-kotlin-jvm.sh, which passes it."
-        }
-    }
-    executionData.setFrom(
-        correctness.map { it.extensions.getByType<JacocoTaskExtension>().destinationFile!! },
-        conformance.map { it.extensions.getByType<JacocoTaskExtension>().destinationFile!! },
-    )
-    // Every source set that compiles into the measured classes; jvmMain
-    // holds the JNI entry points and the loader.
-    sourceDirectories.setFrom(
-        files("src/commonMain/kotlin", "src/jvmMain/kotlin"),
-    )
-    classDirectories.setFrom(jvmMainCompilation.output.classesDirs)
-    reports {
-        xml.required.set(true)
-        html.required.set(false)
-        csv.required.set(false)
-    }
-}

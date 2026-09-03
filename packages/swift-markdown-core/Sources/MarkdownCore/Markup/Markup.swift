@@ -7,7 +7,7 @@ import MarkdownCoreC
 /// boundary before a line begins — which is where a block closed by a blank
 /// line ends.
 public struct Position: Sendable, Hashable {
-    /// The 1-based line, counted in the normalized source (see ``Read``).
+    /// The 1-based source line.
     public let line: Int32
     /// The 1-based boundary within the line, counted in BYTES, not characters.
     public let column: Int32
@@ -24,9 +24,7 @@ public struct Position: Sendable, Hashable {
 ///
 /// A SCOPE IS A PAIR OF BOUNDARIES, NOT A BYTE RANGE. It tells an editor which
 /// range of the source an element covers; it does not name a substring, and no
-/// substring can be taken with it. Slicing the source between two positions is
-/// a misuse — the coordinates are counted against the normalized source (see
-/// ``Read``), not the string that was fed to the ``Document``.
+/// substring can be taken with it.
 public struct Scope: Sendable, Hashable {
     /// The boundary the element begins at.
     public let start: Position
@@ -41,54 +39,22 @@ public struct Scope: Sendable, Hashable {
     }
 }
 
-/// A node's identity: the name a consumer tracks an element by across a
-/// stream's feeds — the render key (docs/STREAMING.md §4 D4).
-///
-/// ``block`` is the owning block's document-unique mint — the block is the
-/// minimal update unit, so it alone names the region an incremental consumer
-/// re-renders — and ``ordinal`` is the node's pre-order ordinal among that
-/// block's inline descendants, 0 for the block itself. The pair is unique
-/// within one document and never reused within a parse; it is not stable
-/// across documents. The halves are opaque values: compare them, key
-/// dictionaries by them, and derive nothing else from them.
-public struct Identity: Sendable, Hashable {
-    /// The owning block's document-unique mint; a block's own.
-    public let block: UInt32
-    /// The pre-order ordinal within the owning block; 0 for the block itself.
-    public let ordinal: UInt32
-
-    /// Creates an identity from its two halves. Neither is validated; the
-    /// parser is what produces meaningful pairs.
-    public init(block: UInt32, ordinal: UInt32) {
-        self.block = block
-        self.ordinal = ordinal
-    }
-}
-
-extension Identity {
-    init(from value: markdown_core_identity) {
-        self.init(block: value.block, ordinal: value.ordinal)
-    }
-}
-
 /// One node of the parsed document.
 ///
-/// Every kind is a value type and every kind is `Sendable`: the native parse
-/// is released before a ``Read`` is returned, so nothing here borrows memory
-/// the C library owns and a tree can cross an isolation boundary unchanged.
+/// Every kind is a value type and every kind is `Sendable`: the native parse is
+/// released before ``Document/parse(_:options:)`` returns, so nothing here
+/// borrows memory the C library owns and a tree can cross an isolation
+/// boundary unchanged.
 ///
-/// The set of conforming kinds is closed. ``Visitor`` names all of them,
+/// The set of conforming kinds is closed. ``MarkupVisitor`` names all of them,
 /// which is what makes a visitor exhaustive at compile time.
 public protocol Markup: Sendable {
-    /// The node's identity: the name a consumer tracks this element by across
-    /// a stream's feeds — the render key. See ``Identity``.
-    var id: Identity { get }
     /// Where this element is, as a pair of boundaries. See ``Scope`` for what
     /// those boundaries are and are not.
     var scope: Scope { get }
     /// Dispatches to the visitor case for this element's kind.
-    func accept<V: Visitor>(_ visitor: inout V) -> V.Result
-    /// The canonical diagnostic dump of this element and everything under it.
+    func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result
+    /// The canonical debug dump of this element and everything under it.
     ///
     /// One grammar across C, Swift, Kotlin and ECMAScript, checked against the
     /// same goldens. It is a debugging and conformance surface, not a
@@ -114,95 +80,17 @@ extension Markup {
         Scope(from: markdown_core_node_scope(node))
     }
 
-    /// The node's whole identity, answered by the C side from the node alone
-    /// — the engine stamps an inline's owner in the same pass that assigns
-    /// its ordinal, so no walk here composes anything.
-    static func identity(from node: OpaquePointer) -> Identity {
-        Identity(from: markdown_core_node_identifier(node))
-    }
-
-    /// Every child, in source order, as the C tree holds them.
-    static func children(from node: OpaquePointer) -> [any Markup] {
-        var result: [any Markup] = []
-        result.reserveCapacity(markdown_core_node_child_count(node))
-        var cursor = markdown_core_node_children(node)
-        while let current = cursor.child {
-            result.append(markup(from: current))
-            cursor = markdown_core_children_next(cursor)
-        }
-        return result
-    }
-}
-
-/// The definition edge a reference carries: the identity of the definition it
-/// resolved to — the first definition of its label in document order. The
-/// target is a block, so its ordinal is 0 by construction.
-func referenceDefinition(from node: OpaquePointer) -> Identity {
-    var definition = markdown_core_identity()
-    markdown_core_node_reference_definition(node, &definition)
-    return Identity(from: definition)
-}
-
-/// The kinds a typed child walk constructs directly (#145): each carries the
-/// same internal node initializer `markup(from:)` dispatches to, named as a
-/// requirement so `typedChildren` can call it without boxing the child in an
-/// existential first.
-protocol NodeConstructible {
-    init(from node: OpaquePointer)
-}
-
-extension ListItem: NodeConstructible {}
-extension TableRow: NodeConstructible {}
-extension TableCell: NodeConstructible {}
-
-extension Markup {
-    /// Every child, required to be one kind.
+    /// Narrows an already-copied content relation to its semantic element kind.
     ///
     /// A `List` owns `ListItem`s and a `TableRow` owns `TableCell`s; the C tree
     /// cannot say so and the typed model can, so the narrowing happens once,
     /// here, instead of at every use site.
-    ///
-    /// One pass, constructing `T` directly (#145): the walk used to build the
-    /// full `[any Markup]` — every `ListItem`, `TableRow`, and `TableCell`
-    /// outgrows the inline existential buffer, so each child was a heap box —
-    /// and then map that finished array into a second, downcast copy. The
-    /// engine guarantees the child kind (`can_contain_type`), which is what
-    /// the retired downcast re-checked per element.
-    static func typedChildren<T: Markup & NodeConstructible>(from node: OpaquePointer) -> [T] {
-        var result: [T] = []
-        result.reserveCapacity(markdown_core_node_child_count(node))
-        var cursor = markdown_core_node_children(node)
-        while let current = cursor.child {
-            result.append(T(from: current))
-            cursor = markdown_core_children_next(cursor)
+    static func typedChildren<T: Markup>(_ children: [any Markup]) -> [T] {
+        children.map { child in
+            guard let typed = child as? T else {
+                preconditionFailure("\(type(of: child)) is not a \(T.self)")
+            }
+            return typed
         }
-        return result
-    }
-
-    /// A directive's label, or `nil` when the source wrote none.
-    ///
-    /// The label is the first child when it is there at all, so this is a
-    /// look, not a search. Until Step 7 the C facade spliced the label node
-    /// out of the child list and named its count on the parent, and this
-    /// walked a run of children with no container; the node is visible now.
-    static func directiveLabel(from node: OpaquePointer) -> DirectiveLabel? {
-        guard let first = markdown_core_node_children(node).child,
-            markdown_core_node_get_kind(first) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL
-        else { return nil }
-        return DirectiveLabel(from: first)
-    }
-
-    /// A directive block's content: every child after the label.
-    static func directiveContent(from node: OpaquePointer) -> [any Markup] {
-        var result: [any Markup] = []
-        var cursor = markdown_core_node_children(node)
-        if let first = cursor.child, markdown_core_node_get_kind(first) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL {
-            cursor = markdown_core_children_next(cursor)
-        }
-        while let current = cursor.child {
-            result.append(markup(from: current))
-            cursor = markdown_core_children_next(cursor)
-        }
-        return result
     }
 }

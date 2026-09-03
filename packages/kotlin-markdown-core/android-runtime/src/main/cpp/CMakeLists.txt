@@ -32,7 +32,7 @@ add_library(
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/directive.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/ext_scanners.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/tasklist.c"
-    "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_bridge.c"
+    "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni_payload.c"
     "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni.c")
 
 target_include_directories(
@@ -54,7 +54,7 @@ target_compile_options(
             $<$<OR:$<C_COMPILER_ID:Clang>,$<C_COMPILER_ID:GNU>>:-pedantic>)
 set_target_properties(
     markdown_core_kotlin
-    PROPERTIES C_STANDARD 11
+    PROPERTIES C_STANDARD 99
                C_STANDARD_REQUIRED YES
                C_EXTENSIONS NO
                C_VISIBILITY_PRESET hidden

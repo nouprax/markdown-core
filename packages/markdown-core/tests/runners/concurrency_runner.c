@@ -9,19 +9,18 @@
 //                node, dumps twice, and frees.  All dumps must match the
 //                single-threaded reference computed after the threads join.
 //
-//   stress       After initialization has completed, threads hammer the
-//                facade with a matrix of inputs x ParseOptions (extensions
+//   stress       Threads hammer the facade with a matrix of inputs x
+//                ParseOptions (extensions
 //                toggled on and off) and byte-compare every dump against
 //                per-combination references.  This pins the parser-local
 //                special-character tables: a parse with an extension
 //                disabled must never observe characters registered by a
 //                concurrent parse with it enabled.
 //
-//   lifecycle    Single-threaded registry lifecycle regression: repeated
-//                parse/free cycles interleaved with failure paths must keep
-//                the process-lifetime registry intact — the last parse must
-//                still attach every extension and dump identically to the
-//                first.
+//   lifecycle    Repeated parse/free cycles interleaved with failure paths
+//                must not affect a later parser instance — the last parse
+//                must still attach every extension and dump identically to
+//                the first.
 //
 // The runner uses raw native threads (pthread / Win32) on purpose: the
 // facade contract must hold without any test-harness serialization.
@@ -200,9 +199,8 @@ static size_t traverse(const markdown_core_node *node) {
     markdown_core_node_formula_properties(node, &mode, &value);
 
     size_t children = 0;
-    markdown_core_children cursor = markdown_core_node_children(node);
-    const markdown_core_node *child;
-    for (; (child = cursor.child) != NULL; cursor = markdown_core_children_next(cursor)) {
+    const markdown_core_node *child = markdown_core_node_get_first_child(node);
+    for (; child; child = markdown_core_node_get_next_sibling(child)) {
         size_t below = traverse(child);
         if (!below) {
             return 0;
@@ -230,7 +228,7 @@ static int parse_and_dump(const char *input, option_variant variant, uint8_t **d
         return 1;
     }
 
-    if (!traverse(markdown_core_document_semantic(document))) {
+    if (!traverse(markdown_core_document_root(document))) {
         markdown_core_document_free(document);
         return 1;
     }
@@ -316,10 +314,9 @@ static void worker_release(worker *workers, int count) {
 }
 
 // Runs the thread pool, then compares every thread's dump for every
-// combination against a reference computed on the main thread (safe once the
-// workers have joined: initialization is over).
+// combination against a reference computed on the main thread.
 static int run_threads_and_verify(int iterations) {
-    static worker workers[THREAD_COUNT];
+    worker workers[THREAD_COUNT];
     thread_handle handles[THREAD_COUNT];
     barrier start;
     barrier_init(&start, THREAD_COUNT);
@@ -364,13 +361,8 @@ static int run_threads_and_verify(int iterations) {
                 }
                 if (workers[index].lengths[combined] != reference_length ||
                     memcmp(workers[index].dumps[combined], reference, reference_length) != 0) {
-                    fprintf(
-                        stderr,
-                        "concurrency: thread %d dump diverges (input %zu variant %d)\n",
-                        index,
-                        input,
-                        variant
-                    );
+                    fprintf(stderr, "concurrency: thread %d dump diverges (input %zu variant %d)\n", index, input,
+                            variant);
                     failures += 1;
                 }
             }
@@ -383,14 +375,15 @@ static int run_threads_and_verify(int iterations) {
 }
 
 static int case_first_parse(void) {
-    // No parse may happen before the barrier releases the workers: the whole
-    // point is that library initialization races are exercised for real.
+    // No parse may happen before the barrier releases the workers: the first
+    // calls must be as parallel as steady-state calls without any warmup.
     return run_threads_and_verify(1);
 }
 
 static int case_stress(void) {
-    // Initialization completes here, single-threaded; the pool then stresses
-    // steady-state parsing with disagreeing option sets.
+    // Establish one ordinary sequential baseline, then stress concurrent
+    // parsing with disagreeing option sets. There is no library initialization
+    // phase for this baseline to perform.
     uint8_t *warm = NULL;
     size_t warm_length = 0;
     if (parse_and_dump(INPUTS[0], OPTIONS_DEFAULT, &warm, &warm_length)) {
@@ -419,7 +412,7 @@ static int case_lifecycle(void) {
         }
         markdown_core_dump_free(dump);
 
-        // Failure paths must not disturb the registry or later parses.
+        // Failure paths must not affect later parser instances.
         markdown_core_error *error = NULL;
         if (markdown_core_document_parse(NULL, 1, NULL, &error) != NULL ||
             markdown_core_error_get_code(error) != MARKDOWN_CORE_ERROR_INVALID_ARGUMENT) {

@@ -33,14 +33,9 @@ fi
     -p packages/kotlin-markdown-core/consumers/kmp jvmTest
 "$gradle" --warning-mode=fail "$property" "-PconsumerRepository=$repository" \
     -p packages/kotlin-markdown-core/consumers/jvm-gradle run
-# ASSEMBLE THE DEBUG VARIANT, WHICH IS WHAT THIS CONSUMER PROJECT HAS. An
-# earlier line carried a release-shrinking audit (assembleRelease, an
-# AAR/mapping/dex comparison, verify-android-jni-shrinking.mjs); its build
-# side never existed in this tree, and the orphaned script was deleted after
-# the owner ruled the release does not need it (#142): the JNI bridge's only
-# FindClass names java/lang/OutOfMemoryError, so the default Android keep
-# rules for native methods already protect every entry a consumer's R8 could
-# otherwise strip.
+# This consumer intentionally has one debug variant. Release packaging verifies
+# the library-owned JNI keep rule separately; this task exercises resolution and
+# runtime integration without pretending to be an R8 reachability benchmark.
 "$gradle" --warning-mode=fail "$property" "-PconsumerRepository=$repository" \
     -p packages/kotlin-markdown-core/consumers/android assembleDebug
 

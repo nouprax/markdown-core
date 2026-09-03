@@ -1,13 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { TextEncoder } from "node:util";
-import { Document, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
+import { Document, TreeDumper, visit } from "../dist/index.js";
 import { kindVisitor } from "./visitor.mjs";
-
-// The whole-text parse, keeping only the semantic tree; the streamed cases
-// below spell the full entry out themselves.
-const parse = (source, options) => new Document(source, options).seal().semantic;
 
 const canonicalFixtures = new URL("../build/generated/conformance/canonical-ast-fixtures.json", import.meta.url);
 const canonicalManifest = JSON.parse(await readFile(canonicalFixtures, "utf8"));
@@ -22,10 +17,10 @@ test("conformance: public node schema is reachable", () => {
         "| left | center |\n| :--- | :----: |\n| a | b |\n\n::leaf[Label]{id=value}\n\n:::container[Title]{kind=demo}\nBody\n:::\n",
         "$$\ny\n$$\n"
     ];
-    const documents = sources.map((source) => parse(source));
-    const nodes = documents.flatMap(flatten);
+    const documents = sources.map((source) => Document.parse(source));
+    const kinds = documents.flatMap((document) => dumpKinds(document.dump()));
     assert.deepEqual(
-        new Set(nodes.map((node) => node.kind)),
+        new Set(kinds),
         new Set([
             "document",
             "blockQuote",
@@ -65,7 +60,9 @@ test("conformance: public node schema is reachable", () => {
 });
 
 test("conformance: fields, nullability, and typed table nodes map to JavaScript", () => {
-    const document = parse('3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image "title")\n');
+    const document = Document.parse(
+        '3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image "title")\n'
+    );
     assert.equal(document.content[0].flavor, "ordered");
     assert.equal(document.content[0].start, 3);
     assert.equal(document.content[0].tight, true);
@@ -99,7 +96,7 @@ test("conformance: fields, nullability, and typed table nodes map to JavaScript"
 });
 
 test("conformance: directive labels preserve missing, empty, and populated states", () => {
-    const document = parse(":missing{id=1}\n\n:empty[]\n\n:label[text]\n\n::block[title]\n");
+    const document = Document.parse(":missing{id=1}\n\n:empty[]\n\n:label[text]\n\n::block[title]\n");
     const missing = document.content[0].content[0];
     const empty = document.content[1].content[0];
     const label = document.content[2].content[0];
@@ -107,83 +104,34 @@ test("conformance: directive labels preserve missing, empty, and populated state
 
     assert.equal(missing.label, null);
     assert.deepEqual(missing.attributes, [{ name: "id", value: "1" }]);
-    // A label written empty is a node with no children, and its scope still
-    // spans its brackets -- which is what tells it from a label never written.
+    // A label written empty is Markup in the label field, not directive
+    // content. Its scope still distinguishes it from a label never written.
     assert.equal(empty.label.kind, "directiveLabel");
     assert.deepEqual(empty.label.content, []);
     assert.equal(label.label.content[0].literal, "text");
     assert.equal(block.label.content[0].literal, "title");
     assert.deepEqual(block.content, []);
+
+    assert.equal("content" in label, false);
+    assert.deepEqual(
+        label.label.content.map((node) => node.kind),
+        ["text"]
+    );
+    assert.match(TreeDumper.dump(label), /DirectiveLabel/u);
 });
 
 for (const testCase of canonicalManifest.cases) {
     test(`conformance: shared canonical AST case ${testCase.name}`, async () => {
-        const document = parse(testCase.source, testCase.parseOptions);
+        const document = Document.parse(testCase.source, testCase.parseOptions);
         assert.equal(TreeDumper.dump(document), testCase.expected, testCase.name);
         assert.equal(document.dump(), testCase.expected, testCase.name);
     });
-
-    // THE STREAM'S corpus is the one-shot corpus (docs/STREAMING.md D6: T14
-    // extends the corpora rather than adding a channel). 7 is prime, so the
-    // chunk boundary drifts through every alignment and splits line endings,
-    // UTF-8 sequences, and construct delimiters somewhere in every case.
-    test(`conformance: shared canonical AST case ${testCase.name} streamed in 7-byte chunks`, async () => {
-        const document = new Document(testCase.parseOptions);
-        try {
-            const bytes = new TextEncoder().encode(testCase.source);
-            for (let offset = 0; offset < bytes.length; offset += 7) {
-                document.feed(bytes.subarray(offset, Math.min(offset + 7, bytes.length)));
-            }
-            const sealed = document.seal();
-            assert.equal(TreeDumper.dump(sealed.semantic), testCase.expected, testCase.name);
-            assert.equal(sealed.dump(), testCase.expected, testCase.name);
-        } finally {
-            document.dispose();
-        }
-    });
-
-    // THE DELTA'S GATE (#162): a document fed one line at a time answers
-    // every feed through a DELTA against its previous read, and each such
-    // read must equal -- structurally and in its dump -- the read a fresh
-    // document answers for the same bytes in one WHOLE frame; the seal, a
-    // delta too, must equal the whole-text parse. Structural equality is the
-    // binding's own reassembly checked: a value reused in the wrong place,
-    // or a child dropped or doubled, is a difference here.
-    test(`conformance: shared canonical AST case ${testCase.name} delta-streamed by line equals the whole reads`, async () => {
-        const document = new Document(testCase.parseOptions);
-        try {
-            const bytes = new TextEncoder().encode(testCase.source);
-            let fed = 0;
-            let boundary = 0;
-            while (fed < bytes.length) {
-                const newline = bytes.indexOf(0x0a, fed);
-                const end = newline === -1 ? bytes.length : newline + 1;
-                const read = document.feed(bytes.subarray(fed, end));
-                fed = end;
-                boundary += 1;
-                const whole = new Document(testCase.parseOptions);
-                try {
-                    const expected = whole.feed(bytes.subarray(0, fed));
-                    assert.equal(read.dump(), expected.dump(), `${testCase.name} boundary ${boundary}`);
-                    assert.deepStrictEqual(read.semantic, expected.semantic, `${testCase.name} boundary ${boundary}`);
-                } finally {
-                    whole.dispose();
-                }
-            }
-            const sealed = document.seal();
-            const expected = new Document(testCase.source, testCase.parseOptions).seal();
-            assert.equal(sealed.dump(), testCase.expected, testCase.name);
-            assert.deepStrictEqual(sealed.semantic, expected.semantic, `${testCase.name} sealed`);
-        } finally {
-            document.dispose();
-        }
-    });
 }
 
-function flatten(root) {
-    const nodes = [];
-    new Walker().walk(root, (event, node) => {
-        if (event === WalkEvent.entering) nodes.push(node);
-    });
-    return nodes;
+function dumpKinds(dump) {
+    return dump
+        .trimEnd()
+        .split("\n")
+        .map((line) => line.replace(/^[│ ├└─]*/u, "").split(" ", 1)[0])
+        .map((name) => (name.startsWith("HTML") ? `html${name.slice(4)}` : name[0].toLowerCase() + name.slice(1)));
 }

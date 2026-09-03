@@ -18,6 +18,10 @@ case "$preset" in
 esac
 test -n "$output"
 
+# A test artifact is a snapshot of the current graph, not of whichever targets
+# happened to exist in this build directory previously. Removed runners must
+# not survive as stale executables in the archive.
+cmake -E remove_directory "$root/$build_dir"
 configure=(cmake --preset "$preset" -DMARKDOWN_CORE_TESTS=ON)
 if [ "$shared" != - ]; then
     configure+=("-DMARKDOWN_CORE_SHARED=$shared")
@@ -36,6 +40,11 @@ if [ -n "$configuration" ]; then
 fi
 if ! "${inventory[@]}" | grep -Eq 'Total Tests: [1-9][0-9]*$'; then
     echo "C test artifact contains no discovered CTest tests" >&2
+    exit 1
+fi
+bash "$root/scripts/audit-test-topology.sh" "$root/$build_dir" "$configuration"
+if find "$root/$build_dir" -type f \( -name bench_runner -o -name bench_runner.exe \) -print -quit | grep -q .; then
+    echo "C test artifact tree contains a benchmark executable" >&2
     exit 1
 fi
 

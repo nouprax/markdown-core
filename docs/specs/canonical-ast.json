@@ -1,6 +1,6 @@
 {
     "schemaVersion": 1,
-    "purpose": "THE canonical AST contract, machine-readable and normative. Six projection surfaces declare this same shape again in their own language -- a Swift struct cannot be produced by a C function and neither can a Kotlin class or a TypeScript interface -- and scripts/audit-ast-projections.mjs checks every one of them against this file. The prose companion at docs/specs/canonical-ast.md carries everything a table cannot say (the core rules, coordinates, ownership, the attribute grammar) and ITS table is generated from this file and checked against it, so the two cannot drift. Until Step 15A both lived under docs/deprecated/, which is archive and not normative, while four executable policy files read them. Q29 deleted `mode` from five kinds at 15A.4 -- Code, CodeBlock, Directive, DirectiveBlock and FormulaBlock -- because each of their values is implied by the kind. Q29 named FOUR; `extensions/formula.c`'s `markdown_core_extensions_set_formula_mode` REFUSES to make a FormulaBlock embedded, so its mode is as constant as a CodeBlock's, and `Formula` is the only kind where the value is a fact about the source.",
+    "purpose": "The machine-readable, normative canonical AST contract. C, Swift, Kotlin, and TypeScript declare projections of this shape, and scripts/audit-ast-projections.mjs checks every projection plus the prose and debug-dump tables against this file. Formula is the only kind whose placement mode varies; placement for Code, CodeBlock, Directive, DirectiveBlock, and FormulaBlock is implied by the kind.",
     "prose": "docs/specs/canonical-ast.md",
     "dumpGrammar": "docs/specs/canonical-ast-dump.md",
     "enums": {
@@ -10,22 +10,14 @@
         "TableAlignment": ["none", "left", "center", "right"],
         "DirectiveAttribute": "a name/value pair of Strings"
     },
-    "inheritedFields": [
-        {
-            "name": "id",
-            "type": "Identity",
-            "optional": false
-        },
-        {
-            "name": "scope",
-            "type": "Scope",
-            "optional": false
-        }
-    ],
+    "inheritedField": {
+        "name": "scope",
+        "type": "Scope",
+        "optional": false
+    },
     "kinds": [
         {
             "name": "Document",
-            "bindingType": "Semantic",
             "fields": [
                 {
                     "name": "content",
@@ -245,7 +237,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "attributes is an ordered sequence of name/value pairs sorted by name; label is a DirectiveLabel node whose scope spans its brackets; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one"
+            "invariants": "attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never part of content; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one"
         },
         {
             "name": "DirectiveLabel",
@@ -267,7 +259,7 @@
                     "optional": false
                 },
                 {
-                    "name": "norm",
+                    "name": "identifier",
                     "type": "String",
                     "optional": false
                 },
@@ -277,7 +269,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "label is non-empty and as written; norm is the match key the label folds to and KEEPS the leading `^`, so a footnote and a link definition of one name cannot collide; block content"
+            "invariants": "label is non-empty and as written; identifier KEEPS the leading `^`, so a footnote and a link definition of one name cannot collide; block content"
         },
         {
             "name": "ReferenceDefinition",
@@ -288,7 +280,7 @@
                     "optional": false
                 },
                 {
-                    "name": "norm",
+                    "name": "identifier",
                     "type": "String",
                     "optional": false
                 },
@@ -303,7 +295,7 @@
                     "optional": true
                 }
             ],
-            "invariants": "label is the bytes between the brackets as written, delimiters excluded, escapes and character references unresolved, whitespace uncollapsed, case unfolded; norm is the match key -- full Unicode case fold, trimmed, internal whitespace collapsed -- and is compared with memcmp over its bytes; neither derives the other; destination is never absent, because a definition that could not build one is not produced at all; absent and empty title remain distinct; leaf"
+            "invariants": "label is the bytes between the brackets as written, delimiters excluded, escapes and character references unresolved, whitespace uncollapsed, case unfolded; identifier is the match key -- full Unicode case fold, trimmed, internal whitespace collapsed -- and is compared with memcmp over its bytes; neither derives the other; destination is never absent, because a definition that could not build one is not produced at all; absent and empty title remain distinct; leaf"
         },
         {
             "name": "Text",
@@ -448,13 +440,13 @@
                     "optional": false
                 },
                 {
-                    "name": "form",
-                    "type": "ReferenceForm",
+                    "name": "identifier",
+                    "type": "String",
                     "optional": false
                 },
                 {
-                    "name": "definition",
-                    "type": "Identity",
+                    "name": "form",
+                    "type": "ReferenceForm",
                     "optional": false
                 },
                 {
@@ -463,7 +455,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "label is as written, exactly as on ReferenceDefinition; the node carries NO destination and NO match key -- the destination is stated once, at the definition, and definition names it: the identity of the first definition of this label in document order, whose norm IS the match key; form records which of the three spellings the source used, and all three resolve identically; inline content"
+            "invariants": "label is as written and identifier is the match key, exactly as on ReferenceDefinition; the node carries NO destination -- the destination is stated once, at the definition; form records which of the three spellings the source used, and all three resolve identically; inline content"
         },
         {
             "name": "ImageReference",
@@ -474,13 +466,13 @@
                     "optional": false
                 },
                 {
-                    "name": "form",
-                    "type": "ReferenceForm",
+                    "name": "identifier",
+                    "type": "String",
                     "optional": false
                 },
                 {
-                    "name": "definition",
-                    "type": "Identity",
+                    "name": "form",
+                    "type": "ReferenceForm",
                     "optional": false
                 },
                 {
@@ -510,7 +502,7 @@
                     "optional": true
                 }
             ],
-            "invariants": "attributes is an ordered sequence of name/value pairs sorted by name; label is a DirectiveLabel node whose scope spans its brackets; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one"
+            "invariants": "attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never a child/content element; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one"
         },
         {
             "name": "FootnoteReference",
@@ -521,12 +513,12 @@
                     "optional": false
                 },
                 {
-                    "name": "definition",
-                    "type": "Identity",
+                    "name": "identifier",
+                    "type": "String",
                     "optional": false
                 }
             ],
-            "invariants": "label is non-empty and as written; definition is the identity of the first FootnoteDefinition of this label in document order, whose norm -- caret included -- is the match key; no form -- there is one footnote call syntax; leaf"
+            "invariants": "label is non-empty and as written; identifier KEEPS the leading `^`; no form -- there is one footnote call syntax; leaf"
         }
     ]
 }

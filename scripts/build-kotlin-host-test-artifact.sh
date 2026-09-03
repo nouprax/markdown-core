@@ -7,22 +7,21 @@ target=${1:-}
 output=${2:-"$root/build/ci-artifacts/kotlin-$target"}
 project_build="$root/packages/kotlin-markdown-core/build"
 
+# Gradle Sync cleans each owned leaf, but not sibling staging directories from
+# a target removed from the current graph. Start the CI-only staging root from
+# a known empty state so stale classes cannot enter the archive.
+rm -rf "$project_build/ci-test-artifact"
+
 case "$target" in
     linuxX64)
         "$root/scripts/gradle.sh" --console=plain --stacktrace \
             :packages:kotlin-markdown-core:stageJvmTestArtifact \
-            :packages:kotlin-markdown-core:stageJvmBenchmarkArtifact \
             :packages:kotlin-markdown-core:stageAndroidHostTestArtifact \
-            :packages:kotlin-markdown-core:jvmJar \
             :packages:kotlin-markdown-core:linkDebugTestLinuxX64
         classpath=$(find "$project_build/ci-test-artifact/jvm/lib" -type f -name '*.jar' -print | paste -sd: -)
         javac -cp "$classpath" \
             -d "$project_build/ci-test-artifact/jvm/classes" \
             "$root/scripts/ci/KotlinJvmTestLauncher.java"
-        mkdir -p "$project_build/ci-test-artifact/jvm-benchmark/size"
-        jvm_jar="$project_build/libs/kotlin-markdown-core-jvm-$(cat "$root/VERSION").jar"
-        test -f "$jvm_jar"
-        cp "$jvm_jar" "$project_build/ci-test-artifact/jvm-benchmark/size/"
         ;;
     macosArm64)
         "$root/scripts/gradle.sh" --console=plain --stacktrace \
@@ -33,6 +32,11 @@ case "$target" in
         exit 2
         ;;
 esac
+
+if find "$project_build/ci-test-artifact" -iname '*benchmark*' -print -quit | grep -q .; then
+    echo "Kotlin test artifact staging contains a benchmark payload" >&2
+    exit 1
+fi
 
 rm -rf "$output"
 mkdir -p "$output"

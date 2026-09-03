@@ -5,11 +5,9 @@ import type { DirectiveAttribute } from "./model/directive-attribute.js";
 import type { DirectiveBlock } from "./model/directive-block.js";
 import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
+import type { Document } from "./model/document.js";
 import type { Emphasis } from "./model/emphasis.js";
 import type { FootnoteDefinition, FootnoteReference } from "./model/footnote.js";
-import type { ReferenceDefinition } from "./model/reference-definition.js";
-import type { Semantic } from "./model/semantic.js";
-import type { ImageReference, LinkReference } from "./model/reference.js";
 import type { FormulaBlock } from "./model/formula-block.js";
 import type { Formula } from "./model/formula.js";
 import type { Heading } from "./model/heading.js";
@@ -21,161 +19,161 @@ import type { Link } from "./model/link.js";
 import type { List, ListItem } from "./model/list.js";
 import type { Markup } from "./model/markup.js";
 import type { Paragraph } from "./model/paragraph.js";
+import type { ReferenceDefinition } from "./model/reference-definition.js";
+import type { ImageReference, LinkReference } from "./model/reference.js";
 import type { SoftBreak } from "./model/soft-break.js";
 import type { Strikethrough } from "./model/strikethrough.js";
 import type { Strong } from "./model/strong.js";
 import type { Table, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
 import type { ThematicBreak } from "./model/thematic-break.js";
-import type { Identity, Scope } from "./values.js";
+import type { Scope } from "./values.js";
 import { visit, type Visitor } from "./visitor.js";
-import { Walker, WalkEvent } from "./walker.js";
 
-interface DumpRecord {
-    readonly line: string;
-    readonly children: number;
-}
-
-/** Produces the canonical diagnostic tree for immutable Markdown markup. */
+/** Produces the canonical debug tree for immutable Markdown markup. */
 export class TreeDumper {
     private constructor() {}
 
-    /** Returns the canonical diagnostic dump for `root` and its descendants. */
+    /** Returns the canonical debug dump for `root` and its owned markup. */
     static dump(root: Markup): string {
-        const remainingChildren: number[] = [];
-        const lines: string[] = [];
-
-        new Walker().walk(root, (event, node) => {
-            if (event === WalkEvent.entering) {
-                const dump = visit(node, dumpVisitor);
-                if (remainingChildren.length === 0) {
-                    lines.push(dump.line);
-                } else {
-                    const parent = remainingChildren.length - 1;
-                    const prefix = remainingChildren
-                        .slice(0, -1)
-                        .map((remaining) => (remaining > 0 ? "│   " : "    "))
-                        .join("");
-                    const connector = remainingChildren[parent] === 1 ? "└── " : "├── ";
-                    lines.push(prefix + connector + dump.line);
-                    remainingChildren[parent] = remainingChildren[parent]! - 1;
-                }
-                remainingChildren.push(dump.children);
-            } else {
-                if (remainingChildren.pop() !== 0) throw new Error("walker exited before its children");
-            }
-        });
-        return `${lines.join("\n")}\n`;
+        const state = new DumpState();
+        state.dump(root);
+        return state.result();
     }
 }
 
-const dumpVisitor: Visitor<DumpRecord> = {
-    visitSemantic: (node: Semantic) => record("Document", node, [], node.content.length),
-    visitBlockQuote: (node: BlockQuote) => record("BlockQuote", node, [], node.content.length),
-    visitParagraph: (node: Paragraph) => record("Paragraph", node, [], node.content.length),
-    visitHeading: (node: Heading) => record("Heading", node, [`level=${node.level}`], node.content.length),
-    visitThematicBreak: (node: ThematicBreak) => record("ThematicBreak", node),
-    visitList: (node: List) =>
-        record(
-            "List",
-            node,
-            [`flavor=${node.flavor}`, `start=${node.start ?? "null"}`, `tight=${node.tight}`],
-            node.items.length
-        ),
-    visitListItem: (node: ListItem) =>
-        record("ListItem", node, [`checked=${node.checked ?? "null"}`], node.content.length),
-    visitCodeBlock: (node: CodeBlock) =>
-        record("CodeBlock", node, [
-            `info=${optionalString(node.info)}`,
-            `language=${optionalString(node.language)}`,
-            `literal=${jsonString(node.literal)}`,
-            `fenced=${node.fenced}`,
-            `closed=${node.closed}`
-        ]),
-    visitHTMLBlock: (node: HTMLBlock) => record("HTMLBlock", node, [`literal=${jsonString(node.literal)}`]),
-    visitFormulaBlock: (node: FormulaBlock) => record("FormulaBlock", node, [`literal=${jsonString(node.literal)}`]),
-    visitTable: (node: Table) =>
-        record("Table", node, [`alignments=[${node.alignments.join(",")}]`], 1 + node.rows.length),
-    visitTableRow: (node: TableRow) => record("TableRow", node, [`isHeader=${node.isHeader}`], node.cells.length),
-    visitTableCell: (node: TableCell) => record("TableCell", node, [], node.content.length),
-    visitDirectiveBlock: (node: DirectiveBlock) =>
-        record(
-            "DirectiveBlock",
-            node,
-            directiveFields(node.name, node.attributes),
-            (node.label === null ? 0 : 1) + node.content.length
-        ),
-    visitDirectiveLabel: (node: DirectiveLabel) => record("DirectiveLabel", node, [], node.content.length),
-    visitFootnoteDefinition: (node: FootnoteDefinition) =>
-        record("FootnoteDefinition", node, definitionAssociation(node), node.content.length),
-    visitReferenceDefinition: (node: ReferenceDefinition) =>
-        record("ReferenceDefinition", node, [
-            ...definitionAssociation(node),
-            `destination=${jsonString(node.destination)}`,
-            `title=${optionalString(node.title)}`
-        ]),
-    visitLinkReference: (node: LinkReference) =>
-        record(
-            "LinkReference",
-            node,
-            [`label=${jsonString(node.label)}`, `form=${node.form}`, `definition=${identity(node.definition)}`],
-            node.content.length
-        ),
-    visitImageReference: (node: ImageReference) =>
-        record(
-            "ImageReference",
-            node,
-            [`label=${jsonString(node.label)}`, `form=${node.form}`, `definition=${identity(node.definition)}`],
-            node.content.length
-        ),
-    visitText: (node: Text) => record("Text", node, [`literal=${jsonString(node.literal)}`]),
-    visitSoftBreak: (node: SoftBreak) => record("SoftBreak", node),
-    visitLineBreak: (node: LineBreak) => record("LineBreak", node),
-    visitCode: (node: Code) => record("Code", node, [`literal=${jsonString(node.literal)}`]),
-    visitHTML: (node: HTML) => record("HTML", node, [`literal=${jsonString(node.literal)}`]),
-    visitFormula: (node: Formula) =>
-        record("Formula", node, [`mode=${node.mode}`, `literal=${jsonString(node.literal)}`]),
-    visitEmphasis: (node: Emphasis) => record("Emphasis", node, [], node.content.length),
-    visitStrong: (node: Strong) => record("Strong", node, [], node.content.length),
-    visitStrikethrough: (node: Strikethrough) => record("Strikethrough", node, [], node.content.length),
-    visitLink: (node: Link) =>
-        record(
-            "Link",
-            node,
-            [`destination=${jsonString(node.destination)}`, `title=${optionalString(node.title)}`],
-            node.content.length
-        ),
-    visitImage: (node: Image) =>
-        record(
-            "Image",
-            node,
-            [`source=${jsonString(node.source)}`, `title=${optionalString(node.title)}`],
-            node.content.length
-        ),
-    visitDirective: (node: Directive) =>
-        record("Directive", node, directiveFields(node.name, node.attributes), node.label === null ? 0 : 1),
-    visitFootnoteReference: (node: FootnoteReference) =>
-        record("FootnoteReference", node, [
-            `label=${jsonString(node.label)}`,
-            `definition=${identity(node.definition)}`
-        ])
-};
+class DumpState {
+    private readonly remainingNodes: number[] = [];
+    private readonly lines: string[] = [];
 
-/** The two fields five kinds carry identically, in contract order. */
-/** A definition's two halves, in contract order: the label as written and the
- * match key it folds to. A REFERENCE does not print its key -- it prints
- * `definition=`, and the key is the winning definition's `norm`. */
-function definitionAssociation(node: { readonly label: string; readonly norm: string }): readonly string[] {
-    return [`label=${jsonString(node.label)}`, `norm=${jsonString(node.norm)}`];
+    /** Each callback emits exactly its node and chooses its children/fields. */
+    private readonly visitor: Visitor<void> = {
+        visitDocument: (node: Document) => this.container("Document", node, [], node.content),
+        visitBlockQuote: (node: BlockQuote) => this.container("BlockQuote", node, [], node.content),
+        visitParagraph: (node: Paragraph) => this.container("Paragraph", node, [], node.content),
+        visitHeading: (node: Heading) => this.container("Heading", node, [`level=${node.level}`], node.content),
+        visitThematicBreak: (node: ThematicBreak) => this.line("ThematicBreak", node),
+        visitList: (node: List) =>
+            this.container(
+                "List",
+                node,
+                [`flavor=${node.flavor}`, `start=${node.start ?? "null"}`, `tight=${node.tight}`],
+                node.items
+            ),
+        visitListItem: (node: ListItem) =>
+            this.container("ListItem", node, [`checked=${node.checked ?? "null"}`], node.content),
+        visitCodeBlock: (node: CodeBlock) =>
+            this.line("CodeBlock", node, [
+                `info=${optionalString(node.info)}`,
+                `language=${optionalString(node.language)}`,
+                `literal=${jsonString(node.literal)}`,
+                `fenced=${node.fenced}`,
+                `closed=${node.closed}`
+            ]),
+        visitHTMLBlock: (node: HTMLBlock) => this.line("HTMLBlock", node, [`literal=${jsonString(node.literal)}`]),
+        visitFormulaBlock: (node: FormulaBlock) =>
+            this.line("FormulaBlock", node, [`literal=${jsonString(node.literal)}`]),
+        visitTable: (node: Table) => {
+            const children = [node.header, ...node.rows];
+            this.container("Table", node, [`alignments=[${node.alignments.join(",")}]`], children);
+        },
+        visitTableRow: (node: TableRow) => this.container("TableRow", node, [`isHeader=${node.isHeader}`], node.cells),
+        visitTableCell: (node: TableCell) => this.container("TableCell", node, [], node.content),
+        visitDirectiveBlock: (node: DirectiveBlock) => {
+            this.line("DirectiveBlock", node, directiveFields(node.name, node.attributes), node.content.length);
+            this.nested(node.content.length + (node.label === null ? 0 : 1), () => {
+                if (node.label !== null) this.dump(node.label);
+                for (const child of node.content) this.dump(child);
+            });
+        },
+        visitDirectiveLabel: (node: DirectiveLabel) => this.container("DirectiveLabel", node, [], node.content),
+        visitFootnoteDefinition: (node: FootnoteDefinition) =>
+            this.container("FootnoteDefinition", node, association(node), node.content),
+        visitReferenceDefinition: (node: ReferenceDefinition) =>
+            this.line("ReferenceDefinition", node, [
+                ...association(node),
+                `destination=${jsonString(node.destination)}`,
+                `title=${optionalString(node.title)}`
+            ]),
+        visitLinkReference: (node: LinkReference) =>
+            this.container("LinkReference", node, [...association(node), `form=${node.form}`], node.content),
+        visitImageReference: (node: ImageReference) =>
+            this.container("ImageReference", node, [...association(node), `form=${node.form}`], node.content),
+        visitText: (node: Text) => this.line("Text", node, [`literal=${jsonString(node.literal)}`]),
+        visitSoftBreak: (node: SoftBreak) => this.line("SoftBreak", node),
+        visitLineBreak: (node: LineBreak) => this.line("LineBreak", node),
+        visitCode: (node: Code) => this.line("Code", node, [`literal=${jsonString(node.literal)}`]),
+        visitHTML: (node: HTML) => this.line("HTML", node, [`literal=${jsonString(node.literal)}`]),
+        visitFormula: (node: Formula) =>
+            this.line("Formula", node, [`mode=${node.mode}`, `literal=${jsonString(node.literal)}`]),
+        visitEmphasis: (node: Emphasis) => this.container("Emphasis", node, [], node.content),
+        visitStrong: (node: Strong) => this.container("Strong", node, [], node.content),
+        visitStrikethrough: (node: Strikethrough) => this.container("Strikethrough", node, [], node.content),
+        visitLink: (node: Link) =>
+            this.container(
+                "Link",
+                node,
+                [`destination=${jsonString(node.destination)}`, `title=${optionalString(node.title)}`],
+                node.content
+            ),
+        visitImage: (node: Image) =>
+            this.container(
+                "Image",
+                node,
+                [`source=${jsonString(node.source)}`, `title=${optionalString(node.title)}`],
+                node.content
+            ),
+        visitDirective: (node: Directive) => {
+            this.line("Directive", node, directiveFields(node.name, node.attributes));
+            this.nested(node.label === null ? 0 : 1, () => {
+                if (node.label !== null) this.dump(node.label);
+            });
+        },
+        visitFootnoteReference: (node: FootnoteReference) => this.line("FootnoteReference", node, association(node))
+    };
+
+    dump(node: Markup): void {
+        visit(node, this.visitor);
+    }
+
+    result(): string {
+        return `${this.lines.join("\n")}\n`;
+    }
+
+    private container(kind: string, node: Markup, fields: readonly string[], children: readonly Markup[]): void {
+        this.line(kind, node, fields, children.length);
+        this.nested(children.length, () => {
+            for (const child of children) this.dump(child);
+        });
+    }
+
+    private line(kind: string, node: Markup, fields: readonly string[] = [], children = 0): void {
+        const fieldText = fields.length === 0 ? "" : ` ${fields.join(" ")}`;
+        const text = `${kind} ${scope(node.scope)}${fieldText} children=${children}`;
+        if (this.remainingNodes.length === 0) {
+            this.lines.push(text);
+            return;
+        }
+
+        const parent = this.remainingNodes.length - 1;
+        const prefix = this.remainingNodes
+            .slice(0, -1)
+            .map((remaining) => (remaining > 0 ? "│   " : "    "))
+            .join("");
+        const connector = this.remainingNodes[parent] === 1 ? "└── " : "├── ";
+        this.lines.push(prefix + connector + text);
+        this.remainingNodes[parent] = this.remainingNodes[parent]! - 1;
+    }
+
+    private nested(count: number, body: () => void): void {
+        this.remainingNodes.push(count);
+        body();
+        if (this.remainingNodes.pop() !== 0) throw new Error("node dumper did not emit every owned node");
+    }
 }
 
-function record(kind: string, node: Markup, fields: readonly string[] = [], children = 0): DumpRecord {
-    const fieldText = fields.length === 0 ? "" : ` ${fields.join(" ")}`;
-    return { line: `${kind} id=${identity(node.id)} ${scope(node.scope)}${fieldText} children=${children}`, children };
-}
-
-function identity(value: Identity): string {
-    return `${value.block}:${value.ordinal}`;
+function association(node: { readonly label: string; readonly identifier: string }): readonly string[] {
+    return [`label=${jsonString(node.label)}`, `identifier=${jsonString(node.identifier)}`];
 }
 
 function directiveFields(name: string, attributes: readonly DirectiveAttribute[] | null): readonly string[] {

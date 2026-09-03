@@ -16,23 +16,23 @@ Here's a well-formed table, doing everything it should.
 | ghi | jkl |
 | mno | pqr |
 .
-Document id=1:0 scope=1:1..4:13 children=1
-└── Table id=2:0 scope=1:1..4:13 alignments=[none,none] children=3
-    ├── TableRow id=3:0 scope=1:1..1:13 isHeader=true children=2
-    │   ├── TableCell id=4:0 scope=1:2..1:6 children=1
-    │   │   └── Text id=4:1 scope=1:3..1:5 literal="abc" children=0
-    │   └── TableCell id=5:0 scope=1:8..1:12 children=1
-    │       └── Text id=5:1 scope=1:9..1:11 literal="def" children=0
-    ├── TableRow id=6:0 scope=3:1..3:13 isHeader=false children=2
-    │   ├── TableCell id=7:0 scope=3:2..3:6 children=1
-    │   │   └── Text id=7:1 scope=3:3..3:5 literal="ghi" children=0
-    │   └── TableCell id=8:0 scope=3:8..3:12 children=1
-    │       └── Text id=8:1 scope=3:9..3:11 literal="jkl" children=0
-    └── TableRow id=9:0 scope=4:1..4:13 isHeader=false children=2
-        ├── TableCell id=10:0 scope=4:2..4:6 children=1
-        │   └── Text id=10:1 scope=4:3..4:5 literal="mno" children=0
-        └── TableCell id=11:0 scope=4:8..4:12 children=1
-            └── Text id=11:1 scope=4:9..4:11 literal="pqr" children=0
+Document scope=1:1..4:13 children=1
+└── Table scope=1:1..4:13 alignments=[none,none] children=3
+    ├── TableRow scope=1:1..1:13 isHeader=true children=2
+    │   ├── TableCell scope=1:2..1:6 children=1
+    │   │   └── Text scope=1:3..1:5 literal="abc" children=0
+    │   └── TableCell scope=1:8..1:12 children=1
+    │       └── Text scope=1:9..1:11 literal="def" children=0
+    ├── TableRow scope=3:1..3:13 isHeader=false children=2
+    │   ├── TableCell scope=3:2..3:6 children=1
+    │   │   └── Text scope=3:3..3:5 literal="ghi" children=0
+    │   └── TableCell scope=3:8..3:12 children=1
+    │       └── Text scope=3:9..3:11 literal="jkl" children=0
+    └── TableRow scope=4:1..4:13 isHeader=false children=2
+        ├── TableCell scope=4:2..4:6 children=1
+        │   └── Text scope=4:3..4:5 literal="mno" children=0
+        └── TableCell scope=4:8..4:12 children=1
+            └── Text scope=4:9..4:11 literal="pqr" children=0
 ````````````````````````````````
 
 We're going to mix up the table now; we'll demonstrate that inline formatting
@@ -49,31 +49,31 @@ Hello!
 
 Hi!
 .
-Document id=1:0 scope=1:1..8:3 children=3
-├── Paragraph id=2:0 scope=1:1..1:6 children=1
-│   └── Text id=2:1 scope=1:1..1:6 literal="Hello!" children=0
-├── Table id=3:0 scope=3:1..6:37 alignments=[none,none] children=3
-│   ├── TableRow id=4:0 scope=3:1..3:18 isHeader=true children=2
-│   │   ├── TableCell id=5:0 scope=3:2..3:8 children=1
-│   │   │   └── Emphasis id=5:1 scope=3:3..3:7 children=1
-│   │   │       └── Text id=5:2 scope=3:4..3:6 literal="abc" children=0
-│   │   └── TableCell id=6:0 scope=3:10..3:17 children=1
-│   │       └── Text id=6:1 scope=3:11..3:16 literal="セン" children=0
-│   ├── TableRow id=7:0 scope=5:1..5:48 isHeader=false children=2
-│   │   ├── TableCell id=8:0 scope=5:2..5:45 children=1
-│   │   │   └── Text id=8:1 scope=5:3..5:44 literal="1. Block elements inside cells don't work." children=0
-│   │   └── TableCell id=9:0 scope=5:47..5:47 children=0
-│   └── TableRow id=10:0 scope=6:1..6:37 isHeader=false children=2
-│       ├── TableCell id=11:0 scope=6:2..6:32 children=3
-│       │   ├── Text id=11:1 scope=6:3..6:6 literal="But " children=0
-│       │   ├── Emphasis id=11:2 scope=6:7..6:30 children=1
-│       │   │   └── Strong id=11:3 scope=6:8..6:29 children=1
-│       │   │       └── Text id=11:4 scope=6:10..6:27 literal="inline elements do" children=0
-│       │   └── Text id=11:5 scope=6:31..6:31 literal="." children=0
-│       └── TableCell id=12:0 scope=6:34..6:36 children=1
-│           └── Text id=12:1 scope=6:35..6:35 literal="x" children=0
-└── Paragraph id=13:0 scope=8:1..8:3 children=1
-    └── Text id=13:1 scope=8:1..8:3 literal="Hi!" children=0
+Document scope=1:1..8:3 children=3
+├── Paragraph scope=1:1..1:6 children=1
+│   └── Text scope=1:1..1:6 literal="Hello!" children=0
+├── Table scope=3:1..6:37 alignments=[none,none] children=3
+│   ├── TableRow scope=3:1..3:18 isHeader=true children=2
+│   │   ├── TableCell scope=3:2..3:8 children=1
+│   │   │   └── Emphasis scope=3:3..3:7 children=1
+│   │   │       └── Text scope=3:4..3:6 literal="abc" children=0
+│   │   └── TableCell scope=3:10..3:17 children=1
+│   │       └── Text scope=3:11..3:16 literal="セン" children=0
+│   ├── TableRow scope=5:1..5:48 isHeader=false children=2
+│   │   ├── TableCell scope=5:2..5:45 children=1
+│   │   │   └── Text scope=5:3..5:44 literal="1. Block elements inside cells don't work." children=0
+│   │   └── TableCell scope=5:47..5:47 children=0
+│   └── TableRow scope=6:1..6:37 isHeader=false children=2
+│       ├── TableCell scope=6:2..6:32 children=3
+│       │   ├── Text scope=6:3..6:6 literal="But " children=0
+│       │   ├── Emphasis scope=6:7..6:30 children=1
+│       │   │   └── Strong scope=6:8..6:29 children=1
+│       │   │       └── Text scope=6:10..6:27 literal="inline elements do" children=0
+│       │   └── Text scope=6:31..6:31 literal="." children=0
+│       └── TableCell scope=6:34..6:36 children=1
+│           └── Text scope=6:35..6:35 literal="x" children=0
+└── Paragraph scope=8:1..8:3 children=1
+    └── Text scope=8:1..8:3 literal="Hi!" children=0
 ````````````````````````````````
 
 Here we demonstrate some edge cases about what is and isn't a table.
@@ -95,29 +95,29 @@ Here we demonstrate some edge cases about what is and isn't a table.
 | xyz |
 | --- |
 .
-Document id=1:0 scope=1:1..15:7 children=6
-├── Paragraph id=2:0 scope=1:1..1:45 children=1
-│   └── Text id=2:1 scope=1:1..1:45 literal="| Not enough table | to be considered table |" children=0
-├── Paragraph id=3:0 scope=3:1..4:45 children=3
-│   ├── Text id=3:1 scope=3:1..3:45 literal="| Not enough table | to be considered table |" children=0
-│   ├── SoftBreak id=3:2 scope=3:46..3:46 children=0
-│   └── Text id=3:3 scope=4:1..4:45 literal="| Not enough table | to be considered table |" children=0
-├── Table id=4:0 scope=6:1..7:46 alignments=[none,none] children=1
-│   └── TableRow id=5:0 scope=6:1..6:46 isHeader=true children=2
-│       ├── TableCell id=6:0 scope=6:2..6:20 children=1
-│       │   └── Text id=6:1 scope=6:3..6:19 literal="Just enough table" children=0
-│       └── TableCell id=7:0 scope=6:22..6:45 children=1
-│           └── Text id=7:1 scope=6:23..6:44 literal="to be considered table" children=0
-├── Paragraph id=8:0 scope=9:1..9:14 children=1
-│   └── Text id=8:1 scope=9:1..9:14 literal="| ---- | --- |" children=0
-├── Table id=9:0 scope=11:1..12:3 alignments=[none] children=1
-│   └── TableRow id=10:0 scope=11:1..11:3 isHeader=true children=1
-│       └── TableCell id=11:0 scope=11:2..11:2 children=1
-│           └── Text id=11:1 scope=11:2..11:2 literal="x" children=0
-└── Table id=12:0 scope=14:1..15:7 alignments=[none] children=1
-    └── TableRow id=13:0 scope=14:1..14:7 isHeader=true children=1
-        └── TableCell id=14:0 scope=14:2..14:6 children=1
-            └── Text id=14:1 scope=14:3..14:5 literal="xyz" children=0
+Document scope=1:1..15:7 children=6
+├── Paragraph scope=1:1..1:45 children=1
+│   └── Text scope=1:1..1:45 literal="| Not enough table | to be considered table |" children=0
+├── Paragraph scope=3:1..4:45 children=3
+│   ├── Text scope=3:1..3:45 literal="| Not enough table | to be considered table |" children=0
+│   ├── SoftBreak scope=3:46..3:46 children=0
+│   └── Text scope=4:1..4:45 literal="| Not enough table | to be considered table |" children=0
+├── Table scope=6:1..7:46 alignments=[none,none] children=1
+│   └── TableRow scope=6:1..6:46 isHeader=true children=2
+│       ├── TableCell scope=6:2..6:20 children=1
+│       │   └── Text scope=6:3..6:19 literal="Just enough table" children=0
+│       └── TableCell scope=6:22..6:45 children=1
+│           └── Text scope=6:23..6:44 literal="to be considered table" children=0
+├── Paragraph scope=9:1..9:14 children=1
+│   └── Text scope=9:1..9:14 literal="| ---- | --- |" children=0
+├── Table scope=11:1..12:3 alignments=[none] children=1
+│   └── TableRow scope=11:1..11:3 isHeader=true children=1
+│       └── TableCell scope=11:2..11:2 children=1
+│           └── Text scope=11:2..11:2 literal="x" children=0
+└── Table scope=14:1..15:7 alignments=[none] children=1
+    └── TableRow scope=14:1..14:7 isHeader=true children=1
+        └── TableCell scope=14:2..14:6 children=1
+            └── Text scope=14:3..14:5 literal="xyz" children=0
 ````````````````````````````````
 
 A "simpler" table, GFM style:
@@ -127,18 +127,18 @@ abc | def
 --- | ---
 xyz | ghi
 .
-Document id=1:0 scope=1:1..3:9 children=1
-└── Table id=2:0 scope=1:1..3:9 alignments=[none,none] children=2
-    ├── TableRow id=3:0 scope=1:1..1:9 isHeader=true children=2
-    │   ├── TableCell id=4:0 scope=1:1..1:4 children=1
-    │   │   └── Text id=4:1 scope=1:1..1:3 literal="abc" children=0
-    │   └── TableCell id=5:0 scope=1:6..1:9 children=1
-    │       └── Text id=5:1 scope=1:7..1:9 literal="def" children=0
-    └── TableRow id=6:0 scope=3:1..3:9 isHeader=false children=2
-        ├── TableCell id=7:0 scope=3:1..3:4 children=1
-        │   └── Text id=7:1 scope=3:1..3:3 literal="xyz" children=0
-        └── TableCell id=8:0 scope=3:6..3:9 children=1
-            └── Text id=8:1 scope=3:7..3:9 literal="ghi" children=0
+Document scope=1:1..3:9 children=1
+└── Table scope=1:1..3:9 alignments=[none,none] children=2
+    ├── TableRow scope=1:1..1:9 isHeader=true children=2
+    │   ├── TableCell scope=1:1..1:4 children=1
+    │   │   └── Text scope=1:1..1:3 literal="abc" children=0
+    │   └── TableCell scope=1:6..1:9 children=1
+    │       └── Text scope=1:7..1:9 literal="def" children=0
+    └── TableRow scope=3:1..3:9 isHeader=false children=2
+        ├── TableCell scope=3:1..3:4 children=1
+        │   └── Text scope=3:1..3:3 literal="xyz" children=0
+        └── TableCell scope=3:6..3:9 children=1
+            └── Text scope=3:7..3:9 literal="ghi" children=0
 ````````````````````````````````
 
 We are making the parser slighly more lax here. Here is a table with spaces at
@@ -154,31 +154,31 @@ Hello!
 
 Hi!
 .
-Document id=1:0 scope=1:1..8:3 children=3
-├── Paragraph id=2:0 scope=1:1..1:6 children=1
-│   └── Text id=2:1 scope=1:1..1:6 literal="Hello!" children=0
-├── Table id=3:0 scope=3:1..6:37 alignments=[none,none] children=3
-│   ├── TableRow id=4:0 scope=3:1..3:18 isHeader=true children=2
-│   │   ├── TableCell id=5:0 scope=3:2..3:8 children=1
-│   │   │   └── Emphasis id=5:1 scope=3:3..3:7 children=1
-│   │   │       └── Text id=5:2 scope=3:4..3:6 literal="abc" children=0
-│   │   └── TableCell id=6:0 scope=3:10..3:17 children=1
-│   │       └── Text id=6:1 scope=3:11..3:16 literal="セン" children=0
-│   ├── TableRow id=7:0 scope=5:1..5:38 isHeader=false children=2
-│   │   ├── TableCell id=8:0 scope=5:2..5:34 children=1
-│   │   │   └── Text id=8:1 scope=5:3..5:33 literal="this row has a space at the end" children=0
-│   │   └── TableCell id=9:0 scope=5:36..5:36 children=0
-│   └── TableRow id=10:0 scope=6:1..6:37 isHeader=false children=2
-│       ├── TableCell id=11:0 scope=6:2..6:32 children=3
-│       │   ├── Text id=11:1 scope=6:3..6:6 literal="But " children=0
-│       │   ├── Emphasis id=11:2 scope=6:7..6:30 children=1
-│       │   │   └── Strong id=11:3 scope=6:8..6:29 children=1
-│       │   │       └── Text id=11:4 scope=6:10..6:27 literal="inline elements do" children=0
-│       │   └── Text id=11:5 scope=6:31..6:31 literal="." children=0
-│       └── TableCell id=12:0 scope=6:34..6:36 children=1
-│           └── Text id=12:1 scope=6:35..6:35 literal="x" children=0
-└── Paragraph id=13:0 scope=8:1..8:3 children=1
-    └── Text id=13:1 scope=8:1..8:3 literal="Hi!" children=0
+Document scope=1:1..8:3 children=3
+├── Paragraph scope=1:1..1:6 children=1
+│   └── Text scope=1:1..1:6 literal="Hello!" children=0
+├── Table scope=3:1..6:37 alignments=[none,none] children=3
+│   ├── TableRow scope=3:1..3:18 isHeader=true children=2
+│   │   ├── TableCell scope=3:2..3:8 children=1
+│   │   │   └── Emphasis scope=3:3..3:7 children=1
+│   │   │       └── Text scope=3:4..3:6 literal="abc" children=0
+│   │   └── TableCell scope=3:10..3:17 children=1
+│   │       └── Text scope=3:11..3:16 literal="セン" children=0
+│   ├── TableRow scope=5:1..5:38 isHeader=false children=2
+│   │   ├── TableCell scope=5:2..5:34 children=1
+│   │   │   └── Text scope=5:3..5:33 literal="this row has a space at the end" children=0
+│   │   └── TableCell scope=5:36..5:36 children=0
+│   └── TableRow scope=6:1..6:37 isHeader=false children=2
+│       ├── TableCell scope=6:2..6:32 children=3
+│       │   ├── Text scope=6:3..6:6 literal="But " children=0
+│       │   ├── Emphasis scope=6:7..6:30 children=1
+│       │   │   └── Strong scope=6:8..6:29 children=1
+│       │   │       └── Text scope=6:10..6:27 literal="inline elements do" children=0
+│       │   └── Text scope=6:31..6:31 literal="." children=0
+│       └── TableCell scope=6:34..6:36 children=1
+│           └── Text scope=6:35..6:35 literal="x" children=0
+└── Paragraph scope=8:1..8:3 children=1
+    └── Text scope=8:1..8:3 literal="Hi!" children=0
 ````````````````````````````````
 
 Table alignment:
@@ -188,30 +188,30 @@ aaa | bbb | ccc | ddd | eee
 :-- | --- | :-: | --- | --:
 fff | ggg | hhh | iii | jjj
 .
-Document id=1:0 scope=1:1..3:27 children=1
-└── Table id=2:0 scope=1:1..3:27 alignments=[left,none,center,none,right] children=2
-    ├── TableRow id=3:0 scope=1:1..1:27 isHeader=true children=5
-    │   ├── TableCell id=4:0 scope=1:1..1:4 children=1
-    │   │   └── Text id=4:1 scope=1:1..1:3 literal="aaa" children=0
-    │   ├── TableCell id=5:0 scope=1:6..1:10 children=1
-    │   │   └── Text id=5:1 scope=1:7..1:9 literal="bbb" children=0
-    │   ├── TableCell id=6:0 scope=1:12..1:16 children=1
-    │   │   └── Text id=6:1 scope=1:13..1:15 literal="ccc" children=0
-    │   ├── TableCell id=7:0 scope=1:18..1:22 children=1
-    │   │   └── Text id=7:1 scope=1:19..1:21 literal="ddd" children=0
-    │   └── TableCell id=8:0 scope=1:24..1:27 children=1
-    │       └── Text id=8:1 scope=1:25..1:27 literal="eee" children=0
-    └── TableRow id=9:0 scope=3:1..3:27 isHeader=false children=5
-        ├── TableCell id=10:0 scope=3:1..3:4 children=1
-        │   └── Text id=10:1 scope=3:1..3:3 literal="fff" children=0
-        ├── TableCell id=11:0 scope=3:6..3:10 children=1
-        │   └── Text id=11:1 scope=3:7..3:9 literal="ggg" children=0
-        ├── TableCell id=12:0 scope=3:12..3:16 children=1
-        │   └── Text id=12:1 scope=3:13..3:15 literal="hhh" children=0
-        ├── TableCell id=13:0 scope=3:18..3:22 children=1
-        │   └── Text id=13:1 scope=3:19..3:21 literal="iii" children=0
-        └── TableCell id=14:0 scope=3:24..3:27 children=1
-            └── Text id=14:1 scope=3:25..3:27 literal="jjj" children=0
+Document scope=1:1..3:27 children=1
+└── Table scope=1:1..3:27 alignments=[left,none,center,none,right] children=2
+    ├── TableRow scope=1:1..1:27 isHeader=true children=5
+    │   ├── TableCell scope=1:1..1:4 children=1
+    │   │   └── Text scope=1:1..1:3 literal="aaa" children=0
+    │   ├── TableCell scope=1:6..1:10 children=1
+    │   │   └── Text scope=1:7..1:9 literal="bbb" children=0
+    │   ├── TableCell scope=1:12..1:16 children=1
+    │   │   └── Text scope=1:13..1:15 literal="ccc" children=0
+    │   ├── TableCell scope=1:18..1:22 children=1
+    │   │   └── Text scope=1:19..1:21 literal="ddd" children=0
+    │   └── TableCell scope=1:24..1:27 children=1
+    │       └── Text scope=1:25..1:27 literal="eee" children=0
+    └── TableRow scope=3:1..3:27 isHeader=false children=5
+        ├── TableCell scope=3:1..3:4 children=1
+        │   └── Text scope=3:1..3:3 literal="fff" children=0
+        ├── TableCell scope=3:6..3:10 children=1
+        │   └── Text scope=3:7..3:9 literal="ggg" children=0
+        ├── TableCell scope=3:12..3:16 children=1
+        │   └── Text scope=3:13..3:15 literal="hhh" children=0
+        ├── TableCell scope=3:18..3:22 children=1
+        │   └── Text scope=3:19..3:21 literal="iii" children=0
+        └── TableCell scope=3:24..3:27 children=1
+            └── Text scope=3:25..3:27 literal="jjj" children=0
 ````````````````````````````````
 
 ### Table cell count mismatches
@@ -223,13 +223,13 @@ The header and delimiter row must match.
 | --- | --- |
 | this | isn't | okay |
 .
-Document id=1:0 scope=1:1..3:23 children=1
-└── Paragraph id=2:0 scope=1:1..3:23 children=5
-    ├── Text id=2:1 scope=1:1..1:13 literal="| a | b | c |" children=0
-    ├── SoftBreak id=2:2 scope=1:14..1:14 children=0
-    ├── Text id=2:3 scope=2:1..2:13 literal="| --- | --- |" children=0
-    ├── SoftBreak id=2:4 scope=2:14..2:14 children=0
-    └── Text id=2:5 scope=3:1..3:23 literal="| this | isn't | okay |" children=0
+Document scope=1:1..3:23 children=1
+└── Paragraph scope=1:1..3:23 children=5
+    ├── Text scope=1:1..1:13 literal="| a | b | c |" children=0
+    ├── SoftBreak scope=1:14..1:14 children=0
+    ├── Text scope=2:1..2:13 literal="| --- | --- |" children=0
+    ├── SoftBreak scope=2:14..2:14 children=0
+    └── Text scope=3:1..3:23 literal="| this | isn't | okay |" children=0
 ````````````````````````````````
 
 But any of the body rows can be shorter. Rows longer
@@ -242,33 +242,33 @@ than the header are truncated.
 | a | b
 | 1 | 2 | 3 | 4 | 5 |
 .
-Document id=1:0 scope=1:1..5:21 children=1
-└── Table id=2:0 scope=1:1..5:21 alignments=[none,none,none] children=4
-    ├── TableRow id=3:0 scope=1:1..1:13 isHeader=true children=3
-    │   ├── TableCell id=4:0 scope=1:2..1:4 children=1
-    │   │   └── Text id=4:1 scope=1:3..1:3 literal="a" children=0
-    │   ├── TableCell id=5:0 scope=1:6..1:8 children=1
-    │   │   └── Text id=5:1 scope=1:7..1:7 literal="b" children=0
-    │   └── TableCell id=6:0 scope=1:10..1:12 children=1
-    │       └── Text id=6:1 scope=1:11..1:11 literal="c" children=0
-    ├── TableRow id=7:0 scope=3:1..3:3 isHeader=false children=3
-    │   ├── TableCell id=8:0 scope=3:2..3:3 children=1
-    │   │   └── Text id=8:1 scope=3:3..3:3 literal="x" children=0
-    │   ├── TableCell id=9:0 scope=3:3..3:3 children=0
-    │   └── TableCell id=10:0 scope=3:3..3:3 children=0
-    ├── TableRow id=11:0 scope=4:1..4:7 isHeader=false children=3
-    │   ├── TableCell id=12:0 scope=4:2..4:4 children=1
-    │   │   └── Text id=12:1 scope=4:3..4:3 literal="a" children=0
-    │   ├── TableCell id=13:0 scope=4:6..4:7 children=1
-    │   │   └── Text id=13:1 scope=4:7..4:7 literal="b" children=0
-    │   └── TableCell id=14:0 scope=4:7..4:7 children=0
-    └── TableRow id=15:0 scope=5:1..5:21 isHeader=false children=3
-        ├── TableCell id=16:0 scope=5:2..5:4 children=1
-        │   └── Text id=16:1 scope=5:3..5:3 literal="1" children=0
-        ├── TableCell id=17:0 scope=5:6..5:8 children=1
-        │   └── Text id=17:1 scope=5:7..5:7 literal="2" children=0
-        └── TableCell id=18:0 scope=5:10..5:12 children=1
-            └── Text id=18:1 scope=5:11..5:11 literal="3" children=0
+Document scope=1:1..5:21 children=1
+└── Table scope=1:1..5:21 alignments=[none,none,none] children=4
+    ├── TableRow scope=1:1..1:13 isHeader=true children=3
+    │   ├── TableCell scope=1:2..1:4 children=1
+    │   │   └── Text scope=1:3..1:3 literal="a" children=0
+    │   ├── TableCell scope=1:6..1:8 children=1
+    │   │   └── Text scope=1:7..1:7 literal="b" children=0
+    │   └── TableCell scope=1:10..1:12 children=1
+    │       └── Text scope=1:11..1:11 literal="c" children=0
+    ├── TableRow scope=3:1..3:3 isHeader=false children=3
+    │   ├── TableCell scope=3:2..3:3 children=1
+    │   │   └── Text scope=3:3..3:3 literal="x" children=0
+    │   ├── TableCell scope=3:3..3:3 children=0
+    │   └── TableCell scope=3:3..3:3 children=0
+    ├── TableRow scope=4:1..4:7 isHeader=false children=3
+    │   ├── TableCell scope=4:2..4:4 children=1
+    │   │   └── Text scope=4:3..4:3 literal="a" children=0
+    │   ├── TableCell scope=4:6..4:7 children=1
+    │   │   └── Text scope=4:7..4:7 literal="b" children=0
+    │   └── TableCell scope=4:7..4:7 children=0
+    └── TableRow scope=5:1..5:21 isHeader=false children=3
+        ├── TableCell scope=5:2..5:4 children=1
+        │   └── Text scope=5:3..5:3 literal="1" children=0
+        ├── TableCell scope=5:6..5:8 children=1
+        │   └── Text scope=5:7..5:7 literal="2" children=0
+        └── TableCell scope=5:10..5:12 children=1
+            └── Text scope=5:11..5:11 literal="3" children=0
 ````````````````````````````````
 
 ### Embedded pipes
@@ -283,37 +283,37 @@ Tables with embedded pipes could be tricky.
 | _**`c\|`**_ \| complex
 | don't **\_reparse\_**
 .
-Document id=1:0 scope=1:1..6:23 children=1
-└── Table id=2:0 scope=1:1..6:23 alignments=[none,none] children=5
-    ├── TableRow id=3:0 scope=1:1..1:9 isHeader=true children=2
-    │   ├── TableCell id=4:0 scope=1:2..1:4 children=1
-    │   │   └── Text id=4:1 scope=1:3..1:3 literal="a" children=0
-    │   └── TableCell id=5:0 scope=1:6..1:8 children=1
-    │       └── Text id=5:1 scope=1:7..1:7 literal="b" children=0
-    ├── TableRow id=6:0 scope=3:1..3:47 isHeader=false children=2
-    │   ├── TableCell id=7:0 scope=3:2..3:30 children=1
-    │   │   └── Text id=7:1 scope=3:3..3:27 literal="Escaped pipes are |okay|." children=0
-    │   └── TableCell id=8:0 scope=3:32..3:46 children=1
-    │       └── Text id=8:1 scope=3:33..3:44 literal="Like | this." children=0
-    ├── TableRow id=9:0 scope=4:1..4:34 isHeader=false children=2
-    │   ├── TableCell id=10:0 scope=4:2..4:33 children=3
-    │   │   ├── Text id=10:1 scope=4:3..4:9 literal="Within " children=0
-    │   │   ├── Code id=10:2 scope=4:10..4:25 literal="|code| is okay" children=0
-    │   │   └── Text id=10:3 scope=4:26..4:30 literal=" too." children=0
-    │   └── TableCell id=11:0 scope=4:34..4:34 children=0
-    ├── TableRow id=12:0 scope=5:1..5:24 isHeader=false children=2
-    │   ├── TableCell id=13:0 scope=5:2..5:24 children=2
-    │   │   ├── Emphasis id=13:1 scope=5:3..5:12 children=1
-    │   │   │   └── Strong id=13:2 scope=5:4..5:11 children=1
-    │   │   │       └── Code id=13:3 scope=5:6..5:9 literal="c|" children=0
-    │   │   └── Text id=13:4 scope=5:13..5:22 literal=" | complex" children=0
-    │   └── TableCell id=14:0 scope=5:24..5:24 children=0
-    └── TableRow id=15:0 scope=6:1..6:23 isHeader=false children=2
-        ├── TableCell id=16:0 scope=6:2..6:23 children=2
-        │   ├── Text id=16:1 scope=6:3..6:8 literal="don't " children=0
-        │   └── Strong id=16:2 scope=6:9..6:23 children=1
-        │       └── Text id=16:3 scope=6:11..6:21 literal="_reparse_" children=0
-        └── TableCell id=17:0 scope=6:23..6:23 children=0
+Document scope=1:1..6:23 children=1
+└── Table scope=1:1..6:23 alignments=[none,none] children=5
+    ├── TableRow scope=1:1..1:9 isHeader=true children=2
+    │   ├── TableCell scope=1:2..1:4 children=1
+    │   │   └── Text scope=1:3..1:3 literal="a" children=0
+    │   └── TableCell scope=1:6..1:8 children=1
+    │       └── Text scope=1:7..1:7 literal="b" children=0
+    ├── TableRow scope=3:1..3:47 isHeader=false children=2
+    │   ├── TableCell scope=3:2..3:30 children=1
+    │   │   └── Text scope=3:3..3:27 literal="Escaped pipes are |okay|." children=0
+    │   └── TableCell scope=3:32..3:46 children=1
+    │       └── Text scope=3:33..3:44 literal="Like | this." children=0
+    ├── TableRow scope=4:1..4:34 isHeader=false children=2
+    │   ├── TableCell scope=4:2..4:33 children=3
+    │   │   ├── Text scope=4:3..4:9 literal="Within " children=0
+    │   │   ├── Code scope=4:10..4:25 literal="|code| is okay" children=0
+    │   │   └── Text scope=4:26..4:30 literal=" too." children=0
+    │   └── TableCell scope=4:34..4:34 children=0
+    ├── TableRow scope=5:1..5:24 isHeader=false children=2
+    │   ├── TableCell scope=5:2..5:24 children=2
+    │   │   ├── Emphasis scope=5:3..5:12 children=1
+    │   │   │   └── Strong scope=5:4..5:11 children=1
+    │   │   │       └── Code scope=5:6..5:9 literal="c|" children=0
+    │   │   └── Text scope=5:13..5:22 literal=" | complex" children=0
+    │   └── TableCell scope=5:24..5:24 children=0
+    └── TableRow scope=6:1..6:23 isHeader=false children=2
+        ├── TableCell scope=6:2..6:23 children=2
+        │   ├── Text scope=6:3..6:8 literal="don't " children=0
+        │   └── Strong scope=6:9..6:23 children=1
+        │       └── Text scope=6:11..6:21 literal="_reparse_" children=0
+        └── TableCell scope=6:23..6:23 children=0
 ````````````````````````````````
 
 ### Oddly-formatted markers
@@ -324,11 +324,11 @@ This shouldn't assert.
 | a |
 --- |
 .
-Document id=1:0 scope=1:1..2:5 children=1
-└── Table id=2:0 scope=1:1..2:5 alignments=[none] children=1
-    └── TableRow id=3:0 scope=1:1..1:5 isHeader=true children=1
-        └── TableCell id=4:0 scope=1:2..1:4 children=1
-            └── Text id=4:1 scope=1:3..1:3 literal="a" children=0
+Document scope=1:1..2:5 children=1
+└── Table scope=1:1..2:5 alignments=[none] children=1
+    └── TableRow scope=1:1..1:5 isHeader=true children=1
+        └── TableCell scope=1:2..1:4 children=1
+            └── Text scope=1:3..1:3 literal="a" children=0
 ````````````````````````````````
 
 ### Escaping
@@ -352,53 +352,53 @@ Document id=1:0 scope=1:1..2:5 children=1
 
 \a `\a`
 .
-Document id=1:0 scope=1:1..17:7 children=6
-├── Table id=2:0 scope=1:1..7:13 alignments=[none,none] children=6
-│   ├── TableRow id=3:0 scope=1:1..1:9 isHeader=true children=2
-│   │   ├── TableCell id=4:0 scope=1:2..1:4 children=1
-│   │   │   └── Text id=4:1 scope=1:3..1:3 literal="a" children=0
-│   │   └── TableCell id=5:0 scope=1:6..1:8 children=1
-│   │       └── Text id=5:1 scope=1:7..1:7 literal="b" children=0
-│   ├── TableRow id=6:0 scope=3:1..3:13 isHeader=false children=2
-│   │   ├── TableCell id=7:0 scope=3:2..3:5 children=1
-│   │   │   └── Text id=7:1 scope=3:3..3:4 literal="\\" children=0
-│   │   └── TableCell id=8:0 scope=3:7..3:12 children=1
-│   │       └── Code id=8:1 scope=3:8..3:11 literal="\\\\" children=0
-│   ├── TableRow id=9:0 scope=4:1..4:17 isHeader=false children=2
-│   │   ├── TableCell id=10:0 scope=4:2..4:7 children=1
-│   │   │   └── Text id=10:1 scope=4:3..4:6 literal="\\\\" children=0
-│   │   └── TableCell id=11:0 scope=4:9..4:16 children=1
-│   │       └── Code id=11:1 scope=4:10..4:15 literal="\\\\\\\\" children=0
-│   ├── TableRow id=12:0 scope=5:1..5:13 isHeader=false children=2
-│   │   ├── TableCell id=13:0 scope=5:2..5:5 children=1
-│   │   │   └── Text id=13:1 scope=5:3..5:4 literal="_" children=0
-│   │   └── TableCell id=14:0 scope=5:7..5:12 children=1
-│   │       └── Code id=14:1 scope=5:8..5:11 literal="\\_" children=0
-│   ├── TableRow id=15:0 scope=6:1..6:13 isHeader=false children=2
-│   │   ├── TableCell id=16:0 scope=6:2..6:5 children=1
-│   │   │   └── Text id=16:1 scope=6:3..6:3 literal="|" children=0
-│   │   └── TableCell id=17:0 scope=6:7..6:12 children=1
-│   │       └── Code id=17:1 scope=6:8..6:10 literal="|" children=0
-│   └── TableRow id=18:0 scope=7:1..7:13 isHeader=false children=2
-│       ├── TableCell id=19:0 scope=7:2..7:5 children=1
-│       │   └── Text id=19:1 scope=7:3..7:4 literal="\\a" children=0
-│       └── TableCell id=20:0 scope=7:7..7:12 children=1
-│           └── Code id=20:1 scope=7:8..7:11 literal="\\a" children=0
-├── Paragraph id=21:0 scope=9:1..9:7 children=2
-│   ├── Text id=21:1 scope=9:1..9:3 literal="\\ " children=0
-│   └── Code id=21:2 scope=9:4..9:7 literal="\\\\" children=0
-├── Paragraph id=22:0 scope=11:1..11:11 children=2
-│   ├── Text id=22:1 scope=11:1..11:5 literal="\\\\ " children=0
-│   └── Code id=22:2 scope=11:6..11:11 literal="\\\\\\\\" children=0
-├── Paragraph id=23:0 scope=13:1..13:7 children=2
-│   ├── Text id=23:1 scope=13:1..13:3 literal="_ " children=0
-│   └── Code id=23:2 scope=13:4..13:7 literal="\\_" children=0
-├── Paragraph id=24:0 scope=15:1..15:7 children=2
-│   ├── Text id=24:1 scope=15:1..15:3 literal="| " children=0
-│   └── Code id=24:2 scope=15:4..15:7 literal="\\|" children=0
-└── Paragraph id=25:0 scope=17:1..17:7 children=2
-    ├── Text id=25:1 scope=17:1..17:3 literal="\\a " children=0
-    └── Code id=25:2 scope=17:4..17:7 literal="\\a" children=0
+Document scope=1:1..17:7 children=6
+├── Table scope=1:1..7:13 alignments=[none,none] children=6
+│   ├── TableRow scope=1:1..1:9 isHeader=true children=2
+│   │   ├── TableCell scope=1:2..1:4 children=1
+│   │   │   └── Text scope=1:3..1:3 literal="a" children=0
+│   │   └── TableCell scope=1:6..1:8 children=1
+│   │       └── Text scope=1:7..1:7 literal="b" children=0
+│   ├── TableRow scope=3:1..3:13 isHeader=false children=2
+│   │   ├── TableCell scope=3:2..3:5 children=1
+│   │   │   └── Text scope=3:3..3:4 literal="\\" children=0
+│   │   └── TableCell scope=3:7..3:12 children=1
+│   │       └── Code scope=3:8..3:11 literal="\\\\" children=0
+│   ├── TableRow scope=4:1..4:17 isHeader=false children=2
+│   │   ├── TableCell scope=4:2..4:7 children=1
+│   │   │   └── Text scope=4:3..4:6 literal="\\\\" children=0
+│   │   └── TableCell scope=4:9..4:16 children=1
+│   │       └── Code scope=4:10..4:15 literal="\\\\\\\\" children=0
+│   ├── TableRow scope=5:1..5:13 isHeader=false children=2
+│   │   ├── TableCell scope=5:2..5:5 children=1
+│   │   │   └── Text scope=5:3..5:4 literal="_" children=0
+│   │   └── TableCell scope=5:7..5:12 children=1
+│   │       └── Code scope=5:8..5:11 literal="\\_" children=0
+│   ├── TableRow scope=6:1..6:13 isHeader=false children=2
+│   │   ├── TableCell scope=6:2..6:5 children=1
+│   │   │   └── Text scope=6:3..6:3 literal="|" children=0
+│   │   └── TableCell scope=6:7..6:12 children=1
+│   │       └── Code scope=6:8..6:10 literal="|" children=0
+│   └── TableRow scope=7:1..7:13 isHeader=false children=2
+│       ├── TableCell scope=7:2..7:5 children=1
+│       │   └── Text scope=7:3..7:4 literal="\\a" children=0
+│       └── TableCell scope=7:7..7:12 children=1
+│           └── Code scope=7:8..7:11 literal="\\a" children=0
+├── Paragraph scope=9:1..9:7 children=2
+│   ├── Text scope=9:1..9:3 literal="\\ " children=0
+│   └── Code scope=9:4..9:7 literal="\\\\" children=0
+├── Paragraph scope=11:1..11:11 children=2
+│   ├── Text scope=11:1..11:5 literal="\\\\ " children=0
+│   └── Code scope=11:6..11:11 literal="\\\\\\\\" children=0
+├── Paragraph scope=13:1..13:7 children=2
+│   ├── Text scope=13:1..13:3 literal="_ " children=0
+│   └── Code scope=13:4..13:7 literal="\\_" children=0
+├── Paragraph scope=15:1..15:7 children=2
+│   ├── Text scope=15:1..15:3 literal="| " children=0
+│   └── Code scope=15:4..15:7 literal="\\|" children=0
+└── Paragraph scope=17:1..17:7 children=2
+    ├── Text scope=17:1..17:3 literal="\\a " children=0
+    └── Code scope=17:4..17:7 literal="\\a" children=0
 ````````````````````````````````
 
 ### Embedded HTML
@@ -409,21 +409,21 @@ Document id=1:0 scope=1:1..17:7 children=6
 | <strong>hello</strong> |
 | ok <br> sure |
 .
-Document id=1:0 scope=1:1..4:16 children=1
-└── Table id=2:0 scope=1:1..4:16 alignments=[none] children=3
-    ├── TableRow id=3:0 scope=1:1..1:5 isHeader=true children=1
-    │   └── TableCell id=4:0 scope=1:2..1:4 children=1
-    │       └── Text id=4:1 scope=1:3..1:3 literal="a" children=0
-    ├── TableRow id=5:0 scope=3:1..3:26 isHeader=false children=1
-    │   └── TableCell id=6:0 scope=3:2..3:25 children=3
-    │       ├── HTML id=6:1 scope=3:3..3:10 literal="<strong>" children=0
-    │       ├── Text id=6:2 scope=3:11..3:15 literal="hello" children=0
-    │       └── HTML id=6:3 scope=3:16..3:24 literal="</strong>" children=0
-    └── TableRow id=7:0 scope=4:1..4:16 isHeader=false children=1
-        └── TableCell id=8:0 scope=4:2..4:15 children=3
-            ├── Text id=8:1 scope=4:3..4:5 literal="ok " children=0
-            ├── HTML id=8:2 scope=4:6..4:9 literal="<br>" children=0
-            └── Text id=8:3 scope=4:10..4:14 literal=" sure" children=0
+Document scope=1:1..4:16 children=1
+└── Table scope=1:1..4:16 alignments=[none] children=3
+    ├── TableRow scope=1:1..1:5 isHeader=true children=1
+    │   └── TableCell scope=1:2..1:4 children=1
+    │       └── Text scope=1:3..1:3 literal="a" children=0
+    ├── TableRow scope=3:1..3:26 isHeader=false children=1
+    │   └── TableCell scope=3:2..3:25 children=3
+    │       ├── HTML scope=3:3..3:10 literal="<strong>" children=0
+    │       ├── Text scope=3:11..3:15 literal="hello" children=0
+    │       └── HTML scope=3:16..3:24 literal="</strong>" children=0
+    └── TableRow scope=4:1..4:16 isHeader=false children=1
+        └── TableCell scope=4:2..4:15 children=3
+            ├── Text scope=4:3..4:5 literal="ok " children=0
+            ├── HTML scope=4:6..4:9 literal="<br>" children=0
+            └── Text scope=4:10..4:14 literal=" sure" children=0
 ````````````````````````````````
 
 ### Reference-style links
@@ -437,26 +437,26 @@ Here's a link to [Freedom Planet 2][].
 
 [Freedom Planet 2]: http://www.freedomplanet2.com/
 .
-Document id=1:0 scope=1:1..7:50 children=3
-├── Paragraph id=2:0 scope=1:1..1:38 children=3
-│   ├── Text id=2:1 scope=1:1..1:17 literal="Here's a link to " children=0
-│   ├── LinkReference id=2:2 scope=1:18..1:37 label="Freedom Planet 2" form=collapsed definition=8:0 children=1
-│   │   └── Text id=2:3 scope=1:19..1:34 literal="Freedom Planet 2" children=0
-│   └── Text id=2:4 scope=1:38..1:38 literal="." children=0
-├── Table id=3:0 scope=3:1..5:57 alignments=[none] children=2
-│   ├── TableRow id=4:0 scope=3:1..3:60 isHeader=true children=1
-│   │   └── TableCell id=5:0 scope=3:2..3:59 children=3
-│   │       ├── Text id=5:1 scope=3:3..3:19 literal="Here's a link to " children=0
-│   │       ├── LinkReference id=5:2 scope=3:20..3:39 label="Freedom Planet 2" form=collapsed definition=8:0 children=1
-│   │       │   └── Text id=5:3 scope=3:21..3:36 literal="Freedom Planet 2" children=0
-│   │       └── Text id=5:4 scope=3:40..3:58 literal=" in a table header." children=0
-│   └── TableRow id=6:0 scope=5:1..5:57 isHeader=false children=1
-│       └── TableCell id=7:0 scope=5:2..5:56 children=3
-│           ├── Text id=7:1 scope=5:3..5:19 literal="Here's a link to " children=0
-│           ├── LinkReference id=7:2 scope=5:20..5:39 label="Freedom Planet 2" form=collapsed definition=8:0 children=1
-│           │   └── Text id=7:3 scope=5:21..5:36 literal="Freedom Planet 2" children=0
-│           └── Text id=7:4 scope=5:40..5:55 literal=" in a table row." children=0
-└── ReferenceDefinition id=8:0 scope=7:1..7:50 label="Freedom Planet 2" norm="freedom planet 2" destination="http://www.freedomplanet2.com/" title=null children=0
+Document scope=1:1..7:50 children=3
+├── Paragraph scope=1:1..1:38 children=3
+│   ├── Text scope=1:1..1:17 literal="Here's a link to " children=0
+│   ├── LinkReference scope=1:18..1:37 label="Freedom Planet 2" identifier="freedom planet 2" form=collapsed children=1
+│   │   └── Text scope=1:19..1:34 literal="Freedom Planet 2" children=0
+│   └── Text scope=1:38..1:38 literal="." children=0
+├── Table scope=3:1..5:57 alignments=[none] children=2
+│   ├── TableRow scope=3:1..3:60 isHeader=true children=1
+│   │   └── TableCell scope=3:2..3:59 children=3
+│   │       ├── Text scope=3:3..3:19 literal="Here's a link to " children=0
+│   │       ├── LinkReference scope=3:20..3:39 label="Freedom Planet 2" identifier="freedom planet 2" form=collapsed children=1
+│   │       │   └── Text scope=3:21..3:36 literal="Freedom Planet 2" children=0
+│   │       └── Text scope=3:40..3:58 literal=" in a table header." children=0
+│   └── TableRow scope=5:1..5:57 isHeader=false children=1
+│       └── TableCell scope=5:2..5:56 children=3
+│           ├── Text scope=5:3..5:19 literal="Here's a link to " children=0
+│           ├── LinkReference scope=5:20..5:39 label="Freedom Planet 2" identifier="freedom planet 2" form=collapsed children=1
+│           │   └── Text scope=5:21..5:36 literal="Freedom Planet 2" children=0
+│           └── Text scope=5:40..5:55 literal=" in a table row." children=0
+└── ReferenceDefinition scope=7:1..7:50 label="Freedom Planet 2" identifier="freedom planet 2" destination="http://www.freedomplanet2.com/" title=null children=0
 ````````````````````````````````
 
 ### Sequential cells
@@ -466,21 +466,21 @@ Document id=1:0 scope=1:1..7:50 children=3
 | --- | --- | --- |
 | d || e |
 .
-Document id=1:0 scope=1:1..3:10 children=1
-└── Table id=2:0 scope=1:1..3:10 alignments=[none,none,none] children=2
-    ├── TableRow id=3:0 scope=1:1..1:13 isHeader=true children=3
-    │   ├── TableCell id=4:0 scope=1:2..1:4 children=1
-    │   │   └── Text id=4:1 scope=1:3..1:3 literal="a" children=0
-    │   ├── TableCell id=5:0 scope=1:6..1:8 children=1
-    │   │   └── Text id=5:1 scope=1:7..1:7 literal="b" children=0
-    │   └── TableCell id=6:0 scope=1:10..1:12 children=1
-    │       └── Text id=6:1 scope=1:11..1:11 literal="c" children=0
-    └── TableRow id=7:0 scope=3:1..3:10 isHeader=false children=3
-        ├── TableCell id=8:0 scope=3:2..3:4 children=1
-        │   └── Text id=8:1 scope=3:3..3:3 literal="d" children=0
-        ├── TableCell id=9:0 scope=3:6..3:5 children=0
-        └── TableCell id=10:0 scope=3:7..3:9 children=1
-            └── Text id=10:1 scope=3:8..3:8 literal="e" children=0
+Document scope=1:1..3:10 children=1
+└── Table scope=1:1..3:10 alignments=[none,none,none] children=2
+    ├── TableRow scope=1:1..1:13 isHeader=true children=3
+    │   ├── TableCell scope=1:2..1:4 children=1
+    │   │   └── Text scope=1:3..1:3 literal="a" children=0
+    │   ├── TableCell scope=1:6..1:8 children=1
+    │   │   └── Text scope=1:7..1:7 literal="b" children=0
+    │   └── TableCell scope=1:10..1:12 children=1
+    │       └── Text scope=1:11..1:11 literal="c" children=0
+    └── TableRow scope=3:1..3:10 isHeader=false children=3
+        ├── TableCell scope=3:2..3:4 children=1
+        │   └── Text scope=3:3..3:3 literal="d" children=0
+        ├── TableCell scope=3:6..3:5 children=0
+        └── TableCell scope=3:7..3:9 children=1
+            └── Text scope=3:8..3:8 literal="e" children=0
 ````````````````````````````````
 
 ### Interaction with emphasis
@@ -490,19 +490,19 @@ Document id=1:0 scope=1:1..3:10 children=1
 | --- | --- |
 |***(a)***|
 .
-Document id=1:0 scope=1:1..3:11 children=1
-└── Table id=2:0 scope=1:1..3:11 alignments=[none,none] children=2
-    ├── TableRow id=3:0 scope=1:1..1:9 isHeader=true children=2
-    │   ├── TableCell id=4:0 scope=1:2..1:4 children=1
-    │   │   └── Text id=4:1 scope=1:3..1:3 literal="a" children=0
-    │   └── TableCell id=5:0 scope=1:6..1:8 children=1
-    │       └── Text id=5:1 scope=1:7..1:7 literal="b" children=0
-    └── TableRow id=6:0 scope=3:1..3:11 isHeader=false children=2
-        ├── TableCell id=7:0 scope=3:2..3:10 children=1
-        │   └── Emphasis id=7:1 scope=3:2..3:10 children=1
-        │       └── Strong id=7:2 scope=3:3..3:9 children=1
-        │           └── Text id=7:3 scope=3:5..3:7 literal="(a)" children=0
-        └── TableCell id=8:0 scope=3:11..3:11 children=0
+Document scope=1:1..3:11 children=1
+└── Table scope=1:1..3:11 alignments=[none,none] children=2
+    ├── TableRow scope=1:1..1:9 isHeader=true children=2
+    │   ├── TableCell scope=1:2..1:4 children=1
+    │   │   └── Text scope=1:3..1:3 literal="a" children=0
+    │   └── TableCell scope=1:6..1:8 children=1
+    │       └── Text scope=1:7..1:7 literal="b" children=0
+    └── TableRow scope=3:1..3:11 isHeader=false children=2
+        ├── TableCell scope=3:2..3:10 children=1
+        │   └── Emphasis scope=3:2..3:10 children=1
+        │       └── Strong scope=3:3..3:9 children=1
+        │           └── Text scope=3:5..3:7 literal="(a)" children=0
+        └── TableCell scope=3:11..3:11 children=0
 ````````````````````````````````
 
 ### a table can be recognised when separated from a paragraph of text without an empty line
@@ -514,22 +514,22 @@ Document id=1:0 scope=1:1..3:11 children=1
 | ---| --- |
 d | e
 .
-Document id=1:0 scope=1:1..5:5 children=2
-├── Paragraph id=2:0 scope=1:1..2:3 children=3
-│   ├── Text id=2:1 scope=1:1..1:3 literal="123" children=0
-│   ├── SoftBreak id=2:2 scope=1:4..1:4 children=0
-│   └── Text id=2:3 scope=2:1..2:3 literal="456" children=0
-└── Table id=3:0 scope=3:1..5:5 alignments=[none,none] children=2
-    ├── TableRow id=4:0 scope=3:1..3:9 isHeader=true children=2
-    │   ├── TableCell id=5:0 scope=3:2..3:4 children=1
-    │   │   └── Text id=5:1 scope=3:3..3:3 literal="a" children=0
-    │   └── TableCell id=6:0 scope=3:6..3:8 children=1
-    │       └── Text id=6:1 scope=3:7..3:7 literal="b" children=0
-    └── TableRow id=7:0 scope=5:1..5:5 isHeader=false children=2
-        ├── TableCell id=8:0 scope=5:1..5:2 children=1
-        │   └── Text id=8:1 scope=5:1..5:1 literal="d" children=0
-        └── TableCell id=9:0 scope=5:4..5:5 children=1
-            └── Text id=9:1 scope=5:5..5:5 literal="e" children=0
+Document scope=1:1..5:5 children=2
+├── Paragraph scope=1:1..2:3 children=3
+│   ├── Text scope=1:1..1:3 literal="123" children=0
+│   ├── SoftBreak scope=1:4..1:4 children=0
+│   └── Text scope=2:1..2:3 literal="456" children=0
+└── Table scope=3:1..5:5 alignments=[none,none] children=2
+    ├── TableRow scope=3:1..3:9 isHeader=true children=2
+    │   ├── TableCell scope=3:2..3:4 children=1
+    │   │   └── Text scope=3:3..3:3 literal="a" children=0
+    │   └── TableCell scope=3:6..3:8 children=1
+    │       └── Text scope=3:7..3:7 literal="b" children=0
+    └── TableRow scope=5:1..5:5 isHeader=false children=2
+        ├── TableCell scope=5:1..5:2 children=1
+        │   └── Text scope=5:1..5:1 literal="d" children=0
+        └── TableCell scope=5:4..5:5 children=1
+            └── Text scope=5:5..5:5 literal="e" children=0
 ````````````````````````````````
 
 The lead a table is split out of is not a cell, so it is not pipe-unescaped:
@@ -542,15 +542,15 @@ pre \\| lead
 | a | b |
 | - | - |
 .
-Document id=1:0 scope=1:1..3:9 children=2
-├── Paragraph id=2:0 scope=1:1..1:12 children=1
-│   └── Text id=2:1 scope=1:1..1:12 literal="pre \\| lead" children=0
-└── Table id=3:0 scope=2:1..3:9 alignments=[none,none] children=1
-    └── TableRow id=4:0 scope=2:1..2:9 isHeader=true children=2
-        ├── TableCell id=5:0 scope=2:2..2:4 children=1
-        │   └── Text id=5:1 scope=2:3..2:3 literal="a" children=0
-        └── TableCell id=6:0 scope=2:6..2:8 children=1
-            └── Text id=6:1 scope=2:7..2:7 literal="b" children=0
+Document scope=1:1..3:9 children=2
+├── Paragraph scope=1:1..1:12 children=1
+│   └── Text scope=1:1..1:12 literal="pre \\| lead" children=0
+└── Table scope=2:1..3:9 alignments=[none,none] children=1
+    └── TableRow scope=2:1..2:9 isHeader=true children=2
+        ├── TableCell scope=2:2..2:4 children=1
+        │   └── Text scope=2:3..2:3 literal="a" children=0
+        └── TableCell scope=2:6..2:8 children=1
+            └── Text scope=2:7..2:7 literal="b" children=0
 ````````````````````````````````
 
 The lead, the header row and its cells are all recovered from the paragraph's
@@ -563,16 +563,16 @@ the other shows: every position below comes from the content-to-source map.
 > | a | b |
 > | --- | --- |
 .
-Document id=1:0 scope=1:1..3:15 children=1
-└── BlockQuote id=2:0 scope=1:1..3:15 children=2
-    ├── Paragraph id=3:0 scope=1:3..1:5 children=1
-    │   └── Text id=3:1 scope=1:3..1:5 literal="123" children=0
-    └── Table id=4:0 scope=2:3..3:15 alignments=[none,none] children=1
-        └── TableRow id=5:0 scope=2:3..2:11 isHeader=true children=2
-            ├── TableCell id=6:0 scope=2:4..2:6 children=1
-            │   └── Text id=6:1 scope=2:5..2:5 literal="a" children=0
-            └── TableCell id=7:0 scope=2:8..2:10 children=1
-                └── Text id=7:1 scope=2:9..2:9 literal="b" children=0
+Document scope=1:1..3:15 children=1
+└── BlockQuote scope=1:1..3:15 children=2
+    ├── Paragraph scope=1:3..1:5 children=1
+    │   └── Text scope=1:3..1:5 literal="123" children=0
+    └── Table scope=2:3..3:15 alignments=[none,none] children=1
+        └── TableRow scope=2:3..2:11 isHeader=true children=2
+            ├── TableCell scope=2:4..2:6 children=1
+            │   └── Text scope=2:5..2:5 literal="a" children=0
+            └── TableCell scope=2:8..2:10 children=1
+                └── Text scope=2:9..2:9 literal="b" children=0
 ````````````````````````````````
 
 ## Strikethroughs
@@ -582,12 +582,12 @@ A well-formed strikethrough.
 ```````````````````````````````` example
 A proper ~strikethrough~.
 .
-Document id=1:0 scope=1:1..1:25 children=1
-└── Paragraph id=2:0 scope=1:1..1:25 children=3
-    ├── Text id=2:1 scope=1:1..1:9 literal="A proper " children=0
-    ├── Strikethrough id=2:2 scope=1:10..1:24 children=1
-    │   └── Text id=2:3 scope=1:11..1:23 literal="strikethrough" children=0
-    └── Text id=2:4 scope=1:25..1:25 literal="." children=0
+Document scope=1:1..1:25 children=1
+└── Paragraph scope=1:1..1:25 children=3
+    ├── Text scope=1:1..1:9 literal="A proper " children=0
+    ├── Strikethrough scope=1:10..1:24 children=1
+    │   └── Text scope=1:11..1:23 literal="strikethrough" children=0
+    └── Text scope=1:25..1:25 literal="." children=0
 ````````````````````````````````
 
 Some strikethrough edge cases.
@@ -605,27 +605,27 @@ This is not ~~~~~one~~~~~ huge strikethrough.
 
 No ~mismatch~~
 .
-Document id=1:0 scope=1:1..11:14 children=6
-├── Paragraph id=2:0 scope=1:1..1:30 children=1
-│   └── Text id=2:1 scope=1:1..1:30 literal="These are ~not strikethroughs." children=0
-├── Paragraph id=3:0 scope=3:1..3:17 children=1
-│   └── Text id=3:1 scope=3:1..3:17 literal="No, they are not~" children=0
-├── Paragraph id=4:0 scope=5:1..5:32 children=3
-│   ├── Text id=4:1 scope=5:1..5:5 literal="This " children=0
-│   ├── Strikethrough id=4:2 scope=5:6..5:17 children=1
-│   │   └── Text id=4:3 scope=5:7..5:16 literal="is ~ legit" children=0
-│   └── Text id=4:4 scope=5:18..5:32 literal=" isn't ~ legit." children=0
-├── Paragraph id=5:0 scope=7:1..7:45 children=1
-│   └── Text id=5:1 scope=7:1..7:45 literal="This is not ~~~~~one~~~~~ huge strikethrough." children=0
-├── Paragraph id=6:0 scope=9:1..9:25 children=4
-│   ├── Strikethrough id=6:1 scope=9:1..9:5 children=1
-│   │   └── Text id=6:2 scope=9:2..9:4 literal="one" children=0
-│   ├── Text id=6:3 scope=9:6..9:6 literal=" " children=0
-│   ├── Strikethrough id=6:4 scope=9:7..9:13 children=1
-│   │   └── Text id=6:5 scope=9:9..9:11 literal="two" children=0
-│   └── Text id=6:6 scope=9:14..9:25 literal=" ~~~three~~~" children=0
-└── Paragraph id=7:0 scope=11:1..11:14 children=1
-    └── Text id=7:1 scope=11:1..11:14 literal="No ~mismatch~~" children=0
+Document scope=1:1..11:14 children=6
+├── Paragraph scope=1:1..1:30 children=1
+│   └── Text scope=1:1..1:30 literal="These are ~not strikethroughs." children=0
+├── Paragraph scope=3:1..3:17 children=1
+│   └── Text scope=3:1..3:17 literal="No, they are not~" children=0
+├── Paragraph scope=5:1..5:32 children=3
+│   ├── Text scope=5:1..5:5 literal="This " children=0
+│   ├── Strikethrough scope=5:6..5:17 children=1
+│   │   └── Text scope=5:7..5:16 literal="is ~ legit" children=0
+│   └── Text scope=5:18..5:32 literal=" isn't ~ legit." children=0
+├── Paragraph scope=7:1..7:45 children=1
+│   └── Text scope=7:1..7:45 literal="This is not ~~~~~one~~~~~ huge strikethrough." children=0
+├── Paragraph scope=9:1..9:25 children=4
+│   ├── Strikethrough scope=9:1..9:5 children=1
+│   │   └── Text scope=9:2..9:4 literal="one" children=0
+│   ├── Text scope=9:6..9:6 literal=" " children=0
+│   ├── Strikethrough scope=9:7..9:13 children=1
+│   │   └── Text scope=9:9..9:11 literal="two" children=0
+│   └── Text scope=9:14..9:25 literal=" ~~~three~~~" children=0
+└── Paragraph scope=11:1..11:14 children=1
+    └── Text scope=11:1..11:14 literal="No ~mismatch~~" children=0
 ````````````````````````````````
 
 Using 200 tilde since it overflows the internal buffer
@@ -699,152 +699,152 @@ Full stop outside parens shouldn't be included http://google.com/ok.
 
 http://🍄.ga/ http://x🍄.ga/
 .
-Document id=1:0 scope=1:1..63:32 children=32
-├── Paragraph id=2:0 scope=1:1..1:38 children=4
-│   ├── Text id=2:1 scope=1:1..1:2 literal=": " children=0
-│   ├── Link id=2:2 scope=1:3..1:19 destination="http://google.com" title=null children=1
-│   │   └── Text id=2:3 scope=1:3..1:19 literal="http://google.com" children=0
-│   ├── Text id=2:4 scope=1:20..1:20 literal=" " children=0
-│   └── Link id=2:5 scope=1:21..1:38 destination="https://google.com" title=null children=1
-│       └── Text id=2:6 scope=1:21..1:38 literal="https://google.com" children=0
-├── Paragraph id=3:0 scope=3:1..3:43 children=3
-│   ├── Link id=3:1 scope=3:1..3:22 destination="http://google.com/å" title=null children=1
-│   │   └── Text id=3:2 scope=3:2..3:21 literal="http://google.com/å" children=0
-│   ├── Text id=3:3 scope=3:23..3:23 literal=" " children=0
-│   └── Link id=3:4 scope=3:24..3:43 destination="http://google.com/å" title=null children=1
-│       └── Text id=3:5 scope=3:24..3:43 literal="http://google.com/å" children=0
-├── Paragraph id=4:0 scope=5:1..5:19 children=1
-│   └── Link id=4:1 scope=5:1..5:19 destination="mailto:scyther@pokemon.com" title=null children=1
-│       └── Text id=4:2 scope=5:1..5:19 literal="scyther@pokemon.com" children=0
-├── Paragraph id=5:0 scope=7:1..7:31 children=1
-│   └── Link id=5:1 scope=7:1..7:31 destination="mailto:scy.the_rbe-edr+ill@pokemon.com" title=null children=1
-│       └── Text id=5:2 scope=7:1..7:31 literal="scy.the_rbe-edr+ill@pokemon.com" children=0
-├── Paragraph id=6:0 scope=9:1..9:20 children=2
-│   ├── Link id=6:1 scope=9:1..9:19 destination="mailto:scyther@pokemon.com" title=null children=1
-│   │   └── Text id=6:2 scope=9:1..9:19 literal="scyther@pokemon.com" children=0
-│   └── Text id=6:3 scope=9:20..9:20 literal="." children=0
-├── Paragraph id=7:0 scope=11:1..11:20 children=2
-│   ├── Link id=7:1 scope=11:1..11:19 destination="mailto:scyther@pokemon.com" title=null children=1
-│   │   └── Text id=7:2 scope=11:1..11:19 literal="scyther@pokemon.com" children=0
-│   └── Text id=7:3 scope=11:20..11:20 literal="/" children=0
-├── Paragraph id=8:0 scope=13:1..13:40 children=3
-│   ├── Link id=8:1 scope=13:1..13:19 destination="mailto:scyther@pokemon.com" title=null children=1
-│   │   └── Text id=8:2 scope=13:1..13:19 literal="scyther@pokemon.com" children=0
-│   ├── Text id=8:3 scope=13:20..13:20 literal="/" children=0
-│   └── Link id=8:4 scope=13:21..13:40 destination="mailto:beedrill@pokemon.com" title=null children=1
-│       └── Text id=8:5 scope=13:21..13:40 literal="beedrill@pokemon.com" children=0
-├── Paragraph id=9:0 scope=15:1..15:26 children=1
-│   └── Link id=9:1 scope=15:1..15:26 destination="mailto:scyther@pokemon.com" title=null children=1
-│       └── Text id=9:2 scope=15:1..15:26 literal="mailto:scyther@pokemon.com" children=0
-├── Paragraph id=10:0 scope=17:1..17:36 children=2
-│   ├── Text id=10:1 scope=17:1..17:10 literal="This is a " children=0
-│   └── Link id=10:2 scope=17:11..17:36 destination="mailto:scyther@pokemon.com" title=null children=1
-│       └── Text id=10:3 scope=17:11..17:36 literal="mailto:scyther@pokemon.com" children=0
-├── Paragraph id=11:0 scope=19:1..19:27 children=2
-│   ├── Link id=11:1 scope=19:1..19:26 destination="mailto:scyther@pokemon.com" title=null children=1
-│   │   └── Text id=11:2 scope=19:1..19:26 literal="mailto:scyther@pokemon.com" children=0
-│   └── Text id=11:3 scope=19:27..19:27 literal="." children=0
-├── Paragraph id=12:0 scope=21:1..21:29 children=2
-│   ├── Text id=12:1 scope=21:1..21:10 literal="mmmmailto:" children=0
-│   └── Link id=12:2 scope=21:11..21:29 destination="mailto:scyther@pokemon.com" title=null children=1
-│       └── Text id=12:3 scope=21:11..21:29 literal="scyther@pokemon.com" children=0
-├── Paragraph id=13:0 scope=23:1..23:27 children=2
-│   ├── Link id=13:1 scope=23:1..23:26 destination="mailto:scyther@pokemon.com" title=null children=1
-│   │   └── Text id=13:2 scope=23:1..23:26 literal="mailto:scyther@pokemon.com" children=0
-│   └── Text id=13:3 scope=23:27..23:27 literal="/" children=0
-├── Paragraph id=14:0 scope=25:1..25:34 children=2
-│   ├── Link id=14:1 scope=25:1..25:26 destination="mailto:scyther@pokemon.com" title=null children=1
-│   │   └── Text id=14:2 scope=25:1..25:26 literal="mailto:scyther@pokemon.com" children=0
-│   └── Text id=14:3 scope=25:27..25:34 literal="/message" children=0
-├── Paragraph id=15:0 scope=27:1..27:54 children=3
-│   ├── Link id=15:1 scope=27:1..27:26 destination="mailto:scyther@pokemon.com" title=null children=1
-│   │   └── Text id=15:2 scope=27:1..27:26 literal="mailto:scyther@pokemon.com" children=0
-│   ├── Text id=15:3 scope=27:27..27:27 literal="/" children=0
-│   └── Link id=15:4 scope=27:28..27:54 destination="mailto:beedrill@pokemon.com" title=null children=1
-│       └── Text id=15:5 scope=27:28..27:54 literal="mailto:beedrill@pokemon.com" children=0
-├── Paragraph id=16:0 scope=29:1..29:24 children=1
-│   └── Link id=16:1 scope=29:1..29:24 destination="xmpp:scyther@pokemon.com" title=null children=1
-│       └── Text id=16:2 scope=29:1..29:24 literal="xmpp:scyther@pokemon.com" children=0
-├── Paragraph id=17:0 scope=31:1..31:25 children=2
-│   ├── Link id=17:1 scope=31:1..31:24 destination="xmpp:scyther@pokemon.com" title=null children=1
-│   │   └── Text id=17:2 scope=31:1..31:24 literal="xmpp:scyther@pokemon.com" children=0
-│   └── Text id=17:3 scope=31:25..31:25 literal="." children=0
-├── Paragraph id=18:0 scope=33:1..33:32 children=1
-│   └── Link id=18:1 scope=33:1..33:32 destination="xmpp:scyther@pokemon.com/message" title=null children=1
-│       └── Text id=18:2 scope=33:1..33:32 literal="xmpp:scyther@pokemon.com/message" children=0
-├── Paragraph id=19:0 scope=35:1..35:33 children=2
-│   ├── Link id=19:1 scope=35:1..35:32 destination="xmpp:scyther@pokemon.com/message" title=null children=1
-│   │   └── Text id=19:2 scope=35:1..35:32 literal="xmpp:scyther@pokemon.com/message" children=0
-│   └── Text id=19:3 scope=35:33..35:33 literal="." children=0
-├── Paragraph id=20:0 scope=37:1..37:31 children=2
-│   ├── Text id=20:1 scope=37:1..37:12 literal="Email me at:" children=0
-│   └── Link id=20:2 scope=37:13..37:31 destination="mailto:scyther@pokemon.com" title=null children=1
-│       └── Text id=20:3 scope=37:13..37:31 literal="scyther@pokemon.com" children=0
-├── Paragraph id=21:0 scope=39:1..39:32 children=3
-│   ├── Link id=21:1 scope=39:1..39:14 destination="http://www.github.com" title=null children=1
-│   │   └── Text id=21:2 scope=39:1..39:14 literal="www.github.com" children=0
-│   ├── Text id=21:3 scope=39:15..39:15 literal=" " children=0
-│   └── Link id=21:4 scope=39:16..39:32 destination="http://www.github.com/á" title=null children=1
-│       └── Text id=21:5 scope=39:16..39:32 literal="www.github.com/á" children=0
-├── Paragraph id=22:0 scope=41:1..41:18 children=1
-│   └── Link id=22:1 scope=41:1..41:18 destination="http://www.google.com/a_b" title=null children=1
-│       └── Text id=22:2 scope=41:1..41:18 literal="www.google.com/a_b" children=0
-├── Paragraph id=23:0 scope=43:1..43:53 children=1
-│   └── Text id=23:1 scope=43:1..43:53 literal="Underscores not allowed in host name www.xxx.yyy._zzz" children=0
-├── Paragraph id=24:0 scope=45:1..45:53 children=1
-│   └── Text id=24:1 scope=45:1..45:53 literal="Underscores not allowed in host name www.xxx._yyy.zzz" children=0
-├── Paragraph id=25:0 scope=47:1..47:51 children=2
-│   ├── Text id=25:1 scope=47:1..47:35 literal="Underscores allowed in domain name " children=0
-│   └── Link id=25:2 scope=47:36..47:51 destination="http://www._xxx.yyy.zzz" title=null children=1
-│       └── Text id=25:3 scope=47:36..47:51 literal="www._xxx.yyy.zzz" children=0
-├── Paragraph id=26:0 scope=49:1..49:31 children=1
-│   └── Strong id=26:1 scope=49:1..49:31 children=2
-│       ├── Text id=26:2 scope=49:3..49:15 literal="Autolink and " children=0
-│       └── Link id=26:3 scope=49:16..49:29 destination="http://inlines" title=null children=1
-│           └── Text id=26:4 scope=49:16..49:29 literal="http://inlines" children=0
-├── Paragraph id=27:0 scope=51:1..51:51 children=1
-│   └── Image id=27:1 scope=51:1..51:51 source="http://inline.com/image" title=null children=1
-│       └── Text id=27:2 scope=51:3..51:25 literal="http://inline.com/image" children=0
-├── Paragraph id=28:0 scope=53:1..53:7 children=1
-│   └── Link id=28:1 scope=53:1..53:7 destination="mailto:a.w@b.c" title=null children=1
-│       └── Text id=28:2 scope=53:1..53:7 literal="a.w@b.c" children=0
-├── Paragraph id=29:0 scope=55:1..55:68 children=3
-│   ├── Text id=29:1 scope=55:1..55:47 literal="Full stop outside parens shouldn't be included " children=0
-│   ├── Link id=29:2 scope=55:48..55:67 destination="http://google.com/ok" title=null children=1
-│   │   └── Text id=29:3 scope=55:48..55:67 literal="http://google.com/ok" children=0
-│   └── Text id=29:4 scope=55:68..55:68 literal="." children=0
-├── Paragraph id=30:0 scope=57:1..57:69 children=3
-│   ├── Text id=30:1 scope=57:1..57:47 literal="(Full stop inside parens shouldn't be included " children=0
-│   ├── Link id=30:2 scope=57:48..57:67 destination="http://google.com/ok" title=null children=1
-│   │   └── Text id=30:3 scope=57:48..57:67 literal="http://google.com/ok" children=0
-│   └── Text id=30:4 scope=57:68..57:69 literal=".)" children=0
-├── Paragraph id=31:0 scope=59:1..59:19 children=3
-│   ├── Text id=31:1 scope=59:1..59:1 literal="\"" children=0
-│   ├── Link id=31:2 scope=59:2..59:18 destination="http://google.com" title=null children=1
-│   │   └── Text id=31:3 scope=59:2..59:18 literal="http://google.com" children=0
-│   └── Text id=31:4 scope=59:19..59:19 literal="\"" children=0
-├── Paragraph id=32:0 scope=61:1..61:19 children=3
-│   ├── Text id=32:1 scope=61:1..61:1 literal="'" children=0
-│   ├── Link id=32:2 scope=61:2..61:18 destination="http://google.com" title=null children=1
-│   │   └── Text id=32:3 scope=61:2..61:18 literal="http://google.com" children=0
-│   └── Text id=32:4 scope=61:19..61:19 literal="'" children=0
-└── Paragraph id=33:0 scope=63:1..63:32 children=3
-    ├── Link id=33:1 scope=63:1..63:15 destination="http://🍄.ga/" title=null children=1
-    │   └── Text id=33:2 scope=63:1..63:15 literal="http://🍄.ga/" children=0
-    ├── Text id=33:3 scope=63:16..63:16 literal=" " children=0
-    └── Link id=33:4 scope=63:17..63:32 destination="http://x🍄.ga/" title=null children=1
-        └── Text id=33:5 scope=63:17..63:32 literal="http://x🍄.ga/" children=0
+Document scope=1:1..63:32 children=32
+├── Paragraph scope=1:1..1:38 children=4
+│   ├── Text scope=1:1..1:2 literal=": " children=0
+│   ├── Link scope=1:3..1:19 destination="http://google.com" title=null children=1
+│   │   └── Text scope=1:3..1:19 literal="http://google.com" children=0
+│   ├── Text scope=1:20..1:20 literal=" " children=0
+│   └── Link scope=1:21..1:38 destination="https://google.com" title=null children=1
+│       └── Text scope=1:21..1:38 literal="https://google.com" children=0
+├── Paragraph scope=3:1..3:43 children=3
+│   ├── Link scope=3:1..3:22 destination="http://google.com/å" title=null children=1
+│   │   └── Text scope=3:2..3:21 literal="http://google.com/å" children=0
+│   ├── Text scope=3:23..3:23 literal=" " children=0
+│   └── Link scope=3:24..3:43 destination="http://google.com/å" title=null children=1
+│       └── Text scope=3:24..3:43 literal="http://google.com/å" children=0
+├── Paragraph scope=5:1..5:19 children=1
+│   └── Link scope=5:1..5:19 destination="mailto:scyther@pokemon.com" title=null children=1
+│       └── Text scope=5:1..5:19 literal="scyther@pokemon.com" children=0
+├── Paragraph scope=7:1..7:31 children=1
+│   └── Link scope=7:1..7:31 destination="mailto:scy.the_rbe-edr+ill@pokemon.com" title=null children=1
+│       └── Text scope=7:1..7:31 literal="scy.the_rbe-edr+ill@pokemon.com" children=0
+├── Paragraph scope=9:1..9:20 children=2
+│   ├── Link scope=9:1..9:19 destination="mailto:scyther@pokemon.com" title=null children=1
+│   │   └── Text scope=9:1..9:19 literal="scyther@pokemon.com" children=0
+│   └── Text scope=9:20..9:20 literal="." children=0
+├── Paragraph scope=11:1..11:20 children=2
+│   ├── Link scope=11:1..11:19 destination="mailto:scyther@pokemon.com" title=null children=1
+│   │   └── Text scope=11:1..11:19 literal="scyther@pokemon.com" children=0
+│   └── Text scope=11:20..11:20 literal="/" children=0
+├── Paragraph scope=13:1..13:40 children=3
+│   ├── Link scope=13:1..13:19 destination="mailto:scyther@pokemon.com" title=null children=1
+│   │   └── Text scope=13:1..13:19 literal="scyther@pokemon.com" children=0
+│   ├── Text scope=13:20..13:20 literal="/" children=0
+│   └── Link scope=13:21..13:40 destination="mailto:beedrill@pokemon.com" title=null children=1
+│       └── Text scope=13:21..13:40 literal="beedrill@pokemon.com" children=0
+├── Paragraph scope=15:1..15:26 children=1
+│   └── Link scope=15:1..15:26 destination="mailto:scyther@pokemon.com" title=null children=1
+│       └── Text scope=15:1..15:26 literal="mailto:scyther@pokemon.com" children=0
+├── Paragraph scope=17:1..17:36 children=2
+│   ├── Text scope=17:1..17:10 literal="This is a " children=0
+│   └── Link scope=17:11..17:36 destination="mailto:scyther@pokemon.com" title=null children=1
+│       └── Text scope=17:11..17:36 literal="mailto:scyther@pokemon.com" children=0
+├── Paragraph scope=19:1..19:27 children=2
+│   ├── Link scope=19:1..19:26 destination="mailto:scyther@pokemon.com" title=null children=1
+│   │   └── Text scope=19:1..19:26 literal="mailto:scyther@pokemon.com" children=0
+│   └── Text scope=19:27..19:27 literal="." children=0
+├── Paragraph scope=21:1..21:29 children=2
+│   ├── Text scope=21:1..21:10 literal="mmmmailto:" children=0
+│   └── Link scope=21:11..21:29 destination="mailto:scyther@pokemon.com" title=null children=1
+│       └── Text scope=21:11..21:29 literal="scyther@pokemon.com" children=0
+├── Paragraph scope=23:1..23:27 children=2
+│   ├── Link scope=23:1..23:26 destination="mailto:scyther@pokemon.com" title=null children=1
+│   │   └── Text scope=23:1..23:26 literal="mailto:scyther@pokemon.com" children=0
+│   └── Text scope=23:27..23:27 literal="/" children=0
+├── Paragraph scope=25:1..25:34 children=2
+│   ├── Link scope=25:1..25:26 destination="mailto:scyther@pokemon.com" title=null children=1
+│   │   └── Text scope=25:1..25:26 literal="mailto:scyther@pokemon.com" children=0
+│   └── Text scope=25:27..25:34 literal="/message" children=0
+├── Paragraph scope=27:1..27:54 children=3
+│   ├── Link scope=27:1..27:26 destination="mailto:scyther@pokemon.com" title=null children=1
+│   │   └── Text scope=27:1..27:26 literal="mailto:scyther@pokemon.com" children=0
+│   ├── Text scope=27:27..27:27 literal="/" children=0
+│   └── Link scope=27:28..27:54 destination="mailto:beedrill@pokemon.com" title=null children=1
+│       └── Text scope=27:28..27:54 literal="mailto:beedrill@pokemon.com" children=0
+├── Paragraph scope=29:1..29:24 children=1
+│   └── Link scope=29:1..29:24 destination="xmpp:scyther@pokemon.com" title=null children=1
+│       └── Text scope=29:1..29:24 literal="xmpp:scyther@pokemon.com" children=0
+├── Paragraph scope=31:1..31:25 children=2
+│   ├── Link scope=31:1..31:24 destination="xmpp:scyther@pokemon.com" title=null children=1
+│   │   └── Text scope=31:1..31:24 literal="xmpp:scyther@pokemon.com" children=0
+│   └── Text scope=31:25..31:25 literal="." children=0
+├── Paragraph scope=33:1..33:32 children=1
+│   └── Link scope=33:1..33:32 destination="xmpp:scyther@pokemon.com/message" title=null children=1
+│       └── Text scope=33:1..33:32 literal="xmpp:scyther@pokemon.com/message" children=0
+├── Paragraph scope=35:1..35:33 children=2
+│   ├── Link scope=35:1..35:32 destination="xmpp:scyther@pokemon.com/message" title=null children=1
+│   │   └── Text scope=35:1..35:32 literal="xmpp:scyther@pokemon.com/message" children=0
+│   └── Text scope=35:33..35:33 literal="." children=0
+├── Paragraph scope=37:1..37:31 children=2
+│   ├── Text scope=37:1..37:12 literal="Email me at:" children=0
+│   └── Link scope=37:13..37:31 destination="mailto:scyther@pokemon.com" title=null children=1
+│       └── Text scope=37:13..37:31 literal="scyther@pokemon.com" children=0
+├── Paragraph scope=39:1..39:32 children=3
+│   ├── Link scope=39:1..39:14 destination="http://www.github.com" title=null children=1
+│   │   └── Text scope=39:1..39:14 literal="www.github.com" children=0
+│   ├── Text scope=39:15..39:15 literal=" " children=0
+│   └── Link scope=39:16..39:32 destination="http://www.github.com/á" title=null children=1
+│       └── Text scope=39:16..39:32 literal="www.github.com/á" children=0
+├── Paragraph scope=41:1..41:18 children=1
+│   └── Link scope=41:1..41:18 destination="http://www.google.com/a_b" title=null children=1
+│       └── Text scope=41:1..41:18 literal="www.google.com/a_b" children=0
+├── Paragraph scope=43:1..43:53 children=1
+│   └── Text scope=43:1..43:53 literal="Underscores not allowed in host name www.xxx.yyy._zzz" children=0
+├── Paragraph scope=45:1..45:53 children=1
+│   └── Text scope=45:1..45:53 literal="Underscores not allowed in host name www.xxx._yyy.zzz" children=0
+├── Paragraph scope=47:1..47:51 children=2
+│   ├── Text scope=47:1..47:35 literal="Underscores allowed in domain name " children=0
+│   └── Link scope=47:36..47:51 destination="http://www._xxx.yyy.zzz" title=null children=1
+│       └── Text scope=47:36..47:51 literal="www._xxx.yyy.zzz" children=0
+├── Paragraph scope=49:1..49:31 children=1
+│   └── Strong scope=49:1..49:31 children=2
+│       ├── Text scope=49:3..49:15 literal="Autolink and " children=0
+│       └── Link scope=49:16..49:29 destination="http://inlines" title=null children=1
+│           └── Text scope=49:16..49:29 literal="http://inlines" children=0
+├── Paragraph scope=51:1..51:51 children=1
+│   └── Image scope=51:1..51:51 source="http://inline.com/image" title=null children=1
+│       └── Text scope=51:3..51:25 literal="http://inline.com/image" children=0
+├── Paragraph scope=53:1..53:7 children=1
+│   └── Link scope=53:1..53:7 destination="mailto:a.w@b.c" title=null children=1
+│       └── Text scope=53:1..53:7 literal="a.w@b.c" children=0
+├── Paragraph scope=55:1..55:68 children=3
+│   ├── Text scope=55:1..55:47 literal="Full stop outside parens shouldn't be included " children=0
+│   ├── Link scope=55:48..55:67 destination="http://google.com/ok" title=null children=1
+│   │   └── Text scope=55:48..55:67 literal="http://google.com/ok" children=0
+│   └── Text scope=55:68..55:68 literal="." children=0
+├── Paragraph scope=57:1..57:69 children=3
+│   ├── Text scope=57:1..57:47 literal="(Full stop inside parens shouldn't be included " children=0
+│   ├── Link scope=57:48..57:67 destination="http://google.com/ok" title=null children=1
+│   │   └── Text scope=57:48..57:67 literal="http://google.com/ok" children=0
+│   └── Text scope=57:68..57:69 literal=".)" children=0
+├── Paragraph scope=59:1..59:19 children=3
+│   ├── Text scope=59:1..59:1 literal="\"" children=0
+│   ├── Link scope=59:2..59:18 destination="http://google.com" title=null children=1
+│   │   └── Text scope=59:2..59:18 literal="http://google.com" children=0
+│   └── Text scope=59:19..59:19 literal="\"" children=0
+├── Paragraph scope=61:1..61:19 children=3
+│   ├── Text scope=61:1..61:1 literal="'" children=0
+│   ├── Link scope=61:2..61:18 destination="http://google.com" title=null children=1
+│   │   └── Text scope=61:2..61:18 literal="http://google.com" children=0
+│   └── Text scope=61:19..61:19 literal="'" children=0
+└── Paragraph scope=63:1..63:32 children=3
+    ├── Link scope=63:1..63:15 destination="http://🍄.ga/" title=null children=1
+    │   └── Text scope=63:1..63:15 literal="http://🍄.ga/" children=0
+    ├── Text scope=63:16..63:16 literal=" " children=0
+    └── Link scope=63:17..63:32 destination="http://x🍄.ga/" title=null children=1
+        └── Text scope=63:17..63:32 literal="http://x🍄.ga/" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 This shouldn't crash everything: (_A_@_.A
 .
-Document id=1:0 scope=1:1..1:41 children=1
-└── Paragraph id=2:0 scope=1:1..1:41 children=3
-    ├── Text id=2:1 scope=1:1..1:34 literal="This shouldn't crash everything: (" children=0
-    ├── Emphasis id=2:2 scope=1:35..1:37 children=1
-    │   └── Text id=2:3 scope=1:36..1:36 literal="A" children=0
-    └── Text id=2:4 scope=1:38..1:41 literal="@_.A" children=0
+Document scope=1:1..1:41 children=1
+└── Paragraph scope=1:1..1:41 children=3
+    ├── Text scope=1:1..1:34 literal="This shouldn't crash everything: (" children=0
+    ├── Emphasis scope=1:35..1:37 children=1
+    │   └── Text scope=1:36..1:36 literal="A" children=0
+    └── Text scope=1:38..1:41 literal="@_.A" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -853,16 +853,16 @@ These should not link:
 * @a.b.c@. x
 * n@.  b
 .
-Document id=1:0 scope=1:1..4:8 children=2
-├── Paragraph id=2:0 scope=1:1..1:22 children=1
-│   └── Text id=2:1 scope=1:1..1:22 literal="These should not link:" children=0
-└── List id=3:0 scope=3:1..4:8 flavor=bullet start=null tight=true children=2
-    ├── ListItem id=4:0 scope=3:1..3:12 checked=null children=1
-    │   └── Paragraph id=5:0 scope=3:3..3:12 children=1
-    │       └── Text id=5:1 scope=3:3..3:12 literal="@a.b.c@. x" children=0
-    └── ListItem id=6:0 scope=4:1..4:8 checked=null children=1
-        └── Paragraph id=7:0 scope=4:3..4:8 children=1
-            └── Text id=7:1 scope=4:3..4:8 literal="n@.  b" children=0
+Document scope=1:1..4:8 children=2
+├── Paragraph scope=1:1..1:22 children=1
+│   └── Text scope=1:1..1:22 literal="These should not link:" children=0
+└── List scope=3:1..4:8 flavor=bullet start=null tight=true children=2
+    ├── ListItem scope=3:1..3:12 checked=null children=1
+    │   └── Paragraph scope=3:3..3:12 children=1
+    │       └── Text scope=3:3..3:12 literal="@a.b.c@. x" children=0
+    └── ListItem scope=4:1..4:8 checked=null children=1
+        └── Paragraph scope=4:3..4:8 children=1
+            └── Text scope=4:3..4:8 literal="n@.  b" children=0
 ````````````````````````````````
 
 ## HTML tag filter
@@ -891,40 +891,40 @@ Even with {"x":"y"} or 1 > 2 or whatever. Even **markdown**.
 <!---->
 <!--thistoo-->
 .
-Document id=1:0 scope=1:1..21:14 children=12
-├── Paragraph id=2:0 scope=1:1..1:57 children=9
-│   ├── Text id=2:1 scope=1:1..1:8 literal="This is " children=0
-│   ├── HTML id=2:2 scope=1:9..1:13 literal="<xmp>" children=0
-│   ├── Text id=2:3 scope=1:14..1:28 literal=" not okay, but " children=0
-│   ├── Strong id=2:4 scope=1:29..1:36 children=1
-│   │   └── Text id=2:5 scope=1:31..1:34 literal="this" children=0
-│   ├── Text id=2:6 scope=1:37..1:37 literal=" " children=0
-│   ├── HTML id=2:7 scope=1:38..1:45 literal="<strong>" children=0
-│   ├── Text id=2:8 scope=1:46..1:47 literal="is" children=0
-│   ├── HTML id=2:9 scope=1:48..1:56 literal="</strong>" children=0
-│   └── Text id=2:10 scope=1:57..1:57 literal="." children=0
-├── HTMLBlock id=3:0 scope=3:1..3:64 literal="<p>This is <xmp> not okay, but **this** <strong>is</strong>.</p>\n" children=0
-├── Paragraph id=4:0 scope=5:1..5:30 children=3
-│   ├── Text id=4:1 scope=5:1..5:19 literal="Nope, I won't have " children=0
-│   ├── HTML id=4:2 scope=5:20..5:29 literal="<textarea>" children=0
-│   └── Text id=4:3 scope=5:30..5:30 literal="." children=0
-├── HTMLBlock id=5:0 scope=7:1..7:33 literal="<p>No <textarea> here either.</p>\n" children=0
-├── HTMLBlock id=6:0 scope=9:1..9:54 literal="<p>This <random /> <thing> is okay</thing> though.</p>\n" children=0
-├── Paragraph id=7:0 scope=11:1..11:29 children=5
-│   ├── Text id=7:1 scope=11:1..11:5 literal="Yep, " children=0
-│   ├── HTML id=7:2 scope=11:6..11:14 literal="<totally>" children=0
-│   ├── Text id=7:3 scope=11:15..11:18 literal="okay" children=0
-│   ├── HTML id=7:4 scope=11:19..11:28 literal="</totally>" children=0
-│   └── Text id=7:5 scope=11:29..11:29 literal="." children=0
-├── HTMLBlock id=8:0 scope=13:1..13:40 literal="<!-- HTML comments are okay, though. -->\n" children=0
-├── Paragraph id=9:0 scope=14:1..15:17 children=3
-│   ├── Text id=9:1 scope=14:1..14:24 literal="<!- But we're strict. ->" children=0
-│   ├── SoftBreak id=9:2 scope=14:25..14:25 children=0
-│   └── Text id=9:3 scope=15:1..15:17 literal="<! No nonsense. >" children=0
-├── HTMLBlock id=10:0 scope=16:1..17:60 literal="<!-- Leave multiline comments the heck alone, though, okay?\nEven with {\"x\":\"y\"} or 1 > 2 or whatever. Even **markdown**.\n-->\n" children=0
-├── HTMLBlock id=11:0 scope=19:1..19:54 literal="<!--- Support everything CommonMark's parser does. -->\n" children=0
-├── HTMLBlock id=12:0 scope=20:1..20:7 literal="<!---->\n" children=0
-└── HTMLBlock id=13:0 scope=21:1..21:14 literal="<!--thistoo-->\n" children=0
+Document scope=1:1..21:14 children=12
+├── Paragraph scope=1:1..1:57 children=9
+│   ├── Text scope=1:1..1:8 literal="This is " children=0
+│   ├── HTML scope=1:9..1:13 literal="<xmp>" children=0
+│   ├── Text scope=1:14..1:28 literal=" not okay, but " children=0
+│   ├── Strong scope=1:29..1:36 children=1
+│   │   └── Text scope=1:31..1:34 literal="this" children=0
+│   ├── Text scope=1:37..1:37 literal=" " children=0
+│   ├── HTML scope=1:38..1:45 literal="<strong>" children=0
+│   ├── Text scope=1:46..1:47 literal="is" children=0
+│   ├── HTML scope=1:48..1:56 literal="</strong>" children=0
+│   └── Text scope=1:57..1:57 literal="." children=0
+├── HTMLBlock scope=3:1..3:64 literal="<p>This is <xmp> not okay, but **this** <strong>is</strong>.</p>\n" children=0
+├── Paragraph scope=5:1..5:30 children=3
+│   ├── Text scope=5:1..5:19 literal="Nope, I won't have " children=0
+│   ├── HTML scope=5:20..5:29 literal="<textarea>" children=0
+│   └── Text scope=5:30..5:30 literal="." children=0
+├── HTMLBlock scope=7:1..7:33 literal="<p>No <textarea> here either.</p>\n" children=0
+├── HTMLBlock scope=9:1..9:54 literal="<p>This <random /> <thing> is okay</thing> though.</p>\n" children=0
+├── Paragraph scope=11:1..11:29 children=5
+│   ├── Text scope=11:1..11:5 literal="Yep, " children=0
+│   ├── HTML scope=11:6..11:14 literal="<totally>" children=0
+│   ├── Text scope=11:15..11:18 literal="okay" children=0
+│   ├── HTML scope=11:19..11:28 literal="</totally>" children=0
+│   └── Text scope=11:29..11:29 literal="." children=0
+├── HTMLBlock scope=13:1..13:40 literal="<!-- HTML comments are okay, though. -->\n" children=0
+├── Paragraph scope=14:1..15:17 children=3
+│   ├── Text scope=14:1..14:24 literal="<!- But we're strict. ->" children=0
+│   ├── SoftBreak scope=14:25..14:25 children=0
+│   └── Text scope=15:1..15:17 literal="<! No nonsense. >" children=0
+├── HTMLBlock scope=16:1..17:60 literal="<!-- Leave multiline comments the heck alone, though, okay?\nEven with {\"x\":\"y\"} or 1 > 2 or whatever. Even **markdown**.\n-->\n" children=0
+├── HTMLBlock scope=19:1..19:54 literal="<!--- Support everything CommonMark's parser does. -->\n" children=0
+├── HTMLBlock scope=20:1..20:7 literal="<!---->\n" children=0
+└── HTMLBlock scope=21:1..21:14 literal="<!--thistoo-->\n" children=0
 ````````````````````````````````
 
 ## Footnotes
@@ -957,46 +957,46 @@ Hi!
 
 [^unused]: This is unused.
 .
-Document id=1:0 scope=1:1..26:26 children=10
-├── Paragraph id=2:0 scope=1:1..1:47 children=5
-│   ├── Text id=2:1 scope=1:1..1:18 literal="This is some text!" children=0
-│   ├── FootnoteReference id=2:2 scope=1:19..1:22 label="1" definition=10:0 children=0
-│   ├── Text id=2:3 scope=1:23..1:35 literal=". Other text." children=0
-│   ├── FootnoteReference id=2:4 scope=1:36..1:46 label="footnote" definition=13:0 children=0
-│   └── Text id=2:5 scope=1:47..1:47 literal="." children=0
-├── Paragraph id=3:0 scope=3:1..3:28 children=3
-│   ├── Text id=3:1 scope=3:1..3:14 literal="Here's a thing" children=0
-│   ├── FootnoteReference id=3:2 scope=3:15..3:27 label="other-note" definition=6:0 children=0
-│   └── Text id=3:3 scope=3:28..3:28 literal="." children=0
-├── Paragraph id=4:0 scope=5:1..5:35 children=3
-│   ├── Text id=4:1 scope=5:1..5:17 literal="And another thing" children=0
-│   ├── FootnoteReference id=4:2 scope=5:18..5:34 label="codeblock-note" definition=8:0 children=0
-│   └── Text id=4:3 scope=5:35..5:35 literal="." children=0
-├── Paragraph id=5:0 scope=7:1..7:36 children=1
-│   └── Text id=5:1 scope=7:1..7:36 literal="This doesn't have a referent[^nope]." children=0
-├── FootnoteDefinition id=6:0 scope=10:1..11:0 label="other-note" norm="^other-note" children=1
-│   └── Paragraph id=7:0 scope=10:22..10:66 children=1
-│       └── Text id=7:1 scope=10:22..10:66 literal="no code block here (spaces are stripped away)" children=0
-├── FootnoteDefinition id=8:0 scope=12:1..14:0 label="codeblock-note" norm="^codeblock-note" children=1
-│   └── CodeBlock id=9:0 scope=13:9..14:0 info=null language=null literal="this is now a code block (8 spaces indentation)\n" fenced=false closed=true children=0
-├── FootnoteDefinition id=10:0 scope=15:1..16:0 label="1" norm="^1" children=1
-│   └── Paragraph id=11:0 scope=15:7..15:40 children=3
-│       ├── Text id=11:1 scope=15:7..15:11 literal="Some " children=0
-│       ├── Emphasis id=11:2 scope=15:12..15:19 children=1
-│       │   └── Text id=11:3 scope=15:13..15:18 literal="bolded" children=0
-│       └── Text id=11:4 scope=15:20..15:40 literal=" footnote definition." children=0
-├── Paragraph id=12:0 scope=17:1..17:3 children=1
-│   └── Text id=12:1 scope=17:1..17:3 literal="Hi!" children=0
-├── FootnoteDefinition id=13:0 scope=19:1..25:0 label="footnote" norm="^footnote" children=3
-│   ├── BlockQuote id=14:0 scope=20:5..20:39 children=1
-│   │   └── Paragraph id=15:0 scope=20:7..20:39 children=1
-│   │       └── Text id=15:1 scope=20:7..20:39 literal="Blockquotes can be in a footnote." children=0
-│   ├── CodeBlock id=16:0 scope=22:9..23:0 info=null language=null literal="as well as code blocks\n" fenced=false closed=true children=0
-│   └── Paragraph id=17:0 scope=24:5..24:37 children=1
-│       └── Text id=17:1 scope=24:5..24:37 literal="or, naturally, simple paragraphs." children=0
-└── FootnoteDefinition id=18:0 scope=26:1..26:26 label="unused" norm="^unused" children=1
-    └── Paragraph id=19:0 scope=26:12..26:26 children=1
-        └── Text id=19:1 scope=26:12..26:26 literal="This is unused." children=0
+Document scope=1:1..26:26 children=10
+├── Paragraph scope=1:1..1:47 children=5
+│   ├── Text scope=1:1..1:18 literal="This is some text!" children=0
+│   ├── FootnoteReference scope=1:19..1:22 label="1" identifier="^1" children=0
+│   ├── Text scope=1:23..1:35 literal=". Other text." children=0
+│   ├── FootnoteReference scope=1:36..1:46 label="footnote" identifier="^footnote" children=0
+│   └── Text scope=1:47..1:47 literal="." children=0
+├── Paragraph scope=3:1..3:28 children=3
+│   ├── Text scope=3:1..3:14 literal="Here's a thing" children=0
+│   ├── FootnoteReference scope=3:15..3:27 label="other-note" identifier="^other-note" children=0
+│   └── Text scope=3:28..3:28 literal="." children=0
+├── Paragraph scope=5:1..5:35 children=3
+│   ├── Text scope=5:1..5:17 literal="And another thing" children=0
+│   ├── FootnoteReference scope=5:18..5:34 label="codeblock-note" identifier="^codeblock-note" children=0
+│   └── Text scope=5:35..5:35 literal="." children=0
+├── Paragraph scope=7:1..7:36 children=1
+│   └── Text scope=7:1..7:36 literal="This doesn't have a referent[^nope]." children=0
+├── FootnoteDefinition scope=10:1..11:0 label="other-note" identifier="^other-note" children=1
+│   └── Paragraph scope=10:22..10:66 children=1
+│       └── Text scope=10:22..10:66 literal="no code block here (spaces are stripped away)" children=0
+├── FootnoteDefinition scope=12:1..14:0 label="codeblock-note" identifier="^codeblock-note" children=1
+│   └── CodeBlock scope=13:9..14:0 info=null language=null literal="this is now a code block (8 spaces indentation)\n" fenced=false closed=true children=0
+├── FootnoteDefinition scope=15:1..16:0 label="1" identifier="^1" children=1
+│   └── Paragraph scope=15:7..15:40 children=3
+│       ├── Text scope=15:7..15:11 literal="Some " children=0
+│       ├── Emphasis scope=15:12..15:19 children=1
+│       │   └── Text scope=15:13..15:18 literal="bolded" children=0
+│       └── Text scope=15:20..15:40 literal=" footnote definition." children=0
+├── Paragraph scope=17:1..17:3 children=1
+│   └── Text scope=17:1..17:3 literal="Hi!" children=0
+├── FootnoteDefinition scope=19:1..25:0 label="footnote" identifier="^footnote" children=3
+│   ├── BlockQuote scope=20:5..20:39 children=1
+│   │   └── Paragraph scope=20:7..20:39 children=1
+│   │       └── Text scope=20:7..20:39 literal="Blockquotes can be in a footnote." children=0
+│   ├── CodeBlock scope=22:9..23:0 info=null language=null literal="as well as code blocks\n" fenced=false closed=true children=0
+│   └── Paragraph scope=24:5..24:37 children=1
+│       └── Text scope=24:5..24:37 literal="or, naturally, simple paragraphs." children=0
+└── FootnoteDefinition scope=26:1..26:26 label="unused" identifier="^unused" children=1
+    └── Paragraph scope=26:12..26:26 children=1
+        └── Text scope=26:12..26:26 literal="This is unused." children=0
 ````````````````````````````````
 
 ## When a footnote is used multiple times, we insert multiple backrefs.
@@ -1008,19 +1008,19 @@ This footnote is referenced[^a-footnote] multiple times, in lots of different pl
 
 [^a-footnote]: This footnote definition should have three backrefs.
 .
-Document id=1:0 scope=1:1..5:67 children=3
-├── Paragraph id=2:0 scope=1:1..1:50 children=3
-│   ├── Text id=2:1 scope=1:1..1:36 literal="This is some text. It has a footnote" children=0
-│   ├── FootnoteReference id=2:2 scope=1:37..1:49 label="a-footnote" definition=4:0 children=0
-│   └── Text id=2:3 scope=1:50..1:50 literal="." children=0
-├── Paragraph id=3:0 scope=3:1..3:98 children=4
-│   ├── Text id=3:1 scope=3:1..3:27 literal="This footnote is referenced" children=0
-│   ├── FootnoteReference id=3:2 scope=3:28..3:40 label="a-footnote" definition=4:0 children=0
-│   ├── Text id=3:3 scope=3:41..3:85 literal=" multiple times, in lots of different places." children=0
-│   └── FootnoteReference id=3:4 scope=3:86..3:98 label="a-footnote" definition=4:0 children=0
-└── FootnoteDefinition id=4:0 scope=5:1..5:67 label="a-footnote" norm="^a-footnote" children=1
-    └── Paragraph id=5:0 scope=5:16..5:67 children=1
-        └── Text id=5:1 scope=5:16..5:67 literal="This footnote definition should have three backrefs." children=0
+Document scope=1:1..5:67 children=3
+├── Paragraph scope=1:1..1:50 children=3
+│   ├── Text scope=1:1..1:36 literal="This is some text. It has a footnote" children=0
+│   ├── FootnoteReference scope=1:37..1:49 label="a-footnote" identifier="^a-footnote" children=0
+│   └── Text scope=1:50..1:50 literal="." children=0
+├── Paragraph scope=3:1..3:98 children=4
+│   ├── Text scope=3:1..3:27 literal="This footnote is referenced" children=0
+│   ├── FootnoteReference scope=3:28..3:40 label="a-footnote" identifier="^a-footnote" children=0
+│   ├── Text scope=3:41..3:85 literal=" multiple times, in lots of different places." children=0
+│   └── FootnoteReference scope=3:86..3:98 label="a-footnote" identifier="^a-footnote" children=0
+└── FootnoteDefinition scope=5:1..5:67 label="a-footnote" identifier="^a-footnote" children=1
+    └── Paragraph scope=5:16..5:67 children=1
+        └── Text scope=5:16..5:67 literal="This footnote definition should have three backrefs." children=0
 ````````````````````````````````
 
 ## Footnote reference labels are href escaped
@@ -1030,13 +1030,13 @@ Hello[^"><script>alert(1)</script>]
 
 [^"><script>alert(1)</script>]: pwned
 .
-Document id=1:0 scope=1:1..3:37 children=2
-├── Paragraph id=2:0 scope=1:1..1:35 children=2
-│   ├── Text id=2:1 scope=1:1..1:5 literal="Hello" children=0
-│   └── FootnoteReference id=2:2 scope=1:6..1:35 label="\"><script>alert(1)</script>" definition=3:0 children=0
-└── FootnoteDefinition id=3:0 scope=3:1..3:37 label="\"><script>alert(1)</script>" norm="^\"><script>alert(1)</script>" children=1
-    └── Paragraph id=4:0 scope=3:33..3:37 children=1
-        └── Text id=4:1 scope=3:33..3:37 literal="pwned" children=0
+Document scope=1:1..3:37 children=2
+├── Paragraph scope=1:1..1:35 children=2
+│   ├── Text scope=1:1..1:5 literal="Hello" children=0
+│   └── FootnoteReference scope=1:6..1:35 label="\"><script>alert(1)</script>" identifier="^\"><script>alert(1)</script>" children=0
+└── FootnoteDefinition scope=3:1..3:37 label="\"><script>alert(1)</script>" identifier="^\"><script>alert(1)</script>" children=1
+    └── Paragraph scope=3:33..3:37 children=1
+        └── Text scope=3:33..3:37 literal="pwned" children=0
 ````````````````````````````````
 
 ## Interop
@@ -1048,15 +1048,15 @@ Autolink and strikethrough.
 
 ~~http://google.com~~
 .
-Document id=1:0 scope=1:1..3:21 children=2
-├── Paragraph id=2:0 scope=1:1..1:18 children=1
-│   └── Strikethrough id=2:1 scope=1:1..1:18 children=1
-│       └── Link id=2:2 scope=1:3..1:16 destination="http://www.google.com" title=null children=1
-│           └── Text id=2:3 scope=1:3..1:16 literal="www.google.com" children=0
-└── Paragraph id=3:0 scope=3:1..3:21 children=1
-    └── Strikethrough id=3:1 scope=3:1..3:21 children=1
-        └── Link id=3:2 scope=3:3..3:19 destination="http://google.com" title=null children=1
-            └── Text id=3:3 scope=3:3..3:19 literal="http://google.com" children=0
+Document scope=1:1..3:21 children=2
+├── Paragraph scope=1:1..1:18 children=1
+│   └── Strikethrough scope=1:1..1:18 children=1
+│       └── Link scope=1:3..1:16 destination="http://www.google.com" title=null children=1
+│           └── Text scope=1:3..1:16 literal="www.google.com" children=0
+└── Paragraph scope=3:1..3:21 children=1
+    └── Strikethrough scope=3:1..3:21 children=1
+        └── Link scope=3:3..3:19 destination="http://google.com" title=null children=1
+            └── Text scope=3:3..3:19 literal="http://google.com" children=0
 ````````````````````````````````
 
 Autolink and tables.
@@ -1066,23 +1066,23 @@ Autolink and tables.
 | --- | --- |
 | https://github.com www.github.com | http://pokemon.com |
 .
-Document id=1:0 scope=1:1..3:58 children=1
-└── Table id=2:0 scope=1:1..3:58 alignments=[none,none] children=2
-    ├── TableRow id=3:0 scope=1:1..1:9 isHeader=true children=2
-    │   ├── TableCell id=4:0 scope=1:2..1:4 children=1
-    │   │   └── Text id=4:1 scope=1:3..1:3 literal="a" children=0
-    │   └── TableCell id=5:0 scope=1:6..1:8 children=1
-    │       └── Text id=5:1 scope=1:7..1:7 literal="b" children=0
-    └── TableRow id=6:0 scope=3:1..3:58 isHeader=false children=2
-        ├── TableCell id=7:0 scope=3:2..3:36 children=3
-        │   ├── Link id=7:1 scope=3:3..3:20 destination="https://github.com" title=null children=1
-        │   │   └── Text id=7:2 scope=3:3..3:20 literal="https://github.com" children=0
-        │   ├── Text id=7:3 scope=3:21..3:21 literal=" " children=0
-        │   └── Link id=7:4 scope=3:22..3:35 destination="http://www.github.com" title=null children=1
-        │       └── Text id=7:5 scope=3:22..3:35 literal="www.github.com" children=0
-        └── TableCell id=8:0 scope=3:38..3:57 children=1
-            └── Link id=8:1 scope=3:39..3:56 destination="http://pokemon.com" title=null children=1
-                └── Text id=8:2 scope=3:39..3:56 literal="http://pokemon.com" children=0
+Document scope=1:1..3:58 children=1
+└── Table scope=1:1..3:58 alignments=[none,none] children=2
+    ├── TableRow scope=1:1..1:9 isHeader=true children=2
+    │   ├── TableCell scope=1:2..1:4 children=1
+    │   │   └── Text scope=1:3..1:3 literal="a" children=0
+    │   └── TableCell scope=1:6..1:8 children=1
+    │       └── Text scope=1:7..1:7 literal="b" children=0
+    └── TableRow scope=3:1..3:58 isHeader=false children=2
+        ├── TableCell scope=3:2..3:36 children=3
+        │   ├── Link scope=3:3..3:20 destination="https://github.com" title=null children=1
+        │   │   └── Text scope=3:3..3:20 literal="https://github.com" children=0
+        │   ├── Text scope=3:21..3:21 literal=" " children=0
+        │   └── Link scope=3:22..3:35 destination="http://www.github.com" title=null children=1
+        │       └── Text scope=3:22..3:35 literal="www.github.com" children=0
+        └── TableCell scope=3:38..3:57 children=1
+            └── Link scope=3:39..3:56 destination="http://pokemon.com" title=null children=1
+                └── Text scope=3:39..3:56 literal="http://pokemon.com" children=0
 ````````````````````````````````
 
 ## Task lists
@@ -1091,14 +1091,14 @@ Document id=1:0 scope=1:1..3:58 children=1
 - [ ] foo
 - [x] bar
 .
-Document id=1:0 scope=1:1..2:9 children=1
-└── List id=2:0 scope=1:1..2:9 flavor=bullet start=null tight=true children=2
-    ├── ListItem id=3:0 scope=1:1..1:9 checked=false children=1
-    │   └── Paragraph id=4:0 scope=1:7..1:9 children=1
-    │       └── Text id=4:1 scope=1:7..1:9 literal="foo" children=0
-    └── ListItem id=5:0 scope=2:1..2:9 checked=true children=1
-        └── Paragraph id=6:0 scope=2:7..2:9 children=1
-            └── Text id=6:1 scope=2:7..2:9 literal="bar" children=0
+Document scope=1:1..2:9 children=1
+└── List scope=1:1..2:9 flavor=bullet start=null tight=true children=2
+    ├── ListItem scope=1:1..1:9 checked=false children=1
+    │   └── Paragraph scope=1:7..1:9 children=1
+    │       └── Text scope=1:7..1:9 literal="foo" children=0
+    └── ListItem scope=2:1..2:9 checked=true children=1
+        └── Paragraph scope=2:7..2:9 children=1
+            └── Text scope=2:7..2:9 literal="bar" children=0
 ````````````````````````````````
 
 Show that a task list and a regular list get processed the same in
@@ -1120,37 +1120,37 @@ Show a regular (non task) list to show that it has the same structure
   - [@] baz
 - [@] bim
 .
-Document id=1:0 scope=1:1..10:9 children=3
-├── List id=2:0 scope=1:1..5:0 flavor=bullet start=null tight=true children=2
-│   ├── ListItem id=3:0 scope=1:1..3:11 checked=true children=2
-│   │   ├── Paragraph id=4:0 scope=1:7..1:9 children=1
-│   │   │   └── Text id=4:1 scope=1:7..1:9 literal="foo" children=0
-│   │   └── List id=5:0 scope=2:3..3:11 flavor=bullet start=null tight=true children=2
-│   │       ├── ListItem id=6:0 scope=2:3..2:11 checked=false children=1
-│   │       │   └── Paragraph id=7:0 scope=2:9..2:11 children=1
-│   │       │       └── Text id=7:1 scope=2:9..2:11 literal="bar" children=0
-│   │       └── ListItem id=8:0 scope=3:3..3:11 checked=true children=1
-│   │           └── Paragraph id=9:0 scope=3:9..3:11 children=1
-│   │               └── Text id=9:1 scope=3:9..3:11 literal="baz" children=0
-│   └── ListItem id=10:0 scope=4:1..5:0 checked=false children=1
-│       └── Paragraph id=11:0 scope=4:7..4:9 children=1
-│           └── Text id=11:1 scope=4:7..4:9 literal="bim" children=0
-├── Paragraph id=12:0 scope=6:1..6:69 children=1
-│   └── Text id=12:1 scope=6:1..6:69 literal="Show a regular (non task) list to show that it has the same structure" children=0
-└── List id=13:0 scope=7:1..10:9 flavor=bullet start=null tight=true children=2
-    ├── ListItem id=14:0 scope=7:1..9:11 checked=null children=2
-    │   ├── Paragraph id=15:0 scope=7:3..7:9 children=1
-    │   │   └── Text id=15:1 scope=7:3..7:9 literal="[@] foo" children=0
-    │   └── List id=16:0 scope=8:3..9:11 flavor=bullet start=null tight=true children=2
-    │       ├── ListItem id=17:0 scope=8:3..8:11 checked=null children=1
-    │       │   └── Paragraph id=18:0 scope=8:5..8:11 children=1
-    │       │       └── Text id=18:1 scope=8:5..8:11 literal="[@] bar" children=0
-    │       └── ListItem id=19:0 scope=9:3..9:11 checked=null children=1
-    │           └── Paragraph id=20:0 scope=9:5..9:11 children=1
-    │               └── Text id=20:1 scope=9:5..9:11 literal="[@] baz" children=0
-    └── ListItem id=21:0 scope=10:1..10:9 checked=null children=1
-        └── Paragraph id=22:0 scope=10:3..10:9 children=1
-            └── Text id=22:1 scope=10:3..10:9 literal="[@] bim" children=0
+Document scope=1:1..10:9 children=3
+├── List scope=1:1..5:0 flavor=bullet start=null tight=true children=2
+│   ├── ListItem scope=1:1..3:11 checked=true children=2
+│   │   ├── Paragraph scope=1:7..1:9 children=1
+│   │   │   └── Text scope=1:7..1:9 literal="foo" children=0
+│   │   └── List scope=2:3..3:11 flavor=bullet start=null tight=true children=2
+│   │       ├── ListItem scope=2:3..2:11 checked=false children=1
+│   │       │   └── Paragraph scope=2:9..2:11 children=1
+│   │       │       └── Text scope=2:9..2:11 literal="bar" children=0
+│   │       └── ListItem scope=3:3..3:11 checked=true children=1
+│   │           └── Paragraph scope=3:9..3:11 children=1
+│   │               └── Text scope=3:9..3:11 literal="baz" children=0
+│   └── ListItem scope=4:1..5:0 checked=false children=1
+│       └── Paragraph scope=4:7..4:9 children=1
+│           └── Text scope=4:7..4:9 literal="bim" children=0
+├── Paragraph scope=6:1..6:69 children=1
+│   └── Text scope=6:1..6:69 literal="Show a regular (non task) list to show that it has the same structure" children=0
+└── List scope=7:1..10:9 flavor=bullet start=null tight=true children=2
+    ├── ListItem scope=7:1..9:11 checked=null children=2
+    │   ├── Paragraph scope=7:3..7:9 children=1
+    │   │   └── Text scope=7:3..7:9 literal="[@] foo" children=0
+    │   └── List scope=8:3..9:11 flavor=bullet start=null tight=true children=2
+    │       ├── ListItem scope=8:3..8:11 checked=null children=1
+    │       │   └── Paragraph scope=8:5..8:11 children=1
+    │       │       └── Text scope=8:5..8:11 literal="[@] bar" children=0
+    │       └── ListItem scope=9:3..9:11 checked=null children=1
+    │           └── Paragraph scope=9:5..9:11 children=1
+    │               └── Text scope=9:5..9:11 literal="[@] baz" children=0
+    └── ListItem scope=10:1..10:9 checked=null children=1
+        └── Paragraph scope=10:3..10:9 children=1
+            └── Text scope=10:3..10:9 literal="[@] bim" children=0
 ````````````````````````````````
 Use a larger indent -- a task list and a regular list should produce
 the same structure.
@@ -1167,37 +1167,37 @@ Show a regular (non task) list to show that it has the same structure
     - [@] baz
 - [@] bim
 .
-Document id=1:0 scope=1:1..10:9 children=3
-├── List id=2:0 scope=1:1..5:0 flavor=bullet start=null tight=true children=2
-│   ├── ListItem id=3:0 scope=1:1..3:13 checked=true children=2
-│   │   ├── Paragraph id=4:0 scope=1:7..1:9 children=1
-│   │   │   └── Text id=4:1 scope=1:7..1:9 literal="foo" children=0
-│   │   └── List id=5:0 scope=2:5..3:13 flavor=bullet start=null tight=true children=2
-│   │       ├── ListItem id=6:0 scope=2:5..2:13 checked=false children=1
-│   │       │   └── Paragraph id=7:0 scope=2:11..2:13 children=1
-│   │       │       └── Text id=7:1 scope=2:11..2:13 literal="bar" children=0
-│   │       └── ListItem id=8:0 scope=3:5..3:13 checked=true children=1
-│   │           └── Paragraph id=9:0 scope=3:11..3:13 children=1
-│   │               └── Text id=9:1 scope=3:11..3:13 literal="baz" children=0
-│   └── ListItem id=10:0 scope=4:1..5:0 checked=false children=1
-│       └── Paragraph id=11:0 scope=4:7..4:9 children=1
-│           └── Text id=11:1 scope=4:7..4:9 literal="bim" children=0
-├── Paragraph id=12:0 scope=6:1..6:69 children=1
-│   └── Text id=12:1 scope=6:1..6:69 literal="Show a regular (non task) list to show that it has the same structure" children=0
-└── List id=13:0 scope=7:1..10:9 flavor=bullet start=null tight=true children=2
-    ├── ListItem id=14:0 scope=7:1..9:13 checked=null children=2
-    │   ├── Paragraph id=15:0 scope=7:3..7:9 children=1
-    │   │   └── Text id=15:1 scope=7:3..7:9 literal="[@] foo" children=0
-    │   └── List id=16:0 scope=8:5..9:13 flavor=bullet start=null tight=true children=2
-    │       ├── ListItem id=17:0 scope=8:5..8:13 checked=null children=1
-    │       │   └── Paragraph id=18:0 scope=8:7..8:13 children=1
-    │       │       └── Text id=18:1 scope=8:7..8:13 literal="[@] bar" children=0
-    │       └── ListItem id=19:0 scope=9:5..9:13 checked=null children=1
-    │           └── Paragraph id=20:0 scope=9:7..9:13 children=1
-    │               └── Text id=20:1 scope=9:7..9:13 literal="[@] baz" children=0
-    └── ListItem id=21:0 scope=10:1..10:9 checked=null children=1
-        └── Paragraph id=22:0 scope=10:3..10:9 children=1
-            └── Text id=22:1 scope=10:3..10:9 literal="[@] bim" children=0
+Document scope=1:1..10:9 children=3
+├── List scope=1:1..5:0 flavor=bullet start=null tight=true children=2
+│   ├── ListItem scope=1:1..3:13 checked=true children=2
+│   │   ├── Paragraph scope=1:7..1:9 children=1
+│   │   │   └── Text scope=1:7..1:9 literal="foo" children=0
+│   │   └── List scope=2:5..3:13 flavor=bullet start=null tight=true children=2
+│   │       ├── ListItem scope=2:5..2:13 checked=false children=1
+│   │       │   └── Paragraph scope=2:11..2:13 children=1
+│   │       │       └── Text scope=2:11..2:13 literal="bar" children=0
+│   │       └── ListItem scope=3:5..3:13 checked=true children=1
+│   │           └── Paragraph scope=3:11..3:13 children=1
+│   │               └── Text scope=3:11..3:13 literal="baz" children=0
+│   └── ListItem scope=4:1..5:0 checked=false children=1
+│       └── Paragraph scope=4:7..4:9 children=1
+│           └── Text scope=4:7..4:9 literal="bim" children=0
+├── Paragraph scope=6:1..6:69 children=1
+│   └── Text scope=6:1..6:69 literal="Show a regular (non task) list to show that it has the same structure" children=0
+└── List scope=7:1..10:9 flavor=bullet start=null tight=true children=2
+    ├── ListItem scope=7:1..9:13 checked=null children=2
+    │   ├── Paragraph scope=7:3..7:9 children=1
+    │   │   └── Text scope=7:3..7:9 literal="[@] foo" children=0
+    │   └── List scope=8:5..9:13 flavor=bullet start=null tight=true children=2
+    │       ├── ListItem scope=8:5..8:13 checked=null children=1
+    │       │   └── Paragraph scope=8:7..8:13 children=1
+    │       │       └── Text scope=8:7..8:13 literal="[@] bar" children=0
+    │       └── ListItem scope=9:5..9:13 checked=null children=1
+    │           └── Paragraph scope=9:7..9:13 children=1
+    │               └── Text scope=9:7..9:13 literal="[@] baz" children=0
+    └── ListItem scope=10:1..10:9 checked=null children=1
+        └── Paragraph scope=10:3..10:9 children=1
+            └── Text scope=10:3..10:9 literal="[@] bim" children=0
 ````````````````````````````````
 
 A task item's checked state is decided by the marker the scanner matched, not
@@ -1209,9 +1209,9 @@ registered as `tasklist-checked-marker`.
 ```````````````````````````````` example
 - [ ] call me [x] later
 .
-Document id=1:0 scope=1:1..1:23 children=1
-└── List id=2:0 scope=1:1..1:23 flavor=bullet start=null tight=true children=1
-    └── ListItem id=3:0 scope=1:1..1:23 checked=false children=1
-        └── Paragraph id=4:0 scope=1:7..1:23 children=1
-            └── Text id=4:1 scope=1:7..1:23 literal="call me [x] later" children=0
+Document scope=1:1..1:23 children=1
+└── List scope=1:1..1:23 flavor=bullet start=null tight=true children=1
+    └── ListItem scope=1:1..1:23 checked=false children=1
+        └── Paragraph scope=1:7..1:23 children=1
+            └── Text scope=1:7..1:23 literal="call me [x] later" children=0
 ````````````````````````````````

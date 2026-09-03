@@ -5,9 +5,6 @@ import MarkdownCoreC
 /// A link written in one of the three reference forms is a ``LinkReference``
 /// instead, and carries no destination at all.
 public struct Link: Markup {
-    /// The node's identity: the name a consumer tracks this element by across
-    /// a stream's feeds — the render key. See ``Identity``.
-    public let id: Identity
     /// Where it is, brackets and parentheses included. See ``Scope``.
     public let scope: Scope
     /// The link text, as inline content.
@@ -20,19 +17,17 @@ public struct Link: Markup {
     public let title: String?
 
     /// Dispatches to the visitor's `Link` case.
-    public func accept<V: Visitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension Link {
-    init(from node: OpaquePointer) {
-        let id = Self.identity(from: node)
+    init(from node: OpaquePointer, content: [any Markup]) {
         var destination = markdown_core_string()
         var title = markdown_core_optional_string()
         markdown_core_node_link_properties(node, &destination, &title)
         self.init(
-            id: id,
             scope: Self.scope(from: node),
-            content: Self.children(from: node),
+            content: content,
             destination: destination.requiredString,
             title: title.string
         )

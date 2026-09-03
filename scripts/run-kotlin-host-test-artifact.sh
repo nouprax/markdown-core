@@ -7,7 +7,7 @@ artifact_dir=${1:-}
 platform=${2:-}
 suite=${3:-}
 
-case "$suite" in correctness | conformance | benchmark) ;; *) exit 2 ;; esac
+case "$suite" in correctness | conformance) ;; *) exit 2 ;; esac
 artifact_verify "$artifact_dir" kotlin-host-test-products
 artifact_extract "$artifact_dir" kotlin-test-products.tar.gz "$root"
 project_build="$root/packages/kotlin-markdown-core/build"
@@ -20,13 +20,6 @@ case "$platform" in
         executable="$project_build/bin/macosArm64/debugTest/test.kexe"
         ;;
     jvm)
-        if [ "$suite" = benchmark ]; then
-            benchmark="$project_build/ci-test-artifact/jvm-benchmark"
-            java --enable-native-access=ALL-UNNAMED \
-                -cp "$benchmark/classes:$benchmark/lib/*" \
-                com.nouprax.markdown.core.benchmark.BenchmarkKt
-            exit
-        fi
         jvm="$project_build/ci-test-artifact/jvm"
         java --enable-native-access=ALL-UNNAMED \
             -cp "$jvm/classes:$jvm/lib/*" \
@@ -34,7 +27,6 @@ case "$platform" in
         exit
         ;;
     android-host)
-        test "$suite" != benchmark
         host="$project_build/ci-test-artifact/android-host"
         mapfile -t classes < <(
             find "$host/classes/com/nouprax/markdown/core" -type f -name '*Test.class' ! -name '*$*' \
@@ -58,12 +50,10 @@ case "$platform" in
         exit
         ;;
     *)
-        echo "usage: $0 <artifact-dir> jvm benchmark | <artifact-dir> linux-x64|macos-arm64|jvm|android-host correctness|conformance" >&2
+        echo "usage: $0 <artifact-dir> linux-x64|macos-arm64|jvm|android-host correctness|conformance" >&2
         exit 2
         ;;
 esac
-
-test "$suite" != benchmark
 
 if [ "$suite" = conformance ]; then
     "$executable" '--ktest_gradle_filter=*AstTest*'

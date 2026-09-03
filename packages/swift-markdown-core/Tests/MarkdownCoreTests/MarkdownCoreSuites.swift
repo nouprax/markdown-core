@@ -7,28 +7,21 @@ import Testing
 // published API.
 @testable import MarkdownCore
 
-/// The tree of a whole-text parse: `Document(markdown:options:).seal()`,
-/// keeping only the semantic view. The lifecycle tests spell
-/// the full entry out themselves.
-private func parse(_ source: String, options: ParseOptions = .init()) throws -> Semantic {
-    try Document(markdown: source, options: options).seal().semantic
-}
-
 @Suite("api") struct APISuite {
     @Test("parse options and visitor dispatch use the public Swift API")
     func publicAPI() throws {
         let options = ParseOptions()
         #expect(options.tables && options.directives && options.formulas)
-        let document = try parse("# Heading\n")
+        let document = try Document.parse("# Heading\n")
         var visitor = KindVisitor()
         #expect(document.content[0].accept(&visitor) == "heading:1")
         let table = try #require(
-            parse("| a |\n| --- |\n| b |\n").content.first as? Table
+            Document.parse("| a |\n| --- |\n| b |\n").content.first as? Table
         )
         #expect(table.header.accept(&visitor) == "header")
         #expect(table.header.cells[0].accept(&visitor) == "cell")
         #expect(
-            try parse("| a |\n| --- |\n| b |\n", options: ParseOptions(tables: false))
+            try Document.parse("| a |\n| --- |\n| b |\n", options: ParseOptions(tables: false))
                 .content.first is Paragraph
         )
     }
@@ -37,7 +30,7 @@ private func parse(_ source: String, options: ParseOptions = .init()) throws -> 
 @Suite("unicode") struct UnicodeSuite {
     @Test("UTF-8 survives the C-to-Swift boundary")
     func unicode() throws {
-        let paragraph = try #require(parse("héllo 🚀 中文\n").content.first as? Paragraph)
+        let paragraph = try #require(Document.parse("héllo 🚀 中文\n").content.first as? Paragraph)
         #expect((paragraph.content.first as? Text)?.literal == "héllo 🚀 中文")
     }
 }
@@ -70,7 +63,7 @@ private func parse(_ source: String, options: ParseOptions = .init()) throws -> 
         // `[a]()` WROTE a destination and wrote nothing in it. The native side
         // answers that with a null pointer and length 0, which is the one place
         // a string with no bytes is still a string.
-        let paragraph = try #require(parse("[a]()\n").content.first as? Paragraph)
+        let paragraph = try #require(Document.parse("[a]()\n").content.first as? Paragraph)
         let link = try #require(paragraph.content.first as? Link)
         // `destination` is not optional at all -- Q26 -- so empty is the only
         // way it can say "nothing was written between the parens"; `title` is,
@@ -81,17 +74,16 @@ private func parse(_ source: String, options: ParseOptions = .init()) throws -> 
 
     @Test("empty input maps to an empty document")
     func empty() throws {
-        #expect(try parse("").content.isEmpty)
+        #expect(try Document.parse("").content.isEmpty)
     }
 }
 
 @Suite("ownership") struct OwnershipSuite {
     @Test("values remain usable and Sendable after native release")
     func copiedAndSendable() async throws {
-        requireSendable(Read.self)
-        requireSendable(Semantic.self)
+        requireSendable(Document.self)
         requireSendable(ParseOptions.self)
-        let document = try parse("parallel 🚀\n")
+        let document = try Document.parse("parallel 🚀\n")
         let counts = await withTaskGroup(of: Int.self, returning: [Int].self) { group in
             for _ in 0..<20 { group.addTask { document.content.count } }
             return await group.reduce(into: []) { $0.append($1) }
@@ -102,38 +94,26 @@ private func parse(_ source: String, options: ParseOptions = .init()) throws -> 
 }
 
 @Suite("api") struct DirectiveLabelSuite {
-    @Test("a directive block's label is walked ahead of its content")
+    @Test("a directive label is dumped as a field but is not content")
     func labelledDirectiveBlock() throws {
-        // A directive block with BOTH halves. The label is a node in its own
-        // right and the walker has to yield it before the content -- with no
-        // label present that branch never runs, and nothing else in this suite
-        // writes one.
         let source = ":::note[Title]{kind=demo}\nBody\n:::\n"
-        let block = try #require(parse(source).content.first as? DirectiveBlock)
+        let block = try #require(Document.parse(source).content.first as? DirectiveBlock)
         let label = try #require(block.label)
         #expect((label.content.first as? Text)?.literal == "Title")
+        #expect(block.content.count == 1)
+        #expect(block.content.first is Paragraph)
         #expect(block.attributes?.first?.name == "kind")
 
-        var kinds: [String] = []
-        let document = try parse(source)
-        Walker().walk(document) { event, node in
-            if event == .entering { kinds.append(String(describing: type(of: node))) }
-        }
-        #expect(kinds.contains("DirectiveLabel"))
-        #expect(kinds.firstIndex(of: "DirectiveLabel")! < kinds.lastIndex(of: "Paragraph")!)
+        #expect(block.content.allSatisfy { !($0 is DirectiveLabel) })
+        #expect(label.content.count == 1)
+        #expect(label.content.first is Text)
+        #expect(block.dump().contains("DirectiveLabel"))
 
-        // AND ONE WITHOUT A LABEL, which is the other arm: the walker's `?? []`
-        // and the dump's `children=` both ask whether a label is there, and a
-        // suite that only ever writes one never takes the answer "no".
+        // The other field arm: no label is emitted when none was written.
         let bare = try #require(
-            parse(":::note\nBody\n:::\n").content.first as? DirectiveBlock
+            Document.parse(":::note\nBody\n:::\n").content.first as? DirectiveBlock
         )
         #expect(bare.label == nil)
-        var bareKinds: [String] = []
-        Walker().walk(try parse(":::note\nBody\n:::\n")) { event, node in
-            if event == .entering { bareKinds.append(String(describing: type(of: node))) }
-        }
-        #expect(!bareKinds.contains("DirectiveLabel"))
         #expect(bare.dump().contains("children=1"))
     }
 
@@ -143,7 +123,7 @@ private func parse(_ source: String, options: ParseOptions = .init()) throws -> 
         // corpus writes most of them. A fenced code block carries its literal
         // through untouched, so it is the one place a test can put them all.
         let literal = "a\"b\\c\td\u{08}e\u{0c}f\u{01}g"
-        let document = try parse("```\n\(literal)\n```\n")
+        let document = try Document.parse("```\n\(literal)\n```\n")
         let dump = document.dump()
         for expected in ["\\\"", "\\\\", "\\t", "\\b", "\\f", "\\n", "\\u0001"] {
             #expect(dump.contains(expected), "dump is missing the escape \(expected)")
@@ -155,18 +135,22 @@ private func parse(_ source: String, options: ParseOptions = .init()) throws -> 
     @Test("large and deeply nested inputs preserve complete value trees")
     func workloads() throws {
         let unit = "## Section\n\nParagraph with **strong**, [link](/), and 🚀.\n\n"
-        #expect(try parse(String(repeating: unit, count: 5_000)).content.count == 10_000)
+        #expect(try Document.parse(String(repeating: unit, count: 5_000)).content.count == 10_000)
+        let depth = 10_000
         var node = try #require(
-            parse(String(repeating: "> ", count: 128) + "leaf\n").content.first
+            Document.parse(String(repeating: "- ", count: depth) + "leaf\n").content.first
         )
-        for _ in 0..<128 { node = try #require((node as? BlockQuote)?.content.first) }
+        for _ in 0..<depth {
+            let list = try #require(node as? MarkdownCore.List)
+            node = try #require(list.items.first?.content.first)
+        }
         #expect(node is Paragraph)
-        for _ in 0..<2_000 { #expect(try parse("# Copy\n\n- [x] item\n").content.count == 2) }
+        for _ in 0..<2_000 { #expect(try Document.parse("# Copy\n\n- [x] item\n").content.count == 2) }
     }
 }
 
-private struct KindVisitor: Visitor {
-    mutating func visit(_ node: Semantic) -> String { kindName(node) }
+private struct KindVisitor: MarkupVisitor {
+    mutating func visit(_ node: Document) -> String { kindName(node) }
     mutating func visit(_ node: BlockQuote) -> String { kindName(node) }
     mutating func visit(_ node: Paragraph) -> String { kindName(node) }
     mutating func visit(_ node: Heading) -> String { "heading:\(node.level)" }

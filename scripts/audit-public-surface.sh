@@ -15,6 +15,28 @@ if [ "$public_headers" != "packages/markdown-core/include/markdown_core.h" ]; th
     fail "the C package must install exactly one facade header"
 fi
 
+test -f packages/markdown-core/core/extension.h \
+    || fail "the internal parser-extension descriptor header is missing"
+test ! -e packages/markdown-core/core/syntax_extension.h \
+    || fail "the retired syntax_extension.h header still exists"
+if grep -R -n -E \
+    'markdown_core_syntax_extension|markdown_core_[a-z0-9_]*_syntax_extensions?|syntax_extension\.h' \
+    packages/markdown-core scripts --exclude-dir=build --exclude=audit-public-surface.sh; then
+    fail "the retired syntax-extension identifier family still exists"
+fi
+grep -q 'typedef struct markdown_core_extension markdown_core_extension;' \
+    packages/markdown-core/core/markdown-core.h \
+    || fail "the parser-extension descriptor does not use markdown_core_extension"
+grep -q 'markdown_core_parser_attach_extension' \
+    packages/markdown-core/core/markdown-core-extension-api.h \
+    || fail "the parser-extension attachment API was not renamed coherently"
+if grep -R -n 'markdown_core_map_entry' packages/markdown-core --exclude-dir=build; then
+    fail "the retired map-entry type still exists"
+fi
+grep -q 'typedef struct markdown_core_map_record markdown_core_map_record;' \
+    packages/markdown-core/core/map.h \
+    || fail "the normalized-label map record does not use markdown_core_map_record"
+
 temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
 
@@ -50,11 +72,19 @@ if (declared.join("\n") !== machOExported.join("\n")) {
     throw new Error("C header declarations and the Mach-O export list differ");
 }
 for (const symbol of declared) {
-    if (/_(set|insert|append|prepend|replace|unlink|new|render)_/.test(symbol)) {
-        throw new Error(`Mutating or rendering C symbol is public: ${symbol}`);
+    if (
+        /_(?:set|insert|append|prepend|replace|unlink|new|render)(?:_|$)/.test(symbol) ||
+        /_(?:feed|stream|edit|session|snapshot|delta|diagnostic)(?:_|$)/.test(symbol) ||
+        /_parser_(?:new|new_with_mem|feed|finish|free)$/.test(symbol) ||
+        /_parse_file$/.test(symbol)
+    ) {
+        throw new Error(`Retired or mutable C symbol is public: ${symbol}`);
     }
 }
 NODE
+
+# These are API identifier checks, not prose checks.
+retired_surface_terms='render|feed|stream|edit|session|snapshot|delta|diagnostic|concrete|Concrete|CST|ConcreteSyntax|Token|Trivia|Recovery|Walker|WalkEvent'
 
 CLANG_MODULE_CACHE_PATH="$temp_dir/swift-module-cache" \
     swift package --disable-sandbox dump-package >"$temp_dir/swift-package.json"
@@ -69,18 +99,18 @@ if (products.join("\n") !== "MarkdownCore:MarkdownCore") {
 NODE
 
 if grep -R -n -E \
-    'public (func|var|let|static func).*\b(render|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)' \
+    "public (class|struct|enum|protocol|typealias|func|var|let|static func).*\\b(${retired_surface_terms}|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)" \
     packages/swift-markdown-core/Sources/MarkdownCore; then
-    fail "Swift exports mutation, renderer, or native implementation details"
+    fail "Swift exports a retired API, mutation, or native implementation detail"
 fi
-grep -q 'public enum TreeDumper' packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift \
-    && grep -q 'public static func dump' packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift \
+grep -q 'public enum TreeDumper' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/TreeDumper.swift \
+    && grep -q 'public static func dump' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/TreeDumper.swift \
     && grep -q 'func dump() -> String' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Markup.swift \
-    || fail "Swift does not expose the reviewed Markup diagnostic dump API"
+    || fail "Swift does not expose the reviewed Markup debug dump API"
 grep -q 'public struct TableRow: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
     && grep -q 'public struct TableCell: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
-    && grep -q 'visit(_ node: TableRow)' packages/swift-markdown-core/Sources/MarkdownCore/Walker/Visitor.swift \
-    && grep -q 'visit(_ node: TableCell)' packages/swift-markdown-core/Sources/MarkdownCore/Walker/Visitor.swift \
+    && grep -q 'visit(_ node: TableRow)' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
+    && grep -q 'visit(_ node: TableCell)' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
     || fail "Swift table rows and cells are not first-class Markup visitor nodes"
 # The kind count is the CONTRACT's, not a number written here. It was 28 in
 # three places until Step 7 added a 29th kind and all three said the same wrong
@@ -88,38 +118,73 @@ grep -q 'public struct TableRow: Markup' packages/swift-markdown-core/Sources/Ma
 kind_count=$(node -e 'process.stdout.write(String(JSON.parse(require("node:fs").readFileSync("docs/specs/canonical-ast.json", "utf8")).kinds.length))')
 
 if grep -R -n 'defaultVisit' packages/swift-markdown-core/Sources/MarkdownCore; then
-    fail "Swift Visitor exposes a catch-all fallback"
+    fail "Swift MarkupVisitor exposes a catch-all fallback"
 fi
-test "$(grep -c 'mutating func visit' packages/swift-markdown-core/Sources/MarkdownCore/Walker/Visitor.swift)" -eq "$kind_count" \
-    || fail "Swift Visitor is not exhaustive over all $kind_count Markup kinds"
+test "$(grep -c 'mutating func visit' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift)" -eq "$kind_count" \
+    || fail "Swift MarkupVisitor is not exhaustive over all $kind_count Markup kinds"
 
 grep -q 'explicitApi()' packages/kotlin-markdown-core/build.gradle.kts \
     || fail "Kotlin explicit API mode is disabled"
 if grep -R -n -E \
-    'public (fun|val|var).*\b(render|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)' \
+    "public (class|data class|sealed class|enum class|object|interface|typealias|fun|val|var).*\\b(${retired_surface_terms}|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)" \
     packages/kotlin-markdown-core/src/commonMain; then
-    fail "Kotlin exports mutation, renderer, or native implementation details"
+    fail "Kotlin exports a retired API, mutation, or native implementation detail"
 fi
 grep -q 'public object TreeDumper' \
-    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/TreeDumper.kt \
+    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/TreeDumper.kt \
     && grep -q 'public fun dump(root: Markup): String' \
-        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/TreeDumper.kt \
+        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/TreeDumper.kt \
     && grep -q 'public fun dump(): String' \
         packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Markup.kt \
-    || fail "Kotlin does not expose the reviewed Markup diagnostic dump API"
+    || fail "Kotlin does not expose the reviewed Markup debug dump API"
 grep -q 'visitor.visitTableRow(this)' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Table.kt \
     && grep -q 'visitor.visitTableCell(this)' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Table.kt \
-    && grep -q 'visitTableRow' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/Visitor.kt \
-    && grep -q 'visitTableCell' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/Visitor.kt \
+    && grep -q 'visitTableRow' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/Visitor.kt \
+    && grep -q 'visitTableCell' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/Visitor.kt \
     || fail "Kotlin table rows and cells are not first-class Markup visitor nodes"
 if grep -R -n 'defaultVisit' packages/kotlin-markdown-core/src/commonMain; then
     fail "Kotlin Visitor exposes a catch-all fallback"
 fi
-test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/Visitor.kt)" -eq "$kind_count" \
+test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/Visitor.kt)" -eq "$kind_count" \
     || fail "Kotlin Visitor is not exhaustive over all $kind_count Markup kinds"
+grep -q '^headers = markdown_core.h$' \
+    packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
+    && grep -q '^package = com.nouprax.markdown.core.internal.capi$' \
+        packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
+    && grep -q '^staticLibraries = libmarkdown-core-extensions.a libmarkdown-core.a$' \
+        packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
+    && grep -q 'markdown_core_document_parse' \
+        packages/kotlin-markdown-core/src/nativePlatformMain/kotlin/com/nouprax/markdown/core/PlatformParser.native.kt \
+    && ! grep -R -q 'markdown_core_kotlin_jni_' \
+        packages/kotlin-markdown-core/src/nativePlatformMain \
+        packages/kotlin-markdown-core/src/nativeInterop \
+    || fail "Kotlin/Native must cinterop the C facade directly, independently of JNI"
+if find packages/kotlin-markdown-core/src -type f -name 'NativeBridge*' | grep -q . \
+    || grep -R -q -E '\bnativeParse\b|internal\.nativebridge' packages/kotlin-markdown-core/src; then
+    fail "the retired cross-target NativeBridge abstraction still exists"
+fi
+if find packages/kotlin-markdown-core/src/commonMain packages/kotlin-markdown-core/src/nativePlatformMain \
+    -type f \( -name 'JniPayloadDecoder.kt' -o -name 'JniMarkupDecoder.kt' -o -name 'JniNodeKind.kt' \) | grep -q .; then
+    fail "the JVM/Android JNI wire protocol leaked into a Kotlin/Native source set"
+fi
+grep -q 'JVM/Android-only JNI payload encoder' \
+    packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni_payload.h \
+    && ! grep -q 'markdown_core_kotlin_jni_payload' \
+        packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
+    || fail "the JNI payload encoder leaked into the Kotlin/Native adapter"
+grep -qx '_JNI_OnLoad' packages/kotlin-markdown-core/src/native/markdown_core_kotlin.exports \
+    && grep -qx '    JNI_OnLoad' packages/kotlin-markdown-core/src/native/markdown_core_kotlin.def \
+    && test "$(grep -cE '^        [A-Za-z0-9_]+;' packages/kotlin-markdown-core/src/native/markdown_core_kotlin.map)" -eq 1 \
+    && grep -q '^        JNI_OnLoad;$' packages/kotlin-markdown-core/src/native/markdown_core_kotlin.map \
+    || fail "Kotlin JNI export allowlists must contain only JNI_OnLoad"
 
 if grep -R -E -n 'readonly children' packages/es-markdown-core/src/model; then
     fail "ES exposes generic children"
+fi
+if grep -R -n -E \
+    "^export (declare )?(class|interface|type|enum|function|const).*\\b(${retired_surface_terms}|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)" \
+    packages/es-markdown-core/src; then
+    fail "ES exports a retired API, mutation, or native implementation detail"
 fi
 grep -q 'TableRow extends MarkupBase<"tableRow">' packages/es-markdown-core/src/model/table.ts \
     && grep -q 'TableCell extends MarkupBase<"tableCell">' packages/es-markdown-core/src/model/table.ts \
@@ -154,19 +219,7 @@ const runtimeExports = [
         match[1].split(",").map((name) => name.trim())
     )
 ].sort();
-// `RegionRole` left the runtime list with the regions when 11a-11c were
-// retired; `Concrete` left it with the concrete view (D8). `Session` joined
-// at T14 (docs/STREAMING.md D5) and became the living `Document` when the
-// 3.0 names were formalized: the stream's one handle, beside the `Read`
-// values it returns (`Read` and `Semantic` are types, not runtime exports).
-const expectedRuntime = [
-    "Document",
-    "ParseError",
-    "TreeDumper",
-    "WalkEvent",
-    "Walker",
-    "visit"
-].sort();
+const expectedRuntime = ["Document", "ParseError", "TreeDumper", "visit"].sort();
 if (runtimeExports.join("\n") !== expectedRuntime.join("\n")) {
     throw new Error(`Unexpected ES runtime exports: ${runtimeExports.join(", ")}`);
 }

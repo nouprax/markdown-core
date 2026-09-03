@@ -29,11 +29,13 @@ bufsize_t _scan_at(bufsize_t (*scanner)(const unsigned char *), markdown_core_ch
 
   spacechar = [ \t\v\f\r\n];
 
+  reg_char     = [^\\()\x00-\x20];
+
   escaped_char = [\\][!"#$%&'()*+,./:;<=>?@[\\\]^_`{|}~-];
 
   tagname = [A-Za-z][A-Za-z0-9-]*;
 
-  blocktagname = 'address'|'article'|'aside'|'base'|'basefont'|'blockquote'|'body'|'caption'|'center'|'col'|'colgroup'|'dd'|'details'|'dialog'|'dir'|'div'|'dl'|'dt'|'fieldset'|'figcaption'|'figure'|'footer'|'form'|'frame'|'frameset'|'h1'|'h2'|'h3'|'h4'|'h5'|'h6'|'head'|'header'|'hr'|'html'|'iframe'|'legend'|'li'|'link'|'main'|'menu'|'menuitem'|'nav'|'noframes'|'ol'|'optgroup'|'option'|'p'|'param'|'section'|'source'|'title'|'summary'|'table'|'tbody'|'td'|'tfoot'|'th'|'thead'|'title'|'tr'|'track'|'ul';
+  blocktagname = 'address'|'article'|'aside'|'base'|'basefont'|'blockquote'|'body'|'caption'|'center'|'col'|'colgroup'|'dd'|'details'|'dialog'|'dir'|'div'|'dl'|'dt'|'fieldset'|'figcaption'|'figure'|'footer'|'form'|'frame'|'frameset'|'h1'|'h2'|'h3'|'h4'|'h5'|'h6'|'head'|'header'|'hr'|'html'|'iframe'|'legend'|'li'|'link'|'main'|'menu'|'menuitem'|'nav'|'noframes'|'ol'|'optgroup'|'option'|'p'|'param'|'search'|'section'|'title'|'summary'|'table'|'tbody'|'td'|'tfoot'|'th'|'thead'|'title'|'tr'|'track'|'ul';
 
   attributename = [a-zA-Z_:][a-zA-Z0-9:._-]*;
 
@@ -54,14 +56,31 @@ bufsize_t _scan_at(bufsize_t (*scanner)(const unsigned char *), markdown_core_ch
 
   processinginstruction = ([^?>\x00]+ | [?][^>\x00] | [>])+;
 
-  declaration = [A-Z]+ spacechar+ [^>\x00]*;
+  declaration = [A-Za-z]+ [^>\x00]*;
 
   cdata = "CDATA[" ([^\]\x00]+ | "]" [^\]\x00] | "]]" [^>\x00])*;
 
   htmltag = opentag | closetag;
 
+  in_parens_nosp   = [(] (reg_char|escaped_char|[\\])* [)];
+
+  in_double_quotes = ["] (escaped_char|[^"\x00])* ["];
+  in_single_quotes = ['] (escaped_char|[^'\x00])* ['];
+  in_parens        = [(] (escaped_char|[^)\x00])* [)];
+
   scheme           = [A-Za-z][A-Za-z0-9.+-]{1,31};
 */
+
+// Try to match a scheme including colon.
+bufsize_t _scan_scheme(const unsigned char *p)
+{
+  const unsigned char *marker = NULL;
+  const unsigned char *start = p;
+/*!re2c
+  scheme [:] { return (bufsize_t)(p - start); }
+  * { return 0; }
+*/
+}
 
 // Try to match URI autolink after first <, returning number of chars matched.
 bufsize_t _scan_autolink_uri(const unsigned char *p)
@@ -100,6 +119,17 @@ bufsize_t _scan_html_tag(const unsigned char *p)
 */
 }
 
+// Try to (liberally) match an HTML tag after first <, returning num of chars matched.
+bufsize_t _scan_liberal_html_tag(const unsigned char *p)
+{
+  const unsigned char *marker = NULL;
+  const unsigned char *start = p;
+/*!re2c
+  [^\n\x00]+ [>] { return (bufsize_t)(p - start); }
+  * { return 0; }
+*/
+}
+
 bufsize_t _scan_html_comment(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
@@ -124,6 +154,7 @@ bufsize_t _scan_html_declaration(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
+  (void) marker;
 /*!re2c
   declaration { return (bufsize_t)(p - start); }
   * { return 0; }
@@ -150,7 +181,7 @@ bufsize_t _scan_html_block_start(const unsigned char *p)
   [<] ('script'|'pre'|'textarea'|'style') (spacechar | [>]) { return 1; }
   '<!--' { return 2; }
   '<?' { return 3; }
-  '<!' [A-Z] { return 4; }
+  '<!' [A-Za-z] { return 4; }
   '<![CDATA[' { return 5; }
   [<] [/]? blocktagname (spacechar | [/]? [>])  { return 6; }
   * { return 0; }
@@ -291,6 +322,32 @@ bufsize_t _scan_close_code_fence(const unsigned char *p)
 /*!re2c
   [`]{3,} / [ \t]*[\r\n] { return (bufsize_t)(p - start); }
   [~]{3,} / [ \t]*[\r\n] { return (bufsize_t)(p - start); }
+  * { return 0; }
+*/
+}
+
+// Scans an entity.
+// Returns number of chars matched.
+bufsize_t _scan_entity(const unsigned char *p)
+{
+  const unsigned char *marker = NULL;
+  const unsigned char *start = p;
+/*!re2c
+  [&] ([#] ([Xx][A-Fa-f0-9]{1,6}|[0-9]{1,7}) |[A-Za-z][A-Za-z0-9]{1,31} ) [;]
+     { return (bufsize_t)(p - start); }
+  * { return 0; }
+*/
+}
+
+// Returns positive value if a URL begins in a way that is potentially
+// dangerous, with javascript:, vbscript:, file:, or data:, otherwise 0.
+bufsize_t _scan_dangerous_url(const unsigned char *p)
+{
+  const unsigned char *marker = NULL;
+  const unsigned char *start = p;
+/*!re2c
+  'data:image/' ('png'|'gif'|'jpeg'|'webp') { return 0; }
+  'javascript:' | 'vbscript:' | 'file:' | 'data:' { return (bufsize_t)(p - start); }
   * { return 0; }
 */
 }

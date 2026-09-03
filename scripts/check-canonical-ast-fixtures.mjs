@@ -47,50 +47,49 @@ const optionNames = [
 const stateValidators = {
     "placement.embedded": (tree) => / mode=embedded /.test(tree),
     "placement.standalone": (tree) => / mode=standalone /.test(tree),
-    "list.flavor.bullet": (tree) => /^.*List id=\d+:\d+ scope=.* flavor=bullet /m.test(tree),
-    "list.flavor.ordered": (tree) => /^.*List id=\d+:\d+ scope=.* flavor=ordered /m.test(tree),
-    "list.start.null": (tree) => /^.*List id=\d+:\d+ scope=.* start=null /m.test(tree),
-    "list.start.value": (tree) => /^.*List id=\d+:\d+ scope=.* start=-?\d+ /m.test(tree),
-    "list.tight.false": (tree) => /^.*List id=\d+:\d+ scope=.* tight=false /m.test(tree),
-    "list.tight.true": (tree) => /^.*List id=\d+:\d+ scope=.* tight=true /m.test(tree),
-    "listItem.checked.null": (tree) => /^.*ListItem id=\d+:\d+ scope=.* checked=null /m.test(tree),
-    "listItem.checked.false": (tree) => /^.*ListItem id=\d+:\d+ scope=.* checked=false /m.test(tree),
-    "listItem.checked.true": (tree) => /^.*ListItem id=\d+:\d+ scope=.* checked=true /m.test(tree),
-    "codeBlock.info.null": (tree) => /^.*CodeBlock id=\d+:\d+ scope=.* info=null /m.test(tree),
-    "codeBlock.info.value": (tree) => /^.*CodeBlock id=\d+:\d+ scope=.* info="/m.test(tree),
-    "codeBlock.language.null": (tree) => /^.*CodeBlock id=\d+:\d+ scope=.* language=null /m.test(tree),
-    "codeBlock.language.value": (tree) => /^.*CodeBlock id=\d+:\d+ scope=.* language="/m.test(tree),
-    "codeBlock.fenced.false": (tree) => /^.*CodeBlock id=\d+:\d+ scope=.* fenced=false /m.test(tree),
-    "codeBlock.fenced.true": (tree) => /^.*CodeBlock id=\d+:\d+ scope=.* fenced=true /m.test(tree),
-    "codeBlock.closed.false": (tree) => /^.*CodeBlock id=\d+:\d+ scope=.* closed=false /m.test(tree),
-    "codeBlock.closed.true": (tree) => /^.*CodeBlock id=\d+:\d+ scope=.* closed=true /m.test(tree),
-    "table.alignment.none": (tree) => /^.*Table id=\d+:\d+ scope=.*alignments=\[[^\]]*none[^\]]*\]/m.test(tree),
-    "table.alignment.left": (tree) => /^.*Table id=\d+:\d+ scope=.*alignments=\[[^\]]*left[^\]]*\]/m.test(tree),
-    "table.alignment.center": (tree) => /^.*Table id=\d+:\d+ scope=.*alignments=\[[^\]]*center[^\]]*\]/m.test(tree),
-    "table.alignment.right": (tree) => /^.*Table id=\d+:\d+ scope=.*alignments=\[[^\]]*right[^\]]*\]/m.test(tree),
-    "tableRow.isHeader.false": (tree) => /^.*TableRow id=\d+:\d+ scope=.* isHeader=false /m.test(tree),
-    "tableRow.isHeader.true": (tree) => /^.*TableRow id=\d+:\d+ scope=.* isHeader=true /m.test(tree),
-    "directive.attributes.null": (tree) => /^.*Directive(?:Block)? id=\d+:\d+ scope=.* attributes=null /m.test(tree),
-    "directive.attributes.empty": (tree) => /^.*Directive(?:Block)? id=\d+:\d+ scope=.* attributes=\[\] /m.test(tree),
-    "directive.attributes.value": (tree) => /^.*Directive(?:Block)? id=\d+:\d+ scope=.* attributes=\[.+\] /m.test(tree),
-    // A label is a NODE now, so its three states are read off the tree rather
-    // than off a count on the parent: absent is a directive with no
-    // DirectiveLabel child, empty is one with `children=0`, populated is one
-    // with children.
+    "list.flavor.bullet": (tree) => /^.*List scope=.* flavor=bullet /m.test(tree),
+    "list.flavor.ordered": (tree) => /^.*List scope=.* flavor=ordered /m.test(tree),
+    "list.start.null": (tree) => /^.*List scope=.* start=null /m.test(tree),
+    "list.start.value": (tree) => /^.*List scope=.* start=-?\d+ /m.test(tree),
+    "list.tight.false": (tree) => /^.*List scope=.* tight=false /m.test(tree),
+    "list.tight.true": (tree) => /^.*List scope=.* tight=true /m.test(tree),
+    "listItem.checked.null": (tree) => /^.*ListItem scope=.* checked=null /m.test(tree),
+    "listItem.checked.false": (tree) => /^.*ListItem scope=.* checked=false /m.test(tree),
+    "listItem.checked.true": (tree) => /^.*ListItem scope=.* checked=true /m.test(tree),
+    "codeBlock.info.null": (tree) => /^.*CodeBlock scope=.* info=null /m.test(tree),
+    "codeBlock.info.value": (tree) => /^.*CodeBlock scope=.* info="/m.test(tree),
+    "codeBlock.language.null": (tree) => /^.*CodeBlock scope=.* language=null /m.test(tree),
+    "codeBlock.language.value": (tree) => /^.*CodeBlock scope=.* language="/m.test(tree),
+    "codeBlock.fenced.false": (tree) => /^.*CodeBlock scope=.* fenced=false /m.test(tree),
+    "codeBlock.fenced.true": (tree) => /^.*CodeBlock scope=.* fenced=true /m.test(tree),
+    "codeBlock.closed.false": (tree) => /^.*CodeBlock scope=.* closed=false /m.test(tree),
+    "codeBlock.closed.true": (tree) => /^.*CodeBlock scope=.* closed=true /m.test(tree),
+    "table.alignment.none": (tree) => /^.*Table scope=.*alignments=\[[^\]]*none[^\]]*\]/m.test(tree),
+    "table.alignment.left": (tree) => /^.*Table scope=.*alignments=\[[^\]]*left[^\]]*\]/m.test(tree),
+    "table.alignment.center": (tree) => /^.*Table scope=.*alignments=\[[^\]]*center[^\]]*\]/m.test(tree),
+    "table.alignment.right": (tree) => /^.*Table scope=.*alignments=\[[^\]]*right[^\]]*\]/m.test(tree),
+    "tableRow.isHeader.false": (tree) => /^.*TableRow scope=.* isHeader=false /m.test(tree),
+    "tableRow.isHeader.true": (tree) => /^.*TableRow scope=.* isHeader=true /m.test(tree),
+    "directive.attributes.null": (tree) => /^.*Directive(?:Block)? scope=.* attributes=null /m.test(tree),
+    "directive.attributes.empty": (tree) => /^.*Directive(?:Block)? scope=.* attributes=\[\] /m.test(tree),
+    "directive.attributes.value": (tree) => /^.*Directive(?:Block)? scope=.* attributes=\[.+\] /m.test(tree),
+    // The dump visualizes the DirectiveLabel field as a nested Markup node:
+    // absent emits no label node, empty has `children=0`, and populated owns
+    // inline descendants.
     "directive.label.null": (tree) =>
-        /^(.*)Directive(?:Block)? id=[^ ]* scope=[^\n]*\n(?!\1(?:\u2502|\|)?\s*(?:\u251c|\u2514)\u2500\u2500 DirectiveLabel )/m.test(
+        /^(.*)Directive(?:Block)? scope=[^\n]*\n(?!\1(?:\u2502|\|)?\s*(?:\u251c|\u2514)\u2500\u2500 DirectiveLabel )/m.test(
             tree
         ),
-    "directive.label.empty": (tree) => /DirectiveLabel id=\S+ scope=\S+ children=0$/m.test(tree),
-    "directive.label.populated": (tree) => /DirectiveLabel id=\S+ scope=\S+ children=[1-9]\d*$/m.test(tree),
-    "reference.form.full": (tree) => /^.*(?:Link|Image)Reference id=\d+:\d+ scope=.* form=full /m.test(tree),
-    "reference.form.collapsed": (tree) => /^.*(?:Link|Image)Reference id=\d+:\d+ scope=.* form=collapsed /m.test(tree),
-    "reference.form.shortcut": (tree) => /^.*(?:Link|Image)Reference id=\d+:\d+ scope=.* form=shortcut /m.test(tree),
-    "link.title.null": (tree) => /^.*Link id=\d+:\d+ scope=.* title=null /m.test(tree),
-    "link.title.empty": (tree) => /^.*Link id=\d+:\d+ scope=.* title="" /m.test(tree),
-    "link.title.value": (tree) => /^.*Link id=\d+:\d+ scope=.* title=".+" /m.test(tree),
-    "image.title.null": (tree) => /^.*Image id=\d+:\d+ scope=.* title=null /m.test(tree),
-    "image.title.value": (tree) => /^.*Image id=\d+:\d+ scope=.* title=".+" /m.test(tree),
+    "directive.label.empty": (tree) => /DirectiveLabel scope=\S+ children=0$/m.test(tree),
+    "directive.label.populated": (tree) => /DirectiveLabel scope=\S+ children=[1-9]\d*$/m.test(tree),
+    "reference.form.full": (tree) => /^.*(?:Link|Image)Reference scope=.* form=full /m.test(tree),
+    "reference.form.collapsed": (tree) => /^.*(?:Link|Image)Reference scope=.* form=collapsed /m.test(tree),
+    "reference.form.shortcut": (tree) => /^.*(?:Link|Image)Reference scope=.* form=shortcut /m.test(tree),
+    "link.title.null": (tree) => /^.*Link scope=.* title=null /m.test(tree),
+    "link.title.empty": (tree) => /^.*Link scope=.* title="" /m.test(tree),
+    "link.title.value": (tree) => /^.*Link scope=.* title=".+" /m.test(tree),
+    "image.title.null": (tree) => /^.*Image scope=.* title=null /m.test(tree),
+    "image.title.value": (tree) => /^.*Image scope=.* title=".+" /m.test(tree),
     "scope.positive": (tree) => / scope=[1-9]\d*:[1-9]\d*\.\./.test(tree),
     /* `scope.zero` was here, and it required the canonical corpus to demonstrate
        a node with NO position -- 0:0..0:0. Its only two witnesses in that corpus
@@ -98,9 +97,8 @@ const stateValidators = {
        of them a real position (D26). The remaining producers of that shape are
        D13's empty Text and the split-off table lead, and pinning either as
        canonical coverage would bless a defect the stage is closing -- which is
-       exactly the golden-regeneration trap: a golden regenerated over a live
-       defect blesses it. The state is
-       therefore deleted rather than re-witnessed. This is a coverage obligation,
+       a defect rather than canonical behavior. The state is therefore deleted
+       rather than re-witnessed. This is a coverage obligation,
        not a grammar or schema change: the dump still permits 0:0..0:0, so no
        binding and no golden format moves. */
     "children.empty": (tree) => / children=0(?:\n|$)/.test(tree),
@@ -113,16 +111,16 @@ const stateValidators = {
     "escaping.attribute-value": (tree) => /attributes=\[[^\]]*="[^\]]*\\"/.test(tree)
 };
 const orderValidators = {
-    "document.source-order": (tree) => tree.startsWith("Document id="),
+    "document.source-order": (tree) => tree.startsWith("Document scope="),
     "table.header-rows-cells": (tree) =>
-        /Table id=[\s\S]*TableRow id=\d+:\d+ scope=.*isHeader=true[\s\S]*TableCell id=[\s\S]*TableRow id=\d+:\d+ scope=.*isHeader=false/.test(
+        /Table scope=[\s\S]*TableRow scope=.*isHeader=true[\s\S]*TableCell scope=[\s\S]*TableRow scope=.*isHeader=false/.test(
             tree
         ),
     "directive.label-before-content": (tree) =>
-        /DirectiveBlock id=\d+:\d+ scope=.* children=[2-9]\d*\n[\s\S]*DirectiveLabel id=[\s\S]*Paragraph id=/.test(
-            tree
-        ),
-    "inline.source-order": (tree) => /Paragraph id=\d+:\d+ scope=.* children=[2-9]\d*/.test(tree)
+        /DirectiveBlock scope=.* children=[1-9]\d*\n[\s\S]*DirectiveLabel scope=[\s\S]*Paragraph scope=/.test(tree),
+    "directive.attributes.source-order": (tree) =>
+        /DirectiveBlock scope=.*attributes=\[properties=".*" metadata=".*"\]/.test(tree),
+    "inline.source-order": (tree) => /Paragraph scope=.* children=[2-9]\d*/.test(tree)
 };
 
 if (manifest.schemaVersion !== 1) failures.push("manifest schemaVersion must be 1");
@@ -159,7 +157,7 @@ const allCoveredStates = new Set();
 const allCoveredOrders = new Set();
 const allObservedFields = new Set();
 const treeLine =
-    /^(?:(?:│ {3}| {4})*(?:├──|└──) )?([A-Z][A-Za-z]+) id=\d+:\d+ scope=-?\d+:-?\d+\.\.-?\d+:-?\d+(?: .+)? children=\d+$/;
+    /^(?:(?:│ {3}| {4})*(?:├──|└──) )?([A-Z][A-Za-z]+) scope=-?\d+:-?\d+\.\.-?\d+:-?\d+(?: .+)? children=\d+$/;
 
 if (!Array.isArray(manifest.cases) || manifest.cases.length === 0) {
     failures.push("manifest cases must be a non-empty array");
@@ -222,25 +220,25 @@ for (const testCase of manifest.cases ?? []) {
         // ONE field, and without the second pass ` b=` reads as a second one.
         const lineWithoutStrings = line.replace(/"(?:\\.|[^"\\])*"/g, '""').replace(/=\[[^\]]*\]/g, "=[]");
         const fieldNames = [...lineWithoutStrings.matchAll(/ ([A-Za-z]+)=/g)].map((field) => field[1]);
-        // The dump's field names for a kind ARE the contract's, minus the
-        // fields that are the child structure itself. Until Step 15A this was a
+        // The dump's scalar field names ARE the contract's; node-valued fields
+        // are represented by nested dump descendants. Until Step 15A this was a
         // hand-written copy of the table -- a SEVENTH one -- and Q29 found it
         // by deleting `mode` from the contract and watching this file disagree.
         //
-        // A field is child structure when its type names a KIND. That used to
+        // A field is node-valued when its type names a KIND. That used to
         // be a regex listing four of them plus an explicit `label` exception,
         // because a directive's label was a COUNT in the dump rather than a
         // node; Step 7 made it a node and the exception became a lie.
         const kindNames = new Set(contract.kinds.map((kind) => kind.name));
-        const isChildEdge = (type) =>
+        const isNodeValuedField = (type) =>
             [...type.matchAll(/[A-Za-z]+/g)].some((word) => word[0] === "Markup" || kindNames.has(word[0]));
         const dumpFields = Object.fromEntries(
             contract.kinds.map((kind) => [
                 kind.name,
-                kind.fields.filter((field) => !isChildEdge(field.type)).map((field) => field.name)
+                kind.fields.filter((field) => !isNodeValuedField(field.type)).map((field) => field.name)
             ])
         );
-        const expectedFieldNames = ["id", "scope", ...(dumpFields[kind] ?? []), "children"];
+        const expectedFieldNames = ["scope", ...(dumpFields[kind] ?? []), "children"];
         if (!sameArray(fieldNames, expectedFieldNames)) {
             failures.push(
                 `${testCase.expected}:${index + 1} fields are ${fieldNames.join(",")}; expected ${expectedFieldNames.join(",")}`

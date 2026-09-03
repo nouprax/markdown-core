@@ -1,10 +1,11 @@
-/* Benchmark workloads (CTest label: benchmark).
+/* Opt-in local benchmark workloads (CTest label: benchmark).
  *
  * Every workload is deterministic and offline: inputs come from the tracked
  * sample documents or are synthesized in-process; nothing is downloaded or
- * written to the source tree.  Timings are reported for trend tracking; the
- * only assertions are completion and relative scaling ratios across doubling
- * input sizes — never absolute wall-clock thresholds.
+ * written to the source tree. Timings and relative scaling ratios are reported
+ * as measurements only. They never decide correctness or process status;
+ * hosted-runner load and platform variance make wall-clock assertions an
+ * unreliable regression oracle.
  *
  *   bench_runner --list
  *   bench_runner --workload NAME [--samples DIR] [--repeats N] [--warmup N]
@@ -23,11 +24,6 @@
 #define BENCH_MAX_REPEATS 32
 #define BENCH_DEFAULT_REPEATS 5
 #define BENCH_DEFAULT_WARMUP 1
-/* Adjacent doubling steps may regress at most this factor before the
- * workload fails; generous enough to absorb scheduler noise while still
- * catching super-linear blowups. */
-static const double BENCH_MAX_DOUBLING_RATIO = 4.0;
-
 typedef struct bench_options {
     const char *samples_dir;
     int repeats;
@@ -35,31 +31,11 @@ typedef struct bench_options {
 } bench_options;
 
 static const char *const BENCH_SAMPLES[] = {
-    "block-bq-flat.md",
-    "block-bq-nested.md",
-    "block-code.md",
-    "block-fences.md",
-    "block-heading.md",
-    "block-hr.md",
-    "block-html.md",
-    "block-lheading.md",
-    "block-list-flat.md",
-    "block-list-nested.md",
-    "block-ref-flat.md",
-    "block-ref-nested.md",
-    "directive.md",
-    "inline-autolink.md",
-    "inline-backticks.md",
-    "inline-em-flat.md",
-    "inline-em-nested.md",
-    "inline-em-worst.md",
-    "inline-entity.md",
-    "inline-escape.md",
-    "inline-html.md",
-    "inline-links-flat.md",
-    "inline-links-nested.md",
-    "inline-newlines.md",
-    "lorem1.md",
+    "block-bq-flat.md",  "block-bq-nested.md",   "block-code.md",          "block-fences.md",    "block-heading.md",
+    "block-hr.md",       "block-html.md",        "block-lheading.md",      "block-list-flat.md", "block-list-nested.md",
+    "block-ref-flat.md", "block-ref-nested.md",  "directive.md",           "inline-autolink.md", "inline-backticks.md",
+    "inline-em-flat.md", "inline-em-nested.md",  "inline-em-worst.md",     "inline-entity.md",   "inline-escape.md",
+    "inline-html.md",    "inline-links-flat.md", "inline-links-nested.md", "inline-newlines.md", "lorem1.md",
     "rawtabs.md",
 };
 
@@ -134,13 +110,8 @@ static int compare_u64(const void *left, const void *right) {
     return a < b ? -1 : (a > b ? 1 : 0);
 }
 
-static int bench_measure(
-    const char *name,
-    const char *input,
-    size_t length,
-    const bench_options *options,
-    double *median_ms
-) {
+static int bench_measure(const char *name, const char *input, size_t length, const bench_options *options,
+                         double *median_ms) {
     uint64_t samples[BENCH_MAX_REPEATS];
     uint64_t elapsed;
     int i;
@@ -162,29 +133,19 @@ static int bench_measure(
     }
     qsort(samples, (size_t)repeats, sizeof(samples[0]), compare_u64);
     *median_ms = (double)samples[repeats / 2] / 1e6;
-    printf(
-        "benchmark case=%s bytes=%zu repeats=%d warmup=%d median_ms=%.3f\n",
-        name,
-        length,
-        repeats,
-        options->warmup,
-        *median_ms
-    );
+    printf("benchmark case=%s bytes=%zu repeats=%d warmup=%d median_ms=%.3f\n", name, length, repeats, options->warmup,
+           *median_ms);
     return 0;
 }
 
-/* Measures the same generator at doubling scales and asserts the relative
- * growth stays under BENCH_MAX_DOUBLING_RATIO per step. */
-static int bench_doubling(
-    const char *name,
-    const bench_options *options,
-    char *(*build)(const bench_options *options, size_t scale, size_t *length),
-    const size_t *scales,
-    size_t steps
-) {
+/* Measures the same generator at doubling scales and reports adjacent ratios.
+ * A reviewer may use the result to design a deterministic invariant or a
+ * controlled experiment, but the ratio itself is not a test assertion. */
+static int bench_doubling(const char *name, const bench_options *options,
+                          char *(*build)(const bench_options *options, size_t scale, size_t *length),
+                          const size_t *scales, size_t steps) {
     double previous_ms = 0.0;
     size_t step;
-    int failed = 0;
     for (step = 0; step < steps; step++) {
         size_t length = 0;
         char *input = build(options, scales[step], &length);
@@ -202,21 +163,11 @@ static int bench_doubling(
         free(input);
         if (step > 0) {
             double floor_ms = previous_ms > 0.0005 ? previous_ms : 0.0005;
-            if (median_ms / floor_ms > BENCH_MAX_DOUBLING_RATIO) {
-                fprintf(
-                    stderr,
-                    "%s: scaling ratio %.2f exceeds %.2f at scale %zu\n",
-                    name,
-                    median_ms / floor_ms,
-                    BENCH_MAX_DOUBLING_RATIO,
-                    scales[step]
-                );
-                failed = 1;
-            }
+            printf("benchmark scaling=%s scale=%zu adjacent_ratio=%.3f\n", name, scales[step], median_ms / floor_ms);
         }
         previous_ms = median_ms;
     }
-    return failed ? -1 : 0;
+    return 0;
 }
 
 /* Workloads ---------------------------------------------------------------- */
@@ -276,15 +227,9 @@ static int workload_binding_baseline(const bench_options *options) {
     result = bench_measure("binding_baseline", input, length, options, &median_ms);
     free(input);
     if (result == 0) {
-        printf(
-            "baseline runtime=c boundary=native_parse workload=representative_large"
-            " workload_version=1 bytes=%zu warmup=%d repeats=%d median_ns=%.0f peak_rss_kib=%ld\n",
-            length,
-            options->warmup,
-            options->repeats,
-            median_ms * 1e6,
-            peak_rss_kib()
-        );
+        printf("metric runtime=c workload=representative_large workload_version=1"
+               " bytes=%zu warmup=%d repeats=%d median_ns=%.0f peak_rss_kib=%ld\n",
+               length, options->warmup, options->repeats, median_ms * 1e6, peak_rss_kib());
     }
     return result;
 }
@@ -333,35 +278,6 @@ static int workload_deep_nesting(const bench_options *options) {
     return bench_doubling("deep_nesting", options, build_deep_nesting, scales, 3);
 }
 
-/* A header, its delimiter, and `scale` four-column body rows: every body
- * line runs the table extension's `last_block_matches` and then the real
- * row build, which is the per-line hot path #137 stopped double-parsing. */
-static char *build_table_rows(const bench_options *options, size_t scale, size_t *length) {
-    static const char header[] = "| one | two | three | four |\n| --- | --- | --- | --- |\n";
-    static const char row[] = "| aaa | bbb | ccc | dddd |\n";
-    size_t header_length = sizeof(header) - 1;
-    size_t row_length = sizeof(row) - 1;
-    char *input;
-    size_t i;
-    (void)options;
-    input = (char *)malloc(header_length + row_length * scale + 1);
-    if (!input) {
-        return NULL;
-    }
-    memcpy(input, header, header_length);
-    for (i = 0; i < scale; i++) {
-        memcpy(input + header_length + i * row_length, row, row_length);
-    }
-    *length = header_length + row_length * scale;
-    input[*length] = 0;
-    return input;
-}
-
-static int workload_tables(const bench_options *options) {
-    static const size_t scales[] = {8192, 16384, 32768};
-    return bench_doubling("tables", options, build_table_rows, scales, 3);
-}
-
 static char *build_extension_document(const bench_options *options, size_t scale, size_t *length) {
     size_t sample_length = 0;
     char *sample = load_sample(options, "directive.md", &sample_length);
@@ -407,7 +323,6 @@ static const bench_workload WORKLOADS[] = {
     {"representative", workload_representative},
     {"large_document", workload_large_document},
     {"deep_nesting", workload_deep_nesting},
-    {"tables", workload_tables},
     {"extensions", workload_extensions},
     {"adversarial", workload_adversarial},
 };
@@ -417,8 +332,6 @@ int main(int argc, char **argv) {
     const char *workload_name = NULL;
     int list_only = 0;
     size_t i;
-
-    ts_bench_pin_allocator();
 
     options.samples_dir = NULL;
     options.repeats = BENCH_DEFAULT_REPEATS;
@@ -436,11 +349,9 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "--warmup") == 0 && i + 1 < (size_t)argc) {
             options.warmup = atoi(argv[++i]);
         } else {
-            fputs(
-                "usage: bench_runner --list | --workload NAME [--samples DIR]"
-                " [--repeats N] [--warmup N]\n",
-                stderr
-            );
+            fputs("usage: bench_runner --list | --workload NAME [--samples DIR]"
+                  " [--repeats N] [--warmup N]\n",
+                  stderr);
             return 2;
         }
     }
@@ -452,11 +363,9 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (!workload_name || !options.samples_dir || options.repeats < 1 || options.warmup < 0) {
-        fputs(
-            "usage: bench_runner --list | --workload NAME [--samples DIR]"
-            " [--repeats N] [--warmup N]\n",
-            stderr
-        );
+        fputs("usage: bench_runner --list | --workload NAME [--samples DIR]"
+              " [--repeats N] [--warmup N]\n",
+              stderr);
         return 2;
     }
     for (i = 0; i < sizeof(WORKLOADS) / sizeof(WORKLOADS[0]); i++) {

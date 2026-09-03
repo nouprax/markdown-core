@@ -4,6 +4,6 @@
 
 ::leaf[Label]{id=identifier}
 
-:::container[Title]{metadata='{"count":9007199254740993}' properties='{"tags":["a",null]}'}
+:::container[Title]{properties='{"tags":["a",null]}' metadata='{"count":9007199254740993}'}
 Body
 :::

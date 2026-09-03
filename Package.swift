@@ -1,11 +1,11 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.3
 import PackageDescription
 
 let package = Package(
     name: "swift-markdown-core",
     platforms: [
-        .iOS(.v18),
-        .macOS(.v15),
+        .iOS(.v26),
+        .macOS(.v26),
     ],
     products: [
         .library(name: "MarkdownCore", targets: ["MarkdownCore"])
@@ -60,11 +60,6 @@ let package = Package(
             dependencies: ["CanonicalASTResourceGenerator"],
             path: "packages/swift-markdown-core/Plugins/GenerateCanonicalASTResources"
         ),
-        .executableTarget(
-            name: "MarkdownCoreBenchmarks",
-            dependencies: ["MarkdownCore"],
-            path: "packages/swift-markdown-core/Benchmarks/MarkdownCoreBenchmarks"
-        ),
     ],
-    cLanguageStandard: .c11
+    cLanguageStandard: .c99
 )

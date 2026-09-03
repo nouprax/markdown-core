@@ -94,6 +94,7 @@
             "document.source-order",
             "table.header-rows-cells",
             "directive.label-before-content",
+            "directive.attributes.source-order",
             "inline.source-order"
         ]
     },
@@ -352,7 +353,12 @@
                     "children.populated",
                     "escaping.attribute-value"
                 ],
-                "orders": ["document.source-order", "table.header-rows-cells", "directive.label-before-content"]
+                "orders": [
+                    "document.source-order",
+                    "table.header-rows-cells",
+                    "directive.label-before-content",
+                    "directive.attributes.source-order"
+                ]
             }
         }
     ]

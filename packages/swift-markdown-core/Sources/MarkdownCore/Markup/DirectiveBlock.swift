@@ -4,17 +4,14 @@ import MarkdownCoreC
 ///
 /// Requires the `directives` extension. A malformed label or attribute block
 /// leaves the directive standing and the punctuation as prose rather than
-/// failing the parse; a diagnostic says so.
+/// failing the parse.
 public struct DirectiveBlock: Markup {
-    /// The node's identity: the name a consumer tracks this element by across
-    /// a stream's feeds — the render key. See ``Identity``.
-    public let id: Identity
     /// Where it is, opening fence through closing fence. See ``Scope``.
     public let scope: Scope
     /// The directive's name, without its colons.
     public let name: String
-    /// The attributes the source wrote, sorted by name, or `nil` when it wrote
-    /// no `{...}` at all.
+    /// The attributes the source wrote, in first-occurrence source order, or
+    /// `nil` when it wrote no `{...}` at all.
     public let attributes: [DirectiveAttribute]?
     /// The bracketed label, or `nil` when the source wrote none.
     public let label: DirectiveLabel?
@@ -22,24 +19,18 @@ public struct DirectiveBlock: Markup {
     public let content: [any Markup]
 
     /// Dispatches to the visitor's `DirectiveBlock` case.
-    public func accept<V: Visitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension DirectiveBlock {
-    init(from node: OpaquePointer) {
-        let id = Self.identity(from: node)
-        // One decode (#145): each `DirectiveValues(from:)` walks every
-        // attribute through the C accessor and allocates two Strings per
-        // entry, so naming it twice decoded the whole set twice and threw
-        // one away. The inline `Directive` already binds it once.
+    init(from node: OpaquePointer, label: DirectiveLabel?, content: [any Markup]) {
         let values = DirectiveValues(from: node)
         self.init(
-            id: id,
             scope: Self.scope(from: node),
             name: values.name,
             attributes: values.attributes,
-            label: Self.directiveLabel(from: node),
-            content: Self.directiveContent(from: node)
+            label: label,
+            content: content
         )
     }
 }

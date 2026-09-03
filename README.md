@@ -17,51 +17,29 @@ divergence history, and license relationship.
 
 ## Usage
 
-In Swift, Kotlin, and ECMAScript the living **`Document`** is the one entry
-into the parser: a `Document` is fed text — in one piece or many — and yields
-**`Read`** values. Every `feed` returns the read after those bytes: an
-immutable value the caller owns outright — a mid-stream projection whose
-incomplete trailing line is not yet in it and whose open constructs are
-projected as they stand. **`seal`** ends the stream and releases the native
-shell, returning the sealed read — identical for the same bytes however they
-were fed. The whole-text parse is one line, `Document(markdown).seal()`: a
-one-chunk stream. Every read stays readable after every later feed and after
-the document itself is gone. The streaming model is specified in
-[docs/STREAMING.md](docs/STREAMING.md).
+All platform APIs have one synchronous parse entry point: `Document.parse` in
+Swift, Kotlin, and ECMAScript, and `markdown_core_document_parse` in C.
 
-A `Read` is the parse. **`semantic`** (the root type `Semantic`, an
-ordinary `Markup` node) is the tree with policy applied; every node carries an
-**`id`** — an `Identity`, the pair `(block, ordinal)` naming the element
-across a stream's feeds: the render key, with `block` alone naming the region
-an incremental consumer re-renders — and a **`scope`** — the pair of
-`(line, column)` **boundaries** the element occupies, not a byte range, and
-no substring is taken with it. A reference (`LinkReference`,
-`ImageReference`, `FootnoteReference`) also carries **`definition`**: the
-identity of the first definition of its label in document order, while a
-definition carries its label as written beside **`norm`**, the match key the
-label folds to. A scope's numbers are counted against the **normalized
-source** — UTF-8 as fed, every NUL replaced by the three bytes of U+FFFD,
-every line ending a single `\n` and every line having one — which the
-library does not hand back: a caller whose input can differ from it applies
-the same normalization to its own copy before resolving a scope against it.
+A parse produces only the AST. Every node carries a **`scope`**: the pair of
+`(line, column)` boundaries reported by the cmark-family parser. A scope is
+location metadata, not a byte range, and no substring is implied by it.
 
-In C a `markdown_core_document` lends out the root node,
-which is exactly the shape `Read`
-copies out; the bindings retain no native parser handle inside a read. The C
-facade keeps its own names and both of its entries:
-`markdown_core_document_parse` for a complete input, and the session
-(`markdown_core_session_new`, `_feed`, `_finish`, `_free`) for a stream.
+The parser does not retain or publish the input, a normalized source copy, a
+line index, tokens, trivia, recovery nodes, or an editing model. Consumers that
+need the Markdown text keep their own input. The Swift, Kotlin, and ECMAScript
+bindings copy the AST into platform values and retain no native parser handle;
+the C API exposes an owned document with borrowed node views.
 
 The default parse options enable smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas (including
 dollar and LaTeX delimiters), and directives. Each option can be disabled per
-parse. `TreeDumper` and `dump()` produce a canonical diagnostic representation
+parse. `TreeDumper` and `dump()` produce a canonical debug representation
 for logs, tests, and debugging; dump text is not a persistence or interchange
 format.
 
 ### Swift
 
-The root Swift package supports iOS 18 and macOS 15 or later and exports the
+The root Swift package supports iOS 26 and macOS 26 or later and exports the
 `MarkdownCore` product and module:
 
 ```swift
@@ -71,15 +49,11 @@ The root Swift package supports iOS 18 and macOS 15 or later and exports the
 ```swift
 import MarkdownCore
 
-let read = try Document(
-    markdown: "# Hello",
+let document = try Document.parse(
+    "# Hello",
     options: ParseOptions(directives: false)
-).seal()
-print(read.dump())
-
-let streaming = try Document()
-let updated = try streaming.feed(chunk: "# Str")
-let grown = try streaming.feed(chunk: "eamed\n") // then .seal()
+)
+print(document.dump())
 ```
 
 The Swift AST is an immutable, `Sendable` value tree. The module also provides
@@ -103,13 +77,11 @@ kotlin {
 import com.nouprax.markdown.core.ParseOptions
 import com.nouprax.markdown.core.Document
 
-val read = Document("# Hello", ParseOptions(directives = false)).seal()
-println(read.dump())
-
-Document().use { document ->
-    val updated = document.feed("# Str")
-    val grown = document.feed("eamed\n") // then .seal()
-}
+val document = Document.parse(
+    "# Hello",
+    ParseOptions(directives = false),
+)
+println(document.dump())
 ```
 
 The published targets are Android (API 21 or later), JVM 17, macOS arm64, and
@@ -117,6 +89,10 @@ Linux x64. Android's four-ABI JNI payload is an internal dependency; consumers
 do not need a separate C or Prefab package. On JDK 26 or later, JVM applications
 should launch with `--enable-native-access=ALL-UNNAMED` to avoid a restricted
 native-access warning from the package-private JNI loader.
+
+Kotlin/Native directly cinterops the read-only C facade. JVM and Android use a
+separate one-call JNI payload. Neither adapter is shared with the ES/Wasm
+linear-memory ABI; the targets share the AST contract, not a binding bridge.
 
 ### ECMAScript and TypeScript
 
@@ -127,16 +103,11 @@ pnpm add @nouprax/es-markdown-core
 ```
 
 ```js
-import { Document, TreeDumper, Walker } from "@nouprax/es-markdown-core";
+import { Document, TreeDumper } from "@nouprax/es-markdown-core";
 
-const read = new Document("# Hello", { directives: false }).seal();
-new Walker().walk(read.semantic, (event, node) => {
-  console.log(event, node.kind, node.scope);
-});
-console.log(TreeDumper.dump(read.semantic));
-
-using streaming = new Document(); // dispose() also works
-const updated = streaming.feed("# Streamed\n");
+const document = Document.parse("# Hello", { directives: false });
+console.log(document.content[0].kind, document.content[0].scope);
+console.log(TreeDumper.dump(document));
 ```
 
 The package supports Node.js 20 or later and browser environments that can load
@@ -163,25 +134,16 @@ document and must not outlive it. Error objects and allocated dump buffers use
 their corresponding `markdown_core_error_free` and `markdown_core_dump_free`
 functions.
 
-A streaming parse opens a session with `markdown_core_session_new`, feeds
-chunks with `markdown_core_session_feed`, and seals the stream with
-`markdown_core_session_finish`. `feed` and `finish` each return an owned
-document released with `markdown_core_document_free`;
-`markdown_core_session_free` releases the session itself. A bridge whose
-boundary is expensive to cross feeds and seals through
-`markdown_core_session_feed_wire` and `markdown_core_session_finish_wire`
-instead, which answer the document as one buffer of canonical bytes -- a
-delta against the previous answer when asked for one.
-
-The library initializes itself on the first parse. Concurrent parsing and
-read-only access are safe; callers must ensure that a document is freed only
-after all access to that document has finished. The complete C contract is in
+The library has no process-level initialization or writable parser globals.
+Independent parse instances may run concurrently, including their first calls;
+read-only document access is also safe. Callers must ensure that a document is
+freed only after all access to it has finished. The complete C contract is in
 [`markdown_core.h`](packages/markdown-core/include/markdown_core.h).
 
 ## Repository layout
 
 - `packages/markdown-core`: C parser, public facade, CLI, extensions, and C tests.
-- `packages/swift-markdown-core`: Swift binding, tests, consumer fixture, and benchmarks.
+- `packages/swift-markdown-core`: Swift binding, tests, and consumer fixture.
 - `packages/kotlin-markdown-core`: Kotlin binding, platform runtimes, tests, and consumer fixtures.
 - `packages/es-markdown-core`: ECMAScript/TypeScript package and WebAssembly runtime.
 - `specs/canonical-ast`: shared, platform-independent AST conformance fixtures.
@@ -191,8 +153,7 @@ after all access to that document has finished. The complete C contract is in
 ## Build
 
 Set up or validate the pinned contributor toolchain with
-[`docs/deprecated/development-environment.md`](docs/deprecated/development-environment.md)
-(archived with the engine reset, but still accurate for the toolchain). The
+[`docs/development-environment.md`](docs/development-environment.md). The
 non-interactive entry points are `scripts/init-environment.sh --check` and
 `scripts/init-environment.sh --install`.
 
@@ -230,34 +191,31 @@ cmake --install build/cmake --prefix /path/to/prefix
 Its CLI is written to
 `build/cmake/packages/markdown-core/core/markdown-core`. The main CMake options
 are `MARKDOWN_CORE_SHARED`, `MARKDOWN_CORE_STATIC`, `MARKDOWN_CORE_TESTS`, and
-`MARKDOWN_CORE_WARNINGS_AS_ERRORS`.
+`MARKDOWN_CORE_WARNINGS_AS_ERRORS`. `MARKDOWN_CORE_BENCHMARKS` is off by
+default and exists only for an explicit local measurement build.
 
 ## Test
 
-Correctness, public-contract conformance, and benchmarks are separate task
-families. Run the targets for the platforms available on the current host:
+Correctness and public-contract conformance are the test task families. Run
+the targets for the platforms available on the current host:
 
 ```sh
 # C host
 pnpm test:c-host
 pnpm conformance:c-host
-pnpm benchmark:c-host
 
 # Swift on macOS
 pnpm test:swift-macos
 pnpm conformance:swift-macos
-pnpm benchmark:swift-macos
 
 # Kotlin/JVM
 pnpm test:kotlin-jvm
 pnpm conformance:kotlin-jvm
-pnpm benchmark:kotlin-jvm
 
 # ECMAScript
 pnpm test:es-node
 pnpm test:es-browser
 pnpm conformance:es-node
-pnpm benchmark:es-node
 ```
 
 Kotlin also has explicit Android host, Android emulator, macOS arm64, and Linux
@@ -266,6 +224,17 @@ x64 targets following the same `test:<platform>` and
 There is intentionally no cross-host aggregate: required CI runs every
 supported platform target on an appropriate host, simulator, browser, or
 device.
+
+Performance measurement is an explicit C-host experiment and never a CI gate.
+When a controlled environment is available, run `pnpm benchmark:c-host`. A
+separate PR benchmark reports one fixed parser workload and binary size against
+the exact PR base. The read-only PR workflow measures and uploads only the
+untrusted head result. A privileged default-branch workflow reuses a trusted
+exact-SHA baseline when one exists, or checks out, builds, and publishes that
+base itself before validating both JSON inputs and updating the comment. It
+never executes code from the PR head. Hosted-runner timing and RSS remain
+informational and never determine pass/fail. The binding packages intentionally
+expose no short wall-clock/RSS loops masquerading as cross-runtime diagnostics.
 
 Run repository-wide formatting, lint, contract, topology, and public-surface
 checks with:
@@ -292,16 +261,10 @@ the C test suite.
 ## Contributing and releasing
 
 Pinned compiler, SDK, runtime, and IDE versions are documented in
-[docs/deprecated/toolchains.md](docs/deprecated/toolchains.md). The release
-process itself is defined by
-[`.github/workflows/release.yml`](.github/workflows/release.yml), which reads
-release notes from `docs/deprecated/releases/<VERSION>.md` and provides a
-`workflow_dispatch` recovery path. The archived runbook
-[docs/deprecated/releasing.md](docs/deprecated/releasing.md) records the
-surrounding practice — the no-secret release dry run, protected
-tag/environment approval, Maven signing, npm OIDC, artifact attestation, and
-post-publication verification — but has partially diverged from that workflow;
-where the two disagree, the workflow is right. Release notes start from
+[docs/toolchains.md](docs/toolchains.md). Release maintainers must follow
+[docs/releasing.md](docs/releasing.md), including the no-secret release dry run,
+protected tag/environment approval, Maven signing, npm OIDC, artifact
+attestation, and post-publication verification. Release notes start from
 [CHANGELOG.md](CHANGELOG.md).
 
 ## License

@@ -2,41 +2,21 @@ import {
     Document,
     TreeDumper,
     visit,
-    Walker,
     type Heading,
     type Markup,
-    type Read,
-    type Semantic,
     type Table,
     type TableCell,
     type TableRow,
     type Visitor
 } from "@nouprax/es-markdown-core";
 
-const read: Read = new Document("# typed", { tables: true }).seal();
-const semantic: Semantic = read.semantic;
-const diagnostic: string = read.dump();
-const explicitDiagnostic: string = TreeDumper.dump(semantic);
-void diagnostic;
-void explicitDiagnostic;
-// @ts-expect-error the read's view is readonly
-read.semantic = semantic;
-// The stream hands out `Read` values, and a chunk is a string or raw UTF-8
-// bytes -- nothing else crosses.
-const streaming: Document = new Document({ tables: false });
-const updated: Read = streaming.feed("# streamed");
-const fedBytes: Read = streaming.feed(new Uint8Array([35, 32, 104, 105, 10]));
-const sealed: Read = streaming.seal();
-const disposal: void = streaming.dispose();
-void updated;
-void fedBytes;
-void sealed;
-void disposal;
-// @ts-expect-error a chunk is a string or a Uint8Array
-streaming.feed(42);
-
+const document: Document = Document.parse("# typed", { tables: true });
+const dump: string = document.dump();
+const explicitDump: string = TreeDumper.dump(document);
+void dump;
+void explicitDump;
 const visitor: Visitor<string> = {
-    visitSemantic: (node) => node.kind,
+    visitDocument: (node) => node.kind,
     visitBlockQuote: (node) => node.kind,
     visitParagraph: (node) => node.kind,
     visitHeading(node: Heading) {
@@ -71,14 +51,13 @@ const visitor: Visitor<string> = {
     visitDirective: (node) => node.kind,
     visitFootnoteReference: (node) => node.kind
 };
-visit(semantic, visitor);
-new Walker().walk(semantic, (_event, node) => visit(node, visitor));
+visit(document, visitor);
 // @ts-expect-error recursively readonly content cannot be replaced
-semantic.content[0] = semantic;
+document.content[0] = document;
 // @ts-expect-error readonly scope values cannot be mutated
-semantic.scope.start.line = 2;
-// @ts-expect-error diagnostic methods cannot be replaced
-semantic.dump = () => "replacement";
+document.scope.start.line = 2;
+// @ts-expect-error dump methods cannot be replaced
+document.dump = () => "replacement";
 
 declare const table: Table;
 const rowMarkup: Markup = table.header;
@@ -91,6 +70,6 @@ void cell;
 
 // @ts-expect-error Visitor is exhaustive and requires one method per Markup kind
 const incompleteVisitor: Visitor<string> = {
-    visitSemantic: (node) => node.kind
+    visitDocument: (node) => node.kind
 };
 void incompleteVisitor;

@@ -1,5 +1,5 @@
 #include "directive.h"
-#include "syntax_extension.h"
+#include "extension.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -20,8 +20,8 @@
 #include "ext_scanners.h"
 
 /* THE ATTRIBUTE LIST IS AN ORDERED MAP, because that is exactly what the
- * grammar asks for: a name appears once, `{a=1 b=2 a=3}` keeps `a=3`, `class`
- * accumulates, and the model is sorted by name (Q19).
+ * grammar asks for: a name appears once, `{a=1 b=2 a=3}` keeps `a=3` in its
+ * first-written position, and `class` accumulates in source order.
  *
  * It used to be a linked list with one node per SOURCE OCCURRENCE, folded
  * afterwards by a hash pass that marked the losers inactive. That built what it
@@ -48,6 +48,7 @@ typedef struct {
 typedef struct {
     markdown_core_chunk name;
     directive_attributes attributes;
+    markdown_core_node *label;
     int fence_length;
     int closed;
     int consume_line;
@@ -166,14 +167,8 @@ static int scan_name(unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_
     return 1;
 }
 
-static int scan_label(
-    const unsigned char *data,
-    bufsize_t len,
-    bufsize_t pos,
-    bufsize_t *label_start,
-    bufsize_t *label_len,
-    bufsize_t *end
-) {
+static int scan_label(const unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *label_start,
+                      bufsize_t *label_len, bufsize_t *end) {
     int depth = 1;
     bufsize_t i;
 
@@ -216,14 +211,8 @@ static int scan_label(
     return 0;
 }
 
-static int scan_attributes_raw(
-    const unsigned char *data,
-    bufsize_t len,
-    bufsize_t pos,
-    bufsize_t *attr_start,
-    bufsize_t *attr_len,
-    bufsize_t *end
-) {
+static int scan_attributes_raw(const unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *attr_start,
+                               bufsize_t *attr_len, bufsize_t *end) {
     unsigned char quote = 0;
     bufsize_t i;
 
@@ -258,12 +247,8 @@ static int scan_attributes_raw(
     return 0;
 }
 
-static int set_chunk_bytes(
-    markdown_core_mem *mem,
-    markdown_core_chunk *chunk,
-    const unsigned char *data,
-    bufsize_t len
-) {
+static int set_chunk_bytes(markdown_core_mem *mem, markdown_core_chunk *chunk, const unsigned char *data,
+                           bufsize_t len) {
     markdown_core_chunk_free(mem, chunk);
     chunk->data = (unsigned char *)data;
     chunk->len = len;
@@ -277,12 +262,8 @@ static int set_chunk_bytes(
     return 1;
 }
 
-static int replace_chunk_bytes(
-    markdown_core_mem *mem,
-    markdown_core_chunk *chunk,
-    const unsigned char *data,
-    bufsize_t len
-) {
+static int replace_chunk_bytes(markdown_core_mem *mem, markdown_core_chunk *chunk, const unsigned char *data,
+                               bufsize_t len) {
     unsigned char *copy = (unsigned char *)mem->calloc((size_t)len + 1, 1);
     if (!copy) {
         return 0;
@@ -361,11 +342,8 @@ static int attribute_name_is_valid(const unsigned char *name, bufsize_t name_len
     return name_len > 0 && scan_attr_name(name, name_len, 0) == name_len;
 }
 
-/* The name is looked up in an index while one can be built and by scan when it
- * cannot. An insert that fails -- the map reports engineered hash clustering
- * that way -- drops to the scan for the rest of this directive rather than
- * bringing in a second algorithm, and the entries already inserted stay
- * findable because the scan does not consult the index. */
+/* Attribute names have one lookup representation. If its allocation fails,
+ * the directive parse fails and the owning parser reports OOM. */
 typedef struct {
     directive_attributes list;
     /* Maps a name to its SLOT NUMBER PLUS ONE, not to a pointer: the entries
@@ -373,24 +351,13 @@ typedef struct {
      * dangle on the next insert. Plus one because the map reports "absent" as
      * a null value and slot zero is a real slot. */
     markdown_core_key_index index;
-    int indexed;
 } attribute_builder;
 
 #define ATTRIBUTE_SLOT_NONE ((size_t)-1)
 
 static size_t attribute_find(attribute_builder *builder, const unsigned char *name, bufsize_t name_len) {
-    size_t i;
-    if (builder->indexed) {
-        void *found = markdown_core_key_index_lookup(&builder->index, name, name_len);
-        return found ? (size_t)(uintptr_t)found - 1 : ATTRIBUTE_SLOT_NONE;
-    }
-    for (i = 0; i < builder->list.count; i++) {
-        const markdown_core_chunk *have = &builder->list.items[i].name;
-        if (have->len == name_len && memcmp(have->data, name, (size_t)name_len) == 0) {
-            return i;
-        }
-    }
-    return ATTRIBUTE_SLOT_NONE;
+    void *found = markdown_core_key_index_lookup(&builder->index, name, name_len);
+    return found ? (size_t)(uintptr_t)found - 1 : ATTRIBUTE_SLOT_NONE;
 }
 
 static int attribute_reserve(markdown_core_mem *mem, directive_attributes *attrs) {
@@ -398,6 +365,9 @@ static int attribute_reserve(markdown_core_mem *mem, directive_attributes *attrs
     directive_attribute *grown;
     if (attrs->count < attrs->capacity) {
         return 1;
+    }
+    if (attrs->capacity > SIZE_MAX / 2 || (attrs->capacity ? attrs->capacity * 2 : 8) > SIZE_MAX / sizeof(*grown)) {
+        return 0;
     }
     capacity = attrs->capacity ? attrs->capacity * 2 : 8;
     grown = (directive_attribute *)mem->realloc(attrs->items, capacity * sizeof(*grown));
@@ -423,12 +393,8 @@ static int attribute_name_is_class(const unsigned char *name, bufsize_t name_len
  * `{class="" .b}` is `class="b"`. Both are oracle rows; the rule is "join what
  * is there", not "join what was written" -- which is why the first value is
  * stored as it comes and only later ones are joined onto it. */
-static int attribute_accumulate_class(
-    markdown_core_mem *mem,
-    markdown_core_chunk *into,
-    const unsigned char *value,
-    bufsize_t value_len
-) {
+static int attribute_accumulate_class(markdown_core_mem *mem, markdown_core_chunk *into, const unsigned char *value,
+                                      bufsize_t value_len) {
     markdown_core_strbuf joined;
     int stored;
     markdown_core_strbuf_init(mem, &joined, into->len + value_len + 2);
@@ -452,15 +418,8 @@ static int attribute_accumulate_class(
  * It runs AFTER the raw scan, never during it, which is what makes
  * `{a=x&#125;y}` one attribute whose value contains a `}` rather than a block
  * that ended early. */
-static int upsert_attribute(
-    markdown_core_mem *mem,
-    attribute_builder *builder,
-    const unsigned char *name,
-    bufsize_t name_len,
-    const unsigned char *value,
-    bufsize_t value_len,
-    int *oom
-) {
+static int upsert_attribute(markdown_core_mem *mem, attribute_builder *builder, const unsigned char *name,
+                            bufsize_t name_len, const unsigned char *value, bufsize_t value_len, int *oom) {
     markdown_core_strbuf decoded;
     directive_attribute *slot;
     size_t at;
@@ -512,43 +471,17 @@ static int upsert_attribute(
         }
         return 0;
     }
-    if (builder->indexed && !markdown_core_key_index_insert(
-                                &builder->index,
-                                slot->name.data,
-                                slot->name.len,
-                                (void *)(uintptr_t)(builder->list.count + 1),
-                                0,
-                                NULL
-                            )) {
-        builder->indexed = 0;
+    if (!markdown_core_key_index_insert(&builder->index, slot->name.data, slot->name.len,
+                                        (void *)(uintptr_t)(builder->list.count + 1), 0, NULL)) {
+        markdown_core_chunk_free(mem, &slot->name);
+        markdown_core_chunk_free(mem, &slot->value);
+        if (oom) {
+            *oom = 1;
+        }
+        return 0;
     }
     builder->list.count++;
     return 1;
-}
-
-/* Q19: THE MODEL IS SORTED, and by name. Two orders is how a third order
- * appears in a binding -- the map has no source order left to preserve once a
- * name appears once -- and remark's own projection is sorted too, which is what
- * the mdast oracle compares against.
- *
- * `qsort` over the array, not a merge sort over a list: the entries are
- * contiguous and there are no equal names to keep stable, because the map made
- * them unique. */
-static int compare_attributes_by_name(const void *left, const void *right) {
-    const directive_attribute *a = (const directive_attribute *)left;
-    const directive_attribute *b = (const directive_attribute *)right;
-    bufsize_t common = a->name.len < b->name.len ? a->name.len : b->name.len;
-    int cmp = memcmp(a->name.data, b->name.data, (size_t)common);
-    if (cmp) {
-        return cmp;
-    }
-    return a->name.len < b->name.len ? -1 : a->name.len > b->name.len;
-}
-
-static void sort_attributes_by_name(directive_attributes *attrs) {
-    if (attrs->count > 1) {
-        qsort(attrs->items, attrs->count, sizeof(*attrs->items), compare_attributes_by_name);
-    }
 }
 
 const char *markdown_core_extensions_get_directive_name(markdown_core_node *node) {
@@ -558,6 +491,16 @@ const char *markdown_core_extensions_get_directive_name(markdown_core_node *node
     }
 
     return markdown_core_chunk_to_cstr(markdown_core_node_mem(node), &directive->name);
+}
+
+int markdown_core_directive_has_label(markdown_core_node *node) {
+    node_directive *directive = get_directive(node);
+    return directive && directive->label;
+}
+
+markdown_core_node *markdown_core_directive_label(markdown_core_node *node) {
+    node_directive *directive = get_directive(node);
+    return directive ? directive->label : NULL;
 }
 
 static int directive_name_is_valid(markdown_core_mem *mem, const char *name) {
@@ -592,10 +535,7 @@ static int directive_name_is_valid(markdown_core_mem *mem, const char *name) {
 int markdown_core_extensions_set_directive_name(markdown_core_node *node, const char *name) {
     node_directive *directive = get_directive(node);
 
-    /* A retained projection's node is frozen (review-found): a write
-     * here would show in every tree at once. */
-    if (!directive || (node->flags & MARKDOWN_CORE_NODE__SHARED) ||
-        !directive_name_is_valid(markdown_core_node_mem(node), name)) {
+    if (!directive || !directive_name_is_valid(markdown_core_node_mem(node), name)) {
         return 0;
     }
 
@@ -622,14 +562,8 @@ size_t markdown_core_extensions_directive_attribute_count(markdown_core_node *no
     return directive ? directive->attributes.count : 0;
 }
 
-int markdown_core_extensions_directive_attribute_at(
-    markdown_core_node *node,
-    size_t index,
-    const char **name,
-    size_t *name_length,
-    const char **value,
-    size_t *value_length
-) {
+int markdown_core_extensions_directive_attribute_at(markdown_core_node *node, size_t index, const char **name,
+                                                    size_t *name_length, const char **value, size_t *value_length) {
     directive_attribute *attr = attribute_at(get_directive(node), index);
     if (!attr || !name || !name_length || !value || !value_length) {
         return 0;
@@ -641,82 +575,27 @@ int markdown_core_extensions_directive_attribute_at(
     return 1;
 }
 
-static void directive_opaque_alloc(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_mem *mem,
-    markdown_core_node *node
-) {
-    /* A NULL payload is tolerated: every accessor goes through get_directive
-     * and treats the node as attribute-less. */
+static void directive_opaque_alloc(const markdown_core_extension *extension, markdown_core_mem *mem,
+                                   markdown_core_node *node) {
     if (is_directive_node(node)) {
         node->as.opaque = mem->calloc(1, sizeof(node_directive));
     }
 }
 
-static void directive_opaque_free(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_mem *mem,
-    markdown_core_node *node
-) {
+static void directive_opaque_free(const markdown_core_extension *extension, markdown_core_mem *mem,
+                                  markdown_core_node *node) {
     node_directive *directive = (node_directive *)node->as.opaque;
     if (!directive) {
         return;
     }
 
+    if (directive->label) {
+        markdown_core_node_free(directive->label);
+    }
     markdown_core_chunk_free(mem, &directive->name);
     free_attribute_list(mem, &directive->attributes);
     mem->free(directive);
-}
-
-/* The AST derivation clones the block skeleton (§12.5): the name and every
- * attribute pair are OWNED chunks, so the copy owns its own. */
-static int directive_opaque_copy(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_mem *mem,
-    markdown_core_node *dst,
-    const markdown_core_node *src
-) {
-    const node_directive *from = (const node_directive *)src->as.opaque;
-    node_directive *to;
-    size_t i;
-    if (!from) {
-        return 1;
-    }
-    to = (node_directive *)mem->calloc(1, sizeof(*to));
-    if (!to) {
-        return 0;
-    }
-    to->fence_length = from->fence_length;
-    to->closed = from->closed;
-    to->consume_line = from->consume_line;
-    to->has_attributes = from->has_attributes;
-    if (!replace_chunk_bytes(mem, &to->name, from->name.data, from->name.len)) {
-        mem->free(to);
-        return 0;
-    }
-    if (from->attributes.count > 0) {
-        to->attributes.items = (directive_attribute *)mem->calloc(from->attributes.count, sizeof(directive_attribute));
-        if (!to->attributes.items) {
-            markdown_core_chunk_free(mem, &to->name);
-            mem->free(to);
-            return 0;
-        }
-        to->attributes.capacity = from->attributes.count;
-        for (i = 0; i < from->attributes.count; i++) {
-            const directive_attribute *item = &from->attributes.items[i];
-            if (!replace_chunk_bytes(mem, &to->attributes.items[i].name, item->name.data, item->name.len) ||
-                !replace_chunk_bytes(mem, &to->attributes.items[i].value, item->value.data, item->value.len)) {
-                to->attributes.count = i + 1;
-                markdown_core_chunk_free(mem, &to->name);
-                free_attribute_list(mem, &to->attributes);
-                mem->free(to);
-                return 0;
-            }
-            to->attributes.count = i + 1;
-        }
-    }
-    dst->as.opaque = to;
-    return 1;
+    node->as.opaque = NULL;
 }
 
 /* AN `=` PROMISES A VALUE. With none before the block ends the block is
@@ -733,13 +612,8 @@ static int unquoted_value_cp(unsigned char c) {
     return !ascii_is_space(c) && c != '"' && c != '\'' && c != '<' && c != '>' && c != '=' && c != '`';
 }
 
-static int parse_attr_value(
-    const unsigned char *data,
-    bufsize_t len,
-    bufsize_t *pos,
-    const unsigned char **value,
-    bufsize_t *value_len
-) {
+static int parse_attr_value(const unsigned char *data, bufsize_t len, bufsize_t *pos, const unsigned char **value,
+                            bufsize_t *value_len) {
     bufsize_t start;
     unsigned char quote;
     while (*pos < len && ascii_is_space(data[*pos])) {
@@ -777,22 +651,20 @@ static int parse_attr_value(
     return 1;
 }
 
-static int parse_attributes(
-    markdown_core_mem *mem,
-    const unsigned char *data,
-    bufsize_t len,
-    directive_attributes *result,
-    int *oom
-) {
+static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, bufsize_t len,
+                            directive_attributes *result, int *oom) {
     attribute_builder builder;
     bufsize_t pos = 0;
     int ok = 1;
 
     memset(&builder, 0, sizeof(builder));
-    /* An index that cannot be built is not a failure: `attribute_find` scans
-     * instead. Most `{...}` hold a handful of names and never notice. */
-    builder.indexed = markdown_core_key_index_init(&builder.index, mem, 8);
     memset(result, 0, sizeof(*result));
+    if (!markdown_core_key_index_init(&builder.index, mem, 8)) {
+        if (oom) {
+            *oom = 1;
+        }
+        return 0;
+    }
     while (pos < len) {
         bufsize_t start;
         bufsize_t name_len;
@@ -816,15 +688,8 @@ static int parse_attributes(
                 ok = 0;
                 break;
             }
-            if (!upsert_attribute(
-                    mem,
-                    &builder,
-                    (const unsigned char *)shorthand_name,
-                    (bufsize_t)strlen(shorthand_name),
-                    data + pos,
-                    shorthand_len,
-                    oom
-                )) {
+            if (!upsert_attribute(mem, &builder, (const unsigned char *)shorthand_name,
+                                  (bufsize_t)strlen(shorthand_name), data + pos, shorthand_len, oom)) {
                 ok = 0;
                 break;
             }
@@ -854,14 +719,8 @@ static int parse_attributes(
         }
     }
 
-    if (builder.indexed) {
-        markdown_core_key_index_free(&builder.index);
-        builder.indexed = 0;
-    }
+    markdown_core_key_index_free(&builder.index);
     if (ok) {
-        /* Sorting last, and only here: the index maps a name to the slot it was
-         * inserted at, so it has to be gone before the entries move. */
-        sort_attributes_by_name(&builder.list);
         *result = builder.list;
         memset(&builder.list, 0, sizeof(builder.list));
     }
@@ -873,13 +732,8 @@ static void free_parsed_directive(markdown_core_mem *mem, parsed_directive *pars
     free_attribute_list(mem, &parsed->attributes);
 }
 
-static int parse_directive_suffix(
-    markdown_core_mem *mem,
-    unsigned char *data,
-    bufsize_t len,
-    bufsize_t pos,
-    parsed_directive *parsed
-) {
+static int parse_directive_suffix(markdown_core_mem *mem, unsigned char *data, bufsize_t len, bufsize_t pos,
+                                  parsed_directive *parsed) {
     bufsize_t attr_start;
     bufsize_t attr_len;
     memset(parsed, 0, sizeof(*parsed));
@@ -909,15 +763,9 @@ static int parse_directive_suffix(
     return 1;
 }
 
-static markdown_core_node *make_label_node(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_mem *mem,
-    const unsigned char *label,
-    bufsize_t label_len,
-    int start_line,
-    int start_column,
-    int end_column
-) {
+static markdown_core_node *make_label_node(const markdown_core_extension *extension, markdown_core_mem *mem,
+                                           const unsigned char *label, bufsize_t label_len, int start_line,
+                                           int start_column, int end_column) {
     markdown_core_node *label_node =
         markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_DIRECTIVE_LABEL, mem, extension);
     if (!label_node) {
@@ -940,46 +788,31 @@ static markdown_core_node *make_label_node(
     return label_node;
 }
 
-static int attach_label_node(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_node *directive_node,
-    const unsigned char *label,
-    bufsize_t label_len,
-    int start_line,
-    int start_column,
-    int end_column
-) {
+static int attach_label_node(const markdown_core_extension *extension, markdown_core_node *directive_node,
+                             const unsigned char *label, bufsize_t label_len, int start_line, int start_column,
+                             int end_column) {
     markdown_core_node *label_node;
 
-    label_node = make_label_node(
-        extension,
-        markdown_core_node_mem(directive_node),
-        label,
-        label_len,
-        start_line,
-        start_column,
-        end_column
-    );
+    label_node = make_label_node(extension, markdown_core_node_mem(directive_node), label, label_len, start_line,
+                                 start_column, end_column);
     if (!label_node) {
         return 0;
     }
 
-    if (!markdown_core_node_append_child(directive_node, label_node)) {
+    node_directive *directive = get_directive(directive_node);
+    if (!directive || directive->label) {
         markdown_core_node_free(label_node);
         return 0;
     }
 
+    directive->label = label_node;
+
     return 1;
 }
 
-static int apply_parsed_directive(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_node *node,
-    const unsigned char *data,
-    parsed_directive *parsed,
-    int start_line,
-    int start_column
-) {
+static int apply_parsed_directive(const markdown_core_extension *extension, markdown_core_node *node,
+                                  const unsigned char *data, parsed_directive *parsed, int start_line,
+                                  int start_column) {
     node_directive *directive = get_directive(node);
     markdown_core_mem *mem = markdown_core_node_mem(node);
 
@@ -1006,15 +839,8 @@ static int apply_parsed_directive(
         int label_start_column = start_column + (int)parsed->label_start;
         int label_end_column = label_start_column + (int)parsed->label_len + 1;
 
-        if (!attach_label_node(
-                extension,
-                node,
-                data + parsed->label_start,
-                parsed->label_len,
-                start_line,
-                label_start_column,
-                label_end_column
-            )) {
+        if (!attach_label_node(extension, node, data + parsed->label_start, parsed->label_len, start_line,
+                               label_start_column, label_end_column)) {
             return 0;
         }
     }
@@ -1022,16 +848,9 @@ static int apply_parsed_directive(
     return 1;
 }
 
-static markdown_core_node *make_directive_node(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_parser *parser,
-    const unsigned char *name,
-    bufsize_t name_len,
-    int start_line,
-    int start_column,
-    int end_line,
-    int end_column
-) {
+static markdown_core_node *make_directive_node(const markdown_core_extension *extension, markdown_core_parser *parser,
+                                               const unsigned char *name, bufsize_t name_len, int start_line,
+                                               int start_column, int end_line, int end_column) {
     markdown_core_node *node =
         markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_DIRECTIVE, parser->mem, extension);
     node_directive *directive;
@@ -1078,14 +897,9 @@ static markdown_core_node *make_directive_node(
  *
  * Scanning it here also means the bytes are CONSUMED here, so no other
  * extension is ever offered them. There is nothing left to protect. */
-static markdown_core_node *match_colon_directive(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_parser *parser,
-    markdown_core_node *parent,
-    markdown_core_inline_parser *inline_parser,
-    markdown_core_chunk *chunk,
-    bufsize_t offset
-) {
+static markdown_core_node *match_colon_directive(const markdown_core_extension *extension, markdown_core_parser *parser,
+                                                 markdown_core_node *parent, markdown_core_inline_parser *inline_parser,
+                                                 markdown_core_chunk *chunk, bufsize_t offset) {
     bufsize_t name_start;
     bufsize_t name_len;
     bufsize_t pos;
@@ -1101,6 +915,7 @@ static markdown_core_node *match_colon_directive(
     int start_line = markdown_core_inline_parser_get_line(inline_parser);
     int start_column = markdown_core_inline_parser_get_column(inline_parser);
 
+    (void)parent;
     memset(&attributes, 0, sizeof(attributes));
 
     /* A TEXT DIRECTIVE'S COLON MAY NOT SIT NEXT TO ANOTHER COLON, on either
@@ -1133,8 +948,6 @@ static markdown_core_node *match_colon_directive(
             label_open = pos;
             pos = label_end;
         }
-        /* else: the directive still stands and the bracket run is prose --
-         * micromark's rule, and 7.1's shape for the attribute block below. */
     }
 
     if (pos < chunk->len && chunk->data[pos] == '{') {
@@ -1150,21 +963,10 @@ static markdown_core_node *match_colon_directive(
             parser->oom = true;
             return NULL;
         }
-        /* else: the braces are prose and the directive stands (7.1's rule) --
-         * `attributes=null`, exactly as a directive with no brace block at
-         * all reports. */
     }
 
-    node = make_directive_node(
-        extension,
-        parser,
-        chunk->data + name_start,
-        name_len,
-        start_line,
-        start_column,
-        start_line,
-        start_column
-    );
+    node = make_directive_node(extension, parser, chunk->data + name_start, name_len, start_line, start_column,
+                               start_line, start_column);
     if (!node) {
         free_attribute_list(parser->mem, &attributes);
         parser->oom = true;
@@ -1182,56 +984,31 @@ static markdown_core_node *match_colon_directive(
         int label_line = start_line;
         int label_column = start_column + (int)(label_open - offset);
         markdown_core_inline_parser_set_offset(inline_parser, (int)(label_start + label_len + 1));
-        label_node = make_label_node(
-            extension,
-            parser->mem,
-            chunk->data + label_start,
-            label_len,
-            label_line,
-            label_column,
-            markdown_core_inline_parser_get_column(inline_parser) - 1
-        );
+        label_node = make_label_node(extension, parser->mem, chunk->data + label_start, label_len, label_line,
+                                     label_column, markdown_core_inline_parser_get_column(inline_parser) - 1);
         if (!label_node) {
             markdown_core_node_free(node);
             parser->oom = true;
             return NULL;
         }
         label_node->end_line = markdown_core_inline_parser_get_line(inline_parser);
-        if (!markdown_core_node_append_child(node, label_node)) {
+        if (directive->label) {
             markdown_core_node_free(label_node);
             markdown_core_node_free(node);
             parser->oom = true;
             return NULL;
         }
+        directive->label = label_node;
     }
 
     markdown_core_inline_parser_set_offset(inline_parser, (int)pos);
     node->end_line = markdown_core_inline_parser_get_line(inline_parser);
     node->end_column = markdown_core_inline_parser_get_column(inline_parser) - 1;
 
-    /* The label's content is its own buffer, so its inlines are parsed against
-     * it and not against the paragraph that contains it -- the same shape a
-     * table cell has, and the same one the BLOCK forms of this directive have
-     * always had. `process_inlines`' walk cannot reach a node created during a
-     * paragraph's own inline pass, so the parse is driven from here. */
+    /* The label brackets belong to the enclosing paragraph's claim run, not
+     * to the detached label content buffer. Parser phases discover the field
+     * from its live owner after this paragraph finishes. */
     if (label_node) {
-        /* The parent link is set HERE and not left to `parse_inline`'s
-         * `append_child`, because requirement 11b's refinement walks a block's
-         * ancestors to find the region its content was cut from -- and without
-         * this the label's chain stops at a directive that is still a return
-         * value, so every node inside a label would own no region at all. The
-         * link is the one `append_child` writes a moment later. */
-        node->parent = parent;
-        markdown_core_parse_inlines(parser, label_node, parser->refmap, parser->options);
-        /* The label asked ON THE PARENT'S BEHALF (#163, review-found): the
-         * nested parse's subject owner is the label, but the block whose
-         * store records the CONSULTED bits is `parent` -- without this OR,
-         * a paragraph holding `:note[sees [x]]` read as immune to the very
-         * definition its label asked about and was served stale. The OR
-         * runs after the nested parse returns, so a label inside a label
-         * propagates outward one level at a time. */
-        parent->flags |=
-            label_node->flags & (MARKDOWN_CORE_NODE__CONSULTED_REFMAP | MARKDOWN_CORE_NODE__CONSULTED_FOOTNOTES);
         /* The label's scope spans its brackets, so the brackets are the
          * label's markers (requirement 11b). They are claimed from HERE, in
          * the enclosing paragraph's claim run, because they are not part of
@@ -1245,13 +1022,9 @@ static markdown_core_node *match_colon_directive(
  * recognised as a delimiter to pair with the opener; the label is scanned at
  * the colon now, so the bracket is nobody's business but the core's -- which
  * is what makes `[a](b)` inside a label work like any other link. */
-static markdown_core_node *match(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_parser *parser,
-    markdown_core_node *parent,
-    unsigned char character,
-    markdown_core_inline_parser *inline_parser
-) {
+static markdown_core_node *match(const markdown_core_extension *extension, markdown_core_parser *parser,
+                                 markdown_core_node *parent, unsigned char character,
+                                 markdown_core_inline_parser *inline_parser) {
     markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
     bufsize_t offset = (bufsize_t)markdown_core_inline_parser_get_offset(inline_parser);
 
@@ -1270,14 +1043,9 @@ static bufsize_t count_colons(const unsigned char *data, bufsize_t len, bufsize_
     return count;
 }
 
-static markdown_core_node *open_directive_block(
-    const markdown_core_syntax_extension *extension,
-    int indented,
-    markdown_core_parser *parser,
-    markdown_core_node *parent_container,
-    unsigned char *input,
-    int len
-) {
+static markdown_core_node *open_directive_block(const markdown_core_extension *extension, int indented,
+                                                markdown_core_parser *parser, markdown_core_node *parent_container,
+                                                unsigned char *input, int len) {
     bufsize_t first_nonspace = (bufsize_t)markdown_core_parser_get_first_nonspace(parser);
     bufsize_t colon_count;
     parsed_directive parsed;
@@ -1294,9 +1062,6 @@ static markdown_core_node *open_directive_block(
     }
 
     if (!parse_directive_suffix(parser->mem, input, (bufsize_t)len, first_nonspace + colon_count, &parsed)) {
-        /* THE BLOCK PATH HAS NO FALLBACK: the inline form keeps the directive
-         * and gives up only the label or the attribute list; here the whole
-         * line becomes a paragraph and reads exactly like prose. */
         if (parsed.oom) {
             parser->oom = true;
         }
@@ -1308,20 +1073,15 @@ static markdown_core_node *open_directive_block(
         return NULL;
     }
 
-    node = markdown_core_parser_add_child(
-        parser,
-        parent_container,
-        MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
-        (int)first_nonspace + 1
-    );
+    node = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
+                                          (int)first_nonspace + 1);
     if (!node) {
         free_parsed_directive(parser->mem, &parsed);
         return NULL;
     }
 
-    /* The attach runs the descriptor's own opaque allocator (node.c): the
-     * manual calloc that used to follow it would leak that payload. */
-    markdown_core_node_set_syntax_extension(node, extension);
+    markdown_core_node_set_extension(node, extension);
+    node->as.opaque = parser->mem->calloc(1, sizeof(node_directive));
     if (!node->as.opaque) {
         parser->oom = true;
         markdown_core_node_free(node);
@@ -1329,14 +1089,8 @@ static markdown_core_node *open_directive_block(
         return NULL;
     }
 
-    if (!apply_parsed_directive(
-            extension,
-            node,
-            input,
-            &parsed,
-            markdown_core_parser_get_line_number(parser),
-            (int)first_nonspace
-        )) {
+    if (!apply_parsed_directive(extension, node, input, &parsed, markdown_core_parser_get_line_number(parser),
+                                (int)first_nonspace)) {
         /* The suffix already validated; failure here is allocation loss. */
         parser->oom = true;
         markdown_core_node_free(node);
@@ -1355,13 +1109,8 @@ static markdown_core_node *open_directive_block(
     return node;
 }
 
-static int directive_block_matches(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_parser *parser,
-    unsigned char *input,
-    int len,
-    markdown_core_node *container
-) {
+static int directive_block_matches(const markdown_core_extension *extension, markdown_core_parser *parser,
+                                   unsigned char *input, int len, markdown_core_node *container) {
     node_directive *directive = get_directive(container);
     bufsize_t first_nonspace = (bufsize_t)markdown_core_parser_get_first_nonspace(parser);
     bufsize_t colon_count;
@@ -1381,12 +1130,8 @@ static int directive_block_matches(
         has_only_spaces_until_line_end(input, (bufsize_t)len, first_nonspace + colon_count)) {
         directive->closed = 1;
         directive->consume_line = 1;
-        markdown_core_parser_advance_offset(
-            parser,
-            (char *)input,
-            len - markdown_core_parser_get_offset(parser),
-            false
-        );
+        markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser),
+                                            false);
         /* Returning 1 here used to leave the container open. The fence was
          * consumed, so nothing else on the line was parsed, but the block
          * stayed open and the next non-blank line arrived as a lazy paragraph
@@ -1398,7 +1143,7 @@ static int directive_block_matches(
     return 1;
 }
 
-static const char *get_type_string(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
+static const char *get_type_string(const markdown_core_extension *extension, markdown_core_node *node) {
     if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE) {
         return "directive";
     }
@@ -1414,19 +1159,15 @@ static const char *get_type_string(const markdown_core_syntax_extension *extensi
     return "<unknown>";
 }
 
-static int can_contain(
-    const markdown_core_syntax_extension *extension,
-    markdown_core_node *node,
-    markdown_core_node_type child_type
-) {
+static int can_contain(const markdown_core_extension *extension, markdown_core_node *node,
+                       markdown_core_node_type child_type) {
     if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE) {
-        return child_type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
+        return 0;
     }
 
     if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
-        return child_type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL ||
-               (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM &&
-                   child_type != MARKDOWN_CORE_NODE_DOCUMENT);
+        return MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM &&
+               child_type != MARKDOWN_CORE_NODE_DOCUMENT;
     }
 
     if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
@@ -1436,11 +1177,11 @@ static int can_contain(
     return 0;
 }
 
-static int contains_inlines(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
+static int contains_inlines(const markdown_core_extension *extension, markdown_core_node *node) {
     return node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
 }
 
-static int accepts_lines(const markdown_core_syntax_extension *extension, markdown_core_node *node) {
+static int accepts_lines(const markdown_core_extension *extension, markdown_core_node *node) {
     node_directive *directive = get_directive(node);
 
     if (!directive) {
@@ -1454,11 +1195,20 @@ static int accepts_lines(const markdown_core_syntax_extension *extension, markdo
     return directive->fence_length == 2 || directive->consume_line;
 }
 
-/* `:` alone opens a directive; the dispatch set is exactly ":". The `]`
- * entry it once carried was removed with the delimiter-based label design --
- * the label is scanned from the `:` -- so no byte this matcher cannot
- * consume is registered. */
-const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE = {
+static int visit_owned_subtrees(const markdown_core_extension *extension, markdown_core_node *node,
+                                markdown_core_owned_subtree_visitor visitor, void *context) {
+    node_directive *directive = get_directive(node);
+    (void)extension;
+    if (!directive || !directive->label) {
+        return 1;
+    }
+    return visitor(&directive->label, context);
+}
+
+/* `:` opens a directive. `]` is in the dispatch set for the `]` arbitration
+ * `bracket_takes_close_bracket` performs, not because it terminates a text run --
+ * `is_core_special_character` refuses it there. */
+const markdown_core_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE = {
     .name = "directive",
     .match_inline = match,
     .last_block_matches = directive_block_matches,
@@ -1469,7 +1219,7 @@ const markdown_core_syntax_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE = {
     .accepts_lines_func = accepts_lines,
     .opaque_alloc_func = directive_opaque_alloc,
     .opaque_free_func = directive_opaque_free,
-    .opaque_copy_func = directive_opaque_copy,
+    .visit_owned_subtrees_func = visit_owned_subtrees,
     .terminates_text = ":",
     .dispatch = ":",
 };

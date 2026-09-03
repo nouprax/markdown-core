@@ -2,15 +2,14 @@
 /**
  * mdast-parity gate.
  *
- * The second of two external oracles. cmark-gfm is the authority for the base
- * language and cannot judge the constructs it does not implement, so for
- * directives, math, footnote placement, and the reference-link model the
- * authority is the unified/remark ecosystem — the one this repository's
- * extensions were written against.
+ * The corrective and supplementary external oracle. cmark owns CommonMark and
+ * cmark-gfm owns its GFM extension layer; remark/micromark supplies independent
+ * evidence for directives, math, footnote representation, tables, and the
+ * reference-link model.
  *
  * Both parsers parse the same corpus, their trees are normalized into one
  * comparable form, and anything that still differs is either registered in
- * `specs/mdast-parity/deltas.json` or a defect.
+ * `specs/oracles/remark/deltas.json` or a defect.
  *
  *   node scripts/check-mdast-parity.mjs [--verbose]
  */
@@ -31,7 +30,7 @@ import { dropEmptyText, fromMdast, MDAST_COMPARED } from "./lib/mdast-oracle.mjs
 import { liftFootnoteDefinitions, parseCanonicalDump, render } from "./lib/upstream-cmark.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const policyPath = "specs/mdast-parity/deltas.json";
+const policyPath = "specs/oracles/remark/deltas.json";
 const policy = JSON.parse(fs.readFileSync(path.join(root, policyPath), "utf8"));
 const verbose = process.argv.includes("--verbose");
 
@@ -51,8 +50,8 @@ const processor = unified().use(remarkParse).use(remarkGfm).use(remarkDirective)
 function project(node) {
     const children = [];
     for (const child of node.children) {
-        // `:red[]` carries an empty label in this repository's AST and no
-        // children at all in mdast, which cannot express the difference
+        // `:red[]` carries an empty label field in this repository's AST and
+        // no label content at all in mdast, which cannot express the difference
         // between it and `:red`. Dropping the empty node compares what both
         // models can state.
         if (child.kind === "DirectiveLabel" && child.children.length === 0) continue;
@@ -66,18 +65,16 @@ function project(node) {
     }
     const fields = {};
     for (const key of MDAST_COMPARED[node.kind] ?? []) {
-        // This repository's dump names an image's target `source`, and a
-        // definition's match key `norm`; mdast calls them destination and
-        // identifier. One name reaches the comparison.
+        // This repository's dump names an image's target `source`; mdast and
+        // cmark both call it a destination. One name reaches the comparison.
         let value =
             node.kind === "Image" && key === "destination"
                 ? (node.fields.destination ?? node.fields.source)
-                : key === "identifier"
-                  ? (node.fields.identifier ?? node.fields.norm)
-                  : node.fields[key];
-        // Both sides spell a directive's attributes as sorted `key="value"`
-        // pairs now; the dump brackets the group so it reads as one field, and
-        // spells an empty container `[]` where the oracle spells it "null".
+                : node.fields[key];
+        // Both sides spell a directive's attributes as source-ordered
+        // `key="value"` pairs; the dump brackets the group so it reads as one
+        // field, and spells an empty container `[]` where the oracle spells it
+        // "null".
         if (key === "attributes" && typeof value === "string" && value.startsWith("[")) {
             const inner = value.slice(1, -1);
             value = inner === "" ? "null" : inner;
@@ -246,7 +243,7 @@ if (divergent.length) {
         if (entry.settledBacklog) {
             process.stderr.write(
                 `    backlog entry now AGREES with remark. ${entry.settledBacklog.closedBy} has landed;\n` +
-                    "    delete this entry from specs/mdast-parity/deltas.json in that same commit.\n"
+                    `    delete this entry from ${policyPath} in that same commit.\n`
             );
             continue;
         }
@@ -276,7 +273,7 @@ if (divergent.length) {
         if (entry.settled) {
             process.stderr.write(
                 `    registered divergence \`${entry.settled.id}\` no longer reproduces: the two now agree.\n` +
-                    "    Remove the entry from specs/mdast-parity/deltas.json, with review.\n"
+                    `    Remove the entry from ${policyPath}, with review.\n`
             );
             continue;
         }
@@ -288,7 +285,7 @@ if (divergent.length) {
     }
     process.stderr.write(
         "\nEach divergence is either a defect or a deliberate difference. A deliberate one is\n" +
-            "registered in specs/mdast-parity/deltas.json and written into docs/specs/canonical-ast.md.\n"
+            `registered in ${policyPath} and written into docs/specs/canonical-ast.md.\n`
     );
     process.exit(1);
 }
