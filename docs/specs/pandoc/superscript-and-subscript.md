@@ -3,6 +3,8 @@
 Status: normative target module for the independent `superscript` and
 `subscript` options. Authority:
 [Pandoc User's Guide — superscripts and subscripts](https://pandoc.org/MANUAL.html#extension-superscript-subscript)
+and the pinned reader's
+[`litBetweenNoSpace`](https://github.com/jgm/pandoc/blob/b913622e1ff87c69ab8b1a606577122e220925cd/src/Text/Pandoc/Readers/Markdown.hs#L211-L214)
 at the snapshot pinned by the [Pandoc extension index](../pandoc.md).
 
 ## AST
@@ -29,7 +31,9 @@ With `superscript=true`, one unescaped `^` opens and the next eligible `^`
 closes. With `subscript=true`, one unescaped `~` opens and the next eligible
 `~` closes. The body may be empty: `^^` produces an empty `Superscript`, and
 `~~` produces an empty `Subscript` when no higher-priority valid strikeout
-claims the tildes.
+claims the tildes. This follows from Pandoc's zero-or-more `manyTill` body
+parser and is reproduced by the pinned 3.11 CLI as `Superscript []` and
+`Subscript []`.
 
 An unescaped whitespace or source line ending before the closer invalidates
 the candidate. An ASCII space may be included as `\ `; following Pandoc, that

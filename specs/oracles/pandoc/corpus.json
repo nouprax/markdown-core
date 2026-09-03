@@ -38,6 +38,11 @@
             "input": "H~2~O and 2^10^\n"
         },
         {
+            "id": "empty-superscript-and-subscript",
+            "from": "markdown_strict+superscript+subscript",
+            "input": "Empty ^^ and ~~ remain nodes.\n"
+        },
+        {
             "id": "inline-code-attributes",
             "from": "markdown_strict+inline_code_attributes",
             "input": "`printf()`{.c #call role=\"function\"}\n"

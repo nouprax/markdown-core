@@ -233,6 +233,10 @@ const seenGaps = new Set();
 const failures = [];
 const unknownKinds = new Set();
 const cases = policy.corpus.flatMap((file) => readExamples(root, file));
+if (cases.length === 0) {
+    process.stderr.write(`obsidian parity: corpus produced no examples: ${policy.corpus.join(", ")}\n`);
+    process.exit(1);
+}
 const duplicateCorpusInputs = cases.filter(
     (testCase, index) => cases.findIndex((candidate) => candidate.input === testCase.input) !== index
 );
