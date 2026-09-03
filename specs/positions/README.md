@@ -6,7 +6,7 @@ Three gates that judge the engine's source positions, and one ledger each.
 |---|---|---|
 | `inline-sourcepos.json` | `scripts/audit-inline-sourcepos.mjs` | does an authority outside this repository agree? |
 | `containment.json` | `scripts/audit-scope-containment.mjs` | is the tree's geometry consistent with itself? |
-| `places.json` | `scripts/audit-position-places.mjs` | does each coordinate name a byte that exists? |
+| `places.json` | `scripts/audit-position-places.mjs` | are both coordinates valid source places, and is the scope ordered? |
 
 ## Why three
 
@@ -17,9 +17,9 @@ anything:
 
 - the golden dumps **assert** them, which means a wrong position is preserved
   by regeneration rather than caught by it;
-- `scripts/audit-scope-sanity.mjs` classifies three shapes that are not
-  positions at all — the `0:0..0:0` sentinel, a reversed range, and line zero —
-  and passes everything else;
+- the position-place oracle rejects shapes that are not positions at all — a
+  line-zero coordinate or a reversed range — in addition to coordinates that
+  fall outside the source;
 - both parity gates compare structure and text and drop position entirely.
 
 So a **well-formed but wrong** position sailed through every gate. That is how
@@ -41,7 +41,9 @@ None of the three subsumes another, and each is blind where another sees:
 - Place-ness needs no authority and no model of what a node ought to cover, and
   it is the only one that reads the input. It is also the only one that can see
   a position which is inside its parent, agrees with upstream, and still names
-  no byte.
+  no byte. Its corpus is every spec-fixture example plus every Markdown input
+  named by the canonical AST manifest; the latter is parsed through the same
+  default public CLI invocation used to generate canonical candidates.
 
 This separation matters: external agreement, containment, and valid byte
 coordinates answer different questions. A tree can agree with cmark and still

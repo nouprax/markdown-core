@@ -12,11 +12,12 @@ import path from "node:path";
 
 const FENCE = "`".repeat(32);
 
-export function readExamples(root, relativePath) {
+export function readExamples(root, relativePath, { includeExampleNumber = false } = {}) {
     const absolute = path.resolve(root, relativePath);
     const lines = fs.readFileSync(absolute, "utf8").split("\n");
     const cases = [];
     const headings = [];
+    let example = 0;
     for (let i = 0; i < lines.length; i++) {
         const heading = /^(#{1,6})\s+(.+?)\s*$/.exec(lines[i]);
         if (heading) {
@@ -25,6 +26,7 @@ export function readExamples(root, relativePath) {
             headings[depth - 1] = heading[2];
         }
         if (!lines[i].startsWith(`${FENCE} example`)) continue;
+        example += 1;
         const attributes = lines[i].slice(`${FENCE} example`.length).trim();
         const body = [];
         let cursor = i + 1;
@@ -34,6 +36,7 @@ export function readExamples(root, relativePath) {
         if (attributes !== "disabled") {
             // The fixtures write tabs as U+2192 so they survive editing.
             cases.push({
+                ...(includeExampleNumber ? { example } : {}),
                 source: `${relativePath}:${String(i + 1)}`,
                 attributes,
                 tags: attributes === "" ? [] : attributes.split(/\s+/),

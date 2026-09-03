@@ -560,8 +560,8 @@ definition does not change that. This is the 432-case matrix reduced: six caret
 spellings against one label, with the definition present. Only the raw caret is
 a call, so exactly one FootnoteReference appears and the definition resolves to
 it; the other five decode to the identical text and open nothing. The six are
-separate paragraphs rather than one, so the example adds no SoftBreak sentinels
-to specs/scope-sanity/ledger.json, which is a ratchet that only shrinks.
+separate paragraphs rather than one, so the example adds no unrelated
+positionless SoftBreak scope.
 
 The full matrix is six caret spellings x eight labels x three tails x three
 definition contexts. 360 of the 432 move at 0a.9, and the split is exactly the

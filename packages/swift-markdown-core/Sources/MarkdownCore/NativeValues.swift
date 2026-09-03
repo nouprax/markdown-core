@@ -27,8 +27,8 @@ extension Scope {
 extension markdown_core_string {
     var requiredString: String {
         guard let data else { return "" }
-        // The native facade has already validated UTF-8 and this initializer also
-        // gives deterministic replacement semantics if that contract regresses.
+        // Swift input reaches the native parser as valid UTF-8. This defensive
+        // decoding also remains total if an internal payload violates that invariant.
         // swiftlint:disable:next optional_data_string_conversion
         return String(decoding: UnsafeBufferPointer(start: data, count: length), as: UTF8.self)
     }

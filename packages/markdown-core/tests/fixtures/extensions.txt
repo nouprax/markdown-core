@@ -478,7 +478,7 @@ Document scope=1:1..3:10 children=1
     └── TableRow scope=3:1..3:10 isHeader=false children=3
         ├── TableCell scope=3:2..3:4 children=1
         │   └── Text scope=3:3..3:3 literal="d" children=0
-        ├── TableCell scope=3:6..3:5 children=0
+        ├── TableCell scope=3:6..3:6 children=0
         └── TableCell scope=3:7..3:9 children=1
             └── Text scope=3:8..3:8 literal="e" children=0
 ````````````````````````````````

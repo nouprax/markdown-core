@@ -204,7 +204,9 @@ typedef struct markdown_core_optional_string {
 MARKDOWN_CORE_API void markdown_core_parse_options_init(markdown_core_parse_options *options);
 
 /**
- * Parses exactly `length` UTF-8 bytes. `options == NULL` selects the defaults.
+ * Parses exactly `length` bytes as UTF-8. Valid UTF-8 is a caller
+ * precondition; Markdown Core does not validate or repair malformed input.
+ * `options == NULL` selects the defaults.
  * The returned document owns every node and every `markdown_core_string`
  * handed out of it. On failure,
  * NULL is returned and `*error` is set when `error` is non-NULL.

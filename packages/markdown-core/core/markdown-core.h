@@ -535,11 +535,6 @@ markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len,
  */
 #define MARKDOWN_CORE_OPT_NORMALIZE (1 << 8)
 
-/** Validate UTF-8 in the input before parsing, replacing illegal
- * sequences with the replacement character U+FFFD.
- */
-#define MARKDOWN_CORE_OPT_VALIDATE_UTF8 (1 << 9)
-
 /** Convert straight quotes to curly, --- to em dashes, -- to en dashes.
  */
 #define MARKDOWN_CORE_OPT_SMART (1 << 10)

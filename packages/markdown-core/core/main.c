@@ -39,7 +39,6 @@ void print_usage(void) {
     printf("  --profile PROFILE named option set: commonmark | commonmark-smart | default | gfm | "
            "gfm-smart | gfm-extended\n");
     printf("  --smart           Use smart punctuation\n");
-    printf("  --validate-utf8   Replace UTF-8 invalid sequences with U+FFFD\n");
     printf("  --strip-html-comments Strip HTML comment nodes from the parsed AST\n");
     printf("  --extension, -e EXTENSION_NAME  Specify an extension name to use\n");
     printf("  --list-extensions               List available extensions and quit\n");
@@ -111,8 +110,7 @@ int main(int argc, char *argv[]) {
     int *files;
     markdown_core_strbuf source;
     markdown_core_node *document = NULL;
-    int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS |
-                  MARKDOWN_CORE_OPT_VALIDATE_UTF8;
+    int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
     int res = 1;
 
 #ifdef USE_PLEDGE
@@ -192,8 +190,7 @@ int main(int argc, char *argv[]) {
                  * bit left to spell it with (Q14). */
                 options = MARKDOWN_CORE_OPT_FOOTNOTES;
             } else if (strcmp(argv[i], "default") == 0) {
-                options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES |
-                          MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS | MARKDOWN_CORE_OPT_VALIDATE_UTF8;
+                options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
             } else {
                 fprintf(stderr, "Unknown profile %s\n", argv[i]);
                 goto failure;
@@ -207,8 +204,6 @@ int main(int argc, char *argv[]) {
             options |= MARKDOWN_CORE_OPT_SMART;
         } else if (strcmp(argv[i], "--strip-html-comments") == 0) {
             options |= MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
-        } else if (strcmp(argv[i], "--validate-utf8") == 0) {
-            options |= MARKDOWN_CORE_OPT_VALIDATE_UTF8;
         } else if (strcmp(argv[i], "--liberal-html-tag") == 0) {
             options |= MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG;
         } else if ((strcmp(argv[i], "--help") == 0) || (strcmp(argv[i], "-h") == 0)) {
