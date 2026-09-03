@@ -28,7 +28,9 @@ for oracle_file in \
     specs/oracles/remark/deltas.json \
     specs/oracles/remark/corpus.md \
     specs/oracles/obsidian/deltas.json \
-    specs/oracles/obsidian/corpus.md; do
+    specs/oracles/obsidian/corpus.md \
+    specs/oracles/pandoc/source.json \
+    specs/oracles/pandoc/corpus.json; do
     if [ ! -f "$oracle_file" ]; then
         fail "external oracle file is missing: $oracle_file"
     fi
@@ -46,6 +48,7 @@ for target_spec in \
     docs/specs/citation-model.md \
     docs/specs/remark.md \
     docs/specs/remark/attributes.md \
+    docs/plans/2026-09-03-pandoc-markdown-extensions.md \
     docs/specs/pandoc.md \
     docs/specs/pandoc/attributes.md \
     docs/specs/pandoc/citations.md \

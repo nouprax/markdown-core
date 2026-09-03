@@ -2,10 +2,15 @@
 
 Status: normative target index. Authority: Pandoc 3.11, released 2026-08-29,
 at immutable tag commit `b913622e1ff87c69ab8b1a606577122e220925cd`.
+Implementation sequencing and proof obligations are defined by the
+[Pandoc Markdown extensions plan](../plans/2026-09-03-pandoc-markdown-extensions.md).
 The [Pandoc User's Guide](https://pandoc.org/MANUAL.html#pandocs-markdown)
 owns the source language; the tagged
 [Markdown reader](https://github.com/jgm/pandoc/tree/b913622e1ff87c69ab8b1a606577122e220925cd/src/Text/Pandoc/Readers)
-and Pandoc 3.11 native/JSON output are supplementary grammar and AST evidence.
+and official Pandoc 3.11 native/JSON output are grammar and executable AST
+evidence. Their immutable blobs, release artifacts, checksums, extension map,
+and runner restrictions are fixed by the
+[Pandoc oracle policy](../../specs/oracles/pandoc/README.md).
 
 This directory groups independently composable syntax extensions. It does not
 define a monolithic Pandoc dialect or change inherited CommonMark/GFM behavior.

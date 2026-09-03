@@ -12,18 +12,23 @@ the reviewed policy that defines each comparison:
 - `obsidian/` pins the most-used current npm Obsidian parser for the documented
   wikilink/embed, highlight, comment, and custom-task intersection it actually
   implements. Official Obsidian Help remains the language authority.
+- `pandoc/` pins the official Pandoc 3.11 manual, reader sources, release CLI,
+  and per-platform artifact digests for the explicitly selected Pandoc
+  extension layer. Its parity gate is the first implementation-plan phase.
 
-Each `deltas.json` records the authority version, compared corpus, deliberate
-differences, and fail-closed exceptions used by its parity gate. The remark
-oracle also owns a small purpose-built input corpus. A registered difference
-must reproduce; a new difference and a registered difference that disappears
-both fail the gate.
+Each active gate's `deltas.json` records the authority version, compared
+corpus, deliberate differences, and fail-closed exceptions. The Pandoc policy
+currently has an immutable `source.json` and input-only corpus; it explicitly
+does not claim parity until the planned gate and its initial delta registry
+land. A registered difference must reproduce; a new difference and a
+registered difference that disappears both fail an active gate.
 
 Authority is scoped, not voted: cmark-gfm cannot override current cmark on the
-base language, and remark does not silently override either primary oracle.
+base language, Pandoc cannot replace inherited CommonMark/GFM behavior with its
+default dialect, and remark does not silently override either primary oracle.
 When a primary implementation is demonstrably wrong, the exception is reviewed
-and registered, with remark/mdast agreement used as independent evidence where
-available.
+and registered, with independent implementation agreement used as evidence
+where available.
 
 These are external oracle policies, not copies of Markdown Core's expected
 output. Product-owned golden AST dumps remain solely in
