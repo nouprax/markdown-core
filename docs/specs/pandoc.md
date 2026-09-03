@@ -12,6 +12,11 @@ evidence. Their immutable blobs, release artifacts, checksums, extension map,
 and runner restrictions are fixed by the
 [Pandoc oracle policy](../../specs/oracles/pandoc/README.md).
 
+The sole source-language exception is braced attributes. Every attachment site
+uses Markdown Core's shared Remark-derived attribute grammar; Pandoc's different
+shorthand boundaries, `{-}` rewrite, and bare-name rejection are deliberately
+unsupported and registered as oracle-policy differences.
+
 This directory groups independently composable syntax extensions. It does not
 define a monolithic Pandoc dialect or change inherited CommonMark/GFM behavior.
 Enabling one option enables only its named recognition rule and semantic
@@ -21,8 +26,9 @@ this index is opt-in.
 The shared value contract lives outside this directory:
 
 - [Attributes](attributes.md) owns the universal `Markup.attributes` field, the
-  shared grammar, value invariants, normalization, and merge operation. Pandoc
-  attachment belongs to this profile's attribute module.
+  sole Remark-derived grammar, value invariants, normalization, and merge
+  operation. Pandoc contributes attachment sites but no alternate braced
+  grammar.
 - [Citation model](citation-model.md) owns `Cite`, `Citation`, and
   `CitationReferent` independently of Pandoc bibliography syntax.
 

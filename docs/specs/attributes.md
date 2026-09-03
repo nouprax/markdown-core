@@ -1,10 +1,10 @@
 # Shared markup attributes
 
 Status: normative target contract for the universal `Markup.attributes` field,
-its value model, shared attribute-list grammar, normalization, and merge
-operation. It deliberately defines no profile-specific attachment position.
-Remark directive attachment and Pandoc attachment are defined in their own
-profile contracts.
+its value model, one Remark-derived attribute-list grammar, normalization, and
+merge operation. It deliberately defines no attachment position. Remark
+directive and Pandoc extensions attach this same syntax at positions defined by
+their profile contracts; Pandoc does not contribute a second attribute grammar.
 
 ## Universal consumer field
 
@@ -52,8 +52,11 @@ node fields. Bindings may expose derived lookups such as `id`, `classes`, or
 The array contains at most one entry for each exact, case-sensitive name and
 preserves the source position of that name's first occurrence. A later
 occurrence replaces the value in that slot. The exact name `class` is the sole
-exception: repeated values accumulate in occurrence order, separated by one
-ASCII space. Empty values remain strings, and numeric- or boolean-looking
+exception: repeated values accumulate in occurrence order. A separator is
+inserted only when the accumulated class string is already non-empty. Therefore
+an initial empty class contributes no leading space, while an empty class after
+non-empty content contributes the authored empty position as a trailing or
+internal space. Empty values remain strings, and numeric- or boolean-looking
 values are never coerced.
 
 These normalized invariants are the consumer model. An oracle that represents
@@ -63,52 +66,71 @@ this one collection before comparison.
 ## Attribute-list grammar
 
 ```text
-attributes          = "{" attribute-space*
-                      [ attribute *( attribute-separator attribute ) ]
-                      attribute-space* "}"
-attribute-separator = 1*attribute-space
-attribute           = shorthand-id | shorthand-class | assignment | bare
-shorthand-id        = "#" shorthand-value
-shorthand-class     = "." shorthand-value
-assignment          = name attribute-space* "=" attribute-space* value
-bare                = name
-value               = unquoted-value | single-quoted-value |
-                      double-quoted-value
+attributes       = "{" attribute-space* *( attribute attribute-space* ) "}"
+attribute        = shorthand-id | shorthand-class | assignment | bare
+shorthand-id     = "#" shorthand-value
+shorthand-class  = "." shorthand-value
+assignment       = name attribute-space* "=" attribute-space* value
+bare             = name
+value            = unquoted-value | single-quoted-value |
+                   double-quoted-value
+shorthand-value  = shorthand-first *shorthand-rest
+shorthand-first  = any scalar except shorthand-stop or shorthand-invalid
+shorthand-rest   = any scalar except shorthand-stop or shorthand-invalid
+shorthand-stop   = "#" | "." | "}" | attribute-space
+shorthand-invalid = DQUOTE | "'" | "<" | "=" | ">" | "`"
 ```
 
-`attribute-space` is ASCII space, tab, form feed, or a source line ending when
-the attachment position permits a multiline list. Attributes are whitespace
-separated. A `.` or `:` inside a shorthand value belongs to that value, so
-`{#one.two}` is one ID rather than an ID followed by a class.
+`attribute-space` is ASCII space, tab, or a source line ending when the
+attachment position permits a multiline list. Form feed and other Unicode
+whitespace are not separators. They are value content where the active value
+production accepts an arbitrary scalar; where a name or another attribute is
+expected, they make the complete container malformed. The grammar follows the
+pinned `micromark-extension-directive@4.0.0` attribute tokenizer. Between
+attributes, `#` begins ID shorthand and `.` begins class shorthand. Within a
+shorthand value, either marker terminates the current value and is reprocessed
+as the next shorthand opener without requiring whitespace. Thus
+`{#one.two}` produces `id="one"` followed by `class="two"`, and
+`{.one.two}` produces two class occurrences that normalize to
+`class="one two"`. A colon is not a terminator: `{#one:two}` is the single ID
+`one:two`.
+
+A shorthand value is non-empty. A quote, `<`, `=`, `>`, or backtick before its
+boundary makes the complete attribute container malformed. Other punctuation
+is ordinary value content. A backslash has no escape semantics in a shorthand,
+so the dot in `{#a\.b}` still opens a class and the preceding ID value is
+`a\`.
 
 A `name` is one or more Unicode scalar values. Its first scalar must be `-`,
 `_`, a Unicode letter/number, or a non-whitespace non-punctuation scalar.
 Subsequent scalars additionally permit `.` and `:`. Names are not decoded or
 case-folded.
 
-An ID shorthand value is one or more Unicode letters/numbers or `-`, `_`, `:`,
-and `.`, and may begin with any of them. A class shorthand value follows the
-`name` rule and is non-empty. `#value` desugars to `id=value`; `.value`
-desugars to `class=value`.
+An unquoted value is non-empty and extends to attribute whitespace or `}`.
+Quotes, `<`, `>`, `=`, and backticks make an unquoted value malformed rather
+than ending it. A quoted value may be empty and ends at the next matching quote;
+backslash does not escape that quote. The closing quote must be followed by
+attribute whitespace or `}`. Consequently, `name=`, `name= `, and
+`name="x"next=y` are malformed, while bare `name`, `name=''`, and `name=""`
+produce an empty string.
 
-An unquoted value extends to ASCII whitespace or `}`. Quotes, `<`, `>`, `=`,
-and backticks must be quoted or backslash-escaped. A quoted value ends at its
-matching unescaped quote and may contain attribute whitespace. `name=`,
-`name=''`, `name=""`, and bare `name` all produce an empty string.
-
-Backslash escapes use the shared Markdown ASCII-punctuation rule. Character
-references are decoded in values and shorthand values only after the complete
-container has been scanned; a decoded `}` cannot terminate its container.
+Character references are decoded in assignment and shorthand values only after
+the complete container has been scanned, using the pinned Remark
+`parse-entities` HTML-attribute context. That context accepts its defined legacy
+semicolonless forms; for example, `&amp` may decode before a shorthand marker
+while an ambiguous alphanumeric continuation remains literal. A decoded `}`
+cannot terminate its source container. Attribute names are not entity-decoded.
 
 ## Normalization and merge
 
 Normalization occurs exactly once when attachment commits:
 
 1. Expand ID and class shorthand and any placement-specific special form.
-2. Decode escapes and character references in values.
+2. Decode character references in values.
 3. Insert the first occurrence of a name at the current array position.
-4. Append repeated `class` values with one ASCII-space separator; replace every
-   other repeated value without moving its first slot.
+4. For repeated `class`, append one ASCII-space separator and the new value when
+   the accumulated value is non-empty; otherwise replace the empty value.
+   Replace every other repeated value without moving its first slot.
 
 `merge(primary, inherited)` is used when an occurrence receives attributes
 through indirection. It keeps the primary value for duplicate non-`class`
@@ -117,16 +139,20 @@ inherited-only names in inherited order. The result is one `Attributes` array.
 
 ## Profile boundary
 
-This contract does not decide which grammar alternatives a profile accepts,
-where an attribute list may attach, which `Markup` owns it, whether successful
-syntax changes node recognition, or how owner scope changes. Those are source
-language facts and must be stated exactly once by the relevant profile:
+This contract decides the only braced attribute grammar. A profile decides only
+where a complete list may attach, which `Markup` owns it, whether successful
+attachment changes node recognition, and how owner scope changes:
 
 - [Remark attributes](remark/attributes.md) owns directive attachment.
 - [Pandoc attributes](pandoc/attributes.md) owns Pandoc attachment extensions.
 
 Every `Markup` kind still has the universal field. A profile leaves it empty
 when no enabled rule attaches or synthesizes attributes for that occurrence.
+No profile may reinterpret a complete braced list. In particular, Pandoc
+attachment sites use the Remark-derived shorthand boundaries, bare-name rule,
+empty-value rule, and character-reference behavior rather than Pandoc's
+different attribute tokenizer. Profile-specific non-container sugar, such as
+the unbraced fenced-Div class word, is outside this grammar.
 
 Attributes are inert metadata. Parsing a name or value never executes code,
 opens a target, reads a file, or changes layout. Interpretation and security
@@ -142,9 +168,12 @@ failure aborts the owning parse operation.
 
 ## Required conformance cases
 
-Tests must cover the universal field on every Markup kind; empty values; every
-grammar form; Unicode names and values; escapes and character references;
-normalization; duplicate class, ID, and custom names; primary/inherited merge;
-inert unsafe-looking metadata; allocation failure; and size-doubling unique,
+Tests must cover the universal field on every Markup kind; empty quoted and bare
+values; rejected empty unquoted values; every grammar form; adjacent `#` and `.`
+shorthand boundaries; retained `:`; Unicode names and values; literal
+backslashes; Unicode-whitespace value and boundary positions; Remark
+attribute-context character references; normalization; duplicate class, ID,
+and custom names; primary/inherited merge; inert unsafe-looking metadata;
+allocation failure; and size-doubling unique,
 duplicate, malformed, and unclosed inputs. Attachment, scope, option, and
 profile-specific fallback cases belong to the corresponding profile suite.

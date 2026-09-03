@@ -112,9 +112,14 @@ syntax and precedence where no selected Pandoc extension participates.
 ## Phase 2 — one attribute operation and heading registry
 
 - [ ] Implement the shared attribute scanner and normalization operation once.
-      Pandoc and Remark profile modules contribute only their attachment sites and
-      grammar-specific acceptance; no node owns a private attribute parser or
-      storage shape.
+      Remark supplies its exact source grammar; Pandoc contributes only attachment
+      sites and may not switch shorthand boundaries or value rules. No node owns a
+      private attribute parser or storage shape.
+- [ ] Align the existing directive implementation with every remaining pinned
+      Remark boundary, including HTML-attribute-context character references and
+      Remark's position-sensitive treatment of non-Markdown whitespace. Remove
+      `directive-attribute-reference-semicolon` from the Remark backlog in the same
+      commit that makes it agree.
 - [ ] Attach inline code, heading, fenced-code, link/image, bracketed-Span, and
       fenced-Div attributes during construction of their owning node. Reference
       definitions retain attributes only in the existing parser-owned resolution

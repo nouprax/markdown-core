@@ -2,19 +2,29 @@
 
 Status: normative target profile contract for attaching shared attributes to
 Remark-family directives. The [shared attributes contract](../attributes.md)
-owns the universal field, grammar, values, normalization, and merge operation;
-this module owns only directive source acceptance, attachment, scope, and
-fallback.
+owns the universal field, the Remark-derived source grammar, values,
+normalization, and merge operation; this module owns only directive attachment,
+scope, and fallback.
 
 Authority: `remark-directive@4.0.0` and its micromark dependency surface, as
 pinned by the [Remark extension index](../remark.md) and repository oracle.
 
 ## Accepted grammar
 
-Directive attribute containers accept every production in the shared grammar:
-ID and class shorthand, assignments, and bare names. A bare name has an empty
-string value. There is no Pandoc-specific `{-}` rewrite; `-` is the ordinary
-attribute name `-` with an empty value.
+Directive attribute containers use the shared grammar without a profile
+override. In particular:
+
+```markdown
+:x{#one.two}       <!-- id="one", class="two" -->
+:x{.one.two}       <!-- class="one two" -->
+:x{#one:two}       <!-- id="one:two" -->
+:x{bare}           <!-- bare="" -->
+```
+
+Adjacent `#` and `.` terminate the preceding shorthand; `:` does not. A bare
+name has an empty string value, while `name=` is malformed. There is no
+Pandoc-specific `{-}` rewrite: `-` is the ordinary attribute name `-` with an
+empty value.
 
 ## Attachment
 
@@ -69,8 +79,9 @@ binding.
 ## Required conformance cases
 
 Tests must cover inline, leaf, and container directives; suffixes with and
-without labels; `{}`; shorthand, assignments, bare names, Unicode, quoting,
-escapes, entities, duplicates, and classes; immediate versus spaced suffixes;
-multiline permitted/rejected forms; malformed and unclosed fallback; exact
-owner scopes; option-off behavior; code/HTML ownership; allocation failure;
-and size-doubling attribute inputs.
+without labels; `{}`; adjacent shorthand markers; retained colons; assignments;
+bare names; rejected `name=`; Unicode; quoting; literal backslashes;
+attribute-context entities; duplicates and classes; immediate versus spaced
+suffixes; multiline permitted/rejected forms; malformed and unclosed fallback;
+exact owner scopes; option-off behavior; code/HTML ownership; allocation
+failure; and size-doubling attribute inputs.

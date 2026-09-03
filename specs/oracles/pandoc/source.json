@@ -76,7 +76,16 @@
         ]
     },
     "profileBoundary": {
-        "claim": "Pandoc 3.11 owns only the explicitly enabled extension layer. cmark and cmark-gfm remain authoritative for inherited CommonMark and GFM behavior.",
+        "claim": "Pandoc 3.11 owns only the explicitly enabled extension layer, except that the shared Remark-derived grammar owns every braced attribute container. cmark and cmark-gfm remain authoritative for inherited CommonMark and GFM behavior.",
+        "attributeSyntaxAuthority": {
+            "authority": "micromark-extension-directive@4.0.0 through remark-directive@4.0.0",
+            "scope": "Every braced attribute container at Remark and Pandoc attachment sites.",
+            "unsupportedPandocInterpretations": [
+                "Pandoc retains a dot inside #id and .class shorthand; Markdown Core treats it as the next class shorthand marker.",
+                "Pandoc rewrites {-} to class unnumbered; Markdown Core stores the bare name - with an empty value.",
+                "Pandoc rejects generic bare names in braced lists; Markdown Core stores each as an empty-valued attribute."
+            ]
+        },
         "publicToPandocExtensions": {
             "auto_anchors": ["auto_identifiers", "gfm_auto_identifiers"],
             "bracketed_spans": ["bracketed_spans"],

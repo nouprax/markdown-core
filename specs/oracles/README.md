@@ -14,7 +14,9 @@ the reviewed policy that defines each comparison:
   implements. Official Obsidian Help remains the language authority.
 - `pandoc/` pins the official Pandoc 3.11 manual, reader sources, release CLI,
   and per-platform artifact digests for the explicitly selected Pandoc
-  extension layer. Its parity gate is the first implementation-plan phase.
+  extension layer. The shared Remark grammar remains authoritative for braced
+  attributes at Pandoc attachment sites. Its parity gate is the first
+  implementation-plan phase.
 
 Each active gate's `deltas.json` records the authority version, compared
 corpus, deliberate differences, and fail-closed exceptions. The Pandoc policy

@@ -8,6 +8,21 @@
             "input": "[This is *some text*]{.class #key rank=\"1\"}\n"
         },
         {
+            "id": "remark-shorthand-boundaries-at-pandoc-site",
+            "from": "markdown_strict+bracketed_spans",
+            "input": "[text]{#one.two .three.four #one:two .three:four}\n"
+        },
+        {
+            "id": "remark-bare-dash-at-pandoc-site",
+            "from": "markdown_strict+bracketed_spans",
+            "input": "[text]{-}\n"
+        },
+        {
+            "id": "remark-bare-name-at-pandoc-site",
+            "from": "markdown_strict+bracketed_spans",
+            "input": "[text]{disabled}\n"
+        },
+        {
             "id": "superscript-and-subscript",
             "from": "markdown_strict+superscript+subscript",
             "input": "H~2~O and 2^10^\n"

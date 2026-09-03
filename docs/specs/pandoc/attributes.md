@@ -6,9 +6,10 @@ Status: normative target profile contract for `bracketed_spans`,
 `auto_anchors`.
 
 The [shared attributes contract](../attributes.md) owns the universal
-`Markup.attributes` field, grammar, value invariants, normalization, and merge
-operation. This module owns only Pandoc source acceptance, attachment,
-precedence, scope, and option behavior. Authority: the Pandoc User's Guide for
+`Markup.attributes` field, the sole Remark-derived braced grammar, value
+invariants, normalization, and merge operation. This module owns only Pandoc
+attachment positions, precedence, scope, and option behavior. Authority for
+those attachment rules is the Pandoc User's Guide for
 [attributes](https://pandoc.org/MANUAL.html#extension-attributes),
 [bracketed spans](https://pandoc.org/MANUAL.html#extension-bracketed_spans),
 [inline code attributes](https://pandoc.org/MANUAL.html#extension-inline_code_attributes),
@@ -20,13 +21,28 @@ snapshot pinned by the [Pandoc extension index](../pandoc.md).
 
 ## Accepted grammar
 
-Pandoc attachment positions accept shared ID shorthand, class shorthand, and
-assignments, plus the single special token `-`. Another bare token such as
-`{disabled}` is not a Pandoc attribute list.
+Every braced attachment position in this profile accepts exactly the shared
+Remark-derived grammar. Markdown Core intentionally does not implement
+Pandoc's different braced attribute tokenizer:
 
-Every braced `-` desugars to class `unnumbered` before shared normalization.
-An unbraced fenced-Div word is a different production: `::: -` has class `-`,
-while `::: {-}` has class `unnumbered`.
+| Source | Markdown Core result |
+| --- | --- |
+| `{#one.two}` | `id="one"`, `class="two"` |
+| `{.one.two}` | `class="one two"` |
+| `{#one:two .three:four}` | `id="one:two"`, `class="three:four"` |
+| `{-}` | name `-` with an empty value |
+| `{disabled}` | name `disabled` with an empty value |
+
+Upstream Pandoc retains dots inside a shorthand, rewrites `{-}` to class
+`unnumbered`, and rejects a generic bare name. Those interpretations are not
+supported. They are explicit language-authority exceptions in the
+[Pandoc oracle policy](../../../specs/oracles/pandoc/README.md), not alternate
+parser modes.
+
+An unbraced fenced-Div word is a separate fenced-Div production rather than an
+attribute container; it remains shorthand for one class. Thus `::: -` produces
+`class="-"`, while `::: {-}` produces the empty-valued attribute named `-`.
+Neither form produces `unnumbered`.
 
 ## Attachment registry
 
@@ -58,7 +74,7 @@ the balanced `]`. `{}` still creates a Span whose universal array is empty.
 Span content, bracket precedence, and fallback are defined by
 [bracketed spans](bracketed-spans.md).
 
-A `fenced_divs` opener carries either one braced Pandoc attribute list or one
+A `fenced_divs` opener carries either one braced shared attribute list or one
 non-whitespace unbraced word interpreted as a class. `{}` is a valid empty
 opener. Fence recognition, nesting, and closing are defined by
 [fenced divs](fenced-divs.md).
@@ -103,7 +119,7 @@ universal array; the algorithm and implicit references are defined by
 ## Fenced code
 
 With `fenced_code_attributes=true`, tilde and backtick code fences accept a
-Pandoc attribute list in the opening info region. A single bare language word
+braced shared attribute list in the opening info region. A single bare language word
 is shorthand for the first class and may precede another list:
 
 ````markdown
@@ -164,7 +180,8 @@ nodes or create node-specific attribute stores.
 
 ## Required conformance cases
 
-Tests must cover every registry row; Pandoc bare-name rejection and `{-}`;
+Tests must cover every registry row; the shared shorthand boundaries at every
+Pandoc attachment site; bare names and `{-}` without Pandoc reinterpretation;
 `{}`; immediate versus spaced attachment; malformed fallback; option-off
 behavior; nested ownership and cross-extension precedence; exact owner scopes;
 language aliases; image units; reference inheritance; synthesized IDs; inert

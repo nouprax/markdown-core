@@ -151,17 +151,17 @@
             "authority": "GitHub",
             "summary": "`$$` opened and closed inside a paragraph is inline math spanning the lines; remark requires the delimiters to own their lines and leaves the text alone.",
             "why": "Follows from `$$` being usable inline at all, which the padding rule and github-display-math-block already establish."
-        },
+        }
+    ],
+    "baselineBacklog": [
         {
             "id": "directive-attribute-reference-semicolon",
             "input": ":n{a=&amp b=&#65}\n",
-            "authority": "CommonMark, and this engine's own entity rule",
-            "summary": "A character reference in a directive attribute value requires its semicolon here; micromark-extension-directive decodes it without one.",
-            "why": "MEASURED, exhaustively. Every one of the 2125 named references in this engine's table decodes identically in both, WITH the semicolon: 2125 of 2125 agree. The whole difference is whether the semicolon is required, and it comes to 162 inputs -- the 106 names HTML5 allows without one, the numeric forms without one, and a numeric form with more than eight digits. micromark-extension-directive reaches for `parse-entities` with `{attribute: true}` because a directive attribute looks like an HTML attribute; that rule is used NOWHERE ELSE in its own parser. Measured against remark: `&amp` without a semicolon is literal in ordinary text, in a link title, in a link destination and in a fenced block's info string, and decodes only in a directive attribute value. This engine decodes all five through one call to `houdini_unescape_html_f`, so importing the sixth rule would mean a second entity rule living in `extensions/directive.c` and disagreeing with the five that share one. Q20 asked whether references are decoded there at all; they are, and this is the narrower question it also says to register rather than leave silent."
+            "requirement": "Decode character references with the pinned Remark parse-entities HTML-attribute context, including its defined semicolonless forms.",
+            "closedBy": "Pandoc Phase 2 — one attribute operation and heading registry"
         }
     ],
-    "baselineBacklog": [],
-    "baselineBacklogNote": "Empty. Every previously known parser-versus-remark gap in this corpus has either been resolved or classified as an explicit delta above. The parity gate remains fail-closed: a new divergence or a registered divergence that stops occurring both fail the run.",
+    "baselineBacklogNote": "Remark's attribute tokenizer is now the sole braced-attribute grammar authority for every attachment site. The registered entity-context mismatch is implementation work, not a deliberate product divergence. The gate requires it to keep reproducing until the shared attribute implementation closes it and removes this entry in the same commit.",
     "retiredBacklog": [
         {
             "input": "Inline \\\\(x+y\\\\) and \\(a+b\\).\n",
