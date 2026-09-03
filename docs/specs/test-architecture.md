@@ -3,6 +3,13 @@
 本文档冻结全仓统一测试架构。后续 phase(尤其 Phase 8–13)必须在该契约内实现;
 修改本契约需要先评审本文档,再改实现。
 
+Release readiness 是 merge invariant，而不是 advisory release preparation。
+Pull request 与 merge-group snapshot 必须在 `Required gates` 和 `CodeQL gate`
+之外产生稳定且 fail-closed 的 `Release Dry Run - Ready` context。该 aggregate
+依赖 coordinated-version validation 以及全部 C、Swift、npm 和跨 host Maven
+artifact producers；任何 producer 失败、取消、跳过或缺失都会阻止 commit 进入
+`main`。Manual dry run 使用不同的 context name，不能满足此 gate。
+
 ## 1. 根级入口与路由
 
 `pnpm` scripts 只做平台路由:不包含测试 case、fixture、timeout、filter 或预期
