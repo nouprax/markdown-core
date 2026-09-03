@@ -22,6 +22,11 @@ preserves inherited cmark/CommonMark behavior, including Markdown recognition
 between paired inline HTML tags, and adds no HTML element-region suppression.
 Block identifiers populate the same universal `Markup.anchor` string used by
 other profiles; they do not introduce a block-specific target type.
+Outgoing references use the shared tagged `Destination`: ordinary Markdown
+`Link` values own `Destination.url`, while `CrossLink` values own the
+`Destination.cross` or `Destination.anchor` branch. Heading and block source
+spellings share the latter and introduce no discriminator. No destination
+populates the declaration-side anchor on its owning reference node.
 
 The normative work items are the module specs linked from the
 [OFM contract index](../specs/obsidian-flavored-markdown.md): wikilinks/embeds,
@@ -53,7 +58,8 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       inline source forms must lower to the same one-item resolved consumer model;
       retain none of the source-shaped kinds as aliases.
 - [ ] Resolve direct, full, collapsed, shortcut, and autolinks to the same `Link`
-      shape, and direct/reference images to the same `Image` shape. Remove
+      shape with `dest=Destination.url(...)`, and direct/reference images to the
+      same `Image` shape. Remove
       `LinkReference`, `ImageReference`, `ReferenceDefinition`, and
       `ReferenceForm` from the public AST. Keep labels, form, definition storage,
       and normalization in the existing parser-owned lookup operation; add no
@@ -61,7 +67,9 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
 - [ ] Add the remaining target value types and kinds to
       `docs/specs/canonical-ast.json`, `docs/specs/canonical-ast.md`, and
       `docs/specs/canonical-ast-dump.md`:
-      `CrossLink`, `Mark`, and `Comment`; wikilink route and destination fields;
+      the shared `Destination` enum and `Link.dest`; `CrossLink`, `Mark`, and
+      `Comment`; the `Destination.cross(path)` and
+      `Destination.anchor(path, value)` branches;
       the callout-fold enum; shared image dimensions; the universal nullable
       `anchor` field on every Markup kind; and `marker` on `ListItem`. Only the
       addressable kinds named by the block-identifier grammar receive a non-null
@@ -91,7 +99,9 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       the existing subject cursor, delimiter/bracket infrastructure, allocator,
       source map, and extension attachment order.
 - [ ] Make `![[...]]` and `[[...]]` one scanner and one `CrossLink` payload. Split
-      path, route-local `dest`, and label value once while scanning. Do not
+      path, optional anchor, and label value once while scanning, then construct
+      one complete `Destination.cross` or `Destination.anchor`. Heading and
+      block punctuation must not survive as a consumer discriminator. Do not
       rescan the completed literal in a binding or renderer.
 - [ ] Make comments opaque during scanning. Support retained `Comment` nodes and
       parser-level stripping from the same recognized construct so stripping

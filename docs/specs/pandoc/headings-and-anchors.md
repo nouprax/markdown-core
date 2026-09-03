@@ -65,10 +65,12 @@ All ordinary reference spellings may resolve it:
 [go there][First chapter]
 ```
 
-The result is an ordinary resolved `Link(destination="#id", content, ...)`;
-the virtual definition and lookup label are not public AST nodes. Link
-attributes written at the occurrence remain governed by the Pandoc attribute
-contract.
+The result is an ordinary resolved
+`Link(dest=Destination.url("#id"), content, ...)`; the virtual definition and
+lookup label are not public AST nodes. The shared
+[destination contract](../destinations.md) owns this reference-side value.
+Link attributes written at the occurrence remain governed by the Pandoc
+attribute contract.
 
 An explicit source reference definition always wins over a virtual heading
 definition. If multiple headings have the same normalized authored label, the

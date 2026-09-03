@@ -32,17 +32,20 @@ Source punctuation is excluded from the stored value:
 | generated heading identifier `foo` | `anchor="foo"` |
 | Obsidian block identifier `^foo` | `anchor="foo"` |
 
-These are one consumer fact. There is no `fragment`/`block` discriminator and
-no distinct heading, attribute, directive, or Obsidian anchor type. Characters
-such as `#` and `^`, and a `CrossLink`'s `route`, describe a reference spelling
-or an attachment grammar; they do not qualify the identity declared by the
-target node.
+These are one consumer fact. There is no heading/block/fragment discriminator
+and no distinct heading, attribute, directive, or Obsidian anchor type.
+Characters such as `#` and `^` describe a reference spelling or an attachment
+grammar; they do not qualify the identity declared by the target node.
+Accordingly, `[[#Heading]]` and `[[#^block-id]]` both use
+`Destination.anchor`; the parser does not reproduce their punctuation as an
+anchor-kind tag.
 
 Incoming `Link`, `CrossLink`, citation, and footnote values do not populate
 their own `anchor` merely because they refer to something. A resolver may use
-their destination, `dest`, or referent to find a node whose anchor matches, but
-the reference-side value and declaration-side anchor remain different facts.
-Resolution remains downstream and does not mutate the AST.
+a link's shared [`Destination`](destinations.md) or a citation referent to find
+a node whose anchor matches, but the reference-side value and declaration-side
+anchor remain different facts. Resolution remains downstream and does not
+mutate the AST.
 
 ## Population and precedence
 

@@ -9,13 +9,13 @@ Status: normative target module. Authority:
 
 ```text
 wiki-link        = [ "!" ] "[[" wiki-target [ "|" label ] "]]"
-wiki-target      = [ vault-path ] [ fragment-route / block-route ]
-fragment-route   = "#" fragment *( "#" fragment )
-block-route      = "#^" block-id
+wiki-target      = [ vault-path ] [ heading-anchor / block-anchor ]
+heading-anchor   = "#" heading-part *( "#" heading-part )
+block-anchor     = "#^" block-id
 block-id         = 1*( ASCII-letter / DIGIT / "-" )
 ```
 
-At least one of `vault-path`, `fragment-route`, or `block-route` must be
+At least one of `vault-path`, `heading-anchor`, or `block-anchor` must be
 non-empty. One link cannot contain a source newline or another `[[`/`]]`
 delimiter pair. Paths may contain spaces, Unicode, filename extensions, and
 `/`-separated components rooted at the vault.
@@ -31,29 +31,31 @@ does not select another scanner or node kind.
 structured, resolver-dependent reference into the workspace address space. It
 may cross into another document or target a heading/block in the current
 document; “cross” describes that address relationship, not a requirement that
-`path` be non-empty. An ordinary Markdown `Link` already owns a destination and
-does not become a `CrossLink`.
+its destination's `path` be non-empty. The shared
+[`Destination`](../destinations.md) enum also represents an ordinary Markdown
+`Link` URL without collapsing the two node kinds.
 
 ```text
 CrossLink(
   embedded: Bool,
-  path: String,
-  route: none | fragment | block,
-  dest: String?,
+  dest: Destination,
   label: String?,
   scope: Scope
 )
 ```
 
+Every `CrossLink.dest` is either `Destination.cross(path)` or
+`Destination.anchor(path, value)`.
 The invariants are:
 
-- `route == none` exactly when `dest == null`.
-- `path` excludes route, label, and outer delimiters. It may be empty for a
-  same-document fragment such as `[[#Heading]]`.
-- `fragment` removes the first `#` but retains later hierarchy separators. For
-  `[[Note#Parent#Child]]`, `dest == "Parent#Child"`.
-- `block` removes `#^`. For `[[Note#^block-id]]`,
-  `dest == "block-id"`.
+- A target with no anchor suffix constructs `cross`; its `path` is non-empty.
+- A target with either anchor suffix constructs `anchor`. Its `path` excludes
+  the suffix, label, and outer delimiters and may be empty for the current
+  document.
+- A heading spelling removes the first `#` but retains later hierarchy
+  separators. `[[Note#Parent#Child]]` stores `value == "Parent#Child"`.
+- A block spelling removes `#^`. `[[Note#^block-id]]` stores
+  `value == "block-id"`. It does not produce another destination or anchor kind.
 - `label == null` means no `|` was authored. An authored empty label is the
   distinct empty string.
 - `scope` covers the optional `!`, both delimiter pairs, and all enclosed
@@ -61,17 +63,16 @@ The invariants are:
 - A `CrossLink` has no parsed children. `label` is an authored label/parameter,
   not another inline Markdown container.
 
-`dest` is the reference-side selector inside `path`; the complete destination
-is the `(path, route, dest)` tuple. It never declares an anchor on the
-`CrossLink` itself. After workspace resolution, a fragment or block `dest` may
-match the declaration-side `Markup.anchor` of a target node, but equal strings
-do not make the two fields the same semantic fact.
+`dest` is the complete outgoing value. `Destination.anchor.value` names the
+declaration-side `Markup.anchor` sought on a target node; it does not declare an
+anchor on the `CrossLink` itself. Heading and block punctuation affects source
+recognition but is intentionally absent from the consumer value.
 
 The parser does not slug, URL-decode, case-fold, resolve, or validate a path.
-For a note, a fragment normally addresses a heading. For a PDF or another file
-kind, raw values such as `page=3`, `height=400`, or `outline` are interpreted by
-the downstream resolver. The parser must not guess target kind from a filename
-extension.
+For a note, an anchor suffix may address a heading or an explicitly identified
+block. For a PDF or another file kind, raw values such as `page=3`,
+`height=400`, or `outline` are interpreted by the downstream resolver. The
+parser must not guess target kind from a filename extension.
 
 For a normal link, `label` is the custom visible label. For an image embed, a
 decimal `W` or `WxH` label is the documented size parameter. That interpretation
@@ -91,20 +92,20 @@ bracket that could belong to inherited Markdown syntax. The official warning
 that certain filename characters “may not work” is a vault-resolution warning,
 not a parser rejection rule.
 
-The scanner runs once from the shared inline cursor. It records path, route,
-`dest`, and label during recognition; bindings and renderers may not rescan
-the completed source literal.
+The scanner runs once from the shared inline cursor. It constructs one
+`Destination.cross` or `Destination.anchor` while recognizing the label;
+bindings and renderers may not rescan the completed source literal.
 
 ## Required conformance cases
 
 | Input | Required fields |
 | --- | --- |
-| `[[Note]]` | `embedded=false`, `path="Note"`, `route=none`, `dest=null`, `label=null` |
-| `[[#Heading]]` | `path=""`, `route=fragment`, `dest="Heading"` |
-| `[[Folder/Note#Parent#Child|Label]]` | `dest="Parent#Child"`, `label="Label"` |
-| `![[Note#^block-id]]` | `embedded=true`, `route=block`, `dest="block-id"` |
+| `[[Note]]` | `embedded=false`, `dest=cross(path="Note")`, `label=null` |
+| `[[#Heading]]` | `dest=anchor(path="", value="Heading")` |
+| `[[Folder/Note#Parent#Child|Label]]` | `dest=anchor(path="Folder/Note", value="Parent#Child")`, `label="Label"` |
+| `![[Note#^block-id]]` | `embedded=true`, `dest=anchor(path="Note", value="block-id")` |
 | `![[Image.png|100x145]]` | raw `label="100x145"`; no media-type inference |
-| `![[Document.pdf#page=3]]` | `route=fragment`, `dest="page=3"` |
+| `![[Document.pdf#page=3]]` | `dest=anchor(path="Document.pdf", value="page=3")` |
 | `[[Note|]]` | `label=""`, distinct from no label delimiter |
 
 Tests must also cover every malformed boundary above, all opaque contexts,

@@ -19,17 +19,19 @@ algorithm resolves a definition, all equivalent authoring forms produce the
 same semantic node:
 
 ```text
-[text](destination "title")  \
+[text](url "title")          \
 [text][label]                  |
-[text][]                       |--> Link(destination, title, content, scope)
+[text][]                       |--> Link(dest=Destination.url(url), title, content, scope)
 [label]                        |
 <autolink>                    /
 ```
 
 The resolved `Link.content` is the inline content authored at that occurrence.
-`destination` and `title` come from the inline destination or the winning
-reference definition. Its `scope` covers the link occurrence, not a separate
-definition elsewhere in the document.
+The `Destination.url` value and `title` come from the inline destination or the
+winning reference definition. Its `scope` covers the link occurrence, not a
+separate definition elsewhere in the document. This module uses the shared
+[destination model](../destinations.md); reference resolution cannot expose a
+bare string in parallel with `Link.dest`.
 
 Direct and reference images normalize in the same way to `Image`. Their alt
 content belongs to each `Image` occurrence; their source and title come from

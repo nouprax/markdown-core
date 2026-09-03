@@ -12,7 +12,9 @@ inline engines. All source forms project to one consumer-oriented canonical
 AST: every Markup value has the universal anchor and attributes fields, all
 table syntaxes produce one Table model, all ordered-list syntaxes produce one
 List model, and Pandoc bibliography calls use the shared `Cite`/`Citation`/
-`CitationReferent` model. Reader state needed only for recognition—reference
+`CitationReferent` model. Ordinary links own the shared
+`Destination.url` branch, including implicit heading references. Reader state
+needed only for recognition—reference
 definitions, virtual heading references, example counters, attribute
 attachment candidates, and table boundary maps—remains parser-owned.
 
@@ -78,6 +80,13 @@ syntax and precedence where no selected Pandoc extension participates.
 
 ## Phase 1 — freeze the public consumer model
 
+- [ ] Add the shared `Destination` enum defined by
+      [`docs/specs/destinations.md`](../specs/destinations.md) to every public
+      surface. Replace `Link.destination: String` with
+      `Link.dest: Destination`, require the `url` branch for ordinary links,
+      and coordinate the same canonical change with Obsidian's `cross` and
+      `anchor` branches; do not retain the old string as parallel compatibility
+      state.
 - [ ] Add the universal nullable `anchor` field defined by
       [`docs/specs/anchors.md`](../specs/anchors.md) and the non-null
       `attributes` field defined by

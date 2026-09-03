@@ -68,23 +68,23 @@
         {
             "id": "wikilink-basic",
             "input": "[[Note]]\n",
-            "oracleDigest": "136b7fa9ac344aa1cf52dd8e483680e8699d373e412c66b219c0826a12d1671d",
+            "oracleDigest": "c1bef12f6b23ead493f983413d51781079ff33fcb9c87c8d91cf810aabd631e4",
             "markdownCoreDigest": "4c6fd8e27beca1ffe66a0aadb4cd1f68f3bc1f0bb5cce119cfef330ace76592e",
-            "requirement": "Recognize a wikilink and expose its path instead of one literal Text node.",
+            "requirement": "Recognize a wikilink and expose Destination.cross(path) instead of one literal Text node.",
             "closedBy": "Phase 2 — one OFM inline extension"
         },
         {
             "id": "wikilink-heading-label",
             "input": "[[Folder/Note#Heading#Child|Display text]]\n",
-            "oracleDigest": "86a372fe70cab81bb3bbb28c330fe9a58dea1b07a4ce2878607bd36a9e95414e",
+            "oracleDigest": "6b2f00f03606ae32e07d6bb66f459ae1ca6c5fe840a3039cefab653827544bdf",
             "markdownCoreDigest": "96dc467eb91188957bd03b0469c812f6365d01741b90a774e6f690975cfcc47c",
-            "requirement": "Preserve the vault path, complete fragment destination, and label text as CrossLink fields.",
+            "requirement": "Preserve the vault path and complete anchor value in one Destination.anchor branch, plus the CrossLink label.",
             "closedBy": "Phase 2 — one OFM inline extension"
         },
         {
             "id": "wikilink-embed",
             "input": "![[Image.png|100x145]]\n",
-            "oracleDigest": "462f71578ddcc8bede74d136056853c5e23427b31f7d0f5f14db11579b48d2ec",
+            "oracleDigest": "2fd68cddd516a0b47210cae7f429e56ebbb8dd5be4c6fc4344b0726f0b2f88e9",
             "markdownCoreDigest": "b85827fe99d15228e9a5ac66dd2b97b351df3148dddd2b808bea82e526058a9c",
             "requirement": "Recognize the shared wikilink form with embedded=true and preserve its label/size parameter.",
             "closedBy": "Phase 2 — one OFM inline extension"
@@ -92,9 +92,9 @@
         {
             "id": "wikilink-block-embed",
             "input": "![[Note#^block-id]]\n",
-            "oracleDigest": "51e97ba149d9bea5208ac05aa241c4198ab5506e1297bdbaf2a4d07d0c93045b",
+            "oracleDigest": "ac6f93d90fc4d6c37c0f5b86beb3ab0ea9d89156e1f1bbcca52fc8b0061e307d",
             "markdownCoreDigest": "c363cff78b07b6d440245f776863926540f01bf9ccb8dd33894d25d378e08dd8",
-            "requirement": "Recognize an embedded block reference and preserve its reference-side destination without the #^ delimiter.",
+            "requirement": "Recognize an embedded block reference and project it to the same Destination.anchor branch as a heading reference, without the #^ delimiter or a source-kind tag.",
             "closedBy": "Phase 2 — one OFM inline extension"
         },
         {
@@ -145,6 +145,11 @@
             "id": "wikilink-label-nullability",
             "summary": "The oracle collapses an absent wikilink label delimiter to an empty alias string, while the target model distinguishes an absent label from an authored empty label.",
             "handling": "The projection consults the node's exact source spelling and maps the oracle's empty alias to null only when no label delimiter was authored."
+        },
+        {
+            "id": "destination-value-model",
+            "summary": "mdast stores ordinary link URLs and wikilink path/heading components as flat fields. The target model stores one tagged Destination value.",
+            "handling": "The semantic projection wraps ordinary URLs in Destination.url, path-only wikilinks in Destination.cross, and both heading and block wikilinks in the same Destination.anchor branch after removing source punctuation."
         },
         {
             "id": "universal-callout-container",

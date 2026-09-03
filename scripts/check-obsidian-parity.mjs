@@ -73,10 +73,22 @@ const comparedFields = {
     ListItem: ["marker"],
     Code: ["literal"],
     CodeBlock: ["literal", "info"],
-    Link: ["destination", "title"],
+    Link: ["dest", "title"],
     Image: ["source", "title"],
-    CrossLink: ["embedded", "path", "route", "dest", "label"]
+    CrossLink: ["embedded", "dest", "label"]
 };
+
+function urlDestination(value) {
+    return `url(value=${JSON.stringify(value)})`;
+}
+
+function crossDestination(path) {
+    return `cross(path=${JSON.stringify(path)})`;
+}
+
+function anchorDestination(path, value) {
+    return `anchor(path=${JSON.stringify(path)}, value=${JSON.stringify(value)})`;
+}
 
 function normalizeChildren(children) {
     const result = [];
@@ -114,7 +126,7 @@ function fromMdast(node, unknown, source) {
         fields.info = node.lang ?? "null";
     }
     if (node.type === "link") {
-        fields.destination = node.url;
+        fields.dest = urlDestination(node.url);
         fields.title = node.title ?? "null";
     }
     if (node.type === "image") {
@@ -126,9 +138,9 @@ function fromMdast(node, unknown, source) {
         const bodyStart = spelling.startsWith("![[") ? 3 : 2;
         const hasLabelDelimiter = spelling.slice(bodyStart, -2).includes("|");
         fields.embedded = String(node.embedded);
-        fields.path = node.path;
-        fields.route = node.heading ? (node.heading.startsWith("^") ? "block" : "fragment") : "none";
-        fields.dest = node.heading ? node.heading.replace(/^\^/, "") : "null";
+        fields.dest = node.heading
+            ? anchorDestination(node.path, node.heading.replace(/^\^/, ""))
+            : crossDestination(node.path);
         fields.label = node.alias === "" && !hasLabelDelimiter ? "null" : node.alias;
     }
 
@@ -142,7 +154,11 @@ function fromMdast(node, unknown, source) {
 function fromMarkdownCore(node) {
     const fields = {};
     for (const name of comparedFields[node.kind] ?? []) {
-        fields[name] = String(node.fields[name] ?? (name === "literal" ? "" : "null"));
+        let value = node.fields[name];
+        if (node.kind === "Link" && name === "dest" && value == null) {
+            value = urlDestination(String(node.fields.destination ?? ""));
+        }
+        fields[name] = String(value ?? (name === "literal" ? "" : "null"));
     }
     return {
         kind: node.kind,

@@ -57,7 +57,7 @@ required.
 
 | Module | Sole owner of |
 | --- | --- |
-| [Wikilinks and embeds](obsidian/wikilinks-and-embeds.md) | `[[...]]` and `![[...]]` source forms normalized to `CrossLink`, with target routes, labels, and raw embed parameters |
+| [Wikilinks and embeds](obsidian/wikilinks-and-embeds.md) | `[[...]]` and `![[...]]` source forms normalized to `CrossLink`, with whole-resource or anchor `Destination` values, labels, and raw embed parameters |
 | [Block identifiers](obsidian/block-identifiers.md) | `^id` definition placement, ownership, removal, and attachment to the universal anchor field |
 | [Footnotes](obsidian/footnotes.md) | referenced and inline source forms normalized to one-item `Cite` values with `CitationReferent.footnote` and document-owned `Footnote` values |
 | [Comments](obsidian/comments.md) | inline/standalone `%%` comments and stripping |
@@ -74,10 +74,12 @@ semantics.
 
 The block-identifier module depends on the shared
 [anchor model](anchors.md); it contributes one source attachment rule and does
-not create an Obsidian-specific target identity. The footnote module depends on
-the shared [citation model](citation-model.md). Only its footnote referent and
-group/item shape are part of OFM; the same contract's Pandoc `@key` source
-syntax remains an independent extension.
+not create an Obsidian-specific target identity. The wikilink and inherited-link
+modules depend on the shared [destination model](destinations.md): ordinary
+links use its `url` branch and `CrossLink` uses its `cross` or `anchor` branch.
+The footnote module depends on the shared [citation model](citation-model.md).
+Only its footnote referent and group/item shape are part of OFM; the same
+contract's Pandoc `@key` source syntax remains an independent extension.
 
 ## Parser boundary
 
@@ -125,7 +127,8 @@ least one documented form is not representable by the current canonical AST.
 | Mermaid and embedded-search fenced blocks | Produces `CodeBlock` with language `mermaid` or `query`; execution/rendering is out of scope. | present |
 
 The missing target surface is therefore: consumer-normalized reference links
-and images, `CrossLink` values for wikilinks/embeds, block identifiers and
+with shared `Destination.url` values and images, `CrossLink` values with
+shared whole-resource/anchor destinations for wikilinks/embeds, block identifiers and
 references as structured data, the unified
 `Cite`/`Citation`/`CitationReferent`/`Footnote` model and inline source form,
 comments, highlights, non-space task markers, the universal `Callout` model and
@@ -162,11 +165,12 @@ and `Document.footnotes`. This is one universal consumer model; only the
 `obsidian` profile adds the `^[...]` source form.
 
 Canonical vNext resolves every successful direct, full, collapsed, shortcut,
-and autolink form to `Link`, and every successful direct or reference image to
-`Image`. `LinkReference`, `ImageReference`, `ReferenceDefinition`, and
-`ReferenceForm` are removed from every profile without aliases. Their labels,
-forms, definitions, and lookup map remain parser-internal source machinery;
-they never become `Citation` or a document-owned link registry.
+and autolink form to `Link(dest=Destination.url(...))`, and every successful
+direct or reference image to `Image`. `LinkReference`, `ImageReference`,
+`ReferenceDefinition`, and `ReferenceForm` are removed from every profile
+without aliases. Their labels, forms, definitions, and lookup map remain
+parser-internal source machinery; they never become `Citation` or a
+document-owned link registry.
 
 The new `obsidian` profile composes the inherited GFM, footnote, formula, and
 code behavior with all modules in this contract. It enables

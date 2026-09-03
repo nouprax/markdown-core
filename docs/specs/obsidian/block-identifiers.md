@@ -5,9 +5,11 @@ Status: normative target module. Authority:
 at the snapshot pinned by the
 [OFM contract index](../obsidian-flavored-markdown.md).
 
-This module defines authored block identifiers. The `#^id` route inside a
-wikilink belongs to the wikilink module. The consumer field and its
-source-independent meaning belong to the shared [anchor contract](../anchors.md).
+This module defines authored block identifiers. The `#^id` reference spelling
+inside a wikilink belongs to the wikilink module and projects to the same
+`Destination.anchor` branch as a heading reference. The declaration field and
+its source-independent meaning belong to the shared
+[anchor contract](../anchors.md).
 
 ## Identifier grammar
 
@@ -36,9 +38,10 @@ node and never remains visible content after successful recognition.
    to that item rather than the containing list.
 
 The source-rule addressable set is exactly `Paragraph`, `ListItem`, `List`,
-`Callout`, and `Table`. Headings use wikilink fragments. Code blocks, table
-rows/cells, and internal pieces of a callout are not independently addressable
-under this contract.
+`Callout`, and `Table`. Headings are addressed through heading anchor syntax,
+not this block-identifier attachment rule. Code blocks, table rows/cells, and
+internal pieces of a callout are not independently addressable under this
+contract.
 
 Successful recognition populates the owner's universal `Markup.anchor` with
 the `block-id` value and no leading caret. The source construct remains a block
