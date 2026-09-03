@@ -46,8 +46,18 @@ The local dry run is:
 pnpm release:dry-run
 ```
 
-The `Release Dry Run` workflow performs the cross-host Linux/macOS aggregation
-without access to publication credentials.
+Release readiness is a merge invariant. Every pull request and merge-queue
+candidate must pass the credential-free `Release Dry Run` workflow before its
+commit can enter `main`. Its stable `Release Dry Run - Ready` check fails closed
+unless coordinated-version validation, the C archives, Swift source/product
+archive, npm package and consumer, Linux and macOS Maven publications,
+disposable signing, assembled Central bundle, and staged consumers all pass.
+Manual dispatch uses a distinct check name and cannot satisfy branch
+protection.
+
+The workflow performs its cross-host Linux/macOS aggregation without access to
+publication credentials or write permissions. Publication remains isolated to
+the protected tag workflow and `release` environment.
 
 ## Publish
 

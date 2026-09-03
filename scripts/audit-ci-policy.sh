@@ -511,9 +511,10 @@ if search 'NODE_AUTH_TOKEN|NPM_TOKEN|secrets\.NPM' "$release"; then
 fi
 
 search '^    pull_request:$' "$release_dry_run"
+search '^    merge_group:$' "$release_dry_run"
 search '^    workflow_dispatch:$' "$release_dry_run"
 search '^    contents: read$' "$release_dry_run"
-search '^        name: Release Dry Run - Ready$' "$release_dry_run"
+grep -Fq "name: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'Release Dry Run - Ready' || 'Manual Release Dry Run - Ready' }}" "$release_dry_run"
 search 'sign-maven-publications\.sh build/release-maven-central --ephemeral' "$release_dry_run"
 search 'audit-maven-publications\.mjs' "$release_dry_run"
 search 'build/release-maven-central --full --signed' "$release_dry_run"
@@ -522,12 +523,34 @@ if search 'secrets\.|environment: release|contents: write|id-token: write' "$rel
     exit 1
 fi
 
-for workflow in "$ci" "$codeql"; do
+for workflow in "$ci" "$codeql" "$release_dry_run"; do
     if ! search '^    merge_group:$' "$workflow"; then
         echo "blocking workflow lacks merge_group support: $workflow" >&2
         exit 1
     fi
 done
+
+# The stable release-readiness context is a fail-closed projection of the
+# complete artifact graph. Keep every leaf producer explicit here: an omitted
+# or skipped result must fail rather than allowing branch protection to see a
+# misleading successful aggregate.
+dry_run_gate=$(job_body dry-run-gate "$release_dry_run")
+grep -Fq '        if: ${{ always() }}' <<<"$dry_run_gate"
+grep -Fq '        needs: [validate, c-artifacts, swift-source, npm-package, maven-linux, maven-macos, maven-aggregate]' <<<"$dry_run_gate"
+for result in \
+    'needs.validate.result' \
+    "needs['c-artifacts'].result" \
+    "needs['swift-source'].result" \
+    "needs['npm-package'].result" \
+    "needs['maven-linux'].result" \
+    "needs['maven-macos'].result" \
+    "needs['maven-aggregate'].result"; do
+    grep -Fq "$result" <<<"$dry_run_gate"
+done
+grep -Fq 'test "$result" = success' <<<"$dry_run_gate"
+
+maven_aggregate=$(job_body maven-aggregate "$release_dry_run")
+grep -Fq '        needs: [maven-linux, maven-macos]' <<<"$maven_aggregate"
 search '^    workflow_call:$' "$ci"
 
 ci_push_trigger=$(job_body push "$ci")
@@ -572,7 +595,7 @@ const ruleset = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const ownerReviewRuleset = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
 const required = ruleset.rules.find((rule) => rule.type === "required_status_checks");
 const contexts = required?.parameters?.required_status_checks?.map((check) => check.context).sort();
-const expected = ["CodeQL gate", "Required gates"];
+const expected = ["CodeQL gate", "Release Dry Run - Ready", "Required gates"];
 if (JSON.stringify(contexts) !== JSON.stringify(expected)) {
     throw new Error(`ruleset required checks changed: ${JSON.stringify(contexts)}`);
 }

@@ -37,6 +37,9 @@
                     },
                     {
                         "context": "CodeQL gate"
+                    },
+                    {
+                        "context": "Release Dry Run - Ready"
                     }
                 ]
             }

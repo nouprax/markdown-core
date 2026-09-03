@@ -2,6 +2,7 @@ name: Release Dry Run
 
 on:
     pull_request:
+    merge_group:
     workflow_dispatch:
 
 permissions:
@@ -201,9 +202,9 @@ jobs:
                   if-no-files-found: error
 
     dry-run-gate:
-        name: Release Dry Run - Ready
+        name: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'Release Dry Run - Ready' || 'Manual Release Dry Run - Ready' }}
         if: ${{ always() }}
-        needs: [validate, c-artifacts, swift-source, npm-package, maven-aggregate]
+        needs: [validate, c-artifacts, swift-source, npm-package, maven-linux, maven-macos, maven-aggregate]
         runs-on: ubuntu-latest
         steps:
             - name: Require every release dry-run artifact
@@ -212,8 +213,11 @@ jobs:
                   C_ARTIFACTS: ${{ needs['c-artifacts'].result }}
                   SWIFT_SOURCE: ${{ needs['swift-source'].result }}
                   NPM_PACKAGE: ${{ needs['npm-package'].result }}
+                  MAVEN_LINUX: ${{ needs['maven-linux'].result }}
+                  MAVEN_MACOS: ${{ needs['maven-macos'].result }}
                   MAVEN_AGGREGATE: ${{ needs['maven-aggregate'].result }}
               run: |
-                  for result in "$VALIDATE" "$C_ARTIFACTS" "$SWIFT_SOURCE" "$NPM_PACKAGE" "$MAVEN_AGGREGATE"; do
+                  for result in "$VALIDATE" "$C_ARTIFACTS" "$SWIFT_SOURCE" "$NPM_PACKAGE" \
+                      "$MAVEN_LINUX" "$MAVEN_MACOS" "$MAVEN_AGGREGATE"; do
                       test "$result" = success
                   done
