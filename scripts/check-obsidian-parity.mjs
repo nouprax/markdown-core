@@ -51,7 +51,7 @@ const processor = unified().use(remarkParse).use(remarkGfm).use(remarkObsidian, 
 const mdastKinds = {
     root: "Document",
     paragraph: "Paragraph",
-    blockquote: "BlockQuote",
+    blockquote: "Callout",
     list: "List",
     listItem: "ListItem",
     text: "Text",
@@ -63,19 +63,19 @@ const mdastKinds = {
     link: "Link",
     image: "Image",
     break: "LineBreak",
-    wikilink: "WikiLink",
-    highlight: "Highlight"
+    wikilink: "CrossLink",
+    highlight: "Mark"
 };
 
 const comparedFields = {
     Text: ["literal"],
     List: ["flavor", "start", "tight"],
-    ListItem: ["taskMarker"],
+    ListItem: ["marker"],
     Code: ["literal"],
     CodeBlock: ["literal", "info"],
     Link: ["destination", "title"],
     Image: ["source", "title"],
-    WikiLink: ["embedded", "path", "subpathKind", "subpath", "display"]
+    CrossLink: ["embedded", "path", "route", "subpath", "label"]
 };
 
 function normalizeChildren(children) {
@@ -106,7 +106,7 @@ function fromMdast(node, unknown, source) {
         fields.tight = String(!node.spread);
     }
     if (node.type === "listItem") {
-        fields.taskMarker = node.data?.taskChar ?? "null";
+        fields.marker = node.data?.taskChar ?? "null";
     }
     if (node.type === "inlineCode") fields.literal = node.value;
     if (node.type === "code") {
@@ -124,12 +124,12 @@ function fromMdast(node, unknown, source) {
     if (node.type === "wikilink") {
         const spelling = source.slice(node.position?.start.offset ?? 0, node.position?.end.offset ?? 0);
         const bodyStart = spelling.startsWith("![[") ? 3 : 2;
-        const hasDisplayDelimiter = spelling.slice(bodyStart, -2).includes("|");
+        const hasLabelDelimiter = spelling.slice(bodyStart, -2).includes("|");
         fields.embedded = String(node.embedded);
         fields.path = node.path;
-        fields.subpathKind = node.heading ? (node.heading.startsWith("^") ? "block" : "fragment") : "none";
+        fields.route = node.heading ? (node.heading.startsWith("^") ? "block" : "fragment") : "none";
         fields.subpath = node.heading ? node.heading.replace(/^\^/, "") : "null";
-        fields.display = node.alias === "" && !hasDisplayDelimiter ? "null" : node.alias;
+        fields.label = node.alias === "" && !hasLabelDelimiter ? "null" : node.alias;
     }
 
     return {

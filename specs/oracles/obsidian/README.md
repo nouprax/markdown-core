@@ -19,9 +19,11 @@ OFM specification. The official Obsidian help snapshot registered in
 `deltas.json` remains normative. This oracle is authoritative only for the
 intersection it implements: wikilinks/embeds, highlights, comment removal, and
 custom task characters. Tag and package-specific math syntax are disabled.
-Callouts, block identifiers, inline footnotes, image dimensions, and Markdown
-suppression inside HTML are absent from the direct parser and therefore stay
-under official-example product fixtures.
+Callouts, block identifiers, inline-footnote recognition, the target
+`Cite`/`Citation`/`CitationReferent`/`Footnote` consumer projection, and image
+dimensions are absent from the direct parser comparison and therefore stay
+under official-example product fixtures. Inherited HTML behavior remains owned
+by the cmark oracle; this profile adds no Obsidian-specific HTML suppression.
 
 The corpus contains inputs only. It deliberately has no Markdown Core expected
 AST blocks; product goldens belong to the C fixture and shared canonical AST

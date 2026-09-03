@@ -39,6 +39,41 @@ else
     note "external oracle policies exist without duplicate golden fixtures"
 fi
 
+target_specs_missing=0
+for target_spec in \
+    docs/specs/inserted-text.md \
+    docs/specs/attributes.md \
+    docs/specs/citation-model.md \
+    docs/specs/remark.md \
+    docs/specs/remark/attributes.md \
+    docs/specs/pandoc.md \
+    docs/specs/pandoc/attributes.md \
+    docs/specs/pandoc/citations.md \
+    docs/specs/pandoc/bracketed-spans.md \
+    docs/specs/pandoc/superscript-and-subscript.md \
+    docs/specs/pandoc/headings-and-anchors.md \
+    docs/specs/pandoc/tables.md \
+    docs/specs/pandoc/lists.md \
+    docs/specs/pandoc/definition-lists.md \
+    docs/specs/pandoc/fenced-divs.md \
+    docs/specs/obsidian-flavored-markdown.md \
+    docs/specs/obsidian/wikilinks-and-embeds.md \
+    docs/specs/obsidian/block-identifiers.md \
+    docs/specs/obsidian/footnotes.md \
+    docs/specs/obsidian/comments.md \
+    docs/specs/obsidian/highlights.md \
+    docs/specs/obsidian/tasks.md \
+    docs/specs/obsidian/callouts.md \
+    docs/specs/obsidian/inherited-and-integration.md; do
+    if [ ! -f "$target_spec" ]; then
+        fail "normative target spec module is missing: $target_spec"
+        target_specs_missing=1
+    fi
+done
+if [ "$target_specs_missing" -eq 0 ]; then
+    note "shared, Remark, Pandoc, and modular Obsidian target contracts are present"
+fi
+
 # 2. Every platform consumes the shared conformance contract.
 if [ ! -f specs/canonical-ast/manifest.json ]; then
     fail "root shared canonical AST manifest is missing"
