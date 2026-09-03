@@ -36,3 +36,5 @@ export type { ReferenceForm } from "./values.js";
 export type { ListFlavor, PlacementMode, Position, Scope, TableAlignment } from "./values.js";
 export { visit } from "./visitor.js";
 export type { Visitor } from "./visitor.js";
+export { walk } from "./walking-visitor.js";
+export type { WalkingVisitor, WalkPhase } from "./walking-visitor.js";

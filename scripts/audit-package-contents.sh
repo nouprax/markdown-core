@@ -404,15 +404,27 @@ if unzip -Z1 "$kotlin_jvm_jar" | grep -E '(^|/)(canonical-ast|manifest\.json)|\.
     exit 1
 fi
 if unzip -Z1 "$kotlin_jvm_jar" | grep -E '(^|/)(NativeBridge[^/]*|JvmNative|Walker|MarkupWalker)(\$[^/]*)?\.class$'; then
-    echo "Kotlin JVM publication contains a retired bridge or walker class" >&2
+    echo "Kotlin JVM publication contains a retired bridge or legacy walker class" >&2
     exit 1
 fi
+for required_class in WalkPhase WalkingVisitor WalkingVisitorKt; do
+    if ! unzip -Z1 "$kotlin_jvm_jar" \
+        | grep -qx "com/nouprax/markdown/core/$required_class.class"; then
+        echo "Kotlin JVM publication is missing $required_class" >&2
+        exit 1
+    fi
+done
 if [ ! -f "$kotlin_jvm_sources" ]; then
     echo "Kotlin JVM source publication JAR is missing" >&2
     exit 1
 fi
 if unzip -Z1 "$kotlin_jvm_sources" | grep -E '(^|/)(NativeBridge[^/]*|Walker|MarkupWalker|WireDecoder|WireKind|WireMarkupDecoder)[^/]*\.kt$|^commonMain/.*/(walker|wire)/|(^|/)native-bridge(/|$)'; then
-    echo "Kotlin JVM source publication contains a retired bridge, walker, or shared wire source" >&2
+    echo "Kotlin JVM source publication contains a retired bridge, legacy walker, or shared wire source" >&2
+    exit 1
+fi
+if ! unzip -Z1 "$kotlin_jvm_sources" \
+    | grep -qx 'commonMain/com/nouprax/markdown/core/visitor/WalkingVisitor.kt'; then
+    echo "Kotlin JVM source publication is missing the typed walking visitor" >&2
     exit 1
 fi
 for required_source in \

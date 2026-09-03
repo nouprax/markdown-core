@@ -65,6 +65,17 @@ final enum class com.nouprax.markdown.core/TableAlignment : kotlin/Enum<com.noup
     final fun values(): kotlin/Array<com.nouprax.markdown.core/TableAlignment> // com.nouprax.markdown.core/TableAlignment.values|values#static(){}[0]
 }
 
+final enum class com.nouprax.markdown.core/WalkPhase : kotlin/Enum<com.nouprax.markdown.core/WalkPhase> { // com.nouprax.markdown.core/WalkPhase|null[0]
+    enum entry ENTERING // com.nouprax.markdown.core/WalkPhase.ENTERING|null[0]
+    enum entry EXITING // com.nouprax.markdown.core/WalkPhase.EXITING|null[0]
+
+    final val entries // com.nouprax.markdown.core/WalkPhase.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/WalkPhase> // com.nouprax.markdown.core/WalkPhase.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.nouprax.markdown.core/WalkPhase // com.nouprax.markdown.core/WalkPhase.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.nouprax.markdown.core/WalkPhase> // com.nouprax.markdown.core/WalkPhase.values|values#static(){}[0]
+}
+
 abstract interface <#A: kotlin/Any?> com.nouprax.markdown.core/Visitor { // com.nouprax.markdown.core/Visitor|null[0]
     abstract fun visitBlockQuote(com.nouprax.markdown.core/BlockQuote): #A // com.nouprax.markdown.core/Visitor.visitBlockQuote|visitBlockQuote(com.nouprax.markdown.core.BlockQuote){}[0]
     abstract fun visitCode(com.nouprax.markdown.core/Code): #A // com.nouprax.markdown.core/Visitor.visitCode|visitCode(com.nouprax.markdown.core.Code){}[0]
@@ -98,6 +109,41 @@ abstract interface <#A: kotlin/Any?> com.nouprax.markdown.core/Visitor { // com.
     abstract fun visitTableRow(com.nouprax.markdown.core/TableRow): #A // com.nouprax.markdown.core/Visitor.visitTableRow|visitTableRow(com.nouprax.markdown.core.TableRow){}[0]
     abstract fun visitText(com.nouprax.markdown.core/Text): #A // com.nouprax.markdown.core/Visitor.visitText|visitText(com.nouprax.markdown.core.Text){}[0]
     abstract fun visitThematicBreak(com.nouprax.markdown.core/ThematicBreak): #A // com.nouprax.markdown.core/Visitor.visitThematicBreak|visitThematicBreak(com.nouprax.markdown.core.ThematicBreak){}[0]
+}
+
+abstract interface com.nouprax.markdown.core/WalkingVisitor { // com.nouprax.markdown.core/WalkingVisitor|null[0]
+    abstract fun visitBlockQuote(com.nouprax.markdown.core/BlockQuote, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitBlockQuote|visitBlockQuote(com.nouprax.markdown.core.BlockQuote;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitCode(com.nouprax.markdown.core/Code, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitCode|visitCode(com.nouprax.markdown.core.Code;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitCodeBlock(com.nouprax.markdown.core/CodeBlock, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitCodeBlock|visitCodeBlock(com.nouprax.markdown.core.CodeBlock;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitDirective(com.nouprax.markdown.core/Directive, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitDirective|visitDirective(com.nouprax.markdown.core.Directive;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitDirectiveBlock(com.nouprax.markdown.core/DirectiveBlock, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitDirectiveBlock|visitDirectiveBlock(com.nouprax.markdown.core.DirectiveBlock;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitDirectiveLabel(com.nouprax.markdown.core/DirectiveLabel, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitDirectiveLabel|visitDirectiveLabel(com.nouprax.markdown.core.DirectiveLabel;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitDocument(com.nouprax.markdown.core/Document, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitDocument|visitDocument(com.nouprax.markdown.core.Document;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitEmphasis(com.nouprax.markdown.core/Emphasis, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitEmphasis|visitEmphasis(com.nouprax.markdown.core.Emphasis;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitFootnoteDefinition(com.nouprax.markdown.core/FootnoteDefinition, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitFootnoteDefinition|visitFootnoteDefinition(com.nouprax.markdown.core.FootnoteDefinition;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitFootnoteReference(com.nouprax.markdown.core/FootnoteReference, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitFootnoteReference|visitFootnoteReference(com.nouprax.markdown.core.FootnoteReference;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitFormula(com.nouprax.markdown.core/Formula, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitFormula|visitFormula(com.nouprax.markdown.core.Formula;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitFormulaBlock(com.nouprax.markdown.core/FormulaBlock, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitFormulaBlock|visitFormulaBlock(com.nouprax.markdown.core.FormulaBlock;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitHTML(com.nouprax.markdown.core/HTML, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitHTML|visitHTML(com.nouprax.markdown.core.HTML;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitHTMLBlock(com.nouprax.markdown.core/HTMLBlock, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitHTMLBlock|visitHTMLBlock(com.nouprax.markdown.core.HTMLBlock;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitHeading(com.nouprax.markdown.core/Heading, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitHeading|visitHeading(com.nouprax.markdown.core.Heading;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitImage(com.nouprax.markdown.core/Image, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitImage|visitImage(com.nouprax.markdown.core.Image;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitImageReference(com.nouprax.markdown.core/ImageReference, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitImageReference|visitImageReference(com.nouprax.markdown.core.ImageReference;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitLineBreak(com.nouprax.markdown.core/LineBreak, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitLineBreak|visitLineBreak(com.nouprax.markdown.core.LineBreak;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitLink(com.nouprax.markdown.core/Link, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitLink|visitLink(com.nouprax.markdown.core.Link;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitLinkReference(com.nouprax.markdown.core/LinkReference, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitLinkReference|visitLinkReference(com.nouprax.markdown.core.LinkReference;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitList(com.nouprax.markdown.core/List, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitList|visitList(com.nouprax.markdown.core.List;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitListItem(com.nouprax.markdown.core/ListItem, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitListItem|visitListItem(com.nouprax.markdown.core.ListItem;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitParagraph(com.nouprax.markdown.core/Paragraph, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitParagraph|visitParagraph(com.nouprax.markdown.core.Paragraph;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitReferenceDefinition(com.nouprax.markdown.core/ReferenceDefinition, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitReferenceDefinition|visitReferenceDefinition(com.nouprax.markdown.core.ReferenceDefinition;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitSoftBreak(com.nouprax.markdown.core/SoftBreak, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitSoftBreak|visitSoftBreak(com.nouprax.markdown.core.SoftBreak;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitStrikethrough(com.nouprax.markdown.core/Strikethrough, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitStrikethrough|visitStrikethrough(com.nouprax.markdown.core.Strikethrough;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitStrong(com.nouprax.markdown.core/Strong, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitStrong|visitStrong(com.nouprax.markdown.core.Strong;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitTable(com.nouprax.markdown.core/Table, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitTable|visitTable(com.nouprax.markdown.core.Table;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitTableCell(com.nouprax.markdown.core/TableCell, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitTableCell|visitTableCell(com.nouprax.markdown.core.TableCell;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitTableRow(com.nouprax.markdown.core/TableRow, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitTableRow|visitTableRow(com.nouprax.markdown.core.TableRow;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitText(com.nouprax.markdown.core/Text, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitText|visitText(com.nouprax.markdown.core.Text;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitThematicBreak(com.nouprax.markdown.core/ThematicBreak, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitThematicBreak|visitThematicBreak(com.nouprax.markdown.core.ThematicBreak;com.nouprax.markdown.core.WalkPhase){}[0]
 }
 
 sealed interface com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Markup|null[0]
@@ -550,3 +596,5 @@ final class com.nouprax.markdown.core/ThematicBreak : com.nouprax.markdown.core/
 final object com.nouprax.markdown.core/TreeDumper { // com.nouprax.markdown.core/TreeDumper|null[0]
     final fun dump(com.nouprax.markdown.core/Markup): kotlin/String // com.nouprax.markdown.core/TreeDumper.dump|dump(com.nouprax.markdown.core.Markup){}[0]
 }
+
+final fun (com.nouprax.markdown.core/Markup).com.nouprax.markdown.core/walk(com.nouprax.markdown.core/WalkingVisitor) // com.nouprax.markdown.core/walk|walk@com.nouprax.markdown.core.Markup(com.nouprax.markdown.core.WalkingVisitor){}[0]

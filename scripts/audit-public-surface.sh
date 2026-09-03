@@ -122,6 +122,15 @@ if grep -R -n 'defaultVisit' packages/swift-markdown-core/Sources/MarkdownCore; 
 fi
 test "$(grep -c 'mutating func visit' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift)" -eq "$kind_count" \
     || fail "Swift MarkupVisitor is not exhaustive over all $kind_count Markup kinds"
+grep -q 'public enum WalkPhase' \
+    packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalkingVisitor.swift \
+    && grep -q 'public protocol MarkupWalkingVisitor' \
+        packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalkingVisitor.swift \
+    && grep -q 'public func walk<Visitor: MarkupWalkingVisitor>' \
+        packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalkingVisitor.swift \
+    || fail "Swift does not expose the typed walking visitor contract"
+test "$(awk '/public protocol MarkupWalkingVisitor/{inside=1; next} inside && /^}/{exit} inside && /mutating func visit/{count++} END{print count+0}' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalkingVisitor.swift)" -eq "$kind_count" \
+    || fail "Swift MarkupWalkingVisitor is not exhaustive over all $kind_count Markup kinds"
 
 grep -q 'explicitApi()' packages/kotlin-markdown-core/build.gradle.kts \
     || fail "Kotlin explicit API mode is disabled"
@@ -147,6 +156,15 @@ if grep -R -n 'defaultVisit' packages/kotlin-markdown-core/src/commonMain; then
 fi
 test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/Visitor.kt)" -eq "$kind_count" \
     || fail "Kotlin Visitor is not exhaustive over all $kind_count Markup kinds"
+grep -q 'public enum class WalkPhase' \
+    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/WalkingVisitor.kt \
+    && grep -q 'public interface WalkingVisitor' \
+        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/WalkingVisitor.kt \
+    && grep -q 'public fun Markup.walk(visitor: WalkingVisitor)' \
+        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/WalkingVisitor.kt \
+    || fail "Kotlin does not expose the typed walking visitor contract"
+test "$(awk '/public interface WalkingVisitor/{inside=1; next} inside && /^}/{exit} inside && /public fun visit/{count++} END{print count+0}' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/WalkingVisitor.kt)" -eq "$kind_count" \
+    || fail "Kotlin WalkingVisitor is not exhaustive over all $kind_count Markup kinds"
 grep -q '^headers = markdown_core.h$' \
     packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
     && grep -q '^package = com.nouprax.markdown.core.internal.capi$' \
@@ -196,6 +214,14 @@ if grep -R -E -n 'defaultVisit|visit[A-Z][A-Za-z]+\?' packages/es-markdown-core/
 fi
 test "$(grep -c '^    visit[A-Z].*(this:' packages/es-markdown-core/src/visitor.ts)" -eq "$kind_count" \
     || fail "ES Visitor is not exhaustive over all $kind_count Markup kinds"
+grep -q 'export type WalkPhase = "entering" | "exiting"' \
+    packages/es-markdown-core/src/walking-visitor.ts \
+    && grep -q 'export interface WalkingVisitor' packages/es-markdown-core/src/walking-visitor.ts \
+    && grep -q 'export function walk(root: Markup, walkingVisitor: WalkingVisitor)' \
+        packages/es-markdown-core/src/walking-visitor.ts \
+    || fail "ES does not expose the typed walking visitor contract"
+test "$(grep -c '^    visit[A-Z].*(this:' packages/es-markdown-core/src/walking-visitor.ts)" -eq "$kind_count" \
+    || fail "ES WalkingVisitor is not exhaustive over all $kind_count Markup kinds"
 
 node - packages/es-markdown-core/package.json packages/es-markdown-core/src/index.ts <<'NODE'
 import fs from "node:fs";
@@ -219,7 +245,7 @@ const runtimeExports = [
         match[1].split(",").map((name) => name.trim())
     )
 ].sort();
-const expectedRuntime = ["Document", "ParseError", "TreeDumper", "visit"].sort();
+const expectedRuntime = ["Document", "ParseError", "TreeDumper", "visit", "walk"].sort();
 if (runtimeExports.join("\n") !== expectedRuntime.join("\n")) {
     throw new Error(`Unexpected ES runtime exports: ${runtimeExports.join(", ")}`);
 }

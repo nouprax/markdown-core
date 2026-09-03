@@ -40,9 +40,11 @@ rendering or AST mutation.
 ## Traverse and Inspect
 
 `visit(markup, visitor)` dispatches exactly one node to an exhaustive typed
-`Visitor`. Recursive operations belong in that visitor's per-kind callbacks,
-where each callback explicitly chooses the node's semantic fields and content.
-There is no generic Walker or uniform child projection.
+`Visitor`. `walk(markup, walkingVisitor)` performs a stack-safe depth-first walk
+and dispatches `entering` and `exiting` to an exhaustive `WalkingVisitor` by
+node kind. Each node-kind branch chooses its typed fields and content; there is
+no public iterator or uniform child projection. A directive label is walked as
+the named `label` field, not as directive content.
 
 `TreeDumper.dump(markup)` and each Markup's non-enumerable `dump()` method emit
 the canonical debug tree for a complete document or focused subtree. The

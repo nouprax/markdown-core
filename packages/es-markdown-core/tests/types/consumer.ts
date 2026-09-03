@@ -2,12 +2,15 @@ import {
     Document,
     TreeDumper,
     visit,
+    walk,
     type Heading,
     type Markup,
     type Table,
     type TableCell,
     type TableRow,
-    type Visitor
+    type Visitor,
+    type WalkingVisitor,
+    type WalkPhase
 } from "@nouprax/es-markdown-core";
 
 const document: Document = Document.parse("# typed", { tables: true });
@@ -52,6 +55,14 @@ const visitor: Visitor<string> = {
     visitFootnoteReference: (node) => node.kind
 };
 visit(document, visitor);
+const walkingVisitor: WalkingVisitor = {
+    ...visitor,
+    visitHeading(node: Heading, phase: WalkPhase) {
+        void node.level;
+        void phase;
+    }
+};
+walk(document, walkingVisitor);
 // @ts-expect-error recursively readonly content cannot be replaced
 document.content[0] = document;
 // @ts-expect-error readonly scope values cannot be mutated
@@ -73,3 +84,12 @@ const incompleteVisitor: Visitor<string> = {
     visitDocument: (node) => node.kind
 };
 void incompleteVisitor;
+
+// @ts-expect-error WalkingVisitor is exhaustive and requires one method per Markup kind
+const incompleteWalkingVisitor: WalkingVisitor = {
+    visitDocument: (node, phase) => {
+        void node;
+        void phase;
+    }
+};
+void incompleteWalkingVisitor;

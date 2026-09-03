@@ -3,6 +3,10 @@
     "purpose": "The machine-readable, normative canonical AST contract. C, Swift, Kotlin, and TypeScript declare projections of this shape, and scripts/audit-ast-projections.mjs checks every projection plus the prose and debug-dump tables against this file. Formula is the only kind whose placement mode varies; placement for Code, CodeBlock, Directive, DirectiveBlock, and FormulaBlock is implied by the kind.",
     "prose": "docs/specs/canonical-ast.md",
     "dumpGrammar": "docs/specs/canonical-ast-dump.md",
+    "walk": {
+        "phases": ["entering", "exiting"],
+        "order": "Depth first. A node enters, then its owned Markup-valued fields are visited in canonical field order with arrays retaining stored order, then the node exits. Relations remain named fields; the walk does not project them into generic children."
+    },
     "enums": {
         "PlacementMode": ["embedded", "standalone"],
         "ListFlavor": ["bullet", "ordered"],

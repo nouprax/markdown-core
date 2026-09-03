@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Document, TreeDumper, visit } from "../dist/index.js";
+import { Document, TreeDumper, visit, walk } from "../dist/index.js";
 // Past index.js for the instance itself: the heap is what this asserts about,
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
@@ -18,6 +18,39 @@ test("api: synchronous parse and typed visitor dispatch", () => {
         "heading:1"
     );
     assert.equal(visit(document, kindVisitor), "document");
+});
+
+test("api: walking dispatch is typed and preserves owned-field semantics", () => {
+    const block = Document.parse(":::note[Title]\nBody\n:::\n").content[0];
+    const events = [];
+    walk(
+        block,
+        walkingVisitor((node, phase) => events.push(`${phase}:${nodeKindName(node)}`))
+    );
+
+    assert.deepEqual(events, [
+        "entering:DirectiveBlock",
+        "entering:DirectiveLabel",
+        "entering:Text",
+        "exiting:Text",
+        "exiting:DirectiveLabel",
+        "entering:Paragraph",
+        "entering:Text",
+        "exiting:Text",
+        "exiting:Paragraph",
+        "exiting:DirectiveBlock"
+    ]);
+    assert.deepEqual(block.content.map(nodeKindName), ["Paragraph"]);
+
+    const table = Document.parse("| a |\n| --- |\n| b |\n").content[0];
+    const tableRowKinds = [];
+    walk(
+        table,
+        walkingVisitor((node, phase) => {
+            if (phase === "entering" && node.kind === "tableRow") tableRowKinds.push(node.isHeader);
+        })
+    );
+    assert.deepEqual(tableRowKinds, [true, false]);
 });
 
 test("api: options gate extensions", () => {
@@ -131,7 +164,20 @@ test("robustness: uncapped list nesting remains traversable", () => {
     // The transfer is an indexed table and the decoder constructs it in
     // reverse order, so depth is data rather than native or JS call-stack use.
     const depth = 10_000;
-    let node = Document.parse("- ".repeat(depth) + "leaf\n").content[0];
+    const document = Document.parse("- ".repeat(depth) + "leaf\n");
+    let entered = 0;
+    let exited = 0;
+    walk(
+        document,
+        walkingVisitor((_node, phase) => {
+            if (phase === "entering") entered += 1;
+            else exited += 1;
+        })
+    );
+    assert.equal(entered, exited);
+    assert.ok(entered > depth * 2);
+
+    let node = document.content[0];
     for (let index = 0; index < depth; index += 1) {
         assert.equal(node.kind, "list");
         assert.equal(node.items.length, 1);
@@ -139,6 +185,14 @@ test("robustness: uncapped list nesting remains traversable", () => {
     }
     assert.equal(node.kind, "paragraph");
 });
+
+function walkingVisitor(callback) {
+    return Object.fromEntries(Object.keys(kindVisitor).map((method) => [method, callback]));
+}
+
+function nodeKindName(node) {
+    return node.kind[0].toUpperCase() + node.kind.slice(1);
+}
 
 test("robustness: repeated parse and release remains stable", () => {
     for (let index = 0; index < 2_000; index += 1) {

@@ -419,3 +419,50 @@ public abstract interface class com/nouprax/markdown/core/Visitor {
 	public abstract fun visitThematicBreak (Lcom/nouprax/markdown/core/ThematicBreak;)Ljava/lang/Object;
 }
 
+public final class com/nouprax/markdown/core/WalkPhase : java/lang/Enum {
+	public static final field ENTERING Lcom/nouprax/markdown/core/WalkPhase;
+	public static final field EXITING Lcom/nouprax/markdown/core/WalkPhase;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/WalkPhase;
+	public static fun values ()[Lcom/nouprax/markdown/core/WalkPhase;
+}
+
+public abstract interface class com/nouprax/markdown/core/WalkingVisitor {
+	public abstract fun visitBlockQuote (Lcom/nouprax/markdown/core/BlockQuote;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitCode (Lcom/nouprax/markdown/core/Code;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitCodeBlock (Lcom/nouprax/markdown/core/CodeBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitDirective (Lcom/nouprax/markdown/core/Directive;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitDirectiveBlock (Lcom/nouprax/markdown/core/DirectiveBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitDirectiveLabel (Lcom/nouprax/markdown/core/DirectiveLabel;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitDocument (Lcom/nouprax/markdown/core/Document;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitEmphasis (Lcom/nouprax/markdown/core/Emphasis;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitFootnoteDefinition (Lcom/nouprax/markdown/core/FootnoteDefinition;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitFootnoteReference (Lcom/nouprax/markdown/core/FootnoteReference;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitFormula (Lcom/nouprax/markdown/core/Formula;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitFormulaBlock (Lcom/nouprax/markdown/core/FormulaBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitHTML (Lcom/nouprax/markdown/core/HTML;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitHTMLBlock (Lcom/nouprax/markdown/core/HTMLBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitHeading (Lcom/nouprax/markdown/core/Heading;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitImage (Lcom/nouprax/markdown/core/Image;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitImageReference (Lcom/nouprax/markdown/core/ImageReference;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitLineBreak (Lcom/nouprax/markdown/core/LineBreak;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitLink (Lcom/nouprax/markdown/core/Link;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitLinkReference (Lcom/nouprax/markdown/core/LinkReference;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitList (Lcom/nouprax/markdown/core/List;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitListItem (Lcom/nouprax/markdown/core/ListItem;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitParagraph (Lcom/nouprax/markdown/core/Paragraph;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitReferenceDefinition (Lcom/nouprax/markdown/core/ReferenceDefinition;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitSoftBreak (Lcom/nouprax/markdown/core/SoftBreak;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitStrikethrough (Lcom/nouprax/markdown/core/Strikethrough;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitStrong (Lcom/nouprax/markdown/core/Strong;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitTable (Lcom/nouprax/markdown/core/Table;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitTableCell (Lcom/nouprax/markdown/core/TableCell;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitTableRow (Lcom/nouprax/markdown/core/TableRow;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitText (Lcom/nouprax/markdown/core/Text;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitThematicBreak (Lcom/nouprax/markdown/core/ThematicBreak;Lcom/nouprax/markdown/core/WalkPhase;)V
+}
+
+public final class com/nouprax/markdown/core/WalkingVisitorKt {
+	public static final fun walk (Lcom/nouprax/markdown/core/Markup;Lcom/nouprax/markdown/core/WalkingVisitor;)V
+}
+
