@@ -38,6 +38,35 @@ class ApiTest {
         assertEquals("Document", document.accept(visitor))
         assertEquals("Paragraph", document.content.last().accept(visitor))
     }
+
+    @Test
+    fun walkingVisitorIsTypedAndPreservesOwnedFieldSemantics() {
+        val block = assertIs<DirectiveBlock>(Document.parse(":::note[Title]\nBody\n:::\n").content.single())
+        val visitor = RecordingWalkingVisitor()
+        block.walk(visitor)
+
+        assertEquals(
+            listOf(
+                "entering:DirectiveBlock",
+                "entering:DirectiveLabel",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:DirectiveLabel",
+                "entering:Paragraph",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Paragraph",
+                "exiting:DirectiveBlock",
+            ),
+            visitor.events,
+        )
+        assertEquals(listOf("Paragraph"), block.content.map { it::class.simpleName })
+
+        val table = assertIs<Table>(Document.parse("| a |\n| --- |\n| b |\n").content.single())
+        val tableVisitor = RecordingWalkingVisitor()
+        table.walk(tableVisitor)
+        assertEquals(listOf(true, false), tableVisitor.tableRowKinds)
+    }
 }
 
 class UnicodeTest {
@@ -240,9 +269,14 @@ class RobustnessTest {
     @Test
     fun uncappedListNestingRemainsTraversable() {
         val depth = 10_000
+        val document = Document.parse("- ".repeat(depth) + "leaf\n")
+        val visitor = RecordingWalkingVisitor(recordEvents = false)
+        document.walk(visitor)
+        assertEquals(visitor.entered, visitor.exited)
+        assertTrue(visitor.entered > depth * 2)
+
         var node: Markup =
-            Document
-                .parse("- ".repeat(depth) + "leaf\n")
+            document
                 .content
                 .single()
         repeat(depth) {

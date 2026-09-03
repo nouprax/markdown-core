@@ -44,9 +44,11 @@ rendering or mutation.
 ## Traverse and Inspect
 
 `Markup.accept(visitor)` dispatches exactly one node to an exhaustive typed
-`Visitor`. Recursive operations belong in that visitor's per-kind callbacks,
-where each callback explicitly chooses the node's semantic fields and content.
-There is no generic Walker or uniform child projection.
+`Visitor`. `Markup.walk(walkingVisitor)` performs a stack-safe depth-first walk
+and dispatches `ENTERING` and `EXITING` to an exhaustive `WalkingVisitor` by
+node kind. Each node-kind branch chooses its typed fields and content; there is
+no public iterator or uniform child projection. A directive label is walked as
+the named `label` field, not as directive content.
 
 Every immutable `Markup` exposes `dump()`, which delegates to the public
 `TreeDumper` and returns the canonical file-tree dump for that subtree:

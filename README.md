@@ -57,7 +57,8 @@ print(document.dump())
 ```
 
 The Swift AST is an immutable, `Sendable` value tree. The module also provides
-exhaustive typed visitors and read-only depth-first walking.
+exhaustive typed visitors and stack-safe, read-only depth-first walking through
+`MarkupWalkingVisitor` and `Markup.walk(with:)`.
 
 ### Kotlin Multiplatform
 

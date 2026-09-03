@@ -46,8 +46,9 @@ public struct Scope: Sendable, Hashable {
 /// borrows memory the C library owns and a tree can cross an isolation
 /// boundary unchanged.
 ///
-/// The set of conforming kinds is closed. ``MarkupVisitor`` names all of them,
-/// which is what makes a visitor exhaustive at compile time.
+/// The set of conforming kinds is closed. ``MarkupVisitor`` and
+/// ``MarkupWalkingVisitor`` name all of them, which makes both dispatch
+/// protocols exhaustive at compile time.
 public protocol Markup: Sendable {
     /// Where this element is, as a pair of boundaries. See ``Scope`` for what
     /// those boundaries are and are not.

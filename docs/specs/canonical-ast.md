@@ -195,7 +195,7 @@ and is not an option.
 Renderer-only `unsafe`, `github-pre-lang`, and `full-info-string` options do
 not exist. Raw HTML, URLs, and full code info strings are always retained.
 
-## Visitor
+## Visitor and walking
 
 The typed `Visitor<Result>` has one dispatch method for every `Markup` kind in
 the node inventory, including `TableRow`, `TableCell`, and `DirectiveLabel`.
@@ -205,16 +205,27 @@ fallback. Adding a `Markup` kind must therefore produce compile errors in every
 visitor until the new case is handled. Visiting one node does not implicitly
 recurse.
 
-There is no public Walker or generic child projection. A recursive operation
-is implemented by the operation's exhaustive Visitor itself: each node-kind
-callback performs that node's work and explicitly decides whether and how to
-visit its typed fields and content. This keeps recursion subordinate to AST
-semantics instead of pretending every `Markup`-valued relation is one uniform
-child edge. In particular, a directive callback may inspect or visit `label`
-without making it directive content.
+The bindings also expose a read-only, depth-first `walk` operation driven by an
+exhaustive node-kind-dispatched walking visitor. Every typed callback receives
+an `entering` phase before the node's owned markup relations and an `exiting`
+phase after them. The walk is implemented with an explicit action stack, so
+language call-stack depth does not grow with AST depth.
 
-The Visitor exposes no replace, remove, setter, parent mutation, or
-native-handle callback.
+Walking does not expose an iterator or a generic child projection. Each
+node-kind traversal branch selects its own typed, owned relations. Relations
+are visited in canonical field order and arrays retain their stored order:
+`Table.header` precedes `Table.rows`, while `DirectiveBlock.label` precedes
+`DirectiveBlock.content`. A directive label therefore participates in a
+complete AST walk as the named `label` field without becoming directive
+content or contributing to a `children` collection.
+
+The walking visitor is exhaustive under the same rule as `Visitor`: every
+node-kind callback is required and there is no default, optional handler,
+untyped callback, or catch-all adapter. The walk is observation only; it has no
+prune, replace, remove, setter, parent mutation, or native-handle callback.
+
+Operations that need relation-specific policy rather than the canonical full
+walk continue to implement recursion in their own exhaustive per-node Visitor.
 
 ## Debug dump
 

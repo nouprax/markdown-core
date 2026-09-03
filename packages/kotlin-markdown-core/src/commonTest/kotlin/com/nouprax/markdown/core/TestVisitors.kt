@@ -139,3 +139,188 @@ internal class RecordingVisitor : Visitor<Unit> {
 }
 
 private fun name(node: Markup): String = node::class.simpleName ?: "unknown"
+
+internal class RecordingWalkingVisitor(
+    private val recordEvents: Boolean = true,
+) : WalkingVisitor {
+    val events: MutableList<String> = mutableListOf()
+    val tableRowKinds: MutableList<Boolean> = mutableListOf()
+    var entered: Int = 0
+        private set
+    var exited: Int = 0
+        private set
+
+    private fun record(
+        node: Markup,
+        phase: WalkPhase,
+    ) {
+        when (phase) {
+            WalkPhase.ENTERING -> entered++
+            WalkPhase.EXITING -> exited++
+        }
+        if (recordEvents) events += "${phase.name.lowercase()}:${name(node)}"
+    }
+
+    override fun visitDocument(
+        node: Document,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitBlockQuote(
+        node: BlockQuote,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitParagraph(
+        node: Paragraph,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitHeading(
+        node: Heading,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitThematicBreak(
+        node: ThematicBreak,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitList(
+        node: List,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitListItem(
+        node: ListItem,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitCodeBlock(
+        node: CodeBlock,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitHTMLBlock(
+        node: HTMLBlock,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitFormulaBlock(
+        node: FormulaBlock,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitTable(
+        node: Table,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitTableRow(
+        node: TableRow,
+        phase: WalkPhase,
+    ) {
+        record(node, phase)
+        if (phase == WalkPhase.ENTERING) tableRowKinds += node.isHeader
+    }
+
+    override fun visitTableCell(
+        node: TableCell,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitDirectiveBlock(
+        node: DirectiveBlock,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitDirectiveLabel(
+        node: DirectiveLabel,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitFootnoteDefinition(
+        node: FootnoteDefinition,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitReferenceDefinition(
+        node: ReferenceDefinition,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitLinkReference(
+        node: LinkReference,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitImageReference(
+        node: ImageReference,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitText(
+        node: Text,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitSoftBreak(
+        node: SoftBreak,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitLineBreak(
+        node: LineBreak,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitCode(
+        node: Code,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitHTML(
+        node: HTML,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitFormula(
+        node: Formula,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitEmphasis(
+        node: Emphasis,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitStrong(
+        node: Strong,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitStrikethrough(
+        node: Strikethrough,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitLink(
+        node: Link,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitImage(
+        node: Image,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitDirective(
+        node: Directive,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitFootnoteReference(
+        node: FootnoteReference,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+}

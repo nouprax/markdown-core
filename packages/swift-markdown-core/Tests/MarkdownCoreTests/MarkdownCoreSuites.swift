@@ -25,6 +25,39 @@ import Testing
                 .content.first is Paragraph
         )
     }
+
+    @Test("walking dispatch is typed and preserves owned-field semantics")
+    func walkingVisitor() throws {
+        let block = try #require(
+            Document.parse(":::note[Title]\nBody\n:::\n").content.first as? DirectiveBlock
+        )
+        var visitor = RecordingWalkingVisitor()
+        block.walk(with: &visitor)
+
+        #expect(
+            visitor.events == [
+                "entering:DirectiveBlock",
+                "entering:DirectiveLabel",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:DirectiveLabel",
+                "entering:Paragraph",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Paragraph",
+                "exiting:DirectiveBlock",
+            ]
+        )
+        #expect(block.content.count == 1)
+        #expect(block.content.allSatisfy { !($0 is DirectiveLabel) })
+
+        let table = try #require(
+            Document.parse("| a |\n| --- |\n| b |\n").content.first as? Table
+        )
+        var tableVisitor = RecordingWalkingVisitor()
+        table.walk(with: &tableVisitor)
+        #expect(tableVisitor.tableRowKinds == [true, false])
+    }
 }
 
 @Suite("unicode") struct UnicodeSuite {
@@ -137,9 +170,19 @@ import Testing
         let unit = "## Section\n\nParagraph with **strong**, [link](/), and 🚀.\n\n"
         #expect(try Document.parse(String(repeating: unit, count: 5_000)).content.count == 10_000)
         let depth = 10_000
-        var node = try #require(
-            Document.parse(String(repeating: "- ", count: depth) + "leaf\n").content.first
+        var document: Document? = try Document.parse(
+            String(repeating: "- ", count: depth) + "leaf\n"
         )
+        var walkingVisitor = RecordingWalkingVisitor(recordEvents: false)
+        document?.walk(with: &walkingVisitor)
+        #expect(walkingVisitor.entered == walkingVisitor.exited)
+        #expect(walkingVisitor.entered > depth * 2)
+
+        // Keep the next value alive while releasing each ancestor. Swift's
+        // nested value-tree destruction is otherwise recursive independently
+        // of the walk implementation being exercised here.
+        var node = try #require(document?.content.first)
+        document = nil
         for _ in 0..<depth {
             let list = try #require(node as? MarkdownCore.List)
             node = try #require(list.items.first?.content.first)
@@ -192,4 +235,60 @@ private func requireSendable<T: Sendable>(_: T.Type) {}
 
 private func kindName(_ node: any Markup) -> String {
     String(describing: type(of: node))
+}
+
+private struct RecordingWalkingVisitor: MarkupWalkingVisitor {
+    private let recordEvents: Bool
+    var events: [String] = []
+    var tableRowKinds: [Bool] = []
+    var entered = 0
+    var exited = 0
+
+    init(recordEvents: Bool = true) {
+        self.recordEvents = recordEvents
+    }
+
+    private mutating func record(_ node: any Markup, _ phase: WalkPhase) {
+        switch phase {
+        case .entering: entered += 1
+        case .exiting: exited += 1
+        }
+        if recordEvents { events.append("\(phase):\(kindName(node))") }
+    }
+
+    mutating func visit(_ node: Document, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: BlockQuote, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Paragraph, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Heading, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: ThematicBreak, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: MarkdownCore.List, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: ListItem, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: CodeBlock, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: HTMLBlock, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: FormulaBlock, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Table, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: DirectiveBlock, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: DirectiveLabel, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: FootnoteDefinition, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: ReferenceDefinition, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: LinkReference, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: ImageReference, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Text, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: SoftBreak, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: LineBreak, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Code, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: HTML, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Formula, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Emphasis, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Strong, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Strikethrough, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Link, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Image, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Directive, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: FootnoteReference, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: TableRow, phase: WalkPhase) {
+        record(node, phase)
+        if phase == .entering { tableRowKinds.append(node.isHeader) }
+    }
+    mutating func visit(_ node: TableCell, phase: WalkPhase) { record(node, phase) }
 }
