@@ -25,8 +25,8 @@ Div(
 )
 ```
 
-An explicit `{}` is sufficient to distinguish an opening fence even though its
-universal attributes array is empty. Content is arbitrary block content.
+An explicit `{}` is sufficient to distinguish an opening fence even though it
+produces `Attributes.empty`. Content is arbitrary block content.
 `scope` covers both fences when closed and otherwise reaches the last consumed
 content.
 

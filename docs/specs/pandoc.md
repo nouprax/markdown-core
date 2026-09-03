@@ -12,10 +12,9 @@ evidence. Their immutable blobs, release artifacts, checksums, extension map,
 and runner restrictions are fixed by the
 [Pandoc oracle policy](../../specs/oracles/pandoc/README.md).
 
-The sole source-language exception is braced attributes. Every attachment site
-uses Markdown Core's shared Remark-derived attribute grammar; Pandoc's different
-shorthand boundaries, `{-}` rewrite, and bare-name rejection are deliberately
-unsupported and registered as oracle-policy differences.
+Pandoc 3.11 also owns the one shared braced-attribute grammar and the consumer
+shape projected from its `Attr` tuple. Remark contributes directive envelopes
+and attachment positions but does not introduce a second attribute grammar.
 
 This directory groups independently composable syntax extensions. It does not
 define a monolithic Pandoc dialect or change inherited CommonMark/GFM behavior.
@@ -26,25 +25,24 @@ this index is opt-in.
 The shared value contract lives outside this directory:
 
 - [Attributes](attributes.md) owns the universal `Markup.attributes` field, the
-  sole Remark-derived grammar, value invariants, normalization, and merge
-  operation. Pandoc contributes attachment sites but no alternate braced
-  grammar.
+  Pandoc-derived consumer shape, sole grammar, value invariants, normalization,
+  and merge operation.
 - [Citation model](citation-model.md) owns `Cite`, `Citation`, and
   `CitationReferent` independently of Pandoc bibliography syntax.
 
 ## Modules
 
-| Requested extension | Normative module |
-| --- | --- |
-| `inline_code_attributes`, `header_attributes`, `fenced_code_attributes`, `link_attributes`, and the Pandoc attachment registry | [Pandoc attributes](pandoc/attributes.md) |
-| `citations` (bibliography branch) | [Citations](pandoc/citations.md) |
-| `bracketed_spans` | [Bracketed spans](pandoc/bracketed-spans.md) |
-| `superscript`, `subscript` | [Superscript and subscript](pandoc/superscript-and-subscript.md) |
-| `auto_anchors`, `implicit_header_references` | [Heading anchors](pandoc/headings-and-anchors.md) |
-| `simple_tables`, `multiline_tables`, `grid_tables`, `table_captions` | [Tables](pandoc/tables.md) |
-| `fancy_lists`, `startnum`, `example_lists` | [Ordered and example lists](pandoc/lists.md) |
-| `definition_lists`, requested compact form | [Definition lists](pandoc/definition-lists.md) |
-| `fenced_divs` | [Fenced divs](pandoc/fenced-divs.md) |
+| Requested extension                                                                                                            | Normative module                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `inline_code_attributes`, `header_attributes`, `fenced_code_attributes`, `link_attributes`, and the Pandoc attachment registry | [Pandoc attributes](pandoc/attributes.md)                        |
+| `citations` (bibliography branch)                                                                                              | [Citations](pandoc/citations.md)                                 |
+| `bracketed_spans`                                                                                                              | [Bracketed spans](pandoc/bracketed-spans.md)                     |
+| `superscript`, `subscript`                                                                                                     | [Superscript and subscript](pandoc/superscript-and-subscript.md) |
+| `auto_anchors`, `implicit_header_references`                                                                                   | [Heading anchors](pandoc/headings-and-anchors.md)                |
+| `simple_tables`, `multiline_tables`, `grid_tables`, `table_captions`                                                           | [Tables](pandoc/tables.md)                                       |
+| `fancy_lists`, `startnum`, `example_lists`                                                                                     | [Ordered and example lists](pandoc/lists.md)                     |
+| `definition_lists`, requested compact form                                                                                     | [Definition lists](pandoc/definition-lists.md)                   |
+| `fenced_divs`                                                                                                                  | [Fenced divs](pandoc/fenced-divs.md)                             |
 
 `auto_anchors` is Markdown Core's public option name for Pandoc's
 `auto_identifiers` with `gfm_auto_identifiers`; it deliberately selects the

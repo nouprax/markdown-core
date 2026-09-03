@@ -8,10 +8,10 @@ supplies reproducible evidence for recognition, fallback, grouping, ordering,
 and semantic facts.
 
 [`source.json`](source.json) is the immutable authority and runner contract. It
-pins the 3.11 tag commit, the exact manual/reader/extension-registry blobs, and
-the official portable archives with the SHA-256 digests published by GitHub's
-release service. A later version is not accepted implicitly; moving any pin is
-a reviewed language-baseline change.
+pins the 3.11 tag commit, the exact manual, Markdown reader, shared attribute
+merge, and extension-registry blobs, and the official portable archives with
+the SHA-256 digests published by GitHub's release service. A later version is
+not accepted implicitly; moving any pin is a reviewed language-baseline change.
 
 This is an extension-layer oracle, not a Pandoc-dialect oracle. Every case in
 [`corpus.json`](corpus.json) declares `markdown_strict` plus only the extension
@@ -20,13 +20,12 @@ forbidden because it would enable unrelated rules. The base reader is merely
 a controlled harness substrate: current cmark and cmark-gfm policies continue
 to own Markdown Core's inherited CommonMark/GFM behavior.
 
-Braced attribute tokenization is one explicit exception to Pandoc authority.
-Markdown Core uses the pinned Remark/micromark attribute grammar at every
-attachment site. It therefore treats `.` and `#` as adjacent shorthand
-boundaries, retains `:` inside a shorthand, treats `{-}` as the empty-valued
-name `-`, and accepts other bare names. Upstream Pandoc's different results are
-unsupported. The future parity gate must preserve these as declared semantic
-deltas rather than normalize them away or treat them as product gaps.
+Pandoc 3.11 is also the authority for the one shared braced-attribute grammar
+and its semantic `Attr` shape. Markdown Core names that tuple's components
+`identifier`, `classes`, and `keyValues`, projecting Pandoc's empty identifier
+to `null` without otherwise flattening or deduplicating its arrays. The same
+grammar applies at Remark directive attachment sites; Remark owns the directive
+envelope, not a second attribute member language.
 
 The corpus contains inputs and runner options only. It contains no Markdown
 Core expected AST and no stored Pandoc output. The planned parity gate will run
@@ -42,5 +41,5 @@ projection may translate representation-only Pandoc constructors into the
 canonical consumer model; it may not erase a syntax, ordering, content,
 attribute, citation, list, heading, or table difference. Product scopes remain
 owned by Markdown Core fixtures because Pandoc JSON does not expose compatible
-source ranges. Attribute cases are compared too; their declared authority
-exception must reproduce fail-closed.
+source ranges. Attribute cases compare all three components and their order;
+the projection may not collapse them into a generic name/value map.

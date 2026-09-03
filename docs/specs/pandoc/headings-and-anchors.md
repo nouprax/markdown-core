@@ -16,9 +16,9 @@ algorithm is not another mode in this contract.
 
 ## GFM automatic anchors
 
-With `auto_anchors=true`, every heading lacking a non-empty explicit `id`
-receives a synthesized `id` attribute. Generate its base from the parsed
-heading inline content in this order:
+With `auto_anchors=true`, every heading whose `attributes.identifier` is null
+receives a synthesized identifier. Generate its base from the parsed heading
+inline content in this order:
 
 1. Project to visible plain text: remove formatting containers while retaining
    their text, retain link labels and code literals, and remove footnote
@@ -34,7 +34,7 @@ heading inline content in this order:
 
 Punctuation removal does not insert whitespace, so separated source fragments
 may concatenate. Formatting delimiters never contribute. For example,
-`## My Header` receives `id="my-header"`.
+`## My Header` receives `attributes.identifier="my-header"`.
 
 Generated and explicit IDs share one document registry. If the base already
 exists, append `-N` using the smallest positive decimal `N` not yet registered.
@@ -47,14 +47,14 @@ authored heading range.
 
 ## Implicit heading references
 
-With `implicit_header_references=true`, each heading with a non-empty final
-`id` contributes a virtual reference definition. Its key is the authored
-heading-label source after removing the ATX/Setext heading syntax, optional ATX
-closing hashes, and trailing heading attributes, then applying inherited
-case-insensitive reference-label normalization. Inline markup remains part of
-the label source: `# *Foo*` is referenced by `[*Foo*]`, not `[Foo]`. The
-virtual definition targets `#` followed by the final ID, which is independently
-derived from visible content when automatic.
+With `implicit_header_references=true`, each heading with a non-null final
+`attributes.identifier` contributes a virtual reference definition. Its key is
+the authored heading-label source after removing the ATX/Setext heading syntax,
+optional ATX closing hashes, and trailing heading attributes, then applying
+inherited case-insensitive reference-label normalization. Inline markup remains
+part of the label source: `# *Foo*` is referenced by `[*Foo*]`, not `[Foo]`.
+The virtual definition targets `#` followed by the final ID, which is
+independently derived from visible content when automatic.
 
 All ordinary reference spellings may resolve it:
 

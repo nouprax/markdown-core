@@ -9,9 +9,9 @@ compatibility aliases for any public model that this work replaces.
 
 Add the selected Pandoc syntax as opt-in rules inside the existing block and
 inline engines. All source forms project to one consumer-oriented canonical
-AST: every Markup value has the shared attributes field, all table syntaxes
-produce one Table model, all ordered-list syntaxes produce one List model, and
-Pandoc bibliography calls use the shared `Cite`/`Citation`/
+AST: every Markup value has the shared Pandoc-shaped attributes field, all
+table syntaxes produce one Table model, all ordered-list syntaxes produce one
+List model, and Pandoc bibliography calls use the shared `Cite`/`Citation`/
 `CitationReferent` model. Reader state needed only for recognition—reference
 definitions, virtual heading references, example counters, attribute
 attachment candidates, and table boundary maps—remains parser-owned.
@@ -35,7 +35,7 @@ The source and runner contract is already frozen in
 | Role                          | Frozen choice                                                                                                                      |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Normative prose               | Pandoc 3.11 `MANUAL.txt` at tag commit `b913622e1ff87c69ab8b1a606577122e220925cd`                                                  |
-| Grammar and registry evidence | `Markdown.hs` and `Extensions.hs` blobs at the same commit                                                                         |
+| Grammar and registry evidence | `Markdown.hs`, `Shared.hs` attribute merge, and `Extensions.hs` blobs at the same commit                                           |
 | Executable implementation     | Official Pandoc 3.11 release CLI, verified against its per-platform SHA-256 before first use                                       |
 | Observation format            | Pandoc native JSON from `--to=json`, without citeproc, filters, templates, defaults files, or bibliography lookup                  |
 | Reader isolation              | `markdown_strict` plus the exact extension set declared by each input-only corpus case; the default `markdown` bundle is forbidden |
@@ -78,10 +78,12 @@ syntax and precedence where no selected Pandoc extension participates.
 
 ## Phase 1 — freeze the public consumer model
 
-- [ ] Add the universal ordered `attributes` field defined by
+- [ ] Add the universal `attributes` field defined by
       [`docs/specs/attributes.md`](../specs/attributes.md) to every canonical
-      Markup kind and all four public surfaces. Kinds without an enabled
-      attachment rule retain an empty array; do not create node-specific copies.
+      Markup kind and all four public surfaces. Its one payload contains the
+      optional identifier, ordered classes, and ordered key/value pairs. Kinds
+      without an enabled attachment rule retain `Attributes.empty`; do not create
+      node-specific copies or flatten the three components.
 - [ ] Add `Span`, `Superscript`, `Subscript`, `Div`, `DefinitionList`,
       `Definition`, and `ExampleReference`, plus the ordered-list style and
       delimiter values, `ListItem.exampleLabel`, heading IDs through attributes,
@@ -112,14 +114,14 @@ syntax and precedence where no selected Pandoc extension participates.
 ## Phase 2 — one attribute operation and heading registry
 
 - [ ] Implement the shared attribute scanner and normalization operation once.
-      Remark supplies its exact source grammar; Pandoc contributes only attachment
-      sites and may not switch shorthand boundaries or value rules. No node owns a
-      private attribute parser or storage shape.
-- [ ] Align the existing directive implementation with every remaining pinned
-      Remark boundary, including HTML-attribute-context character references and
-      Remark's position-sensitive treatment of non-Markdown whitespace. Remove
-      `directive-attribute-reference-semicolon` from the Remark backlog in the same
-      commit that makes it agree.
+      The pinned Pandoc 3.11 reader supplies its exact source grammar and `Attr`
+      semantics. Remark and Pandoc profile modules contribute attachment sites
+      only. No node owns a private attribute parser or storage shape.
+- [ ] Replace the existing directive-only Remark attribute parser and pair-array
+      storage with the shared Pandoc operation. Update the directive fixtures and
+      add every resulting Remark-oracle grammar difference to its fail-closed
+      registry in that same commit; do not retain Remark shorthand, bare-name,
+      empty-assignment, or entity behavior as a hidden mode.
 - [ ] Attach inline code, heading, fenced-code, link/image, bracketed-Span, and
       fenced-Div attributes during construction of their owning node. Reference
       definitions retain attributes only in the existing parser-owned resolution

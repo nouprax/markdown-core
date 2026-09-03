@@ -8,17 +8,27 @@
             "input": "[This is *some text*]{.class #key rank=\"1\"}\n"
         },
         {
-            "id": "remark-shorthand-boundaries-at-pandoc-site",
+            "id": "pandoc-shorthand-boundaries",
             "from": "markdown_strict+bracketed_spans",
             "input": "[text]{#one.two .three.four #one:two .three:four}\n"
         },
         {
-            "id": "remark-bare-dash-at-pandoc-site",
+            "id": "pandoc-attribute-components-and-duplicates",
+            "from": "markdown_strict+bracketed_spans",
+            "input": "[text]{#first #last .a .a id=final class=\"b b\" k=1 k=2 empty=}\n"
+        },
+        {
+            "id": "pandoc-attribute-value-decoding",
+            "from": "markdown_strict+bracketed_spans",
+            "input": "[text]{quoted=\"&amp;\" unquoted=&amp; escaped=a\\}b}\n"
+        },
+        {
+            "id": "pandoc-special-unnumbered",
             "from": "markdown_strict+bracketed_spans",
             "input": "[text]{-}\n"
         },
         {
-            "id": "remark-bare-name-at-pandoc-site",
+            "id": "pandoc-bare-name-rejection",
             "from": "markdown_strict+bracketed_spans",
             "input": "[text]{disabled}\n"
         },
@@ -56,6 +66,11 @@
             "id": "link-and-image-attributes",
             "from": "markdown_strict+link_attributes",
             "input": "[text](https://example.com){target=\"_blank\"} ![image](foo.jpg){#hero .wide width=50%}\n"
+        },
+        {
+            "id": "pandoc-reference-attribute-merge",
+            "from": "markdown_strict+link_attributes",
+            "input": "[text][ref]{#occ .same .occ k=occ}\n\n[ref]: /target {#def .same .def k=def q=first q=last}\n"
         },
         {
             "id": "simple-table-with-caption",

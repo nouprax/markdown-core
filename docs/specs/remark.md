@@ -14,10 +14,11 @@ the directive envelope syntax; registered repository deltas remain explicit.
 Shared values live outside this profile:
 
 - [Attributes](attributes.md) owns the universal `Markup.attributes` field,
-  shared grammar, value invariants, normalization, and merge operation.
+  shared Pandoc-derived grammar and consumer shape, normalization, and merge
+  operation. This profile contributes only directive attachment positions.
 
 ## Modules
 
-| Extension | Normative module |
-| --- | --- |
+| Extension                      | Normative module                          |
+| ------------------------------ | ----------------------------------------- |
 | directive attribute attachment | [Remark attributes](remark/attributes.md) |

@@ -14,9 +14,8 @@ the reviewed policy that defines each comparison:
   implements. Official Obsidian Help remains the language authority.
 - `pandoc/` pins the official Pandoc 3.11 manual, reader sources, release CLI,
   and per-platform artifact digests for the explicitly selected Pandoc
-  extension layer. The shared Remark grammar remains authoritative for braced
-  attributes at Pandoc attachment sites. Its parity gate is the first
-  implementation-plan phase.
+  extension layer, including the shared attribute grammar and consumer model.
+  Its parity gate is the first implementation-plan phase.
 
 Each active gate's `deltas.json` records the authority version, compared
 corpus, deliberate differences, and fail-closed exceptions. The Pandoc policy
@@ -27,7 +26,8 @@ registered difference that disappears both fail an active gate.
 
 Authority is scoped, not voted: cmark-gfm cannot override current cmark on the
 base language, Pandoc cannot replace inherited CommonMark/GFM behavior with its
-default dialect, and remark does not silently override either primary oracle.
+default dialect, and Remark's directive tokenizer cannot replace the explicitly
+selected shared Pandoc attribute grammar.
 When a primary implementation is demonstrably wrong, the exception is reviewed
 and registered, with independent implementation agreement used as evidence
 where available.

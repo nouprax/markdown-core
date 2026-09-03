@@ -16,5 +16,12 @@ language. Current cmark owns CommonMark syntax, cmark-gfm owns only its GFM
 extension layer, and a remark agreement can justify a reviewed delta without
 silently overriding either primary authority.
 
+For directives, Remark owns the envelope, label, and attribute attachment
+position. It does not own the attribute member grammar or public attribute
+shape: those follow the pinned Pandoc 3.11 contract at every attachment site.
+The active delta registry records only differences the current runtime already
+exhibits; Phase 2 must register the additional grammar differences atomically
+when it replaces the existing directive-only attribute parser.
+
 The stored corpus contains inputs only. It never stores Markdown Core's
 expected output and is not a replacement for canonical AST conformance.

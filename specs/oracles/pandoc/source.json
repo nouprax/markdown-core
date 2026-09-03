@@ -17,6 +17,11 @@
             "blob": "99a3fb4348f0c37ac9e539794493f493acc29e09",
             "url": "https://github.com/jgm/pandoc/blob/b913622e1ff87c69ab8b1a606577122e220925cd/src/Text/Pandoc/Readers/Markdown.hs"
         },
+        "attributeMerge": {
+            "path": "src/Text/Pandoc/Shared.hs",
+            "blob": "1a5e80b5e5baca3ee71bf26572f8de4c37d07193",
+            "url": "https://github.com/jgm/pandoc/blob/b913622e1ff87c69ab8b1a606577122e220925cd/src/Text/Pandoc/Shared.hs"
+        },
         "extensionRegistry": {
             "path": "src/Text/Pandoc/Extensions.hs",
             "blob": "2a0e130b14dd3700b7aa12971be746812a95b0b1",
@@ -76,15 +81,12 @@
         ]
     },
     "profileBoundary": {
-        "claim": "Pandoc 3.11 owns only the explicitly enabled extension layer, except that the shared Remark-derived grammar owns every braced attribute container. cmark and cmark-gfm remain authoritative for inherited CommonMark and GFM behavior.",
-        "attributeSyntaxAuthority": {
-            "authority": "micromark-extension-directive@4.0.0 through remark-directive@4.0.0",
+        "claim": "Pandoc 3.11 owns only the explicitly enabled extension layer, including the one shared attribute grammar and consumer projection. cmark and cmark-gfm remain authoritative for inherited CommonMark and GFM behavior.",
+        "attributeContract": {
+            "authority": "Pandoc 3.11 MANUAL.txt, Markdown.hs, Shared.hs combineAttr, and native JSON Attr values at the pinned tag commit",
             "scope": "Every braced attribute container at Remark and Pandoc attachment sites.",
-            "unsupportedPandocInterpretations": [
-                "Pandoc retains a dot inside #id and .class shorthand; Markdown Core treats it as the next class shorthand marker.",
-                "Pandoc rewrites {-} to class unnumbered; Markdown Core stores the bare name - with an empty value.",
-                "Pandoc rejects generic bare names in braced lists; Markdown Core stores each as an empty-valued attribute."
-            ]
+            "consumerProjection": "Pandoc Attr is named as identifier, ordered classes, and ordered key/value pairs; an empty identifier projects to null.",
+            "remarkBoundary": "remark-directive owns directive envelope and attachment syntax, but its different attribute member tokenizer is deliberately not a second grammar."
         },
         "publicToPandocExtensions": {
             "auto_anchors": ["auto_identifiers", "gfm_auto_identifiers"],

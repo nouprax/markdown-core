@@ -6,10 +6,10 @@ Status: normative target profile contract for `bracketed_spans`,
 `auto_anchors`.
 
 The [shared attributes contract](../attributes.md) owns the universal
-`Markup.attributes` field, the sole Remark-derived braced grammar, value
-invariants, normalization, and merge operation. This module owns only Pandoc
-attachment positions, precedence, scope, and option behavior. Authority for
-those attachment rules is the Pandoc User's Guide for
+`Markup.attributes` field, its Pandoc-derived consumer shape, the sole braced
+grammar, normalization, and merge operation. This module owns only attachment
+positions, precedence, scope, and option behavior. Authority is the Pandoc
+User's Guide for
 [attributes](https://pandoc.org/MANUAL.html#extension-attributes),
 [bracketed spans](https://pandoc.org/MANUAL.html#extension-bracketed_spans),
 [inline code attributes](https://pandoc.org/MANUAL.html#extension-inline_code_attributes),
@@ -21,47 +21,39 @@ snapshot pinned by the [Pandoc extension index](../pandoc.md).
 
 ## Accepted grammar
 
-Every braced attachment position in this profile accepts exactly the shared
-Remark-derived grammar. Markdown Core intentionally does not implement
-Pandoc's different braced attribute tokenizer:
+Every braced attachment position accepts exactly the shared Pandoc 3.11
+grammar. Representative projections are:
 
-| Source | Markdown Core result |
-| --- | --- |
-| `{#one.two}` | `id="one"`, `class="two"` |
-| `{.one.two}` | `class="one two"` |
-| `{#one:two .three:four}` | `id="one:two"`, `class="three:four"` |
-| `{-}` | name `-` with an empty value |
-| `{disabled}` | name `disabled` with an empty value |
+| Source                                    | Markdown Core result                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `{#one.two}`                              | `identifier="one.two"`                                                                     |
+| `{.one.two}`                              | `classes=["one.two"]`                                                                      |
+| `{#one:two .three:four}`                  | `identifier="one:two"`, `classes=["three:four"]`                                           |
+| `{-}`                                     | `classes=["unnumbered"]`                                                                   |
+| `{id=one class="wide warning" key=value}` | `identifier="one"`, `classes=["wide", "warning"]`, `keyValues=[Attribute("key", "value")]` |
+| `{disabled}`                              | malformed; no attribute attachment                                                         |
 
-Upstream Pandoc retains dots inside a shorthand, rewrites `{-}` to class
-`unnumbered`, and rejects a generic bare name. Those interpretations are not
-supported. They are explicit language-authority exceptions in the
-[Pandoc oracle policy](../../../specs/oracles/pandoc/README.md), not alternate
-parser modes.
-
-An unbraced fenced-Div word is a separate fenced-Div production rather than an
-attribute container; it remains shorthand for one class. Thus `::: -` produces
-`class="-"`, while `::: {-}` produces the empty-valued attribute named `-`.
-Neither form produces `unnumbered`.
+An unbraced fenced-Div word is a separate production rather than an attribute
+container; it remains shorthand for one class. Thus `::: -` produces class
+`-`, while `::: {-}` produces class `unnumbered`.
 
 ## Attachment registry
 
 Only these enabled Pandoc rules can populate the universal field:
 
-| Extension/source rule | Owner | Attachment position |
-| --- | --- | --- |
-| `bracketed_spans` | `Span` | immediately after the balanced closing `]` |
-| `inline_code_attributes` | `Code` | immediately after the complete closing backtick run |
-| `header_attributes` | `Heading` | at the end of ATX or Setext heading text |
-| `auto_anchors` | `Heading` | synthesized `id` when no non-empty explicit ID exists |
-| `fenced_code_attributes` | `CodeBlock` | the opening fence's info region |
-| `link_attributes` | `Link`, `Image` | immediately after an occurrence, or inherited from its reference definition |
-| `fenced_divs` | `Div` | the opening colon fence |
+| Extension/source rule    | Owner           | Attachment position                                                         |
+| ------------------------ | --------------- | --------------------------------------------------------------------------- |
+| `bracketed_spans`        | `Span`          | immediately after the balanced closing `]`                                  |
+| `inline_code_attributes` | `Code`          | immediately after the complete closing backtick run                         |
+| `header_attributes`      | `Heading`       | at the end of ATX or Setext heading text                                    |
+| `auto_anchors`           | `Heading`       | synthesized `identifier` when no non-empty explicit value exists            |
+| `fenced_code_attributes` | `CodeBlock`     | the opening fence's info region                                             |
+| `link_attributes`        | `Link`, `Image` | immediately after an occurrence, or inherited from its reference definition |
+| `fenced_divs`            | `Div`           | the opening colon fence                                                     |
 
-Every other Markup kind retains an empty attributes array unless another
-profile contributes an independent rule. The requested table extensions do
-not define table-attribute syntax, so Table, row, and cell attributes remain
-empty.
+Every other Markup kind retains `Attributes.empty` unless another profile
+contributes an independent rule. The requested table extensions do not define
+table-attribute syntax, so Table, row, and cell attributes remain empty.
 
 Successfully authored attachment syntax is part of the owner's scope. A
 synthesized attribute neither extends scope nor receives a fictional source
@@ -70,7 +62,7 @@ position.
 ## Spans and divs
 
 `bracketed_spans` requires a successfully parsed container immediately after
-the balanced `]`. `{}` still creates a Span whose universal array is empty.
+the balanced `]`. `{}` still creates a Span whose attributes are empty.
 Span content, bracket precedence, and fallback are defined by
 [bracketed spans](bracketed-spans.md).
 
@@ -84,7 +76,7 @@ opener. Fence recognition, nesting, and closing are defined by
 With `inline_code_attributes=true`, a container must begin immediately after a
 complete code span:
 
-```markdown
+```text
 `printf()`{.c}
 `<$>`{#operator .haskell role="function"}
 ```
@@ -101,7 +93,7 @@ With `header_attributes=true`, a list at the end of an ATX or Setext heading
 attaches to that Heading. It may immediately follow visible heading text or be
 separated by whitespace. Optional ATX closing hashes precede it:
 
-```markdown
+```text
 # Chapter {#sec:intro .unnumbered}
 ## Chapter ## {#other key="value"}
 # Compact{#compact}
@@ -111,16 +103,16 @@ Setext heading {#setext}
 ```
 
 The suffix is removed from heading content and included in Heading scope. An
-invalid suffix remains visible content. A non-empty explicit ID wins over
-automatic generation. `auto_anchors` writes its generated ID into the same
-universal array; the algorithm and implicit references are defined by
+invalid suffix remains visible content. A non-empty explicit identifier wins
+over automatic generation. `auto_anchors` writes its generated value into
+`attributes.identifier`; the algorithm and implicit references are defined by
 [heading anchors](headings-and-anchors.md).
 
 ## Fenced code
 
 With `fenced_code_attributes=true`, tilde and backtick code fences accept a
-braced shared attribute list in the opening info region. A single bare language word
-is shorthand for the first class and may precede another list:
+braced shared attribute list in the opening info region. A single bare
+language word is shorthand for the first class and may precede another list:
 
 ````markdown
 ```python {.numberLines startFrom="10"}
@@ -180,10 +172,10 @@ nodes or create node-specific attribute stores.
 
 ## Required conformance cases
 
-Tests must cover every registry row; the shared shorthand boundaries at every
-Pandoc attachment site; bare names and `{-}` without Pandoc reinterpretation;
+Tests must cover every registry row; Pandoc shorthand boundaries at every
+attachment site; the three consumer components; `{-}`; bare-name rejection;
 `{}`; immediate versus spaced attachment; malformed fallback; option-off
 behavior; nested ownership and cross-extension precedence; exact owner scopes;
-language aliases; image units; reference inheritance; synthesized IDs; inert
-unsafe-looking metadata; allocation failure; and size-doubling valid,
+language aliases; image units; reference inheritance; synthesized identifiers;
+inert unsafe-looking metadata; allocation failure; and size-doubling valid,
 duplicate, malformed, and unclosed inputs.

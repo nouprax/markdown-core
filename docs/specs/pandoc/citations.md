@@ -131,11 +131,11 @@ source plus AST output and performs no bibliography lookup or CSL rendering.
 
 ## Citation-position reset
 
-The exact heading class `reset-citation-positions` instructs a downstream
-citation processor to reset position-sensitive style state at a top-level
-heading. A nested heading does not reset it. Heading attribute syntax belongs
-to the [Pandoc attribute contract](attributes.md); the citation parser merely
-defines this class's processor-facing meaning.
+The exact heading entry `reset-citation-positions` in `attributes.classes`
+instructs a downstream citation processor to reset position-sensitive style
+state at a top-level heading. A nested heading does not reset it. Heading
+attribute syntax belongs to the [Pandoc attribute contract](attributes.md); the
+citation parser merely defines this class's processor-facing meaning.
 
 ## Required conformance cases
 

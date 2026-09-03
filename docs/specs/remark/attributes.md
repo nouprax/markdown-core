@@ -2,29 +2,33 @@
 
 Status: normative target profile contract for attaching shared attributes to
 Remark-family directives. The [shared attributes contract](../attributes.md)
-owns the universal field, the Remark-derived source grammar, values,
-normalization, and merge operation; this module owns only directive attachment,
-scope, and fallback.
+owns the universal Pandoc-derived field, source grammar, normalization, and
+merge operation; this module owns only directive attachment, scope, and
+fallback.
 
-Authority: `remark-directive@4.0.0` and its micromark dependency surface, as
-pinned by the [Remark extension index](../remark.md) and repository oracle.
+Authority for the directive envelope and attachment position is
+`remark-directive@4.0.0` and its micromark dependency surface, as pinned by the
+[Remark extension index](../remark.md) and repository oracle. Its different
+attribute member tokenizer is deliberately outside that authority boundary.
 
 ## Accepted grammar
 
-Directive attribute containers use the shared grammar without a profile
+Directive attribute containers use the shared Pandoc grammar without a profile
 override. In particular:
 
 ```markdown
-:x{#one.two}       <!-- id="one", class="two" -->
-:x{.one.two}       <!-- class="one two" -->
-:x{#one:two}       <!-- id="one:two" -->
-:x{bare}           <!-- bare="" -->
+:x{#one.two} <!-- identifier="one.two" -->
+:x{.one.two} <!-- classes=["one.two"] -->
+:x{#one:two} <!-- identifier="one:two" -->
+:x{#doc .wide key="value"} <!-- all three components -->
+:x{-} <!-- classes=["unnumbered"] -->
 ```
 
-Adjacent `#` and `.` terminate the preceding shorthand; `:` does not. A bare
-name has an empty string value, while `name=` is malformed. There is no
-Pandoc-specific `{-}` rewrite: `-` is the ordinary attribute name `-` with an
-empty value.
+Dots and colons remain inside a shorthand. Generic bare names are malformed;
+`name=` is a valid empty key/value assignment; and `-` is the special
+`unnumbered` class member. These deliberate differences from
+`micromark-extension-directive` prevent a second attribute model from entering
+through the Remark profile.
 
 ## Attachment
 
@@ -33,7 +37,7 @@ optional label in each directive envelope:
 
 ```markdown
 :video{id=123 muted=true}
-:cite[See *source*]{#smith .paper data-kind=ref}
+:cite[See _source_]{#smith .paper data-kind=ref}
 
 ::youtube[Video]{vid=01ab2cd3efg .featured}
 
@@ -44,44 +48,46 @@ Block content.
 
 The owner mapping is:
 
-| Directive source form | Owner |
-| --- | --- |
-| inline text directive | `Directive` |
-| leaf block directive | `DirectiveBlock` |
+| Directive source form            | Owner            |
+| -------------------------------- | ---------------- |
+| inline text directive            | `Directive`      |
+| leaf block directive             | `DirectiveBlock` |
 | container block directive opener | `DirectiveBlock` |
 
-The normalized values populate the owner's universal attributes array. `{}`
-attaches successfully but leaves that array empty. The public AST does not
+The normalized values populate the owner's universal `Attributes` value. `{}`
+attaches successfully but produces `Attributes.empty`. The public AST does not
 retain a separate `hasAttributes` bit.
 
 Intervening whitespace ends the suffix position. The attribute container is
 not label content and is not part of block content. A successfully attached
 container is included in the directive's scope. A quoted value may cross a
 source line where the directive scanner already permits that suffix to
-continue; an unquoted line ending remains a shared separator.
+continue; the shared grammar admits at most one non-blank line ending between
+members. A quoted value may cross multiple non-blank lines and normalizes each
+line ending to one ASCII space.
 
 ## Fallback and option behavior
 
 The directive envelope commits independently from its optional attribute
 suffix. An invalid or unclosed container attaches nothing and remains
 available to ordinary parsing; it does not erase an otherwise valid directive
-or manufacture a partial attribute array.
+or manufacture a partial `Attributes` value.
 
 With directive recognition disabled, no directive attachment rule runs and
 attribute-looking source remains governed by the inherited parser. Source
 owned by code, HTML tokens/blocks, or an already completed construct is not a
 directive suffix.
 
-Recognition reuses the directive scanner and the shared single-pass attribute
-parser. It must not rescan a completed node or normalize attributes in a
-binding.
+Recognition reuses the directive scanner and the one shared Pandoc attribute
+parser. It must not rescan a completed node, retain the older Remark attribute
+tokenizer as a mode, or normalize attributes in a binding.
 
 ## Required conformance cases
 
 Tests must cover inline, leaf, and container directives; suffixes with and
-without labels; `{}`; adjacent shorthand markers; retained colons; assignments;
-bare names; rejected `name=`; Unicode; quoting; literal backslashes;
-attribute-context entities; duplicates and classes; immediate versus spaced
-suffixes; multiline permitted/rejected forms; malformed and unclosed fallback;
-exact owner scopes; option-off behavior; code/HTML ownership; allocation
-failure; and size-doubling attribute inputs.
+without labels; `{}`; retained dots; numeric ID shorthand; Unicode
+letter-started names; `{-}`; rejected bare names; accepted empty assignments;
+quoted-only entity decoding; escapes; ordered duplicate classes and key/value
+entries; immediate versus spaced suffixes; multiline permitted/rejected forms;
+malformed and unclosed fallback; exact owner scopes; option-off behavior;
+code/HTML ownership; allocation failure; and size-doubling attribute inputs.

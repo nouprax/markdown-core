@@ -4,7 +4,7 @@
         "runner": "unified / remark",
         "why": "The authorities below are micromark extensions, which emit a token stream rather than a tree. remark is the harness that runs them and turns the tokens into mdast, so it is what this gate executes — but the syntax decisions being compared are the extensions' own.",
         "authorities": {
-            "directives": "micromark-extension-directive@4.0.0 (run through remark-directive, a wrapper that only registers it)",
+            "directives": "micromark-extension-directive@4.0.0 for directive envelopes, labels, and attachment positions (run through remark-directive); the shared attribute member grammar is explicitly Pandoc-owned",
             "math": "micromark-extension-math@3.1.0",
             "footnotes and tables": "micromark-extension-gfm-* (remark-gfm)"
         },
@@ -13,10 +13,11 @@
         "notAnAuthorityFor": [
             "Which construct wins when two extensions could claim the same line. That is decided by micromark's construct priority and by this repository's audited extension attachment order — each an artifact of its own architecture, not a rule either project specifies. Divergences of that kind are product grammar decisions rather than mdast parity deltas.",
             "LaTeX-style math delimiters. micromark-extension-math implements `$` and `$$` only, so `\\(x\\)` and `\\[x\\]` reach remark as ordinary escaped brackets. It has no opinion there to compare against, which is why packages/markdown-core/tests/fixtures/extensions-formula-latex.txt is deliberately absent from the corpus below rather than present with six registered divergences. Registering them would read as `remark disagrees`, and it does not — it was never asked.",
-            "Whether an extension is on. The gate runs one parser profile for the whole corpus, so the `*-option-gates` fixtures, which assert what the same input parses to with an extension off, cannot be judged here. The cmark oracle judges that negative property with every extension disabled."
+            "Whether an extension is on. The gate runs one parser profile for the whole corpus, so the `*-option-gates` fixtures, which assert what the same input parses to with an extension off, cannot be judged here. The cmark oracle judges that negative property with every extension disabled.",
+            "Attribute member grammar and consumer shape. Markdown Core deliberately uses the pinned Pandoc 3.11 grammar and Attr model at every attachment site; remark remains authoritative only for the directive envelope and attachment position. New runtime differences caused by that planned migration must be registered when they begin reproducing."
         ]
     },
-    "claim": "For the constructs listed above, Markdown Core's semantics are identical to the unified/remark ecosystem's, except for the AST-shape differences below. The check that enforces it is scripts/check-mdast-parity.mjs.",
+    "claim": "Within the authority boundary above, Markdown Core's semantics are identical to the unified/remark ecosystem's except for the registered differences below. The check that enforces current runtime behavior is scripts/check-mdast-parity.mjs.",
     "corpus": [
         "specs/oracles/remark/corpus.md",
         "packages/markdown-core/tests/fixtures/extensions-directive.txt",
@@ -151,17 +152,17 @@
             "authority": "GitHub",
             "summary": "`$$` opened and closed inside a paragraph is inline math spanning the lines; remark requires the delimiters to own their lines and leaves the text alone.",
             "why": "Follows from `$$` being usable inline at all, which the padding rule and github-display-math-block already establish."
-        }
-    ],
-    "baselineBacklog": [
+        },
         {
             "id": "directive-attribute-reference-semicolon",
             "input": ":n{a=&amp b=&#65}\n",
-            "requirement": "Decode character references with the pinned Remark parse-entities HTML-attribute context, including its defined semicolonless forms.",
-            "closedBy": "Pandoc Phase 2 — one attribute operation and heading registry"
+            "authority": "Pandoc 3.11 shared attribute grammar",
+            "summary": "An unquoted directive attribute value retains these semicolonless character-reference spellings; micromark-extension-directive decodes them in HTML-attribute context.",
+            "why": "Pandoc does not run character-reference decoding for unquoted attribute values. The same grammar applies at directive sites, so this is a deliberate shared-language boundary rather than implementation backlog."
         }
     ],
-    "baselineBacklogNote": "Remark's attribute tokenizer is now the sole braced-attribute grammar authority for every attachment site. The registered entity-context mismatch is implementation work, not a deliberate product divergence. The gate requires it to keep reproducing until the shared attribute implementation closes it and removes this entry in the same commit.",
+    "baselineBacklog": [],
+    "baselineBacklogNote": "Empty. Attribute member grammar is deliberately Pandoc-owned. The current directive implementation still has other Remark-shaped behavior; each new oracle difference must be added fail-closed in the same commit that migrates the runtime and fixtures, because a divergence cannot be registered before it reproduces.",
     "retiredBacklog": [
         {
             "input": "Inline \\\\(x+y\\\\) and \\(a+b\\).\n",
