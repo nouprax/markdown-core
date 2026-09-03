@@ -116,7 +116,7 @@ export function configuredFixtureCorpus(root) {
 
     return fixturePaths.flatMap((relative) => {
         const suite = suites.get(relative);
-        return readExamples(root, relative).map((example) => ({
+        return readExamples(root, relative, { includeExampleNumber: true }).map((example) => ({
             ...example,
             binary: suite.binary,
             args: [...suite.args, "--example", String(example.example), "--dump"]

@@ -12,7 +12,7 @@ import path from "node:path";
 
 const FENCE = "`".repeat(32);
 
-export function readExamples(root, relativePath) {
+export function readExamples(root, relativePath, { includeExampleNumber = false } = {}) {
     const absolute = path.resolve(root, relativePath);
     const lines = fs.readFileSync(absolute, "utf8").split("\n");
     const cases = [];
@@ -36,7 +36,7 @@ export function readExamples(root, relativePath) {
         if (attributes !== "disabled") {
             // The fixtures write tabs as U+2192 so they survive editing.
             cases.push({
-                example,
+                ...(includeExampleNumber ? { example } : {}),
                 source: `${relativePath}:${String(i + 1)}`,
                 attributes,
                 tags: attributes === "" ? [] : attributes.split(/\s+/),
