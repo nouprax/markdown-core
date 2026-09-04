@@ -10,6 +10,8 @@ specification remains normative for its behavior.
 
 - [Obsidian Flavored Markdown implementation plan](2026-09-02-obsidian-flavored-markdown.md)
 - [Pandoc Markdown extensions implementation plan](2026-09-03-pandoc-markdown-extensions.md)
+- [Extension specification audit](2026-09-04-extension-spec-audit.md), whose
+  resolution checklist the specification pull requests of this plan follow
 
 Both plans freeze the public model in one phase and then add syntax. Landing
 that literally would mean one pull request that touches every kind on every
