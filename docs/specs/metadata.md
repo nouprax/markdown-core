@@ -76,11 +76,11 @@ case-preserving and case-sensitive in the canonical value. No spelling is
 lowercased, slugged, pluralized, or rewritten. A root mapping key is a
 property-name position rather than a property-value position: a directly
 authored plain, single-quoted, or double-quoted scalar is decoded as text
-without applying JSON-schema null, boolean, or number resolution. Consequently
-`1` and `"1"` name the same record, as do `true` and `"true"`. A sequence,
-mapping, or alias cannot supply a record name. Uniqueness is checked after
-text decoding, so differently spelled keys which decode to the same name are
-duplicates.
+without applying the value-side null, boolean, or number resolution operation.
+Consequently `1` and `"1"` name the same record, as do `true` and `"true"`. A
+sequence, mapping, or alias cannot supply a record name. Uniqueness is checked
+after text decoding, so differently spelled keys which decode to the same name
+are duplicates.
 
 Text decoding preserves the complete scalar value rather than a numeric or
 boolean canonicalization. For example, the plain keys `1`, `1.0`, `1e0`, `01`,

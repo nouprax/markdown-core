@@ -15,9 +15,12 @@ vault rather than encoded completely in an individual note.
 
 The help page does not publish a malformed-fence grammar or choose one of
 YAML's optional scalar-resolution schemas. Exact fence spelling and the YAML
-1.2.2 JSON-schema projection below are Markdown Core boundaries: they make
-fallback and cross-platform scalar types deterministic without treating a
-permissive library behavior as Obsidian syntax.
+1.2.2 JSON-scalar-with-string-fallback projection below are Markdown Core
+boundaries: they make fallback and cross-platform scalar types deterministic
+without treating a permissive library behavior as Obsidian syntax. This is not
+YAML's strict JSON schema: a valid plain scalar which is not `null`, `true`,
+`false`, or a JSON-shaped number resolves to text instead of making the
+document invalid.
 
 ## Envelope grammar
 
@@ -105,10 +108,11 @@ dedicated aliases field, or rewrite `Destination.cross.path`.
 The mapping-key position always denotes a textual property name. Plain scalar
 spellings such as `1.0`, `1e2`, `-0`, `true`, `null`, and `~` are therefore
 names with those exact strings, not Number, Checkbox, or empty values; quoting
-them does not change the consumer name. JSON-schema scalar resolution applies
-only on the value side of an entry. Distinct textual names such as `1` and
-`1.0` remain distinct even if a host YAML binding canonicalizes them to the
-same object key. Sequence, mapping, and alias keys are not property names.
+them does not change the consumer name. The JSON-scalar-with-string-fallback
+operation applies only on the value side of an entry. Distinct textual names
+such as `1` and `1.0` remain distinct even if a host YAML binding canonicalizes
+them to the same object key. Sequence, mapping, and alias keys are not property
+names.
 
 ## Property values
 
