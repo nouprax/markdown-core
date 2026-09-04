@@ -4,8 +4,9 @@
  *
  * The official Obsidian help snapshot owns the language. This gate executes
  * the most-used current npm OFM parser over the intersection it implements.
- * A separately pinned frontmatter/YAML pair supplies executable evidence for
- * Obsidian Properties. The gate compares a scope-free semantic tree and keeps
+ * A separately pinned source-preserving YAML document parser supplies
+ * executable evidence for Obsidian Properties after the exact profile envelope
+ * has been recognized. The gate compares a scope-free semantic tree and keeps
  * every current product gap explicit and fail-closed.
  */
 
@@ -17,11 +18,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import remarkObsidian from "@quartz-community/remark-obsidian";
-import matter from "gray-matter";
-import { JSON_SCHEMA, load as loadYaml } from "js-yaml";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
+import { isAlias, isMap, isScalar, isSeq, parseAllDocuments } from "yaml";
 
 import { readExamples } from "./lib/fixture-corpus.mjs";
 import { parseCanonicalDump, parseCanonicalFields } from "./lib/upstream-cmark.mjs";
@@ -33,9 +33,11 @@ const verbose = process.argv.includes("--verbose");
 const ours = path.join(root, "build/cmake/packages/markdown-core/core/markdown-core");
 
 if (
-    policy.metadataOracle.options.language !== "yaml" ||
-    policy.metadataOracle.options.delimiters !== "---" ||
-    policy.metadataOracle.options.schema !== "JSON_SCHEMA"
+    policy.metadataOracle.options.envelope !== "obsidian-exact-leading-fence" ||
+    policy.metadataOracle.options.schema !== "json-scalars-with-string-fallback" ||
+    policy.metadataOracle.options.version !== "1.2" ||
+    policy.metadataOracle.options.keepSourceTokens !== true ||
+    policy.metadataOracle.options.uniqueKeys !== false
 ) {
     process.stderr.write(`obsidian parity: invalid Properties oracle options in ${policyPath}\n`);
     process.exit(1);
@@ -47,7 +49,7 @@ if (!fs.existsSync(ours)) {
 }
 
 const require = createRequire(import.meta.url);
-for (const expected of [policy.oracle, policy.metadataOracle.frontmatter, policy.metadataOracle.yaml]) {
+for (const expected of [policy.oracle, policy.metadataOracle.yaml]) {
     const installedPackage = JSON.parse(fs.readFileSync(require.resolve(`${expected.package}/package.json`), "utf8"));
     if (installedPackage.version !== expected.version) {
         process.stderr.write(
@@ -101,38 +103,158 @@ function crossDestination(path, anchor) {
     return { kind: "cross", path, anchor };
 }
 
-function metadataScalar(value) {
-    if (value === null) return { kind: "null" };
-    if (typeof value === "boolean") return { kind: "bool", value };
-    if (typeof value === "number" && Number.isFinite(value)) {
-        return { kind: "number", value: String(value) };
-    }
-    if (typeof value === "string" && !/[\r\n]/.test(value)) return { kind: "text", value };
-    throw new Error(`unsupported Properties scalar: ${Object.prototype.toString.call(value)}`);
+const yamlStringFallback = {
+    identify: (value) => typeof value === "string",
+    default: true,
+    tag: "tag:yaml.org,2002:str",
+    test: /^/,
+    resolve: (value) => value,
+    stringify: ({ value }) => JSON.stringify(value)
+};
+
+const yamlScalarTags = new Set([
+    "tag:yaml.org,2002:str",
+    "tag:yaml.org,2002:null",
+    "tag:yaml.org,2002:bool",
+    "tag:yaml.org,2002:int",
+    "tag:yaml.org,2002:float"
+]);
+const yamlMapTags = new Set(["tag:yaml.org,2002:map"]);
+const yamlSequenceTags = new Set(["tag:yaml.org,2002:seq"]);
+
+function jsonScalarsWithStringFallback(tags) {
+    const unresolved = tags.findIndex((tag) => tag.tag === "");
+    if (unresolved < 0) throw new Error("yaml JSON schema no longer exposes its unresolved-scalar fallback");
+    return [...tags.slice(0, unresolved), yamlStringFallback, ...tags.slice(unresolved + 1)];
 }
 
-function metadataValue(value) {
-    if (!Array.isArray(value)) return { kind: "scalar", value: metadataScalar(value) };
-    const values = value.map(metadataScalar);
-    if (values.some((item) => item.kind !== "number" && item.kind !== "text")) {
-        throw new Error("Properties lists contain only text and number items");
+function assertSupportedTag(node, allowed) {
+    if (node.tag !== undefined && !allowed.has(node.tag)) {
+        throw new Error(`unsupported Properties YAML tag: ${node.tag}`);
     }
-    return { kind: "list", values };
 }
 
-function projectMetadata(value) {
-    if (value === undefined || value === null) return [];
-    if (typeof value !== "object" || Array.isArray(value)) {
-        throw new Error("Properties payload is not a top-level mapping");
+function resolveMetadataAlias(node, context, project) {
+    if (!isAlias(node)) return project(node, context);
+    if (context.activeAliases.has(node)) throw new Error("cyclic Properties alias");
+    const resolved = node.resolve(context.document);
+    if (resolved === undefined) throw new Error(`undefined Properties alias: ${node.source}`);
+    context.activeAliases.add(node);
+    try {
+        return project(resolved, context);
+    } finally {
+        context.activeAliases.delete(node);
     }
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-        throw new Error("Properties payload has a non-data object prototype");
-    }
-    return Object.entries(value).map(([name, recordValue]) => {
-        if (name.length === 0 || /[\r\n]/.test(name)) throw new Error("Properties name is empty or multiline");
-        return { name, value: metadataValue(recordValue) };
+}
+
+function projectMetadataScalar(node, context) {
+    return resolveMetadataAlias(node, context, (resolved) => {
+        if (!isScalar(resolved)) throw new Error("Properties value is not a scalar");
+        assertSupportedTag(resolved, yamlScalarTags);
+
+        const value = resolved.value;
+        if (resolved.type === "PLAIN" && resolved.source === "" && value === "") return { kind: "null" };
+        if (resolved.tag === "tag:yaml.org,2002:str") {
+            if (typeof value !== "string" || /[\r\n]/.test(value)) {
+                throw new Error("Properties text is multiline");
+            }
+            return { kind: "text", value };
+        }
+        if (resolved.tag === "tag:yaml.org,2002:null") return { kind: "null" };
+        if (resolved.tag === "tag:yaml.org,2002:bool") {
+            if (typeof value !== "boolean") throw new Error("invalid Properties boolean");
+            return { kind: "bool", value };
+        }
+        if (
+            resolved.tag === "tag:yaml.org,2002:int" ||
+            resolved.tag === "tag:yaml.org,2002:float" ||
+            typeof value === "number" ||
+            typeof value === "bigint"
+        ) {
+            if (typeof value === "number" && !Number.isFinite(value)) {
+                throw new Error("non-finite Properties number");
+            }
+            if (typeof resolved.source !== "string") throw new Error("Properties number has no source lexeme");
+            return { kind: "number", value: resolved.source };
+        }
+        if (value === null) return { kind: "null" };
+        if (typeof value === "boolean") return { kind: "bool", value };
+        if (typeof value === "string" && !/[\r\n]/.test(value)) return { kind: "text", value };
+        throw new Error(`unsupported Properties scalar: ${Object.prototype.toString.call(value)}`);
     });
+}
+
+function projectMetadataValue(node, context) {
+    if (node === null) return { kind: "scalar", value: { kind: "null" } };
+    return resolveMetadataAlias(node, context, (resolved) => {
+        if (!isSeq(resolved)) return { kind: "scalar", value: projectMetadataScalar(resolved, context) };
+        assertSupportedTag(resolved, yamlSequenceTags);
+        const values = resolved.items.map((item) => {
+            if (item === null) throw new Error("Properties lists contain no empty items");
+            const value = projectMetadataScalar(item, context);
+            if (value.kind !== "number" && value.kind !== "text") {
+                throw new Error("Properties lists contain only text and number items");
+            }
+            return value;
+        });
+        return { kind: "list", values };
+    });
+}
+
+function propertyName(node) {
+    if (!isScalar(node)) throw new Error("Properties name is not a directly authored scalar");
+    assertSupportedTag(node, yamlScalarTags);
+    if (node.type !== "PLAIN" && node.type !== "QUOTE_SINGLE" && node.type !== "QUOTE_DOUBLE") {
+        throw new Error("Properties name uses an unsupported scalar style");
+    }
+    const name = node.source;
+    if (typeof name !== "string" || name.length === 0 || /[\r\n]/.test(name)) {
+        throw new Error("Properties name is empty or multiline");
+    }
+    return name;
+}
+
+function cstRange(value, range = { start: Infinity, end: -Infinity }) {
+    if (Array.isArray(value)) {
+        for (const item of value) cstRange(item, range);
+    } else if (value !== null && typeof value === "object") {
+        if (Number.isInteger(value.offset) && typeof value.source === "string") {
+            range.start = Math.min(range.start, value.offset);
+            range.end = Math.max(range.end, value.offset + value.source.length);
+        }
+        for (const child of Object.values(value)) cstRange(child, range);
+    }
+    return range;
+}
+
+function projectMetadata(document, payloadStart) {
+    if (document.errors.length > 0 || document.warnings.length > 0) {
+        throw new Error(document.errors[0]?.message ?? document.warnings[0]?.message ?? "invalid Properties YAML");
+    }
+    if (document.directives.docStart || document.directives.docEnd || document.directives.yaml.explicit) {
+        throw new Error("Properties payload contains a YAML stream or document indicator");
+    }
+    if (document.contents === null) return { records: [], recordRanges: [] };
+    if (!isMap(document.contents)) throw new Error("Properties payload is not a top-level mapping");
+    assertSupportedTag(document.contents, yamlMapTags);
+
+    const context = { document, activeAliases: new Set() };
+    const names = new Set();
+    const records = [];
+    const recordRanges = [];
+    for (const pair of document.contents.items) {
+        const name = propertyName(pair.key);
+        if (names.has(name)) throw new Error(`duplicate Properties name: ${name}`);
+        names.add(name);
+        records.push({ name, value: projectMetadataValue(pair.value, context) });
+
+        const relative = cstRange(pair.srcToken);
+        if (!Number.isFinite(relative.start) || !Number.isFinite(relative.end)) {
+            throw new Error(`Properties record has no source range: ${name}`);
+        }
+        recordRanges.push([payloadStart + relative.start, payloadStart + relative.end]);
+    }
+    return { records, recordRanges };
 }
 
 function sourceLine(source, start) {
@@ -155,7 +277,13 @@ function officialPropertiesEnvelope(source) {
     while (cursor <= source.length) {
         const line = sourceLine(source, cursor);
         if (line.text === "---") {
-            return { start, bodyStart: line.next };
+            return {
+                start,
+                payloadStart: opening.next,
+                payloadEnd: cursor,
+                metadataEnd: cursor + 3,
+                bodyStart: line.next
+            };
         }
         if (!line.terminated) return null;
         cursor = line.next;
@@ -167,23 +295,30 @@ function parseProperties(source) {
     const envelope = officialPropertiesEnvelope(source);
     if (envelope === null) return { content: source, metadata: null };
 
-    const withoutBom = source.slice(envelope.start);
-    const parsed = matter(withoutBom, {
-        language: policy.metadataOracle.options.language,
-        delimiters: policy.metadataOracle.options.delimiters,
-        engines: {
-            yaml: (payload) =>
-                loadYaml(payload, {
-                    schema: JSON_SCHEMA,
-                    json: false
-                })
-        }
+    const payload = source.slice(envelope.payloadStart, envelope.payloadEnd);
+    const documents = parseAllDocuments(payload, {
+        schema: "json",
+        customTags: jsonScalarsWithStringFallback,
+        keepSourceTokens: true,
+        uniqueKeys: false,
+        resolveKnownTags: false,
+        version: "1.2",
+        strict: true,
+        logLevel: "silent"
     });
-    const expectedBody = source.slice(envelope.bodyStart);
-    if (parsed.content !== expectedBody) {
-        throw new Error("gray-matter did not agree with the official exact-fence envelope");
-    }
-    return { content: parsed.content, metadata: projectMetadata(parsed.data) };
+    if (documents.length > 1) throw new Error("Properties payload contains multiple YAML documents");
+    const projected =
+        documents.length === 0
+            ? { records: [], recordRanges: [] }
+            : projectMetadata(documents[0], envelope.payloadStart);
+    return {
+        content: source.slice(envelope.bodyStart),
+        metadata: projected.records,
+        evidence: {
+            metadataRange: [envelope.start, envelope.metadataEnd],
+            recordRanges: projected.recordRanges
+        }
+    };
 }
 
 function parseJsonString(source, start) {
@@ -440,16 +575,85 @@ for (const nonHeader of ["text\n---\nname: value\n---\n", "---yaml\nname: value\
         process.exit(1);
     }
 }
-if (JSON.stringify(parseProperties("\uFEFF---\n---\n").metadata) !== "[]") {
-    process.stderr.write("obsidian parity: Properties oracle rejected an empty BOM-prefixed header\n");
+for (const emptyProperties of [
+    "\uFEFF---\n---\n",
+    "---\n   \n---\n",
+    "---\n# note\n---\n",
+    "---\n#\n---\n",
+    "---\n  #\n---\n",
+    "---\n# first\n\t# second\n---\n",
+    "---\r\n#\r\n---\r\n"
+]) {
+    if (JSON.stringify(parseProperties(emptyProperties).metadata) !== "[]") {
+        process.stderr.write(
+            `obsidian parity: Properties oracle rejected empty metadata ${JSON.stringify(emptyProperties)}\n`
+        );
+        process.exit(1);
+    }
+}
+const sourceFaithfulProperties = parseProperties(
+    '---\nzeta: last\n1: &large 9007199254740993\n1.0: 1.0\n1e2: 1e2\n-0: -0\n~: tilde\ntrue: boolean\n"escaped\\u0020name": *large\n---\n'
+);
+if (
+    JSON.stringify(sourceFaithfulProperties.metadata?.map((record) => record.name)) !==
+    '["zeta","1","1.0","1e2","-0","~","true","escaped name"]'
+) {
+    process.stderr.write("obsidian parity: Properties oracle did not preserve decoded names in source order\n");
+    process.exit(1);
+}
+if (
+    JSON.stringify(
+        sourceFaithfulProperties.metadata
+            ?.filter((record) => ["1", "1.0", "1e2", "-0", "escaped name"].includes(record.name))
+            .map((record) => record.value.value.value)
+    ) !== '["9007199254740993","1.0","1e2","-0","9007199254740993"]'
+) {
+    process.stderr.write("obsidian parity: Properties oracle lost exact numeric or alias value evidence\n");
+    process.exit(1);
+}
+const rangedSource = "---\nfirst: one\nitems:\n  - two\n  - 3.0\n---\nBody\n";
+const rangedProperties = parseProperties(rangedSource);
+const rangedClosing = rangedSource.lastIndexOf("---\n");
+if (
+    rangedProperties.evidence?.metadataRange[0] !== 0 ||
+    rangedProperties.evidence.metadataRange[1] !== rangedClosing + 3 ||
+    rangedProperties.evidence.recordRanges.length !== 2 ||
+    rangedProperties.evidence.recordRanges.some(
+        ([start, end], index, ranges) =>
+            start < 4 ||
+            end > rangedClosing ||
+            start >= end ||
+            (index > 0 && start < ranges[index - 1][1]) ||
+            !rangedSource.slice(start, end).includes(index === 0 ? "first" : "items")
+    )
+) {
+    process.stderr.write("obsidian parity: Properties oracle lost source-token range evidence\n");
+    process.exit(1);
+}
+const taggedProperties = parseProperties("---\ntext: !!str 1\nnumber: !!float 1.0\n---\n").metadata;
+if (
+    JSON.stringify(taggedProperties) !==
+    '[{"name":"text","value":{"kind":"scalar","value":{"kind":"text","value":"1"}}},{"name":"number","value":{"kind":"scalar","value":{"kind":"number","value":"1.0"}}}]'
+) {
+    process.stderr.write("obsidian parity: Properties oracle lost supported standard scalar tags\n");
     process.exit(1);
 }
 for (const invalid of [
+    "---\nnull\n---\n",
     "---\nname: one\nname: two\n---\n",
+    '---\n"1": quoted\n1: plain\n---\n',
     "---\n- one\n- two\n---\n",
     "---\nname:\n  nested: value\n---\n",
     "---\nname: |\n  two lines\n---\n",
-    "---\nitems: [true, null]\n---\n"
+    "---\nitems: [true, null]\n---\n",
+    "---\n[a, b]: value\n---\n",
+    "---\nfirst: &name value\n*name: alias key\n---\n",
+    "---\nname: !application value\n---\n",
+    "---\nname: *missing\n---\n",
+    "---\nname: &loop [*loop]\n---\n",
+    "---\n...\n---\n",
+    "---\nfirst: one\n...\n---\n",
+    "---\nfirst: one\n...\nsecond: two\n---\n"
 ]) {
     let rejected = false;
     try {
@@ -571,8 +775,7 @@ process.stdout.write(
 );
 process.stdout.write(`  oracle: ${policy.oracle.package}@${policy.oracle.version}\n`);
 process.stdout.write(
-    `  metadata oracle: ${policy.metadataOracle.frontmatter.package}@${policy.metadataOracle.frontmatter.version} + ` +
-        `${policy.metadataOracle.yaml.package}@${policy.metadataOracle.yaml.version}\n`
+    `  metadata oracle: ${policy.metadataOracle.yaml.package}@${policy.metadataOracle.yaml.version}\n`
 );
 process.stdout.write(`  corpus: ${policy.corpus.join(", ")}\n`);
 

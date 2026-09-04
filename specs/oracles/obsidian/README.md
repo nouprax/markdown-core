@@ -15,16 +15,16 @@ release records git commit
 `bb36c5db9f343dd82af2ffe47b5ec271a15c080d` in npm metadata.
 
 Properties use a separate executable oracle because that Markdown package
-does not recognize file metadata. The gate runs `gray-matter@4.0.3` with a
-custom `js-yaml@4.1.0` engine configured with `JSON_SCHEMA`. Both packages are
-exact- and integrity-pinned. npm's official download API reported 8,940,668
-downloads for `gray-matter` and 298,229,346 for `js-yaml` in the week queried
-for 2026-08-23 through 2026-08-29. The compared frontmatter alternatives
-`remark-frontmatter@5.0.0` and `front-matter@4.0.2` had 5,162,817 and 4,381,501;
-the former tokenizes fences but deliberately does not decode values. The
-selected releases record commits
-`e54a33b394e14a1808b88f939507f374552906e4` and
-`2cef47bebf60da141b78b085f3dea3b5733dcc12` in npm metadata.
+does not recognize file metadata. The gate runs `yaml@2.9.0` through its
+Document/node API with CST source tokens retained. The package is exact- and
+integrity-pinned and its npm release records git commit
+`ddb21b04cb889722cec8f89dc1b67f19d62d7f7d`. npm's official download API
+reported 202,359,392 downloads for `yaml` during 2026-08-23 through 2026-08-29.
+`js-yaml` had 298,229,346 downloads, but its public load API projects mappings
+to JavaScript objects and thereby erases source order, key shape, colliding
+scalar spellings, and numeric lexemes. Raw download rank cannot make an
+implementation an oracle for information it does not expose. `yaml` is the
+broadly used candidate whose public model can witness the required facts.
 
 Popularity chooses an implementation oracle; it does not make that package the
 OFM specification. The official Obsidian help snapshot registered in
@@ -39,14 +39,27 @@ by the cmark oracle; this profile adds no Obsidian-specific HTML suppression.
 
 The Properties page remains the authority for beginning-of-file placement,
 the three-hyphen fence form, the supported consumer domain, and the absence of
-Markdown and nested Properties values. `gray-matter` is more permissive for
-some delimiter spellings, so the harness first applies the target contract's
-malformed-envelope boundary and then requires `gray-matter` to agree on the
-extracted body.
-Package-only syntax never enlarges the target language. `js-yaml` supplies
-YAML 1.2 JSON-schema decoding for the valid intersection; the projection then
-requires one top-level mapping with arbitrary non-empty names and scalar or
-documented text/number-list values.
+Markdown and nested Properties values. The harness therefore owns one exact,
+line-oriented envelope scanner and passes only the bytes between a valid pair
+of fences to the YAML oracle. A package-specific frontmatter recognizer is
+neither an authority nor an intermediate normalization layer.
+
+`yaml` parses one document with JSON scalar resolution plus a plain-string
+fallback, duplicate checking disabled at composition time, and source tokens
+enabled. The Properties projection then walks the ordered mapping pairs,
+decodes each directly authored scalar key as text, checks uniqueness in that
+decoded string namespace, retains number payloads from scalar source, resolves
+aliases on the node graph, and accepts only the contract's scalar and
+text/number-list domain. It never calls `toJS()` or materializes a root
+JavaScript object. Empty, whitespace-only, and comment-only payloads all
+produce a document with no content node and therefore the same non-null empty
+metadata array; comments remain presentation bytes rather than records.
+
+Package-only syntax never enlarges the target language. Parser errors,
+unsupported tags or node kinds, duplicate decoded names, unresolved or cyclic
+aliases, YAML stream/document indicators (including `...`), and unsupported
+values make the tentative Properties candidate fail. Only the exact outer
+`---` line terminates Properties.
 
 The corpus contains inputs only. It deliberately has no Markdown Core expected
 AST blocks; product goldens belong to the C fixture and shared canonical AST
@@ -67,13 +80,13 @@ The gate performs no network access. It verifies the installed package version,
 runs oracle canaries before comparison, parses the same corpus with both
 implementations, and compares a scope-free semantic tree. Scope correctness
 remains owned by product fixtures because the two parsers use different
-coordinate models. The Properties comparison additionally omits record scopes
-and limits number witnesses to exactly representable canonical spellings,
-because the external libraries expose neither source-faithful record ranges
-nor lossless numeric lexemes, and JavaScript object enumeration reorders
-integer-index-looking names. Product fixtures own those facts, strict invalid
-fallback, exact order for every valid name, nested-value rejection, and
-resource limits.
+coordinate models. The Properties canaries additionally require every emitted
+record to retain ordered, in-envelope CST range evidence. Its corpus covers
+integer-looking keys in non-JavaScript order, exact large/decimal/exponent/
+negative-zero number spellings, quoted key decoding, aliases, and strict
+projection failures. Product fixtures remain authoritative for canonical
+binding-coordinate scopes, allocation failure, and parser-wide resource
+limits.
 
 For successful Properties inputs, the normalized semantic root contains a
 `metadata` field: `null` means absent, while an array (including an empty

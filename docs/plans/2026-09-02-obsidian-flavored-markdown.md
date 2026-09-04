@@ -145,11 +145,13 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       parsing. Commit only a complete valid candidate, remove it from
       `Document.content`, and return every byte to inherited Markdown on any
       envelope, YAML, or projection failure.
-- [ ] Decode the payload once as a YAML 1.2.2 JSON-schema document and project
-      one top-level mapping into the shared metadata values. Accept arbitrary
-      unique non-empty string names and the documented scalar/list domain;
-      retain dates and quoted wikilinks as inert text and reject nested values,
-      duplicate names, executable tags, cycles, and resource-limit violations.
+- [ ] Decode the payload once as a YAML 1.2.2 document using JSON scalar
+      resolution with a plain-string fallback, then project one top-level
+      mapping into the shared metadata values. Accept arbitrary unique non-empty
+      string names and the documented scalar/list domain; retain dates and
+      quoted wikilinks as inert text and reject nested values, duplicate names,
+      unsupported tags, YAML stream/document indicators including `...`, cycles,
+      and resource-limit violations.
 - [ ] Record source-faithful metadata and record scopes before parsing the
       remaining body. Decoding and alias expansion must never extend a record
       scope to another source occurrence or manufacture an expanded range.
@@ -218,11 +220,13 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       universal reference-link/image normalization. Those authorities continue to
       own recognition, precedence, and fallback, but their source-shaped
       definition/reference nodes do not override the consumer AST contract.
-- [ ] Extend the Obsidian parity gate with exact-pinned `gray-matter` envelope
-      extraction plus `js-yaml` `JSON_SCHEMA` decoding for successful documented
-      Properties forms. Keep strict fence/fallback, exact number spelling,
-      record scopes, nested-value rejection, and resource limits under product
-      fixtures where those packages are not authoritative.
+- [x] Extend the Obsidian parity gate with the exact profile-owned envelope
+      scanner and exact-pinned `yaml@2.9.0` Document/node parsing with CST source
+      tokens. Project mapping pairs without a JavaScript object intermediary so
+      empty/comment-only documents, key shape, decoded-name uniqueness, source
+      order, exact number spelling, aliases, and supported values are executable
+      evidence. Keep binding-coordinate scopes, allocation failure, and shared
+      resource limits under product fixtures.
 - [ ] Keep official-only requirements—callouts, block identifiers, inline
       footnote recognition, the
       `Cite`/`Citation`/`CitationReferent`/`Footnote` projection,
