@@ -79,7 +79,7 @@ const comparedFields = {
 };
 
 function urlDestination(value) {
-    return `url(value=${JSON.stringify(value)})`;
+    return `url(${JSON.stringify(value)})`;
 }
 
 function crossDestination(path, anchor) {

@@ -8,9 +8,7 @@ targets. Profile modules own the source rules that construct each branch.
 
 ```text
 Destination =
-  url(
-    value: String
-  )
+  url(String)
   | cross(
     path: String,
     anchor: String?
@@ -40,7 +38,7 @@ An ordinary Markdown `Link` always owns the `url` branch. Its `value` is the
 complete semantic destination produced by the inherited link grammar,
 including an empty destination, a relative reference, or a fragment-only
 reference such as `#section`. Moving this value from `Link.destination` to
-`Link.dest = Destination.url(value)` changes the consumer shape, not the
+`Link.dest = Destination.url(...)` changes the consumer shape, not the
 inherited source grammar, escaping, normalization, or resolution behavior.
 
 An Obsidian `CrossLink` owns the `cross(path, anchor)` branch. A null `anchor`

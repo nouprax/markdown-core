@@ -30,7 +30,7 @@ Remark directive attachment sites; Remark owns the directive envelope, not a
 second attribute member language.
 
 Pandoc JSON's `Link` target URL is projected into the shared consumer value as
-`Link.dest = Destination.url(value)`. A fragment-only target such as `#section`
+`Link.dest = Destination.url(url)`. A fragment-only target such as `#section`
 remains a URL-branch reference to the declaration-side `Markup.anchor`; the
 projection does not copy that value into the link's own anchor field.
 
