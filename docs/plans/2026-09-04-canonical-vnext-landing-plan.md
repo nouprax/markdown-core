@@ -157,8 +157,9 @@ specification in the same pull request.
   content stays inline, a table form whose cells hold blocks stores the blocks
   directly, and no cell is normalized to a `Paragraph`.
 - `obsidian` is one switch. Off means the inherited behavior byte for byte, so
-  no option under it has an effect while it is off, and every new option
-  defaults to `false`.
+  no option under it has an effect while it is off. Every new option defaults to
+  `false` except `stripObsidianComments`, which defaults to `true` so the
+  profile omits recognized comments unless a caller retains them.
 - The parser stores fenced-code info, language, and attributes as written. It
   does not lowercase, alias, or derive a language from a class; consumers
   interpret them.
@@ -236,9 +237,10 @@ value carries `scope` only.
 
 Binding spelling is shown; the C facade uses `snake_case`, and the CLI `-e`
 names and fixture fence tags use the extension names from the Pandoc and
-Obsidian indexes. Every new option defaults to `false`. An option is public from
-the item in its `Public from` column; before that item it exists only as
-registry, CLI, and conformance plumbing.
+Obsidian indexes. Every new option defaults to `false` except
+`stripObsidianComments`, which defaults to `true`. An option is public from the
+item in its `Public from` column; before that item it exists only as registry,
+CLI, and conformance plumbing.
 
 | Option                     | Behavior lands in | Public from |
 | -------------------------- | ----------------- | ----------- |

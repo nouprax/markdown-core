@@ -109,9 +109,12 @@ syntax and precedence where no selected Pandoc extension participates.
       footnote migration: Pandoc `@key` creates `CitationReferent.bib`, while
       footnote syntax creates `CitationReferent.footnote`; neither profile gets a
       parallel citation node.
-- [ ] Allocate C kind/field identifiers once, then update the native tree, C
-      facade, canonical wire schema, dump format, Swift/Kotlin/ES values,
-      exhaustive visitors, walkers, and AST projection audit atomically.
+- [ ] Add each C kind and field identifier with the item that first produces it,
+      then update the native tree, C facade, canonical wire schema, dump format,
+      Swift/Kotlin/ES values, exhaustive visitors, walkers, and AST projection
+      audit atomically. While 3.0.0 is unreleased, identifiers, wire layouts,
+      and manifest order may be renumbered by any later item; nothing is
+      reserved in advance.
 - [ ] Expose one independent option per public extension named by the index.
       `auto_anchors` composes the two pinned Pandoc extension rules internally;
       compact definition syntax remains part of `definition_lists` and receives

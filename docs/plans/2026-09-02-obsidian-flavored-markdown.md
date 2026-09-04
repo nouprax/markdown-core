@@ -93,9 +93,12 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       Keep source compatibility only through a derived language convenience
       property when that does not duplicate wire state. Treat the public shape
       change as a major-version change rather than preserving two authorities.
-- [ ] Allocate stable C kind/field identifiers once, then update the native AST,
-      C read-only facade, wire format, Swift/Kotlin/ES values, exhaustive visitors,
-      walkers, dumpers, and AST projection audit atomically.
+- [ ] Add each C kind and field identifier with the item that first produces it,
+      then update the native AST, C read-only facade, wire format,
+      Swift/Kotlin/ES values, exhaustive visitors, walkers, dumpers, and AST
+      projection audit atomically. While 3.0.0 is unreleased, identifiers, wire
+      layouts, and manifest order may be renumbered by any later item; nothing
+      is reserved in advance.
 - [ ] Add an `obsidian` preset in each binding and a CLI `--profile obsidian`.
       Keep existing profile grammar and option composition stable, but make the
       canonical `BlockQuote` to `Callout` rename universal. Add only the option
