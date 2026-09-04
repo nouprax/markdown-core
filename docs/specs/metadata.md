@@ -70,9 +70,14 @@ stored map.
 
 A record name is a non-empty, single-line decoded Unicode string. Names are
 case-preserving and case-sensitive in the canonical value. No spelling is
-lowercased, slugged, pluralized, or rewritten. A YAML key which does not
-resolve to a string is invalid for this model; a numeric- or boolean-looking
-name can be quoted to make it a string.
+lowercased, slugged, pluralized, or rewritten. A root mapping key is a
+property-name position rather than a property-value position: a directly
+authored plain, single-quoted, or double-quoted scalar is decoded as text
+without applying JSON-schema null, boolean, or number resolution. Consequently
+`1` and `"1"` name the same record, as do `true` and `"true"`. A sequence,
+mapping, or alias cannot supply a record name. Uniqueness is checked after
+text decoding, so differently spelled keys which decode to the same name are
+duplicates.
 
 The accepted name set is open. `tags`, `aliases`, `cssclasses`, `publish`, and
 every other product-known spelling occupy the same `String` domain as a user
@@ -111,25 +116,27 @@ handled identically.
 
 ## YAML projection
 
-The Properties payload is decoded as one YAML 1.2.2 document using the JSON
-schema. JSON object syntax is therefore accepted through the same operation;
-it is not a second parser or value model. Only the following representation
-graph projects successfully:
+The Properties payload is decoded as one YAML 1.2.2 document. Root values use
+the JSON schema; root mapping keys use the property-name projection above.
+JSON object syntax is accepted through the same operation; it is not a second
+parser or value model. Only the following representation graph projects
+successfully:
 
 - the root is an empty node or one mapping;
-- every mapping key resolves to a unique, non-empty string;
+- every mapping key is a directly authored scalar which decodes to a unique,
+  non-empty, single-line name;
 - every root value resolves to a supported scalar or a sequence of supported
   list items; and
-- every alias is defined earlier in the same Properties block, is acyclic, and
-  resolves to one of those supported values.
+- every alias in a value position is defined earlier in the same Properties
+  block, is acyclic, and resolves to one of those supported values.
 
-Explicit application-specific tags, non-string keys, duplicate keys, nested
-mappings, nested sequences, cyclic aliases, non-finite numbers, and multiple
-YAML documents do not have a canonical Metadata value. YAML presentation
-details—comments, anchor names, quote style, flow versus block style, and
-numeric formatting—are not additional public fields. The exact numeric scalar
-spelling is the sole deliberate lexical payload because converting it would
-lose consumer-visible precision.
+Explicit application-specific tags, complex or aliased keys, duplicate names,
+nested mappings, nested sequences, cyclic aliases, non-finite numbers, and
+multiple YAML documents do not have a canonical Metadata value. YAML
+presentation details—comments, anchor names, quote style, flow versus block
+style, and numeric formatting—are not additional public fields. The exact
+numeric scalar spelling is the sole deliberate lexical payload because
+converting it would lose consumer-visible precision.
 
 An alias contributes the resolved value at the alias occurrence. It creates no
 public reference node and no shared mutable object. Expansion must observe the
@@ -197,9 +204,10 @@ punctuation-bearing names; source order; exact-name case preservation; null,
 empty text, empty list, booleans, exact large integers, decimals, exponents,
 dates and date-times retained as text, quoted escapes, text/number block and
 flow lists, quoted internal-link text, JSON object syntax, comments, and
-aliases. Negative cases must cover empty, multiline, or non-string names;
-multiline text; boolean/null list items; duplicates; nested values; unsupported
-tags; non-finite numbers; undefined/cyclic/explosive aliases; multiple YAML
-documents; malformed YAML; allocation failure; and each structural limit.
-Profile fixtures own the envelope, option gate, fallback, precedence, and exact
-block/record scopes.
+aliases; and plain and quoted numeric- and boolean-looking names. Negative
+cases must cover empty or multiline names; sequence, mapping, or alias keys;
+duplicates after name decoding; multiline text; boolean/null list items;
+nested values; unsupported tags; non-finite numbers;
+undefined/cyclic/explosive aliases; multiple YAML documents; malformed YAML;
+allocation failure; and each structural limit. Profile fixtures own the
+envelope, option gate, fallback, precedence, and exact block/record scopes.

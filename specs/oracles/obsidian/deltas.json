@@ -274,7 +274,12 @@
         {
             "id": "metadata-integer-name-order",
             "summary": "js-yaml returns a JavaScript object, whose standard enumeration order moves integer-index-looking property names ahead of other names even when the YAML source authored another order.",
-            "handling": "The oracle corpus covers source order with ordinary names. Product fixtures own exact order for quoted numeric-looking and every other valid name; the target AST always follows source order."
+            "handling": "The oracle corpus covers source order with ordinary names. Product fixtures own exact order for numeric-looking and every other valid name; the target AST always follows source order."
+        },
+        {
+            "id": "metadata-name-source-model",
+            "summary": "js-yaml exposes mapping keys only after conversion to JavaScript property strings, so it cannot preserve whether a decoded name came from a plain or quoted scalar or reject a sequence, mapping, or alias key by inspecting the resulting object.",
+            "handling": "The oracle corpus covers decoded names in the direct-scalar intersection. Product fixtures own property-name source validation, quote-independent decoding, and duplicate detection in the decoded string namespace."
         }
     ],
     "notAnAuthorityFor": [
@@ -284,7 +289,7 @@
         "Math delimiter edge cases. The gate disables the package's micromark math extension; documented $ and $$ forms remain under the product formula contract.",
         "Callouts. They are implemented by the umbrella transform after parsing, not by this direct parser package.",
         "Block identifier attachment, inline-footnote recognition, the Cite/Citation/CitationReferent/Footnote consumer projection, or image-size semantics. The selected Markdown comparison does not implement them, so official-example product fixtures own them.",
-        "Properties syntax accepted only by gray-matter, YAML values outside the documented Obsidian domain, strict invalid-candidate fallback, exact numeric spellings, source scopes, or resource limits. Product fixtures own these boundaries.",
+        "Properties syntax accepted only by gray-matter, YAML values outside the documented Obsidian domain, property-name source shapes erased by js-yaml, strict invalid-candidate fallback, exact numeric spellings, source scopes, or resource limits. Product fixtures own these boundaries.",
         "Vault resolution, rendering, styling, editor completion, or transclusion. These are outside a parser-only AST."
     ]
 }

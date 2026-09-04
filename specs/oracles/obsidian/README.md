@@ -44,9 +44,11 @@ some delimiter spellings, so the harness first applies the target contract's
 malformed-envelope boundary and then requires `gray-matter` to agree on the
 extracted body.
 Package-only syntax never enlarges the target language. `js-yaml` supplies
-YAML 1.2 JSON-schema decoding for the valid intersection; the projection then
-requires one top-level mapping with arbitrary non-empty names and scalar or
-documented text/number-list values.
+YAML 1.2 JSON-schema value decoding for the valid intersection; the projection
+then requires one top-level mapping with arbitrary non-empty names and scalar
+or documented text/number-list values. Its JavaScript-object result has
+already converted mapping keys to property strings, so it is evidence for the
+decoded names in the successful corpus, not for the source shape of a YAML key.
 
 The corpus contains inputs only. It deliberately has no Markdown Core expected
 AST blocks; product goldens belong to the C fixture and shared canonical AST
@@ -72,8 +74,8 @@ and limits number witnesses to exactly representable canonical spellings,
 because the external libraries expose neither source-faithful record ranges
 nor lossless numeric lexemes, and JavaScript object enumeration reorders
 integer-index-looking names. Product fixtures own those facts, strict invalid
-fallback, exact order for every valid name, nested-value rejection, and
-resource limits.
+fallback, key-source validation, exact order for every valid name,
+nested-value rejection, and resource limits.
 
 For successful Properties inputs, the normalized semantic root contains a
 `metadata` field: `null` means absent, while an array (including an empty

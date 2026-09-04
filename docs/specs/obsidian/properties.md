@@ -81,6 +81,12 @@ All three entries are ordinary records. A downstream vault resolver may
 interpret `aliases`, but the parser does not resolve `[[Doggo]]`, add a
 dedicated aliases field, or rewrite `Destination.cross.path`.
 
+The mapping-key position always denotes a textual property name. Plain scalar
+spellings such as `1`, `true`, and `null` are therefore names with those exact
+strings, not Number, Checkbox, or empty values; quoting them does not change
+the consumer name. JSON-schema scalar resolution applies only on the value
+side of an entry. Sequence, mapping, and alias keys are not property names.
+
 ## Property values
 
 The source forms project as follows:
@@ -143,19 +149,22 @@ those packages do not extend this contract.
 
 Oracle comparison omits scopes and covers only successful documented forms.
 Markdown Core fixtures own exact scopes, invalid-candidate fallback, BOM and
-line-ending boundaries, strict fence spelling, nested-value rejection,
-precision-preserving number payloads, and resource failures.
+line-ending boundaries, strict fence spelling, property-name source shape and
+source order, nested-value rejection, precision-preserving number payloads,
+and resource failures.
 
 ## Required conformance cases
 
 In addition to the shared metadata cases, profile tests must cover a block at
 byte zero and after a BOM; LF and CRLF; closing at EOF; empty, whitespace, and
-comment-only payloads; arbitrary names; YAML and JSON root mappings; body
-parsing immediately after the close; and option-off behavior. Boundary cases
-must cover leading blank/text, second blocks, `...`, short/long/indented/
-trailed/info-word fences, indented scalar separators, missing close, malformed
-payloads, duplicate keys, non-mapping roots, multiline text, boolean/null list
-items, nested values, interaction with thematic breaks and Setext headings,
-and source-like bytes inside every container. Every accepted case must assert
-`Metadata.scope`, each record scope, body scopes, source order, and absence of
-a metadata node in content.
+comment-only payloads; arbitrary names; plain and quoted numeric- and
+boolean-looking names; YAML and JSON root mappings; body parsing immediately
+after the close; and option-off behavior. Boundary cases must cover leading
+blank/text, second blocks, `...`, short/long/indented/trailed/info-word fences,
+indented scalar separators, missing close, malformed payloads, empty or
+multiline names, sequence/mapping/alias keys, duplicate names after decoding,
+non-mapping roots including an explicit root null, multiline text,
+boolean/null list items, nested values, interaction with thematic breaks and
+Setext headings, and source-like bytes inside every container. Every accepted
+case must assert `Metadata.scope`, each record scope, body scopes, source
+order, and absence of a metadata node in content.

@@ -121,7 +121,7 @@ function metadataValue(value) {
 }
 
 function projectMetadata(value) {
-    if (value === undefined || value === null) return [];
+    if (value === undefined) return [];
     if (typeof value !== "object" || Array.isArray(value)) {
         throw new Error("Properties payload is not a top-level mapping");
     }
@@ -155,7 +155,7 @@ function officialPropertiesEnvelope(source) {
     while (cursor <= source.length) {
         const line = sourceLine(source, cursor);
         if (line.text === "---") {
-            return { start, bodyStart: line.next };
+            return { start, payloadStart: opening.next, payloadEnd: cursor, bodyStart: line.next };
         }
         if (!line.terminated) return null;
         cursor = line.next;
@@ -168,22 +168,33 @@ function parseProperties(source) {
     if (envelope === null) return { content: source, metadata: null };
 
     const withoutBom = source.slice(envelope.start);
+    const undecoded = Symbol("undecoded Properties payload");
+    let decoded = undecoded;
     const parsed = matter(withoutBom, {
         language: policy.metadataOracle.options.language,
         delimiters: policy.metadataOracle.options.delimiters,
         engines: {
-            yaml: (payload) =>
-                loadYaml(payload, {
+            yaml: (payload) => {
+                decoded = loadYaml(payload, {
                     schema: JSON_SCHEMA,
                     json: false
-                })
+                });
+                return decoded;
+            }
         }
     });
     const expectedBody = source.slice(envelope.bodyStart);
     if (parsed.content !== expectedBody) {
         throw new Error("gray-matter did not agree with the official exact-fence envelope");
     }
-    return { content: parsed.content, metadata: projectMetadata(parsed.data) };
+    if (decoded === undecoded) {
+        decoded = loadYaml(source.slice(envelope.payloadStart, envelope.payloadEnd), {
+            schema: JSON_SCHEMA,
+            json: false
+        });
+        if (decoded !== undefined) throw new Error("gray-matter did not invoke the configured YAML engine");
+    }
+    return { content: parsed.content, metadata: projectMetadata(decoded) };
 }
 
 function parseJsonString(source, start) {
@@ -444,8 +455,15 @@ if (JSON.stringify(parseProperties("\uFEFF---\n---\n").metadata) !== "[]") {
     process.stderr.write("obsidian parity: Properties oracle rejected an empty BOM-prefixed header\n");
     process.exit(1);
 }
+const propertyNameCanary = parseProperties("---\n1.5: decimal\ntrue: boolean\n---\n").metadata;
+if (JSON.stringify(propertyNameCanary?.map((record) => record.name)) !== '["1.5","true"]') {
+    process.stderr.write("obsidian parity: Properties oracle did not expose scalar property names as strings\n");
+    process.exit(1);
+}
 for (const invalid of [
+    "---\nnull\n---\n",
     "---\nname: one\nname: two\n---\n",
+    '---\n"1": quoted\n1: plain\n---\n',
     "---\n- one\n- two\n---\n",
     "---\nname:\n  nested: value\n---\n",
     "---\nname: |\n  two lines\n---\n",
