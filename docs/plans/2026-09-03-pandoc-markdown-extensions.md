@@ -5,6 +5,10 @@ in [`docs/specs/pandoc.md`](../specs/pandoc.md) on the canonical parser and all
 public bindings. It does not add a monolithic Pandoc dialect and does not retain
 compatibility aliases for any public model that this work replaces.
 
+The cross-plan landing order that turns these phases into individually
+mergeable pull requests is
+[`docs/plans/2026-09-04-canonical-vnext-landing-plan.md`](2026-09-04-canonical-vnext-landing-plan.md).
+
 ## Outcome
 
 Add the selected Pandoc syntax as opt-in rules inside the existing block and

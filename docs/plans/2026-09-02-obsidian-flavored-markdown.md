@@ -5,6 +5,10 @@ Status: proposed. This plan implements the target contract in
 as a new canonical AST baseline, without compatibility aliases for replaced
 kinds or fields.
 
+The cross-plan landing order that turns these phases into individually
+mergeable pull requests is
+[`docs/plans/2026-09-04-canonical-vnext-landing-plan.md`](2026-09-04-canonical-vnext-landing-plan.md).
+
 ## Outcome
 
 Add one coherent Obsidian profile to the C parser and all three bindings. The
