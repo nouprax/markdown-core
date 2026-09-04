@@ -3,9 +3,10 @@
  * Obsidian-flavored Markdown supplementary parity gate.
  *
  * The official Obsidian help snapshot owns the language. This gate executes
- * the most-used current npm OFM parser over the intersection it implements,
- * compares a scope-free semantic tree, and keeps every current product gap
- * explicit and fail-closed.
+ * the most-used current npm OFM parser over the intersection it implements.
+ * A separately pinned frontmatter/YAML pair supplies executable evidence for
+ * Obsidian Properties. The gate compares a scope-free semantic tree and keeps
+ * every current product gap explicit and fail-closed.
  */
 
 import { execFileSync } from "node:child_process";
@@ -16,6 +17,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import remarkObsidian from "@quartz-community/remark-obsidian";
+import matter from "gray-matter";
+import { JSON_SCHEMA, load as loadYaml } from "js-yaml";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
@@ -29,27 +32,37 @@ const policy = JSON.parse(fs.readFileSync(path.join(root, policyPath), "utf8"));
 const verbose = process.argv.includes("--verbose");
 const ours = path.join(root, "build/cmake/packages/markdown-core/core/markdown-core");
 
+if (
+    policy.metadataOracle.options.language !== "yaml" ||
+    policy.metadataOracle.options.delimiters !== "---" ||
+    policy.metadataOracle.options.schema !== "JSON_SCHEMA"
+) {
+    process.stderr.write(`obsidian parity: invalid Properties oracle options in ${policyPath}\n`);
+    process.exit(1);
+}
+
 if (!fs.existsSync(ours)) {
     process.stderr.write(`obsidian parity: missing ${path.relative(root, ours)}\nBuild it with: pnpm build:c\n`);
     process.exit(1);
 }
 
 const require = createRequire(import.meta.url);
-const installedPackage = JSON.parse(
-    fs.readFileSync(require.resolve("@quartz-community/remark-obsidian/package.json"), "utf8")
-);
-if (installedPackage.version !== policy.oracle.version) {
-    process.stderr.write(
-        `obsidian parity: policy pins ${policy.oracle.package}@${policy.oracle.version}, ` +
-            `but ${installedPackage.version} is installed\nRun: pnpm install --frozen-lockfile\n`
-    );
-    process.exit(1);
+for (const expected of [policy.oracle, policy.metadataOracle.frontmatter, policy.metadataOracle.yaml]) {
+    const installedPackage = JSON.parse(fs.readFileSync(require.resolve(`${expected.package}/package.json`), "utf8"));
+    if (installedPackage.version !== expected.version) {
+        process.stderr.write(
+            `obsidian parity: policy pins ${expected.package}@${expected.version}, ` +
+                `but ${installedPackage.version} is installed\nRun: pnpm install --frozen-lockfile\n`
+        );
+        process.exit(1);
+    }
 }
 
 const processor = unified().use(remarkParse).use(remarkGfm).use(remarkObsidian, policy.oracle.options);
 
 const mdastKinds = {
     root: "Document",
+    heading: "Heading",
     paragraph: "Paragraph",
     blockquote: "Callout",
     list: "List",
@@ -63,11 +76,13 @@ const mdastKinds = {
     link: "Link",
     image: "Image",
     break: "LineBreak",
+    thematicBreak: "ThematicBreak",
     wikilink: "CrossLink",
     highlight: "Mark"
 };
 
 const comparedFields = {
+    Heading: ["level"],
     Text: ["literal"],
     List: ["flavor", "start", "tight"],
     ListItem: ["marker"],
@@ -84,6 +99,91 @@ function urlDestination(value) {
 
 function crossDestination(path, anchor) {
     return { kind: "cross", path, anchor };
+}
+
+function metadataScalar(value) {
+    if (value === null) return { kind: "null" };
+    if (typeof value === "boolean") return { kind: "bool", value };
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return { kind: "number", value: String(value) };
+    }
+    if (typeof value === "string" && !/[\r\n]/.test(value)) return { kind: "text", value };
+    throw new Error(`unsupported Properties scalar: ${Object.prototype.toString.call(value)}`);
+}
+
+function metadataValue(value) {
+    if (!Array.isArray(value)) return { kind: "scalar", value: metadataScalar(value) };
+    const values = value.map(metadataScalar);
+    if (values.some((item) => item.kind !== "number" && item.kind !== "text")) {
+        throw new Error("Properties lists contain only text and number items");
+    }
+    return { kind: "list", values };
+}
+
+function projectMetadata(value) {
+    if (value === undefined || value === null) return [];
+    if (typeof value !== "object" || Array.isArray(value)) {
+        throw new Error("Properties payload is not a top-level mapping");
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+        throw new Error("Properties payload has a non-data object prototype");
+    }
+    return Object.entries(value).map(([name, recordValue]) => {
+        if (name.length === 0 || /[\r\n]/.test(name)) throw new Error("Properties name is empty or multiline");
+        return { name, value: metadataValue(recordValue) };
+    });
+}
+
+function sourceLine(source, start) {
+    const newline = source.indexOf("\n", start);
+    const physicalEnd = newline < 0 ? source.length : newline;
+    const contentEnd = physicalEnd > start && source[physicalEnd - 1] === "\r" ? physicalEnd - 1 : physicalEnd;
+    return {
+        text: source.slice(start, contentEnd),
+        next: newline < 0 ? source.length : newline + 1,
+        terminated: newline >= 0
+    };
+}
+
+function officialPropertiesEnvelope(source) {
+    const start = source.startsWith("\uFEFF") ? 1 : 0;
+    const opening = sourceLine(source, start);
+    if (opening.text !== "---" || !opening.terminated) return null;
+
+    let cursor = opening.next;
+    while (cursor <= source.length) {
+        const line = sourceLine(source, cursor);
+        if (line.text === "---") {
+            return { start, bodyStart: line.next };
+        }
+        if (!line.terminated) return null;
+        cursor = line.next;
+    }
+    return null;
+}
+
+function parseProperties(source) {
+    const envelope = officialPropertiesEnvelope(source);
+    if (envelope === null) return { content: source, metadata: null };
+
+    const withoutBom = source.slice(envelope.start);
+    const parsed = matter(withoutBom, {
+        language: policy.metadataOracle.options.language,
+        delimiters: policy.metadataOracle.options.delimiters,
+        engines: {
+            yaml: (payload) =>
+                loadYaml(payload, {
+                    schema: JSON_SCHEMA,
+                    json: false
+                })
+        }
+    });
+    const expectedBody = source.slice(envelope.bodyStart);
+    if (parsed.content !== expectedBody) {
+        throw new Error("gray-matter did not agree with the official exact-fence envelope");
+    }
+    return { content: parsed.content, metadata: projectMetadata(parsed.data) };
 }
 
 function parseJsonString(source, start) {
@@ -168,6 +268,7 @@ function fromMdast(node, unknown, source) {
 
     const fields = {};
     if (node.type === "text") fields.literal = node.value;
+    if (node.type === "heading") fields.level = String(node.depth);
     if (node.type === "list") {
         fields.flavor = node.ordered ? "ordered" : "bullet";
         fields.start = node.ordered ? String(node.start ?? 1) : "null";
@@ -210,7 +311,14 @@ function fromMdast(node, unknown, source) {
     };
 }
 
-function fromMarkdownCore(node) {
+function parseMetadataDump(value) {
+    if (value === undefined || value === "null") return null;
+    const parsed = JSON.parse(String(value));
+    if (!Array.isArray(parsed)) throw new Error("canonical metadata field is not an array or null");
+    return parsed;
+}
+
+function fromMarkdownCore(node, includeMetadata = false) {
     const fields = {};
     for (const name of comparedFields[node.kind] ?? []) {
         let value = node.fields[name];
@@ -223,10 +331,13 @@ function fromMarkdownCore(node) {
         }
         fields[name] = value ?? (name === "literal" ? "" : "null");
     }
+    if (node.kind === "Document" && includeMetadata) {
+        fields.metadata = parseMetadataDump(node.fields.metadata);
+    }
     return {
         kind: node.kind,
         fields,
-        children: normalizeChildren(node.children.map(fromMarkdownCore))
+        children: normalizeChildren(node.children.map((child) => fromMarkdownCore(child)))
     };
 }
 
@@ -245,9 +356,11 @@ function digest(value) {
 
 function compare(input) {
     const unknown = new Set();
-    const parsed = processor.parse(input);
-    const transformed = processor.runSync(parsed, input);
-    const oracleTree = fromMdast(transformed, unknown, input);
+    const properties = parseProperties(input);
+    const parsed = processor.parse(properties.content);
+    const transformed = processor.runSync(parsed, properties.content);
+    const oracleTree = fromMdast(transformed, unknown, properties.content);
+    if (properties.metadata !== null) oracleTree.fields.metadata = properties.metadata;
     const ourTree = fromMarkdownCore(
         parseCanonicalDump(
             execFileSync(ours, ["--profile", "gfm-extended"], {
@@ -255,7 +368,8 @@ function compare(input) {
                 encoding: "utf8",
                 maxBuffer: 1 << 24
             })
-        )
+        ),
+        properties.metadata !== null
     );
     return { oracle: render(oracleTree), ours: render(ourTree), unknown };
 }
@@ -289,6 +403,62 @@ if (taskCanary.children[0]?.children?.[0]?.data?.taskChar !== "?") {
     process.exit(1);
 }
 
+const propertiesCanary = parseProperties(
+    '---\nArbitrary Name: value\nenabled: true\nitems: [one, "[[Two]]"]\ndate: 2026-09-03\n---\n# Body\n'
+);
+if (
+    propertiesCanary.content !== "# Body\n" ||
+    JSON.stringify(propertiesCanary.metadata) !==
+        JSON.stringify([
+            { name: "Arbitrary Name", value: { kind: "scalar", value: { kind: "text", value: "value" } } },
+            { name: "enabled", value: { kind: "scalar", value: { kind: "bool", value: true } } },
+            {
+                name: "items",
+                value: {
+                    kind: "list",
+                    values: [
+                        { kind: "text", value: "one" },
+                        { kind: "text", value: "[[Two]]" }
+                    ]
+                }
+            },
+            { name: "date", value: { kind: "scalar", value: { kind: "text", value: "2026-09-03" } } }
+        ])
+) {
+    process.stderr.write("obsidian parity: Properties oracle canary produced the wrong semantic value\n");
+    process.exit(1);
+}
+for (const nonHeader of ["text\n---\nname: value\n---\n", "---yaml\nname: value\n---\n", "--- \nname: value\n---\n"]) {
+    if (parseProperties(nonHeader).metadata !== null) {
+        process.stderr.write("obsidian parity: Properties oracle accepted a non-header candidate\n");
+        process.exit(1);
+    }
+}
+if (JSON.stringify(parseProperties("\uFEFF---\n---\n").metadata) !== "[]") {
+    process.stderr.write("obsidian parity: Properties oracle rejected an empty BOM-prefixed header\n");
+    process.exit(1);
+}
+for (const invalid of [
+    "---\nname: one\nname: two\n---\n",
+    "---\n- one\n- two\n---\n",
+    "---\nname:\n  nested: value\n---\n",
+    "---\nname: |\n  two lines\n---\n",
+    "---\nitems: [true, null]\n---\n"
+]) {
+    let rejected = false;
+    try {
+        parseProperties(invalid);
+    } catch {
+        rejected = true;
+    }
+    if (!rejected) {
+        process.stderr.write(
+            `obsidian parity: Properties oracle accepted invalid projection ${JSON.stringify(invalid)}\n`
+        );
+        process.exit(1);
+    }
+}
+
 for (const [raw, expected] of [
     ['cross(path="Folder/Note", anchor="Heading one")', crossDestination("Folder/Note", "Heading one")],
     ['cross(path="Folder/Note",anchor="Heading one")', crossDestination("Folder/Note", "Heading one")],
@@ -300,6 +470,13 @@ for (const [raw, expected] of [
         process.stderr.write(`obsidian parity: canonical destination parser rejected or truncated ${raw}\n`);
         process.exit(1);
     }
+}
+const metadataDumpCanary = [{ name: "x", value: { kind: "scalar", value: { kind: "text", value: "a b" } } }];
+const capturedMetadata = parseCanonicalDump(`Document metadata=${JSON.stringify(metadataDumpCanary)} children=0\n`)
+    .fields.metadata;
+if (JSON.stringify(parseMetadataDump(capturedMetadata)) !== JSON.stringify(metadataDumpCanary)) {
+    process.stderr.write("obsidian parity: canonical metadata parser rejected or truncated a record array\n");
+    process.exit(1);
 }
 
 const invalidPolicy = [];
@@ -386,6 +563,10 @@ process.stdout.write(
         `${String(seenGaps.size)}/${String(gaps.size)} registered gaps reproduced\n`
 );
 process.stdout.write(`  oracle: ${policy.oracle.package}@${policy.oracle.version}\n`);
+process.stdout.write(
+    `  metadata oracle: ${policy.metadataOracle.frontmatter.package}@${policy.metadataOracle.frontmatter.version} + ` +
+        `${policy.metadataOracle.yaml.package}@${policy.metadataOracle.yaml.version}\n`
+);
 process.stdout.write(`  corpus: ${policy.corpus.join(", ")}\n`);
 
 if (failures.length) {

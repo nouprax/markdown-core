@@ -18,6 +18,9 @@ read at `obsidianmd/obsidian-help` commit
 Its linked syntax pages, plus the embedded-search link reached from the embeds
 page, complete the reviewed source closure:
 
+- [Properties](https://obsidian.md/help/properties), including the
+  beginning-of-file YAML/JSON envelope, open property names, supported values,
+  uniqueness, and the boundary between file data and vault-wide types;
 - [Basic formatting syntax](https://obsidian.md/help/syntax), specifically
   highlights, footnotes, comments, code blocks, task lists, and external image
   dimensions;
@@ -47,16 +50,17 @@ owned by the modules below while preserving inherited CommonMark/GFM behavior.
 In particular, it does not adopt Obsidian's rule that suppresses Markdown
 between paired inline HTML tags.
 
-`@quartz-community/remark-obsidian@0.2.4` is supplementary implementation
-evidence, not a language authority. Its exact scope and deliberate projections
-are registered in the oracle policy. An oracle-only construct does not enter
-this contract, and official extension syntax absent from the oracle remains
-required.
+`@quartz-community/remark-obsidian@0.2.4` and the separately pinned Properties
+oracle are supplementary implementation evidence, not language authorities.
+Their exact scopes and deliberate projections are registered in the oracle
+policy. An oracle-only construct does not enter this contract, and official
+extension syntax absent from either oracle remains required.
 
 ## Normative module set
 
 | Module | Sole owner of |
 | --- | --- |
+| [Properties](obsidian/properties.md) | the one beginning-of-file YAML/JSON Properties block projected into shared document metadata |
 | [Wikilinks and embeds](obsidian/wikilinks-and-embeds.md) | `[[...]]` and `![[...]]` source forms normalized to `CrossLink`, with `Destination.cross(path, anchor)`, labels, and raw embed parameters |
 | [Block identifiers](obsidian/block-identifiers.md) | `^id` definition placement, ownership, removal, and attachment to the universal anchor field |
 | [Footnotes](obsidian/footnotes.md) | referenced and inline source forms normalized to one-item `Cite` values with `CitationReferent.footnote` and document-owned `Footnote` values |
@@ -81,6 +85,10 @@ with an optional anchor. The footnote module depends on the shared
 [citation model](citation-model.md).
 Only its footnote referent and group/item shape are part of OFM; the same
 contract's Pandoc `@key` source syntax remains an independent extension.
+The Properties module depends on the shared
+[document metadata model](metadata.md). It contributes the sole source
+attachment rule and does not create a key whitelist, well-known-key enum, or
+vault-resolution result.
 
 ## Parser boundary
 
@@ -91,6 +99,8 @@ but does not:
 
 - resolve a shortest path, create a missing note, update renamed links, or
   decide whether a destination exists;
+- interpret an `aliases`, `tags`, `cssclasses`, or publishing record, consult a
+  vault-wide property-type registry, or resolve a link-like metadata string;
 - transclude another file, infer its resolved media kind, render a PDF page,
   execute a search, or render a diagram;
 - choose a callout icon/color or decide whether a fold is currently open;
@@ -103,13 +113,14 @@ the immutable semantic node, authored fields, source order, and source scope.
 
 ## Current support audit
 
-This audit is against `main` at `f7ed6bf2`, using the CLI's explicit
+This audit is against `main` at `cd9d8ce0`, using the CLI's explicit
 `--profile gfm-extended` and the existing parity gates. “Partial” means that at
 least one documented form is not representable by the current canonical AST.
 
 | Official requirement | Current behavior | Status |
 | --- | --- | --- |
 | CommonMark and GFM base syntax | Pinned cmark, cmark-gfm, and remark gates cover the inherited layers. | present |
+| Beginning-of-file Properties with arbitrary unique names and YAML/JSON values | The opening and closing `---` lines participate in inherited Markdown and `Document` has no metadata field. | missing |
 | Reference links and images | Source recognition is present, but the current AST exposes `LinkReference`, `ImageReference`, `ReferenceDefinition`, and `ReferenceForm` instead of resolved `Link`/`Image` values. | partial |
 | `[[Link]]`, paths, headings, blocks, and labels | The complete spelling is one `Text` node. | missing |
 | `![[Link]]` and documented file/embed forms | The complete spelling is one `Text` node. | missing |
@@ -127,13 +138,14 @@ least one documented form is not representable by the current canonical AST.
 | `$inline$` and `$$display$$` MathJax containers | Produces `Formula`/`FormulaBlock` for the documented forms. | present |
 | Mermaid and embedded-search fenced blocks | Produces `CodeBlock` with language `mermaid` or `query`; execution/rendering is out of scope. | present |
 
-The missing target surface is therefore: consumer-normalized reference links
-and images with shared `Destination.url` values, `CrossLink` values with
-shared `Destination.cross(path, anchor)` values for wikilinks/embeds, block identifiers and
-references as structured data, the unified
+The missing target surface is therefore: document-owned metadata populated by
+the Properties block; consumer-normalized reference links and images with
+shared `Destination.url` values; `CrossLink` values with shared
+`Destination.cross(path, anchor)` values for wikilinks/embeds; block identifiers
+and references as structured data; the unified
 `Cite`/`Citation`/`CitationReferent`/`Footnote` model and inline source form,
-comments, highlights, non-space task markers, the universal `Callout` model and
-optional metadata, and image dimensions. Existing inherited syntax keeps one
+comments, highlights, non-space task markers, the universal `Callout` model
+and optional marker fields, and image dimensions. Existing inherited syntax keeps one
 shared implementation; the Obsidian profile must not fork those algorithms.
 
 ## Shared architecture and failure contract
@@ -158,6 +170,12 @@ The canonical vNext AST replaces `BlockQuote` with `Callout` for every profile,
 without an alias or compatibility node. Existing `default`, `commonmark`, `gfm`,
 and `gfm-extended` profiles retain their source grammar and produce
 metadata-free `Callout` values for ordinary `>` containers.
+
+Canonical vNext adds optional `Document.metadata` and the shared `Metadata`,
+`MetadataRecord`, `MetadataScalar`, and `MetadataValue` values. Only the
+`obsidian` profile populates that field in this contract. Existing profiles
+retain their source grammar and produce `metadata=null`; Pandoc
+`yaml_metadata_block` is not enabled or specified.
 
 For every profile with footnotes enabled, canonical vNext also replaces
 `FootnoteReference` and `FootnoteDefinition` with inline `Cite`, its owned

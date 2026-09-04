@@ -180,7 +180,12 @@ function parseCanonicalFields(body) {
 /** Parses this repository's canonical AST dump. */
 export function parseCanonicalDump(dump) {
     const lines = dump.split("\n").filter((line) => line.trim().length);
-    const root = { kind: "Document", fields: {}, children: [] };
+    const rootBody = lines[0]?.trim() ?? "Document";
+    const root = {
+        kind: rootBody.split(" ")[0],
+        fields: parseCanonicalFields(rootBody),
+        children: []
+    };
     const byDepth = [root];
     for (const line of lines.slice(1)) {
         const marker = line.search(/[├└]/);

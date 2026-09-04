@@ -156,6 +156,8 @@ freed only after all access to it has finished. The complete C contract is in
   field and its population, precedence, scope, and resolution boundaries.
 - `docs/specs/destinations.md`: the shared tagged `Destination` value used by
   ordinary `Link`/`Image` URLs and `CrossLink` path/anchor addresses.
+- `docs/specs/metadata.md`: the document-owned, out-of-band metadata consumer
+  model populated by Obsidian Properties without a key whitelist.
 - `docs/specs/attributes.md`: the universal `Markup.attributes` field, shared
   attribute-list grammar, value model, normalization, and merge operation.
 - `docs/specs/remark.md`: Remark-family extension index; directive attribute

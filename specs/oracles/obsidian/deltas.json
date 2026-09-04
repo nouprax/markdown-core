@@ -1,12 +1,13 @@
 {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "officialSpecification": {
         "page": "https://obsidian.md/help/obsidian-flavored-markdown",
         "repository": "https://github.com/obsidianmd/obsidian-help",
         "commit": "d780d6b48a92ee6a150304b40ee888f322bf43bf",
-        "readOn": "2026-09-02",
+        "readOn": "2026-09-03",
         "closure": [
             "en/Editing and formatting/Obsidian Flavored Markdown.md",
+            "en/Editing and formatting/Properties.md",
             "en/Editing and formatting/Basic formatting syntax.md",
             "en/Editing and formatting/Advanced formatting syntax.md#Tables",
             "en/Editing and formatting/Advanced formatting syntax.md#Math",
@@ -62,8 +63,59 @@
             "math": false
         }
     },
+    "metadataOracle": {
+        "frontmatter": {
+            "package": "gray-matter",
+            "version": "4.0.3",
+            "repository": "https://github.com/jonschlinkert/gray-matter",
+            "commit": "e54a33b394e14a1808b88f939507f374552906e4",
+            "integrity": "sha512-5v6yZd4JK3eMI3FqqCouswVqwugaA9r4dNZB1wwcmrD02QkV5H0y7XBQW8QwQqEaZY1pM9aqORSORhJRdNK44Q=="
+        },
+        "yaml": {
+            "package": "js-yaml",
+            "version": "4.1.0",
+            "repository": "https://github.com/nodeca/js-yaml",
+            "commit": "2cef47bebf60da141b78b085f3dea3b5733dcc12",
+            "integrity": "sha512-wpxZs9NoxZaJESJGIZTyDEaYpl0FKSA+FB9aJiyemKhMwkxQg63h4T1KJgUGHpTqPDNRcmmYLugrRjJlBtWvRA=="
+        },
+        "runner": "gray-matter custom yaml engine / js-yaml JSON_SCHEMA",
+        "why": "No executable Obsidian parser API is available. gray-matter is the most-downloaded current dedicated frontmatter parser among the compared packages, and js-yaml is its ecosystem's dominant maintained YAML decoder. npm's official point API reported 8,940,668 and 298,229,346 downloads respectively for the recorded week.",
+        "candidateDownloads": [
+            {
+                "package": "js-yaml",
+                "downloads": 298229346,
+                "note": "selected YAML decoder"
+            },
+            {
+                "package": "gray-matter",
+                "downloads": 8940668,
+                "note": "selected frontmatter parser"
+            },
+            {
+                "package": "remark-frontmatter",
+                "downloads": 5162817,
+                "note": "syntax tokenizer only; does not decode values"
+            },
+            {
+                "package": "front-matter",
+                "downloads": 4381501
+            }
+        ],
+        "downloadWindow": {
+            "start": "2026-08-23",
+            "end": "2026-08-29",
+            "queried": "2026-09-03",
+            "source": "https://api.npmjs.org/downloads/point/last-week/{package}"
+        },
+        "options": {
+            "language": "yaml",
+            "delimiters": "---",
+            "schema": "JSON_SCHEMA"
+        },
+        "authorityBoundary": "The official Properties page owns exact placement and fence grammar. The packages supply executable evidence only for successful forms in their documented intersection; permissive package-only syntax is not accepted by the target contract."
+    },
     "claim": "For the documented constructs the selected package actually parses, Markdown Core must converge on the same semantic recognition except for explicit, general AST-model deltas. The official Obsidian documentation, not this package, owns the language contract.",
-    "corpus": ["specs/oracles/obsidian/corpus.md"],
+    "corpus": ["specs/oracles/obsidian/corpus.md", "specs/oracles/obsidian/metadata-corpus.md"],
     "baselineGaps": [
         {
             "id": "wikilink-basic",
@@ -128,6 +180,54 @@
             "markdownCoreDigest": "0ef32488e38064f3dbcc12165f67bc6d6fe64495a7477c34e3090c132f4f7523",
             "requirement": "Recognize a non-space task character as complete and remove the marker from visible item content.",
             "closedBy": "Phase 4 — task markers, media parameters, and tables"
+        },
+        {
+            "id": "properties-scalars-and-body",
+            "input": "---\ntitle: Galactic handbook\ndraft: false\nrating: 4.5\nempty:\n---\n# Body\n",
+            "oracleDigest": "c44a4535d90ed71c8bd6122d83f9e337001c73be29f1483ab156892c62d033fd",
+            "markdownCoreDigest": "7c02aa75bd6f81d63aaffdbdabc8ff0a1d089b3bfd8f91ea2589a16d8312de2d",
+            "requirement": "Attach ordered scalar records to Document.metadata and parse only the post-fence heading into Document.content.",
+            "closedBy": "Phase 3 — Properties, anchors, and callout containers"
+        },
+        {
+            "id": "properties-list-and-arbitrary-name",
+            "input": "---\naliases:\n  - Doggo\n  - \"[[Canis familiaris]]\"\nvalues: [1977, 3.14, text]\narbitrary user key: value\n---\nBody\n",
+            "oracleDigest": "65e3c0449459fef4ad165a05a272c7bd202562e2b07dd5568f03d8b9135135dd",
+            "markdownCoreDigest": "0dfed670591ec23251681ef1746417a35d1b7089161aaf0eb56abcd8583885b0",
+            "requirement": "Preserve an arbitrary name and ordered scalar list while retaining a quoted internal-link spelling as inert text.",
+            "closedBy": "Phase 3 — Properties, anchors, and callout containers"
+        },
+        {
+            "id": "properties-text-and-empty-values",
+            "input": "---\ndate: 2026-09-03\nwhen: 2026-09-03T12:34:56\nyes-word: yes\nnothing: null\nempty-text: \"\"\nempty-list: []\n---\n",
+            "oracleDigest": "98e8cba74bbca8623108e244a831571965947c4abbfa5bc02b88e40ced8a549f",
+            "markdownCoreDigest": "84fe3cf635d2ad8cb808cd072f329c365a31c56520248e9c896294296f88ea6b",
+            "requirement": "Keep dates, date-times, and YAML-1.1-only boolean words as text, and distinguish null, empty text, and an empty list.",
+            "closedBy": "Phase 3 — Properties, anchors, and callout containers"
+        },
+        {
+            "id": "properties-json-root",
+            "input": "---\n{\"name\":\"value\",\"enabled\":true,\"count\":3}\n---\nAfter\n",
+            "oracleDigest": "8d4b090a2738b2c6b08bc471097bdb295f88f976b6089cb5a9a7d22287d98225",
+            "markdownCoreDigest": "cc9dfa0781160dda3adb56eeed78bc91d4f9c5d7e840e52e31d6a7ef7f4abbf1",
+            "requirement": "Project a JSON root object through the same Metadata record and value model as YAML.",
+            "closedBy": "Phase 3 — Properties, anchors, and callout containers"
+        },
+        {
+            "id": "properties-explicit-empty",
+            "input": "---\n---\n",
+            "oracleDigest": "3208f09528f5eb1b583fddaf9ca445a9b3db458fd0b4c82c186355b0f3ec48d0",
+            "markdownCoreDigest": "38f3b3567b48d32467e8cb72dca42919ecdc64c79369cd67d8f455cb6060f544",
+            "requirement": "Distinguish an explicitly authored empty Metadata value from absent metadata and emit no body nodes.",
+            "closedBy": "Phase 3 — Properties, anchors, and callout containers"
+        },
+        {
+            "id": "properties-first-block-only",
+            "input": "---\nfirst: one\n---\n---\nsecond: two\n---\n",
+            "oracleDigest": "013c47a06e3f380dca536f60a2146c391eacb986aba8592d7cbfb5511c1c79fa",
+            "markdownCoreDigest": "9be8b466d01dfd4a10f43a4d5e7d05ae6a8c1f00266c8c8fd62b9c4b7128827d",
+            "requirement": "Attach only the first Properties block and leave a later fence sequence in the ordinary Markdown body.",
+            "closedBy": "Phase 3 — Properties, anchors, and callout containers"
         }
     ],
     "modelDeltas": [
@@ -160,6 +260,21 @@
             "id": "universal-callout-container",
             "summary": "mdast names every inherited > container blockquote, while the target canonical AST uses Callout for both metadata-free and metadata-bearing quoted containers.",
             "handling": "The semantic projection maps mdast blockquote to Callout. The inherited source grammar remains owned by CommonMark; official product fixtures own optional Obsidian metadata."
+        },
+        {
+            "id": "metadata-number-lexeme",
+            "summary": "js-yaml exposes finite numbers as JavaScript Number values, while the target Metadata model retains the exact authored numeric spelling to avoid cross-platform precision loss.",
+            "handling": "The oracle corpus uses exactly representable canonical spellings and projects them with String(value). Product fixtures own large integers, exponents, negative zero, and other cases where numeric spelling or precision is observable."
+        },
+        {
+            "id": "metadata-source-model",
+            "summary": "gray-matter and js-yaml expose decoded data and body content but do not publish the source-faithful Metadata and MetadataRecord scopes required by the target AST.",
+            "handling": "The parity comparison omits scopes. Product fixtures own exact fence, record, continuation-line, alias-occurrence, body, and Document ranges."
+        },
+        {
+            "id": "metadata-integer-name-order",
+            "summary": "js-yaml returns a JavaScript object, whose standard enumeration order moves integer-index-looking property names ahead of other names even when the YAML source authored another order.",
+            "handling": "The oracle corpus covers source order with ordinary names. Product fixtures own exact order for quoted numeric-looking and every other valid name; the target AST always follows source order."
         }
     ],
     "notAnAuthorityFor": [
@@ -168,7 +283,8 @@
         "Tags. The package implements them, but the official OFM extension table does not include them; the gate disables them.",
         "Math delimiter edge cases. The gate disables the package's micromark math extension; documented $ and $$ forms remain under the product formula contract.",
         "Callouts. They are implemented by the umbrella transform after parsing, not by this direct parser package.",
-        "Block identifier attachment, inline-footnote recognition, the Cite/Citation/CitationReferent/Footnote consumer projection, or image-size semantics. The selected comparison does not implement them, so official-example product fixtures own them.",
+        "Block identifier attachment, inline-footnote recognition, the Cite/Citation/CitationReferent/Footnote consumer projection, or image-size semantics. The selected Markdown comparison does not implement them, so official-example product fixtures own them.",
+        "Properties syntax accepted only by gray-matter, YAML values outside the documented Obsidian domain, strict invalid-candidate fallback, exact numeric spellings, source scopes, or resource limits. Product fixtures own these boundaries.",
         "Vault resolution, rendering, styling, editor completion, or transclusion. These are outside a parser-only AST."
     ]
 }
