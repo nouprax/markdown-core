@@ -86,10 +86,10 @@ Unresolved candidates retain inherited fallback.
 
 Tests must cover explicit IDs composed with auto anchors; formatting, links,
 code, and footnotes in heading text; Unicode case/marks/connectors/whitespace;
-punctuation removal; symbol scalars and shortcode-shaped text; empty bases; duplicate bases and explicit
-duplicates; explicit anchors before and after a generated heading, including
-an Obsidian block identifier when both extensions are enabled; all three
-reference spellings; Unicode/case-folded labels; formatted heading labels and
-their plain-text mismatch; explicit-definition priority; duplicate heading
-labels; occurrence attributes; exact scopes; independent option gates;
-allocation failure; and large duplicate heading sets.
+punctuation removal; symbol scalars and shortcode-shaped text; empty bases;
+duplicate bases and explicit duplicates; explicit anchors before and after a
+generated heading, including an Obsidian block identifier when both extensions
+are enabled; all three reference spellings; Unicode/case-folded labels;
+formatted heading labels and their plain-text mismatch; explicit-definition
+priority; duplicate heading labels; occurrence attributes; exact scopes;
+independent option gates; allocation failure; and large duplicate heading sets.
