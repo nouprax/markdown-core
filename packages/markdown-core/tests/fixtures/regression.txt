@@ -107,6 +107,27 @@ Document scope=1:1..3:12 children=2
     └── HTML scope=3:9..3:12 literal="<st>" children=0
 ````````````````````````````````
 
+A type-7 HTML block cannot interrupt a paragraph, including when the line is a
+lazy continuation whose list-item prefix did not match. The block opener must
+therefore retain the parser's `maybe_lazy` guard instead of using only the
+last matched container kind.
+
+```````````````````````````````` example
+- one
+<a href="bar">
+two
+.
+Document scope=1:1..3:3 children=1
+└── List scope=1:1..3:3 flavor=bullet start=null tight=true children=1
+    └── ListItem scope=1:1..3:3 checked=null children=1
+        └── Paragraph scope=1:3..3:3 children=5
+            ├── Text scope=1:3..1:5 literal="one" children=0
+            ├── SoftBreak scope=1:6..1:6 children=0
+            ├── HTML scope=2:1..2:14 literal="<a href=\"bar\">" children=0
+            ├── SoftBreak scope=2:15..2:15 children=0
+            └── Text scope=3:1..3:3 literal="two" children=0
+````````````````````````````````
+
 Issue #192 - escaped spaces in link destination
 
 
