@@ -132,7 +132,7 @@ export function parseUpstreamXml(xml) {
  * value as one non-whitespace token truncates structured values and makes an
  * oracle compare printer spacing instead of semantics.
  */
-function parseCanonicalFields(body) {
+export function parseCanonicalFields(body) {
     const fields = {};
     let cursor = body.indexOf(" ");
     if (cursor < 0) return fields;
@@ -180,12 +180,7 @@ function parseCanonicalFields(body) {
 /** Parses this repository's canonical AST dump. */
 export function parseCanonicalDump(dump) {
     const lines = dump.split("\n").filter((line) => line.trim().length);
-    const rootBody = lines[0]?.trim() ?? "Document";
-    const root = {
-        kind: rootBody.split(" ")[0],
-        fields: parseCanonicalFields(rootBody),
-        children: []
-    };
+    const root = { kind: "Document", fields: {}, children: [] };
     const byDepth = [root];
     for (const line of lines.slice(1)) {
         const marker = line.search(/[├└]/);

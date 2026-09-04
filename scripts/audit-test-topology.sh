@@ -82,6 +82,12 @@ if [ "$target_specs_missing" -eq 0 ]; then
     note "shared, Remark, Pandoc, and modular Obsidian target contracts are present"
 fi
 
+if ! grep -q 'pnpm check:obsidian-parity' .github/workflows/ci.yml; then
+    fail "the exact-pinned Obsidian parity gate is not wired into required CI"
+else
+    note "the exact-pinned Obsidian parity gate runs in required CI"
+fi
+
 for plan_file in docs/plans/*.md; do
     if ! grep -Eq '^- \[[ xX]\] ' "$plan_file"; then
         fail "plan has no task-list work items: $plan_file"

@@ -24,7 +24,7 @@ import remarkParse from "remark-parse";
 import { unified } from "unified";
 
 import { readExamples } from "./lib/fixture-corpus.mjs";
-import { parseCanonicalDump } from "./lib/upstream-cmark.mjs";
+import { parseCanonicalDump, parseCanonicalFields } from "./lib/upstream-cmark.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const policyPath = "specs/oracles/obsidian/deltas.json";
@@ -318,6 +318,12 @@ function parseMetadataDump(value) {
     return parsed;
 }
 
+function parseCanonicalDumpWithRootFields(dump) {
+    const tree = parseCanonicalDump(dump);
+    tree.fields = parseCanonicalFields(dump.split("\n", 1)[0]?.trim() ?? "Document");
+    return tree;
+}
+
 function fromMarkdownCore(node, includeMetadata = false) {
     const fields = {};
     for (const name of comparedFields[node.kind] ?? []) {
@@ -362,7 +368,7 @@ function compare(input) {
     const oracleTree = fromMdast(transformed, unknown, properties.content);
     if (properties.metadata !== null) oracleTree.fields.metadata = properties.metadata;
     const ourTree = fromMarkdownCore(
-        parseCanonicalDump(
+        parseCanonicalDumpWithRootFields(
             execFileSync(ours, ["--profile", "gfm-extended"], {
                 input,
                 encoding: "utf8",
@@ -472,8 +478,9 @@ for (const [raw, expected] of [
     }
 }
 const metadataDumpCanary = [{ name: "x", value: { kind: "scalar", value: { kind: "text", value: "a b" } } }];
-const capturedMetadata = parseCanonicalDump(`Document metadata=${JSON.stringify(metadataDumpCanary)} children=0\n`)
-    .fields.metadata;
+const capturedMetadata = parseCanonicalDumpWithRootFields(
+    `Document metadata=${JSON.stringify(metadataDumpCanary)} children=0\n`
+).fields.metadata;
 if (JSON.stringify(parseMetadataDump(capturedMetadata)) !== JSON.stringify(metadataDumpCanary)) {
     process.stderr.write("obsidian parity: canonical metadata parser rejected or truncated a record array\n");
     process.exit(1);
