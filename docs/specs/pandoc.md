@@ -28,8 +28,8 @@ The shared value contract lives outside this directory:
 - [Anchors](anchors.md) owns the universal `Markup.anchor` field and its
   source-independent consumer meaning.
 - [Destinations](destinations.md) owns the shared tagged target value;
-  ordinary Markdown links, including implicit heading references, use its
-  `url` branch.
+  ordinary Markdown links and images, including implicit heading references,
+  use its `url` branch.
 - [Attributes](attributes.md) owns the universal `Markup.attributes` field, the
   shared classes-and-records shape, sole grammar, value invariants,
   normalization, and merge operation.

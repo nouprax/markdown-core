@@ -37,11 +37,14 @@ Punctuation removal does not insert whitespace, so separated source fragments
 may concatenate. Formatting delimiters never contribute. For example,
 `## My Header` receives `anchor="my-header"`.
 
-Generated and explicit IDs share one document registry. If the base already
-exists, append `-N` using the smallest positive decimal `N` not yet registered.
-An explicit duplicate remains as authored and may produce a diagnostic, but it
-still occupies the registry; it is not silently renamed. Generation is in
-heading source order and is deterministic.
+Generated and explicit anchors share one document registry. Before generating
+any heading anchor, reserve every explicit anchor recognized anywhere in the
+document by every enabled profile, including heading/other attribute IDs and
+Obsidian block identifiers. If a base already exists, append `-N` using the
+smallest positive decimal `N` not yet registered. An explicit duplicate remains
+as authored and may produce a diagnostic, but it still occupies the registry;
+it is not silently renamed. Generation is in heading source order and is
+deterministic.
 
 The generated anchor has no source scope. The `Heading.scope` remains the
 authored heading range.
@@ -83,7 +86,9 @@ Unresolved candidates retain inherited fallback.
 Tests must cover explicit IDs composed with auto anchors; formatting, links,
 code, and footnotes in heading text; Unicode case/marks/connectors/whitespace;
 punctuation removal; emoji aliases; empty bases; duplicate bases and explicit
-duplicates; all three reference spellings; Unicode/case-folded labels;
-formatted heading labels and their plain-text mismatch; explicit-definition
-priority; duplicate heading labels; occurrence attributes; exact scopes;
-independent option gates; allocation failure; and large duplicate heading sets.
+duplicates; explicit anchors before and after a generated heading, including
+an Obsidian block identifier when both extensions are enabled; all three
+reference spellings; Unicode/case-folded labels; formatted heading labels and
+their plain-text mismatch; explicit-definition priority; duplicate heading
+labels; occurrence attributes; exact scopes; independent option gates;
+allocation failure; and large duplicate heading sets.

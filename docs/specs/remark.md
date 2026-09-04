@@ -15,7 +15,7 @@ Shared values live outside this profile:
 
 - [Anchors](anchors.md) owns the universal `Markup.anchor` field.
 - [Destinations](destinations.md) owns the tagged target value used by ordinary
-  inherited `Link` nodes.
+  inherited `Link` and `Image` nodes.
 - [Attributes](attributes.md) owns the universal `Markup.attributes` field,
   shared Pandoc-derived grammar, classes-and-records consumer shape,
   normalization, and merge operation. This profile contributes only directive

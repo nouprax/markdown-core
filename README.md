@@ -21,14 +21,16 @@ All platform APIs have one synchronous parse entry point: `Document.parse` in
 Swift, Kotlin, and ECMAScript, and `markdown_core_document_parse` in C.
 
 A parse produces only the AST. Every node carries a **`scope`**: the pair of
-`(line, column)` boundaries reported by the cmark-family parser. A scope is
-location metadata, not a byte range, and no substring is implied by it.
+`(line, column)` boundaries reported by the cmark-family parser. It is the
+source-faithful editor cursor range of that node's own occurrence, not a byte
+range or an expanded set of locations that supplied resolved or inherited
+semantic values.
 
 The parser does not retain or publish the input, a normalized source copy, a
-line index, tokens, trivia, recovery nodes, or an editing model. Consumers that
-need the Markdown text keep their own input. The Swift, Kotlin, and ECMAScript
-bindings copy the AST into platform values and retain no native parser handle;
-the C API exposes an owned document with borrowed node views.
+line index, tokens, trivia, or recovery nodes. Consumers that need the Markdown
+text keep their own input. The Swift, Kotlin, and ECMAScript bindings copy the
+AST into platform values and retain no native parser handle; the C API exposes
+an owned document with borrowed node views.
 
 The default parse options enable smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas (including
@@ -153,7 +155,7 @@ freed only after all access to it has finished. The complete C contract is in
 - `docs/specs/anchors.md`: the universal source-independent `Markup.anchor`
   field and its population, precedence, scope, and resolution boundaries.
 - `docs/specs/destinations.md`: the shared tagged `Destination` value used by
-  ordinary `Link` URLs and `CrossLink` path/anchor addresses.
+  ordinary `Link`/`Image` URLs and `CrossLink` path/anchor addresses.
 - `docs/specs/attributes.md`: the universal `Markup.attributes` field, shared
   attribute-list grammar, value model, normalization, and merge operation.
 - `docs/specs/remark.md`: Remark-family extension index; directive attribute

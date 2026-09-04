@@ -74,16 +74,76 @@ const comparedFields = {
     Code: ["literal"],
     CodeBlock: ["literal", "info"],
     Link: ["dest", "title"],
-    Image: ["source", "title"],
+    Image: ["dest", "title"],
     CrossLink: ["embedded", "dest", "label"]
 };
 
 function urlDestination(value) {
-    return `url(${JSON.stringify(value)})`;
+    return { kind: "url", value };
 }
 
 function crossDestination(path, anchor) {
-    return `cross(path=${JSON.stringify(path)}, anchor=${anchor == null ? "null" : JSON.stringify(anchor)})`;
+    return { kind: "cross", path, anchor };
+}
+
+function parseJsonString(source, start) {
+    if (source[start] !== '"') return null;
+    let escaped = false;
+    for (let cursor = start + 1; cursor < source.length; cursor++) {
+        const character = source[cursor];
+        if (escaped) escaped = false;
+        else if (character === "\\") escaped = true;
+        else if (character === '"') {
+            const raw = source.slice(start, cursor + 1);
+            return { value: JSON.parse(raw), end: cursor + 1 };
+        }
+    }
+    return null;
+}
+
+function parseDestination(raw) {
+    let cursor = 0;
+    const skipSpace = () => {
+        while (/\s/.test(raw[cursor] ?? "")) cursor++;
+    };
+    const consume = (token) => {
+        skipSpace();
+        if (!raw.startsWith(token, cursor)) return false;
+        cursor += token.length;
+        return true;
+    };
+    const string = () => {
+        skipSpace();
+        const parsed = parseJsonString(raw, cursor);
+        if (parsed) cursor = parsed.end;
+        return parsed?.value;
+    };
+    const complete = () => {
+        skipSpace();
+        return cursor === raw.length;
+    };
+
+    if (consume("url(")) {
+        const value = string();
+        if (value === undefined || !consume(")") || !complete()) return null;
+        return urlDestination(value);
+    }
+
+    cursor = 0;
+    if (!consume("cross(") || !consume("path=")) return null;
+    const path = string();
+    if (path === undefined || !consume(",") || !consume("anchor=")) return null;
+    skipSpace();
+    let anchor;
+    if (raw.startsWith("null", cursor)) {
+        cursor += 4;
+        anchor = null;
+    } else {
+        anchor = string();
+        if (anchor === undefined) return null;
+    }
+    if (!consume(")") || !complete()) return null;
+    return crossDestination(path, anchor);
 }
 
 function normalizeChildren(children) {
@@ -126,7 +186,7 @@ function fromMdast(node, unknown, source) {
         fields.title = node.title ?? "null";
     }
     if (node.type === "image") {
-        fields.source = node.url;
+        fields.dest = urlDestination(node.url);
         fields.title = node.title ?? "null";
     }
     if (node.type === "wikilink") {
@@ -138,10 +198,15 @@ function fromMdast(node, unknown, source) {
         fields.label = node.alias === "" && !hasLabelDelimiter ? "null" : node.alias;
     }
 
+    const children =
+        node.type === "image" && node.alt
+            ? [{ kind: "Text", fields: { literal: node.alt }, children: [] }]
+            : normalizeChildren((node.children ?? []).map((child) => fromMdast(child, unknown, source)));
+
     return {
         kind,
         fields,
-        children: normalizeChildren((node.children ?? []).map((child) => fromMdast(child, unknown, source)))
+        children
     };
 }
 
@@ -149,10 +214,14 @@ function fromMarkdownCore(node) {
     const fields = {};
     for (const name of comparedFields[node.kind] ?? []) {
         let value = node.fields[name];
-        if (node.kind === "Link" && name === "dest" && value == null) {
-            value = urlDestination(String(node.fields.destination ?? ""));
+        if ((node.kind === "Link" || node.kind === "Image") && name === "dest" && value == null) {
+            const legacyName = node.kind === "Link" ? "destination" : "source";
+            value = urlDestination(String(node.fields[legacyName] ?? ""));
+        } else if (name === "dest" && value != null) {
+            value = parseDestination(String(value));
+            if (value == null) throw new Error(`invalid canonical destination: ${String(node.fields[name])}`);
         }
-        fields[name] = String(value ?? (name === "literal" ? "" : "null"));
+        fields[name] = value ?? (name === "literal" ? "" : "null");
     }
     return {
         kind: node.kind,
@@ -218,6 +287,19 @@ const taskCanary = processor.runSync(processor.parse("- [?] task\n"), "- [?] tas
 if (taskCanary.children[0]?.children?.[0]?.data?.taskChar !== "?") {
     process.stderr.write("obsidian parity: oracle canary did not preserve a custom task character\n");
     process.exit(1);
+}
+
+for (const [raw, expected] of [
+    ['cross(path="Folder/Note", anchor="Heading one")', crossDestination("Folder/Note", "Heading one")],
+    ['cross(path="Folder/Note",anchor="Heading one")', crossDestination("Folder/Note", "Heading one")],
+    ['url("path with spaces/(one)")', urlDestination("path with spaces/(one)")]
+]) {
+    const captured = parseCanonicalDump(`Document\nLink dest=${raw}\n`).children[0]?.fields.dest;
+    const normalized = captured == null ? null : parseDestination(captured);
+    if (JSON.stringify(normalized) !== JSON.stringify(expected)) {
+        process.stderr.write(`obsidian parity: canonical destination parser rejected or truncated ${raw}\n`);
+        process.exit(1);
+    }
 }
 
 const invalidPolicy = [];

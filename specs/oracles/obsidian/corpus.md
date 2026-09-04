@@ -11,6 +11,11 @@ implementations and never reads an expected AST from this file.
 .
 ````````````````````````````````
 
+```````````````````````````````` example
+![alt](image.png "title")
+.
+````````````````````````````````
+
 ## Wikilinks and embeds
 
 ```````````````````````````````` example

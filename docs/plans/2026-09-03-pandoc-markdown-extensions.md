@@ -12,7 +12,7 @@ inline engines. All source forms project to one consumer-oriented canonical
 AST: every Markup value has the universal anchor and attributes fields, all
 table syntaxes produce one Table model, all ordered-list syntaxes produce one
 List model, and Pandoc bibliography calls use the shared `Cite`/`Citation`/
-`CitationReferent` model. Ordinary links own the shared
+`CitationReferent` model. Ordinary links and images own the shared
 `Destination.url` branch, including implicit heading references. Reader state
 needed only for recognition—reference
 definitions, virtual heading references, example counters, attribute
@@ -82,11 +82,11 @@ syntax and precedence where no selected Pandoc extension participates.
 
 - [ ] Add the shared `Destination` enum defined by
       [`docs/specs/destinations.md`](../specs/destinations.md) to every public
-      surface. Replace `Link.destination: String` with
-      `Link.dest: Destination`, require the `url` branch for ordinary links,
-      and coordinate the same canonical change with Obsidian's `cross` branch
-      and optional anchor; do not retain the old string as parallel
-      compatibility state.
+      surface. Replace `Link.destination: String` and `Image.source: String`
+      with `dest: Destination` on both nodes, require the `url` branch for
+      ordinary links and images, and coordinate the same canonical change with
+      Obsidian's `cross` branch and optional anchor; do not retain either old
+      string as parallel compatibility state.
 - [ ] Add the universal nullable `anchor` field defined by
       [`docs/specs/anchors.md`](../specs/anchors.md) and the non-null
       `attributes` field defined by
@@ -143,10 +143,11 @@ syntax and precedence where no selected Pandoc extension participates.
       source-faithful scope; definition inheritance transfers semantic values
       only and never expands, unions, or substitutes the occurrence scope.
       Failed suffixes release source transactionally.
-- [ ] Finalize explicit and generated heading anchors in one source-ordered
-      registry. Use the specified GFM algorithm, reserve explicit anchors,
-      resolve collisions deterministically, and build virtual implicit-reference
-      entries from the same final values.
+- [ ] Finalize explicit and generated heading anchors in one document registry.
+      Use the specified GFM algorithm, reserve every explicit anchor from every
+      enabled profile before synthesis, generate headings in source order,
+      resolve generated collisions deterministically, and build virtual
+      implicit-reference entries from the same final values.
 - [ ] Audit every existing Link/Image, Heading, Code/CodeBlock, directive, and
       reference-definition caller. Remove repair passes or duplicated fields made
       obsolete by the shared operation.

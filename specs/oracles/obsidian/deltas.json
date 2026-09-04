@@ -68,7 +68,7 @@
         {
             "id": "wikilink-basic",
             "input": "[[Note]]\n",
-            "oracleDigest": "4a515d9c0193141f956aa1d506ca961d0ac43140aab1b762b46fdd1c9302ce41",
+            "oracleDigest": "cb4fc6f6d6e1a17163aa578a588c1a9357c5e410f396f231df8151422035099a",
             "markdownCoreDigest": "4c6fd8e27beca1ffe66a0aadb4cd1f68f3bc1f0bb5cce119cfef330ace76592e",
             "requirement": "Recognize a wikilink and expose Destination.cross(path, anchor=null) instead of one literal Text node.",
             "closedBy": "Phase 2 — one OFM inline extension"
@@ -76,7 +76,7 @@
         {
             "id": "wikilink-heading-label",
             "input": "[[Folder/Note#Heading#Child|Display text]]\n",
-            "oracleDigest": "c26de2a2b44b4891b29d0bcdf4cd4065fed3dfdc473af8a473d6de04bcc0a08f",
+            "oracleDigest": "43056e57f3c9821b339b6c3a7ac16299999b89f6fea2367f5644c9cf6cb68dc4",
             "markdownCoreDigest": "96dc467eb91188957bd03b0469c812f6365d01741b90a774e6f690975cfcc47c",
             "requirement": "Preserve the vault path and complete anchor value in one Destination.cross value, plus the CrossLink label.",
             "closedBy": "Phase 2 — one OFM inline extension"
@@ -84,7 +84,7 @@
         {
             "id": "wikilink-embed",
             "input": "![[Image.png|100x145]]\n",
-            "oracleDigest": "c389bd3126228514bc6e8ded24611b72ecf65af4e1c35b1021ee740ad3868852",
+            "oracleDigest": "9f86329d47932086711663f2c4eb7ac9117d2a4e5488c99b960c2be1f3c37c55",
             "markdownCoreDigest": "b85827fe99d15228e9a5ac66dd2b97b351df3148dddd2b808bea82e526058a9c",
             "requirement": "Recognize the shared wikilink form with embedded=true and preserve its label/size parameter.",
             "closedBy": "Phase 2 — one OFM inline extension"
@@ -92,7 +92,7 @@
         {
             "id": "wikilink-block-embed",
             "input": "![[Note#^block-id]]\n",
-            "oracleDigest": "0cf2b28f1d7b8c32d0d92595560a710e3853b5c2c6a67eaac54ede36bc321679",
+            "oracleDigest": "49aad135db1c5c5143670e3c5f88f28982c8e71d6be3c19ddbfd748f33a1f84d",
             "markdownCoreDigest": "c363cff78b07b6d440245f776863926540f01bf9ccb8dd33894d25d378e08dd8",
             "requirement": "Recognize an embedded block reference and project it to the same Destination.cross.anchor field as a heading reference, without the #^ delimiter or a source-kind tag.",
             "closedBy": "Phase 2 — one OFM inline extension"
@@ -148,8 +148,13 @@
         },
         {
             "id": "destination-value-model",
-            "summary": "mdast stores ordinary link URLs and wikilink path/heading components as flat fields. The target model stores one tagged Destination value.",
-            "handling": "The semantic projection wraps ordinary URLs in Destination.url and wikilinks in Destination.cross; both heading and block spellings populate the same optional anchor after source punctuation is removed."
+            "summary": "mdast stores ordinary link/image URLs and wikilink path/heading components as flat fields. The target model stores one tagged Destination value.",
+            "handling": "The semantic projection wraps ordinary link/image URLs in Destination.url and wikilinks in Destination.cross; both heading and block spellings populate the same optional anchor after source punctuation is removed."
+        },
+        {
+            "id": "image-alt-content-model",
+            "summary": "mdast stores an image's alt text as one string, while the target Image owns parsed inline content.",
+            "handling": "The semantic projection maps a non-empty mdast alt string to one Text child. The corpus exercises the plain-text intersection; product fixtures own nested inline image-alt structure."
         },
         {
             "id": "universal-callout-container",

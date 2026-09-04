@@ -21,6 +21,13 @@ Link(
   scope: Scope
 )
 
+Image(
+  dest: Destination,
+  title: String?,
+  content: [Markup],
+  scope: Scope
+)
+
 CrossLink(
   embedded: Bool,
   dest: Destination,
@@ -34,12 +41,14 @@ scope, declaration-side `Markup.anchor`, or attributes. Branch-specific fields
 exist only in their branch; consumers never receive a kind flag alongside a
 bag of nullable URL, path, and anchor fields.
 
-An ordinary Markdown `Link` always owns the `url` branch. Its `value` is the
-complete semantic destination produced by the inherited link grammar,
-including an empty destination, a relative reference, or a fragment-only
-reference such as `#section`. Moving this value from `Link.destination` to
-`Link.dest = Destination.url(...)` changes the consumer shape, not the
-inherited source grammar, escaping, normalization, or resolution behavior.
+An ordinary Markdown `Link` or `Image` always owns the `url` branch. Its value
+is the complete semantic destination produced by the inherited destination
+grammar, including an empty destination, a relative reference, or a
+fragment-only reference such as `#section`. Moving this value from
+`Link.destination` or `Image.source` to `dest = Destination.url(...)` changes
+the consumer shape, not the inherited source grammar, escaping, normalization,
+or resolution behavior. Direct and resolved reference forms produce the same
+node and destination shape.
 
 An Obsidian `CrossLink` owns the `cross(path, anchor)` branch. A null `anchor`
 addresses the whole workspace resource and requires a non-empty `path`. A
@@ -57,10 +66,11 @@ workspace and target-kind context must not reinterpret it. The
 source projection and fallback rules.
 
 The node kinds remain distinct because they carry different consumer
-semantics: `Link.content` is parsed inline label content and `Link.title` is
-Markdown title metadata, while `CrossLink.label` is one raw authored parameter
-and `CrossLink.embedded` requests transclusion. Sharing `Destination` does not
-collapse those nodes or turn a normal Markdown link into a `CrossLink`.
+semantics: `Link.content` is parsed inline label content, `Image.content` is
+parsed alt content, and both may carry Markdown title metadata, while
+`CrossLink.label` is one raw authored parameter and `CrossLink.embedded`
+requests transclusion. Sharing `Destination` does not collapse those nodes or
+turn a normal Markdown link or image into a `CrossLink`.
 
 ## Declaration and resolution boundary
 
@@ -80,18 +90,19 @@ branches or cached fields in the parse tree.
 
 ## Ownership and lifecycle
 
-Each reference node owns exactly one immutable `Destination`. Its strings are
-owned values and cannot borrow parser scratch storage or reference-definition
-tables. A successfully resolved Markdown reference link copies or shares the
-winning definition's URL internally but publishes an owned
-`Destination.url`; the source definition and lookup key remain parser state.
+Each `Link`, `Image`, and `CrossLink` owns exactly one immutable `Destination`.
+Its strings are owned values and cannot borrow parser scratch storage or
+reference-definition tables. A successfully resolved Markdown reference link
+or image copies or shares the winning definition's URL internally but
+publishes an owned `Destination.url`; the source definition and lookup key
+remain parser state.
 Resolution transfers the semantic destination only. It never replaces or
 expands the reference node's source-faithful occurrence scope with the separate
 definition's range.
 
 Allocation failure aborts construction of the owning reference node without
 publishing a partial destination. Traversal visits the owning `Link` or
-`CrossLink` but does not visit `Destination` as a child node.
+`Image` or `CrossLink` but does not visit `Destination` as a child node.
 
 ## Required conformance cases
 
@@ -100,6 +111,7 @@ whole-resource `cross` values with null anchors; empty same-document paths;
 heading and block source spellings populating the same `cross.anchor` field;
 hierarchical and resource-specific anchor values; rejection of invalid branch/field
 combinations; direct and resolved reference links producing the same `url`
-branch; declaration/reference separation; exact occurrence scopes before and
-after resolution; all public binding projections; allocation failure at every
-owned string; and size-doubling URL, path, and anchor inputs.
+branch; direct and resolved reference images producing the same `url` branch;
+declaration/reference separation; exact occurrence scopes before and after
+resolution; all public binding projections; allocation failure at every owned
+string; and size-doubling URL, path, and anchor inputs.

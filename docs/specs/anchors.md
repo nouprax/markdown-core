@@ -73,10 +73,19 @@ resolved reference occurrence inherits metadata, its own non-null anchor wins
 over the definition's anchor. No operation concatenates anchors or silently
 stores a second value.
 
-Document-wide duplicate handling is source-rule-specific. Automatic heading
-anchors are uniquified by their registry; explicit duplicates remain authored
-facts and may produce diagnostics. Obsidian vault-wide uniqueness and target
-selection require workspace context and remain outside the parser.
+Before automatic synthesis, the document registry reserves every explicit
+anchor recognized by every enabled profile, including attribute IDs and
+Obsidian block identifiers. Automatic heading anchors are then generated in
+heading source order and uniquified against all reserved explicit values and
+all earlier generated values. Thus synthesis never creates a collision merely
+because another source grammar declared the same string.
+
+Two explicit declarations may still author the same anchor. Both values remain
+source facts and may produce diagnostics; adding a destination discriminator
+would only hide that collision rather than make either declaration unique.
+Target selection for such ambiguous declarations, Obsidian vault-wide
+uniqueness, and cross-document resolution require consumer/workspace context
+and remain outside the parser.
 
 ## Scope and lifecycle
 
@@ -103,5 +112,6 @@ automatic heading anchors; Obsidian block identifiers; removal of source
 punctuation; identical values produced by different source rules; last-ID and
 explicit-over-generated precedence; reference inheritance without definition
 range inheritance; explicit and generated duplicates; exact occurrence scopes;
-unresolved incoming references not mutating targets; allocation failure; and
-size-doubling anchor candidates.
+cross-profile explicit anchors reserved before synthesis; unresolved incoming
+references not mutating targets; allocation failure; and size-doubling anchor
+candidates.

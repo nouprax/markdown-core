@@ -29,10 +29,11 @@ array is otherwise flattened or deduplicated. The same grammar applies at
 Remark directive attachment sites; Remark owns the directive envelope, not a
 second attribute member language.
 
-Pandoc JSON's `Link` target URL is projected into the shared consumer value as
-`Link.dest = Destination.url(url)`. A fragment-only target such as `#section`
-remains a URL-branch reference to the declaration-side `Markup.anchor`; the
-projection does not copy that value into the link's own anchor field.
+Pandoc JSON's `Link` and `Image` target URLs are projected into the shared
+consumer value as `dest = Destination.url(url)` on their respective nodes. A
+fragment-only target such as `#section` remains a URL-branch reference to the
+declaration-side `Markup.anchor`; the projection does not copy that value into
+the reference node's own anchor field.
 
 The corpus contains inputs and runner options only. It contains no Markdown
 Core expected AST and no stored Pandoc output. The planned parity gate will run

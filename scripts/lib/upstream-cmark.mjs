@@ -123,6 +123,60 @@ export function parseUpstreamXml(xml) {
     return root;
 }
 
+/**
+ * Parses fields from one canonical-dump line in a single forward pass.
+ *
+ * Field values may be JSON strings, bracketed sequences, or tagged values
+ * such as `cross(path="Note", anchor="Heading one")`. Whitespace terminates a
+ * value only outside quotes and balanced delimiters. Treating every unquoted
+ * value as one non-whitespace token truncates structured values and makes an
+ * oracle compare printer spacing instead of semantics.
+ */
+function parseCanonicalFields(body) {
+    const fields = {};
+    let cursor = body.indexOf(" ");
+    if (cursor < 0) return fields;
+
+    while (cursor < body.length) {
+        while (body[cursor] === " ") cursor++;
+        const nameStart = cursor;
+        while (/[a-zA-Z]/.test(body[cursor] ?? "")) cursor++;
+        if (cursor === nameStart || body[cursor] !== "=") break;
+        const name = body.slice(nameStart, cursor++);
+        const valueStart = cursor;
+        let parentheses = 0;
+        let brackets = 0;
+        let quoted = false;
+        let escaped = false;
+
+        while (cursor < body.length) {
+            const character = body[cursor];
+            if (quoted) {
+                if (escaped) escaped = false;
+                else if (character === "\\") escaped = true;
+                else if (character === '"') quoted = false;
+            } else if (character === '"') {
+                quoted = true;
+            } else if (character === "(") {
+                parentheses++;
+            } else if (character === ")") {
+                parentheses--;
+            } else if (character === "[") {
+                brackets++;
+            } else if (character === "]") {
+                brackets--;
+            } else if (/\s/.test(character) && parentheses === 0 && brackets === 0) {
+                break;
+            }
+            cursor++;
+        }
+
+        const value = body.slice(valueStart, cursor);
+        fields[name] = value.startsWith('"') ? JSON.parse(value) : value;
+    }
+    return fields;
+}
+
 /** Parses this repository's canonical AST dump. */
 export function parseCanonicalDump(dump) {
     const lines = dump.split("\n").filter((line) => line.trim().length);
@@ -132,20 +186,7 @@ export function parseCanonicalDump(dump) {
         const marker = line.search(/[├└]/);
         const depth = marker < 0 ? 1 : marker / 4 + 1;
         const body = marker < 0 ? line.trim() : line.slice(marker + 4).trim();
-        const fields = {};
-        // A bracketed group is ONE field even when it contains spaces: a
-        // directive's attributes print as `[k="v" k2="v w"]`.
-        // `[^\]"]` and not `[^\]]`: a quote must go through the quoted branch or
-        // both alternatives can consume one, and a bracket that never closes
-        // makes the engine try every way to split the run into singles and
-        // pairs -- Fibonacci-many, 16 ms at 26 quotes and 528 ms at 38, which is
-        // CodeQL's `js/redos`. Excluding it changes nothing a dump can contain:
-        // every quote inside a bracketed group opens or closes a value.
-        for (const field of body.matchAll(
-            /([a-zA-Z]+)=("(?:[^"\\]|\\.)*"|\[(?:"(?:[^"\\]|\\.)*"|[^\]"])*\]|[^\s]+)/g
-        )) {
-            fields[field[1]] = field[2].startsWith('"') ? JSON.parse(field[2]) : field[2];
-        }
+        const fields = parseCanonicalFields(body);
         const node = { kind: body.split(" ")[0], fields, children: [] };
         byDepth[depth - 1].children.push(node);
         byDepth[depth] = node;

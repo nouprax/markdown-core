@@ -35,9 +35,10 @@ never create an expanded or composite scope. This module uses the shared
 bare string in parallel with `Link.dest`.
 
 Direct and reference images normalize in the same way to `Image`. Their alt
-content belongs to each `Image` occurrence; their source and title come from
-the direct destination or winning reference definition, and resolution does
-not change the occurrence's source-faithful scope.
+content belongs to each `Image` occurrence; their `Destination.url` and title
+come from the direct destination or winning reference definition, and
+resolution does not change the occurrence's source-faithful scope. No
+`Image.source` string survives beside `Image.dest`.
 
 Reference labels, normalized lookup keys, and full/collapsed/shortcut form are
 parser-resolution data. A successfully parsed reference definition populates

@@ -76,8 +76,8 @@ The block-identifier module depends on the shared
 [anchor model](anchors.md); it contributes one source attachment rule and does
 not create an Obsidian-specific target identity. The wikilink and inherited-link
 modules depend on the shared [destination model](destinations.md): ordinary
-links use its `url` branch and `CrossLink` uses its `cross` branch with an
-optional anchor. The footnote module depends on the shared
+links and images use its `url` branch and `CrossLink` uses its `cross` branch
+with an optional anchor. The footnote module depends on the shared
 [citation model](citation-model.md).
 Only its footnote referent and group/item shape are part of OFM; the same
 contract's Pandoc `@key` source syntax remains an independent extension.
@@ -128,7 +128,7 @@ least one documented form is not representable by the current canonical AST.
 | Mermaid and embedded-search fenced blocks | Produces `CodeBlock` with language `mermaid` or `query`; execution/rendering is out of scope. | present |
 
 The missing target surface is therefore: consumer-normalized reference links
-with shared `Destination.url` values and images, `CrossLink` values with
+and images with shared `Destination.url` values, `CrossLink` values with
 shared `Destination.cross(path, anchor)` values for wikilinks/embeds, block identifiers and
 references as structured data, the unified
 `Cite`/`Citation`/`CitationReferent`/`Footnote` model and inline source form,
@@ -167,11 +167,11 @@ and `Document.footnotes`. This is one universal consumer model; only the
 
 Canonical vNext resolves every successful direct, full, collapsed, shortcut,
 and autolink form to `Link(dest=Destination.url(...))`, and every successful
-direct or reference image to `Image`. `LinkReference`, `ImageReference`,
-`ReferenceDefinition`, and `ReferenceForm` are removed from every profile
-without aliases. Their labels, forms, definitions, and lookup map remain
-parser-internal source machinery; they never become `Citation` or a
-document-owned link registry.
+direct or reference image to `Image(dest=Destination.url(...))`.
+`LinkReference`, `ImageReference`, `ReferenceDefinition`, and `ReferenceForm`
+are removed from every profile without aliases. Their labels, forms,
+definitions, and lookup map remain parser-internal source machinery; they
+never become `Citation` or a document-owned link registry.
 
 The new `obsidian` profile composes the inherited GFM, footnote, formula, and
 code behavior with all modules in this contract. It enables
