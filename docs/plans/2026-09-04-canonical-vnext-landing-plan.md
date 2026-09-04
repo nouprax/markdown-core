@@ -162,9 +162,9 @@ specification in the same pull request.
 - The parser stores fenced-code info, language, and attributes as written. It
   does not lowercase, alias, or derive a language from a class; consumers
   interpret them.
-- Emoji alias translation is not supported now. Automatic anchors treat emoji
-  through the permitted-scalar filter alone, and the emoji step of the
-  heading-anchor module is deferred.
+- There is no emoji support. Automatic anchors apply the same steps to every
+  scalar, the GFM emoji alias step is not part of the heading-anchor contract,
+  and no item adds an alias table.
 - The reference expansion bound is an invariant, not a decision. `M2` shares
   each winning destination across its occurrences in the C tree and redesigns
   the transports and decoders so a distinct destination is materialized once on
@@ -616,16 +616,14 @@ registry, CLI, and conformance plumbing.
       every explicit anchor from every enabled profile before synthesis, then
       generates GFM anchors in heading order from visible text (retaining link
       labels and code, dropping footnotes), Unicode lowercasing, whitespace to
-      `-` without collapsing, and the permitted-scalar filter with no emoji
-      alias translation, amending the heading-anchor module's emoji step to say
-      it is deferred, falling back to `section` and uniquifying with the
-      smallest free `-N`. A generated anchor has no scope. Fixtures cover the
-      module's cases including large duplicate sets; remove the
-      `gfm-auto-anchors` gap. Reserving an explicit anchor before synthesis is a
-      cross-item case with every explicit-anchor producer that neither requires
-      nor is required by this item, `O7`, `P2a`, `P2c`, `P2d`, `P5`, and `P8`,
-      each owned by whichever merges later; the `P2b` heading and `M7` directive
-      cases belong to this item. Requires `P2b`.
+      `-` without collapsing, and the permitted-scalar filter, falling back to
+      `section` and uniquifying with the smallest free `-N`. A generated anchor
+      has no scope. Fixtures cover the module's cases including large duplicate
+      sets; remove the `gfm-auto-anchors` gap. Reserving an explicit anchor
+      before synthesis is a cross-item case with every explicit-anchor producer
+      that neither requires nor is required by this item, `O7`, `P2a`, `P2c`,
+      `P2d`, `P5`, and `P8`, each owned by whichever merges later; the `P2b`
+      heading and `M7` directive cases belong to this item. Requires `P2b`.
 - [ ] **P4 — `implicit_header_references`.** Register a virtual reference
       definition for every heading with a final anchor, keyed by the authored
       label source after removing heading syntax, closing hashes, and trailing

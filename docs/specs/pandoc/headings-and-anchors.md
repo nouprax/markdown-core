@@ -24,18 +24,19 @@ content in this order:
 1. Project to visible plain text: remove formatting containers while retaining
    their text, retain link labels and code literals, and remove footnote
    content/calls.
-2. Replace recognized emoji shortcodes and Unicode emoji with their canonical
-   GitHub alias names, without surrounding colons.
-3. Apply Unicode lowercase mapping.
-4. Replace each Unicode whitespace scalar with one ASCII `-`; do not collapse
+2. Apply Unicode lowercase mapping.
+3. Replace each Unicode whitespace scalar with one ASCII `-`; do not collapse
    adjacent replacements.
-5. Remove every scalar except Unicode letters/numbers, Unicode combining
+4. Remove every scalar except Unicode letters/numbers, Unicode combining
    marks, connector punctuation, `-`, and `_`.
-6. If the result is empty, use `section`.
+5. If the result is empty, use `section`.
 
 Punctuation removal does not insert whitespace, so separated source fragments
-may concatenate. Formatting delimiters never contribute. For example,
-`## My Header` receives `anchor="my-header"`.
+may concatenate. Formatting delimiters never contribute. No scalar receives
+special treatment beyond these steps: there is no emoji alias table, so a
+shortcode such as `:tada:` keeps its word and loses its colons, and a symbol
+scalar is removed like any other punctuation. For example, `## My Header`
+receives `anchor="my-header"`.
 
 Generated and explicit anchors share one document registry. Before generating
 any heading anchor, reserve every explicit anchor recognized anywhere in the
@@ -85,7 +86,7 @@ Unresolved candidates retain inherited fallback.
 
 Tests must cover explicit IDs composed with auto anchors; formatting, links,
 code, and footnotes in heading text; Unicode case/marks/connectors/whitespace;
-punctuation removal; emoji aliases; empty bases; duplicate bases and explicit
+punctuation removal; symbol scalars and shortcode-shaped text; empty bases; duplicate bases and explicit
 duplicates; explicit anchors before and after a generated heading, including
 an Obsidian block identifier when both extensions are enabled; all three
 reference spellings; Unicode/case-folded labels; formatted heading labels and
