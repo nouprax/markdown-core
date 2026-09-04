@@ -139,7 +139,10 @@ syntax and precedence where no selected Pandoc extension participates.
 - [ ] Attach inline code, heading, fenced-code, link/image, bracketed-Span, and
       fenced-Div attributes during construction of their owning node. Reference
       definitions retain attributes only in the existing parser-owned resolution
-      table. Failed suffixes release source transactionally.
+      table. An occurrence-local suffix belongs to that occurrence's
+      source-faithful scope; definition inheritance transfers semantic values
+      only and never expands, unions, or substitutes the occurrence scope.
+      Failed suffixes release source transactionally.
 - [ ] Finalize explicit and generated heading anchors in one source-ordered
       registry. Use the specified GFM algorithm, reserve explicit anchors,
       resolve collisions deterministically, and build virtual implicit-reference
@@ -150,8 +153,9 @@ syntax and precedence where no selected Pandoc extension participates.
 
 - [ ] **Exit criterion:** each authored attribute container has exactly one owner,
       generated anchors have no fictional source, reference occurrences merge
-      anchors and attributes once, directives and Pandoc sites coexist without
-      precedence drift, and long or malformed containers remain linear.
+      anchors and attributes once without inheriting definition ranges,
+      directives and Pandoc sites coexist without precedence drift, and long or
+      malformed containers remain linear.
 
 ## Phase 3 — inline extensions and document resolution
 

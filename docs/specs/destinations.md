@@ -85,6 +85,9 @@ owned values and cannot borrow parser scratch storage or reference-definition
 tables. A successfully resolved Markdown reference link copies or shares the
 winning definition's URL internally but publishes an owned
 `Destination.url`; the source definition and lookup key remain parser state.
+Resolution transfers the semantic destination only. It never replaces or
+expands the reference node's source-faithful occurrence scope with the separate
+definition's range.
 
 Allocation failure aborts construction of the owning reference node without
 publishing a partial destination. Traversal visits the owning `Link` or
@@ -97,6 +100,6 @@ whole-resource `cross` values with null anchors; empty same-document paths;
 heading and block source spellings populating the same `cross.anchor` field;
 hierarchical and resource-specific anchor values; rejection of invalid branch/field
 combinations; direct and resolved reference links producing the same `url`
-branch; declaration/reference separation; exact owner scopes; all public
-binding projections; allocation failure at every owned string; and
-size-doubling URL, path, and anchor inputs.
+branch; declaration/reference separation; exact occurrence scopes before and
+after resolution; all public binding projections; allocation failure at every
+owned string; and size-doubling URL, path, and anchor inputs.

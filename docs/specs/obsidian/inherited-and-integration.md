@@ -29,13 +29,15 @@ same semantic node:
 The resolved `Link.content` is the inline content authored at that occurrence.
 The `Destination.url` value and `title` come from the inline destination or the
 winning reference definition. Its `scope` covers the link occurrence, not a
-separate definition elsewhere in the document. This module uses the shared
+separate definition elsewhere in the document. Resolution and inheritance
+never create an expanded or composite scope. This module uses the shared
 [destination model](../destinations.md); reference resolution cannot expose a
 bare string in parallel with `Link.dest`.
 
 Direct and reference images normalize in the same way to `Image`. Their alt
 content belongs to each `Image` occurrence; their source and title come from
-the direct destination or winning reference definition.
+the direct destination or winning reference definition, and resolution does
+not change the occurrence's source-faithful scope.
 
 Reference labels, normalized lookup keys, and full/collapsed/shortcut form are
 parser-resolution data. A successfully parsed reference definition populates

@@ -162,16 +162,18 @@ universal fields:
    sequence; keep the surviving inherited entries in source order and place
    them before the primary entries.
 
-The resolved occurrence receives one anchor and one `Attributes` value. A
-reference definition remains parser-owned and is not emitted as a public
-metadata node.
+The resolved occurrence receives one anchor and one `Attributes` value. This
+operation merges semantic values only and never changes the occurrence's
+source-faithful `Markup.scope`. A reference definition remains parser-owned,
+is not emitted as a public metadata node, and does not contribute its separate
+source range to the resolved occurrence.
 
 ## Profile boundary
 
 This contract decides the sole consumer model and braced attribute grammar. A
 profile decides only where a complete list may attach, which `Markup` owns it,
-whether successful attachment changes node recognition, and how owner scope
-changes:
+whether successful attachment changes node recognition, and which authored
+bytes form that lexical occurrence:
 
 - [Remark attributes](remark/attributes.md) owns directive attachment.
 - [Pandoc attributes](pandoc/attributes.md) owns Pandoc attachment extensions.
@@ -203,7 +205,7 @@ letter-only name starts; `{-}`; generic bare-name rejection; empty, quoted, and
 unquoted values; escapes; quoted-only character references; line-ending
 normalization; non-ASCII whitespace positions; ID replacement; ordered
 duplicate classes and records; `id=` and `class=` projection; reference
-merging; inert unsafe-looking metadata; malformed and unclosed fallback;
-allocation failure; and size-doubling valid, duplicate, malformed, and unclosed
-inputs. Attachment, scope, option, and profile-specific fallback cases belong
-to the corresponding profile suite.
+merging without scope mutation; inert unsafe-looking metadata; malformed and
+unclosed fallback; allocation failure; and size-doubling valid, duplicate,
+malformed, and unclosed inputs. Attachment, exact occurrence scope, option,
+and profile-specific fallback cases belong to the corresponding profile suite.

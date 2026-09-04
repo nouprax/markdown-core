@@ -57,9 +57,9 @@ another profile contributes an independent rule. The requested table
 extensions do not define table-attribute syntax, so Table, row, and cell
 anchors are null and their attributes remain empty.
 
-Successfully authored attachment syntax is part of the owner's scope. A
-synthesized anchor neither extends scope nor receives a fictional source
-position.
+Successfully authored attachment syntax that is lexically part of an
+occurrence is inside that occurrence's source-faithful scope. A synthesized
+anchor neither extends scope nor receives a fictional source position.
 
 ## Spans and divs
 
@@ -141,8 +141,9 @@ attaches to the resulting `Link` or `Image`:
 <https://example.com>{.external}
 ```
 
-Whitespace prevents attachment. The suffix is outside label/alt content and
-inside owner scope. A malformed suffix leaves the completed node unchanged.
+Whitespace prevents attachment. An occurrence-local suffix is outside
+label/alt content and inside that Link or Image occurrence's scope. A malformed
+suffix leaves the completed node unchanged.
 
 A valid list may also follow a reference definition's destination/title,
 including on its allowed continuation line. Its anchor candidate and
@@ -150,7 +151,22 @@ attributes are stored in the parser's reference map rather than emitted as a
 public node. A resolved occurrence uses the shared
 `merge(occurrence, definition)` operation. Explicit
 duplicate-definition precedence is unchanged; unresolved references inherit
-nothing.
+nothing. Merge transfers semantic values only: the definition owns the authored
+suffix and its parser-internal source range, while the emitted Link or Image
+retains the source-faithful range of its own occurrence.
+
+For example:
+
+```markdown
+[x][r]
+
+[r]: /target {#foo}
+```
+
+emits `Link(anchor="foo", ...)` whose scope is exactly the `[x][r]`
+occurrence. It does not include or point at any byte of the definition. By
+contrast, in `[x][r]{#bar}`, the occurrence-local suffix is part of that
+Link's scope because those bytes lexically form the emitted occurrence.
 
 Image `width` and `height` values may be unitless pixels or use `px`, `cm`,
 `mm`, `in`, `inch`, or `%` without internal whitespace. They remain strings;
@@ -178,7 +194,8 @@ nodes or create node-specific attribute stores.
 Tests must cover every registry row; Pandoc shorthand boundaries at every
 attachment site; anchor, classes, and records; `{-}`; bare-name rejection;
 `{}`; immediate versus spaced attachment; malformed fallback; option-off
-behavior; nested ownership and cross-extension precedence; exact owner scopes;
-language aliases; image units; reference inheritance; synthesized anchors;
-inert unsafe-looking metadata; allocation failure; and size-doubling valid,
-duplicate, malformed, and unclosed inputs.
+behavior; nested ownership and cross-extension precedence; exact occurrence
+scopes; language aliases; image units; occurrence-local suffix ranges;
+reference inheritance without definition-range inheritance; synthesized
+anchors; inert unsafe-looking metadata; allocation failure; and size-doubling
+valid, duplicate, malformed, and unclosed inputs.

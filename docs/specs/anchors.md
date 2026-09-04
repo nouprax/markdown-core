@@ -58,8 +58,9 @@ anchor. The current rules are:
 - Obsidian block-identifier attachment.
 
 The defining profile module owns recognition, attachment position, fallback,
-and owner scope. The [shared attributes contract](attributes.md) owns ID
-normalization and reference-occurrence inheritance. The
+and the lexical extent of the source occurrence. The
+[shared attributes contract](attributes.md) owns ID normalization and
+reference-occurrence inheritance. The
 [Pandoc heading-anchor contract](pandoc/headings-and-anchors.md) owns generated
 values and collisions. The
 [Obsidian block-identifier contract](obsidian/block-identifiers.md) owns its
@@ -79,11 +80,16 @@ selection require workspace context and remain outside the parser.
 
 ## Scope and lifecycle
 
-Authored anchor syntax is included in the owning Markup's scope even though its
-punctuation is absent from visible content and from the stored anchor. A
-synthesized anchor has no fictional source range and does not extend the owner
-scope. `anchor` is an owned immutable string and has no scope or attributes of
-its own.
+Every anchor obeys the shared source-faithful
+[`Markup.scope`](canonical-ast.md#coordinates) invariant. Anchor syntax
+lexically attached to an occurrence is inside that occurrence's scope even
+when its punctuation is absent from visible content and the stored value. An
+anchor inherited from a separate reference definition changes only the
+resolved occurrence's semantic field: the emitted node keeps the range of its
+own occurrence, and the definition's range is never copied, unioned, or
+substituted. A synthesized anchor likewise adds no fictional position and
+cannot change scope. `anchor` is an owned immutable string and has no scope or
+attributes of its own.
 
 Recognizing an anchor never opens a link, resolves a document, creates an HTML
 `id`, or changes rendering. Those are consumer policies. Allocation failure
@@ -95,6 +101,7 @@ anchor.
 Tests must cover `anchor=null` on every Markup kind; explicit attribute IDs;
 automatic heading anchors; Obsidian block identifiers; removal of source
 punctuation; identical values produced by different source rules; last-ID and
-explicit-over-generated precedence; reference inheritance; explicit and
-generated duplicates; exact owner scopes; unresolved incoming references not
-mutating targets; allocation failure; and size-doubling anchor candidates.
+explicit-over-generated precedence; reference inheritance without definition
+range inheritance; explicit and generated duplicates; exact occurrence scopes;
+unresolved incoming references not mutating targets; allocation failure; and
+size-doubling anchor candidates.
