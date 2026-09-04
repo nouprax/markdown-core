@@ -198,8 +198,16 @@ sequences; it is landed here as its own track.
 - [ ] **D9 — Reference expansion bound.** Resolution copies the winning
       destination into every occurrence, which the current
       `pathological_reference_expansion_bound` case and the reference ledger
-      forbid. Decide the interning rule for the C tree and restate the bound
-      over interned bytes. Needed by `M2`.
+      forbid. The bound is a property of every surface: each binding decoder
+      materializes a language string per node, and the JNI and Wasm transports
+      copy string bytes per record, so interning only the C tree would let the C
+      case pass while the binding trees still grow with destination length times
+      reference count. Decide the interning rule for the C tree, the
+      shared-string layout of both transports, and the decoder rule that shares
+      one language string per distinct interned string across occurrences, and
+      restate the bound as one adversarial document checked on every surface:
+      interned bytes in C, payload bytes per transport, and distinct string
+      materializations per decoder. Needed by `M2`.
 
 ## Target inventory
 
@@ -351,22 +359,22 @@ plumbing.
       real tagged value instead of wrapping a string. Manifest states:
       `destination.url.empty`, `destination.url.value`. Requires `D1`, `D2`.
 - [ ] **M2 — Resolved reference links and images.** Resolve every successful
-      full, collapsed, shortcut, and autolink form to `Link(dest=url(...))`
-      and every reference image to `Image` inside the existing parser-owned
-      lookup, and remove `LinkReference`, `ImageReference`,
-      `ReferenceDefinition`, and `ReferenceForm` from every surface with
-      their facade accessors; `markdown_core_node_association` narrows to the
-      footnote kinds until `M4`. A resolved occurrence keeps its own scope and
-      never acquires the definition's range; unresolved calls and invalid
-      definitions keep the inherited literal fallback. Update the cmark,
-      cmark-gfm, and remark projections (remark resolves mdast definitions
-      inside the projection), rewrite
-      `scripts/audit-reference-order-independence.mjs` and
+      full, collapsed, shortcut, and autolink form to `Link(dest=url(...))` and
+      every reference image to `Image` inside the existing parser-owned lookup,
+      and remove `LinkReference`, `ImageReference`, `ReferenceDefinition`, and
+      `ReferenceForm` from every surface with their facade accessors;
+      `markdown_core_node_association` narrows to the footnote kinds until `M4`.
+      A resolved occurrence keeps its own scope and never acquires the
+      definition's range; unresolved calls and invalid definitions keep the
+      inherited literal fallback. Update the cmark, cmark-gfm, and remark
+      projections (remark resolves mdast definitions inside the projection),
+      rewrite `scripts/audit-reference-order-independence.mjs` and
       `specs/reference-resolution/` to compare resolved links, and re-derive
-      `pathological_reference_expansion_bound` under `D9`. Manifest: the
-      `reference.form.*` states are replaced by a case proving that a direct
-      and a reference occurrence dump identically apart from scope. Requires
-      `M1`, `D8`, `D9`.
+      `pathological_reference_expansion_bound` under `D9` together with its
+      transport and decoder counterparts on every surface. Manifest: the
+      `reference.form.*` states are replaced by a case proving that a direct and
+      a reference occurrence dump identically apart from scope. Requires `M1`,
+      `D8`, `D9`.
 - [ ] **M3 — `Callout` replaces `BlockQuote`.** Rename the kind in every
       profile, add `CalloutFold`, and give every `>` container `variant=null`,
       `fold=none`, and `title=null` with unchanged content and scope; no alias
