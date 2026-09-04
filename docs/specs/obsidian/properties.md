@@ -57,9 +57,18 @@ line because the complete header remains an authored source region.
 
 The outer fences are an Obsidian Markdown extension rather than YAML stream
 document markers. The payload between them is passed as one independent YAML
-1.2.2 JSON-schema document to the operation defined by the shared metadata
-contract. A top-level JSON object uses the same envelope and produces the same
-records as an equivalent YAML mapping.
+1.2.2 document to the JSON-scalar-with-string-fallback operation defined by the
+shared metadata contract. A top-level JSON object uses the same envelope and
+produces the same records as an equivalent YAML mapping.
+
+The payload does not admit YAML stream directives or document boundary
+indicators. In particular, a line containing `...` is never a Properties
+closing fence and never turns the preceding bytes into valid metadata. Whether
+it is the only payload line or follows a mapping, its document-end role makes
+the complete Properties candidate invalid and all bytes return to inherited
+Markdown parsing. Likewise, the exact inner `---` line is consumed as the
+Obsidian closing fence by the envelope grammar; it is never passed through as
+a YAML document-start indicator.
 
 ## Attachment and body parsing
 
@@ -155,17 +164,21 @@ Obsidian dialect parser or Pandoc metadata behavior.
 
 ## Oracle and product evidence
 
-The official help snapshot is normative. The offline executable oracle uses
-exact-pinned `gray-matter` for the documented beginning-of-file envelope and
-`js-yaml` with `JSON_SCHEMA` for the supported value intersection. This is
-supplementary implementation evidence: syntax or values accepted only by
-those packages do not extend this contract.
+The official help snapshot is normative. The offline executable oracle first
+applies the exact envelope rule above and then uses exact-pinned `yaml@2.9.0`
+through its Document/node API with source tokens retained. It projects ordered
+mapping pairs directly rather than converting them to a JavaScript object.
+Consequently the oracle can witness empty and comment-only documents, key
+source shape, decoded-name uniqueness, source order, exact numeric lexemes,
+aliases, and supported-value projection without frontmatter heuristics or
+host-object key coercion. Syntax or values accepted only by the package do not
+extend this contract.
 
-Oracle comparison omits scopes and covers only successful documented forms.
-Markdown Core fixtures own exact scopes, invalid-candidate fallback, BOM and
-line-ending boundaries, strict fence spelling, property-name source shape and
-source order, nested-value rejection, precision-preserving number payloads,
-and resource failures.
+Semantic comparison omits scopes because the YAML package reports JavaScript
+string offsets while the canonical AST uses inherited binding coordinates.
+The harness nevertheless checks that every accepted record has ordered,
+in-envelope CST range evidence. Markdown Core fixtures remain authoritative
+for exact scopes, allocation failure, and parser-wide resource limits.
 
 ## Required conformance cases
 
@@ -174,11 +187,12 @@ byte zero and after a BOM; LF and CRLF; closing at EOF; empty, whitespace, and
 comment-only payloads; arbitrary names; plain and quoted numeric- and
 boolean-looking names; YAML and JSON root mappings; body parsing immediately
 after the close; and option-off behavior. Boundary cases must cover leading
-blank/text, second blocks, `...`, short/long/indented/trailed/info-word fences,
-indented scalar separators, bare and indented `#` comment-only lines,
-multi-comment payloads, missing close, malformed payloads, empty or multiline
-names, sequence/mapping/alias keys, duplicate names after decoding, non-mapping
-roots including an explicit root null, multiline text, boolean/null list items,
+blank/text, second blocks, YAML directives, `...` both alone and after a
+mapping, short/long/indented/trailed/info-word fences, indented scalar
+separators, bare and indented `#` comment-only lines, multi-comment payloads,
+missing close, malformed payloads, empty or multiline names,
+sequence/mapping/alias keys, duplicate names after decoding, non-mapping roots
+including an explicit root null, multiline text, boolean/null list items,
 nested values, interaction with thematic breaks and Setext headings, and
 source-like bytes inside every container. Every accepted case must assert
 `Metadata.scope`, each record scope, body scopes, source order, and absence of

@@ -64,32 +64,30 @@
         }
     },
     "metadataOracle": {
-        "frontmatter": {
-            "package": "gray-matter",
-            "version": "4.0.3",
-            "repository": "https://github.com/jonschlinkert/gray-matter",
-            "commit": "e54a33b394e14a1808b88f939507f374552906e4",
-            "integrity": "sha512-5v6yZd4JK3eMI3FqqCouswVqwugaA9r4dNZB1wwcmrD02QkV5H0y7XBQW8QwQqEaZY1pM9aqORSORhJRdNK44Q=="
-        },
         "yaml": {
-            "package": "js-yaml",
-            "version": "4.1.0",
-            "repository": "https://github.com/nodeca/js-yaml",
-            "commit": "2cef47bebf60da141b78b085f3dea3b5733dcc12",
-            "integrity": "sha512-wpxZs9NoxZaJESJGIZTyDEaYpl0FKSA+FB9aJiyemKhMwkxQg63h4T1KJgUGHpTqPDNRcmmYLugrRjJlBtWvRA=="
+            "package": "yaml",
+            "version": "2.9.0",
+            "repository": "https://github.com/eemeli/yaml",
+            "commit": "ddb21b04cb889722cec8f89dc1b67f19d62d7f7d",
+            "integrity": "sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA=="
         },
-        "runner": "gray-matter custom yaml engine / js-yaml JSON_SCHEMA",
-        "why": "No executable Obsidian parser API is available. gray-matter is the most-downloaded current dedicated frontmatter parser among the compared packages, and js-yaml is its ecosystem's dominant maintained YAML decoder. npm's official point API reported 8,940,668 and 298,229,346 downloads respectively for the recorded week.",
+        "runner": "exact Obsidian envelope scanner / yaml Document API with CST source tokens",
+        "why": "No executable Obsidian Properties parser API is available. yaml is the broadly used maintained YAML parser whose Document/node API preserves mapping pairs, decoded scalar values, original scalar sources, aliases, comments, and ranges. Those facts are required by the target model and cannot be recovered from gray-matter plus js-yaml's JavaScript-object projection. npm's official point API reported 202,359,392 downloads for yaml during the recorded week.",
         "candidateDownloads": [
             {
                 "package": "js-yaml",
                 "downloads": 298229346,
-                "note": "selected YAML decoder"
+                "note": "higher raw downloads, but its public load API projects mappings to JavaScript objects and erases required source identity, order, and lexical evidence"
+            },
+            {
+                "package": "yaml",
+                "downloads": 202359392,
+                "note": "selected source-preserving YAML Document/CST parser"
             },
             {
                 "package": "gray-matter",
                 "downloads": 8940668,
-                "note": "selected frontmatter parser"
+                "note": "rejected; its empty-payload heuristics collapse distinct YAML document states and the exact Obsidian envelope is already specified locally"
             },
             {
                 "package": "remark-frontmatter",
@@ -108,11 +106,13 @@
             "source": "https://api.npmjs.org/downloads/point/last-week/{package}"
         },
         "options": {
-            "language": "yaml",
-            "delimiters": "---",
-            "schema": "JSON_SCHEMA"
+            "envelope": "obsidian-exact-leading-fence",
+            "schema": "json-scalars-with-string-fallback",
+            "version": "1.2",
+            "keepSourceTokens": true,
+            "uniqueKeys": false
         },
-        "authorityBoundary": "The official Properties page owns exact placement and fence grammar. The packages supply executable evidence only for successful forms in their documented intersection; permissive package-only syntax is not accepted by the target contract."
+        "authorityBoundary": "The official Properties page owns exact placement, fence grammar, and the consumer value domain. The repository scanner enforces that envelope before yaml parses one single-node document; YAML stream directives and document boundary indicators are rejected, and `...` is never a Properties terminator. The library supplies source-preserving YAML syntax and node evidence; the explicit Properties projection accepts only the normative target graph. Permissive library-only syntax is not accepted."
     },
     "claim": "For the documented constructs the selected package actually parses, Markdown Core must converge on the same semantic recognition except for explicit, general AST-model deltas. The official Obsidian documentation, not this package, owns the language contract.",
     "corpus": ["specs/oracles/obsidian/corpus.md", "specs/oracles/obsidian/metadata-corpus.md"],
@@ -230,6 +230,14 @@
             "closedBy": "Phase 3 — Properties, anchors, and callout containers"
         },
         {
+            "id": "properties-source-faithful-values",
+            "input": "---\nzeta: last\n1: &large 9007199254740993\n1.0: 1.0\n1e2: 1e2\n-0: -0\n~: tilde\ntrue: boolean-name\n\"escaped\\u0020name\": *large\nnumbers: [9007199254740993, 1.0, 1e2, -0]\n---\n",
+            "oracleDigest": "66a0fcc8a3a1d9e0e6a495f063f0c02576a2e82f76b65d464b75857a20043213",
+            "markdownCoreDigest": "9c3e03bd1b7a35275c3115195ec9d37026f003e08846f0084c80b48dfe3c4f67",
+            "requirement": "Preserve source order and decoded key text independently of host-object enumeration or YAML scalar resolution, retain every numeric source lexeme, and resolve aliases without precision loss.",
+            "closedBy": "Phase 3 — Properties, anchors, and callout containers"
+        },
+        {
             "id": "properties-first-block-only",
             "input": "---\nfirst: one\n---\n---\nsecond: two\n---\n",
             "oracleDigest": "013c47a06e3f380dca536f60a2146c391eacb986aba8592d7cbfb5511c1c79fa",
@@ -268,26 +276,6 @@
             "id": "universal-callout-container",
             "summary": "mdast names every inherited > container blockquote, while the target canonical AST uses Callout for both metadata-free and metadata-bearing quoted containers.",
             "handling": "The semantic projection maps mdast blockquote to Callout. The inherited source grammar remains owned by CommonMark; official product fixtures own optional Obsidian metadata."
-        },
-        {
-            "id": "metadata-number-lexeme",
-            "summary": "js-yaml exposes finite numbers as JavaScript Number values, while the target Metadata model retains the exact authored numeric spelling to avoid cross-platform precision loss.",
-            "handling": "The oracle corpus uses exactly representable canonical spellings and projects them with String(value). Product fixtures own large integers, exponents, negative zero, and other cases where numeric spelling or precision is observable."
-        },
-        {
-            "id": "metadata-source-model",
-            "summary": "gray-matter and js-yaml expose decoded data and body content but do not publish the source-faithful Metadata and MetadataRecord scopes required by the target AST.",
-            "handling": "The parity comparison omits scopes. Product fixtures own exact fence, record, continuation-line, alias-occurrence, body, and Document ranges."
-        },
-        {
-            "id": "metadata-integer-name-order",
-            "summary": "js-yaml returns a JavaScript object, whose standard enumeration order moves integer-index-looking property names ahead of other names even when the YAML source authored another order.",
-            "handling": "The oracle corpus covers source order with ordinary names. Product fixtures own exact order for numeric-looking and every other valid name; the target AST always follows source order."
-        },
-        {
-            "id": "metadata-name-source-model",
-            "summary": "js-yaml exposes mapping keys only after YAML scalar resolution and conversion to JavaScript property strings. It cannot preserve whether a decoded name came from a plain or quoted scalar, rewrites textual names such as 1.0, 1e2, 01, -0, and ~, may merge distinct authored names such as 1 and 1.0, and cannot reject a sequence, mapping, or alias key by inspecting the resulting object.",
-            "handling": "The oracle corpus covers only direct scalar names whose JavaScript property string equals the target textual name and does not collide after library conversion. Product fixtures own exact name preservation, distinct-name coexistence, property-name source validation, quote-independent decoding, and duplicate detection in the decoded string namespace."
         }
     ],
     "notAnAuthorityFor": [
@@ -297,7 +285,7 @@
         "Math delimiter edge cases. The gate disables the package's micromark math extension; documented $ and $$ forms remain under the product formula contract.",
         "Callouts. They are implemented by the umbrella transform after parsing, not by this direct parser package.",
         "Block identifier attachment, inline-footnote recognition, the Cite/Citation/CitationReferent/Footnote consumer projection, or image-size semantics. The selected Markdown comparison does not implement them, so official-example product fixtures own them.",
-        "Properties syntax accepted only by gray-matter, YAML values outside the documented Obsidian domain, property-name source shapes and spellings erased or merged by js-yaml, strict invalid-candidate fallback, exact numeric value spellings, source scopes, or resource limits. Product fixtures own these boundaries.",
+        "YAML values outside the documented Obsidian domain, transactional invalid-candidate fallback and Markdown precedence, binding-specific range coordinates, allocation failure, or parser-wide resource limits. Product fixtures own these boundaries. The source-preserving Properties oracle does exercise exact envelope recognition, key shape and decoded-name uniqueness, source order, exact number spellings, aliases, and supported-value projection and rejection.",
         "Vault resolution, rendering, styling, editor completion, or transclusion. These are outside a parser-only AST."
     ]
 }

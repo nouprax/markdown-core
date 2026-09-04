@@ -80,8 +80,6 @@
         "@eslint/js": "10.0.1",
         "@quartz-community/remark-obsidian": "0.2.4",
         "eslint": "10.0.1",
-        "gray-matter": "4.0.3",
-        "js-yaml": "4.1.0",
         "prettier": "3.9.5",
         "remark-directive": "^4.0.0",
         "remark-gfm": "^4.0.1",
@@ -89,6 +87,7 @@
         "remark-parse": "^11.0.0",
         "typescript": "6.0.3",
         "typescript-eslint": "8.63.0",
-        "unified": "^11.0.5"
+        "unified": "^11.0.5",
+        "yaml": "2.9.0"
     }
 }

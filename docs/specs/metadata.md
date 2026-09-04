@@ -98,9 +98,11 @@ are not rewritten to plural names.
 
 Scalar values have these exact meanings:
 
-- `null` is an empty or explicit YAML JSON-schema null scalar. It differs from
+- `null` is an empty scalar, a plain scalar whose implicit resolution is null,
+  or a scalar carrying the allowed explicit standard null tag. It differs from
   an empty text value and an empty list.
-- `bool` is an unquoted YAML JSON-schema `true` or `false` value.
+- `bool` is an unquoted lowercase `true` or `false` value or a scalar carrying
+  the allowed explicit standard boolean tag.
 - `number` contains the complete decoded ASCII number spelling without
   conversion through a platform integer or floating-point type. The branch,
   rather than the payload's host type, carries numeric semantics. This avoids
@@ -127,11 +129,25 @@ handled identically.
 
 ## YAML projection
 
-The Properties payload is decoded as one YAML 1.2.2 document. Root values use
-the JSON schema; root mapping keys use the property-name projection above.
-JSON object syntax is accepted through the same operation; it is not a second
-parser or value model. Only the following representation graph projects
-successfully:
+The Properties payload is decoded as one YAML 1.2.2 document. Plain values use
+JSON scalar resolution with a string fallback: exactly `null` resolves to null;
+exactly `true` and `false` resolve to booleans; a scalar matching
+`^-?(0|[1-9][0-9]*)(\.[0-9]*)?([eE][-+]?[0-9]+)?$` resolves to a number; every
+other valid plain scalar resolves to text. This admits Obsidian's ordinary
+unquoted text without also applying YAML 1.1 boolean, timestamp, infinity,
+base-prefix, underscore, or leading-plus resolution. Quoted scalars resolve to
+text unless an allowed explicit standard scalar tag says otherwise. Root
+mapping keys use the property-name projection above instead of scalar
+resolution. JSON object syntax is accepted through the same operation; it is
+not a second parser or value model.
+
+The payload is a single-node document, not a YAML stream embedded inside the
+Properties envelope. YAML directives and explicit document-start or
+document-end indicators are unsupported. In particular, `...` is not an empty
+root and does not terminate Properties; it invalidates the complete candidate.
+Here, an empty node means that the payload itself contains no representation
+node—only zero bytes, whitespace, or comments. Only the following
+representation graph projects successfully:
 
 - the root is an empty node or one mapping;
 - every mapping key is a directly authored scalar which decodes to a unique,
@@ -139,14 +155,19 @@ successfully:
 - every root value resolves to a supported scalar or a sequence of supported
   list items; and
 - every alias in a value position is defined earlier in the same Properties
-  block, is acyclic, and resolves to one of those supported values.
+  block, is acyclic, and resolves to one of those supported values; and
+- the payload contains no YAML stream directive, document-start indicator, or
+  document-end indicator.
 
-Explicit application-specific tags, complex or aliased keys, duplicate names,
-nested mappings, nested sequences, cyclic aliases, non-finite numbers, and
-multiple YAML documents do not have a canonical Metadata value. YAML
-presentation details—comments, anchor names, quote style, flow versus block
-style, and numeric formatting—are not additional public fields. The exact
-numeric scalar spelling is the sole deliberate lexical payload because
+The standard `str`, `null`, `bool`, `int`, and `float` scalar tags may state a
+supported scalar branch explicitly; the standard `map` and `seq` tags may
+state the already-required collection kind. Every other explicit tag,
+including application-specific tags, is unsupported. Complex or aliased keys,
+duplicate names, nested mappings, nested sequences, cyclic aliases, non-finite
+numbers, and multiple YAML documents do not have a canonical Metadata value.
+YAML presentation details—comments, anchor names, quote style, flow versus
+block style, and numeric formatting—are not additional public fields. The
+exact numeric scalar spelling is the sole deliberate lexical payload because
 converting it would lose consumer-visible precision.
 
 An alias contributes the resolved value at the alias occurrence. It creates no
@@ -222,5 +243,7 @@ names; sequence, mapping, or alias keys; duplicates after name decoding such
 as `1` with `"1"`; multiline text; boolean/null list items; nested values;
 unsupported tags; non-finite numbers;
 undefined/cyclic/explosive aliases; multiple YAML documents; malformed YAML;
-allocation failure; and each structural limit. Profile fixtures own the
-envelope, option gate, fallback, precedence, and exact block/record scopes.
+YAML directives and document boundary indicators, including document-end-only
+and mapping-followed-by-document-end payloads; allocation failure; and each
+structural limit. Profile fixtures own the envelope, option gate, fallback,
+precedence, and exact block/record scopes.
