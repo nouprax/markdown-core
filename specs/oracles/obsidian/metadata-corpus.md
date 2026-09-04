@@ -65,6 +65,15 @@ After
 .
 ````````````````````````````````
 
+## Comment-only metadata
+
+```````````````````````````````` example
+---
+# Maintainer note
+---
+.
+````````````````````````````````
+
 ## Only the first block attaches
 
 ```````````````````````````````` example

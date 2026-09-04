@@ -222,6 +222,14 @@
             "closedBy": "Phase 3 — Properties, anchors, and callout containers"
         },
         {
+            "id": "properties-comment-only",
+            "input": "---\n# Maintainer note\n---\n",
+            "oracleDigest": "3208f09528f5eb1b583fddaf9ca445a9b3db458fd0b4c82c186355b0f3ec48d0",
+            "markdownCoreDigest": "9af02ec0f77ad6525b7981d6c92f586c023dd454009962a0cc77718005102f66",
+            "requirement": "Recognize a comment-only Properties block as explicitly authored empty Metadata while emitting no comment record or body node.",
+            "closedBy": "Phase 3 — Properties, anchors, and callout containers"
+        },
+        {
             "id": "properties-first-block-only",
             "input": "---\nfirst: one\n---\n---\nsecond: two\n---\n",
             "oracleDigest": "013c47a06e3f380dca536f60a2146c391eacb986aba8592d7cbfb5511c1c79fa",

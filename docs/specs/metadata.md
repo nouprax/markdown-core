@@ -52,8 +52,11 @@ MetadataValue =
 
 `Document.metadata == null` means that no valid Properties block occurred.
 A non-null `Metadata(records=[])` means that an explicitly authored, valid
-empty block occurred. This distinction is observable because the block owns a
-real source range even though it contributes no records.
+block with no semantic records occurred. Its payload may be empty,
+whitespace-only, or contain only YAML comments. YAML comments never produce a
+`MetadataRecord`, metadata value, or `Markup` node; they remain source bytes
+owned by `Metadata.scope`. This distinguishes every such authored block from
+absent metadata while giving all three forms the same consumer value.
 
 `Metadata`, `MetadataRecord`, `MetadataScalar`, `MetadataListItem`, and
 `MetadataValue` are values, not `Markup` kinds. Metadata is out-of-band

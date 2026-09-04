@@ -43,6 +43,18 @@ with an info word, and a fence preceded by a blank line are not Properties
 fences. The payload may be empty, whitespace-only, or comment-only; each form
 produces non-null empty `Metadata` when the YAML document is valid.
 
+For example, this complete block is valid:
+
+```yaml
+---
+# Maintainer note; not metadata content.
+---
+```
+
+Its canonical projection is `Metadata(records=[])`. The comment contributes no
+record or comment node, but `Metadata.scope` covers both fences and the comment
+line because the complete header remains an authored source region.
+
 The outer fences are an Obsidian Markdown extension rather than YAML stream
 document markers. The payload between them is passed as one independent YAML
 1.2.2 JSON-schema document to the operation defined by the shared metadata

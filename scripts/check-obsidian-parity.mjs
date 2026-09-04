@@ -155,7 +155,7 @@ function officialPropertiesEnvelope(source) {
     while (cursor <= source.length) {
         const line = sourceLine(source, cursor);
         if (line.text === "---") {
-            return { start, payloadStart: opening.next, payloadEnd: cursor, bodyStart: line.next };
+            return { start, bodyStart: line.next };
         }
         if (!line.terminated) return null;
         cursor = line.next;
@@ -188,11 +188,8 @@ function parseProperties(source) {
         throw new Error("gray-matter did not agree with the official exact-fence envelope");
     }
     if (decoded === undecoded) {
-        decoded = loadYaml(source.slice(envelope.payloadStart, envelope.payloadEnd), {
-            schema: JSON_SCHEMA,
-            json: false
-        });
-        if (decoded !== undefined) throw new Error("gray-matter did not invoke the configured YAML engine");
+        if (!parsed.isEmpty) throw new Error("gray-matter did not invoke the configured YAML engine");
+        decoded = undefined;
     }
     return { content: parsed.content, metadata: projectMetadata(decoded) };
 }
@@ -451,9 +448,13 @@ for (const nonHeader of ["text\n---\nname: value\n---\n", "---yaml\nname: value\
         process.exit(1);
     }
 }
-if (JSON.stringify(parseProperties("\uFEFF---\n---\n").metadata) !== "[]") {
-    process.stderr.write("obsidian parity: Properties oracle rejected an empty BOM-prefixed header\n");
-    process.exit(1);
+for (const emptyProperties of ["\uFEFF---\n---\n", "---\n   \n---\n", "---\n# note\n---\n"]) {
+    if (JSON.stringify(parseProperties(emptyProperties).metadata) !== "[]") {
+        process.stderr.write(
+            `obsidian parity: Properties oracle rejected empty metadata ${JSON.stringify(emptyProperties)}\n`
+        );
+        process.exit(1);
+    }
 }
 const propertyNameCanary = parseProperties("---\n1.5: decimal\ntrue: boolean\n---\n").metadata;
 if (JSON.stringify(propertyNameCanary?.map((record) => record.name)) !== '["1.5","true"]') {

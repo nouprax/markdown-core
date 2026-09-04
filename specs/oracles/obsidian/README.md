@@ -49,6 +49,10 @@ then requires one top-level mapping with arbitrary non-empty names and scalar
 or documented text/number-list values. Its JavaScript-object result has
 already converted mapping keys to property strings, so it is evidence for the
 decoded names in the successful corpus, not for the source shape of a YAML key.
+For an empty, whitespace-only, or comment-only payload, `gray-matter` reports
+`isEmpty` and does not invoke its YAML engine; the projection maps each form to
+the same non-null empty metadata array. Comments remain presentation bytes and
+never become semantic records.
 
 The corpus contains inputs only. It deliberately has no Markdown Core expected
 AST blocks; product goldens belong to the C fixture and shared canonical AST
