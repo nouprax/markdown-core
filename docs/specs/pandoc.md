@@ -12,9 +12,10 @@ evidence. Their immutable blobs, release artifacts, checksums, extension map,
 and runner restrictions are fixed by the
 [Pandoc oracle policy](../../specs/oracles/pandoc/README.md).
 
-Pandoc 3.11 also owns the one shared braced-attribute grammar and the consumer
-shape projected from its `Attr` tuple. Remark contributes directive envelopes
-and attachment positions but does not introduce a second attribute grammar.
+Pandoc 3.11 also owns the one shared braced-attribute grammar. Its `Attr` tuple
+is projected into the universal anchor plus the shared classes-and-records
+attribute model. Remark contributes directive envelopes and attachment
+positions but does not introduce a second attribute grammar.
 
 This directory groups independently composable syntax extensions. It does not
 define a monolithic Pandoc dialect or change inherited CommonMark/GFM behavior.
@@ -24,9 +25,14 @@ this index is opt-in.
 
 The shared value contract lives outside this directory:
 
+- [Anchors](anchors.md) owns the universal `Markup.anchor` field and its
+  source-independent consumer meaning.
+- [Destinations](destinations.md) owns the shared tagged target value;
+  ordinary Markdown links and images, including implicit heading references,
+  use its `url` branch.
 - [Attributes](attributes.md) owns the universal `Markup.attributes` field, the
-  Pandoc-derived consumer shape, sole grammar, value invariants, normalization,
-  and merge operation.
+  shared classes-and-records shape, sole grammar, value invariants,
+  normalization, and merge operation.
 - [Citation model](citation-model.md) owns `Cite`, `Citation`, and
   `CitationReferent` independently of Pandoc bibliography syntax.
 

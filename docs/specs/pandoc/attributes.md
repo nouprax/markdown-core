@@ -2,14 +2,14 @@
 
 Status: normative target profile contract for `bracketed_spans`,
 `inline_code_attributes`, `header_attributes`, `fenced_code_attributes`,
-`link_attributes`, `fenced_divs`, and the attribute result of Markdown Core
+`link_attributes`, `fenced_divs`, and the anchor result of Markdown Core
 `auto_anchors`.
 
-The [shared attributes contract](../attributes.md) owns the universal
-`Markup.attributes` field, its Pandoc-derived consumer shape, the sole braced
-grammar, normalization, and merge operation. This module owns only attachment
-positions, precedence, scope, and option behavior. Authority is the Pandoc
-User's Guide for
+The shared [anchor](../anchors.md) and [attributes](../attributes.md) contracts
+own the universal `Markup.anchor` and `Markup.attributes` fields, the sole
+braced grammar, normalization, and merge operation. This module owns only
+attachment positions, precedence, scope, and option behavior. Authority is the
+Pandoc User's Guide for
 [attributes](https://pandoc.org/MANUAL.html#extension-attributes),
 [bracketed spans](https://pandoc.org/MANUAL.html#extension-bracketed_spans),
 [inline code attributes](https://pandoc.org/MANUAL.html#extension-inline_code_attributes),
@@ -24,14 +24,14 @@ snapshot pinned by the [Pandoc extension index](../pandoc.md).
 Every braced attachment position accepts exactly the shared Pandoc 3.11
 grammar. Representative projections are:
 
-| Source                                    | Markdown Core result                                                                       |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `{#one.two}`                              | `identifier="one.two"`                                                                     |
-| `{.one.two}`                              | `classes=["one.two"]`                                                                      |
-| `{#one:two .three:four}`                  | `identifier="one:two"`, `classes=["three:four"]`                                           |
-| `{-}`                                     | `classes=["unnumbered"]`                                                                   |
-| `{id=one class="wide warning" key=value}` | `identifier="one"`, `classes=["wide", "warning"]`, `keyValues=[Attribute("key", "value")]` |
-| `{disabled}`                              | malformed; no attribute attachment                                                         |
+| Source                                    | Markdown Core result                                                                 |
+| ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| `{#one.two}`                              | `anchor="one.two"`                                                                   |
+| `{.one.two}`                              | `classes=["one.two"]`                                                                |
+| `{#one:two .three:four}`                  | `anchor="one:two"`, `classes=["three:four"]`                                         |
+| `{-}`                                     | `classes=["unnumbered"]`                                                             |
+| `{id=one class="wide warning" key=value}` | `anchor="one"`, `classes=["wide", "warning"]`, `records=[Record("key", "value")]` |
+| `{disabled}`                              | malformed; no anchor or attribute attachment                                         |
 
 An unbraced fenced-Div word is a separate production rather than an attribute
 container; it remains shorthand for one class. Thus `::: -` produces class
@@ -39,32 +39,34 @@ container; it remains shorthand for one class. Thus `::: -` produces class
 
 ## Attachment registry
 
-Only these enabled Pandoc rules can populate the universal field:
+Only these enabled Pandoc rules can populate the universal anchor or
+attributes fields:
 
 | Extension/source rule    | Owner           | Attachment position                                                         |
 | ------------------------ | --------------- | --------------------------------------------------------------------------- |
 | `bracketed_spans`        | `Span`          | immediately after the balanced closing `]`                                  |
 | `inline_code_attributes` | `Code`          | immediately after the complete closing backtick run                         |
 | `header_attributes`      | `Heading`       | at the end of ATX or Setext heading text                                    |
-| `auto_anchors`           | `Heading`       | synthesized `identifier` when no non-empty explicit value exists            |
+| `auto_anchors`           | `Heading`       | synthesized `anchor` when no non-empty explicit value exists                |
 | `fenced_code_attributes` | `CodeBlock`     | the opening fence's info region                                             |
 | `link_attributes`        | `Link`, `Image` | immediately after an occurrence, or inherited from its reference definition |
 | `fenced_divs`            | `Div`           | the opening colon fence                                                     |
 
-Every other Markup kind retains `Attributes.empty` unless another profile
-contributes an independent rule. The requested table extensions do not define
-table-attribute syntax, so Table, row, and cell attributes remain empty.
+Every other Markup kind retains `anchor=null` and `Attributes.empty` unless
+another profile contributes an independent rule. The requested table
+extensions do not define table-attribute syntax, so Table, row, and cell
+anchors are null and their attributes remain empty.
 
-Successfully authored attachment syntax is part of the owner's scope. A
-synthesized attribute neither extends scope nor receives a fictional source
-position.
+Successfully authored attachment syntax that is lexically part of an
+occurrence is inside that occurrence's source-faithful scope. A synthesized
+anchor neither extends scope nor receives a fictional source position.
 
 ## Spans and divs
 
 `bracketed_spans` requires a successfully parsed container immediately after
-the balanced `]`. `{}` still creates a Span whose attributes are empty.
-Span content, bracket precedence, and fallback are defined by
-[bracketed spans](bracketed-spans.md).
+the balanced `]`. `{}` still creates a Span with `anchor=null` and
+`Attributes.empty`. Span content, bracket precedence, and fallback are defined
+by [bracketed spans](bracketed-spans.md).
 
 A `fenced_divs` opener carries either one braced shared attribute list or one
 non-whitespace unbraced word interpreted as a class. `{}` is a valid empty
@@ -103,9 +105,9 @@ Setext heading {#setext}
 ```
 
 The suffix is removed from heading content and included in Heading scope. An
-invalid suffix remains visible content. A non-empty explicit identifier wins
-over automatic generation. `auto_anchors` writes its generated value into
-`attributes.identifier`; the algorithm and implicit references are defined by
+invalid suffix remains visible content. A non-empty explicit anchor wins over
+automatic generation. `auto_anchors` writes its generated value into the
+universal `anchor` field; the algorithm and implicit references are defined by
 [heading anchors](headings-and-anchors.md).
 
 ## Fenced code
@@ -139,15 +141,32 @@ attaches to the resulting `Link` or `Image`:
 <https://example.com>{.external}
 ```
 
-Whitespace prevents attachment. The suffix is outside label/alt content and
-inside owner scope. A malformed suffix leaves the completed node unchanged.
+Whitespace prevents attachment. An occurrence-local suffix is outside
+label/alt content and inside that Link or Image occurrence's scope. A malformed
+suffix leaves the completed node unchanged.
 
 A valid list may also follow a reference definition's destination/title,
-including on its allowed continuation line. It is stored in the parser's
-reference map rather than emitted as a public node. A resolved occurrence uses
-the shared `merge(occurrence, definition)` operation. Explicit
+including on its allowed continuation line. Its anchor candidate and
+attributes are stored in the parser's reference map rather than emitted as a
+public node. A resolved occurrence uses the shared
+`merge(occurrence, definition)` operation. Explicit
 duplicate-definition precedence is unchanged; unresolved references inherit
-nothing.
+nothing. Merge transfers semantic values only: the definition owns the authored
+suffix and its parser-internal source range, while the emitted Link or Image
+retains the source-faithful range of its own occurrence.
+
+For example:
+
+```markdown
+[x][r]
+
+[r]: /target {#foo}
+```
+
+emits `Link(anchor="foo", ...)` whose scope is exactly the `[x][r]`
+occurrence. It does not include or point at any byte of the definition. By
+contrast, in `[x][r]{#bar}`, the occurrence-local suffix is part of that
+Link's scope because those bytes lexically form the emitted occurrence.
 
 Image `width` and `height` values may be unitless pixels or use `px`, `cm`,
 `mm`, `in`, `inch`, or `%` without internal whitespace. They remain strings;
@@ -173,9 +192,10 @@ nodes or create node-specific attribute stores.
 ## Required conformance cases
 
 Tests must cover every registry row; Pandoc shorthand boundaries at every
-attachment site; the three consumer components; `{-}`; bare-name rejection;
+attachment site; anchor, classes, and records; `{-}`; bare-name rejection;
 `{}`; immediate versus spaced attachment; malformed fallback; option-off
-behavior; nested ownership and cross-extension precedence; exact owner scopes;
-language aliases; image units; reference inheritance; synthesized identifiers;
-inert unsafe-looking metadata; allocation failure; and size-doubling valid,
-duplicate, malformed, and unclosed inputs.
+behavior; nested ownership and cross-extension precedence; exact occurrence
+scopes; language aliases; image units; occurrence-local suffix ranges;
+reference inheritance without definition-range inheritance; synthesized
+anchors; inert unsafe-looking metadata; allocation failure; and size-doubling
+valid, duplicate, malformed, and unclosed inputs.

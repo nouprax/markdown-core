@@ -68,23 +68,23 @@
         {
             "id": "wikilink-basic",
             "input": "[[Note]]\n",
-            "oracleDigest": "3eb426ccdc26067ee8e52baedbd6c207e560b627ffbde3436949451c0ff51925",
+            "oracleDigest": "cb4fc6f6d6e1a17163aa578a588c1a9357c5e410f396f231df8151422035099a",
             "markdownCoreDigest": "4c6fd8e27beca1ffe66a0aadb4cd1f68f3bc1f0bb5cce119cfef330ace76592e",
-            "requirement": "Recognize a wikilink and expose its path instead of one literal Text node.",
+            "requirement": "Recognize a wikilink and expose Destination.cross(path, anchor=null) instead of one literal Text node.",
             "closedBy": "Phase 2 — one OFM inline extension"
         },
         {
             "id": "wikilink-heading-label",
             "input": "[[Folder/Note#Heading#Child|Display text]]\n",
-            "oracleDigest": "a9b715c6e771dd7f957b976ede3b39b3243f1b1a622c13ab4b6450e251964aa6",
+            "oracleDigest": "43056e57f3c9821b339b6c3a7ac16299999b89f6fea2367f5644c9cf6cb68dc4",
             "markdownCoreDigest": "96dc467eb91188957bd03b0469c812f6365d01741b90a774e6f690975cfcc47c",
-            "requirement": "Preserve the vault path, complete fragment subpath, and label text as CrossLink fields.",
+            "requirement": "Preserve the vault path and complete anchor value in one Destination.cross value, plus the CrossLink label.",
             "closedBy": "Phase 2 — one OFM inline extension"
         },
         {
             "id": "wikilink-embed",
             "input": "![[Image.png|100x145]]\n",
-            "oracleDigest": "3876933b938e06ce6a47d327c99c9141fd223957b7ff0dc070a5a8915c4dad1d",
+            "oracleDigest": "9f86329d47932086711663f2c4eb7ac9117d2a4e5488c99b960c2be1f3c37c55",
             "markdownCoreDigest": "b85827fe99d15228e9a5ac66dd2b97b351df3148dddd2b808bea82e526058a9c",
             "requirement": "Recognize the shared wikilink form with embedded=true and preserve its label/size parameter.",
             "closedBy": "Phase 2 — one OFM inline extension"
@@ -92,9 +92,9 @@
         {
             "id": "wikilink-block-embed",
             "input": "![[Note#^block-id]]\n",
-            "oracleDigest": "fd372fe4c88edf337ff5bfe47c8c452f3b183a72ad95ae2183bc281285ad965f",
+            "oracleDigest": "49aad135db1c5c5143670e3c5f88f28982c8e71d6be3c19ddbfd748f33a1f84d",
             "markdownCoreDigest": "c363cff78b07b6d440245f776863926540f01bf9ccb8dd33894d25d378e08dd8",
-            "requirement": "Recognize an embedded block reference and preserve its block subpath without the #^ delimiter.",
+            "requirement": "Recognize an embedded block reference and project it to the same Destination.cross.anchor field as a heading reference, without the #^ delimiter or a source-kind tag.",
             "closedBy": "Phase 2 — one OFM inline extension"
         },
         {
@@ -145,6 +145,16 @@
             "id": "wikilink-label-nullability",
             "summary": "The oracle collapses an absent wikilink label delimiter to an empty alias string, while the target model distinguishes an absent label from an authored empty label.",
             "handling": "The projection consults the node's exact source spelling and maps the oracle's empty alias to null only when no label delimiter was authored."
+        },
+        {
+            "id": "destination-value-model",
+            "summary": "mdast stores ordinary link/image URLs and wikilink path/heading components as flat fields. The target model stores one tagged Destination value.",
+            "handling": "The semantic projection wraps ordinary link/image URLs in Destination.url and wikilinks in Destination.cross; both heading and block spellings populate the same optional anchor after source punctuation is removed."
+        },
+        {
+            "id": "image-alt-content-model",
+            "summary": "mdast stores an image's alt text as one string, while the target Image owns parsed inline content.",
+            "handling": "The semantic projection maps a non-empty mdast alt string to one Text child. The corpus exercises the plain-text intersection; product fixtures own nested inline image-alt structure."
         },
         {
             "id": "universal-callout-container",

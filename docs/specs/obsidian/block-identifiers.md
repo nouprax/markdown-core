@@ -5,8 +5,11 @@ Status: normative target module. Authority:
 at the snapshot pinned by the
 [OFM contract index](../obsidian-flavored-markdown.md).
 
-This module defines authored block identifiers. The `#^id` route inside a
-wikilink belongs to the wikilink module.
+This module defines authored block identifiers. The `#^id` reference spelling
+inside a wikilink belongs to the wikilink module and projects to the same
+`Destination.cross.anchor` field as a heading reference. The declaration field
+and its source-independent meaning belong to the shared
+[anchor contract](../anchors.md).
 
 ## Identifier grammar
 
@@ -34,20 +37,18 @@ node and never remains visible content after successful recognition.
    `^block-id` at the end of its bullet-point content line. The suffix attaches
    to that item rather than the containing list.
 
-The target addressable set is exactly `Paragraph`, `ListItem`, `List`,
-`Callout`, and `Table`. Headings use wikilink fragments. Code blocks, table
-rows/cells, and internal pieces of a callout are not independently addressable
-under this contract.
+The source-rule addressable set is exactly `Paragraph`, `ListItem`, `List`,
+`Callout`, and `Table`. Headings are addressed through heading anchor syntax,
+not this block-identifier attachment rule. Code blocks, table rows/cells, and
+internal pieces of a callout are not independently addressable under this
+contract.
 
-Every addressable kind owns:
-
-```text
-anchor: String?
-```
-
-The source construct remains a block identifier in Obsidian terminology;
-`anchor` is the canonical AST name because the value declares a link target and
-is not the node's object identity.
+Successful recognition populates the owner's universal `Markup.anchor` with
+the `block-id` value and no leading caret. The source construct remains a block
+identifier in Obsidian terminology, but the consumer value is indistinguishable
+from the same anchor name produced by another profile. This module does not add
+a block-specific field or discriminator. Markup kinds outside the addressable
+set retain `anchor=null` under this source rule.
 
 One block owns at most one anchor. A candidate that would assign a second
 anchor is not consumed and follows ordinary paragraph/inline parsing. This is
@@ -79,7 +80,8 @@ owner path as the block.
   not suppress recognition in intervening source.
 - A list-item suffix wins over whole-list attachment because it is inside the
   item's content line; a detached identifier after the list owns the list.
-- A metadata-free and metadata-bearing `Callout` use the same `anchor` field.
+- A metadata-free and metadata-bearing `Callout` use the same universal
+  `anchor` field.
 
 ## Required conformance cases
 

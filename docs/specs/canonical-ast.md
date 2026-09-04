@@ -53,6 +53,15 @@ rescanning, normalizing, expanding, rejecting, or otherwise reinterpreting
 particular coordinate combinations. Consumers that need to interpret a source
 position use the native parser contract from the same Markdown Core release.
 
+A `Markup.scope` is the source-faithful, contiguous editor cursor range of that
+node's own lexical occurrence. It never becomes an expanded or composite range
+of every source location that contributed semantic values to the node.
+Reference resolution, metadata inheritance, normalization, synthesis, and
+other finalization operations may populate fields on an occurrence, but they
+must not copy, union, substitute, or otherwise change its scope. In particular,
+a resolved reference occurrence does not acquire the separate definition's
+range, and a generated value has no fictional source position.
+
 `TableRow` and `TableCell` have non-optional scopes like every other `Markup`,
 so typed table boundaries do not discard source information.
 

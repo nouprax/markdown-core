@@ -1743,7 +1743,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             S_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
 
         } else if (!indented && ((matched = scan_html_block_start(input, parser->first_nonspace)) ||
-                                 (cont_type != MARKDOWN_CORE_NODE_PARAGRAPH &&
+                                 (cont_type != MARKDOWN_CORE_NODE_PARAGRAPH && !maybe_lazy &&
                                   (matched = scan_html_block_start_7(input, parser->first_nonspace))))) {
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_HTML_BLOCK, parser->first_nonspace + 1);
             if (!*container) {

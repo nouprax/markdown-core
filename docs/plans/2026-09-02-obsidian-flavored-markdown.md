@@ -20,6 +20,14 @@ definitions and reference forms remain parser-internal.
 The profile is an extension preset, not a full Obsidian parser dialect. It
 preserves inherited cmark/CommonMark behavior, including Markdown recognition
 between paired inline HTML tags, and adds no HTML element-region suppression.
+Block identifiers populate the same universal `Markup.anchor` string used by
+other profiles; they do not introduce a block-specific target type.
+Outgoing references use the shared tagged `Destination`: ordinary Markdown
+`Link` and `Image` values own `Destination.url`, while `CrossLink` values own
+the `Destination.cross(path, anchor)` branch. Heading and block source
+spellings populate the same optional anchor field and introduce no
+discriminator. No destination populates the declaration-side anchor on its
+owning reference node.
 
 The normative work items are the module specs linked from the
 [OFM contract index](../specs/obsidian-flavored-markdown.md): wikilinks/embeds,
@@ -51,7 +59,8 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       inline source forms must lower to the same one-item resolved consumer model;
       retain none of the source-shaped kinds as aliases.
 - [ ] Resolve direct, full, collapsed, shortcut, and autolinks to the same `Link`
-      shape, and direct/reference images to the same `Image` shape. Remove
+      shape with `dest=Destination.url(...)`, and direct/reference images to the
+      same `Image(dest=Destination.url(...), ...)` shape. Remove
       `LinkReference`, `ImageReference`, `ReferenceDefinition`, and
       `ReferenceForm` from the public AST. Keep labels, form, definition storage,
       and normalization in the existing parser-owned lookup operation; add no
@@ -59,9 +68,12 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
 - [ ] Add the remaining target value types and kinds to
       `docs/specs/canonical-ast.json`, `docs/specs/canonical-ast.md`, and
       `docs/specs/canonical-ast-dump.md`:
-      `CrossLink`, `Mark`, and `Comment`; wikilink fragment/block-subpath and
-      callout-fold enums; shared image dimensions; `anchor` on addressable block
-      kinds; and `marker` on `ListItem`.
+      the shared `Destination` enum and `Link.dest`/`Image.dest`; `CrossLink`,
+      `Mark`, and `Comment`; the `Destination.cross(path, anchor)` branch;
+      the callout-fold enum; shared image dimensions; the universal nullable
+      `anchor` field on every Markup kind; and `marker` on `ListItem`. Only the
+      addressable kinds named by the block-identifier grammar receive a non-null
+      anchor from that source rule.
 - [ ] Replace stored `checked: Bool?` with the authored `marker: String?`.
       Keep source compatibility only through a derived language convenience
       property when that does not duplicate wire state. Treat the public shape
@@ -87,8 +99,10 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       the existing subject cursor, delimiter/bracket infrastructure, allocator,
       source map, and extension attachment order.
 - [ ] Make `![[...]]` and `[[...]]` one scanner and one `CrossLink` payload. Split
-      path, fragment/block subpath, and label value once while scanning. Do not
-      rescan the completed literal in a binding or renderer.
+      path, optional anchor, and label value once while scanning, then construct
+      one complete `Destination.cross`. Heading and block punctuation must not
+      survive as a consumer discriminator. Do not rescan the completed literal
+      in a binding or renderer.
 - [ ] Make comments opaque during scanning. Support retained `Comment` nodes and
       parser-level stripping from the same recognized construct so stripping
       cannot change where other delimiters bind.
@@ -117,8 +131,9 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
 
 - [ ] Add block identifiers during block finalization, when ownership is known.
       One attachment operation handles paragraph suffixes, structured-block
-      follower lines, and list-item suffixes. It writes the optional field on the
-      owned block and removes the marker from visible content.
+      follower lines, and list-item suffixes. It writes the stripped identifier
+      into the owned block's universal anchor and removes the marker from visible
+      content; it does not record an Obsidian or block discriminator.
 - [ ] Construct `Callout` for every `>` container through the existing block
       algorithm. Default `variant` and `title` to null and `fold` to `none`.
 - [ ] When the first content line has a valid marker, normalize its source type
@@ -132,10 +147,11 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       invalid-position, mixed-case, custom-type, and whole-structured-block
       identifier cases.
 
-- [ ] **Exit criterion:** every identifier has exactly one owner, no valid marker
-      survives as visible text, every `>` container is a `Callout`, metadata-free and
-      metadata-bearing states satisfy their field invariants, nested callouts are
-      stack-safe, and failure/OOM unwinds through the existing node ownership path.
+- [ ] **Exit criterion:** every block identifier has exactly one owner, no valid
+      marker survives as visible text, every `>` container is a `Callout`,
+      metadata-free and metadata-bearing states satisfy their field invariants,
+      nested callouts are stack-safe, and failure/OOM unwinds through the
+      existing node ownership path.
 
 ## Phase 4 — task markers, media parameters, and tables
 

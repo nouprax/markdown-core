@@ -1,10 +1,11 @@
 # Shared markup attributes
 
 Status: normative target contract for the universal `Markup.attributes` field,
-its Pandoc-derived consumer model, the one shared Pandoc 3.11 attribute-list
-grammar, normalization, and merge operation. It deliberately defines no
-attachment position. Remark directives and Pandoc extensions attach this same
-syntax at positions defined by their profile contracts.
+its consumer model, the one shared Pandoc 3.11 attribute-list grammar,
+normalization, and merge operation. It deliberately defines no attachment
+position. Remark directives and Pandoc extensions attach this same syntax at
+positions defined by their profile contracts. The universal
+[`Markup.anchor`](anchors.md) field separately owns the ID component.
 
 Authority: the Pandoc 3.11 User's Guide for
 [attributes](https://pandoc.org/MANUAL.html#extension-attributes), the pinned
@@ -17,15 +18,14 @@ and official native/JSON output under the
 ## Universal consumer field
 
 ```text
-Attribute(
+Record(
   name: String,
   value: String
 )
 
 Attributes(
-  identifier: String?,
   classes: [String],
-  keyValues: [Attribute]
+  records: [Record]
 )
 
 Markup(
@@ -39,12 +39,14 @@ field shared by the tagged union, not an `Attributed` wrapper and not an
 opt-in node capability. Concrete node schemas therefore omit it and specify
 only their kind-specific fields.
 
-`Attributes.empty` is `identifier=null`, `classes=[]`, and `keyValues=[]`. It
-covers all of the following consumer-equivalent states:
+`Attributes.empty` is `classes=[]` and `records=[]`. It covers all of the
+following consumer-equivalent states:
 
 - the source kind has no enabled attachment rule;
 - no attribute syntax was authored at that occurrence;
 - an explicitly authored `{}` attached successfully;
+- a non-empty ID-only container attached successfully and populated
+  `Markup.anchor`;
 - an attachment extension was disabled or its candidate was malformed.
 
 The consumer AST does not retain whether the empty state came from absence or
@@ -52,30 +54,30 @@ The consumer AST does not retain whether the empty state came from absence or
 Parser-internal state may retain it while recognizing an owner, but it is not a
 second public field.
 
-`Attribute` and `Attributes` are values rather than `Markup`: they have no
+`Record` and `Attributes` are values rather than `Markup`: they have no
 children, scope, or attributes of their own. There is one universal payload,
 not parallel directive, heading, link, or Pandoc attribute types. Bindings may
-provide lookups over `keyValues`, but no lookup is a second stored authority.
+provide lookups over `records`, but no lookup is a second stored authority and
+the stored sequence is not a map.
 
 ## Value invariants
 
-The shape is the named projection of Pandoc's `Attr` tuple:
+The shape is the consumer projection of Pandoc's `Attr` tuple. Its identifier
+component populates the owner's universal anchor under the
+[anchor contract](anchors.md); the remaining components populate `Attributes`:
 
-- `identifier` is either `null` or a non-empty string. The last authored ID
-  shorthand or exact lowercase `id=` assignment wins. An authored empty ID
-  normalizes to `null`; source-presence distinctions remain parser-internal.
 - `classes` preserves class order and duplicates. A class shorthand appends
   one class. An exact lowercase `class=` assignment splits its value into
   Unicode whitespace-delimited words and appends those words. The special
   member `-` appends `unnumbered`.
-- `keyValues` contains every other assignment in source order. Duplicate names
+- `records` contains every other assignment in source order. Duplicate names
   remain separate entries; names and values are case-sensitive strings.
 
-The exact names `id` and `class` never also appear in `keyValues`. Empty custom
+The exact names `id` and `class` never also appear in `records`. Empty custom
 values remain empty strings, and numeric- or boolean-looking values are never
-coerced. An oracle exposing Pandoc's empty-string identifier is projected to
-`null`; its class and key/value arrays otherwise map without flattening or
-deduplication.
+coerced. Pandoc's identifier maps to `Markup.anchor`, with its empty string
+projected to `null`; its class array maps to `classes`, and its key/value array
+maps in order to `records` without flattening or deduplication.
 
 ## Attribute-list grammar
 
@@ -137,40 +139,47 @@ references in unquoted values and shorthand values are not decoded.
 
 ## Normalization and merge
 
-Normalization occurs exactly once when attachment commits:
+Normalization occurs exactly once when attachment commits and produces one
+anchor candidate beside one `Attributes` value:
 
-1. Set `identifier` from `#value` or `id=value`, with the later occurrence
-   replacing the earlier one and an empty final value becoming `null`.
+1. Set the owner's anchor candidate from `#value` or `id=value`, with the later
+   occurrence replacing the earlier one and an empty final value becoming
+   `null`.
 2. Append `.value` as one class, split `class=value` into words and append them,
    and append `unnumbered` for each special `-`.
-3. Append every other assignment to `keyValues` without deduplicating it.
+3. Append every other assignment as a `Record` to `records` without
+   deduplicating it.
 
-`merge(primary, inherited)` follows Pandoc's `combineAttr` operation for a
-resolved reference occurrence:
+Metadata `merge(primary, inherited)` follows Pandoc's `combineAttr` operation
+for a resolved reference occurrence while projecting its components into the
+universal fields:
 
-1. Use the primary identifier when non-null; otherwise use the inherited one.
+1. Use the primary anchor when non-null; otherwise use the inherited one.
 2. Concatenate primary classes before inherited classes, then stable-deduplicate
    them by exact value.
-3. Keep primary key/value entries as written. From the inherited sequence,
+3. Keep primary records as written. From the inherited sequence,
    retain only the last occurrence of each name absent from the primary
    sequence; keep the surviving inherited entries in source order and place
    them before the primary entries.
 
-The resolved occurrence receives one `Attributes` value. A reference
-definition remains parser-owned and is not emitted as a public metadata node.
+The resolved occurrence receives one anchor and one `Attributes` value. This
+operation merges semantic values only and never changes the occurrence's
+source-faithful `Markup.scope`. A reference definition remains parser-owned,
+is not emitted as a public metadata node, and does not contribute its separate
+source range to the resolved occurrence.
 
 ## Profile boundary
 
 This contract decides the sole consumer model and braced attribute grammar. A
 profile decides only where a complete list may attach, which `Markup` owns it,
-whether successful attachment changes node recognition, and how owner scope
-changes:
+whether successful attachment changes node recognition, and which authored
+bytes form that lexical occurrence:
 
 - [Remark attributes](remark/attributes.md) owns directive attachment.
 - [Pandoc attributes](pandoc/attributes.md) owns Pandoc attachment extensions.
 
-Every `Markup` kind retains `Attributes.empty` when no enabled rule attaches or
-synthesizes attributes. No profile may reinterpret a complete braced list.
+Every `Markup` kind retains `Attributes.empty` when no enabled rule attaches
+attributes. No profile may reinterpret a complete braced list.
 Remark's directive envelope remains Remark-owned, but its different attribute
 member tokenizer is deliberately not a second grammar. Profile-specific
 non-container sugar, such as the unbraced fenced-Div class word, is outside the
@@ -189,13 +198,14 @@ plus output size. Allocation failure aborts the owning parse operation.
 
 ## Required conformance cases
 
-Tests must cover the universal field on every Markup kind; `Attributes.empty`;
-the three payload components; dots and colons retained in shorthand; numeric ID
-starts; letter-only name starts; `{-}`; generic bare-name rejection; empty,
-quoted, and unquoted values; escapes; quoted-only character references;
-line-ending normalization; non-ASCII whitespace positions; ID replacement;
-ordered duplicate classes and key/value entries; `id=` and `class=` projection;
-reference merging; inert unsafe-looking metadata; malformed and unclosed
-fallback; allocation failure; and size-doubling valid, duplicate, malformed,
-and unclosed inputs. Attachment, scope, option, and profile-specific fallback
-cases belong to the corresponding profile suite.
+Tests must cover the universal attributes field on every Markup kind;
+`Attributes.empty`, including beside a non-null anchor; anchor, classes, and
+records projection; dots and colons retained in shorthand; numeric ID starts;
+letter-only name starts; `{-}`; generic bare-name rejection; empty, quoted, and
+unquoted values; escapes; quoted-only character references; line-ending
+normalization; non-ASCII whitespace positions; ID replacement; ordered
+duplicate classes and records; `id=` and `class=` projection; reference
+merging without scope mutation; inert unsafe-looking metadata; malformed and
+unclosed fallback; allocation failure; and size-doubling valid, duplicate,
+malformed, and unclosed inputs. Attachment, exact occurrence scope, option,
+and profile-specific fallback cases belong to the corresponding profile suite.

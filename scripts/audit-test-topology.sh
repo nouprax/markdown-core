@@ -44,6 +44,8 @@ fi
 target_specs_missing=0
 for target_spec in \
     docs/specs/inserted-text.md \
+    docs/specs/anchors.md \
+    docs/specs/destinations.md \
     docs/specs/attributes.md \
     docs/specs/citation-model.md \
     docs/specs/remark.md \
