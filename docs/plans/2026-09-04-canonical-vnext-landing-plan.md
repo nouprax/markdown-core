@@ -51,9 +51,12 @@ sequences; it is landed here as its own track.
   item is that later item and owns the case without further notice; when
   neither requires the other, the case is listed in the `Cross-item cases`
   column of both items, so the earlier item neither waits for it nor claims
-  it. The model items `M1` through `M7` are serialized because each
-  regenerates shared goldens; the three feature tracks are independent of
-  one another after `M7`.
+  it. Opacity is the one composition the column does not enumerate: code
+  spans and HTML tokens hide every other construct's syntax and belong to
+  each item alone, and the comment opacity case of any item is owned by
+  whichever of `O3` and that item merges later. The model items `M1` through
+  `M7` are serialized because each regenerates shared goldens; the three
+  feature tracks are independent of one another after `M7`.
 - Item identifiers are stable. A registered oracle gap names the item that
   closes it: Pandoc and inserted-text gaps use these identifiers from the
   start, and the existing Obsidian entries, which name plan phases, are
@@ -77,18 +80,23 @@ sequences; it is landed here as its own track.
   pass the contract check. Field and enum changes on existing kinds are
   therefore the only model-only pull requests; they are the `M` items.
 - A feature pull request is one option's behavior: the C extension or
-  scanner, its reviewed position in the attach-order table, the new kind if
-  any, package fixtures for the module's required conformance cases, a
-  canonical case for each new kind or state, and the removal of every oracle
-  gap it closes.
-- Every new option name is plumbed once in `X0` and defaults to off. A feature
-  then implements its option's behavior; the existing profiles never change
-  language.
-- Nothing here ships before `R1`. Between merges, an unproduced enum branch or
-  an option that recognizes nothing yet is allowed only where an item says
-  so, and the item that first produces it is named. No item publishes two
-  representations of one semantic fact, even between merges: the item that
-  introduces a replacement removes what it replaces.
+  scanner, its reviewed position in the attach-order table, the option's
+  facade field, registry row, `canonical-ast.md` row, manifest key, and
+  binding option, the new kind if any, package fixtures for the module's
+  required conformance cases, a canonical case for each new kind or state,
+  and the removal of every oracle gap it closes.
+- Every option name is allocated in the inventory and registered through the
+  registry that `X0` creates. A feature item publishes its option, defaulting
+  to off, together with the behavior, option-off cases, oracle evidence, and
+  product fixtures that make it public; the composed `obsidian` switch and
+  `stripObsidianComments` remain internal test plumbing until `O10`. The
+  existing profiles never change language.
+- Nothing here ships before `R1`. Between merges, an unproduced enum branch,
+  value type, or field is allowed only where an item says so, and the item
+  that first produces it is named; a published option always recognizes its
+  syntax. No item publishes two representations of one semantic fact, even
+  between merges: the item that introduces a replacement removes what it
+  replaces.
 - Parity gates are ratchets. A model item that changes an input's Markdown
   Core digest re-registers that digest in the same pull request; a feature
   item deletes the gaps it closes in the same pull request. A model delta that
@@ -113,7 +121,7 @@ sequences; it is landed here as its own track.
 - Fixtures: one package fixture file per module registered in
   `packages/markdown-core/tests/CMakeLists.txt` with its options; regenerated
   goldens reviewed together with the parser change; canonical cases with
-  manifest coverage vocabulary and checker validators.
+  manifest option and coverage vocabulary and checker validators.
 - Ledgers and gates: `specs/positions/`, `specs/reference-resolution/`, and
   every `specs/oracles/*/deltas.json` updated in the same change with the
   reason in the commit message; `pnpm check:oracle-parity` and the fuzz seeds
@@ -134,20 +142,29 @@ sequences; it is landed here as its own track.
       bump to `4.0.0` in the next model item. Needed by `M1`.
 - [ ] **D2 — Dump spelling.** Choose once how the canonical dump prints the
       inherited fields `anchor` and `attributes`, tagged values
-      (`Destination`, `CitationReferent`, `MetadataValue`), and a node whose
-      several Markup-valued fields must stay distinguishable (`Citation`
-      prefix and suffix, `Callout` title, `Definition` term and bodies,
-      `Table` head, content, and foot). The dump grammar currently forbids
+      (`Destination`, `CitationReferent`, `MetadataValue`), and a node or
+      traversed value whose several Markup-valued fields must stay
+      distinguishable (`Citation` prefix and suffix, `Callout` title,
+      `Definition` term and bodies, `Table` head, content, and foot). The
+      dump grammar currently forbids
       edge labels, which is ambiguous for those nodes; the recommendation is
       to print inherited fields immediately after `scope` and to nest each
       multi-field relation under a labeled group line. Needed by `M1` for
       tagged values and by `M4` for grouped relations.
-- [ ] **D3 — Traversed values are kinds.** `Citation`, `Footnote`, and
-      `TableCaption` carry scopes and are entered by the walk, so decide
-      whether they are Markup kinds reached through typed fields, like
-      `DirectiveLabel` and `TableRow`. Recommendation: yes, because the
-      visitors must be exhaustive over everything a walk enters. Needed by
-      `M4`.
+- [ ] **D3 — Traversed values.** `Citation` and `Footnote` carry scopes and
+      are entered by the walk, yet their contracts define them as semantic
+      values rather than `Markup` kinds, so they neither join the kind
+      inventory nor receive the universal `anchor` and `attributes` fields.
+      Decide how the exhaustive visitors, walkers, dumpers, wire transports,
+      projection audit, and fixture checker represent a traversed value.
+      Recommendation: a typed value-callback set beside the `Markup`
+      callbacks, a value line form in the dump grammar and the canonical
+      fixture checker, and a value surface list in the projection audit.
+      Making them kinds instead is an explicit revision of the citation and
+      footnote contracts that must land before `M4`. `TableCaption` is a
+      scoped block container reached through a typed field, like
+      `DirectiveLabel`, and stays a kind unless `P11a` decides otherwise.
+      Needed by `M4`.
 - [ ] **D4 — One table cell model.** The Pandoc table contract makes every
       cell block content with an inline cell normalized to one `Paragraph`,
       while the canonical contract and the Obsidian integration module still
@@ -159,7 +176,7 @@ sequences; it is landed here as its own track.
       `stripObsidianComments`, with binding presets composing GFM, footnotes,
       formulas, and the modules) and the default of `stripObsidianComments`
       when `obsidian` is off (recommendation: `true`, matching the profile).
-      Needed by `X0`.
+      Needed by `O1`.
 - [ ] **D6 — Fenced-code language authority.** Under `fenced_code_attributes`
       the first class is the sole stored language, while `CodeBlock.language`
       remains the inherited first info word with the option off. Decide the
@@ -187,102 +204,109 @@ follow the same list.
 
 ### Markup kinds
 
-| Kind                                                                                                            | Target fields in canonical order                                                                              | Change                                                | Item         |
-| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ------------ |
-| `Document`                                                                                                      | `content`, `metadata: Metadata?`, `footnotes: [Footnote]`                                                     | changed                                               | `M4`, `M7`   |
-| `Callout`                                                                                                       | `variant: String?`, `fold: CalloutFold`, `title: [Markup]?`, `content`                                        | replaces `BlockQuote`                                 | `M3`         |
-| `Paragraph`, `ThematicBreak`, `HTMLBlock`, `FormulaBlock`                                                       | as today                                                                                                      | unchanged                                             | —            |
-| `Heading`                                                                                                       | `level`, `content`                                                                                            | unchanged; anchors use the inherited field            | —            |
-| `List`                                                                                                          | `flavor`, `start`, `style: OrderedListStyle?`, `delimiter: OrderedListDelimiter?`, `tight`, `items`           | changed                                               | `M5`         |
-| `ListItem`                                                                                                      | `marker: String?`, `exampleLabel: String?`, `content`                                                         | changed; `checked` removed                            | `M5`         |
-| `CodeBlock`                                                                                                     | `info`, `language`, `literal`, `fenced`, `closed`                                                             | unchanged pending `D6`                                | —            |
-| `Table`                                                                                                         | `caption: TableCaption?`, `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]`, `foot: [TableRow]` | changed; `caption` arrives with its kind              | `M6`, `P11a` |
-| `TableRow`                                                                                                      | `cells`                                                                                                       | changed; `isHeader` removed                           | `M6`         |
-| `TableCell`                                                                                                     | `rowspan: Int`, `colspan: Int`, `content` (block)                                                             | changed                                               | `M6`         |
-| `TableCaption`                                                                                                  | `content` (block)                                                                                             | new; typed field of `Table`                           | `P11a`       |
-| `DirectiveBlock`                                                                                                | `name`, `label`, `content`                                                                                    | changed; attributes move to the inherited field       | `M7`         |
-| `DirectiveLabel`                                                                                                | `content`                                                                                                     | unchanged                                             | —            |
-| `Div`                                                                                                           | `closed: Bool`, `content`                                                                                     | new                                                   | `P8`         |
-| `DefinitionList`                                                                                                | `definitions: [Definition]`                                                                                   | new                                                   | `P10`        |
-| `Definition`                                                                                                    | `term: [Markup]`, `content: [[Markup]]`, `compact: Bool`                                                      | new                                                   | `P10`        |
-| `Footnote`                                                                                                      | `id: String`, `content` (block)                                                                               | new; owned by `Document.footnotes`                    | `M4`         |
-| `Text`, `SoftBreak`, `LineBreak`, `Code`, `HTML`, `Formula`, `Emphasis`, `Strong`, `Strikethrough`              | as today                                                                                                      | unchanged                                             | —            |
-| `Link`                                                                                                          | `dest: Destination`, `title`, `content`                                                                       | changed                                               | `M1`         |
-| `Image`                                                                                                         | `dest: Destination`, `title`, `width: Int?`, `height: Int?`, `content`                                        | changed                                               | `M1`, `M7`   |
-| `Directive`                                                                                                     | `name`, `label`                                                                                               | changed; attributes move to the inherited field       | `M7`         |
-| `CrossLink`                                                                                                     | `embedded: Bool`, `dest: Destination`, `label: String?`                                                       | new                                                   | `O1`         |
-| `Mark`                                                                                                          | `content`                                                                                                     | new                                                   | `O2`         |
-| `Comment`                                                                                                       | `literal`                                                                                                     | new; block or inline by its parent edge               | `O3`         |
-| `Cite`                                                                                                          | `citations: [Citation]`                                                                                       | new                                                   | `M4`         |
-| `Citation`                                                                                                      | `referent: CitationReferent`, `prefix`, `suffix`                                                              | new; typed field of `Cite`                            | `M4`         |
-| `Insert`                                                                                                        | `content`                                                                                                     | new                                                   | `I1`         |
-| `Span`                                                                                                          | `content`                                                                                                     | new                                                   | `P5`         |
-| `Superscript`, `Subscript`                                                                                      | `content`                                                                                                     | new                                                   | `P6`         |
-| `ExampleReference`                                                                                              | `label: String`                                                                                               | new                                                   | `P9b`        |
-| `BlockQuote`                                                                                                    | —                                                                                                             | removed                                               | `M3`         |
-| `ReferenceDefinition`, `LinkReference`, `ImageReference`                                                        | —                                                                                                             | removed                                               | `M2`         |
-| `FootnoteDefinition`, `FootnoteReference`                                                                       | —                                                                                                             | removed                                               | `M4`         |
+| Kind                                                                                               | Target fields in canonical order                                                                                  | Change                                          | Item         |
+| -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ------------ |
+| `Document`                                                                                         | `content`, `metadata: Metadata?`, `footnotes: [Footnote]`                                                         | changed                                         | `M4`, `M7`   |
+| `Callout`                                                                                          | `variant: String?`, `fold: CalloutFold`, `title: [Markup]?`, `content`                                            | replaces `BlockQuote`                           | `M3`         |
+| `Paragraph`, `ThematicBreak`, `HTMLBlock`, `FormulaBlock`                                          | as today                                                                                                          | unchanged                                       | —            |
+| `Heading`                                                                                          | `level`, `content`                                                                                                | unchanged; anchors use the inherited field      | —            |
+| `List`                                                                                             | `flavor`, `start`, `style: OrderedListStyle?`, `delimiter: OrderedListDelimiter?`, `tight`, `items`               | changed                                         | `M5`         |
+| `ListItem`                                                                                         | `marker: String?`, `exampleLabel: String?`, `content`                                                             | changed; `checked` removed                      | `M5`         |
+| `CodeBlock`                                                                                        | `info`, `language`, `literal`, `fenced`, `closed`                                                                 | unchanged pending `D6`                          | —            |
+| `Table`                                                                                            | `caption: TableCaption?`, `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]`, `foot: [TableRow]` | changed; `caption` arrives with its kind        | `M6`, `P11a` |
+| `TableRow`                                                                                         | `cells`                                                                                                           | changed; `isHeader` removed                     | `M6`         |
+| `TableCell`                                                                                        | `rowspan: Int`, `colspan: Int`, `content` (block)                                                                 | changed                                         | `M6`         |
+| `TableCaption`                                                                                     | `content` (block)                                                                                                 | new; typed field of `Table`                     | `P11a`       |
+| `DirectiveBlock`                                                                                   | `name`, `label`, `content`                                                                                        | changed; attributes move to the inherited field | `M7`         |
+| `DirectiveLabel`                                                                                   | `content`                                                                                                         | unchanged                                       | —            |
+| `Div`                                                                                              | `closed: Bool`, `content`                                                                                         | new                                             | `P8`         |
+| `DefinitionList`                                                                                   | `definitions: [Definition]`                                                                                       | new                                             | `P10`        |
+| `Definition`                                                                                       | `term: [Markup]`, `content: [[Markup]]`, `compact: Bool`                                                          | new                                             | `P10`        |
+| `Text`, `SoftBreak`, `LineBreak`, `Code`, `HTML`, `Formula`, `Emphasis`, `Strong`, `Strikethrough` | as today                                                                                                          | unchanged                                       | —            |
+| `Link`                                                                                             | `dest: Destination`, `title`, `content`                                                                           | changed                                         | `M1`         |
+| `Image`                                                                                            | `dest: Destination`, `title`, `width: Int?`, `height: Int?`, `content`                                            | changed                                         | `M1`, `M7`   |
+| `Directive`                                                                                        | `name`, `label`                                                                                                   | changed; attributes move to the inherited field | `M7`         |
+| `CrossLink`                                                                                        | `embedded: Bool`, `dest: Destination`, `label: String?`                                                           | new                                             | `O1`         |
+| `Mark`                                                                                             | `content`                                                                                                         | new                                             | `O2`         |
+| `Comment`                                                                                          | `literal`                                                                                                         | new; block or inline by its parent edge         | `O3`         |
+| `Cite`                                                                                             | `citations: [Citation]`                                                                                           | new                                             | `M4`         |
+| `Insert`                                                                                           | `content`                                                                                                         | new                                             | `I1`         |
+| `Span`                                                                                             | `content`                                                                                                         | new                                             | `P5`         |
+| `Superscript`, `Subscript`                                                                         | `content`                                                                                                         | new                                             | `P6`         |
+| `ExampleReference`                                                                                 | `label: String`                                                                                                   | new                                             | `P9b`        |
+| `BlockQuote`                                                                                       | —                                                                                                                 | removed                                         | `M3`         |
+| `ReferenceDefinition`, `LinkReference`, `ImageReference`                                           | —                                                                                                                 | removed                                         | `M2`         |
+| `FootnoteDefinition`, `FootnoteReference`                                                          | —                                                                                                                 | removed                                         | `M4`         |
 
 Every kind also carries the inherited fields `scope: Scope`,
-`anchor: String?` (`M7`), and `attributes: Attributes` (`M7`).
+`anchor: String?` (`M7`), and `attributes: Attributes` (`M7`). A traversed
+value carries `scope` only.
 
 ### Values that are not nodes
 
-| Value                                                                                          | Item and first producer                                     |
-| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `Destination = url(String) \| cross(path: String, anchor: String?)`                            | `M1`; `cross` first produced by `O1`                        |
-| `Attributes(classes: [String], records: [Record])`, `Record(name, value)`                      | `M7`; populated from directive syntax in `M7`               |
-| `CitationReferent = bib(key, mode: BibMode) \| footnote(id)`, `BibMode`                        | `M4`; `bib` first produced by `P7`                          |
-| `CalloutFold = none \| expanded \| collapsed`                                                  | `M3`; `expanded` and `collapsed` first produced by `O8`     |
-| `OrderedListStyle`, `OrderedListDelimiter`                                                     | `M5`; values beyond the inherited forms first by `P9a`, `P9b` |
-| `TableColumn(alignment: TableAlignment, relative: Double?)`                                    | `M6`; `relative` first produced by `P11c`                   |
-| `Metadata`, `MetadataRecord`, `MetadataValue`, `MetadataScalar`, `MetadataListItem`            | `M7`; first produced by `O6`                                |
-| `ReferenceForm`                                                                                | removed by `M2`                                             |
-| `DirectiveAttribute`                                                                           | removed by `M7`                                             |
+| Value                                                                               | Item and first producer                                         |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `Destination = url(String) \| cross(path: String, anchor: String?)`                 | `M1`; `cross` first produced by `O1`                            |
+| `Attributes(classes: [String], records: [Record])`, `Record(name, value)`           | `M7`; populated from directive syntax in `M7`                   |
+| `CitationReferent = bib(key, mode: BibMode) \| footnote(id)`, `BibMode`             | `M4`; `bib` first produced by `P7`                              |
+| `Citation(referent, prefix: [Markup], suffix: [Markup], scope)`                     | `M4`; scoped and traversed, not `Markup` (`D3`)                 |
+| `Footnote(id, content: [Markup], scope)`                                            | `M4`; document-owned, scoped and traversed, not `Markup` (`D3`) |
+| `CalloutFold = none \| expanded \| collapsed`                                       | `M3`; `expanded` and `collapsed` first produced by `O8`         |
+| `OrderedListStyle`, `OrderedListDelimiter`                                          | `M5`; values beyond the inherited forms first by `P9a`, `P9b`   |
+| `TableColumn(alignment: TableAlignment, relative: Double?)`                         | `M6`; `relative` first produced by `P11c`                       |
+| `Metadata`, `MetadataRecord`, `MetadataValue`, `MetadataScalar`, `MetadataListItem` | `M7`; first produced by `O6`                                    |
+| `ReferenceForm`                                                                     | removed by `M2`                                                 |
+| `DirectiveAttribute`                                                                | removed by `M7`                                                 |
 
 ### Parse options
 
 Binding spelling is shown; the C facade uses `snake_case`, and the CLI `-e`
 names and fixture fence tags use the extension names from the Pandoc and
 Obsidian indexes. Every new option defaults to `false` except where `D5`
-decides otherwise.
+decides otherwise. An option is public from the item in its `Public from`
+column; before that item it exists only as registry, CLI, and conformance
+plumbing.
 
-| Option                                           | Behavior lands in |
-| ------------------------------------------------ | ----------------- |
-| `obsidian`                                       | `O1` through `O9` |
-| `stripObsidianComments`                          | `O3`              |
-| `insertedText`                                   | `I1`              |
-| `inlineCodeAttributes`                           | `P2a`             |
-| `headerAttributes`                               | `P2b`             |
-| `fencedCodeAttributes`                           | `P2c`             |
-| `linkAttributes`                                 | `P2d`             |
-| `autoAnchors`                                    | `P3`              |
-| `implicitHeaderReferences`                       | `P4`              |
-| `bracketedSpans`                                 | `P5`              |
-| `superscript`, `subscript`                       | `P6`              |
-| `citations`                                      | `P7`              |
-| `fencedDivs`                                     | `P8`              |
-| `fancyLists`, `startnum`                         | `P9a`             |
-| `exampleLists`                                   | `P9b`             |
-| `definitionLists`                                | `P10`             |
-| `tableCaptions`                                  | `P11a`            |
-| `simpleTables`                                   | `P11b`            |
-| `multilineTables`                                | `P11c`            |
-| `gridTables`                                     | `P11d`            |
+| Option                     | Behavior lands in | Public from |
+| -------------------------- | ----------------- | ----------- |
+| `obsidian`                 | `O1` through `O9` | `O10`       |
+| `stripObsidianComments`    | `O3`              | `O10`       |
+| `insertedText`             | `I1`              | `I1`        |
+| `inlineCodeAttributes`     | `P2a`             | `P2a`       |
+| `headerAttributes`         | `P2b`             | `P2b`       |
+| `fencedCodeAttributes`     | `P2c`             | `P2c`       |
+| `linkAttributes`           | `P2d`             | `P2d`       |
+| `autoAnchors`              | `P3`              | `P3`        |
+| `implicitHeaderReferences` | `P4`              | `P4`        |
+| `bracketedSpans`           | `P5`              | `P5`        |
+| `superscript`, `subscript` | `P6`              | `P6`        |
+| `citations`                | `P7`              | `P7`        |
+| `fencedDivs`               | `P8`              | `P8`        |
+| `fancyLists`, `startnum`   | `P9a`             | `P9a`       |
+| `exampleLists`             | `P9b`             | `P9b`       |
+| `definitionLists`          | `P10`             | `P10`       |
+| `tableCaptions`            | `P11a`            | `P11a`      |
+| `simpleTables`             | `P11b`            | `P11b`      |
+| `multilineTables`          | `P11c`            | `P11c`      |
+| `gridTables`               | `P11d`            | `P11d`      |
 
 ## Stage 0 — groundwork
 
-- [ ] **X0 — Option plumbing.** Add every option in the inventory to the C
-      facade struct and `markdown_core_parse_options_init`, the three binding
-      `ParseOptions` types and their JNI, Kotlin/Native, and Wasm option
-      encoders, the CLI (`--profile obsidian` composing the profile named by
-      the Obsidian index, plus the `-e` names), the `ts_ast_enable` fixture
-      tags, the `ParseOptions` table in `canonical-ast.md`, the frozen option
-      list in `scripts/check-canonical-ast-fixtures.mjs` and every manifest
-      case, and the Kotlin API dumps. No option recognizes syntax yet; each
-      feature item wires its own extension bit. Exit: every existing fixture
-      and canonical case is byte-identical with any new option on or off.
-      Requires `D5`.
+- [ ] **X0 — Option registry and harness plumbing.** Create one C-side option
+      registry that maps a registered name to its facade field or engine
+      extension bit, and route the CLI `-e` names, the `ts_ast_enable`
+      fixture tags, and the facade-to-engine mapping through it, so a feature
+      item adds exactly one row. Make
+      `scripts/check-canonical-ast-fixtures.mjs` read the option vocabulary
+      from the `ParseOptions` table in `canonical-ast.md` instead of a second
+      hardcoded list, and give the C, Swift, Kotlin, and ES conformance
+      runners an internal option path so a canonical case can enable a
+      registered option that its public surface has not yet published. No
+      public option is added here: the inventory allocates the names, and
+      each feature item publishes its own option together with its behavior.
+      Exit: every existing fixture and canonical case is byte-identical, and
+      the registry, CLI, fixture tags, and checker agree on the nine existing
+      names.
 - [ ] **P0 — Pandoc oracle gate.** Add `oracle-pandoc` to
       `scripts/init-environment.sh`: `--install` fetches only the host
       archive named by `specs/oracles/pandoc/source.json` and verifies its
@@ -296,7 +320,9 @@ decides otherwise.
       carrying both digests and the closing item, and wire
       `check:pandoc-parity` into `check:oracle-parity`, the External parity
       CI job, and `scripts/audit-test-topology.sh`. Normal build and test
-      commands still perform no network access. Requires `X0`.
+      commands still perform no network access. The adapter enables each
+      case's options that the registry already knows and records the rest
+      as gaps. Requires `X0`.
 - [ ] **I0 — Inserted-text oracle gate.** Pin `markdown-it@13.0.2` and
       `markdown-it-ins@4.0.0` as exact development dependencies with the
       integrity values recorded in `docs/specs/inserted-text.md`; add
@@ -345,11 +371,14 @@ decides otherwise.
       mdast `blockquote`. Manifest states: `callout.variant.null`,
       `callout.fold.none`, `callout.title.null`.
 - [ ] **M4 — Citation and footnote model.** Replace `FootnoteReference` and
-      `FootnoteDefinition` with inline `Cite(citations)`, scoped
-      `Citation(referent, prefix, suffix)`, the complete `CitationReferent`
-      union with `BibMode`, document-owned `Footnote(id, content)`, and
-      `Document.footnotes` visited after `content` and ordered by scope
-      start. Inherited `[^label]` calls lower to a one-item `Cite` with empty
+      `FootnoteDefinition` with inline `Cite(citations)`, the scoped
+      `Citation(referent, prefix, suffix)` value, the complete
+      `CitationReferent` union with `BibMode`, the document-owned
+      `Footnote(id, content)` value, and `Document.footnotes` visited after
+      `content` and ordered by scope start; `Citation` and `Footnote` are
+      traversed values outside the `Markup` union and receive the value
+      callbacks, dump form, and wire records that `D3` decides. Inherited
+      `[^label]` calls lower to a one-item `Cite` with empty
       affixes whose ID is the normalized label without the caret; repeated
       calls share one `Footnote`; a valid unreferenced definition remains a
       `Footnote`; a losing duplicate keeps the inherited content fallback.
@@ -441,7 +470,12 @@ decides otherwise.
 - [ ] **O1 — Wikilinks and embeds.** Create the parser-owned OFM inline
       extension, its bit, and its reviewed attach-table position (before
       `table`; the extension must see `[` and `!` before inherited bracket
-      handling), enabled by `obsidian`. One scanner recognizes `[[...]]` and
+      handling), enabled by the `obsidian` switch this item introduces per
+      `D5` as internal test plumbing: an engine-level switch reached by the
+      CLI `--profile obsidian` composition, the fixture runners, and the
+      conformance runners' internal option path, with the facade field and
+      public binding option arriving in `O10`. One scanner recognizes
+      `[[...]]` and
       `![[...]]`, splits path, optional anchor, and label while scanning,
       removes the `#` and `#^` punctuation, and builds one
       `CrossLink(embedded, dest=cross(path, anchor), label)` whose `label` is
@@ -451,7 +485,9 @@ decides otherwise.
       scopes, allocation failure, and size-doubling `!`, `[`, `]`, `#`, `^`,
       and `|` runs, and a canonical case; remove the four `wikilink-*` gaps
       and keep the label-nullability and destination projections as general
-      deltas with canaries. Requires `X0`, `M1`.
+      deltas with canaries. Identifier-like bytes inside a crosslink source
+      form are a cross-item case owned by whichever of `O1` and `O7` merges
+      later. Requires `X0`, `M1`, `D5`.
 - [ ] **O2 — Highlights.** Add `==` to the shared delimiter stack under
       `obsidian` with the exact-two-run and non-empty rules, local pairing,
       and opaque code, comment, and HTML-token bytes; add the `Mark(content)`
@@ -463,12 +499,14 @@ decides otherwise.
 - [ ] **O3 — Comments.** Scan `%%...%%` from the shared cursor with a linear
       closer search, classify block placement when both delimiters occupy
       their own lines and inline placement otherwise, keep the body opaque,
-      and emit `Comment(literal)` when `stripObsidianComments` is off or omit
-      the node without changing surrounding delimiter binding when it is on.
-      Add the kind, fixtures in both modes covering inline, standalone,
-      multiline, empty, adjacent, escaped, unmatched, and Markdown-looking
-      bodies plus size-doubling percent runs, and a canonical case; remove
-      the two `comment-*` gaps. Requires `O1`, `D5`.
+      and emit `Comment(literal)` when `stripObsidianComments` (internal
+      until `O10`) is off or omit the node without changing surrounding
+      delimiter binding when it is on. Add the kind, fixtures in both modes
+      covering inline, standalone, multiline, empty, adjacent, escaped,
+      unmatched, and Markdown-looking bodies, the syntax of every already
+      merged extension inside a comment body under the opacity rule, and
+      size-doubling percent runs, and a canonical case; remove the two
+      `comment-*` gaps. Requires `O1`, `D5`.
 - [ ] **O4 — Inline footnotes.** Recognize `^[content]` inside the shared
       bracket algorithm, ahead of superscript, producing one one-item `Cite`
       with a `footnote` referent and one document-owned `Footnote` whose body
@@ -513,10 +551,11 @@ decides otherwise.
       while child scopes end before it. Fixtures cover every placement,
       metadata-free callouts, nested lists, invalid characters, missing
       separation, duplicates, end of document, scopes, allocation failure,
-      and long candidate sequences. Two cross-item cases are owned by
+      and long candidate sequences. Three cross-item cases are owned by
       whichever item merges later: the cross-profile reservation case of the
-      anchor contract with `P3`, and an identifier attached to a
-      metadata-bearing callout with `O8`. Requires `M3`, `M7`.
+      anchor contract with `P3`, an identifier attached to a metadata-bearing
+      callout with `O8`, and identifier-like bytes inside a crosslink source
+      form with `O1`. Requires `M3`, `M7`.
 - [ ] **O8 — Callout metadata.** Evaluate `[!type]`, the optional `+` or `-`
       fold marker, and the inline title on the first content line of every
       `>` container inside the existing block algorithm, lowercase the type
@@ -552,8 +591,10 @@ decides otherwise.
       boundaries, escaped table pipes, long paths and headings, and repeated
       identifiers with structural bounds; audit every inline extension caller
       and delete obsolete skip tables and repair paths; empty `baselineGaps`;
-      mark every support-audit row present; document the `obsidian` option
-      in the README and the binding READMEs. Requires `O1` through `O9`.
+      mark every support-audit row present; publish `obsidian` and
+      `stripObsidianComments` in every binding's `ParseOptions`, the facade,
+      and the CLI help, and document them in the README and the binding
+      READMEs. Requires `O1` through `O9`.
 - [ ] **Obsidian track exit criterion:** the plan exit criterion of the
       Obsidian implementation plan holds on every public surface, with the
       profile enabled by one composed switch and comment retention as its
@@ -572,8 +613,9 @@ decides otherwise.
       `CrossLink`, `Mark`, `Cite`, nesting-limit, allocation-failure, and
       size-doubling cases, and a canonical case; remove every `I0` gap. The
       `CrossLink`, `Mark`, and `Cite` composition cases are cross-item cases
-      owned by whichever of `I1` and `O1`, `O2`, or `M4` merges later.
-      Requires `X0`, `I0`.
+      owned by whichever of `I1` and `O1`, `O2`, or `M4` merges later, and
+      `Comment` opacity follows the opacity rule with `O3`. Requires `X0`,
+      `I0`.
 
 ## Stage 5 — Pandoc track
 
@@ -677,8 +719,9 @@ decides otherwise.
       style or delimiter change, and the nested-start restriction; `startnum`
       stores the first marker's value and otherwise `start=1`. Remove the
       `fancy-list-and-startnum` gap. Requires `M5`.
-- [ ] **P9b — `example_lists`.** Add `(@)`, `(@label)`, and `(N@)` markers
-      with `style=example`, a document-wide counter and label map as parser
+- [ ] **P9b — `example_lists`.** Add `(@)`, `(@label)`, `(N@)`, and
+      `(N@label)` markers with `style=example`, a document-wide counter and
+      label map as parser
       state, `ListItem.exampleLabel`, the `ExampleReference(label)` kind for
       later `(@label)` occurrences, the repeated-label and reset rules,
       four-space continuations, and counter overflow as a parse error.
@@ -750,48 +793,48 @@ decides otherwise.
 
 Sizes are rough review-effort estimates, not schedules.
 
-| Item         | Requires           | Size | Cross-item cases                                                                            | Discharges                                                                                             |
-| ------------ | ------------------ | ---- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `X0`         | `D5`               | M    | —                                                                                           | Obsidian Phase 1 preset; Pandoc Phase 1 options                                                        |
-| `P0`         | `X0`               | M    | —                                                                                           | Pandoc Phase 0; Pandoc Phase 1 gate activation                                                         |
-| `I0`         | —                  | S    | —                                                                                           | inserted-text oracle setup                                                                             |
-| `M1`         | `D1`, `D2`         | M    | —                                                                                           | Obsidian and Pandoc Phase 1 `Destination`                                                              |
-| `M2`         | `M1`, `D8`, `D9`   | L    | —                                                                                           | Obsidian Phase 1 reference normalization; Phase 5 projections                                          |
-| `M3`         | —                  | M    | —                                                                                           | Obsidian Phase 1 `Callout`                                                                             |
-| `M4`         | `M2`, `D2`, `D3`   | L    | `Insert` containing `Cite` (`I1`)                                                           | Obsidian Phase 1 citation model; Pandoc Phase 1 bibliography branch                                    |
-| `M5`         | —                  | M    | —                                                                                           | Obsidian Phase 1 `marker`; Pandoc Phase 1 list values                                                  |
-| `M6`         | `D3`, `D4`         | L    | —                                                                                           | Pandoc Phase 1 table values                                                                            |
-| `M7`         | `M1`–`M6`, `D2`    | L    | —                                                                                           | Obsidian Phase 1 metadata, anchor, dimensions; Pandoc Phase 1 fields; Pandoc Phase 2 directive storage |
-| `P1`         | `M7`               | L    | —                                                                                           | Pandoc Phase 2 attribute operation and directive grammar                                               |
-| `O1`         | `X0`, `M1`         | M    | `Insert` containing `CrossLink` (`I1`)                                                      | Obsidian Phase 2 wikilinks                                                                             |
-| `O2`         | `O1`               | S    | `Insert` containing `Mark` (`I1`)                                                           | Obsidian Phase 2 highlights                                                                            |
-| `O3`         | `O1`, `D5`         | M    | —                                                                                           | Obsidian Phase 2 comments                                                                              |
-| `O4`         | `O1`, `M4`         | M    | `^[` before superscript (`P6`)                                                              | Obsidian Phase 2 inline footnotes and resolution                                                       |
-| `O5`         | `X0`, `M5`         | S    | —                                                                                           | Obsidian Phase 4 task markers                                                                          |
-| `O6`         | `X0`, `M7`         | XL   | —                                                                                           | Obsidian Phase 3 Properties                                                                            |
-| `O7`         | `M3`, `M7`         | M    | anchor reserved before synthesis (`P3`); identifier on a metadata-bearing callout (`O8`)    | Obsidian Phase 3 block identifiers                                                                     |
-| `O8`         | `M3`, `O1`, `O2`   | M    | identifier on a metadata-bearing callout (`O7`)                                             | Obsidian Phase 3 callouts                                                                              |
-| `O9`         | `M6`, `M7`, `O1`   | M    | —                                                                                           | Obsidian Phase 4 media parameters and tables                                                           |
-| `O10`        | `O1`–`O9`          | M    | —                                                                                           | Obsidian Phase 2 caller audit; Phase 5; plan exit criterion                                            |
-| `I1`         | `X0`, `I0`         | S    | `Insert` containing `CrossLink`, `Mark`, `Cite` (`O1`, `O2`, `M4`)                          | inserted-text contract                                                                                 |
-| `P2a`, `P2b` | `P1`               | S    | —                                                                                           | Pandoc Phase 2 attachment sites                                                                        |
-| `P2c`        | `P1`, `D6`         | M    | —                                                                                           | Pandoc Phase 2 attachment sites                                                                        |
-| `P2d`        | `P1`, `M2`         | M    | link tail ahead of a span (`P5`); attributes on an implicit heading reference (`P4`)        | Pandoc Phase 2 attachment, merge, and caller audit                                                     |
-| `P3`         | `M7`, `P2b`, `D7`  | M    | anchor reserved before synthesis (`O7`)                                                     | Pandoc Phase 2 heading registry                                                                        |
-| `P4`         | `M2`, `P3`         | M    | attributes on an implicit heading reference (`P2d`)                                         | Pandoc Phase 3 document resolution                                                                     |
-| `P5`         | `P1`               | M    | link tail ahead of a span (`P2d`)                                                           | Pandoc Phase 3 spans                                                                                   |
-| `P6`         | `X0`               | S    | `^[` before superscript (`O4`)                                                              | Pandoc Phase 3 superscript and subscript                                                               |
-| `P7`         | `M4`, `P5`, `P9b`  | L    | —                                                                                           | Pandoc Phase 3 citations and resolution                                                                |
-| `P8`         | `P1`               | M    | definition body ends at a div close (`P10`)                                                 | Pandoc Phase 4 fenced divs                                                                             |
-| `P9a`        | `M5`               | M    | —                                                                                           | Pandoc Phase 4 ordered markers                                                                         |
-| `P9b`        | `P9a`              | M    | —                                                                                           | Pandoc Phase 4 example lists                                                                           |
-| `P10`        | `X0`               | L    | caption precedence over term lookahead (`P11a`); definition body ends at a div close (`P8`) | Pandoc Phase 4 definition lists                                                                        |
-| `P11a`       | `M6`               | M    | caption precedence over term lookahead (`P10`)                                              | Pandoc Phase 5 captions                                                                                |
-| `P11b`       | `P11a`             | M    | —                                                                                           | Pandoc Phase 5 simple tables and precedence                                                            |
-| `P11c`       | `P11b`             | M    | —                                                                                           | Pandoc Phase 5 multiline tables                                                                        |
-| `P11d`       | `P11a`             | XL   | —                                                                                           | Pandoc Phase 5 grid tables                                                                             |
-| `P12`        | `P2a`–`P11d`       | M    | —                                                                                           | Pandoc Phase 6; plan exit criterion                                                                    |
-| `R1`         | `O10`, `I1`, `P12` | S    | —                                                                                           | both delivery sequences                                                                                |
+| Item         | Requires           | Size | Cross-item cases                                                                                                                          | Discharges                                                                                             |
+| ------------ | ------------------ | ---- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `X0`         | —                  | M    | —                                                                                                                                         | option registry serving both plans' option bullets                                                     |
+| `P0`         | `X0`               | M    | —                                                                                                                                         | Pandoc Phase 0; Pandoc Phase 1 gate activation                                                         |
+| `I0`         | —                  | S    | —                                                                                                                                         | inserted-text oracle setup                                                                             |
+| `M1`         | `D1`, `D2`         | M    | —                                                                                                                                         | Obsidian and Pandoc Phase 1 `Destination`                                                              |
+| `M2`         | `M1`, `D8`, `D9`   | L    | —                                                                                                                                         | Obsidian Phase 1 reference normalization; Phase 5 projections                                          |
+| `M3`         | —                  | M    | —                                                                                                                                         | Obsidian Phase 1 `Callout`                                                                             |
+| `M4`         | `M2`, `D2`, `D3`   | L    | `Insert` containing `Cite` (`I1`)                                                                                                         | Obsidian Phase 1 citation model; Pandoc Phase 1 bibliography branch                                    |
+| `M5`         | —                  | M    | —                                                                                                                                         | Obsidian Phase 1 `marker`; Pandoc Phase 1 list values                                                  |
+| `M6`         | `D3`, `D4`         | L    | —                                                                                                                                         | Pandoc Phase 1 table values                                                                            |
+| `M7`         | `M1`–`M6`, `D2`    | L    | —                                                                                                                                         | Obsidian Phase 1 metadata, anchor, dimensions; Pandoc Phase 1 fields; Pandoc Phase 2 directive storage |
+| `P1`         | `M7`               | L    | —                                                                                                                                         | Pandoc Phase 2 attribute operation and directive grammar                                               |
+| `O1`         | `X0`, `M1`, `D5`   | M    | `Insert` containing `CrossLink` (`I1`); identifier-like bytes inside a crosslink (`O7`)                                                   | Obsidian Phase 2 wikilinks                                                                             |
+| `O2`         | `O1`               | S    | `Insert` containing `Mark` (`I1`)                                                                                                         | Obsidian Phase 2 highlights                                                                            |
+| `O3`         | `O1`, `D5`         | M    | —                                                                                                                                         | Obsidian Phase 2 comments                                                                              |
+| `O4`         | `O1`, `M4`         | M    | `^[` before superscript (`P6`)                                                                                                            | Obsidian Phase 2 inline footnotes and resolution                                                       |
+| `O5`         | `X0`, `M5`         | S    | —                                                                                                                                         | Obsidian Phase 4 task markers                                                                          |
+| `O6`         | `X0`, `M7`         | XL   | —                                                                                                                                         | Obsidian Phase 3 Properties                                                                            |
+| `O7`         | `M3`, `M7`         | M    | anchor reserved before synthesis (`P3`); identifier on a metadata-bearing callout (`O8`); identifier-like bytes inside a crosslink (`O1`) | Obsidian Phase 3 block identifiers                                                                     |
+| `O8`         | `M3`, `O1`, `O2`   | M    | identifier on a metadata-bearing callout (`O7`)                                                                                           | Obsidian Phase 3 callouts                                                                              |
+| `O9`         | `M6`, `M7`, `O1`   | M    | —                                                                                                                                         | Obsidian Phase 4 media parameters and tables                                                           |
+| `O10`        | `O1`–`O9`          | M    | —                                                                                                                                         | Obsidian Phase 1 preset publication; Phase 2 caller audit; Phase 5; plan exit criterion                |
+| `I1`         | `X0`, `I0`         | S    | `Insert` containing `CrossLink`, `Mark`, `Cite` (`O1`, `O2`, `M4`)                                                                        | inserted-text contract                                                                                 |
+| `P2a`, `P2b` | `P1`               | S    | —                                                                                                                                         | Pandoc Phase 2 attachment sites                                                                        |
+| `P2c`        | `P1`, `D6`         | M    | —                                                                                                                                         | Pandoc Phase 2 attachment sites                                                                        |
+| `P2d`        | `P1`, `M2`         | M    | link tail ahead of a span (`P5`); attributes on an implicit heading reference (`P4`)                                                      | Pandoc Phase 2 attachment, merge, and caller audit                                                     |
+| `P3`         | `M7`, `P2b`, `D7`  | M    | anchor reserved before synthesis (`O7`)                                                                                                   | Pandoc Phase 2 heading registry                                                                        |
+| `P4`         | `M2`, `P3`         | M    | attributes on an implicit heading reference (`P2d`)                                                                                       | Pandoc Phase 3 document resolution                                                                     |
+| `P5`         | `P1`               | M    | link tail ahead of a span (`P2d`)                                                                                                         | Pandoc Phase 3 spans                                                                                   |
+| `P6`         | `X0`               | S    | `^[` before superscript (`O4`)                                                                                                            | Pandoc Phase 3 superscript and subscript                                                               |
+| `P7`         | `M4`, `P5`, `P9b`  | L    | —                                                                                                                                         | Pandoc Phase 3 citations and resolution                                                                |
+| `P8`         | `P1`               | M    | definition body ends at a div close (`P10`)                                                                                               | Pandoc Phase 4 fenced divs                                                                             |
+| `P9a`        | `M5`               | M    | —                                                                                                                                         | Pandoc Phase 4 ordered markers                                                                         |
+| `P9b`        | `P9a`              | M    | —                                                                                                                                         | Pandoc Phase 4 example lists                                                                           |
+| `P10`        | `X0`               | L    | caption precedence over term lookahead (`P11a`); definition body ends at a div close (`P8`)                                               | Pandoc Phase 4 definition lists                                                                        |
+| `P11a`       | `M6`               | M    | caption precedence over term lookahead (`P10`)                                                                                            | Pandoc Phase 5 captions                                                                                |
+| `P11b`       | `P11a`             | M    | —                                                                                                                                         | Pandoc Phase 5 simple tables and precedence                                                            |
+| `P11c`       | `P11b`             | M    | —                                                                                                                                         | Pandoc Phase 5 multiline tables                                                                        |
+| `P11d`       | `P11a`             | XL   | —                                                                                                                                         | Pandoc Phase 5 grid tables                                                                             |
+| `P12`        | `P2a`–`P11d`       | M    | —                                                                                                                                         | Pandoc Phase 6; plan exit criterion                                                                    |
+| `R1`         | `O10`, `I1`, `P12` | S    | —                                                                                                                                         | both delivery sequences                                                                                |
 
 ## Working in parallel
 
@@ -807,12 +850,13 @@ Sizes are rough review-effort estimates, not schedules.
   edit the table path; `P2a` through `P2d` share the attribute callers; `P5`,
   `P6`, and `P7` share the inline bracket and delimiter code; `P8` and `P10`
   share block starts.
-- The `Cross-item cases` column is the complete list of fixtures that wait
-  for a second item neither of whose items requires the other: `Insert`
-  composed with `CrossLink`, `Mark`, and `Cite`; `^[` before superscript;
-  the cross-profile anchor reservation; an identifier on a metadata-bearing
-  callout; a link tail claiming a container ahead of a span; attributes on
+- The `Cross-item cases` column, together with the opacity rule, is the
+  complete list of fixtures that wait for a second item neither of whose
+  items requires the other: `Insert` composed with `CrossLink`, `Mark`, and
+  `Cite`; `^[` before superscript; the cross-profile anchor reservation; an
+  identifier on a metadata-bearing callout; identifier-like bytes inside a
+  crosslink; a link tail claiming a container ahead of a span; attributes on
   an implicit heading reference; a definition body ending at a fenced-div
-  close; and caption precedence over definition-term lookahead. Each is
-  written by the later of its two items, and no item's `Requires` grows
-  because of it.
+  close; caption precedence over definition-term lookahead; and every
+  comment opacity case. Each is written by the later of its two items, and
+  no item's `Requires` grows because of it.
