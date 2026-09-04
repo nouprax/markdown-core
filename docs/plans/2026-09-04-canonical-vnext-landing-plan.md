@@ -79,8 +79,8 @@ sequences; it is landed here as its own track.
   appear in a parseable canonical case, so a kind without a producer cannot
   pass the contract check. Field and enum changes on existing kinds are
   therefore the only model-only pull requests; they are the `M` items. Every
-  item that adds or removes a kind requires `D8`, so no ordinal is assigned
-  before the allocation policy exists.
+  item that adds, removes, or renames a kind requires `D8`, so no ordinal is
+  assigned before the allocation policy exists.
 - A feature pull request is one option's behavior: the C extension or
   scanner, its reviewed position in the attach-order table, the option's
   facade field, registry row, `canonical-ast.md` row, manifest key, and
@@ -192,7 +192,7 @@ sequences; it is landed here as its own track.
       whether the removals in `M2` and `M4` compact the enum or leave holes,
       and allocate the final order from the inventory below so later items
       append at reserved positions. Needed by `M2` and by every item that
-      adds a kind.
+      adds, removes, or renames a kind.
 - [ ] **D9 — Reference expansion bound.** Resolution copies the winning
       destination into every occurrence, which the current
       `pathological_reference_expansion_bound` case and the reference ledger
@@ -372,7 +372,7 @@ plumbing.
       walkers, and every fixture containing a quote regenerate. The Obsidian
       `universal-callout-container` delta stays as the general projection of
       mdast `blockquote`. Manifest states: `callout.variant.null`,
-      `callout.fold.none`, `callout.title.null`. Requires `D1`.
+      `callout.fold.none`, `callout.title.null`. Requires `D1`, `D8`.
 - [ ] **M4 — Citation and footnote model.** Replace `FootnoteReference` and
       `FootnoteDefinition` with inline `Cite(citations)`, the scoped
       `Citation(referent, prefix, suffix)` value, the complete
@@ -515,45 +515,42 @@ plumbing.
       unclosed forms, unresolved calls, nested citations, semantic cycles,
       deterministic IDs and visitation order, allocation failure, and
       adversarial `^`, `[`, and `]` runs. Requires `O1`, `M4`.
-- [ ] **O5 — Task markers.** Generalize the task-list scanner under
-      `obsidian` from `[ xX]` to exactly one Unicode scalar followed by a
-      structural separator, decoding at most the candidate marker; the GFM
-      profiles keep the inherited rule. Fixtures cover the module's marker
-      table, ordered and nested lists, tabs and newlines as separators, empty
-      and multi-scalar markers, missing separators, scopes, and long
-      malformed bracket runs; remove the `custom-task-character` gap.
-      Requires `X0`, `M5`.
+- [ ] **O5 — Task markers.** Generalize the task-list scanner under `obsidian`
+      from `[ xX]` to exactly one Unicode scalar followed by a structural
+      separator, decoding at most the candidate marker; the GFM profiles keep
+      the inherited rule. Fixtures cover the module's marker table, ordered and
+      nested lists, tabs and newlines as separators, empty and multi-scalar
+      markers, missing separators, scopes, and long malformed bracket runs;
+      remove the `custom-task-character` gap. Requires `O1`, `M5`.
 - [ ] **O6 — Properties.** Recognize at most one exact `---` envelope at the
       beginning of the decoded document after an optional BOM, scan it
       transactionally, decode the payload once as a YAML 1.2.2 document with
-      JSON scalar resolution and a plain-string fallback, and project one
-      root mapping into ordered `Metadata` records with textual key names,
-      exact number lexemes, text and number lists, aliases resolved
-      acyclically within budget, the allowed standard tags, and JSON root
-      objects. Reject nested values, duplicates after decoding, stream
-      indicators including `...`, and every other unsupported form by
-      returning all bytes to inherited parsing; record `Metadata.scope` and
-      each record scope; parse the body once after the closing fence. This is
-      the largest C component of the track: land it as one item, or split the
-      decoder by registered gap group if review requires. Fixtures own the
-      module's profile cases and the shared metadata cases; remove the eight
-      `properties-*` gaps, whose oracle projection now reads the real field.
-      Requires `X0`, `M7`.
-- [ ] **O7 — Block identifiers.** Attach `^block-id` during block
-      finalization through one operation for paragraph suffixes,
-      structured-block follower lines with the required blank-line
-      boundaries, and list-item suffixes, writing the identifier into the
-      owner's inherited `anchor` and removing it from visible content with no
-      repair pass or offset side table; a second candidate on one owner is
-      ordinary content, and the owner's scope still covers the identifier
-      while child scopes end before it. Fixtures cover every placement,
-      metadata-free callouts, nested lists, invalid characters, missing
-      separation, duplicates, end of document, scopes, allocation failure,
-      and long candidate sequences. Three cross-item cases are owned by
+      JSON scalar resolution and a plain-string fallback, and project one root
+      mapping into ordered `Metadata` records with textual key names, exact
+      number lexemes, text and number lists, aliases resolved acyclically within
+      budget, the allowed standard tags, and JSON root objects. Reject nested
+      values, duplicates after decoding, stream indicators including `...`, and
+      every other unsupported form by returning all bytes to inherited parsing;
+      record `Metadata.scope` and each record scope; parse the body once after
+      the closing fence. This is the largest C component of the track: land it
+      as one item, or split the decoder by registered gap group if review
+      requires. Fixtures own the module's profile cases and the shared metadata
+      cases; remove the eight `properties-*` gaps, whose oracle projection now
+      reads the real field. Requires `O1`, `M7`.
+- [ ] **O7 — Block identifiers.** Attach `^block-id` during block finalization
+      through one operation for paragraph suffixes, structured-block follower
+      lines with the required blank-line boundaries, and list-item suffixes,
+      writing the identifier into the owner's inherited `anchor` and removing it
+      from visible content with no repair pass or offset side table; a second
+      candidate on one owner is ordinary content, and the owner's scope still
+      covers the identifier while child scopes end before it. Fixtures cover
+      every placement, metadata-free callouts, nested lists, invalid characters,
+      missing separation, duplicates, end of document, scopes, allocation
+      failure, and long candidate sequences. Three cross-item cases are owned by
       whichever item merges later: the cross-profile reservation case of the
       anchor contract with `P3`, an identifier attached to a metadata-bearing
       callout with `O8`, and identifier-like bytes inside a crosslink source
-      form with `O1`. Requires `M3`, `M7`.
+      form with `O1`. Requires `O1`, `M3`, `M7`.
 - [ ] **O8 — Callout metadata.** Evaluate `[!type]`, the optional `+` or `-`
       fold marker, and the inline title on the first content line of every `>`
       container inside the existing block algorithm, lowercase the type into
@@ -618,35 +615,35 @@ plumbing.
 
 - [ ] **P2a — `inline_code_attributes`.** Attach a container that begins
       immediately after a complete closing backtick run to the `Code` node,
-      excluding it from `literal` and including it in scope; whitespace
-      prevents attachment and a malformed suffix leaves the code span
-      unchanged. Fixtures and a canonical case; remove the
-      `inline-code-attributes` gap. Requires `P1`.
+      excluding it from `literal` and including it in scope; whitespace prevents
+      attachment and a malformed suffix leaves the code span unchanged. Fixtures
+      and a canonical case; remove the `inline-code-attributes` gap. Requires
+      `P0`, `P1`.
 - [ ] **P2b — `header_attributes`.** Attach a trailing container on ATX and
-      Setext headings, after optional closing hashes, removing it from
-      content and including it in scope; an invalid suffix stays visible.
-      Fixtures cover compact, spaced, Setext, and malformed forms; remove the
-      `header-attributes` gap. Requires `P1`.
+      Setext headings, after optional closing hashes, removing it from content
+      and including it in scope; an invalid suffix stays visible. Fixtures cover
+      compact, spaced, Setext, and malformed forms; remove the
+      `header-attributes` gap. Requires `P0`, `P1`.
 - [ ] **P2c — `fenced_code_attributes`.** Accept a braced list in the opening
       info region of tilde and backtick fences, with a bare language word as
-      first-class shorthand lowercased and mapped for `c++` and
-      `objective-c`; `numberLines` and its relatives stay inert records; a
-      malformed list attaches nothing and does not reinterpret the body or
-      closing fence; option-off keeps the inherited info contract. Resolve
-      `D6` in the same change. Remove the `fenced-code-attributes` gap.
-      Requires `P1`, `D6`.
-- [ ] **P2d — `link_attributes`.** Attach an immediate container after a
-      direct link, image, resolved reference occurrence, or autolink; store a
+      first-class shorthand lowercased and mapped for `c++` and `objective-c`;
+      `numberLines` and its relatives stay inert records; a malformed list
+      attaches nothing and does not reinterpret the body or closing fence;
+      option-off keeps the inherited info contract. Resolve `D6` in the same
+      change. Remove the `fenced-code-attributes` gap. Requires `P0`, `P1`,
+      `D6`.
+- [ ] **P2d — `link_attributes`.** Attach an immediate container after a direct
+      link, image, resolved reference occurrence, or autolink; store a
       definition's container in the parser reference map and apply
       `merge(occurrence, definition)` on resolution without touching the
-      occurrence scope; keep `width` and `height` unit strings as records.
-      Audit every Link, Image, Heading, Code, CodeBlock, directive, and
-      reference-definition caller and delete repair passes made obsolete by
-      the shared operation. Two cross-item cases are owned by whichever item
-      merges later: a link tail claiming the container ahead of a bracketed
-      span with `P5`, and attributes authored on an implicit heading
-      reference occurrence with `P4`. Remove the `link-and-image-attributes`
-      and `pandoc-reference-attribute-merge` gaps. Requires `P1`, `M2`.
+      occurrence scope; keep `width` and `height` unit strings as records. Audit
+      every Link, Image, Heading, Code, CodeBlock, directive, and
+      reference-definition caller and delete repair passes made obsolete by the
+      shared operation. Two cross-item cases are owned by whichever item merges
+      later: a link tail claiming the container ahead of a bracketed span with
+      `P5`, and attributes authored on an implicit heading reference occurrence
+      with `P4`. Remove the `link-and-image-attributes` and
+      `pandoc-reference-attribute-merge` gaps. Requires `P0`, `P1`, `M2`.
 - [ ] **P3 — `auto_anchors`.** Build one document anchor registry that
       reserves every explicit anchor from every enabled profile before
       synthesis, then generates GFM anchors in heading order from visible
@@ -677,7 +674,7 @@ plumbing.
       and attribute-grammar gaps. The `Span` containing a `Cite` case belongs to
       `P7`, and a link tail claiming the container ahead of a span is a
       cross-item case owned by whichever of `P5` and `P2d` merges later.
-      Requires `P1`, `D8`.
+      Requires `P0`, `P1`, `D8`.
 - [ ] **P6 — `superscript` and `subscript`.** Add the single `^` and `~`
       delimiters through the delimiter engine with unescaped-whitespace
       rejection, `\ ` to a no-break space, empty bodies, `^[` and `~~`
@@ -685,7 +682,7 @@ plumbing.
       canonical cases; remove the `superscript-and-subscript` and
       `empty-superscript-and-subscript` gaps. The `^[` precedence case is a
       cross-item case owned by whichever of `P6` and `O4` merges later. Requires
-      `X0`, `D8`.
+      `P0`, `D8`.
 - [ ] **P7 — `citations`.** Recognize bare and braced keys, bracketed groups
       with semicolon items and prefix, mode marker, key, and suffix scopes,
       author-in-text keys with an optional bracketed tail, `-@` for
@@ -708,14 +705,14 @@ plumbing.
       Add the kind, fixtures, and a canonical case; remove the
       `fenced-divs-nested` gap. A definition body ending at an enclosing
       fenced-div close is a cross-item case owned by whichever of `P8` and `P10`
-      merges later. Requires `P1`, `D8`.
+      merges later. Requires `P0`, `P1`, `D8`.
 - [ ] **P9a — `fancy_lists` and `startnum`.** Generalize the ordered-marker
       operation for decimal, alphabetic, Roman, and `#` markers with period,
       one-paren, and two-paren delimiters, the capital-period two-space rule,
-      `i` and `I` disambiguation, same-style continuation, a new list on a
-      style or delimiter change, and the nested-start restriction; `startnum`
-      stores the first marker's value and otherwise `start=1`. Remove the
-      `fancy-list-and-startnum` gap. Requires `M5`.
+      `i` and `I` disambiguation, same-style continuation, a new list on a style
+      or delimiter change, and the nested-start restriction; `startnum` stores
+      the first marker's value and otherwise `start=1`. Remove the
+      `fancy-list-and-startnum` gap. Requires `P0`, `M5`.
 - [ ] **P9b — `example_lists`.** Add `(@)`, `(@label)`, `(N@)`, and `(N@label)`
       markers with `style=example`, a document-wide counter and label map as
       parser state, `ListItem.exampleLabel`, the `ExampleReference(label)` kind
@@ -733,7 +730,7 @@ plumbing.
       canonical cases; remove the two `definition-list-*` gaps. Two cross-item
       cases are owned by whichever item merges later: caption precedence over
       term lookahead with `P11a`, and a body ending at an enclosing fenced-div
-      close with `P8`. Requires `X0`, `D2`, `D8`.
+      close with `P8`. Requires `P0`, `D2`, `D8`.
 - [ ] **P11a — `table_captions`.** Claim a `Table:`, `table:`, or `:` paragraph
       immediately before or after a supported table for the nearest complete
       eligible table, preceding first, strip the marker into
@@ -741,8 +738,8 @@ plumbing.
       paragraph alone with the option off. Add `Table.caption: TableCaption?`
       and the `TableCaption` kind together on every surface, fixtures for
       before, after, both, multiline, and empty captions, and canonical cases
-      for `table.caption.null` and `table.caption.populated`. Requires `M6`,
-      `D3`, `D8`.
+      for `table.caption.null` and `table.caption.populated`. Requires `P0`,
+      `M6`, `D3`, `D8`.
 - [ ] **P11b — `simple_tables`.** Establish column ranges from the dash
       separator line, derive alignment from header placement, accept the
       headerless closing-separator form, end at a blank line or closing
@@ -797,7 +794,7 @@ Sizes are rough review-effort estimates, not schedules.
 | `I0`         | —                      | S    | —                                                                                                                                         | inserted-text oracle setup                                                                             |
 | `M1`         | `D1`, `D2`             | M    | —                                                                                                                                         | Obsidian and Pandoc Phase 1 `Destination`                                                              |
 | `M2`         | `M1`, `D8`, `D9`       | L    | —                                                                                                                                         | Obsidian Phase 1 reference normalization; Phase 5 projections                                          |
-| `M3`         | `D1`                   | M    | —                                                                                                                                         | Obsidian Phase 1 `Callout`                                                                             |
+| `M3`         | `D1`, `D8`             | M    | —                                                                                                                                         | Obsidian Phase 1 `Callout`                                                                             |
 | `M4`         | `M2`, `D2`, `D3`       | L    | `Insert` containing `Cite` (`I1`)                                                                                                         | Obsidian Phase 1 citation model; Pandoc Phase 1 bibliography branch                                    |
 | `M5`         | `D1`                   | M    | —                                                                                                                                         | Obsidian Phase 1 `marker`; Pandoc Phase 1 list values                                                  |
 | `M6`         | `D1`, `D2`, `D4`       | L    | —                                                                                                                                         | Pandoc Phase 1 table values                                                                            |
@@ -807,26 +804,26 @@ Sizes are rough review-effort estimates, not schedules.
 | `O2`         | `O1`, `D8`             | S    | `Insert` containing `Mark` (`I1`)                                                                                                         | Obsidian Phase 2 highlights                                                                            |
 | `O3`         | `O1`, `D5`, `D8`       | M    | —                                                                                                                                         | Obsidian Phase 2 comments                                                                              |
 | `O4`         | `O1`, `M4`             | M    | `^[` before superscript (`P6`)                                                                                                            | Obsidian Phase 2 inline footnotes and resolution                                                       |
-| `O5`         | `X0`, `M5`             | S    | —                                                                                                                                         | Obsidian Phase 4 task markers                                                                          |
-| `O6`         | `X0`, `M7`             | XL   | —                                                                                                                                         | Obsidian Phase 3 Properties                                                                            |
-| `O7`         | `M3`, `M7`             | M    | anchor reserved before synthesis (`P3`); identifier on a metadata-bearing callout (`O8`); identifier-like bytes inside a crosslink (`O1`) | Obsidian Phase 3 block identifiers                                                                     |
+| `O5`         | `O1`, `M5`             | S    | —                                                                                                                                         | Obsidian Phase 4 task markers                                                                          |
+| `O6`         | `O1`, `M7`             | XL   | —                                                                                                                                         | Obsidian Phase 3 Properties                                                                            |
+| `O7`         | `O1`, `M3`, `M7`       | M    | anchor reserved before synthesis (`P3`); identifier on a metadata-bearing callout (`O8`); identifier-like bytes inside a crosslink (`O1`) | Obsidian Phase 3 block identifiers                                                                     |
 | `O8`         | `M3`, `O1`, `O2`, `D2` | M    | identifier on a metadata-bearing callout (`O7`)                                                                                           | Obsidian Phase 3 callouts                                                                              |
 | `O9`         | `M6`, `M7`, `O1`       | M    | —                                                                                                                                         | Obsidian Phase 4 media parameters and tables                                                           |
 | `O10`        | `O1`–`O9`              | M    | —                                                                                                                                         | Obsidian Phase 1 preset publication; Phase 2 caller audit; Phase 5; plan exit criterion                |
 | `I1`         | `X0`, `I0`, `D8`       | S    | `Insert` containing `CrossLink`, `Mark`, `Cite` (`O1`, `O2`, `M4`)                                                                        | inserted-text contract                                                                                 |
-| `P2a`, `P2b` | `P1`                   | S    | —                                                                                                                                         | Pandoc Phase 2 attachment sites                                                                        |
-| `P2c`        | `P1`, `D6`             | M    | —                                                                                                                                         | Pandoc Phase 2 attachment sites                                                                        |
-| `P2d`        | `P1`, `M2`             | M    | link tail ahead of a span (`P5`); attributes on an implicit heading reference (`P4`)                                                      | Pandoc Phase 2 attachment, merge, and caller audit                                                     |
+| `P2a`, `P2b` | `P0`, `P1`             | S    | —                                                                                                                                         | Pandoc Phase 2 attachment sites                                                                        |
+| `P2c`        | `P0`, `P1`, `D6`       | M    | —                                                                                                                                         | Pandoc Phase 2 attachment sites                                                                        |
+| `P2d`        | `P0`, `P1`, `M2`       | M    | link tail ahead of a span (`P5`); attributes on an implicit heading reference (`P4`)                                                      | Pandoc Phase 2 attachment, merge, and caller audit                                                     |
 | `P3`         | `M7`, `P2b`, `D7`      | M    | anchor reserved before synthesis (`O7`)                                                                                                   | Pandoc Phase 2 heading registry                                                                        |
 | `P4`         | `M2`, `P3`             | M    | attributes on an implicit heading reference (`P2d`)                                                                                       | Pandoc Phase 3 document resolution                                                                     |
-| `P5`         | `P1`, `D8`             | M    | link tail ahead of a span (`P2d`)                                                                                                         | Pandoc Phase 3 spans                                                                                   |
-| `P6`         | `X0`, `D8`             | S    | `^[` before superscript (`O4`)                                                                                                            | Pandoc Phase 3 superscript and subscript                                                               |
+| `P5`         | `P0`, `P1`, `D8`       | M    | link tail ahead of a span (`P2d`)                                                                                                         | Pandoc Phase 3 spans                                                                                   |
+| `P6`         | `P0`, `D8`             | S    | `^[` before superscript (`O4`)                                                                                                            | Pandoc Phase 3 superscript and subscript                                                               |
 | `P7`         | `M4`, `P5`, `P9b`      | L    | —                                                                                                                                         | Pandoc Phase 3 citations and resolution                                                                |
-| `P8`         | `P1`, `D8`             | M    | definition body ends at a div close (`P10`)                                                                                               | Pandoc Phase 4 fenced divs                                                                             |
-| `P9a`        | `M5`                   | M    | —                                                                                                                                         | Pandoc Phase 4 ordered markers                                                                         |
+| `P8`         | `P0`, `P1`, `D8`       | M    | definition body ends at a div close (`P10`)                                                                                               | Pandoc Phase 4 fenced divs                                                                             |
+| `P9a`        | `P0`, `M5`             | M    | —                                                                                                                                         | Pandoc Phase 4 ordered markers                                                                         |
 | `P9b`        | `P9a`, `D8`            | M    | —                                                                                                                                         | Pandoc Phase 4 example lists                                                                           |
-| `P10`        | `X0`, `D2`, `D8`       | L    | caption precedence over term lookahead (`P11a`); definition body ends at a div close (`P8`)                                               | Pandoc Phase 4 definition lists                                                                        |
-| `P11a`       | `M6`, `D3`, `D8`       | M    | caption precedence over term lookahead (`P10`)                                                                                            | Pandoc Phase 5 captions                                                                                |
+| `P10`        | `P0`, `D2`, `D8`       | L    | caption precedence over term lookahead (`P11a`); definition body ends at a div close (`P8`)                                               | Pandoc Phase 4 definition lists                                                                        |
+| `P11a`       | `P0`, `M6`, `D3`, `D8` | M    | caption precedence over term lookahead (`P10`)                                                                                            | Pandoc Phase 5 captions                                                                                |
 | `P11b`       | `P11a`                 | M    | —                                                                                                                                         | Pandoc Phase 5 simple tables and precedence                                                            |
 | `P11c`       | `P11b`                 | M    | —                                                                                                                                         | Pandoc Phase 5 multiline tables                                                                        |
 | `P11d`       | `P11a`                 | XL   | —                                                                                                                                         | Pandoc Phase 5 grid tables                                                                             |
@@ -838,8 +835,8 @@ Sizes are rough review-effort estimates, not schedules.
 - `M1` through `M7` are one open pull request at a time; each regenerates
   goldens that the next one rewrites again.
 - `P0` and `I0` touch only scripts and oracle policy and may land at any point
-  before `P1` and `I1`; their registered digests are re-registered by
-  whichever model item changes them.
+  before the first Pandoc feature item after `P1` and before `I1`; their
+  registered digests are re-registered by whichever model item changes them.
 - After `M7`, the Obsidian, inserted-text, and Pandoc tracks are independent.
   Inside a track, items that edit the same engine file are serialized or
   rebased in order: `O2` through `O5` extend the extension `O1` creates; `O6`,
