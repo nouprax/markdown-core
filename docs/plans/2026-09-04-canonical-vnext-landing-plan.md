@@ -531,11 +531,12 @@ plumbing.
       values, duplicates after decoding, stream indicators including `...`, and
       every other unsupported form by returning all bytes to inherited parsing;
       record `Metadata.scope` and each record scope; parse the body once after
-      the closing fence. This is the largest C component of the track: land it
-      as one item, or split the decoder by registered gap group if review
-      requires. Fixtures own the module's profile cases and the shared metadata
-      cases; remove the eight `properties-*` gaps, whose oracle projection now
-      reads the real field. Requires `O1`.
+      the closing fence. This is the largest C component of the track and still
+      lands as one item, because the envelope scan, the YAML decoding, and the
+      projection are one decoding operation; no partial decoder merges. Fixtures
+      own the module's profile cases and the shared metadata cases; remove the
+      eight `properties-*` gaps, whose oracle projection now reads the real
+      field. Requires `O1`.
 - [ ] **O7 — Block identifiers.** Attach `^block-id` during block finalization
       through one operation for paragraph suffixes, structured-block follower
       lines with the required blank-line boundaries, and list-item suffixes,
@@ -775,10 +776,11 @@ plumbing.
       and `colspan` stored once in the upper-left anchor row, a row-width
       occupancy array validating overlap, overrun, uncovered coordinates, and
       cross-group spans, and alignment colons and widths. Remove the
-      `grid-table-block-cells` and `grid-table-row-and-column-spans` gaps.
-      Caption precedence over definition-term lookahead for this table form is a
-      cross-item case owned by whichever of `P11d` and `P10` merges later.
-      Requires `P11a`.
+      `grid-table-block-cells` and `grid-table-row-and-column-spans` gaps. Grid
+      widths populate `TableColumn.relative` through the producer `P11c`
+      establishes. Caption precedence over definition-term lookahead for this
+      table form is a cross-item case owned by whichever of `P11d` and `P10`
+      merges later. Requires `P11c`.
 - [ ] **P12 — Pandoc evidence closure.** Add option-independence fixtures
       for every extension on and off in combination, deterministic fuzz seeds
       and size-doubling cases for brackets, attributes, `@`, braces, carets,
@@ -846,7 +848,7 @@ Sizes are rough review-effort estimates, not schedules.
 | `P11a` | `P0`, `M7`, `D3`, `D8` | M    | caption precedence over term lookahead (`P10`)                                                                                | Pandoc Phase 5 captions                                                                                                          |
 | `P11b` | `P11a`                 | M    | caption precedence over term lookahead (`P10`)                                                                                | Pandoc Phase 5 simple tables and precedence                                                                                      |
 | `P11c` | `P11b`                 | M    | caption precedence over term lookahead (`P10`)                                                                                | Pandoc Phase 5 multiline tables                                                                                                  |
-| `P11d` | `P11a`                 | XL   | caption precedence over term lookahead (`P10`)                                                                                | Pandoc Phase 5 grid tables                                                                                                       |
+| `P11d` | `P11c`                 | XL   | caption precedence over term lookahead (`P10`)                                                                                | Pandoc Phase 5 grid tables                                                                                                       |
 | `P12`  | `P2a`–`P11d`           | M    | —                                                                                                                             | Pandoc Phase 6; plan exit criterion                                                                                              |
 | `R1`   | `O10`, `I1`, `P12`     | S    | —                                                                                                                             | both delivery sequences                                                                                                          |
 
