@@ -44,9 +44,14 @@ sequences; it is landed here as its own track.
   [`docs/specs/obsidian-flavored-markdown.md`](../specs/obsidian-flavored-markdown.md)
   whenever an Obsidian row changes status.
 - The written order is the default order. Any order that respects the
-  `Requires` column of the dependency table is valid. The model items `M1`
-  through `M7` are serialized because each regenerates shared goldens; the
-  three feature tracks are independent of one another after `M7`.
+  `Requires` column of the dependency table is valid: that column lists every
+  merge prerequisite, and nothing outside it may block an item. A conformance
+  case that composes the syntax of two items is listed in the
+  `Cross-item cases` column of both items and is owned by whichever of the
+  two merges later, so the earlier item neither waits for it nor claims it.
+  The model items `M1` through `M7` are serialized because each regenerates
+  shared goldens; the three feature tracks are independent of one another
+  after `M7`.
 - Item identifiers are stable. A registered oracle gap names the item that
   closes it: Pandoc and inserted-text gaps use these identifiers from the
   start, and the existing Obsidian entries, which name plan phases, are
@@ -79,7 +84,8 @@ sequences; it is landed here as its own track.
   language.
 - Nothing here ships before `R1`. Between merges, an unproduced enum branch,
   an option that recognizes nothing yet, or a transitional duplicate field is
-  allowed only where an item says so, and the item that removes it is named.
+  allowed only where an item says so, and the item that first produces it or
+  removes it is named.
 - Parity gates are ratchets. A model item that changes an input's Markdown
   Core digest re-registers that digest in the same pull request; a feature
   item deletes the gaps it closes in the same pull request. A model delta that
@@ -112,6 +118,8 @@ sequences; it is landed here as its own track.
 - Documentation: the CHANGELOG entry under the unreleased version, the
   binding READMEs when a public option or preset changes, and the Obsidian
   support audit row.
+- Cross-item cases: every case in the item's `Cross-item cases` column whose
+  partner item has already merged is part of this item's fixtures.
 
 ## Decisions to settle before the item that names them
 
@@ -185,7 +193,7 @@ follow the same list.
 | `List`                                                                                                          | `flavor`, `start`, `style: OrderedListStyle?`, `delimiter: OrderedListDelimiter?`, `tight`, `items`           | changed                                               | `M5`         |
 | `ListItem`                                                                                                      | `marker: String?`, `exampleLabel: String?`, `content`                                                         | changed; `checked` removed                            | `M5`         |
 | `CodeBlock`                                                                                                     | `info`, `language`, `literal`, `fenced`, `closed`                                                             | unchanged pending `D6`                                | —            |
-| `Table`                                                                                                         | `caption: TableCaption?`, `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]`, `foot: [TableRow]` | changed                                               | `M6`         |
+| `Table`                                                                                                         | `caption: TableCaption?`, `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]`, `foot: [TableRow]` | changed; `caption` arrives with its kind              | `M6`, `P11a` |
 | `TableRow`                                                                                                      | `cells`                                                                                                       | changed; `isHeader` removed                           | `M6`         |
 | `TableCell`                                                                                                     | `rowspan: Int`, `colspan: Int`, `content` (block)                                                             | changed                                               | `M6`         |
 | `TableCaption`                                                                                                  | `content` (block)                                                                                             | new; typed field of `Table`                           | `P11a`       |
@@ -361,16 +369,17 @@ decides otherwise.
       `listItem.marker.value`, `list.style.decimal`, `list.style.null`,
       `list.delimiter.period`, `list.delimiter.oneParen`,
       `listItem.exampleLabel.null`.
-- [ ] **M6 — One table model.** Emit `Table(caption=null, columns, head,
-      content, foot=[])` with `TableColumn(alignment, relative=null)` from the
-      existing pipe-table path, remove `TableRow.isHeader`, add
-      `TableCell.rowspan` and `colspan` as `1`, and make cell content block
-      content by normalizing each inherited inline cell to one `Paragraph`
-      (`D4`). Replace the table facade accessors, update the cmark-gfm and
-      remark projections to wrap phrasing content, keep the empty-cell
-      positions from #191 exact in the ledgers, and regenerate every table
-      fixture. `TableCaption` is not added here; `caption` is first produced
-      by `P11a`. Manifest states and orders: `table.caption.null`,
+- [ ] **M6 — One table model.** Emit `Table(columns, head, content, foot=[])`
+      with `TableColumn(alignment, relative=null)` from the existing
+      pipe-table path, remove `TableRow.isHeader`, add `TableCell.rowspan`
+      and `colspan` as `1`, and make cell content block content by
+      normalizing each inherited inline cell to one `Paragraph` (`D4`).
+      Replace the table facade accessors, update the cmark-gfm and remark
+      projections to wrap phrasing content, keep the empty-cell positions
+      from #191 exact in the ledgers, and regenerate every table fixture.
+      `Table.caption` is not added here: a typed field cannot precede its
+      kind, and the `TableCaption` kind cannot precede a producer, so `P11a`
+      adds the field and the kind together. Manifest states and orders:
       `table.column.relative.null`, `tableCell.span.one`,
       `table.head-content-foot`. Requires `D3`, `D4`.
 - [ ] **M7 — Universal fields and remaining null facts.** Add the inherited
@@ -494,8 +503,8 @@ decides otherwise.
       metadata-free callouts, nested lists, invalid characters, missing
       separation, duplicates, end of document, scopes, allocation failure,
       and long candidate sequences. The cross-profile reservation case of the
-      anchor contract lands with whichever of `O7` and `P3` merges second.
-      Requires `M3`, `M7`.
+      anchor contract is a cross-item case owned by whichever of `O7` and
+      `P3` merges later. Requires `M3`, `M7`.
 - [ ] **O8 — Callout metadata.** Evaluate `[!type]`, the optional `+` or `-`
       fold marker, and the inline title on the first content line of every
       `>` container inside the existing block algorithm, lowercase the type
@@ -548,9 +557,10 @@ decides otherwise.
       no region. Add the `Insert(content)` kind, fixtures replaying the
       pinned upstream cases plus the contract's crossed-delimiter,
       `CrossLink`, `Mark`, `Cite`, nesting-limit, allocation-failure, and
-      size-doubling cases, and a canonical case; remove every `I0` gap.
-      Requires `X0`, `I0`; the `CrossLink`, `Mark`, and `Cite` composition
-      cases require `O1`, `O2`, and `M4`.
+      size-doubling cases, and a canonical case; remove every `I0` gap. The
+      `CrossLink`, `Mark`, and `Cite` composition cases are cross-item cases
+      owned by whichever of `I1` and `O1`, `O2`, or `M4` merges later.
+      Requires `X0`, `I0`.
 
 ## Stage 5 — Pandoc track
 
@@ -590,8 +600,9 @@ decides otherwise.
       without collapsing, and the permitted-scalar filter, falling back to
       `section` and uniquifying with the smallest free `-N`. A generated
       anchor has no scope. Fixtures cover the module's cases including large
-      duplicate sets; remove the `gfm-auto-anchors` gap. Requires `M7`, `P2b`,
-      `D7`.
+      duplicate sets; remove the `gfm-auto-anchors` gap. The cross-profile
+      reservation case is a cross-item case owned by whichever of `P3` and
+      `O7` merges later. Requires `M7`, `P2b`, `D7`.
 - [ ] **P4 — `implicit_header_references`.** Register a virtual reference
       definition for every heading with a final anchor, keyed by the authored
       label source after removing heading syntax, closing hashes, and trailing
@@ -613,8 +624,9 @@ decides otherwise.
       rejection, `\ ` to a no-break space, empty bodies, `^[` and `~~`
       precedence, and independent option gates. Add both kinds, fixtures, and
       canonical cases; remove the `superscript-and-subscript` and
-      `empty-superscript-and-subscript` gaps. Requires `X0`; the `^[`
-      precedence case requires `O4`.
+      `empty-superscript-and-subscript` gaps. The `^[` precedence case is a
+      cross-item case owned by whichever of `P6` and `O4` merges later.
+      Requires `X0`.
 - [ ] **P7 — `citations`.** Recognize bare and braced keys, bracketed groups
       with semicolon items and prefix, mode marker, key, and suffix scopes,
       author-in-text keys with an optional bracketed tail, `-@` for
@@ -654,14 +666,16 @@ decides otherwise.
       and boundary rules; and yield to a complete table candidate. Add
       `DefinitionList` and `Definition`, fixtures for every listed case, and
       canonical cases; remove the two `definition-list-*` gaps. The
-      caption-precedence case requires `P11a`. Requires `X0`.
+      caption-precedence case is a cross-item case owned by whichever of
+      `P10` and `P11a` merges later. Requires `X0`.
 - [ ] **P11a — `table_captions`.** Claim a `Table:`, `table:`, or `:`
       paragraph immediately before or after a supported table for the nearest
       complete eligible table, preceding first, strip the marker into
       `TableCaption.content`, extend `Table.scope` over both, and leave the
-      paragraph alone with the option off. Add the `TableCaption` kind as the
-      first producer of `Table.caption`, fixtures for before, after, both,
-      multiline, and empty captions, and a canonical case. Requires `M6`.
+      paragraph alone with the option off. Add `Table.caption: TableCaption?`
+      and the `TableCaption` kind together on every surface, fixtures for
+      before, after, both, multiline, and empty captions, and canonical cases
+      for `table.caption.null` and `table.caption.populated`. Requires `M6`.
 - [ ] **P11b — `simple_tables`.** Establish column ranges from the dash
       separator line, derive alignment from header placement, accept the
       headerless closing-separator form, end at a blank line or closing
@@ -709,48 +723,48 @@ decides otherwise.
 
 Sizes are rough review-effort estimates, not schedules.
 
-| Item             | Requires                                | Size | Discharges                                                           |
-| ---------------- | --------------------------------------- | ---- | -------------------------------------------------------------------- |
-| `X0`             | `D5`                                    | M    | Obsidian Phase 1 preset; Pandoc Phase 1 options                      |
-| `P0`             | `X0`                                    | M    | Pandoc Phase 0; Pandoc Phase 1 gate activation                       |
-| `I0`             | —                                       | S    | inserted-text oracle setup                                           |
-| `M1`             | `D1`, `D2`                              | M    | Obsidian and Pandoc Phase 1 `Destination`                            |
-| `M2`             | `M1`, `D8`, `D9`                        | L    | Obsidian Phase 1 reference normalization; Phase 5 projections        |
-| `M3`             | —                                       | M    | Obsidian Phase 1 `Callout`                                           |
-| `M4`             | `M2`, `D2`, `D3`                        | L    | Obsidian Phase 1 citation model; Pandoc Phase 1 bibliography branch  |
-| `M5`             | —                                       | M    | Obsidian Phase 1 `marker`; Pandoc Phase 1 list values                |
-| `M6`             | `D3`, `D4`                              | L    | Pandoc Phase 1 table values                                          |
-| `M7`             | `M1`–`M6`, `D2`                         | L    | Obsidian Phase 1 metadata, anchor, dimensions; Pandoc Phase 1 fields |
-| `P1`             | `M7`                                    | L    | Pandoc Phase 2 attribute operation and directive migration           |
-| `O1`             | `X0`, `M1`                              | M    | Obsidian Phase 2 wikilinks                                           |
-| `O2`             | `O1`                                    | S    | Obsidian Phase 2 highlights                                          |
-| `O3`             | `O1`, `D5`                              | M    | Obsidian Phase 2 comments                                            |
-| `O4`             | `O1`, `M4`                              | M    | Obsidian Phase 2 inline footnotes and resolution                     |
-| `O5`             | `X0`, `M5`                              | S    | Obsidian Phase 4 task markers                                        |
-| `O6`             | `X0`, `M7`                              | XL   | Obsidian Phase 3 Properties                                          |
-| `O7`             | `M3`, `M7`                              | M    | Obsidian Phase 3 block identifiers                                   |
-| `O8`             | `M3`, `O1`, `O2`                        | M    | Obsidian Phase 3 callouts                                            |
-| `O9`             | `M6`, `M7`, `O1`                        | M    | Obsidian Phase 4 media parameters and tables                         |
-| `O10`            | `O1`–`O9`                               | M    | Obsidian Phase 2 caller audit; Phase 5; plan exit criterion          |
-| `I1`             | `X0`, `I0`                              | S    | inserted-text contract                                               |
-| `P2a`, `P2b`     | `P1`                                    | S    | Pandoc Phase 2 attachment sites                                      |
-| `P2c`            | `P1`, `D6`                              | M    | Pandoc Phase 2 attachment sites                                      |
-| `P2d`            | `P1`, `M2`                              | M    | Pandoc Phase 2 attachment, merge, and caller audit                   |
-| `P3`             | `M7`, `P2b`, `D7`                       | M    | Pandoc Phase 2 heading registry                                      |
-| `P4`             | `M2`, `P3`                              | M    | Pandoc Phase 3 document resolution                                   |
-| `P5`             | `P1`                                    | M    | Pandoc Phase 3 spans                                                 |
-| `P6`             | `X0`                                    | S    | Pandoc Phase 3 superscript and subscript                             |
-| `P7`             | `M4`, `P5`, `P9b`                       | L    | Pandoc Phase 3 citations and resolution                              |
-| `P8`             | `P1`                                    | M    | Pandoc Phase 4 fenced divs                                           |
-| `P9a`            | `M5`                                    | M    | Pandoc Phase 4 ordered markers                                       |
-| `P9b`            | `P9a`                                   | M    | Pandoc Phase 4 example lists                                         |
-| `P10`            | `X0`                                    | L    | Pandoc Phase 4 definition lists                                      |
-| `P11a`           | `M6`                                    | M    | Pandoc Phase 5 captions                                              |
-| `P11b`           | `P11a`                                  | M    | Pandoc Phase 5 simple tables and precedence                          |
-| `P11c`           | `P11b`                                  | M    | Pandoc Phase 5 multiline tables                                      |
-| `P11d`           | `P11a`                                  | XL   | Pandoc Phase 5 grid tables                                           |
-| `P12`            | `P2a`–`P11d`                            | M    | Pandoc Phase 6; plan exit criterion                                  |
-| `R1`             | `O10`, `I1`, `P12`                      | S    | both delivery sequences                                              |
+| Item         | Requires           | Size | Cross-item cases                                                   | Discharges                                                           |
+| ------------ | ------------------ | ---- | ------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `X0`         | `D5`               | M    | —                                                                  | Obsidian Phase 1 preset; Pandoc Phase 1 options                      |
+| `P0`         | `X0`               | M    | —                                                                  | Pandoc Phase 0; Pandoc Phase 1 gate activation                       |
+| `I0`         | —                  | S    | —                                                                  | inserted-text oracle setup                                           |
+| `M1`         | `D1`, `D2`         | M    | —                                                                  | Obsidian and Pandoc Phase 1 `Destination`                            |
+| `M2`         | `M1`, `D8`, `D9`   | L    | —                                                                  | Obsidian Phase 1 reference normalization; Phase 5 projections        |
+| `M3`         | —                  | M    | —                                                                  | Obsidian Phase 1 `Callout`                                           |
+| `M4`         | `M2`, `D2`, `D3`   | L    | `Insert` containing `Cite` (`I1`)                                  | Obsidian Phase 1 citation model; Pandoc Phase 1 bibliography branch  |
+| `M5`         | —                  | M    | —                                                                  | Obsidian Phase 1 `marker`; Pandoc Phase 1 list values                |
+| `M6`         | `D3`, `D4`         | L    | —                                                                  | Pandoc Phase 1 table values                                          |
+| `M7`         | `M1`–`M6`, `D2`    | L    | —                                                                  | Obsidian Phase 1 metadata, anchor, dimensions; Pandoc Phase 1 fields |
+| `P1`         | `M7`               | L    | —                                                                  | Pandoc Phase 2 attribute operation and directive migration           |
+| `O1`         | `X0`, `M1`         | M    | `Insert` containing `CrossLink` (`I1`)                             | Obsidian Phase 2 wikilinks                                           |
+| `O2`         | `O1`               | S    | `Insert` containing `Mark` (`I1`)                                  | Obsidian Phase 2 highlights                                          |
+| `O3`         | `O1`, `D5`         | M    | —                                                                  | Obsidian Phase 2 comments                                            |
+| `O4`         | `O1`, `M4`         | M    | `^[` before superscript (`P6`)                                     | Obsidian Phase 2 inline footnotes and resolution                     |
+| `O5`         | `X0`, `M5`         | S    | —                                                                  | Obsidian Phase 4 task markers                                        |
+| `O6`         | `X0`, `M7`         | XL   | —                                                                  | Obsidian Phase 3 Properties                                          |
+| `O7`         | `M3`, `M7`         | M    | explicit anchor reserved before synthesis (`P3`)                   | Obsidian Phase 3 block identifiers                                   |
+| `O8`         | `M3`, `O1`, `O2`   | M    | —                                                                  | Obsidian Phase 3 callouts                                            |
+| `O9`         | `M6`, `M7`, `O1`   | M    | —                                                                  | Obsidian Phase 4 media parameters and tables                         |
+| `O10`        | `O1`–`O9`          | M    | —                                                                  | Obsidian Phase 2 caller audit; Phase 5; plan exit criterion          |
+| `I1`         | `X0`, `I0`         | S    | `Insert` containing `CrossLink`, `Mark`, `Cite` (`O1`, `O2`, `M4`) | inserted-text contract                                               |
+| `P2a`, `P2b` | `P1`               | S    | —                                                                  | Pandoc Phase 2 attachment sites                                      |
+| `P2c`        | `P1`, `D6`         | M    | —                                                                  | Pandoc Phase 2 attachment sites                                      |
+| `P2d`        | `P1`, `M2`         | M    | —                                                                  | Pandoc Phase 2 attachment, merge, and caller audit                   |
+| `P3`         | `M7`, `P2b`, `D7`  | M    | explicit anchor reserved before synthesis (`O7`)                   | Pandoc Phase 2 heading registry                                      |
+| `P4`         | `M2`, `P3`         | M    | —                                                                  | Pandoc Phase 3 document resolution                                   |
+| `P5`         | `P1`               | M    | —                                                                  | Pandoc Phase 3 spans                                                 |
+| `P6`         | `X0`               | S    | `^[` before superscript (`O4`)                                     | Pandoc Phase 3 superscript and subscript                             |
+| `P7`         | `M4`, `P5`, `P9b`  | L    | —                                                                  | Pandoc Phase 3 citations and resolution                              |
+| `P8`         | `P1`               | M    | —                                                                  | Pandoc Phase 4 fenced divs                                           |
+| `P9a`        | `M5`               | M    | —                                                                  | Pandoc Phase 4 ordered markers                                       |
+| `P9b`        | `P9a`              | M    | —                                                                  | Pandoc Phase 4 example lists                                         |
+| `P10`        | `X0`               | L    | caption precedence over term lookahead (`P11a`)                    | Pandoc Phase 4 definition lists                                      |
+| `P11a`       | `M6`               | M    | caption precedence over term lookahead (`P10`)                     | Pandoc Phase 5 captions                                              |
+| `P11b`       | `P11a`             | M    | —                                                                  | Pandoc Phase 5 simple tables and precedence                          |
+| `P11c`       | `P11b`             | M    | —                                                                  | Pandoc Phase 5 multiline tables                                      |
+| `P11d`       | `P11a`             | XL   | —                                                                  | Pandoc Phase 5 grid tables                                           |
+| `P12`        | `P2a`–`P11d`       | M    | —                                                                  | Pandoc Phase 6; plan exit criterion                                  |
+| `R1`         | `O10`, `I1`, `P12` | S    | —                                                                  | both delivery sequences                                              |
 
 ## Working in parallel
 
@@ -766,7 +780,8 @@ Sizes are rough review-effort estimates, not schedules.
   edit the table path; `P2a` through `P2d` share the attribute callers; `P5`,
   `P6`, and `P7` share the inline bracket and delimiter code; `P8` and `P10`
   share block starts.
-- The cross-track fixtures are owned by the later item: `O4` before the `^[`
-  precedence case in `P6`, `O7` or `P3` for the cross-profile anchor
-  reservation, `P9b` before the example-label rule in `P7`, and `P11a` before
-  the caption-precedence case in `P10`.
+- The `Cross-item cases` column is the complete list of fixtures that wait
+  for a second item: `Insert` composed with `CrossLink`, `Mark`, and `Cite`;
+  `^[` before superscript; the cross-profile anchor reservation; and caption
+  precedence over definition-term lookahead. Each is written by the later of
+  its two items, and no item's `Requires` grows because of it.
