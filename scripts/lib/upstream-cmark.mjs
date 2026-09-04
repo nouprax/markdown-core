@@ -132,7 +132,7 @@ export function parseUpstreamXml(xml) {
  * value as one non-whitespace token truncates structured values and makes an
  * oracle compare printer spacing instead of semantics.
  */
-function parseCanonicalFields(body) {
+export function parseCanonicalFields(body) {
     const fields = {};
     let cursor = body.indexOf(" ");
     if (cursor < 0) return fields;

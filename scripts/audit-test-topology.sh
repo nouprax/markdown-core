@@ -29,6 +29,7 @@ for oracle_file in \
     specs/oracles/remark/corpus.md \
     specs/oracles/obsidian/deltas.json \
     specs/oracles/obsidian/corpus.md \
+    specs/oracles/obsidian/metadata-corpus.md \
     specs/oracles/pandoc/source.json \
     specs/oracles/pandoc/corpus.json; do
     if [ ! -f "$oracle_file" ]; then
@@ -46,6 +47,7 @@ for target_spec in \
     docs/specs/inserted-text.md \
     docs/specs/anchors.md \
     docs/specs/destinations.md \
+    docs/specs/metadata.md \
     docs/specs/attributes.md \
     docs/specs/citation-model.md \
     docs/specs/remark.md \
@@ -62,6 +64,7 @@ for target_spec in \
     docs/specs/pandoc/definition-lists.md \
     docs/specs/pandoc/fenced-divs.md \
     docs/specs/obsidian-flavored-markdown.md \
+    docs/specs/obsidian/properties.md \
     docs/specs/obsidian/wikilinks-and-embeds.md \
     docs/specs/obsidian/block-identifiers.md \
     docs/specs/obsidian/footnotes.md \
@@ -77,6 +80,12 @@ for target_spec in \
 done
 if [ "$target_specs_missing" -eq 0 ]; then
     note "shared, Remark, Pandoc, and modular Obsidian target contracts are present"
+fi
+
+if ! grep -q 'pnpm check:obsidian-parity' .github/workflows/ci.yml; then
+    fail "the exact-pinned Obsidian parity gate is not wired into required CI"
+else
+    note "the exact-pinned Obsidian parity gate runs in required CI"
 fi
 
 for plan_file in docs/plans/*.md; do

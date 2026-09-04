@@ -1054,10 +1054,11 @@ jobs:
                       fi
                   done
 
-    # Three disjoint external authorities: current cmark for CommonMark,
-    # cmark-gfm only for the GFM extension layer, and remark/micromark as a
-    # corrective and supplementary implementation. They build this parser, so
-    # they remain separate from the compiler-free Test layer.
+    # Disjoint external authorities: current cmark for CommonMark, cmark-gfm
+    # only for the GFM extension layer, remark/micromark as a corrective and
+    # supplementary implementation, and the pinned Obsidian/Properties
+    # oracles for the extension intersection they implement. They build this
+    # parser, so they remain separate from the compiler-free Test layer.
     upstream-parity:
         name: External parity
         needs: health-checks-ready
@@ -1083,6 +1084,8 @@ jobs:
               run: pnpm check:gfm-parity
             - name: Run the corrective and supplementary remark oracle
               run: pnpm check:mdast-parity
+            - name: Run the supplementary Obsidian and Properties oracles
+              run: pnpm check:obsidian-parity
             # The position oracles. They live here because one of the three
             # needs the pinned upstream parser this job already builds, and
             # because all three are ratchets over registered rows: they fail on

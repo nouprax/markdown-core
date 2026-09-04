@@ -12,10 +12,15 @@ profile reuses the current CommonMark/GFM block and inline algorithms, adds the
 documented OFM syntax as composable extensions, exposes every new semantic fact
 through the immutable canonical AST, and keeps vault resolution and rendering
 out of the parser. Every `>` container becomes `Callout`; a plain quoted block
-has null metadata, while `[!type]` populates that same node model.
+has `variant=null`, `title=null`, and `fold=none`, while `[!type]` populates
+that same node model.
 Every successful reference link or image is resolved before the public AST is
 finalized and is indistinguishable from its direct counterpart; source
 definitions and reference forms remain parser-internal.
+One valid beginning-of-file Properties block populates optional
+`Document.metadata` as ordered, out-of-band records. Property names remain an
+open string domain; vault conventions such as `aliases` do not become parser
+keywords or link-resolution results.
 
 The profile is an extension preset, not a full Obsidian parser dialect. It
 preserves inherited cmark/CommonMark behavior, including Markdown recognition
@@ -30,10 +35,11 @@ discriminator. No destination populates the declaration-side anchor on its
 owning reference node.
 
 The normative work items are the module specs linked from the
-[OFM contract index](../specs/obsidian-flavored-markdown.md): wikilinks/embeds,
-block identifiers, footnotes, comments, highlights, tasks, callouts, and
-inherited/integration behavior. A phase is incomplete if its module's grammar,
-AST invariants, fallback, scopes, or required conformance cases are unmet.
+[OFM contract index](../specs/obsidian-flavored-markdown.md): Properties,
+wikilinks/embeds, block identifiers, footnotes, comments, highlights, tasks,
+callouts, and inherited/integration behavior. A phase is incomplete if its
+module's grammar, AST invariants, fallback, scopes, or required conformance
+cases are unmet.
 The shared [`Cite`, `Citation`, and `CitationReferent`
 contract](../specs/citation-model.md) owns their reusable semantics; this plan does
 not enable Pandoc `@key` syntax in the Obsidian profile.
@@ -58,6 +64,11 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       `Footnote(id, content, scope)` value, and `Document.footnotes`. Referenced and
       inline source forms must lower to the same one-item resolved consumer model;
       retain none of the source-shaped kinds as aliases.
+- [ ] Add optional `Document.metadata` and the document-owned `Metadata`,
+      ordered `MetadataRecord`, `MetadataValue`, and `MetadataScalar` values.
+      Preserve exact record-name case and source order, distinguish absent from
+      explicitly empty metadata, retain number payloads as exact strings, and
+      add no known-name enum, vault type, resolved link, or Markup child.
 - [ ] Resolve direct, full, collapsed, shortcut, and autolinks to the same `Link`
       shape with `dest=Destination.url(...)`, and direct/reference images to the
       same `Image(dest=Destination.url(...), ...)` shape. Remove
@@ -127,7 +138,21 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       the same one-item `Cite` edge to a `Footnote`; and size-doubling probes show
       linear scanner work on long runs of `[`, `]`, `=`, `%`, and mixed openers.
 
-## Phase 3 — callout containers and metadata
+## Phase 3 — Properties, anchors, and callout containers
+
+- [ ] Recognize at most one exact `---` Properties envelope at the beginning of
+      the decoded document, after an optional BOM and before inherited block
+      parsing. Commit only a complete valid candidate, remove it from
+      `Document.content`, and return every byte to inherited Markdown on any
+      envelope, YAML, or projection failure.
+- [ ] Decode the payload once as a YAML 1.2.2 JSON-schema document and project
+      one top-level mapping into the shared metadata values. Accept arbitrary
+      unique non-empty string names and the documented scalar/list domain;
+      retain dates and quoted wikilinks as inert text and reject nested values,
+      duplicate names, executable tags, cycles, and resource-limit violations.
+- [ ] Record source-faithful metadata and record scopes before parsing the
+      remaining body. Decoding and alias expansion must never extend a record
+      scope to another source occurrence or manufacture an expanded range.
 
 - [ ] Add block identifiers during block finalization, when ownership is known.
       One attachment operation handles paragraph suffixes, structured-block
@@ -143,15 +168,19 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
 - [ ] Use the same container recursion for nested callouts. Unknown/custom types
       remain metadata-bearing callouts; alias-to-style mapping stays outside the
       parser.
-- [ ] Cover metadata-free, title-only, empty-body, formatted-title, nested,
-      invalid-position, mixed-case, custom-type, and whole-structured-block
-      identifier cases.
+- [ ] Cover absent/empty/populated Properties, arbitrary names, every value
+      branch, JSON roots, strict fences, malformed transactional fallback, and
+      Properties/body scope boundaries alongside metadata-free, title-only,
+      empty-body, formatted-title, nested, invalid-position, mixed-case,
+      custom-type, and whole-structured-block identifier cases.
 
-- [ ] **Exit criterion:** every block identifier has exactly one owner, no valid
-      marker survives as visible text, every `>` container is a `Callout`,
-      metadata-free and metadata-bearing states satisfy their field invariants,
-      nested callouts are stack-safe, and failure/OOM unwinds through the
-      existing node ownership path.
+- [ ] **Exit criterion:** one valid Properties block yields metadata and no body
+      node, every invalid candidate falls back without partial records, every
+      block identifier has exactly one owner, no valid marker survives as
+      visible text, every `>` container is a `Callout`, and plain and
+      marker-bearing states satisfy their field invariants; nested
+      callouts are stack-safe, and failure/OOM unwinds through the existing node
+      ownership path.
 
 ## Phase 4 — task markers, media parameters, and tables
 
@@ -189,6 +218,11 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       universal reference-link/image normalization. Those authorities continue to
       own recognition, precedence, and fallback, but their source-shaped
       definition/reference nodes do not override the consumer AST contract.
+- [ ] Extend the Obsidian parity gate with exact-pinned `gray-matter` envelope
+      extraction plus `js-yaml` `JSON_SCHEMA` decoding for successful documented
+      Properties forms. Keep strict fence/fallback, exact number spelling,
+      record scopes, nested-value rejection, and resource limits under product
+      fixtures where those packages are not authoritative.
 - [ ] Keep official-only requirements—callouts, block identifiers, inline
       footnote recognition, the
       `Cite`/`Citation`/`CitationReferent`/`Footnote` projection,
@@ -212,7 +246,8 @@ exists on every platform and the full target fixture is enabled; before that
 point the preset remains internal test plumbing.
 
 - [ ] Publish release notes listing the documented OFM subset, parser-only
-      boundary, reference-link/image normalization, the `BlockQuote` to `Callout`,
-      source-shaped footnote to `Cite`/`Citation`/`CitationReferent`/`Footnote`, and
-      `checked` to `marker` migrations, the unchanged legacy-profile source
-      grammar, and the exact official help snapshot used for conformance.
+      boundary, `Document.metadata` addition, reference-link/image normalization,
+      the `BlockQuote` to `Callout`, source-shaped footnote to
+      `Cite`/`Citation`/`CitationReferent`/`Footnote`, and `checked` to `marker`
+      migrations, the unchanged legacy-profile source grammar, and the exact
+      official help snapshot used for conformance.
