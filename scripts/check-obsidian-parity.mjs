@@ -456,9 +456,12 @@ for (const emptyProperties of ["\uFEFF---\n---\n", "---\n   \n---\n", "---\n# no
         process.exit(1);
     }
 }
-const propertyNameCanary = parseProperties("---\n1.5: decimal\ntrue: boolean\n---\n").metadata;
-if (JSON.stringify(propertyNameCanary?.map((record) => record.name)) !== '["1.5","true"]') {
-    process.stderr.write("obsidian parity: Properties oracle did not expose scalar property names as strings\n");
+// This exercises only the stable property-name intersection recorded in the
+// oracle policy. Source-faithful and spelling-changing names belong to product
+// fixtures because js-yaml has already converted them to JavaScript keys.
+const stablePropertyNameCanary = parseProperties("---\n1.5: decimal\ntrue: boolean\n---\n").metadata;
+if (JSON.stringify(stablePropertyNameCanary?.map((record) => record.name)) !== '["1.5","true"]') {
+    process.stderr.write("obsidian parity: Properties oracle failed its stable property-name intersection\n");
     process.exit(1);
 }
 for (const invalid of [

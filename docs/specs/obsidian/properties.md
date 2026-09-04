@@ -94,10 +94,12 @@ interpret `aliases`, but the parser does not resolve `[[Doggo]]`, add a
 dedicated aliases field, or rewrite `Destination.cross.path`.
 
 The mapping-key position always denotes a textual property name. Plain scalar
-spellings such as `1`, `true`, and `null` are therefore names with those exact
-strings, not Number, Checkbox, or empty values; quoting them does not change
-the consumer name. JSON-schema scalar resolution applies only on the value
-side of an entry. Sequence, mapping, and alias keys are not property names.
+spellings such as `1.0`, `1e2`, `-0`, `true`, `null`, and `~` are therefore
+names with those exact strings, not Number, Checkbox, or empty values; quoting
+them does not change the consumer name. JSON-schema scalar resolution applies
+only on the value side of an entry. Distinct textual names such as `1` and
+`1.0` remain distinct even if a host YAML binding canonicalizes them to the
+same object key. Sequence, mapping, and alias keys are not property names.
 
 ## Property values
 

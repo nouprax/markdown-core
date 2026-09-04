@@ -82,6 +82,14 @@ mapping, or alias cannot supply a record name. Uniqueness is checked after
 text decoding, so differently spelled keys which decode to the same name are
 duplicates.
 
+Text decoding preserves the complete scalar value rather than a numeric or
+boolean canonicalization. For example, the plain keys `1`, `1.0`, `1e0`, `01`,
+`0`, `-0`, `null`, and `~` produce those eight exact names. They remain
+distinct from one another; in particular, `1` and `1.0` may coexist even when
+a general-purpose YAML binding would resolve both to the same numeric value.
+Each plain form is instead a duplicate of a quoted key that decodes to the
+same text, such as `1.0` and `"1.0"`.
+
 The accepted name set is open. `tags`, `aliases`, `cssclasses`, `publish`, and
 every other product-known spelling occupy the same `String` domain as a user
 name such as `project-status`. The parser neither rejects unknown names nor
@@ -207,10 +215,12 @@ punctuation-bearing names; source order; exact-name case preservation; null,
 empty text, empty list, booleans, exact large integers, decimals, exponents,
 dates and date-times retained as text, quoted escapes, text/number block and
 flow lists, quoted internal-link text, JSON object syntax, comments, and
-aliases; and plain and quoted numeric- and boolean-looking names. Negative
-cases must cover empty or multiline names; sequence, mapping, or alias keys;
-duplicates after name decoding; multiline text; boolean/null list items;
-nested values; unsupported tags; non-finite numbers;
+aliases; plain and quoted numeric-, boolean-, and null-looking names; exact
+name preservation for `1.0`, `1e2`, `-0`, and `~`; and simultaneous distinct
+names such as `1` and `1.0`. Negative cases must cover empty or multiline
+names; sequence, mapping, or alias keys; duplicates after name decoding such
+as `1` with `"1"`; multiline text; boolean/null list items; nested values;
+unsupported tags; non-finite numbers;
 undefined/cyclic/explosive aliases; multiple YAML documents; malformed YAML;
 allocation failure; and each structural limit. Profile fixtures own the
 envelope, option gate, fallback, precedence, and exact block/record scopes.

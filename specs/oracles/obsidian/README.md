@@ -49,6 +49,14 @@ then requires one top-level mapping with arbitrary non-empty names and scalar
 or documented text/number-list values. Its JavaScript-object result has
 already converted mapping keys to property strings, so it is evidence for the
 decoded names in the successful corpus, not for the source shape of a YAML key.
+The executable property-name intersection is restricted further to direct
+scalar spellings whose JavaScript property string is identical to the target
+textual name and which `js-yaml` does not merge with another authored name.
+Numeric or null spellings such as `1.0`, `1e2`, `01`, `-0`, and `~` are outside
+that intersection because the binding rewrites them to `"1"`, `"100"`, `"1"`,
+`"0"`, and `"null"`. They must not be added to this oracle corpus as name
+witnesses; product fixtures own their exact names, source order, coexistence,
+and duplicate boundaries.
 For an empty, whitespace-only, or comment-only payload, `gray-matter` reports
 `isEmpty` and does not invoke its YAML engine; the projection maps each form to
 the same non-null empty metadata array. Comments remain presentation bytes and
@@ -78,8 +86,9 @@ and limits number witnesses to exactly representable canonical spellings,
 because the external libraries expose neither source-faithful record ranges
 nor lossless numeric lexemes, and JavaScript object enumeration reorders
 integer-index-looking names. Product fixtures own those facts, strict invalid
-fallback, key-source validation, exact order for every valid name,
-nested-value rejection, and resource limits.
+fallback, key-source validation, exact spelling and order for every valid
+name, distinct textual names collapsed by the binding, nested-value rejection,
+and resource limits.
 
 For successful Properties inputs, the normalized semantic root contains a
 `metadata` field: `null` means absent, while an array (including an empty
