@@ -35,9 +35,11 @@ sequences; it is landed here as its own track.
 
 ## How to use this plan
 
-- One checkbox below is one pull request. It merges alone, leaves every
-  existing profile's fixtures byte-identical unless the item says otherwise,
-  and passes required CI including the release dry run.
+- One checkbox below is one pull request. It merges alone, leaves every existing
+  profile's fixtures byte-identical unless the item says otherwise, and passes
+  required CI including the release dry run. The three stage exit criteria are
+  gates rather than pull requests: each is verified in the pull request of the
+  last item of its stage, named beside it, and has nothing of its own to tick.
 - Tick the item when its pull request has merged. In that same pull request,
   tick the bullets it discharges in the owning implementation plan and update
   the support audit table in
@@ -457,12 +459,12 @@ plumbing.
       conformance cases pass, no second attribute tokenizer remains, and
       size-doubling valid, duplicate, malformed, and unclosed containers are
       linear. Requires `M1` through `M6`, `D2`.
-- [ ] **Stage 1 exit criterion:** every surface compiles with exhaustive
-      handling of the inventory kinds that exist so far, the projection audit
-      proves kind and field parity, no fixture or document names a removed
-      kind or field, no kind stores one semantic fact in two fields, and
-      equivalent direct and reference links and images have identical
-      semantic shapes.
+- **Stage 1 exit criterion**, verified in the `M7` pull request: every surface
+  compiles with exhaustive handling of the inventory kinds that exist so far,
+  the projection audit proves kind and field parity, no fixture or document
+  names a removed kind or field, no kind stores one semantic fact in two fields,
+  and equivalent direct and reference links and images have identical semantic
+  shapes.
 
 ## Stage 2 — Obsidian track
 
@@ -588,10 +590,10 @@ plumbing.
       `stripObsidianComments` in every binding's `ParseOptions`, the facade,
       and the CLI help, and document them in the README and the binding
       READMEs. Requires `O1` through `O9`.
-- [ ] **Obsidian track exit criterion:** the plan exit criterion of the
-      Obsidian implementation plan holds on every public surface, with the
-      profile enabled by one composed switch and comment retention as its
-      only independent option.
+- **Obsidian track exit criterion**, verified in the `O10` pull request: the
+  plan exit criterion of the Obsidian implementation plan holds on every public
+  surface, with the profile enabled by one composed switch and comment retention
+  as its only independent option.
 
 ## Stage 3 — inserted-text track
 
@@ -736,10 +738,11 @@ plumbing.
       gap; append further bodies and definitions per the module's separator and
       boundary rules; and yield to a complete table candidate. Add
       `DefinitionList` and `Definition`, fixtures for every listed case, and
-      canonical cases; remove the two `definition-list-*` gaps. Two cross-item
-      cases are owned by whichever item merges later: caption precedence over
-      term lookahead with `P11a`, and a body ending at an enclosing fenced-div
-      close with `P8`. Requires `P0`, `M7`, `D2`, `D8`.
+      canonical cases; remove the two `definition-list-*` gaps. Cross-item cases
+      owned by whichever item merges later: caption precedence over term
+      lookahead with `P11a` and again for each later table form with `P11b`,
+      `P11c`, and `P11d`, and a body ending at an enclosing fenced-div close
+      with `P8`. Requires `P0`, `M7`, `D2`, `D8`.
 - [ ] **P11a — `table_captions`.** Claim a `Table:`, `table:`, or `:` paragraph
       immediately before or after a supported table for the nearest complete
       eligible table, preceding first, strip the marker into
@@ -756,20 +759,26 @@ plumbing.
       fence without a complete shape. `TableColumn.relative` stays `null` for
       simple tables because Pandoc's reader gives them default column widths;
       `P11c` is the field's first producer. Remove the
-      `simple-table-with-caption` gap. Requires `P11a`.
+      `simple-table-with-caption` gap. Caption precedence over definition-term
+      lookahead for this table form is a cross-item case owned by whichever of
+      `P11b` and `P10` merges later. Requires `P11a`.
 - [ ] **P11c — `multiline_tables`.** Recognize full-width and segmented dash
       boundaries, combine physical lines into logical rows separated by blank
       lines, populate `TableColumn.relative` from source widths, require the
       blank separator for a one-row table, and accept the headerless form.
-      Remove the `multiline-table` gap. Requires `P11b`.
-- [ ] **P11d — `grid_tables`.** Parse `+`, `-`, `=`, and `|` boundaries with
-      the top line defining columns, `=` separators selecting head and foot,
-      cell bodies through the ordinary block parser, missing segments as
-      `rowspan` and `colspan` stored once in the upper-left anchor row, a
-      row-width occupancy array validating overlap, overrun, uncovered
-      coordinates, and cross-group spans, and alignment colons and widths.
-      Remove the `grid-table-block-cells` and
-      `grid-table-row-and-column-spans` gaps. Requires `P11a`.
+      Remove the `multiline-table` gap. Caption precedence over definition-term
+      lookahead for this table form is a cross-item case owned by whichever of
+      `P11c` and `P10` merges later. Requires `P11b`.
+- [ ] **P11d — `grid_tables`.** Parse `+`, `-`, `=`, and `|` boundaries with the
+      top line defining columns, `=` separators selecting head and foot, cell
+      bodies through the ordinary block parser, missing segments as `rowspan`
+      and `colspan` stored once in the upper-left anchor row, a row-width
+      occupancy array validating overlap, overrun, uncovered coordinates, and
+      cross-group spans, and alignment colons and widths. Remove the
+      `grid-table-block-cells` and `grid-table-row-and-column-spans` gaps.
+      Caption precedence over definition-term lookahead for this table form is a
+      cross-item case owned by whichever of `P11d` and `P10` merges later.
+      Requires `P11a`.
 - [ ] **P12 — Pandoc evidence closure.** Add option-independence fixtures
       for every extension on and off in combination, deterministic fuzz seeds
       and size-doubling cases for brackets, attributes, `@`, braces, carets,
@@ -778,9 +787,9 @@ plumbing.
       `deltas.json` of everything except general documented projections with
       canaries; document every option in the README and the binding READMEs.
       Requires `P2a` through `P11d`.
-- [ ] **Pandoc track exit criterion:** the Phase 6 exit criterion of the
-      Pandoc implementation plan holds, with every selected extension
-      independently composable and no monolithic preset.
+- **Pandoc track exit criterion**, verified in the `P12` pull request: the Phase
+  6 exit criterion of the Pandoc implementation plan holds, with every selected
+  extension independently composable and no monolithic preset.
 
 ## Stage 5 — release
 
@@ -833,11 +842,11 @@ Sizes are rough review-effort estimates, not schedules.
 | `P8`   | `P0`, `M7`, `D8`       | M    | definition body ends at a div close (`P10`); anchor reserved before synthesis (`P3`)                                          | Pandoc Phase 4 fenced divs                                                                                                       |
 | `P9a`  | `P0`, `M7`             | M    | —                                                                                                                             | Pandoc Phase 4 ordered markers                                                                                                   |
 | `P9b`  | `P9a`, `D8`            | M    | —                                                                                                                             | Pandoc Phase 4 example lists                                                                                                     |
-| `P10`  | `P0`, `M7`, `D2`, `D8` | L    | caption precedence over term lookahead (`P11a`); definition body ends at a div close (`P8`)                                   | Pandoc Phase 4 definition lists                                                                                                  |
+| `P10`  | `P0`, `M7`, `D2`, `D8` | L    | caption precedence over term lookahead (`P11a`, `P11b`, `P11c`, `P11d`); definition body ends at a div close (`P8`)           | Pandoc Phase 4 definition lists                                                                                                  |
 | `P11a` | `P0`, `M7`, `D3`, `D8` | M    | caption precedence over term lookahead (`P10`)                                                                                | Pandoc Phase 5 captions                                                                                                          |
-| `P11b` | `P11a`                 | M    | —                                                                                                                             | Pandoc Phase 5 simple tables and precedence                                                                                      |
-| `P11c` | `P11b`                 | M    | —                                                                                                                             | Pandoc Phase 5 multiline tables                                                                                                  |
-| `P11d` | `P11a`                 | XL   | —                                                                                                                             | Pandoc Phase 5 grid tables                                                                                                       |
+| `P11b` | `P11a`                 | M    | caption precedence over term lookahead (`P10`)                                                                                | Pandoc Phase 5 simple tables and precedence                                                                                      |
+| `P11c` | `P11b`                 | M    | caption precedence over term lookahead (`P10`)                                                                                | Pandoc Phase 5 multiline tables                                                                                                  |
+| `P11d` | `P11a`                 | XL   | caption precedence over term lookahead (`P10`)                                                                                | Pandoc Phase 5 grid tables                                                                                                       |
 | `P12`  | `P2a`–`P11d`           | M    | —                                                                                                                             | Pandoc Phase 6; plan exit criterion                                                                                              |
 | `R1`   | `O10`, `I1`, `P12`     | S    | —                                                                                                                             | both delivery sequences                                                                                                          |
 
@@ -862,5 +871,6 @@ Sizes are rough review-effort estimates, not schedules.
   an identifier on a metadata-bearing callout; a link tail claiming a container
   ahead of a span; attributes on an implicit heading reference; a definition
   body ending at a fenced-div close; caption precedence over definition-term
-  lookahead; and every comment opacity case. Each is written by the later of its
-  two items, and no item's `Requires` grows because of it.
+  lookahead, once per table form; and every comment opacity case. Each is
+  written by the later of its two items, and no item's `Requires` grows because
+  of it.
