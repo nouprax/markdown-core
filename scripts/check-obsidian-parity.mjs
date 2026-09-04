@@ -155,7 +155,7 @@ function officialPropertiesEnvelope(source) {
     while (cursor <= source.length) {
         const line = sourceLine(source, cursor);
         if (line.text === "---") {
-            return { start, bodyStart: line.next };
+            return { start, payloadStart: opening.next, payloadEnd: cursor, bodyStart: line.next };
         }
         if (!line.terminated) return null;
         cursor = line.next;
@@ -163,11 +163,24 @@ function officialPropertiesEnvelope(source) {
     return null;
 }
 
+function isCommentOnlyYamlPayload(source) {
+    let cursor = 0;
+    while (cursor < source.length) {
+        const line = sourceLine(source, cursor);
+        let contentStart = 0;
+        while (line.text[contentStart] === " " || line.text[contentStart] === "\t") contentStart++;
+        if (contentStart < line.text.length && line.text[contentStart] !== "#") return false;
+        cursor = line.next;
+    }
+    return true;
+}
+
 function parseProperties(source) {
     const envelope = officialPropertiesEnvelope(source);
     if (envelope === null) return { content: source, metadata: null };
 
     const withoutBom = source.slice(envelope.start);
+    const payload = source.slice(envelope.payloadStart, envelope.payloadEnd);
     const undecoded = Symbol("undecoded Properties payload");
     let decoded = undecoded;
     const parsed = matter(withoutBom, {
@@ -187,8 +200,11 @@ function parseProperties(source) {
     if (parsed.content !== expectedBody) {
         throw new Error("gray-matter did not agree with the official exact-fence envelope");
     }
+    const commentOnly = isCommentOnlyYamlPayload(payload);
     if (decoded === undecoded) {
-        if (!parsed.isEmpty) throw new Error("gray-matter did not invoke the configured YAML engine");
+        if (!commentOnly) throw new Error("gray-matter did not invoke the configured YAML engine");
+        decoded = undefined;
+    } else if (decoded === null && commentOnly) {
         decoded = undefined;
     }
     return { content: parsed.content, metadata: projectMetadata(decoded) };
@@ -448,7 +464,15 @@ for (const nonHeader of ["text\n---\nname: value\n---\n", "---yaml\nname: value\
         process.exit(1);
     }
 }
-for (const emptyProperties of ["\uFEFF---\n---\n", "---\n   \n---\n", "---\n# note\n---\n"]) {
+for (const emptyProperties of [
+    "\uFEFF---\n---\n",
+    "---\n   \n---\n",
+    "---\n# note\n---\n",
+    "---\n#\n---\n",
+    "---\n  #\n---\n",
+    "---\n# first\n\t# second\n---\n",
+    "---\r\n#\r\n---\r\n"
+]) {
     if (JSON.stringify(parseProperties(emptyProperties).metadata) !== "[]") {
         process.stderr.write(
             `obsidian parity: Properties oracle rejected empty metadata ${JSON.stringify(emptyProperties)}\n`

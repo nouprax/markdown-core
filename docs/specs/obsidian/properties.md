@@ -175,10 +175,11 @@ comment-only payloads; arbitrary names; plain and quoted numeric- and
 boolean-looking names; YAML and JSON root mappings; body parsing immediately
 after the close; and option-off behavior. Boundary cases must cover leading
 blank/text, second blocks, `...`, short/long/indented/trailed/info-word fences,
-indented scalar separators, missing close, malformed payloads, empty or
-multiline names, sequence/mapping/alias keys, duplicate names after decoding,
-non-mapping roots including an explicit root null, multiline text,
-boolean/null list items, nested values, interaction with thematic breaks and
-Setext headings, and source-like bytes inside every container. Every accepted
-case must assert `Metadata.scope`, each record scope, body scopes, source
-order, and absence of a metadata node in content.
+indented scalar separators, bare and indented `#` comment-only lines,
+multi-comment payloads, missing close, malformed payloads, empty or multiline
+names, sequence/mapping/alias keys, duplicate names after decoding, non-mapping
+roots including an explicit root null, multiline text, boolean/null list items,
+nested values, interaction with thematic breaks and Setext headings, and
+source-like bytes inside every container. Every accepted case must assert
+`Metadata.scope`, each record scope, body scopes, source order, and absence of
+a metadata node in content.

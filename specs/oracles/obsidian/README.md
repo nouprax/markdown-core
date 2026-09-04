@@ -57,10 +57,13 @@ that intersection because the binding rewrites them to `"1"`, `"100"`, `"1"`,
 `"0"`, and `"null"`. They must not be added to this oracle corpus as name
 witnesses; product fixtures own their exact names, source order, coexistence,
 and duplicate boundaries.
-For an empty, whitespace-only, or comment-only payload, `gray-matter` reports
-`isEmpty` and does not invoke its YAML engine; the projection maps each form to
-the same non-null empty metadata array. Comments remain presentation bytes and
-never become semantic records.
+`gray-matter` inconsistently reports some empty and comment-only payloads
+through `isEmpty` while sending other valid forms, including a bare `#` line,
+to its YAML engine. The gate therefore recognizes the YAML no-content grammar
+from the exact payload: every physical line must contain only spaces or tabs
+and an optional `#` comment. It maps empty, whitespace-only, and all such
+comment-only forms to the same non-null empty metadata array. Comments remain
+presentation bytes and never become semantic records.
 
 The corpus contains inputs only. It deliberately has no Markdown Core expected
 AST blocks; product goldens belong to the C fixture and shared canonical AST
