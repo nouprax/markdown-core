@@ -61,11 +61,15 @@ sequences; it is landed here as its own track.
   and owns the case without further notice; when neither requires the other, the
   case is listed in the `Cross-item cases` column of both items, so the earlier
   item neither waits for it nor claims it. Opacity is the one composition the
-  column does not enumerate: code spans and HTML tokens hide every other
-  construct's syntax and belong to each item alone, and the comment opacity case
-  of any item is owned by whichever of `O3` and that item merges later. The
-  model items `M1` through `M7` are serialized because each regenerates shared
-  goldens; the three feature tracks are independent of one another after `M7`.
+  column does not enumerate, and the opaque regions are the audit's seam S-7
+  list. Code spans, HTML tokens, and formula bodies under `formulas` exist
+  before every item, so each item proves in its own pull request that its syntax
+  stays literal inside all three. Comment bodies and wikilinks arrive with `O3`
+  and `O1`, so an item's comment opacity case is owned by whichever of `O3` and
+  that item merges later, and its wikilink opacity case by whichever of `O1` and
+  that item merges later. The model items `M1` through `M7` are serialized
+  because each regenerates shared goldens; the three feature tracks are
+  independent of one another after `M7`.
 - Item identifiers are stable. A registered oracle gap names the item that
   closes it: Pandoc and inserted-text gaps use these identifiers from the
   start, and the existing Obsidian entries, which name plan phases, are
@@ -370,10 +374,11 @@ CLI, and conformance plumbing.
       states are replaced by a case proving that a direct and a reference
       occurrence dump identically apart from scope. Requires `M1`.
 - [ ] **M3 — `Callout` replaces `BlockQuote`.** Rename the kind in every
-      profile, add `CalloutFold`, and give every `>` container `variant=null`,
-      `fold=none`, and `title=null` with unchanged content and scope; no alias
-      or wrapper survives. The C node type, facade accessor, dump, bindings,
-      walkers, and every fixture containing a quote regenerate. The Obsidian
+      profile, add `CalloutFold`, expose `variant`, `fold`, and `title` on every
+      surface, and give every `>` container `variant=null`, `fold=none`, and
+      `title=null` with unchanged content and scope; no alias or wrapper
+      survives. The C node type, facade accessor, dump, bindings, walkers, and
+      every fixture containing a quote regenerate. The Obsidian
       `universal-callout-container` delta stays as the general projection of
       mdast `blockquote`. Manifest states: `callout.variant.null`,
       `callout.fold.none`, `callout.title.null`.
@@ -480,11 +485,12 @@ CLI, and conformance plumbing.
       `M7`, `S2`.
 - [ ] **O2 — Highlights.** Add `==` to the shared delimiter stack under
       `obsidian` with the exact-two-run and non-empty rules, local pairing, and
-      opaque code, comment, and HTML-token bytes; add the `Mark(content)` kind,
-      fixtures for formatted, adjacent, escaped, unmatched, triple, table-cell,
-      and footnote-content bodies plus size-doubling equals runs, and a
-      canonical case; remove the `highlight` gap and keep the content-model
-      projection. Callout-title cases join in `O8`. Requires `O1`.
+      opaque code, formula, comment, HTML-token, and wikilink bytes (audit seam
+      S-7); add the `Mark(content)` kind, fixtures for formatted, adjacent,
+      escaped, unmatched, triple, table-cell, and footnote-content bodies plus
+      size-doubling equals runs, and a canonical case; remove the `highlight`
+      gap and keep the content-model projection. Callout-title cases join in
+      `O8`. Requires `O1`.
 - [ ] **O3 — Comments.** Scan `%%...%%` from the shared cursor with a linear
       closer search, classify block placement when both delimiters occupy their
       own lines and inline placement otherwise, keep the body opaque, and emit
@@ -553,10 +559,11 @@ CLI, and conformance plumbing.
       in `variant` with matching left to consumers (audit decision D-7), remove
       the metadata line from content before body blocks finalize, keep unknown
       and custom types, leave invalid or misplaced markers as content, and nest
-      through the inherited container recursion. Add a title accessor and its
-      dump form, fixtures for the module's table plus formatted titles, every
-      built-in alias, nested combinations, lazy continuation, scopes, allocation
-      failure, and adversarial depth, and canonical cases for
+      through the inherited container recursion. Populate the `variant`, `fold`,
+      and `title` fields that `M3` declared on every surface, changing no
+      accessor or dump form; add fixtures for the module's table plus formatted
+      titles, every built-in alias, nested combinations, lazy continuation,
+      scopes, allocation failure, and adversarial depth, and canonical cases for
       `callout.variant.value`, `callout.fold.expanded`,
       `callout.fold.collapsed`, and `callout.title.populated`. An identifier
       attached to a metadata-bearing callout is a cross-item case owned by
@@ -599,15 +606,15 @@ CLI, and conformance plumbing.
       flanking rules without the rule of three, push eligible units onto the
       shared delimiter stack, nest rather than merge repeated units, and
       normalize an odd closer's spare `+` after its closing units; escapes,
-      code, comments, and HTML-token bytes are opaque and paired tags create no
-      region. Add the `Insert(content)` kind, fixtures replaying the pinned
-      upstream cases plus the contract's crossed-delimiter, `CrossLink`, `Mark`,
-      `Cite`, nesting-limit, allocation-failure, and size-doubling cases, and a
-      canonical case; remove every `I0` gap. The `CrossLink` and `Mark`
-      composition cases are cross-item cases owned by whichever of `I1` and `O1`
-      or `O2` merges later, the `Cite` composition case belongs to `I1` because
-      it reaches the citation model through `M7`, and `Comment` opacity follows
-      the opacity rule with `O3`. Requires `X0`, `I0`, `M7`.
+      code, formula, comment, and HTML-token bytes are opaque and paired tags
+      create no region. Add the `Insert(content)` kind, fixtures replaying the
+      pinned upstream cases plus the contract's crossed-delimiter, `CrossLink`,
+      `Mark`, `Cite`, nesting-limit, allocation-failure, and size-doubling
+      cases, and a canonical case; remove every `I0` gap. The `CrossLink` and
+      `Mark` composition cases are cross-item cases owned by whichever of `I1`
+      and `O1` or `O2` merges later, the `Cite` composition case belongs to `I1`
+      because it reaches the citation model through `M7`, and `Comment` opacity
+      follows the opacity rule with `O3`. Requires `X0`, `I0`, `M7`.
 
 ## Stage 4 — Pandoc track
 
@@ -896,5 +903,5 @@ Sizes are rough review-effort estimates, not schedules.
   wikilink pipe inside a grid cell; a link tail claiming a container ahead of a
   span; attributes on an implicit heading reference; a definition body ending at
   a fenced-div close; caption precedence over definition-term lookahead, once
-  per table form; and every comment opacity case. Each is written by the later
-  of its two items, and no item's `Requires` grows because of it.
+  per table form; and every comment and wikilink opacity case. Each is written
+  by the later of its two items, and no item's `Requires` grows because of it.
