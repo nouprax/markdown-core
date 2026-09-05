@@ -513,11 +513,21 @@ the `stripHTMLComments` row, since nothing strips comments.
       scopes, allocation failure, and size-doubling `!`, `[`, `]`, `#`, `^`, and
       `|` runs, and a canonical case; remove the four `wikilink-*` gaps and keep
       the label-nullability and destination projections as general deltas with
-      canaries. The heading-text projection of `CrossLink` in generated anchors
-      is a cross-item case owned by whichever of `O1` and `P3` merges later. An
-      attribute container following a complete `CrossLink` staying text under
-      `bracketedSpans` (audit finding OW-4) is a cross-item case owned by
-      whichever of `O1` and `P5` merges later. Requires `X0`, `M7`, `S2`.
+      canaries. Teach the table boundary scanner the `\|` escape so a wikilink
+      alias or embed size stays inside one cell while the inline scanner
+      receives the logical pipe, active while `crossLinks` is on in every table
+      syntax that parses the cell, so the module's escaped-pipe cases hold in
+      inherited pipe tables from this item; the inherited delimiter-row grammar
+      is unchanged (audit finding OI-3), and with `crossLinks` off tables are
+      byte-for-byte inherited. Fixtures also cover escaped pipes in aligned and
+      pipe-optional tables. An escaped wikilink pipe inside a simple, multiline,
+      or grid table cell is a cross-item case owned by whichever of `O1` and
+      `P11b`, `P11c`, or `P11d` merges later. The heading-text projection of
+      `CrossLink` in generated anchors is a cross-item case owned by whichever
+      of `O1` and `P3` merges later. An attribute container following a complete
+      `CrossLink` staying text under `bracketedSpans` (audit finding OW-4) is a
+      cross-item case owned by whichever of `O1` and `P5` merges later. Requires
+      `X0`, `M7`, `S2`.
 - [ ] **O2 — Highlights.** Add `==` to the shared delimiter stack under `marks`
       with the exact-two-run and non-empty rules, local pairing, and opaque
       code, formula, comment, HTML-token, and wikilink bytes (audit seam S-7);
@@ -607,22 +617,13 @@ the `stripHTMLComments` row, since nothing strips comments.
       `callout.title.populated`. An identifier attached to a metadata-bearing
       callout is a cross-item case owned by whichever of `O8` and `O7` merges
       later. Requires `O1`, `O2`.
-- [ ] **O9 — Image dimensions and table integration.** Under `imageDimensions`,
-      parse the complete `W`, `WxH`, `alt|W`, and `alt|WxH` alt-label suffixes
-      in the shared image construction path into `width` and `height`, keep the
-      whole label as alt content on any malformed suffix, and leave
-      `CrossLink.label` raw. Teach the table boundary scanner the `\|` escape so
-      a wikilink alias or embed size stays inside one cell while the inline
-      scanner receives the logical pipe, with the escape active while
-      `crossLinks` is on in every table syntax that parses the cell, pipe tables
-      under `tables` and each Pandoc table form under its own option, so no
-      table option is a prerequisite of another; the inherited delimiter-row
-      grammar is unchanged (audit finding OI-3), and with every Obsidian option
-      off tables and task items are byte-for-byte inherited. Fixtures cover
-      every valid and invalid dimension form, escaped pipes, aligned and
-      pipe-optional tables, and formatted cells. An escaped wikilink pipe inside
-      a grid-table cell is a cross-item case owned by whichever of `O9` and
-      `P11d` merges later. Requires `O1`.
+- [ ] **O9 — Image dimensions.** Under `imageDimensions`, parse the complete
+      `W`, `WxH`, `alt|W`, and `alt|WxH` alt-label suffixes in the shared image
+      construction path into `width` and `height`, keep the whole label as alt
+      content on any malformed suffix, and leave `CrossLink.label` raw; with the
+      option off every alt label is inherited alt content byte for byte.
+      Fixtures cover every valid and invalid dimension form and formatted alt
+      content. Requires `O1`.
 - [ ] **O10 — Obsidian evidence closure.** Add the integration fixtures for
       every pairwise opaque-context interaction, OFM and CommonMark constructs
       between paired inline HTML tags, the five-step precedence order, task
@@ -688,17 +689,23 @@ the `stripHTMLComments` row, since nothing strips comments.
       link, image, resolved reference occurrence, or autolink. Implement the
       attributes contract's `merge(primary, inherited)` operation here with
       reference definitions as its first consumer: store a definition's
-      container in the parser reference map and apply it on resolution without
-      touching the occurrence scope; keep `width` and `height` unit strings as
-      records. Audit every Link, Image, Heading, Code, CodeBlock, directive, and
-      reference-definition caller and delete repair passes made obsolete by the
-      shared operation. Two cross-item cases are owned by whichever item merges
-      later: a link tail claiming the container ahead of a bracketed span with
-      `P5`, and attributes authored on an implicit heading reference occurrence
-      with `P4`. Remove the `link-and-image-attributes` and
-      `pandoc-reference-attribute-merge` gaps. An explicit ID from this syntax
-      reserved before heading synthesis is a cross-item case owned by whichever
-      of `P2d` and `P3` merges later. Requires `P0`, `M7`.
+      container in the parser reference map as part of the shared resource that
+      `M2` introduced, so an occurrence references the definition's attributes
+      and materializes only its occurrence-local merge delta rather than a copy,
+      and apply the merge on resolution without touching the occurrence scope;
+      extend `pathological_reference_expansion_bound` and its transport and
+      decoder counterparts so a long definition anchor, class list, or record
+      referenced many times is stored once on every surface; keep `width` and
+      `height` unit strings as records. Audit every Link, Image, Heading, Code,
+      CodeBlock, directive, and reference-definition caller and delete repair
+      passes made obsolete by the shared operation. Two cross-item cases are
+      owned by whichever item merges later: a link tail claiming the container
+      ahead of a bracketed span with `P5`, and attributes authored on an
+      implicit heading reference occurrence with `P4`. Remove the
+      `link-and-image-attributes` and `pandoc-reference-attribute-merge` gaps.
+      An explicit ID from this syntax reserved before heading synthesis is a
+      cross-item case owned by whichever of `P2d` and `P3` merges later.
+      Requires `P0`, `M7`.
 - [ ] **P3 — `auto_anchors`.** Build one document anchor registry that reserves
       every explicit anchor from every enabled extension before synthesis, then
       generates GFM anchors in heading order from visible text (retaining link
@@ -850,8 +857,9 @@ the `stripHTMLComments` row, since nothing strips comments.
       over definition-term lookahead for this table form is a cross-item case
       owned by whichever of `P11b` and `P10` merges later. An identifier line
       after a caption on this table form attaching to the `Table` is a
-      cross-item case owned by whichever of `P11b` and `O7` merges later.
-      Requires `P11a`.
+      cross-item case owned by whichever of `P11b` and `O7` merges later. An
+      escaped wikilink pipe inside a simple-table cell is a cross-item case
+      owned by whichever of `P11b` and `O1` merges later. Requires `P11a`.
 - [ ] **P11c — `multiline_tables`.** Recognize full-width and segmented dash
       boundaries, combine physical lines into logical rows separated by blank
       lines, populate `TableColumn.relative` from source widths, require the
@@ -860,7 +868,9 @@ the `stripHTMLComments` row, since nothing strips comments.
       lookahead for this table form is a cross-item case owned by whichever of
       `P11c` and `P10` merges later. An identifier line after a caption on this
       table form attaching to the `Table` is a cross-item case owned by
-      whichever of `P11c` and `O7` merges later. Requires `P11b`.
+      whichever of `P11c` and `O7` merges later. An escaped wikilink pipe inside
+      a multiline-table cell is a cross-item case owned by whichever of `P11c`
+      and `O1` merges later. Requires `P11b`.
 - [ ] **P11d — `grid_tables`.** Parse `+`, `-`, `=`, and `|` boundaries with the
       top line defining columns, `=` separators selecting head and foot, cell
       bodies through the ordinary block parser, missing segments as `rowspan`
@@ -872,7 +882,7 @@ the `stripHTMLComments` row, since nothing strips comments.
       establishes. Caption precedence over definition-term lookahead for this
       table form is a cross-item case owned by whichever of `P11d` and `P10`
       merges later. An escaped wikilink pipe inside a grid-table cell is a
-      cross-item case owned by whichever of `P11d` and `O9` merges later. An
+      cross-item case owned by whichever of `P11d` and `O1` merges later. An
       identifier line after a caption on this table form attaching to the
       `Table` is a cross-item case owned by whichever of `P11d` and `O7` merges
       later. Requires `P11c`.
@@ -919,7 +929,7 @@ Sizes are rough review-effort estimates, not schedules.
 | `M5`   | `S2`, `S3`         | M    | —                                                                                                                                                                                                       | Obsidian Phase 1 `marker`; Pandoc Phase 1 list values                                                                            |
 | `M6`   | `S3`               | L    | —                                                                                                                                                                                                       | Pandoc Phase 1 table values                                                                                                      |
 | `M7`   | `M0`–`M6`          | XL   | —                                                                                                                                                                                                       | Obsidian Phase 1 metadata, anchor, dimensions; Pandoc Phase 1 fields; Pandoc Phase 2 attribute operation and directive migration |
-| `O1`   | `X0`, `M7`, `S2`   | M    | `Insert` containing `CrossLink` (`I1`); heading-text projection (`P3`); container after a complete wikilink (`P5`)                                                                                      | Obsidian Phase 2 wikilinks                                                                                                       |
+| `O1`   | `X0`, `M7`, `S2`   | M    | `Insert` containing `CrossLink` (`I1`); heading-text projection (`P3`); container after a complete wikilink (`P5`); escaped wikilink pipe in a simple, multiline, or grid cell (`P11b`, `P11c`, `P11d`) | Obsidian Phase 2 wikilinks; Phase 4 escaped table pipes                                                                          |
 | `O2`   | `O1`               | S    | `Insert` containing `Mark` (`I1`); heading-text projection (`P3`)                                                                                                                                       | Obsidian Phase 2 highlights                                                                                                      |
 | `O3`   | `O1`               | M    | —                                                                                                                                                                                                       | Obsidian Phase 2 comments                                                                                                        |
 | `O4`   | `O1`               | M    | `^[` before superscript (`P6`)                                                                                                                                                                          | Obsidian Phase 2 inline footnotes and resolution                                                                                 |
@@ -927,7 +937,7 @@ Sizes are rough review-effort estimates, not schedules.
 | `O6`   | `O1`               | XL   | —                                                                                                                                                                                                       | Obsidian Phase 3 Properties                                                                                                      |
 | `O7`   | `O1`               | M    | anchor reserved before synthesis (`P3`); identifier on a metadata-bearing callout (`O8`); identifier caret before superscript (`P6`); identifier after a table caption (`P11a`, `P11b`, `P11c`, `P11d`) | Obsidian Phase 3 block identifiers                                                                                               |
 | `O8`   | `O1`, `O2`         | M    | identifier on a metadata-bearing callout (`O7`)                                                                                                                                                         | Obsidian Phase 3 callouts                                                                                                        |
-| `O9`   | `O1`               | M    | escaped wikilink pipe in a grid cell (`P11d`)                                                                                                                                                           | Obsidian Phase 4 media parameters and tables                                                                                     |
+| `O9`   | `O1`               | M    | —                                                                                                                                                                                                       | Obsidian Phase 4 media parameters                                                                                                |
 | `O10`  | `O1`–`O9`          | M    | —                                                                                                                                                                                                       | Obsidian Phase 1 preset publication; Phase 2 caller audit; Phase 5; plan exit criterion                                          |
 | `I1`   | `X0`, `I0`, `M7`   | S    | `Insert` containing `CrossLink`, `Mark` (`O1`, `O2`); heading-text projection (`P3`)                                                                                                                    | inserted-text contract                                                                                                           |
 | `P2a`  | `P0`, `M7`         | S    | anchor reserved before synthesis (`P3`)                                                                                                                                                                 | Pandoc Phase 2 attachment sites                                                                                                  |
@@ -944,9 +954,9 @@ Sizes are rough review-effort estimates, not schedules.
 | `P9b`  | `P9a`              | M    | heading-text projection (`P3`)                                                                                                                                                                          | Pandoc Phase 4 example lists                                                                                                     |
 | `P10`  | `P0`, `M7`         | L    | caption precedence over term lookahead (`P11a`, `P11b`, `P11c`, `P11d`); definition body ends at a div close (`P8`)                                                                                     | Pandoc Phase 4 definition lists                                                                                                  |
 | `P11a` | `P0`, `M7`         | M    | caption precedence over term lookahead (`P10`); identifier after a table caption (`O7`)                                                                                                                 | Pandoc Phase 5 captions                                                                                                          |
-| `P11b` | `P11a`             | M    | caption precedence over term lookahead (`P10`); identifier after a table caption (`O7`)                                                                                                                 | Pandoc Phase 5 simple tables and precedence                                                                                      |
-| `P11c` | `P11b`             | M    | caption precedence over term lookahead (`P10`); identifier after a table caption (`O7`)                                                                                                                 | Pandoc Phase 5 multiline tables                                                                                                  |
-| `P11d` | `P11c`             | XL   | caption precedence over term lookahead (`P10`); escaped wikilink pipe in a grid cell (`O9`); identifier after a table caption (`O7`)                                                                    | Pandoc Phase 5 grid tables                                                                                                       |
+| `P11b` | `P11a`             | M    | caption precedence over term lookahead (`P10`); identifier after a table caption (`O7`); escaped wikilink pipe in a simple-table cell (`O1`)                                                            | Pandoc Phase 5 simple tables and precedence                                                                                      |
+| `P11c` | `P11b`             | M    | caption precedence over term lookahead (`P10`); identifier after a table caption (`O7`); escaped wikilink pipe in a multiline-table cell (`O1`)                                                         | Pandoc Phase 5 multiline tables                                                                                                  |
+| `P11d` | `P11c`             | XL   | caption precedence over term lookahead (`P10`); escaped wikilink pipe in a grid cell (`O1`); identifier after a table caption (`O7`)                                                                    | Pandoc Phase 5 grid tables                                                                                                       |
 | `P12`  | `P2a`–`P11d`       | M    | —                                                                                                                                                                                                       | Pandoc Phase 6; plan exit criterion                                                                                              |
 | `R1`   | `O10`, `I1`, `P12` | S    | —                                                                                                                                                                                                       | both delivery sequences                                                                                                          |
 
@@ -978,9 +988,9 @@ Sizes are rough review-effort estimates, not schedules.
   each inline kind a later item produces; a complete cite over a virtual heading
   reference; an identifier on a metadata-bearing callout; an identifier line
   after a table caption, once per table form; an escaped wikilink pipe inside a
-  grid cell; a link tail claiming a container ahead of a span; a container after
-  a complete wikilink; attributes on an implicit heading reference; a definition
-  body ending at a fenced-div close; caption precedence over definition-term
-  lookahead, once per table form; and every comment and wikilink opacity case.
-  Each is written by the later of its two items, and no item's `Requires` grows
-  because of it.
+  simple, multiline, or grid cell; a link tail claiming a container ahead of a
+  span; a container after a complete wikilink; attributes on an implicit heading
+  reference; a definition body ending at a fenced-div close; caption precedence
+  over definition-term lookahead, once per table form; and every comment and
+  wikilink opacity case. Each is written by the later of its two items, and no
+  item's `Requires` grows because of it.

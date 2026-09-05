@@ -1082,8 +1082,9 @@ A transitional finding names the landing-plan item that resolves it.
 - **PX-4** `pandoc.md:63` (also `bracketed-spans.md:44`, `citations.md:106`,
   `superscript-and-subscript.md:62`, `attributes.md:180`) — A — "comments" is
   undefined outside the Obsidian comment module. Rule: in this directory
-  "comment" means a `Comment` recognized by the Obsidian comment rule; with
-  `comments` off no byte is a comment; HTML comments are HTML tokens.
+  "comment" means a `Comment` node, produced by an HTML comment under the
+  inherited grammar and by `%%` under `comments`; with `comments` off no `%%`
+  byte is a comment while an HTML comment is still a `Comment` node (CA-22).
 - **PX-5** `pandoc.md:66-68` — B — "without consuming a bracket ... required by
   a later construct" is not decidable. Rule: on recognition failure the cursor
   returns to the candidate's first byte and the next alternative in the module's

@@ -29,28 +29,32 @@ incomplete if its module's model, recognition, fallback, precedence, scopes,
 option isolation, allocation behavior, or complexity requirements are unmet.
 
 The inherited language remains the repository's current CommonMark/GFM
-implementation. Pandoc 3.11 is authoritative only for the explicitly selected
-extension layer. The product must not acquire unrelated behavior merely
-because Pandoc enables it in its default `markdown` format.
+implementation. The modules are the sole normative statement of the selected
+extension layer; Pandoc 3.11 is the source of their feature definitions and
+evidence, not an authority over behavior, and where a module is silent behavior
+is undefined until the module is amended, never inherited from Pandoc. The
+product must not acquire unrelated behavior merely because Pandoc enables it in
+its default `markdown` format.
 
-## Frozen authority and executable oracle
+## Frozen source and evidence oracle
 
 The source and runner contract is already frozen in
 [`specs/oracles/pandoc/source.json`](../../specs/oracles/pandoc/source.json):
 
 | Role                          | Frozen choice                                                                                                                      |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Normative prose               | Pandoc 3.11 `MANUAL.txt` at tag commit `b913622e1ff87c69ab8b1a606577122e220925cd`                                                  |
+| Feature definitions           | Pandoc 3.11 `MANUAL.txt` at tag commit `b913622e1ff87c69ab8b1a606577122e220925cd`                                                  |
 | Grammar and registry evidence | `Markdown.hs`, `Shared.hs` attribute merge, and `Extensions.hs` blobs at the same commit                                           |
 | Executable implementation     | Official Pandoc 3.11 release CLI, verified against its per-platform SHA-256 before first use                                       |
 | Observation format            | Pandoc native JSON from `--to=json`, without citeproc, filters, templates, defaults files, or bibliography lookup                  |
 | Reader isolation              | `markdown_strict` plus the exact extension set declared by each input-only corpus case; the default `markdown` bundle is forbidden |
 
-The User's Guide owns accepted source syntax. CLI JSON is the executable
-oracle for recognition, fallback, grouping, ordering, and Pandoc's semantic
-facts after a reviewed projection into the target model. Neither raw Pandoc
-constructor names nor its early rendering choices override Markdown Core's
-consumer contract. Current cmark and cmark-gfm continue to own inherited
+The User's Guide is the source of the accepted source syntax that the modules
+define. CLI JSON is the evidence corpus for recognition, fallback, grouping,
+ordering, and Pandoc's semantic facts after a reviewed projection into the
+target model; where a module and the corpus differ, the module rule stands and
+the difference is a registered delta. Neither raw Pandoc constructor names nor
+its early rendering choices override Markdown Core's consumer contract. Current cmark and cmark-gfm continue to own inherited
 syntax and precedence where no selected Pandoc extension participates.
 
 ## Phase 0 — bootstrap the pinned oracle
