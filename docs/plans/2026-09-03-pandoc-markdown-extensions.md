@@ -1,7 +1,7 @@
 # Pandoc Markdown extensions implementation plan
 
-Status: proposed. This plan implements the independently composable extensions
-in [`docs/specs/pandoc.md`](../specs/pandoc.md) on the canonical parser and all
+Status: proposed. This plan implements the Pandoc-derived modules of the
+[Markdown Core dialect](../specs/dialect.md) on the canonical parser and all
 public bindings. It does not add a monolithic Pandoc dialect and does not retain
 compatibility aliases for any public model that this work replaces.
 
@@ -22,11 +22,11 @@ needed only for recognition—reference
 definitions, virtual heading references, example counters, attribute
 attachment candidates, and table boundary maps—remains parser-owned.
 
-The normative behavior is divided among the modules linked from the
-[Pandoc extension index](../specs/pandoc.md). This plan owns implementation
-order and proof obligations, not a second copy of their grammars. A phase is
-incomplete if its module's model, recognition, fallback, precedence, scopes,
-option isolation, allocation behavior, or complexity requirements are unmet.
+The normative behavior is divided among the modules linked from the [dialect
+index](../specs/dialect.md). This plan owns implementation order and proof
+obligations, not a second copy of their grammars. A phase is incomplete if its
+module's model, recognition, fallback, precedence, scopes, option isolation,
+allocation behavior, or complexity requirements are unmet.
 
 The inherited language remains the repository's current CommonMark/GFM
 implementation. The modules are the sole normative statement of the selected
@@ -90,17 +90,17 @@ selected Pandoc extension participates.
 ## Phase 1 — freeze the public consumer model
 
 - [ ] Add the shared `Destination` enum defined by
-      [`docs/specs/destinations.md`](../specs/destinations.md) to every public
-      surface. Replace `Link.destination: String` and `Image.source: String`
-      with `dest: Destination` on both nodes, require the `url` branch for
-      ordinary links and images, and coordinate the same canonical change with
-      Obsidian's `cross` branch and optional anchor; do not retain either old
-      string as parallel compatibility state.
+      [`docs/specs/dialect/links-and-images.md`](../specs/dialect/links-and-images.md)
+      to every public surface. Replace `Link.destination: String` and
+      `Image.source: String` with `dest: Destination` on both nodes, require the
+      `url` branch for ordinary links and images, and coordinate the same
+      canonical change with Obsidian's `cross` branch and optional anchor; do
+      not retain either old string as parallel compatibility state.
 - [ ] Add the universal nullable `anchor` field defined by
-      [`docs/specs/anchors.md`](../specs/anchors.md) and the non-null
-      `attributes` field defined by
-      [`docs/specs/attributes.md`](../specs/attributes.md) to every canonical
-      Markup kind and all four public surfaces. `anchor` is one
+      [`docs/specs/dialect/anchors.md`](../specs/dialect/anchors.md) and the
+      non-null `attributes` field defined by
+      [`docs/specs/dialect/attributes.md`](../specs/dialect/attributes.md) to
+      every canonical Markup kind and all four public surfaces. `anchor` is one
       source-independent string; `Attributes` contains ordered classes and
       ordered `Record` values. Kinds without an enabled source rule retain
       `anchor=null` and `Attributes.empty`; do not create node-specific copies.
@@ -112,7 +112,7 @@ selected Pandoc extension participates.
 - [ ] Add the shared bibliography branch to `Cite`, `Citation`, and
       `CitationReferent`. Coordinate the same canonical change with the Obsidian
       footnote migration: Pandoc `@key` creates `CitationReferent.bib`, while
-      footnote syntax creates `CitationReferent.footnote`; neither profile gets a
+      footnote syntax creates `CitationReferent.footnote`; neither source gets a
       parallel citation node.
 - [ ] Add each C kind and field identifier with the item that first produces it,
       then update the native tree, C facade, canonical wire schema, dump format,
@@ -120,10 +120,10 @@ selected Pandoc extension participates.
       audit atomically. While 3.0.0 is unreleased, identifiers, wire layouts,
       and manifest order may be renumbered by any later item; nothing is
       reserved in advance.
-- [ ] Expose one independent option per public extension named by the index.
-      `auto_anchors` composes the two pinned Pandoc extension rules internally;
-      compact definition syntax remains part of `definition_lists` and receives
-      no invented option.
+- [ ] Expose one independent option per public extension named by the dialect
+      index. `autoAnchors` composes the two pinned Pandoc extension rules
+      internally; compact definition syntax remains part of `definitionLists`,
+      and start numbers are always honored, so neither receives an option.
 - [ ] Activate product comparison once those options and target values can be
       represented. Register every initial gap in a fail-closed `deltas.json` with
       both semantic digests and the phase that closes it; add the offline gate to
@@ -255,7 +255,7 @@ selected Pandoc extension participates.
 
 - [ ] **Exit criterion:** every selected extension is independently composable, all four
       surfaces expose one canonical model, the pinned Pandoc corpus has no
-      unregistered divergence, inherited profiles remain green, and no test or build
+      unregistered divergence, inherited options remain green, and no test or build
       step fetches mutable external state.
 
 ## Delivery sequence
@@ -263,7 +263,7 @@ selected Pandoc extension participates.
 Review and land in the order: oracle bootstrap, canonical model and parity
 skeleton, attribute/heading infrastructure, inline recognition, block/list
 recognition, table recognition, and integration evidence. Each change must
-leave existing profiles green. No Pandoc extension is public until its AST is
+leave every existing option set green. No Pandoc extension is public until its AST is
 available on every binding and its option-off, oracle, and product conformance
 cases pass.
 

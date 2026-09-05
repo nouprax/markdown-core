@@ -27,19 +27,21 @@ implementation an oracle for information it does not expose. `yaml` is the
 broadly used candidate whose public model can witness the required facts.
 
 Popularity chooses an implementation oracle; it does not make that package the
-OFM specification. The official Obsidian help snapshot registered in
-`deltas.json` remains normative. This oracle is authoritative only for the
+specification. The official Obsidian help snapshot registered in `deltas.json`
+is the source of the feature definitions, and the dialect modules under
+`docs/specs/dialect/` are the rule. This oracle is authoritative only for the
 intersection it implements: wikilinks/embeds, highlights, comment removal, and
 custom task characters. Tag and package-specific math syntax are disabled.
 Callouts, block identifiers, inline-footnote recognition, the target
 `Cite`/`Citation`/`CitationReferent`/`Footnote` consumer projection, and image
 dimensions are absent from the direct parser comparison and therefore stay
 under official-example product fixtures. Inherited HTML behavior remains owned
-by the cmark oracle; this profile adds no Obsidian-specific HTML suppression.
+by the cmark oracle; the dialect adds no Obsidian-specific HTML suppression.
 
-The Properties page remains the authority for beginning-of-file placement,
-the three-hyphen fence form, the supported consumer domain, and the absence of
-Markdown and nested Properties values. The harness therefore owns one exact,
+The Properties page is the source for beginning-of-file placement, the
+three-hyphen fence form, the supported consumer domain, and the absence of
+Markdown and nested Properties values; `docs/specs/dialect/properties.md`
+states the rule. The harness therefore owns one exact,
 line-oriented envelope scanner and passes only the bytes between a valid pair
 of fences to the YAML oracle. A package-specific frontmatter recognizer is
 neither an authority nor an intermediate normalization layer.
@@ -91,7 +93,7 @@ limits.
 For successful Properties inputs, the normalized semantic root contains a
 `metadata` field: `null` means absent, while an array (including an empty
 array) contains ordered `{name, value}` records using the tagged scalar/list
-shape from `docs/specs/metadata.md`. The current implementation's missing
+shape from `docs/specs/dialect/properties.md`. The current implementation's missing
 field is deliberately normalized to `null`, so every target gap remains
 visible. When `Document.metadata` is implemented, its canonical debug field
 must expose the same compact JSON value for this gate; that dump change lands

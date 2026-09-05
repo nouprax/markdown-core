@@ -1,9 +1,14 @@
 # Extension specification audit
 
-Status: audit with a resolution checklist. It covers every file under
-`docs/specs` at the head of `claude/feature-specs-plan-xlt8nu` after the ground
-rules of the [landing plan](2026-09-04-canonical-vnext-landing-plan.md) were
-recorded. The goal it measures against is a closed, well-defined extension set
+Status: historical record. It audited every file under `docs/specs` as they
+stood at commit `7df9454`, before the dialect rewrite replaced them with
+[`docs/specs/dialect.md`](../specs/dialect.md) and its modules, and its line
+references point at those files. Every rule it proposes was carried into the
+modules, its settled decisions and the remaining source collisions live in the
+[conflicts register](../specs/dialect/conflicts.md), and its resolution
+checklist is discharged by landing item `S0` of the
+[landing plan](2026-09-04-canonical-vnext-landing-plan.md), which ticks the
+boxes below when it merges. The goal it measures against is a closed, well-defined extension set
 in which every input has exactly one specified output on every surface.
 Byte-for-byte agreement with Pandoc, Obsidian, or any other oracle is not a
 goal; a specification that states its own rule and registers the oracle

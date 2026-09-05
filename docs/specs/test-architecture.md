@@ -1,7 +1,9 @@
 # Markdown Core 测试与流水线架构契约
 
-本文档冻结全仓统一测试架构。后续 phase(尤其 Phase 8–13)必须在该契约内实现;
-修改本契约需要先评审本文档,再改实现。
+本文档记录全仓统一测试架构。后续 phase(尤其 Phase 8–13)必须在该契约内实现;
+修改本契约需要先评审本文档,再改实现。在 3.0.0 发布前，manifest 的顺序、路径、
+coverage 词汇、kind 序号与 wire 布局都可以在任何经过评审的变更中调整；本文档记录
+现状，不冻结它们。
 
 Release readiness 是 merge invariant，而不是 advisory release preparation。
 Pull request 与 merge-group snapshot 必须在 `Required gates` 和 `CodeQL gate`
@@ -91,7 +93,7 @@ runner 重建第二份:
 Makefile 不实现第二套测试或 benchmark runner。sanitizer 任务
 (`make asan-test`/`ubsan-test`/`tsan-test`、CI asan/ubsan/tsan jobs)复用同一
 graph 的 `asan`/`ubsan`/`tsan` presets。TSan preset(Phase 10)在支持的平台上
-验证冻结的并发契约;TSan 不可用的平台仍通过 default preset 运行同一批原生
+验证已记录的并发契约;TSan 不可用的平台仍通过 default preset 运行同一批原生
 并发 regression,不得静默跳过。
 
 ## 3. Suite/workload taxonomy
@@ -118,7 +120,7 @@ C 侧 CTest label taxonomy(每个测试恰有一个 label):
 | `facade` | facade 行为与并发 correctness(`facade_concurrent_first_parse`、`facade_concurrent_stress`) |
 | `conformance` | 公开 facade/schema shape 与 reviewed canonical dumps(`facade_native`、`facade_dump_cli`)；不进入 correctness preset |
 | `consumer` | C++ consumer 编译/链接/运行(`consumer_facade_cplusplus`) |
-| `spec` | GFM 0.29 product golden、smart punctuation、entities（全部为 canonical AST dump 断言；最新 CommonMark 由 cmark oracle 判断） |
+| `spec` | GFM 0.29 product golden、smart punctuation、entities（全部为 canonical AST dump 断言；CommonMark 0.31.2 由 pinned cmark oracle 判断，GFM extension 层由 pinned cmark-gfm 0.29.0.gfm.13 判断） |
 | `extensions` | GFM/formula/directive extension specs 与 option gates |
 | `regression` | 固定回归语料、实例生命周期与严格 OOM 语义(`regression_commonmark`、`regression_instance_lifecycle`、`regression_strict_oom`) |
 | `pathological` | 逐 case 注册的对抗输入、固定资源上界与语义断言(`pathological_*`) |
@@ -203,8 +205,10 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
 ## 5. Shared conformance 与 package-local correctness 契约
 
 - Canonical Markdown/`.ast` conformance data 只有一份，位于
-  `specs/canonical-ast/`；`manifest.json` 是唯一 case list，并显式冻结 paths、
-  parse options、顺序、编码/换行和 semantic coverage tags。该目录不含 runner。
+  `specs/canonical-ast/`；`manifest.json` 是唯一 case list，并显式记录 paths、
+  parse options、顺序、编码/换行和 semantic coverage tags。每个 case 必须显式列出
+  `ParseOptions` 的每个字段，缺失字段由 `scripts/check-canonical-ast-fixtures.mjs`
+  判失败。该目录不含 runner。
 - C、Swift、Kotlin、ES 的原生 conformance targets 使用各自公开
   parse/immutable AST 与独立的 per-node Visitor/TreeDumper 路径枚举同一
   manifest。Swift、Kotlin、ES 另行验证公开、stack-safe、按 node kind 分派的
@@ -221,6 +225,9 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
 - 仓库根目录不得存在 `tests/`、跨 package test harness 或职责不明的 runner。
   除 root canonical contract data 外，consumer、compile contract、correctness
   fixtures 与 packaging tests 必须位于唯一 owning package 内。
+- Size-doubling case 的统一定义：对同一构造分别以 n 与 2n 字节的输入解析，断言固定
+  的 AST 形状与有界的 output/source byte ratio；各 dialect module 要求的 adversarial
+  用例都按此定义编写。
 - C spec/extension fixtures 位于 `packages/markdown-core/tests/fixtures/`
   (CommonMark 32-backtick example 格式)。自 Phase 8 起 expected block 一律是
   canonical AST dump;`spec_runner` 对每个例子解析一次、dump 两次(断言 dump
@@ -229,15 +236,16 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
   才能提交,不得用于隐藏未经批准的 parser drift。
 - 上述 package-local fixture 是 extension correctness requirement 的唯一副本，
   同时作为 external parity gate 的输入 corpus。`specs/` 只保存跨平台 contract、
-  外部 oracle policy/delta 与 position ledger；`specs/oracles/` 按真实 authority
-  保存 cmark、cmark-gfm 与 remark/micromark 的 pin、comparison policy 和
-  deliberate delta。cmark 是最新稳定 CommonMark authority；cmark-gfm 只判断
-  GFM extension layer；remark/mdast 只作纠偏与补充。该目录不得包含本仓库
-  input/expected blocks 的镜像。Obsidian 的官方 Help snapshot 是 OFM 语言
-  authority；`@quartz-community/remark-obsidian` 只比较其实际实现的 wikilink、
-  embed、highlight、comment 与 custom-task 交集，不能替代官方例子或为缺失的
-  callout/block-id/inline-footnote/HTML 行为作证。Golden fixture 本身不是独立
-  external authority。
+  外部 oracle policy/delta 与 position ledger；`specs/oracles/` 保存 cmark、
+  cmark-gfm、remark/micromark、Obsidian 与 Pandoc oracle 的 pin、comparison policy
+  和 deliberate delta。oracle 是证据而不是规则：`docs/specs/dialect.md` 及其模块是
+  语法的唯一规范文本，与 oracle 的任何差异都登记为 delta，而不是改规则。cmark
+  0.31.2 判断 CommonMark 层；cmark-gfm 0.29.0.gfm.13 只判断 GFM extension layer；
+  remark/mdast 只作纠偏与补充；`@quartz-community/remark-obsidian` 只比较其实际实现
+  的 wikilink、embed、highlight、comment 与 custom-task 交集，不能为缺失的
+  callout/block-id/inline-footnote/HTML 行为作证；Pandoc 3.11 CLI 只比较显式启用的
+  Pandoc 来源特性。该目录不得包含本仓库 input/expected blocks 的镜像。Golden fixture
+  是本仓库的 oracle of record，不是外部 authority。
 
 ## 6. 通用执行策略
 
@@ -312,7 +320,7 @@ CTest tree 路径传给同一脚本，追加动态 inventory/discovery 交叉检
 required labels 非空且没有 disabled test、没有 performance label，correctness/conformance
 selection 互斥，test runner discovery 与 CTest registration 一致，Swift suite discovery
 非空。`scripts/audit-ci-policy.sh` 另行强制 required CI 不含 benchmark job、测试制品不携带
-benchmark payload，并冻结独立 PR benchmark 的 head-only untrusted producer、trusted
+benchmark payload，并记录独立 PR benchmark 的 head-only untrusted producer、trusted
 exact-SHA baseline fallback、artifact origin 和权限边界。
 
 源码目录、文件合并方式、pnpm script 的具体实现文本、router/alias 命名、Android managed

@@ -3,9 +3,10 @@
 The executable oracle is the official Pandoc 3.11 CLI. Pandoc is both the
 producer of these extensions and the producer of its native JSON model, so a
 third-party popularity proxy would add uncertainty rather than independence.
-The normative source language remains the pinned Pandoc User's Guide; the CLI
-supplies reproducible evidence for recognition, fallback, grouping, ordering,
-and semantic facts.
+The pinned Pandoc User's Guide is the source of the feature definitions, the
+dialect modules under `docs/specs/dialect/` are the rule, and the CLI supplies
+reproducible evidence for recognition, fallback, grouping, ordering, and
+semantic facts.
 
 [`source.json`](source.json) is the immutable authority and runner contract. It
 pins the 3.11 tag commit, the exact manual, Markdown reader, shared attribute
@@ -20,8 +21,9 @@ forbidden because it would enable unrelated rules. The base reader is merely
 a controlled harness substrate: current cmark and cmark-gfm policies continue
 to own Markdown Core's inherited CommonMark/GFM behavior.
 
-Pandoc 3.11 is also the authority for the one shared braced-attribute grammar
-and its semantic `Attr` shape. Markdown Core projects that tuple into its
+Pandoc 3.11 is also the source and evidence for the one shared braced-attribute
+grammar and its semantic `Attr` shape, which `docs/specs/dialect/attributes.md`
+states. Markdown Core projects that tuple into its
 consumer model: the identifier becomes `Markup.anchor`, classes become
 `Attributes.classes`, and ordered key/value pairs become `Attributes.records`
 of `Record` values. Pandoc's empty identifier projects to `anchor=null`; neither

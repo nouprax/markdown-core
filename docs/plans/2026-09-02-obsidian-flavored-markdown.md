@@ -1,9 +1,8 @@
 # Obsidian Flavored Markdown implementation plan
 
-Status: proposed. This plan implements the target contract in
-[`docs/specs/obsidian-flavored-markdown.md`](../specs/obsidian-flavored-markdown.md)
-as a new canonical AST baseline, without compatibility aliases for replaced
-kinds or fields.
+Status: proposed. This plan implements the Obsidian-derived modules of the
+[Markdown Core dialect](../specs/dialect.md) as a new canonical AST baseline,
+without compatibility aliases for replaced kinds or fields.
 
 The cross-plan landing order that turns these phases into individually
 mergeable pull requests is
@@ -37,15 +36,14 @@ anchor)` branch. Heading and block source spellings populate the same optional
 anchor field and introduce no discriminator. No destination populates the
 declaration-side anchor on its owning reference node.
 
-The normative work items are the module specs linked from the
-[OFM contract index](../specs/obsidian-flavored-markdown.md): Properties,
-wikilinks/embeds, block identifiers, footnotes, comments, highlights, tasks,
-callouts, and inherited/integration behavior. A phase is incomplete if its
-module's grammar, AST invariants, fallback, scopes, or required conformance
-cases are unmet.
-The shared [`Cite`, `Citation`, and `CitationReferent`
-contract](../specs/citation-model.md) owns their reusable semantics; this plan does
-not enable Pandoc `@key` syntax through any Obsidian option.
+The normative work items are the dialect modules linked from the [dialect
+index](../specs/dialect.md): properties, cross links, block identifiers,
+footnotes, comments, marks, task lists, callouts, and the links-and-images and
+tables rules they extend. A phase is incomplete if its module's grammar, AST
+invariants, fallback, scopes, or required conformance cases are unmet. The
+shared [`Cite`, `Citation`, and `CitationReferent`
+model](../specs/dialect/footnotes.md) owns their reusable semantics; this plan
+does not enable Pandoc `@key` syntax through any Obsidian option.
 
 - [ ] **Plan exit criterion:** the in-scope official extension examples, negative
       boundaries, cross-extension interactions, oracle comparison, allocation

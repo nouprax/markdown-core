@@ -13,6 +13,13 @@ The executable repository-level conformance data lives at
 Markdown/`.ast` pairs are the sole cross-platform oracle for this contract;
 they do not change the production AST or define a serialization format.
 
+The language the parser accepts is defined by [`dialect.md`](dialect.md) and
+its modules; this document is the contract of the AST the implementation
+produces today, and its option table is the registry of record for
+`ParseOptions`. Where a dialect module describes a kind, field, value, or
+option that this document lacks, the module names the landing item that adds
+it, and this document stands until that item merges.
+
 This document is the language-neutral public AST contract implemented by the
 Swift, Kotlin, and ES bindings. Platform APIs may use idiomatic syntax, but
 they must not change names, nullability, ownership, traversal order, defaults,
@@ -33,7 +40,13 @@ or semantics.
   is not an element of the directive's `content` and is not exposed through a
   generic child/content sequence.
 - The AST contains parsing semantics only. Renderer state, security policy,
-  layout, highlighting, generated HTML, and MS-private syntax are excluded.
+  layout, highlighting, and generated HTML are excluded.
+- Adjacent `Text` nodes in one content array are merged into one node spanning
+  from the first's start to the last's end, and a `Text` node is never empty.
+- Besides `Markup`, exactly the scoped values `Citation`, `Footnote`,
+  `Metadata`, and `MetadataRecord` carry a `scope`, because they are written;
+  every other value is located by its owner's scope. Those values arrive with
+  the landing items that add them.
 
 ## Coordinates
 
@@ -46,6 +59,16 @@ The C facade passes the supplied bytes to the native parser as UTF-8. Valid
 UTF-8 is a caller precondition; Markdown Core has no validation or repair mode
 for malformed input. Swift, Kotlin, and ECMAScript strings are encoded as UTF-8
 before entering that same parse path.
+
+`line` is 1-based and increments once per line ending, whether LF, CR, or
+CRLF. `column` is the 1-based byte index within the line; a tab is one byte.
+`start` is the first byte of the node's first code point and `end` the last
+byte of its last code point, inclusive. A node's scope never includes the line
+ending that terminates its last line. `SoftBreak` covers the line-ending bytes
+of its break, and `LineBreak` covers the line-ending bytes together with the
+backslash or trailing spaces that produced it. A multiline or grid table cell
+under the dialect's table options is the one construct whose scope may include
+bytes of sibling cells, because its segments are written on shared lines.
 
 Scopes inherit the native C parser's source-position values and semantics
 exactly. The C facade and platform bindings copy `line` and `column` without
@@ -88,9 +111,14 @@ other five kinds the placement is constant and therefore implied by the kind:
 | `DirectiveBlock` | `standalone` |
 | `Code` | `embedded` |
 | `CodeBlock` | `standalone` |
-| `FormulaBlock` | `standalone` — `markdown_core_extensions_set_formula_mode` refuses any other value for this kind |
+| `FormulaBlock` | `standalone` — `markdown_core_extensions_set_formula_mode` returns `false` and leaves the node unchanged for any other value |
 
 ### Directive attributes
+
+This section describes the directive attribute model as implemented today.
+Landing item `M7` replaces it with the universal `anchor` and `attributes`
+fields of [`dialect/attributes.md`](dialect/attributes.md), which also states
+the one attribute grammar; until then this section stands.
 
 Directive `attributes` is an optional ordered sequence of `DirectiveAttribute`
 pairs, each a `name: String` and a `value: String`. It preserves the source
@@ -127,8 +155,9 @@ TableAlignment = none | left | center | right
 
 `content` and other collection fields below own their values. `inline content`
 means only inline `Markup` kinds are valid; `block content` means only block
-kinds are valid. Bindings treat a category violation from the C facade as an
-error rather than silently dropping a value.
+kinds are valid. A category violation reported by the C facade fails
+`Document.parse` on that binding with the platform contract-violation error
+and returns no document.
 
 | Kind | Fields in canonical order | Nullability and invariants |
 | --- | --- | --- |
@@ -139,10 +168,10 @@ error rather than silently dropping a value.
 | `ThematicBreak` | none | leaf |
 | `List` | `flavor: ListFlavor`, `start: Int?`, `tight: Bool`, `items: [ListItem]` | `start` is non-null only for ordered lists |
 | `ListItem` | `checked: Bool?`, `content: [Markup]` | `checked == null` means not a task item; block content |
-| `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | `info` is the complete raw info string; `language` is its first non-whitespace token; indented blocks have `fenced=false, closed=true` |
+| `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | `info` is the info string after escape and character-reference processing, stripped of leading and trailing spaces and tabs, and `null` when that is empty or the block is indented; `language` is the prefix of `info` before the first space or tab; `fenced` is true for a fenced block; `closed` is true if and only if a closing fence was found, and always for an indented block |
 | `HTMLBlock` | `literal: String` | raw HTML is preserved |
 | `FormulaBlock` | `literal: String` | a formula block is always standalone; see the note below |
-| `Table` | `alignments: [TableAlignment]`, `header: TableRow`, `rows: [TableRow]` | one alignment per column; header is non-optional |
+| `Table` | `alignments: [TableAlignment]`, `header: TableRow`, `rows: [TableRow]` | one alignment per column; header is non-optional; a row shorter than the delimiter row is completed with empty cells scoped at the row's end and a longer row is truncated, so every row has one cell per column |
 | `TableRow` | `isHeader: Bool`, `cells: [TableCell]` | `isHeader` is true only for `Table.header` and false for entries in `Table.rows` |
 | `TableCell` | `content: [Markup]` | inline content |
 | `DirectiveBlock` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never part of content; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
@@ -158,7 +187,7 @@ error rather than silently dropping a value.
 | `Emphasis` | `content: [Markup]` | inline content |
 | `Strong` | `content: [Markup]` | inline content |
 | `Strikethrough` | `content: [Markup]` | inline content |
-| `Link` | `destination: String`, `title: String?`, `content: [Markup]` | `destination` is never absent (Q26): `[a]()` and `[a](<>)` wrote one and wrote nothing in it, and a link with no destination at all is a `LinkReference`; absent and empty title remain distinct; inline content |
+| `Link` | `destination: String`, `title: String?`, `content: [Markup]` | `destination` is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, and a link with no destination at all is a `LinkReference`; absent and empty title remain distinct; inline content |
 | `Image` | `source: String`, `title: String?`, `content: [Markup]` | `source` is never absent, for the reason `Link.destination` is not; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `LinkReference` | `label: String`, `identifier: String`, `form: ReferenceForm`, `content: [Markup]` | `label` and `identifier` are exactly as on `ReferenceDefinition`; the node carries NO destination — the destination is stated once, at the definition; `form` records which of the three spellings the source used, and all three resolve identically; inline content |
 | `ImageReference` | `label: String`, `identifier: String`, `form: ReferenceForm`, `content: [Markup]` | as `LinkReference`; content is parsed alt-text inline content |
@@ -166,7 +195,10 @@ error rather than silently dropping a value.
 | `FootnoteReference` | `label: String`, `identifier: String` | `label` is non-empty and as written; `identifier` KEEPS the leading `^`; no form — there is one footnote call syntax; leaf |
 
 Every row above also has the final inherited field `scope: Scope`; it is not
-repeated in the table.
+repeated in the table. `Link.destination`, `Image.source`, and every `title`
+are the CommonMark-unescaped values with angle-bracket wrappers removed and no
+percent-encoding or normalization; an unresolved reference is the inherited
+literal text with its brackets.
 
 ### Typed table ownership
 
@@ -186,20 +218,30 @@ validates the owning edge: the value in `Table.header` is true and values in
 `Document.parse(source, options = ParseOptions.default)` is the only parsing
 entry point. A parse returns exactly the `Document` this table describes. The
 document does not retain source text, a normalized source copy, a line index,
-tokens, trivia, or recovery records. `ParseOptions` is immutable and contains
-exactly these booleans:
+tokens, trivia, or recovery records. `ParseOptions` is immutable and today
+contains exactly these booleans:
 
-| Field | Default |
-| --- | --- |
-| `smartPunctuation` | `true` |
-| `footnotes` | `true` |
-| `stripHTMLComments` | `true` |
-| `tables` | `true` |
-| `strikethrough` | `true` |
-| `autolinks` | `true` |
-| `taskLists` | `true` |
-| `formulas` | `true` |
-| `directives` | `true` |
+| Field | Default | Status |
+| --- | --- | --- |
+| `smartPunctuation` | `true` | active |
+| `footnotes` | `true` | active |
+| `stripHTMLComments` | `true` | active until `M0` removes it |
+| `tables` | `true` | active |
+| `strikethrough` | `true` | active |
+| `autolinks` | `true` | active |
+| `taskLists` | `true` | active |
+| `formulas` | `true` | active |
+| `directives` | `true` | active |
+
+This table is the registry of record. `Status` is `active` for an option the
+implementation recognizes; every other option of the dialect is allocated by
+name in the feature table of [`dialect.md`](dialect.md), enters this table as
+`active` in the item that lands it, and defaults to `false`. Binding, C, CLI,
+and fixture spellings follow the dialect index. The effect of each option is
+stated by its dialect module: an option that is off leaves the inherited
+grammar byte for byte, `smartPunctuation` is defined by
+[`dialect/base.md`](dialect/base.md), and `stripHTMLComments` is removed by
+`M0` because a comment is a `Comment` node that nothing strips.
 
 Disabling an extension disables recognition of its syntax and produces the
 same fallback core AST on every platform. `formulas` is the whole gate for
@@ -207,7 +249,7 @@ every formula delimiter: `$`, `$$`, `` $`...`$ ``, `\(...\)` and `\[...\]`
 are one extension's syntax and turn on together. Scope tracking is mandatory
 and is not an option.
 Renderer-only `unsafe`, `github-pre-lang`, and `full-info-string` options do
-not exist. Raw HTML, URLs, and full code info strings are always retained.
+not exist. Raw HTML, URLs, and code info strings are always retained.
 
 ## Visitor and walking
 
@@ -232,6 +274,10 @@ are visited in canonical field order and arrays retain their stored order:
 `DirectiveBlock.content`. A directive label therefore participates in a
 complete AST walk as the named `label` field without becoming directive
 content or contributing to a `children` collection.
+
+Once `M4` adds them, the scoped values `Citation` and `Footnote` receive value
+callbacks and the walk descends into their markup arrays in declared field
+order; unscoped values receive no callback and are not descended into.
 
 The walking visitor is exhaustive under the same rule as `Visitor`: every
 node-kind callback is required and there is no default, optional handler,

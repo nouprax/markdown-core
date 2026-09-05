@@ -44,42 +44,41 @@ fi
 
 target_specs_missing=0
 for target_spec in \
-    docs/specs/inserted-text.md \
-    docs/specs/anchors.md \
-    docs/specs/destinations.md \
-    docs/specs/metadata.md \
-    docs/specs/attributes.md \
-    docs/specs/citation-model.md \
-    docs/specs/remark.md \
-    docs/specs/remark/attributes.md \
+    docs/specs/dialect.md \
+    docs/specs/dialect/anchors.md \
+    docs/specs/dialect/attributes.md \
+    docs/specs/dialect/base.md \
+    docs/specs/dialect/block-identifiers.md \
+    docs/specs/dialect/bracketed-spans.md \
+    docs/specs/dialect/callouts.md \
+    docs/specs/dialect/citations.md \
+    docs/specs/dialect/comments.md \
+    docs/specs/dialect/conflicts.md \
+    docs/specs/dialect/cross-links.md \
+    docs/specs/dialect/definition-lists.md \
+    docs/specs/dialect/directives.md \
+    docs/specs/dialect/fenced-divs.md \
+    docs/specs/dialect/footnotes.md \
+    docs/specs/dialect/formulas.md \
+    docs/specs/dialect/inserted-text.md \
+    docs/specs/dialect/links-and-images.md \
+    docs/specs/dialect/lists.md \
+    docs/specs/dialect/marks.md \
+    docs/specs/dialect/properties.md \
+    docs/specs/dialect/strikethrough.md \
+    docs/specs/dialect/superscript-and-subscript.md \
+    docs/specs/dialect/tables.md \
+    docs/specs/dialect/task-lists.md \
+    docs/plans/2026-09-02-obsidian-flavored-markdown.md \
     docs/plans/2026-09-03-pandoc-markdown-extensions.md \
-    docs/specs/pandoc.md \
-    docs/specs/pandoc/attributes.md \
-    docs/specs/pandoc/citations.md \
-    docs/specs/pandoc/bracketed-spans.md \
-    docs/specs/pandoc/superscript-and-subscript.md \
-    docs/specs/pandoc/headings-and-anchors.md \
-    docs/specs/pandoc/tables.md \
-    docs/specs/pandoc/lists.md \
-    docs/specs/pandoc/definition-lists.md \
-    docs/specs/pandoc/fenced-divs.md \
-    docs/specs/obsidian-flavored-markdown.md \
-    docs/specs/obsidian/properties.md \
-    docs/specs/obsidian/wikilinks-and-embeds.md \
-    docs/specs/obsidian/block-identifiers.md \
-    docs/specs/obsidian/footnotes.md \
-    docs/specs/obsidian/comments.md \
-    docs/specs/obsidian/highlights.md \
-    docs/specs/obsidian/tasks.md \
-    docs/specs/obsidian/callouts.md \
-    docs/specs/obsidian/inherited-and-integration.md; do
+    docs/plans/2026-09-04-canonical-vnext-landing-plan.md; do
     if [ ! -f "$target_spec" ]; then
-        fail "normative target spec module is missing: $target_spec"
+        fail "normative dialect module or plan is missing: $target_spec"
         target_specs_missing=1
     fi
 done
 if [ "$target_specs_missing" -eq 0 ]; then
-    note "shared, Remark, Pandoc, and modular Obsidian target contracts are present"
+    note "the dialect index, every dialect module, and the implementation plans are present"
 fi
 
 if ! grep -q 'pnpm check:obsidian-parity' .github/workflows/ci.yml; then
