@@ -518,14 +518,15 @@ CLI, and conformance plumbing.
       `O1`.
 - [ ] **O8 — Callout metadata.** Evaluate `[!type]`, the optional `+` or `-`
       fold marker, and the inline title on the first content line of every `>`
-      container inside the existing block algorithm, lowercase the type into
-      `variant`, remove the metadata line from content before body blocks
-      finalize, keep unknown and custom types, leave invalid or misplaced
-      markers as content, and nest through the inherited container recursion.
-      Add a title accessor and its dump form, fixtures for the module's table
-      plus formatted titles, every built-in alias, nested combinations, lazy
-      continuation, scopes, allocation failure, and adversarial depth, and
-      canonical cases for `callout.variant.value`, `callout.fold.expanded`,
+      container inside the existing block algorithm, store the type as written
+      in `variant` with matching left to consumers (audit decision D-7), remove
+      the metadata line from content before body blocks finalize, keep unknown
+      and custom types, leave invalid or misplaced markers as content, and nest
+      through the inherited container recursion. Add a title accessor and its
+      dump form, fixtures for the module's table plus formatted titles, every
+      built-in alias, nested combinations, lazy continuation, scopes, allocation
+      failure, and adversarial depth, and canonical cases for
+      `callout.variant.value`, `callout.fold.expanded`,
       `callout.fold.collapsed`, and `callout.title.populated`. An identifier
       attached to a metadata-bearing callout is a cross-item case owned by
       whichever of `O8` and `O7` merges later. Requires `O1`, `O2`.
@@ -654,9 +655,12 @@ CLI, and conformance plumbing.
       rejection, `\ ` to a no-break space, empty bodies, `^[` and `~~`
       precedence, and independent option gates. Add both kinds, fixtures, and
       canonical cases; remove the `superscript-and-subscript` and
-      `empty-superscript-and-subscript` gaps. The `^[` precedence case is a
-      cross-item case owned by whichever of `P6` and `O4` merges later. Requires
-      `P0`, `M7`.
+      `empty-superscript-and-subscript` gaps. Remove the legacy
+      double-tilde-only strikethrough mode with it: the CLI flag, the C option
+      bit, and the parser branch, so a single tilde is a subscript delimiter
+      when `subscript` is on and inherited strikethrough otherwise (audit
+      decision D-8). The `^[` precedence case is a cross-item case owned by
+      whichever of `P6` and `O4` merges later. Requires `P0`, `M7`.
 - [ ] **P7 — `citations`.** Recognize bare and braced keys, bracketed groups
       with semicolon items and prefix, mode marker, key, and suffix scopes,
       author-in-text keys with an optional bracketed tail, `-@` for
@@ -665,12 +669,13 @@ CLI, and conformance plumbing.
       to that link; one followed by an attribute container belongs to the outer
       `Span` only while `bracketedSpans` is enabled, and with `citations` alone
       the candidate remains a bracketed `Cite` and the container stays inherited
-      text; a complete cite beats shortcut-reference lookup; and a label
-      collected by an example list beats the same `@key` regardless of order.
-      This is the first producer of `CitationReferent.bib`. The
-      `reset-citation-positions` class is documented here, and its heading
-      fixture is an ordinary `header_attributes` case in `P2b`. Remove the
-      `bibliography-citations` gap. Requires `P5`, `P9b`.
+      text; a complete cite beats shortcut-reference lookup; and only the
+      `(@label)` spelling resolves against example labels, so a bare or
+      bracketed `@key` stays a citation (audit decision D-9). This is the first
+      producer of `CitationReferent.bib`. The `reset-citation-positions` class
+      is documented here, and its heading fixture is an ordinary
+      `header_attributes` case in `P2b`. Remove the `bibliography-citations`
+      gap. Requires `P5`, `P9b`.
 - [ ] **P8 — `fenced_divs`.** Open a `Div` on a line of three or more colons
       followed by a braced list or one unbraced class word, close the innermost
       open `Div` on any attribute-free colon line, nest through the normal
@@ -685,9 +690,11 @@ CLI, and conformance plumbing.
       operation for decimal, alphabetic, Roman, and `#` markers with period,
       one-paren, and two-paren delimiters, the capital-period two-space rule,
       `i` and `I` disambiguation, same-style continuation, a new list on a style
-      or delimiter change, and the nested-start restriction; `startnum` stores
-      the first marker's value and otherwise `start=1`. Remove the
-      `fancy-list-and-startnum` gap. Requires `P0`, `M7`.
+      or delimiter change, and the nested-start restriction; `startnum` governs
+      only alphabetic and Roman markers, storing their first value when on and
+      `start=1` when off, while decimal markers always store the inherited value
+      (audit decision D-3). Remove the `fancy-list-and-startnum` gap. Requires
+      `P0`, `M7`.
 - [ ] **P9b — `example_lists`.** Add `(@)`, `(@label)`, `(N@)`, and `(N@label)`
       markers with `style=example`, a document-wide counter and label map as
       parser state, `ListItem.exampleLabel`, the `ExampleReference(label)` kind

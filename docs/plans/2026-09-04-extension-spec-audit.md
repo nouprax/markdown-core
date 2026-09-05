@@ -264,9 +264,11 @@ A transitional finding names the landing-plan item that resolves it.
   missing invariants to the JSON.
 - **CA-2** `:36` — A — "MS-private syntax" is undefined. Rule: delete the
   phrase.
-- **CA-3** `:45-47` — B — invalid UTF-8 has no specified output; "no validation
-  or repair" means undefined behavior for the C entry point (every binding
-  already guarantees valid UTF-8). Decision D-5.
+- **CA-3** `:45-47` — B — invalid UTF-8 has no specified output at the C entry
+  point, and the text does not say that this is deliberate. Rule (decision D-5):
+  state that valid UTF-8 is a caller precondition, that the C entry point's
+  output for invalid input is unspecified, and that every binding guarantees
+  valid UTF-8 before calling it.
 - **CA-4** `:50-54` (also `canonical-ast-dump.md:69-70`, `metadata.md:181-182`)
   — E — scopes "inherit the native C parser's ... semantics exactly", but no
   written coordinate contract exists; base, unit, inclusivity, tabs, CRLF, the
@@ -1652,10 +1654,13 @@ assumes.
   `Markup` kinds; `Metadata` and `MetadataRecord` are scoped values outside
   `Markup` with no callbacks; `TableColumn`, `Destination`, `CitationReferent`,
   and `Attributes` are unscoped values.
-- **D-5 Invalid UTF-8 at the C entry point.** Recommended: the facade returns
-  the invalid-input error and no document, which is one linear scan; the
-  alternative documents the output as unspecified, which the bindings never
-  reach because they always pass valid UTF-8.
+- **D-5 Invalid UTF-8 at the C entry point.** Recommended: keep the caller
+  precondition that #191 established and add no validation pass;
+  `canonical-ast.md` states that the C entry point's output for invalid UTF-8 is
+  unspecified and that every binding guarantees valid UTF-8 before calling it,
+  so no implementation item is needed. The alternative, a validation scan
+  returning an invalid-input error, would be new engine work needing its own
+  landing item.
 - **D-6 Pipe-table rows with too few or too many cells.** Recommended: state
   whatever the engine does today as the rule and register the difference from
   cmark-gfm; if it pads, a padded cell's scope is the empty range at the row's
