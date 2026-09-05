@@ -470,8 +470,9 @@ CLI, and conformance plumbing.
       `O1`.
 - [ ] **O4 — Inline footnotes.** Recognize `^[content]` inside the shared
       bracket algorithm, ahead of superscript, producing one one-item `Cite`
-      with a `footnote` referent and one document-owned `Footnote` whose body is
-      normalized to a paragraph; assign `inline-N` IDs after every authored ID,
+      with a `footnote` referent and one document-owned `Footnote` whose content
+      is the parsed inline body stored directly, with no synthesized `Paragraph`
+      (audit finding OF-4); assign `inline-N` IDs after every authored ID,
       de-collide with `-K`, and merge referenced and inline values in source
       order inside the one document footnote operation. The oracle is silent
       here, so product fixtures own escaped brackets, empty and unclosed forms,
@@ -677,11 +678,14 @@ CLI, and conformance plumbing.
       `header_attributes` case in `P2b`. Remove the `bibliography-citations`
       gap. Requires `P5`, `P9b`.
 - [ ] **P8 — `fenced_divs`.** Open a `Div` on a line of three or more colons
-      followed by a braced list or one unbraced class word, close the innermost
-      open `Div` on any attribute-free colon line, nest through the normal
-      container stack, and record `closed=false` when the document ends first.
-      Add the kind, fixtures, and a canonical case; remove the
-      `fenced-divs-nested` gap. A definition body ending at an enclosing
+      followed, after `{` or whitespace, by a braced list or one unbraced class
+      word, so a colon run followed immediately by a directive name stays a
+      container directive; close the innermost open colon container, `Div` or
+      directive, on any bare colon line through the one container-stack close
+      operation both constructs share, with the combined case covered; nest
+      through the normal container stack, and record `closed=false` when the
+      document ends first. Add the kind, fixtures, and a canonical case; remove
+      the `fenced-divs-nested` gap. A definition body ending at an enclosing
       fenced-div close is a cross-item case owned by whichever of `P8` and `P10`
       merges later. An explicit ID from this syntax reserved before heading
       synthesis is a cross-item case owned by whichever of `P8` and `P3` merges
@@ -699,9 +703,10 @@ CLI, and conformance plumbing.
       markers with `style=example`, a document-wide counter and label map as
       parser state, `ListItem.exampleLabel`, the `ExampleReference(label)` kind
       for later `(@label)` occurrences, the repeated-label and reset rules,
-      four-space continuations, and counter overflow as a parse error. Fixtures
-      and a canonical case; remove the `example-lists-and-reference` gap.
-      Requires `P9a`.
+      four-space continuations, and `N` limited to nine digits so no counter can
+      overflow, a longer digit run being ordinary text (audit finding PL-14).
+      Fixtures and a canonical case; remove the `example-lists-and-reference`
+      gap. Requires `P9a`.
 - [ ] **P10 — `definition_lists`.** Recognize a one-line term, an optional
       single blank line, and a first marker line by bounded non-consuming
       lookahead before paragraph fallback; feed each body's lines to the
@@ -714,15 +719,17 @@ CLI, and conformance plumbing.
       lookahead with `P11a` and again for each later table form with `P11b`,
       `P11c`, and `P11d`, and a body ending at an enclosing fenced-div close
       with `P8`. Requires `P0`, `M7`.
-- [ ] **P11a — `table_captions`.** Claim a `Table:`, `table:`, or `:` paragraph
-      immediately before or after a supported table for the nearest complete
-      eligible table, preceding first, strip the marker into
-      `TableCaption.content`, extend `Table.scope` over both, and leave the
-      paragraph alone with the option off. Add `Table.caption: TableCaption?`
-      and the `TableCaption` kind together on every surface, fixtures for
-      before, after, both, multiline, and empty captions, and canonical cases
-      for `table.caption.null` and `table.caption.populated`. Requires `P0`,
-      `M7`.
+- [ ] **P11a — `table_captions`.** Recognize a `Table:`, `table:`, or `:`
+      caption line as a table-candidate block start parsed in one lookahead with
+      the table that follows it, releasing the bytes to paragraph parsing when
+      no table follows, and claim a caption paragraph after a table, a caption
+      between two tables belonging to the preceding one (audit seam S-5); strip
+      the marker into `TableCaption.content`, extend `Table.scope` over both,
+      and leave the paragraph alone with the option off. Add `Table.caption:
+      TableCaption?` and the `TableCaption` kind together on every surface,
+      fixtures for before, after, both, multiline, and empty captions, and
+      canonical cases for `table.caption.null` and `table.caption.populated`.
+      Requires `P0`, `M7`.
 - [ ] **P11b — `simple_tables`.** Establish column ranges from the dash
       separator line, derive alignment from header placement, accept the
       headerless closing-separator form, end at a blank line or closing
