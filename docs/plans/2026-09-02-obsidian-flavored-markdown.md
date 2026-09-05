@@ -1,48 +1,49 @@
 # Obsidian Flavored Markdown implementation plan
 
-Status: proposed. This plan implements the target contract in
-[`docs/specs/obsidian-flavored-markdown.md`](../specs/obsidian-flavored-markdown.md)
-as a new canonical AST baseline, without compatibility aliases for replaced
-kinds or fields.
+Status: proposed. This plan implements the Obsidian-derived modules of the
+[Markdown Core dialect](../specs/dialect.md) as a new canonical AST baseline,
+without compatibility aliases for replaced kinds or fields.
+
+The cross-plan landing order that turns these phases into individually
+mergeable pull requests is
+[`docs/plans/2026-09-04-canonical-vnext-landing-plan.md`](2026-09-04-canonical-vnext-landing-plan.md).
 
 ## Outcome
 
-Add one coherent Obsidian profile to the C parser and all three bindings. The
-profile reuses the current CommonMark/GFM block and inline algorithms, adds the
-documented OFM syntax as composable extensions, exposes every new semantic fact
-through the immutable canonical AST, and keeps vault resolution and rendering
-out of the parser. Every `>` container becomes `Callout`; a plain quoted block
-has `variant=null`, `title=null`, and `fold=none`, while `[!type]` populates
-that same node model.
-Every successful reference link or image is resolved before the public AST is
-finalized and is indistinguishable from its direct counterpart; source
-definitions and reference forms remain parser-internal.
-One valid beginning-of-file Properties block populates optional
+Add the Obsidian syntax extensions to the C parser and all three bindings, one
+parse option per module. They reuse the current CommonMark/GFM block and inline
+algorithms, add the documented OFM syntax as composable extensions, expose every
+new semantic fact through the immutable canonical AST, and keep vault resolution
+and rendering out of the parser. Every `>` container becomes `Callout`; a plain
+quoted block has `variant=null`, `title=null`, and `fold=none`, while `[!type]`
+populates that same node model. Every successful reference link or image is
+resolved before the public AST is finalized and is indistinguishable from its
+direct counterpart; source definitions and reference forms remain
+parser-internal. One valid beginning-of-file Properties block populates optional
 `Document.metadata` as ordered, out-of-band records. Property names remain an
 open string domain; vault conventions such as `aliases` do not become parser
 keywords or link-resolution results.
 
-The profile is an extension preset, not a full Obsidian parser dialect. It
-preserves inherited cmark/CommonMark behavior, including Markdown recognition
-between paired inline HTML tags, and adds no HTML element-region suppression.
-Block identifiers populate the same universal `Markup.anchor` string used by
-other profiles; they do not introduce a block-specific target type.
-Outgoing references use the shared tagged `Destination`: ordinary Markdown
-`Link` and `Image` values own `Destination.url`, while `CrossLink` values own
-the `Destination.cross(path, anchor)` branch. Heading and block source
-spellings populate the same optional anchor field and introduce no
-discriminator. No destination populates the declaration-side anchor on its
-owning reference node.
+The modules are independent extensions, each behind its own option, not a preset
+and not a full Obsidian parser dialect. They preserve inherited cmark/CommonMark
+behavior, including Markdown recognition between paired inline HTML tags, and
+add no HTML element-region suppression. Block identifiers populate the same
+universal `Markup.anchor` string used by other extensions; they do not introduce
+a block-specific target type. Outgoing references use the shared tagged
+`Destination`: ordinary Markdown `Link` and `Image` values own
+`Destination.url`, while `CrossLink` values own the `Destination.cross(path,
+anchor)` branch. Heading and block source spellings populate the same optional
+anchor field and introduce no discriminator. No destination populates the
+declaration-side anchor on its owning reference node.
 
-The normative work items are the module specs linked from the
-[OFM contract index](../specs/obsidian-flavored-markdown.md): Properties,
-wikilinks/embeds, block identifiers, footnotes, comments, highlights, tasks,
-callouts, and inherited/integration behavior. A phase is incomplete if its
-module's grammar, AST invariants, fallback, scopes, or required conformance
-cases are unmet.
-The shared [`Cite`, `Citation`, and `CitationReferent`
-contract](../specs/citation-model.md) owns their reusable semantics; this plan does
-not enable Pandoc `@key` syntax in the Obsidian profile.
+The normative work items are the dialect modules linked from the [dialect
+index](../specs/dialect.md): properties, cross links, block identifiers,
+footnotes, comments, marks, task lists, callouts, and the links-and-images and
+tables rules they extend. A phase is incomplete if its module's grammar, AST
+invariants, fallback, scopes, or required conformance cases are unmet. The
+shared [`Cite`, `Citation`, and `CitationReferent`
+model](../specs/dialect/footnotes.md) owns their reusable semantics; this plan
+does not enable Pandoc `@key` syntax through any Obsidian option.
 
 - [ ] **Plan exit criterion:** the in-scope official extension examples, negative
       boundaries, cross-extension interactions, oracle comparison, allocation
@@ -89,13 +90,17 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       Keep source compatibility only through a derived language convenience
       property when that does not duplicate wire state. Treat the public shape
       change as a major-version change rather than preserving two authorities.
-- [ ] Allocate stable C kind/field identifiers once, then update the native AST,
-      C read-only facade, wire format, Swift/Kotlin/ES values, exhaustive visitors,
-      walkers, dumpers, and AST projection audit atomically.
-- [ ] Add an `obsidian` preset in each binding and a CLI `--profile obsidian`.
-      Keep existing profile grammar and option composition stable, but make the
-      canonical `BlockQuote` to `Callout` rename universal. Add only the option
-      bits needed to compose the preset; do not add a second parser.
+- [ ] Add each C kind and field identifier with the item that first produces it,
+      then update the native AST, C read-only facade, wire format,
+      Swift/Kotlin/ES values, exhaustive visitors, walkers, dumpers, and AST
+      projection audit atomically. While 3.0.0 is unreleased, identifiers, wire
+      layouts, and manifest order may be renumbered by any later item; nothing
+      is reserved in advance.
+- [ ] Add one parse option per module to the registry, the CLI, and each
+      binding; there is no preset and no CLI `--profile obsidian`. Keep the
+      inherited grammar stable, but make the canonical `BlockQuote` to `Callout`
+      rename universal. Add only the option bit each module needs; do not add a
+      second parser.
 
 - [ ] **Exit criterion:** all public surfaces compile with exhaustive handling, the
       canonical schema audit proves kind/field parity, and fixtures can express every
@@ -114,17 +119,18 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       one complete `Destination.cross`. Heading and block punctuation must not
       survive as a consumer discriminator. Do not rescan the completed literal
       in a binding or renderer.
-- [ ] Make comments opaque during scanning. Support retained `Comment` nodes and
-      parser-level stripping from the same recognized construct so stripping
-      cannot change where other delimiters bind.
+- [ ] Make comments opaque during scanning and emit the same `Comment` node an
+      HTML comment produces; nothing is stripped, so nothing can change where
+      other delimiters bind.
 - [ ] Parse highlight children through the normal inline engine, with source
-      ownership by code, comments, and HTML tokens taking precedence. Paired inline
-      HTML tags do not create a suppressing region. The inline footnote scanner
-      creates one one-item `Cite` containing a `Citation` whose referent is
-      `CitationReferent.footnote(id)` and whose prefix and suffix are empty, plus
-      one document-owned `Footnote`; it normalizes the inline body to a paragraph
-      and obtains the ID from the same parser-owned footnote collection used by
-      inherited referenced footnotes.
+      ownership by code, comments, and HTML tokens taking precedence. Paired
+      inline HTML tags do not create a suppressing region. The inline footnote
+      scanner creates one one-item `Cite` containing a `Citation` whose referent
+      is `CitationReferent.footnote(id)` and whose prefix and suffix are empty,
+      plus one document-owned `Footnote`; it stores the parsed inline body
+      directly in `Footnote.content` with no synthesized `Paragraph` and obtains
+      the ID from the same parser-owned footnote collection used by inherited
+      referenced footnotes.
 - [ ] Resolve inherited `[^label]` calls through the same operation, so repeated
       calls share one `Footnote` without body duplication. Merge referenced and
       inline values in source order and assign their deterministic document-local
@@ -163,10 +169,10 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       content; it does not record an Obsidian or block discriminator.
 - [ ] Construct `Callout` for every `>` container through the existing block
       algorithm. Default `variant` and `title` to null and `fold` to `none`.
-- [ ] When the first content line has a valid marker, normalize its source type
-      identifier into `variant`, populate fold state and title before ordinary body
-      blocks are finalized, and remove the marker line from content. Do not
-      mutate/repair a finished tree in a post-pass.
+- [ ] When the first content line has a valid marker, store its source type
+      identifier as written in `variant`, populate fold state and title before
+      ordinary body blocks are finalized, and remove the marker line from
+      content. Do not mutate/repair a finished tree in a post-pass.
 - [ ] Use the same container recursion for nested callouts. Unknown/custom types
       remain metadata-bearing callouts; alias-to-style mapping stays outside the
       parser.
@@ -189,14 +195,15 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
 - [ ] Generalize the existing task-list scanner from `[ xX]` to one Unicode code
       point. Store the marker, derive completion, and retain the existing rule that
       only the item prefix is inspected.
-- [ ] Parse external image `W`, `alt|W`, and `alt|W x H` suffixes in the shared
-      image construction path. Keep wikilink label parameters raw until vault
-      resolution establishes the embedded file kind.
+- [ ] Parse external image `W`, `WxH`, `alt|W`, and `alt|WxH` suffixes,
+      lowercase `x` with no surrounding spaces, in the shared image construction
+      path. Keep wikilink label parameters raw until vault resolution
+      establishes the embedded file kind.
 - [ ] Move wiki alias-pipe awareness into the shared table/inline boundary so
       `[[target\|label]]` and `![[image\|100]]` stay inside one cell. Do not add a
       table-only wikilink parser.
-- [ ] Preserve current GFM semantics for ordinary tables and task items under the
-      existing profiles.
+- [ ] Preserve current GFM semantics for ordinary tables and task items while
+      every Obsidian option is off.
 
 - [ ] **Exit criterion:** task markers round-trip through every public AST, two-hyphen
       tables retain current behavior, escaped wiki pipes never create extra cells,
@@ -220,7 +227,7 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       universal reference-link/image normalization. Those authorities continue to
       own recognition, precedence, and fallback, but their source-shaped
       definition/reference nodes do not override the consumer AST contract.
-- [x] Extend the Obsidian parity gate with the exact profile-owned envelope
+- [x] Extend the Obsidian parity gate with the exact module-owned envelope
       scanner and exact-pinned `yaml@2.9.0` Document/node parsing with CST source
       tokens. Project mapping pairs without a JavaScript object intermediary so
       empty/comment-only documents, key shape, decoded-name uniqueness, source
@@ -244,14 +251,14 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
 ## Delivery sequence
 
 The durable review sequence is model, inline engine, block ownership, existing
-extension integration, and evidence. Each change must leave all existing
-profiles green. No phase may ship the `obsidian` preset publicly until its AST
-exists on every platform and the full target fixture is enabled; before that
-point the preset remains internal test plumbing.
+extension integration, and evidence. Each change must leave every existing
+option set green. No phase may publish a module's option until its AST exists on
+every platform and the module's target fixture is enabled; before that point the
+option remains internal test plumbing.
 
 - [ ] Publish release notes listing the documented OFM subset, parser-only
       boundary, `Document.metadata` addition, reference-link/image normalization,
       the `BlockQuote` to `Callout`, source-shaped footnote to
       `Cite`/`Citation`/`CitationReferent`/`Footnote`, and `checked` to `marker`
-      migrations, the unchanged legacy-profile source grammar, and the exact
+      migrations, the unchanged inherited source grammar, and the exact
       official help snapshot used for conformance.

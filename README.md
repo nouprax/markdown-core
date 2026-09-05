@@ -150,26 +150,16 @@ freed only after all access to it has finished. The complete C contract is in
 - `packages/kotlin-markdown-core`: Kotlin binding, platform runtimes, tests, and consumer fixtures.
 - `packages/es-markdown-core`: ECMAScript/TypeScript package and WebAssembly runtime.
 - `specs/canonical-ast`: shared, platform-independent AST conformance fixtures.
-- `docs/specs/inserted-text.md`: optional `markdown-it-ins`-compatible
-  `++inserted text++` syntax and semantic `Insert` node.
-- `docs/specs/anchors.md`: the universal source-independent `Markup.anchor`
-  field and its population, precedence, scope, and resolution boundaries.
-- `docs/specs/destinations.md`: the shared tagged `Destination` value used by
-  ordinary `Link`/`Image` URLs and `CrossLink` path/anchor addresses.
-- `docs/specs/metadata.md`: the document-owned, out-of-band metadata consumer
-  model populated by Obsidian Properties without a key whitelist.
-- `docs/specs/attributes.md`: the universal `Markup.attributes` field, shared
-  attribute-list grammar, value model, normalization, and merge operation.
-- `docs/specs/remark.md`: Remark-family extension index; directive attribute
-  attachment is defined under `docs/specs/remark/`.
-- `docs/specs/citation-model.md`: shared
-  `Cite`/`Citation`/`CitationReferent` consumer semantics.
-- `docs/specs/pandoc.md`: Pandoc extension contract index;
-  `docs/specs/pandoc/` contains the normative feature modules, including
-  Pandoc attribute attachment and bibliography citations.
-- `docs/specs/obsidian-flavored-markdown.md`: OFM contract index, authority,
-  profile rules, and current support audit; `docs/specs/obsidian/` contains the
-  normative feature modules.
+- `docs/specs/dialect.md`: the Markdown Core dialect index: the feature set,
+  one parse option per feature, the locked executable oracle of each feature,
+  the cross-feature recognition order, opacity, failure, and limit rules.
+- `docs/specs/dialect/`: one normative module per feature (base language,
+  formulas, directives, attributes, anchors, links and images, cross links,
+  footnotes, citations, comments, marks, strikethrough, superscript and
+  subscript, inserted text, bracketed spans, task lists, lists, definition
+  lists, callouts, fenced divs, block identifiers, properties, tables), plus
+  `conflicts.md`, the register of source-versus-source collisions, settled
+  decisions, and deliberate exclusions.
 - `samples`: sample consumers and integration examples.
 - `scripts`: repository build, formatting, lint, audit, and consumer-check entry points.
 

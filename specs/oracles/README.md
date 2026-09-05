@@ -11,7 +11,8 @@ the reviewed policy that defines each comparison:
   reference semantics.
 - `obsidian/` pins the most-used current npm Obsidian parser for the documented
   wikilink/embed, highlight, comment, and custom-task intersection it actually
-  implements. Official Obsidian Help remains the language authority.
+  implements. The official Obsidian Help is the source of its feature
+  definitions; the dialect modules under `docs/specs/dialect/` are the rule.
 - `pandoc/` pins the official Pandoc 3.11 manual, reader sources, release CLI,
   and per-platform artifact digests for the explicitly selected Pandoc
   extension layer, including the shared attribute grammar and consumer model.

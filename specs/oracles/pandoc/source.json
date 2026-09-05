@@ -81,9 +81,9 @@
         ]
     },
     "profileBoundary": {
-        "claim": "Pandoc 3.11 owns only the explicitly enabled extension layer, including the one shared attribute grammar and consumer projection. cmark and cmark-gfm remain authoritative for inherited CommonMark and GFM behavior.",
+        "claim": "Pandoc 3.11 is the source and evidence only for the explicitly enabled Pandoc-derived features of the dialect, including the one shared attribute grammar and consumer projection; docs/specs/dialect.md and its modules state the rules, and cmark and cmark-gfm are the oracles for inherited CommonMark and GFM behavior.",
         "attributeContract": {
-            "authority": "Pandoc 3.11 MANUAL.txt, Markdown.hs, Shared.hs combineAttr, and native JSON Attr values at the pinned tag commit",
+            "authority": "Pandoc 3.11 MANUAL.txt, Markdown.hs, Shared.hs combineAttr, and native JSON Attr values at the pinned tag commit, as the source and evidence for docs/specs/dialect/attributes.md",
             "scope": "Every braced attribute container at Remark and Pandoc attachment sites.",
             "consumerProjection": "Pandoc Attr identifier projects to the owner's universal anchor, classes to Attributes.classes, and ordered key/value pairs to Attributes.records of Record values; an empty identifier projects to anchor null.",
             "remarkBoundary": "remark-directive owns directive envelope and attachment syntax, but its different attribute member tokenizer is deliberately not a second grammar."
@@ -94,23 +94,23 @@
             "citations": ["citations"],
             "definition_lists": ["definition_lists"],
             "example_lists": ["fancy_lists", "example_lists"],
-            "fancy_lists": ["fancy_lists"],
+            "fancy_lists": ["fancy_lists", "startnum"],
             "fenced_code_attributes": ["fenced_code_blocks", "backtick_code_blocks", "fenced_code_attributes"],
             "fenced_divs": ["fenced_divs"],
             "grid_tables": ["grid_tables"],
-            "header_attributes": ["header_attributes"],
-            "implicit_header_references": ["auto_identifiers", "gfm_auto_identifiers", "implicit_header_references"],
+            "heading_attributes": ["header_attributes"],
+            "implicit_heading_references": ["auto_identifiers", "gfm_auto_identifiers", "implicit_header_references"],
             "inline_code_attributes": ["inline_code_attributes"],
             "link_attributes": ["link_attributes"],
             "multiline_tables": ["multiline_tables"],
             "simple_tables": ["simple_tables"],
-            "startnum": ["startnum"],
             "subscript": ["subscript"],
             "superscript": ["superscript"],
             "table_captions": ["table_captions"]
         },
         "notAnIndependentExtension": {
-            "compact_definition_lists": "Compact and loose forms are both source shapes under definition_lists."
+            "compact_definition_lists": "Compact and loose forms are both source shapes under definition_lists.",
+            "startnum": "Markdown Core always honors the first marker's value, so Pandoc's startnum is enabled with fancy_lists and is not an option."
         }
     }
 }

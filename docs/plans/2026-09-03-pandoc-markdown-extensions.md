@@ -1,9 +1,13 @@
 # Pandoc Markdown extensions implementation plan
 
-Status: proposed. This plan implements the independently composable extensions
-in [`docs/specs/pandoc.md`](../specs/pandoc.md) on the canonical parser and all
+Status: proposed. This plan implements the Pandoc-derived modules of the
+[Markdown Core dialect](../specs/dialect.md) on the canonical parser and all
 public bindings. It does not add a monolithic Pandoc dialect and does not retain
 compatibility aliases for any public model that this work replaces.
+
+The cross-plan landing order that turns these phases into individually
+mergeable pull requests is
+[`docs/plans/2026-09-04-canonical-vnext-landing-plan.md`](2026-09-04-canonical-vnext-landing-plan.md).
 
 ## Outcome
 
@@ -18,36 +22,41 @@ needed only for recognition—reference
 definitions, virtual heading references, example counters, attribute
 attachment candidates, and table boundary maps—remains parser-owned.
 
-The normative behavior is divided among the modules linked from the
-[Pandoc extension index](../specs/pandoc.md). This plan owns implementation
-order and proof obligations, not a second copy of their grammars. A phase is
-incomplete if its module's model, recognition, fallback, precedence, scopes,
-option isolation, allocation behavior, or complexity requirements are unmet.
+The normative behavior is divided among the modules linked from the [dialect
+index](../specs/dialect.md). This plan owns implementation order and proof
+obligations, not a second copy of their grammars. A phase is incomplete if its
+module's model, recognition, fallback, precedence, scopes, option isolation,
+allocation behavior, or complexity requirements are unmet.
 
 The inherited language remains the repository's current CommonMark/GFM
-implementation. Pandoc 3.11 is authoritative only for the explicitly selected
-extension layer. The product must not acquire unrelated behavior merely
-because Pandoc enables it in its default `markdown` format.
+implementation. The modules are the sole normative statement of the selected
+extension layer; Pandoc 3.11 is the source of their feature definitions and
+evidence, not an authority over behavior, and where a module is silent behavior
+is undefined until the module is amended, never inherited from Pandoc. The
+product must not acquire unrelated behavior merely because Pandoc enables it in
+its default `markdown` format.
 
-## Frozen authority and executable oracle
+## Frozen source and evidence oracle
 
 The source and runner contract is already frozen in
 [`specs/oracles/pandoc/source.json`](../../specs/oracles/pandoc/source.json):
 
 | Role                          | Frozen choice                                                                                                                      |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Normative prose               | Pandoc 3.11 `MANUAL.txt` at tag commit `b913622e1ff87c69ab8b1a606577122e220925cd`                                                  |
+| Feature definitions           | Pandoc 3.11 `MANUAL.txt` at tag commit `b913622e1ff87c69ab8b1a606577122e220925cd`                                                  |
 | Grammar and registry evidence | `Markdown.hs`, `Shared.hs` attribute merge, and `Extensions.hs` blobs at the same commit                                           |
 | Executable implementation     | Official Pandoc 3.11 release CLI, verified against its per-platform SHA-256 before first use                                       |
 | Observation format            | Pandoc native JSON from `--to=json`, without citeproc, filters, templates, defaults files, or bibliography lookup                  |
 | Reader isolation              | `markdown_strict` plus the exact extension set declared by each input-only corpus case; the default `markdown` bundle is forbidden |
 
-The User's Guide owns accepted source syntax. CLI JSON is the executable
-oracle for recognition, fallback, grouping, ordering, and Pandoc's semantic
-facts after a reviewed projection into the target model. Neither raw Pandoc
-constructor names nor its early rendering choices override Markdown Core's
-consumer contract. Current cmark and cmark-gfm continue to own inherited
-syntax and precedence where no selected Pandoc extension participates.
+The User's Guide is the source of the accepted source syntax that the modules
+define. CLI JSON is the evidence corpus for recognition, fallback, grouping,
+ordering, and Pandoc's semantic facts after a reviewed projection into the
+target model; where a module and the corpus differ, the module rule stands and
+the difference is a registered delta. Neither raw Pandoc constructor names nor
+its early rendering choices override Markdown Core's consumer contract. Current
+cmark and cmark-gfm continue to own inherited syntax and precedence where no
+selected Pandoc extension participates.
 
 ## Phase 0 — bootstrap the pinned oracle
 
@@ -81,17 +90,17 @@ syntax and precedence where no selected Pandoc extension participates.
 ## Phase 1 — freeze the public consumer model
 
 - [ ] Add the shared `Destination` enum defined by
-      [`docs/specs/destinations.md`](../specs/destinations.md) to every public
-      surface. Replace `Link.destination: String` and `Image.source: String`
-      with `dest: Destination` on both nodes, require the `url` branch for
-      ordinary links and images, and coordinate the same canonical change with
-      Obsidian's `cross` branch and optional anchor; do not retain either old
-      string as parallel compatibility state.
+      [`docs/specs/dialect/links-and-images.md`](../specs/dialect/links-and-images.md)
+      to every public surface. Replace `Link.destination: String` and
+      `Image.source: String` with `dest: Destination` on both nodes, require the
+      `url` branch for ordinary links and images, and coordinate the same
+      canonical change with Obsidian's `cross` branch and optional anchor; do
+      not retain either old string as parallel compatibility state.
 - [ ] Add the universal nullable `anchor` field defined by
-      [`docs/specs/anchors.md`](../specs/anchors.md) and the non-null
-      `attributes` field defined by
-      [`docs/specs/attributes.md`](../specs/attributes.md) to every canonical
-      Markup kind and all four public surfaces. `anchor` is one
+      [`docs/specs/dialect/anchors.md`](../specs/dialect/anchors.md) and the
+      non-null `attributes` field defined by
+      [`docs/specs/dialect/attributes.md`](../specs/dialect/attributes.md) to
+      every canonical Markup kind and all four public surfaces. `anchor` is one
       source-independent string; `Attributes` contains ordered classes and
       ordered `Record` values. Kinds without an enabled source rule retain
       `anchor=null` and `Attributes.empty`; do not create node-specific copies.
@@ -103,15 +112,18 @@ syntax and precedence where no selected Pandoc extension participates.
 - [ ] Add the shared bibliography branch to `Cite`, `Citation`, and
       `CitationReferent`. Coordinate the same canonical change with the Obsidian
       footnote migration: Pandoc `@key` creates `CitationReferent.bib`, while
-      footnote syntax creates `CitationReferent.footnote`; neither profile gets a
+      footnote syntax creates `CitationReferent.footnote`; neither source gets a
       parallel citation node.
-- [ ] Allocate C kind/field identifiers once, then update the native tree, C
-      facade, canonical wire schema, dump format, Swift/Kotlin/ES values,
-      exhaustive visitors, walkers, and AST projection audit atomically.
-- [ ] Expose one independent option per public extension named by the index.
-      `auto_anchors` composes the two pinned Pandoc extension rules internally;
-      compact definition syntax remains part of `definition_lists` and receives
-      no invented option.
+- [ ] Add each C kind and field identifier with the item that first produces it,
+      then update the native tree, C facade, canonical wire schema, dump format,
+      Swift/Kotlin/ES values, exhaustive visitors, walkers, and AST projection
+      audit atomically. While 3.0.0 is unreleased, identifiers, wire layouts,
+      and manifest order may be renumbered by any later item; nothing is
+      reserved in advance.
+- [ ] Expose one independent option per public extension named by the dialect
+      index. `autoAnchors` composes the two pinned Pandoc extension rules
+      internally; compact definition syntax remains part of `definitionLists`,
+      and start numbers are always honored, so neither receives an option.
 - [ ] Activate product comparison once those options and target values can be
       represented. Register every initial gap in a fail-closed `deltas.json` with
       both semantic digests and the phase that closes it; add the offline gate to
@@ -125,10 +137,11 @@ syntax and precedence where no selected Pandoc extension participates.
 
 ## Phase 2 — one attribute operation and heading registry
 
-- [ ] Implement the shared attribute scanner and normalization operation once.
-      The pinned Pandoc 3.11 reader supplies its exact source grammar and `Attr`
-      semantics; project its identifier into the owner anchor and its remaining
-      components into classes and records. Remark and Pandoc profile modules
+- [ ] Implement the shared attribute scanner and normalization operation once,
+      to the grammar and semantics that the shared attributes contract states;
+      the pinned Pandoc 3.11 reader is evidence for that contract, never its
+      source of rules. Project the identifier into the owner anchor and the
+      remaining components into classes and records. Remark and Pandoc modules
       contribute attachment sites only. No node owns a private parser or storage
       shape.
 - [ ] Replace the existing directive-only Remark attribute parser and pair-array
@@ -145,7 +158,7 @@ syntax and precedence where no selected Pandoc extension participates.
       Failed suffixes release source transactionally.
 - [ ] Finalize explicit and generated heading anchors in one document registry.
       Use the specified GFM algorithm, reserve every explicit anchor from every
-      enabled profile before synthesis, generate headings in source order,
+      enabled option before synthesis, generate headings in source order,
       resolve generated collisions deterministically, and build virtual
       implicit-reference entries from the same final values.
 - [ ] Audit every existing Link/Image, Heading, Code/CodeBlock, directive, and
@@ -208,9 +221,9 @@ syntax and precedence where no selected Pandoc extension participates.
 - [ ] Implement captions as an attachment candidate claimed by the nearest
       complete eligible table. Do not emit a caption paragraph and later repair
       the AST.
-- [ ] For simple and multiline forms, derive alignment and optional relative
-      widths directly from established column ranges. Normalize inline-only cells
-      to one paragraph without losing their source scopes.
+- [ ] For simple and multiline forms, derive alignment from established column
+      ranges and relative widths for multiline tables only, and store inline
+      cell content directly without normalizing it to a paragraph.
 - [ ] For grid tables, maintain a row-width occupancy array. Store a spanning cell
       once in the row containing its upper-left coordinate; validate every
       occupied coordinate and prevent a span from crossing head/content/foot
@@ -242,7 +255,7 @@ syntax and precedence where no selected Pandoc extension participates.
 
 - [ ] **Exit criterion:** every selected extension is independently composable, all four
       surfaces expose one canonical model, the pinned Pandoc corpus has no
-      unregistered divergence, inherited profiles remain green, and no test or build
+      unregistered divergence, inherited options remain green, and no test or build
       step fetches mutable external state.
 
 ## Delivery sequence
@@ -250,7 +263,7 @@ syntax and precedence where no selected Pandoc extension participates.
 Review and land in the order: oracle bootstrap, canonical model and parity
 skeleton, attribute/heading infrastructure, inline recognition, block/list
 recognition, table recognition, and integration evidence. Each change must
-leave existing profiles green. No Pandoc extension is public until its AST is
+leave every existing option set green. No Pandoc extension is public until its AST is
 available on every binding and its option-off, oracle, and product conformance
 cases pass.
 
