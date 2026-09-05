@@ -230,33 +230,33 @@ opaque to every later class.
 
 ### Inline
 
-| Step | Construct                                                    | Option                                                  | Class                       | Decided by        |
-| ---- | ------------------------------------------------------------ | ------------------------------------------------------- | --------------------------- | ----------------- |
-| A1   | backslash escape                                             | inherited                                               | scanner                     | CommonMark        |
-| A2   | code span                                                    | inherited                                               | scanner, opaque             | CommonMark        |
-| A3   | raw HTML token (an HTML comment is `Comment`), `<autolink>`  | inherited                                               | scanner, opaque token bytes | CommonMark, CA-22 |
-| A4   | formula `$`, `$$`, `` $`...`$ ``, `\(`, `\[`                 | `formulas`                                              | scanner, opaque             | CA-21, S-7        |
-| A5   | inline comment `%%...%%`                                     | `comments`                                              | scanner, opaque             | OC-1, S-7         |
-| A6   | wikilink `[[...]]`, `![[...]]`                               | `crossLinks`                                            | scanner, opaque             | OW-1, OW-4, S-4   |
-| A7   | inline footnote `^[...]`                                     | `inlineFootnotes` and `footnotes`                       | scanner, body parsed        | OF-2, S-1         |
-| A8   | citation key `@key`, `-@key`                                 | `citations`                                             | scanner                     | PC-5, PC-9, PC-12 |
-| A9   | example reference `(@label)`, bare `@label` with `citations` | `exampleLists`; the bare form also requires `citations` | scanner, document-wide      | PL-11, PC-12      |
-| A10  | text directive `:name[...]{...}`                             | `directives`                                            | scanner                     | RM-2              |
-| A11  | GFM bare autolink                                            | `autolinks`                                             | post-pass over `Text` only  | ON-5, PA-7        |
-| A12  | character reference                                          | inherited                                               | scanner                     | CommonMark        |
-| B0   | defined footnote call `[^label]`                             | `footnotes`                                             | bracket close, first        | S-1               |
-| B1   | link and image tails, then `{attrs}`                         | inherited, `linkAttributes`                             | bracket close               | PS-1              |
-| B2   | `[...]{attrs}` span                                          | `bracketedSpans`                                        | bracket close               | PS-1              |
-| B3   | `[@key...; ...]` cite group                                  | `citations`                                             | bracket close               | PS-1, PC-6        |
-| B4   | shortcut reference                                           | inherited                                               | bracket close, last         | PS-1              |
-| C1   | `*`, `_` emphasis and strong                                 | inherited                                               | delimiter stack             | CommonMark        |
-| C2   | `~~` strikethrough                                           | `strikethrough`                                         | delimiter stack             | inherited         |
-| C3   | `~` subscript, or single-tilde strikethrough                 | `subscript`, `strikethrough`                            | delimiter stack             | S-7               |
-| C4   | `^` superscript                                              | `superscript`                                           | delimiter stack             | S-7               |
-| C5   | `==` highlight                                               | `marks`                                                 | delimiter stack             | OH-1              |
-| C6   | `++` insert                                                  | `insertedText`                                          | delimiter stack             | IT-5              |
-| D    | attribute suffix at registry sites                           | per option                                              | immediately after its owner | PA-7              |
-| E    | smart punctuation                                            | `smartPunctuation`                                      | remaining `Text`            | CA-22             |
+| Step | Construct                                                   | Option                            | Class                                                                                                                                                                | Decided by        |
+| ---- | ----------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| A1   | backslash escape                                            | inherited                         | scanner                                                                                                                                                              | CommonMark        |
+| A2   | code span                                                   | inherited                         | scanner, opaque                                                                                                                                                      | CommonMark        |
+| A3   | raw HTML token (an HTML comment is `Comment`), `<autolink>` | inherited                         | scanner, opaque token bytes                                                                                                                                          | CommonMark, CA-22 |
+| A4   | formula `$`, `$$`, `` $`...`$ ``, `\(`, `\[`                | `formulas`                        | scanner, opaque                                                                                                                                                      | CA-21, S-7        |
+| A5   | inline comment `%%...%%`                                    | `comments`                        | scanner, opaque                                                                                                                                                      | OC-1, S-7         |
+| A6   | wikilink `[[...]]`, `![[...]]`                              | `crossLinks`                      | scanner, opaque                                                                                                                                                      | OW-1, OW-4, S-4   |
+| A7   | inline footnote `^[...]`                                    | `inlineFootnotes` and `footnotes` | scanner, body parsed                                                                                                                                                 | OF-2, S-1         |
+| A8   | citation key `@key`, `-@key`                                | `citations`                       | scanner; a bare key with no bracketed tail is one candidate finalized document-wide, `ExampleReference` when `exampleLists` registers its label and `Cite` otherwise | PC-5, PC-9, PC-12 |
+| A9   | example reference `(@label)`                                | `exampleLists`                    | scanner, document-wide; the bare form is A8's candidate                                                                                                              | PL-11, PC-12      |
+| A10  | text directive `:name[...]{...}`                            | `directives`                      | scanner                                                                                                                                                              | RM-2              |
+| A11  | GFM bare autolink                                           | `autolinks`                       | post-pass over `Text` only                                                                                                                                           | ON-5, PA-7        |
+| A12  | character reference                                         | inherited                         | scanner                                                                                                                                                              | CommonMark        |
+| B0   | defined footnote call `[^label]`                            | `footnotes`                       | bracket close, first                                                                                                                                                 | S-1               |
+| B1   | link and image tails, then `{attrs}`                        | inherited, `linkAttributes`       | bracket close                                                                                                                                                        | PS-1              |
+| B2   | `[...]{attrs}` span                                         | `bracketedSpans`                  | bracket close                                                                                                                                                        | PS-1              |
+| B3   | `[@key...; ...]` cite group                                 | `citations`                       | bracket close                                                                                                                                                        | PS-1, PC-6        |
+| B4   | shortcut reference                                          | inherited                         | bracket close, last                                                                                                                                                  | PS-1              |
+| C1   | `*`, `_` emphasis and strong                                | inherited                         | delimiter stack                                                                                                                                                      | CommonMark        |
+| C2   | `~~` strikethrough                                          | `strikethrough`                   | delimiter stack                                                                                                                                                      | inherited         |
+| C3   | `~` subscript, or single-tilde strikethrough                | `subscript`, `strikethrough`      | delimiter stack                                                                                                                                                      | S-7               |
+| C4   | `^` superscript                                             | `superscript`                     | delimiter stack                                                                                                                                                      | S-7               |
+| C5   | `==` highlight                                              | `marks`                           | delimiter stack                                                                                                                                                      | OH-1              |
+| C6   | `++` insert                                                 | `insertedText`                    | delimiter stack                                                                                                                                                      | IT-5              |
+| D    | attribute suffix at registry sites                          | per option                        | immediately after its owner                                                                                                                                          | PA-7              |
+| E    | smart punctuation                                           | `smartPunctuation`                | remaining `Text`                                                                                                                                                     | CA-22             |
 
 ### Block starts
 
@@ -695,10 +695,11 @@ A transitional finding names the landing-plan item that resolves it.
   whitespace; a container opener is at most three spaces, a run of at least
   three colons, name, optional label and container, optional trailing
   whitespace, whose content is block content and which closes at the first later
-  line of at most three spaces consisting of exactly that many colons; an
-  unclosed container ends where its enclosing container ends and yields the same
-  node; any other byte on an opener line makes it paragraph text; no space is
-  allowed between the colons and the name.
+  bare line of at most three spaces and three or more colons, the one closer
+  grammar that a `Div` shares (S-8), closing the innermost open colon container
+  of either kind; an unclosed container ends where its enclosing container ends
+  and yields the same node; any other byte on an opener line makes it paragraph
+  text; no space is allowed between the colons and the name.
 - **RM-3** `remark.md:26-28` — B — no module row for the envelope or for
   `directives` off. Rule: add the row.
 - **RA-1** `remark/attributes.md:20-25,57-62` — T (`M7`) — `{}` versus absent

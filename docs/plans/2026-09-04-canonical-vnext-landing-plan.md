@@ -546,8 +546,10 @@ the `stripHTMLComments` row, since nothing strips comments.
       adjacent, escaped, unmatched, and Markdown-looking bodies, the syntax of
       every already merged extension inside a comment body under the opacity
       rule, an HTML comment beside a `%%` comment, and size-doubling percent
-      runs, and a canonical case; remove the two `comment-*` gaps. Requires
-      `O1`.
+      runs, and a canonical case; remove the two `comment-*` gaps. A callout
+      title that is one `%%` comment, whose `title` is non-null and holds one
+      `Comment`, is a cross-item case owned by whichever of `O3` and `O8` merges
+      later. Requires `O1`.
 - [ ] **O4 — Inline footnotes.** Under `inlineFootnotes`, which requires
       `footnotes`, recognize `^[content]` inside the shared bracket algorithm,
       ahead of superscript, producing one one-item `Cite` with a `footnote`
@@ -616,6 +618,8 @@ the `stripHTMLComments` row, since nothing strips comments.
       `callout.fold.expanded`, `callout.fold.collapsed`, and
       `callout.title.populated`. An identifier attached to a metadata-bearing
       callout is a cross-item case owned by whichever of `O8` and `O7` merges
+      later, and a title that is one `%%` comment, non-null and holding one
+      `Comment`, is a cross-item case owned by whichever of `O8` and `O3` merges
       later. Requires `O1`, `O2`.
 - [ ] **O9 — Image dimensions.** Under `imageDimensions`, parse the complete
       `W`, `WxH`, `alt|W`, and `alt|WxH` alt-label suffixes in the shared image
@@ -623,7 +627,10 @@ the `stripHTMLComments` row, since nothing strips comments.
       content on any malformed suffix, and leave `CrossLink.label` raw; with the
       option off every alt label is inherited alt content byte for byte.
       Fixtures cover every valid and invalid dimension form and formatted alt
-      content. Requires `O1`.
+      content. An image carrying both a typed dimension suffix and a `width` or
+      `height` attribute record, each retained independently (audit finding
+      PA-9), is a cross-item case owned by whichever of `O9` and `P2d` merges
+      later. Requires `O1`.
 - [ ] **O10 — Obsidian evidence closure.** Add the integration fixtures for
       every pairwise opaque-context interaction, OFM and CommonMark constructs
       between paired inline HTML tags, the five-step precedence order, task
@@ -704,8 +711,10 @@ the `stripHTMLComments` row, since nothing strips comments.
       implicit heading reference occurrence with `P4`. Remove the
       `link-and-image-attributes` and `pandoc-reference-attribute-merge` gaps.
       An explicit ID from this syntax reserved before heading synthesis is a
-      cross-item case owned by whichever of `P2d` and `P3` merges later.
-      Requires `P0`, `M7`.
+      cross-item case owned by whichever of `P2d` and `P3` merges later, and an
+      image carrying both a typed dimension suffix and a `width` or `height`
+      attribute record, each retained independently, is a cross-item case owned
+      by whichever of `P2d` and `O9` merges later. Requires `P0`, `M7`.
 - [ ] **P3 — `auto_anchors`.** Build one document anchor registry that reserves
       every explicit anchor from every enabled extension before synthesis, then
       generates GFM anchors in heading order from the per-kind text projection
@@ -936,19 +945,19 @@ Sizes are rough review-effort estimates, not schedules.
 | `M7`   | `M0`–`M6`          | XL   | —                                                                                                                                                                                                       | Obsidian Phase 1 metadata, anchor, dimensions; Pandoc Phase 1 fields; Pandoc Phase 2 attribute operation and directive migration |
 | `O1`   | `X0`, `M7`, `S2`   | M    | `Insert` containing `CrossLink` (`I1`); heading-text projection (`P3`); container after a complete wikilink (`P5`); escaped wikilink pipe in a simple, multiline, or grid cell (`P11b`, `P11c`, `P11d`) | Obsidian Phase 2 wikilinks; Phase 4 escaped table pipes                                                                          |
 | `O2`   | `O1`               | S    | `Insert` containing `Mark` (`I1`); heading-text projection (`P3`)                                                                                                                                       | Obsidian Phase 2 highlights                                                                                                      |
-| `O3`   | `O1`               | M    | —                                                                                                                                                                                                       | Obsidian Phase 2 comments                                                                                                        |
+| `O3`   | `O1`               | M    | callout title that is one comment (`O8`)                                                                                                                                                                | Obsidian Phase 2 comments                                                                                                        |
 | `O4`   | `O1`               | M    | `^[` before superscript (`P6`)                                                                                                                                                                          | Obsidian Phase 2 inline footnotes and resolution                                                                                 |
 | `O5`   | `O1`               | S    | —                                                                                                                                                                                                       | Obsidian Phase 4 task markers                                                                                                    |
 | `O6`   | `O1`               | XL   | —                                                                                                                                                                                                       | Obsidian Phase 3 Properties                                                                                                      |
 | `O7`   | `O1`               | M    | anchor reserved before synthesis (`P3`); identifier on a metadata-bearing callout (`O8`); identifier caret before superscript (`P6`); identifier after a table caption (`P11a`, `P11b`, `P11c`, `P11d`) | Obsidian Phase 3 block identifiers                                                                                               |
-| `O8`   | `O1`, `O2`         | M    | identifier on a metadata-bearing callout (`O7`)                                                                                                                                                         | Obsidian Phase 3 callouts                                                                                                        |
-| `O9`   | `O1`               | M    | —                                                                                                                                                                                                       | Obsidian Phase 4 media parameters                                                                                                |
+| `O8`   | `O1`, `O2`         | M    | identifier on a metadata-bearing callout (`O7`); callout title that is one comment (`O3`)                                                                                                               | Obsidian Phase 3 callouts                                                                                                        |
+| `O9`   | `O1`               | M    | typed dimensions beside a dimension attribute record (`P2d`)                                                                                                                                            | Obsidian Phase 4 media parameters                                                                                                |
 | `O10`  | `O1`–`O9`          | M    | —                                                                                                                                                                                                       | Obsidian Phase 1 preset publication; Phase 2 caller audit; Phase 5; plan exit criterion                                          |
 | `I1`   | `X0`, `I0`, `M7`   | S    | `Insert` containing `CrossLink`, `Mark` (`O1`, `O2`); heading-text projection (`P3`)                                                                                                                    | inserted-text contract                                                                                                           |
 | `P2a`  | `P0`, `M7`         | S    | anchor reserved before synthesis (`P3`)                                                                                                                                                                 | Pandoc Phase 2 attachment sites                                                                                                  |
 | `P2b`  | `P0`, `M7`         | S    | —                                                                                                                                                                                                       | Pandoc Phase 2 attachment sites                                                                                                  |
 | `P2c`  | `P0`, `M7`         | M    | anchor reserved before synthesis (`P3`)                                                                                                                                                                 | Pandoc Phase 2 attachment sites                                                                                                  |
-| `P2d`  | `P0`, `M7`         | M    | link tail ahead of a span (`P5`); attributes on an implicit heading reference (`P4`); anchor reserved before synthesis (`P3`)                                                                           | Pandoc Phase 2 attachment, merge, and caller audit                                                                               |
+| `P2d`  | `P0`, `M7`         | M    | link tail ahead of a span (`P5`); attributes on an implicit heading reference (`P4`); anchor reserved before synthesis (`P3`); typed dimensions beside a dimension attribute record (`O9`)              | Pandoc Phase 2 attachment, merge, and caller audit                                                                               |
 | `P3`   | `P2b`              | M    | anchor reserved before synthesis (`O7`, `P2a`, `P2c`, `P2d`, `P5`, `P8`); heading-text projection (`O1`, `O2`, `I1`, `P5`, `P6`, `P7`, `P9b`)                                                           | Pandoc Phase 2 heading registry                                                                                                  |
 | `P4`   | `P3`               | M    | attributes on an implicit heading reference (`P2d`); complete cite over a virtual heading reference (`P7`)                                                                                              | Pandoc Phase 3 document resolution                                                                                               |
 | `P5`   | `P0`, `M7`         | M    | link tail ahead of a span (`P2d`); anchor reserved before synthesis (`P3`); heading-text projection (`P3`); container after a complete wikilink (`O1`)                                                  | Pandoc Phase 3 spans                                                                                                             |
@@ -991,11 +1000,12 @@ Sizes are rough review-effort estimates, not schedules.
   superscript; an identifier caret before superscript; an explicit anchor
   reserved before synthesis, once per producer; the heading-text projection of
   each inline kind a later item produces; a complete cite over a virtual heading
-  reference; an identifier on a metadata-bearing callout; an identifier line
-  after a table caption, once per table form; an escaped wikilink pipe inside a
-  simple, multiline, or grid cell; a link tail claiming a container ahead of a
-  span; a container after a complete wikilink; attributes on an implicit heading
-  reference; a definition body ending at a fenced-div close; caption precedence
-  over definition-term lookahead, once per table form; and every comment and
-  wikilink opacity case. Each is written by the later of its two items, and no
-  item's `Requires` grows because of it.
+  reference; an identifier on a metadata-bearing callout; a callout title that
+  is one comment; an identifier line after a table caption, once per table form;
+  an escaped wikilink pipe inside a simple, multiline, or grid cell; typed image
+  dimensions beside a dimension attribute record; a link tail claiming a
+  container ahead of a span; a container after a complete wikilink; attributes
+  on an implicit heading reference; a definition body ending at a fenced-div
+  close; caption precedence over definition-term lookahead, once per table form;
+  and every comment and wikilink opacity case. Each is written by the later of
+  its two items, and no item's `Requires` grows because of it.
