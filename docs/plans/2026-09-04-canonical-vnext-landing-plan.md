@@ -8,10 +8,8 @@ grammars or proof obligations: the two implementation plans remain normative for
 their phases and exit criteria, and every module specification remains normative
 for its behavior.
 
-- [Obsidian Flavored Markdown implementation
-  plan](2026-09-02-obsidian-flavored-markdown.md)
-- [Pandoc Markdown extensions implementation
-  plan](2026-09-03-pandoc-markdown-extensions.md)
+- [Obsidian Flavored Markdown implementation plan](2026-09-02-obsidian-flavored-markdown.md)
+- [Pandoc Markdown extensions implementation plan](2026-09-03-pandoc-markdown-extensions.md)
 - [Extension specification audit](2026-09-04-extension-spec-audit.md), whose
   resolution checklist the specification pull requests of this plan follow
 
