@@ -94,7 +94,7 @@ sequences; it is landed here as its own track.
   only model-only pull requests; they are the `M` items.
 - A feature pull request is one option's behavior: the C extension or scanner,
   its reviewed position in the attach-order table, the option's facade field,
-  registry row, `canonical-ast.md` row, manifest key, and binding option, the
+  registry row, `canonical-ast.md` row flipped from `allocated` to `active`, manifest key, and binding option, the
   new kind if any, package fixtures for the module's required conformance cases,
   a canonical case for each new kind or state, and the removal of every oracle
   gap it closes.
@@ -255,8 +255,10 @@ Binding spelling is shown; the C facade uses `snake_case`, and the CLI `-e`
 names and fixture fence tags use the extension names from the Pandoc and
 Obsidian indexes. Every new option defaults to `false`. There are no profiles:
 an option is public from the item in its `Public from` column, which is the item
-that lands its behavior, and no item composes options. `stripHTMLComments` is
-removed by `M0`, and nothing strips comments.
+that lands its behavior, and no item composes options. The `ParseOptions` table
+in `canonical-ast.md` marks each row `active` or `allocated` with its landing
+item; a feature item flips its row to `active` when it lands, and `M0` deletes
+the `stripHTMLComments` row, since nothing strips comments.
 
 | Option                     | Behavior lands in | Public from |
 | -------------------------- | ----------------- | ----------- |
@@ -311,15 +313,20 @@ removed by `M0`, and nothing strips comments.
       registry that maps a registered name to its facade field or engine
       extension bit, and route the CLI `-e` names, the `ts_ast_enable` fixture
       tags, and the facade-to-engine mapping through it, so a feature item adds
-      exactly one row. Make `scripts/check-canonical-ast-fixtures.mjs` read the
-      option vocabulary from the `ParseOptions` table in `canonical-ast.md`
-      instead of a second hardcoded list, and give the C, Swift, Kotlin, and ES
-      conformance runners an internal option path so a canonical case can enable
-      a registered option that its public surface has not yet published. No
-      public option is added here: the inventory allocates the names, and each
-      feature item publishes its own option together with its behavior. Exit:
-      every existing fixture and canonical case is byte-identical, and the
-      registry, CLI, fixture tags, and checker agree on the nine existing names.
+      exactly one row. Give the `ParseOptions` table in `canonical-ast.md` a
+      `Status` column, `active` for an option the implementation recognizes and
+      `allocated` with its landing item for a name the inventory reserves, and
+      make `scripts/check-canonical-ast-fixtures.mjs` read the option vocabulary
+      from the `active` rows instead of a second hardcoded list, failing on an
+      `active` row the registry lacks or a registry name the table does not mark
+      `active`, so the table and the registry agree whichever of `X0` and `S1`
+      merges first; and give the C, Swift, Kotlin, and ES conformance runners an
+      internal option path so a canonical case can enable a registered option
+      that its public surface has not yet published. No public option is added
+      here: the inventory allocates the names, and each feature item publishes
+      its own option together with its behavior. Exit: every existing fixture
+      and canonical case is byte-identical, and the registry, CLI, fixture tags,
+      and checker agree on the nine `active` names.
 - [ ] **P0 — Pandoc evidence gate.** Add `oracle-pandoc` to
       `scripts/init-environment.sh`: `--install` fetches only the host archive
       named by `specs/oracles/pandoc/source.json` and verifies its SHA-256, and
@@ -361,9 +368,9 @@ removed by `M0`, and nothing strips comments.
       bit, the CLI flag, the facade field, and every binding option, so no
       comment is ever stripped and a consumer drops `Comment` nodes instead.
       Regenerate every fixture containing an HTML comment, add a canonical case,
-      and amend the option table and the `HTML` and `HTMLBlock` rows of
-      `canonical-ast.md`. Manifest states: `comment.placement.block`,
-      `comment.placement.inline`. Requires `S1`.
+      and delete the `stripHTMLComments` row of the option table and amend the
+      `HTML` and `HTMLBlock` rows of `canonical-ast.md`. Manifest states:
+      `comment.placement.block`, `comment.placement.inline`. Requires `S1`.
 - [ ] **M1 — `Destination` on `Link` and `Image`.** Add the tagged `Destination`
       value with both branches and replace `Link.destination` and `Image.source`
       with `dest`; only `url` is produced until `O1`. New facade accessors

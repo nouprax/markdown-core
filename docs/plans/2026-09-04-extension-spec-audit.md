@@ -131,7 +131,9 @@ reference expansion bound is an invariant.
 This is the set the specifications describe once the findings are resolved.
 Names are the binding spelling; the C facade uses `snake_case` and the CLI uses
 the extension names. Every option is independent unless its row says it is gated
-by another.
+by another. In `canonical-ast.md` each row also carries a `Status`: `active`
+once the implementation recognizes the option and `allocated` with its landing
+item before that; the fixture checker reads only `active` rows (X0).
 
 ### Inherited base
 
@@ -375,8 +377,8 @@ A transitional finding names the landing-plan item that resolves it.
   `scope`, `anchor`, `attributes`, and the dump prints them (CD-6).
 - **CA-20** `:189-202` — T (`X0`) plus B — "exactly these booleans" versus the
   twenty-two module options. Rule: the table is the single option registry;
-  every option enters it with its default and its off rule (the closed set
-  above).
+  every option enters it with its default, its off rule, and its status,
+  `active` or `allocated` with the landing item (the closed set above).
 - **CA-21** `:204-208` — B — no file states which formula delimiter yields
   `Formula(embedded)`, `Formula(standalone)`, or `FormulaBlock`, nor flanking,
   escaping, opacity, or the block fence rule. Rule: add a formulas module
@@ -1741,15 +1743,16 @@ need no item of their own.
 
 - [ ] **A1 — `canonical-ast.md` and `canonical-ast.json`:** the coordinate
       contract, the limits section, the recognition-order tables, the
-      `ParseOptions` registry with defaults and off rules, the no-profiles
-      statement, the formulas grammar or a pointer to a new module, the the
-      `smartPunctuation` effect, the HTML comment `Comment` rule with the
-      removal of `stripHTMLComments`, `Text` merging, `CodeBlock.info` and
-      `closed`, table cell-count handling, destination unescaping, the
-      scoped-value rule, the walk-into-values rule, and the status sentences
-      that name which target file supersedes which section. Closes CA-1 through
-      CA-27 except the transitional ones, CJ-1, CJ-3, CJ-4, CJ-5, CJ-7, S-0,
-      X-1, and decisions D-4, D-5, D-6.
+      `ParseOptions` table with defaults, off rules, and a `Status` column
+      (`active` or `allocated` with the landing item; `stripHTMLComments` stays
+      `active` until `M0` deletes it), the no-profiles statement, the formulas
+      grammar or a pointer to a new module, the the `smartPunctuation` effect,
+      the HTML comment `Comment` rule with the removal of `stripHTMLComments`,
+      `Text` merging, `CodeBlock.info` and `closed`, table cell-count handling,
+      destination unescaping, the scoped-value rule, the walk-into-values rule,
+      and the status sentences that name which target file supersedes which
+      section. Closes CA-1 through CA-27 except the transitional ones, CJ-1,
+      CJ-3, CJ-4, CJ-5, CJ-7, S-0, X-1, and decisions D-4, D-5, D-6.
 - [ ] **A2 — `canonical-ast-dump.md`:** token separation, the `children` table,
       the string escaping form, enum elements in arrays, the universal-field
       line, tagged-value and nested-value encodings, double formatting, the
