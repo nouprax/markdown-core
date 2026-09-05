@@ -1836,13 +1836,13 @@ need no item of their own.
       clause, interruption allowed, unclosed scope, the directive rule, eligible
       closers. Closes PD-1 through PD-10, PF-1 through PF-7.
 - [ ] **C4 — `pandoc/headings-and-anchors.md` and `pandoc/lists.md`:** the
-      projection table, the lowercase mapping, categories, `base-N`, no
-      diagnostics, footnote bodies, virtual definitions; `start >= 0`, inherited
-      markers off, `startnum` scope, `@` only in parentheses, the Roman grammar,
-      padding, committed style, nesting, `(N@)`, labels, `(@label)` placement,
-      repeated labels, continuation columns, no overflow sentence, interruption,
-      `#)` and `(#)`. Closes PH-1 through PH-7, PL-1 through PL-16, decision
-      D-3.
+      projection table with a required conformance case per projected kind, the
+      lowercase mapping, categories, `base-N`, no diagnostics, footnote bodies,
+      virtual definitions; `start >= 0`, inherited markers off, `startnum`
+      scope, `@` only in parentheses, the Roman grammar, padding, committed
+      style, nesting, `(N@)`, labels, `(@label)` placement, repeated labels,
+      continuation columns, no overflow sentence, interruption, `#)` and `(#)`.
+      Closes PH-1 through PH-7, PL-1 through PL-16, decision D-3.
 - [ ] **C5 — `pandoc/superscript-and-subscript.md`:** the delimiter-stack model,
       whitespace, the `\ ` scope, single tildes, the footnote rule pointer,
       block identifiers and autolinks, no oracle justification. Closes PU-1

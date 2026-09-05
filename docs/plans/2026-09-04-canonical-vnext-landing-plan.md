@@ -708,21 +708,26 @@ the `stripHTMLComments` row, since nothing strips comments.
       Requires `P0`, `M7`.
 - [ ] **P3 — `auto_anchors`.** Build one document anchor registry that reserves
       every explicit anchor from every enabled extension before synthesis, then
-      generates GFM anchors in heading order from visible text (retaining link
-      labels and code, dropping footnotes), Unicode lowercasing, whitespace to
-      `-` without collapsing, and the permitted-scalar filter, falling back to
-      `section` and uniquifying with the smallest free `-N`. A generated anchor
-      has no scope. Fixtures cover the module's cases including large duplicate
-      sets; remove the `gfm-auto-anchors` gap. Reserving an explicit anchor
-      before synthesis is a cross-item case with every explicit-anchor producer
-      that neither requires nor is required by this item, `O7`, `P2a`, `P2c`,
-      `P2d`, `P5`, and `P8`, each owned by whichever merges later; the `P2b`
-      heading and `M7` directive cases belong to this item. The heading-text
-      projection of each kind a later item produces is a cross-item case owned
-      by whichever of `P3` and that item merges later: `CrossLink` with `O1`,
-      `Mark` with `O2`, `Insert` with `I1`, `Span` with `P5`, `Superscript` and
-      `Subscript` with `P6`, a bibliography `Cite` with `P7`, and
-      `ExampleReference` with `P9b` (audit finding PH-1). Requires `P2b`.
+      generates GFM anchors in heading order from the per-kind text projection
+      of audit finding PH-1 (`Text` and `Code` literals; the concatenated child
+      text of formatting, `Link`, `Image`, and directive labels; one space per
+      soft or hard line break; nothing for `HTML`, `Comment`, and a footnote
+      `Cite`; `Formula.literal`), Unicode lowercasing, whitespace to `-` without
+      collapsing, and the permitted-scalar filter, falling back to `section` and
+      uniquifying with the smallest free `-N`. A generated anchor has no scope.
+      Fixtures cover the module's cases, a projection case for every kind that
+      exists when this item lands, `Formula`, `HTML`, `Comment`, `Image`, line
+      breaks, and directive labels included, and large duplicate sets; remove
+      the `gfm-auto-anchors` gap. Reserving an explicit anchor before synthesis
+      is a cross-item case with every explicit-anchor producer that neither
+      requires nor is required by this item, `O7`, `P2a`, `P2c`, `P2d`, `P5`,
+      and `P8`, each owned by whichever merges later; the `P2b` heading and `M7`
+      directive cases belong to this item. The heading-text projection of each
+      kind a later item produces is a cross-item case owned by whichever of `P3`
+      and that item merges later: `CrossLink` with `O1`, `Mark` with `O2`,
+      `Insert` with `I1`, `Span` with `P5`, `Superscript` and `Subscript` with
+      `P6`, a bibliography `Cite` with `P7`, and `ExampleReference` with `P9b`
+      (audit finding PH-1). Requires `P2b`.
 - [ ] **P4 — `implicit_header_references`.** Register a virtual reference
       definition for every heading with a final anchor, keyed by the authored
       label source after removing heading syntax, closing hashes, and trailing

@@ -197,9 +197,10 @@ not enable Pandoc `@key` syntax through any Obsidian option.
 - [ ] Generalize the existing task-list scanner from `[ xX]` to one Unicode code
       point. Store the marker, derive completion, and retain the existing rule that
       only the item prefix is inspected.
-- [ ] Parse external image `W`, `alt|W`, and `alt|W x H` suffixes in the shared
-      image construction path. Keep wikilink label parameters raw until vault
-      resolution establishes the embedded file kind.
+- [ ] Parse external image `W`, `WxH`, `alt|W`, and `alt|WxH` suffixes,
+      lowercase `x` with no surrounding spaces, in the shared image construction
+      path. Keep wikilink label parameters raw until vault resolution
+      establishes the embedded file kind.
 - [ ] Move wiki alias-pipe awareness into the shared table/inline boundary so
       `[[target\|label]]` and `![[image\|100]]` stay inside one cell. Do not add a
       table-only wikilink parser.
