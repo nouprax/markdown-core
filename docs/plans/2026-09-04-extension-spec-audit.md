@@ -990,8 +990,11 @@ A transitional finding names the landing-plan item that resolves it.
 - **OP-2** `:33` — B — a lone CR line ending. Rule: line endings are LF, CR, or
   CRLF, identical to the inherited splitter.
 - **OP-3** `:108-115` — B — tagged scalar keys and the explicit-key indicator.
-  Rule: a key written with `?` is accepted when its node is an untagged plain or
-  quoted scalar; a key carrying any tag invalidates the candidate.
+  Rule: the one key rule of ME-3: a key is directly authored iff it is a plain,
+  single-quoted, or double-quoted scalar carrying no tag, anchor, or
+  explicit-key indicator, so a key written with `?` or carrying any tag or
+  anchor invalidates the candidate; the properties module states no key rule of
+  its own.
 - **OP-4** `:130-131` — B — "line" for decoded escapes. Rule: a decoded text
   containing U+000A or U+000D invalidates the candidate; U+0085, U+2028, and
   U+2029 are ordinary characters.
