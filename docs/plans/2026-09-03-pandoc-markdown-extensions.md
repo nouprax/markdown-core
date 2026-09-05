@@ -215,9 +215,9 @@ syntax and precedence where no selected Pandoc extension participates.
 - [ ] Implement captions as an attachment candidate claimed by the nearest
       complete eligible table. Do not emit a caption paragraph and later repair
       the AST.
-- [ ] For simple and multiline forms, derive alignment and optional relative
-      widths directly from established column ranges. Normalize inline-only cells
-      to one paragraph without losing their source scopes.
+- [ ] For simple and multiline forms, derive alignment from established column
+      ranges and relative widths for multiline tables only, and store inline
+      cell content directly without normalizing it to a paragraph.
 - [ ] For grid tables, maintain a row-width occupancy array. Store a spanning cell
       once in the row containing its upper-left coordinate; validate every
       occupied coordinate and prevent a span from crossing head/content/foot

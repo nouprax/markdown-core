@@ -1412,8 +1412,8 @@ A transitional finding names the landing-plan item that resolves it.
   paragraph". Rule: pipe and simple table cells store their parsed inline
   content directly; multiline and grid cells store the block sequence the block
   parser produces from the cell text; no cell is wrapped in or unwrapped from a
-  `Paragraph`. The same stale text sits in
-  `docs/plans/2026-09-03-pandoc-markdown-extensions.md:215-217`.
+  `Paragraph`. The matching bullet of the Pandoc implementation plan was
+  corrected together with this audit.
 - **PT-2** `:55-57` — A — "paragraph-like block". Rule: `TableCaption.content`
   is the caption paragraph's parsed inline content after removing the marker and
   the whitespace after it; a multi-line caption contributes `SoftBreak`s.
@@ -1791,9 +1791,7 @@ seams that need two modules edited together.
       segmentation, precedence against Setext and thematic breaks, the multiline
       boundaries, joining, syntax order, the boundary union, grid lines and
       spans, colons, `=` lines, cell text, rectangular scopes, fallback, the
-      dump encoding, `^id` after captions; and the stale normalization text in
-      `docs/plans/2026-09-03-pandoc-markdown-extensions.md`. Closes PT-1 through
-      PT-23.
+      dump encoding, `^id` after captions. Closes PT-1 through PT-23.
 - [ ] **D1 — the seams:** land the recognition-order tables in
       `canonical-ast.md` and replace every module's precedence paragraph with a
       pointer, in one pull request after A1 through C6, so no module keeps a

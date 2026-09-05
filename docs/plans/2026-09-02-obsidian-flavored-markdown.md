@@ -125,13 +125,14 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       parser-level stripping from the same recognized construct so stripping
       cannot change where other delimiters bind.
 - [ ] Parse highlight children through the normal inline engine, with source
-      ownership by code, comments, and HTML tokens taking precedence. Paired inline
-      HTML tags do not create a suppressing region. The inline footnote scanner
-      creates one one-item `Cite` containing a `Citation` whose referent is
-      `CitationReferent.footnote(id)` and whose prefix and suffix are empty, plus
-      one document-owned `Footnote`; it normalizes the inline body to a paragraph
-      and obtains the ID from the same parser-owned footnote collection used by
-      inherited referenced footnotes.
+      ownership by code, comments, and HTML tokens taking precedence. Paired
+      inline HTML tags do not create a suppressing region. The inline footnote
+      scanner creates one one-item `Cite` containing a `Citation` whose referent
+      is `CitationReferent.footnote(id)` and whose prefix and suffix are empty,
+      plus one document-owned `Footnote`; it stores the parsed inline body
+      directly in `Footnote.content` with no synthesized `Paragraph` and obtains
+      the ID from the same parser-owned footnote collection used by inherited
+      referenced footnotes.
 - [ ] Resolve inherited `[^label]` calls through the same operation, so repeated
       calls share one `Footnote` without body duplication. Merge referenced and
       inline values in source order and assign their deterministic document-local
@@ -170,10 +171,10 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       content; it does not record an Obsidian or block discriminator.
 - [ ] Construct `Callout` for every `>` container through the existing block
       algorithm. Default `variant` and `title` to null and `fold` to `none`.
-- [ ] When the first content line has a valid marker, normalize its source type
-      identifier into `variant`, populate fold state and title before ordinary body
-      blocks are finalized, and remove the marker line from content. Do not
-      mutate/repair a finished tree in a post-pass.
+- [ ] When the first content line has a valid marker, store its source type
+      identifier as written in `variant`, populate fold state and title before
+      ordinary body blocks are finalized, and remove the marker line from
+      content. Do not mutate/repair a finished tree in a post-pass.
 - [ ] Use the same container recursion for nested callouts. Unknown/custom types
       remain metadata-bearing callouts; alias-to-style mapping stays outside the
       parser.
