@@ -208,13 +208,14 @@ upstream behavior is intricate: no emoji handling, no language lowercasing or
 aliasing, no `p.` page-number exception for capital-period markers, numbers
 limited to nine digits, one Roman-numeral grammar, captions decided in one
 lookahead, no display-width arithmetic in tables, citation locators kept as
-suffix text, example labels resolved only in the `(@label)` spelling, and a
-single tilde meaning subscript when that option is on. Five features still carry
-most of the remaining intricacy, and each could be narrowed to a smaller common
-form or dropped without affecting any other module: grid tables with row and
-column spans, multiline tables, example-list numbering resets, definition-list
-lazy continuation, and author-in-text citation tails. Decision D-10 keeps them
-as their modules specify.
+suffix text, example labels resolved in the `(@label)` spelling and, with
+`citations` on, in a bare `@label` with no bracketed tail (D-9), and a single
+tilde meaning subscript when that option is on. Five features still carry most
+of the remaining intricacy, and each could be narrowed to a smaller common form
+or dropped without affecting any other module: grid tables with row and column
+spans, multiline tables, example-list numbering resets, definition-list lazy
+continuation, and author-in-text citation tails. Decision D-10 keeps them as
+their modules specify.
 
 ## Recognition order
 

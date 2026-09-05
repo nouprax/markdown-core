@@ -385,13 +385,15 @@ removed by `M0`, and nothing strips comments.
       projections (remark resolves mdast definitions inside the projection),
       rewrite `scripts/audit-reference-order-independence.mjs` and
       `specs/reference-resolution/` to compare resolved links, share each
-      winning destination across its occurrences in the C tree, redesign the JNI
-      and Wasm transports and every decoder so a distinct destination is
-      materialized once per surface, and re-derive
+      winning resource, destination and title together, across its occurrences
+      in the C tree, redesign the JNI and Wasm transports and every decoder so a
+      distinct resource is materialized once per surface, and re-derive
       `pathological_reference_expansion_bound` together with its transport and
-      decoder counterparts on every surface. Manifest: the `reference.form.*`
-      states are replaced by a case proving that a direct and a reference
-      occurrence dump identically apart from scope. Requires `M1`.
+      decoder counterparts on every surface around resource identity, so a long
+      destination or title referenced many times is stored once and the bound
+      holds on every surface. Manifest: the `reference.form.*` states are
+      replaced by a case proving that a direct and a reference occurrence dump
+      identically apart from scope. Requires `M1`.
 - [ ] **M3 — `Callout` replaces `BlockQuote`.** Rename the kind everywhere, add
       `CalloutFold`, expose `variant`, `fold`, and `title` on every surface, and
       give every `>` container `variant=null`, `fold=none`, and `title=null`
