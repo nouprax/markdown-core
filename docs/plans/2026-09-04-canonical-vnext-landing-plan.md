@@ -753,17 +753,18 @@ that lands its behavior, and no item composes options.
       to that link; one followed by an attribute container belongs to the outer
       `Span` only while `bracketedSpans` is enabled, and with `citations` alone
       the candidate remains a bracketed `Cite` and the container stays inherited
-      text; a complete cite beats shortcut-reference lookup; and only the
-      `(@label)` spelling resolves against example labels, so a bare or
-      bracketed `@key` stays a citation (audit decision D-9). This is the first
-      producer of `CitationReferent.bib`. The `reset-citation-positions` class
-      is documented here, and its heading fixture is an ordinary
-      `header_attributes` case in `P2b`. Remove the `bibliography-citations`
-      gap. The heading-text projection of a bibliography `Cite` in generated
-      anchors is a cross-item case owned by whichever of `P7` and `P3` merges
-      later. A complete cite beating the shortcut reference of a virtual heading
-      definition is a cross-item case owned by whichever of `P7` and `P4` merges
-      later. Requires `P5`, `P9b`.
+      text; a complete cite beats shortcut-reference lookup; and, as Pandoc
+      resolves it, a bare `@key` with no bracketed tail whose key is an example
+      label registered anywhere in the document is an `ExampleReference`, while
+      `[@key]` and a bare key followed by a bracketed tail stay citations (audit
+      decision D-9). This is the first producer of `CitationReferent.bib`. The
+      `reset-citation-positions` class is documented here, and its heading
+      fixture is an ordinary `header_attributes` case in `P2b`. Remove the
+      `bibliography-citations` gap. The heading-text projection of a
+      bibliography `Cite` in generated anchors is a cross-item case owned by
+      whichever of `P7` and `P3` merges later. A complete cite beating the
+      shortcut reference of a virtual heading definition is a cross-item case
+      owned by whichever of `P7` and `P4` merges later. Requires `P5`, `P9b`.
 - [ ] **P8 — `fenced_divs`.** Open a `Div` on a line of three or more colons
       followed, after `{` or whitespace, by a braced list or one unbraced class
       word, so a colon run followed immediately by a directive name stays a
@@ -789,13 +790,14 @@ that lands its behavior, and no item composes options.
 - [ ] **P9b — `example_lists`.** Add `(@)`, `(@label)`, `(N@)`, and `(N@label)`
       markers with `style=example`, a document-wide counter and label map as
       parser state, `ListItem.exampleLabel`, the `ExampleReference(label)` kind
-      for later `(@label)` occurrences, the repeated-label and reset rules,
-      four-space continuations, and `N` limited to nine digits so no counter can
-      overflow, a longer digit run being ordinary text (audit finding PL-14).
-      Fixtures and a canonical case; remove the `example-lists-and-reference`
-      gap. The heading-text projection of `ExampleReference` in generated
-      anchors is a cross-item case owned by whichever of `P9b` and `P3` merges
-      later. Requires `P9a`.
+      for `(@label)` occurrences anywhere in the document, with bare `@label`
+      capture arriving in `P7`, the repeated-label and reset rules, four-space
+      continuations, and `N` limited to nine digits so no counter can overflow,
+      a longer digit run being ordinary text (audit finding PL-14). Fixtures and
+      a canonical case; remove the `example-lists-and-reference` gap. The
+      heading-text projection of `ExampleReference` in generated anchors is a
+      cross-item case owned by whichever of `P9b` and `P3` merges later.
+      Requires `P9a`.
 - [ ] **P10 — `definition_lists`.** Recognize a one-line term, an optional
       single blank line, and a first marker line by bounded non-consuming
       lookahead before paragraph fallback; feed each body's lines to the
