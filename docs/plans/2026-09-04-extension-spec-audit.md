@@ -731,8 +731,9 @@ A transitional finding names the landing-plan item that resolves it.
   `properties`, `blockIdentifiers`, `callouts`, and `imageDimensions` stand
   alone; `inlineFootnotes` requires `footnotes`, which also gates `[^label]`
   lowering and `Document.footnotes`; `taskMarkers` requires `taskLists`; the
-  `\|` rule requires `tables` and `crossLinks`; `$` is gated by `formulas`;
-  `stripComments` has no effect while `comments` is off.
+  `\|` rule requires `crossLinks` and whichever table option parses the cell;
+  `$` is gated by `formulas`; `stripComments` has no effect while `comments` is
+  off.
 - **OI-3** `:136` versus `obsidian/inherited-and-integration.md:66,76-77` — D/A
   — the audit row says two-hyphen delimiter cells are already present under the
   inherited grammar while the integration module makes "at least two hyphens" a

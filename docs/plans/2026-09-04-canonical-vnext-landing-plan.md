@@ -593,14 +593,16 @@ that lands its behavior, and no item composes options.
       whole label as alt content on any malformed suffix, and leave
       `CrossLink.label` raw. Teach the table boundary scanner the `\|` escape so
       a wikilink alias or embed size stays inside one cell while the inline
-      scanner receives the logical pipe, with the escape active only while
-      `tables` and `crossLinks` are both on; the inherited delimiter-row grammar
-      is unchanged (audit finding OI-3), and with every Obsidian option off
-      tables and task items are byte-for-byte inherited. Fixtures cover every
-      valid and invalid dimension form, escaped pipes, aligned and pipe-optional
-      tables, and formatted cells. An escaped wikilink pipe inside a grid-table
-      cell is a cross-item case owned by whichever of `O9` and `P11d` merges
-      later. Requires `O1`.
+      scanner receives the logical pipe, with the escape active while
+      `crossLinks` is on in every table syntax that parses the cell, pipe tables
+      under `tables` and each Pandoc table form under its own option, so no
+      table option is a prerequisite of another; the inherited delimiter-row
+      grammar is unchanged (audit finding OI-3), and with every Obsidian option
+      off tables and task items are byte-for-byte inherited. Fixtures cover
+      every valid and invalid dimension form, escaped pipes, aligned and
+      pipe-optional tables, and formatted cells. An escaped wikilink pipe inside
+      a grid-table cell is a cross-item case owned by whichever of `O9` and
+      `P11d` merges later. Requires `O1`.
 - [ ] **O10 — Obsidian evidence closure.** Add the integration fixtures for
       every pairwise opaque-context interaction, OFM and CommonMark constructs
       between paired inline HTML tags, the five-step precedence order, task
@@ -818,16 +820,19 @@ that lands its behavior, and no item composes options.
       Requires `P0`, `M7`.
 - [ ] **P11b — `simple_tables`.** Establish column ranges from the dash
       separator line, derive alignment from header placement, accept the
-      headerless closing-separator form, end at a blank line or closing
-      separator, and refuse to steal a thematic break, Setext underline, or
-      fence without a complete shape. `TableColumn.relative` stays `null` for
-      simple tables because Pandoc's reader gives them default column widths;
-      `P11c` is the field's first producer. Remove the
-      `simple-table-with-caption` gap. Caption precedence over definition-term
-      lookahead for this table form is a cross-item case owned by whichever of
-      `P11b` and `P10` merges later. An identifier line after a caption on this
-      table form attaching to the `Table` is a cross-item case owned by
-      whichever of `P11b` and `O7` merges later. Requires `P11a`.
+      headerless closing-separator form, and end at a blank line or closing
+      separator, under the block-start order of audit seam S-8: a Setext heading
+      beats every simple-table candidate, complete or not, a complete candidate
+      beats a thematic break and a paragraph, a dash line that completes no
+      candidate is a thematic break, and a code fence is never claimed.
+      `TableColumn.relative` stays `null` for simple tables because Pandoc's
+      reader gives them default column widths; `P11c` is the field's first
+      producer. Remove the `simple-table-with-caption` gap. Caption precedence
+      over definition-term lookahead for this table form is a cross-item case
+      owned by whichever of `P11b` and `P10` merges later. An identifier line
+      after a caption on this table form attaching to the `Table` is a
+      cross-item case owned by whichever of `P11b` and `O7` merges later.
+      Requires `P11a`.
 - [ ] **P11c — `multiline_tables`.** Recognize full-width and segmented dash
       boundaries, combine physical lines into logical rows separated by blank
       lines, populate `TableColumn.relative` from source widths, require the

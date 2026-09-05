@@ -71,7 +71,7 @@ A pipe belonging to a wikilink label or an embed size must be authored as `\|`
 inside a table. Table boundary scanning recognizes that escape before splitting
 cells, while the inline scanner receives the logical pipe and parses one
 `CrossLink`. There is no table-specific wikilink parser; the escape rule applies
-while `tables` and `crossLinks` are both on.
+while `crossLinks` is on, in every table syntax that parses the cell.
 
 Ordinary GFM tables keep the same algorithm and AST under every option set. The
 inherited delimiter-row grammar is unchanged; a two-hyphen delimiter cell is a
