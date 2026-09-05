@@ -1,12 +1,12 @@
 # Canonical vNext landing plan
 
 Status: proposed. This plan turns the feature contracts merged in #192, #193,
-#194, and #196 into an ordered list of pull requests that can each merge
-alone. It owns the cross-profile landing order, the per-pull-request
-definition of done, and the target inventory of kinds, values, and options.
-It does not restate grammars or proof obligations: the two implementation
-plans remain normative for their phases and exit criteria, and every module
-specification remains normative for its behavior.
+#194, and #196 into an ordered list of pull requests that can each merge alone.
+It owns the cross-track landing order, the per-pull-request definition of done,
+and the target inventory of kinds, values, and options. It does not restate
+grammars or proof obligations: the two implementation plans remain normative for
+their phases and exit criteria, and every module specification remains normative
+for its behavior.
 
 - [Obsidian Flavored Markdown implementation plan](2026-09-02-obsidian-flavored-markdown.md)
 - [Pandoc Markdown extensions implementation plan](2026-09-03-pandoc-markdown-extensions.md)
@@ -15,9 +15,9 @@ specification remains normative for its behavior.
 
 Both plans freeze the public model in one phase and then add syntax. Landing
 that literally would mean one pull request that touches every kind on every
-surface, once per profile, while nothing else can merge. This plan instead
+surface, once per module set, while nothing else can merge. This plan instead
 lands the shared model one consumer fact at a time and then lands each syntax
-feature as one self-contained pull request, so the profile tracks proceed in
+feature as one self-contained pull request, so the three tracks proceed in
 parallel and every merge leaves `main` releasable.
 
 ## What the last seven commits changed
@@ -27,7 +27,7 @@ parallel and every merge leaves `main` releasable.
 | #187 node-kind walking visitors               | landed | Every new kind adds entering and exiting callbacks to the Swift, Kotlin, and ES walkers; the public-surface audit derives the required count from `canonical-ast.json`.                                       |
 | #190 release dry-run readiness                | landed | Every pull request must pass the credential-free `Release Dry Run - Ready` check, so an intermediate state that cannot build every artifact cannot merge.                                                       |
 | #191 UTF-8 repair removal and table positions | landed | Valid UTF-8 is a caller precondition, so new scanners add no validation or repair path. The position ledgers are fail-closed ratchets that every parser change keeps exact.                                    |
-| #192 extension profile contracts              | specs  | The Obsidian module set, the Pandoc module set, the shared attributes, citation, and inserted-text contracts, Remark directive attachment, the Pandoc and Obsidian oracle pins, and the two implementation plans. |
+| #192 extension module contracts               | specs  | The Obsidian module set, the Pandoc module set, the shared attributes, citation, and inserted-text contracts, Remark directive attachment, the Pandoc and Obsidian oracle pins, and the two implementation plans. |
 | #193 anchors and destinations                 | specs  | The universal `Markup.anchor` field, the tagged `Destination` value on `Link`, `Image`, and `CrossLink`, and the simplified `Attributes` shape.                                                                 |
 | #194 Obsidian Properties                      | specs  | `Document.metadata`, the shared metadata value model, the Properties envelope, and the `yaml@2.9.0` oracle.                                                                                                     |
 | #196 Properties corrections                   | specs  | Mapping keys are textual names, explicit null roots are rejected, and the oracle canaries were tightened.                                                                                                       |
@@ -40,11 +40,11 @@ sequences; it is landed here as its own track.
 - One checkbox below is one pull request, except the three specification closure
   items `S1` through `S3`, each of which is ticked when the last of the audit
   checklist items it names has merged. Every pull request merges alone, leaves
-  every existing profile's fixtures byte-identical unless the item says
-  otherwise, and passes required CI including the release dry run. The three
-  stage exit criteria are gates rather than pull requests: each is verified in
-  the pull request of the last item of its stage, named beside it, and has
-  nothing of its own to tick.
+  every existing fixture byte-identical unless the item says otherwise, and
+  passes required CI including the release dry run. The three stage exit
+  criteria are gates rather than pull requests: each is verified in the pull
+  request of the last item of its stage, named beside it, and has nothing of its
+  own to tick.
 - Tick the item when its pull request has merged. In that same pull request,
   tick the bullets it discharges in the owning implementation plan and update
   the support audit table in
@@ -99,11 +99,10 @@ sequences; it is landed here as its own track.
   required conformance cases, a canonical case for each new kind or state,
   and the removal of every oracle gap it closes.
 - Every option name is allocated in the inventory and registered through the
-  registry that `X0` creates. A feature item publishes its option, defaulting
-  to off, together with the behavior, option-off cases, oracle evidence, and
-  product fixtures that make it public; the composed `obsidian` switch and
-  `stripObsidianComments` remain internal test plumbing until `O10`. The
-  existing profiles never change language.
+  registry that `X0` creates. A feature item publishes its option, defaulting to
+  off, together with the behavior, option-off cases, oracle evidence, and
+  product fixtures that make it public. The inherited options never change
+  language.
 - Nothing here ships before `R1`. Between merges, an unproduced enum branch,
   value type, or field is allowed only where an item says so, and the item
   that first produces it is named; a published option always recognizes its
@@ -140,7 +139,7 @@ sequences; it is landed here as its own track.
   reason in the commit message; `pnpm check:oracle-parity` and the fuzz seeds
   pass.
 - Documentation: the CHANGELOG entry under the unreleased version, the
-  binding READMEs when a public option or preset changes, and the Obsidian
+  binding READMEs when a public option changes, and the Obsidian
   support audit row.
 - Cross-item cases: every case in the item's `Cross-item cases` column whose
   partner item has already merged is part of this item's fixtures.
@@ -172,10 +171,13 @@ specification in the same pull request.
 - `TableCell.content` is `[Markup]`, the most general content model. Inline
   content stays inline, a table form whose cells hold blocks stores the blocks
   directly, and no cell is normalized to a `Paragraph`.
-- `obsidian` is one switch. Off means the inherited behavior byte for byte, so
-  no option under it has an effect while it is off. Every new option defaults to
-  `false` except `stripObsidianComments`, which defaults to `true` so the
-  profile omits recognized comments unless a caller retains them.
+- There are no profiles and no umbrella switch. Every extension syntax is its
+  own `ParseOptions` switch, off by default, and off means the inherited
+  behavior byte for byte; a module that extends inherited syntax is additionally
+  gated by that syntax's inherited option. The one option that is not a syntax
+  switch is `stripObsidianComments`, which defaults to `true` and acts only
+  while `obsidianComments` is on. The CLI `--profile` names are harness
+  shorthands for the comparison oracles and define no language.
 - The parser stores fenced-code info, language, and attributes as written. It
   does not lowercase, alias, or derive a language from a class; consumers
   interpret them.
@@ -254,14 +256,22 @@ value carries `scope` only.
 Binding spelling is shown; the C facade uses `snake_case`, and the CLI `-e`
 names and fixture fence tags use the extension names from the Pandoc and
 Obsidian indexes. Every new option defaults to `false` except
-`stripObsidianComments`, which defaults to `true`. An option is public from the
-item in its `Public from` column; before that item it exists only as registry,
-CLI, and conformance plumbing.
+`stripObsidianComments`, which defaults to `true`. There are no profiles: an
+option is public from the item in its `Public from` column, which is the item
+that lands its behavior, and no item composes options.
 
 | Option                     | Behavior lands in | Public from |
 | -------------------------- | ----------------- | ----------- |
-| `obsidian`                 | `O1` through `O9` | `O10`       |
-| `stripObsidianComments`    | `O3`              | `O10`       |
+| `wikilinks`                | `O1`              | `O1`        |
+| `highlights`               | `O2`              | `O2`        |
+| `obsidianComments`         | `O3`              | `O3`        |
+| `stripObsidianComments`    | `O3`              | `O3`        |
+| `inlineFootnotes`          | `O4`              | `O4`        |
+| `taskMarkers`              | `O5`              | `O5`        |
+| `properties`               | `O6`              | `O6`        |
+| `blockIdentifiers`         | `O7`              | `O7`        |
+| `callouts`                 | `O8`              | `O8`        |
+| `imageDimensions`          | `O9`              | `O9`        |
 | `insertedText`             | `I1`              | `I1`        |
 | `inlineCodeAttributes`     | `P2a`             | `P2a`       |
 | `headerAttributes`         | `P2b`             | `P2b`       |
@@ -286,10 +296,10 @@ CLI, and conformance plumbing.
 - [ ] **S1 — Shared-contract closure.** Land the audit's checklist items A1
       through A5 in `docs/plans/2026-09-04-extension-spec-audit.md`: the
       coordinate contract, the limits section, the recognition-order tables, the
-      `ParseOptions` registry and the profiles table, the formulas grammar, the
-      dump encodings, the shared-contract rules, and the directive envelope
-      module. Specification only; no engine change. Tick when the last of those
-      five pull requests has merged.
+      `ParseOptions` registry and the no-profiles statement, the formulas
+      grammar, the dump encodings, the shared-contract rules, and the directive
+      envelope module. Specification only; no engine change. Tick when the last
+      of those five pull requests has merged.
 - [ ] **S2 — Obsidian specification closure.** Land the audit's checklist items
       B1 through B6: the index, every Obsidian module, and each module's pointer
       to the recognition-order tables. Specification only. Tick when the last of
@@ -375,16 +385,16 @@ CLI, and conformance plumbing.
       decoder counterparts on every surface. Manifest: the `reference.form.*`
       states are replaced by a case proving that a direct and a reference
       occurrence dump identically apart from scope. Requires `M1`.
-- [ ] **M3 — `Callout` replaces `BlockQuote`.** Rename the kind in every
-      profile, add `CalloutFold`, expose `variant`, `fold`, and `title` on every
-      surface, and give every `>` container `variant=null`, `fold=none`, and
-      `title=null` with unchanged content and scope; no alias or wrapper
-      survives. The C node type, facade accessor, dump, bindings, walkers, and
-      every fixture containing a quote regenerate. The Obsidian
-      `universal-callout-container` delta stays as the general projection of
-      mdast `blockquote`. Manifest states: `callout.variant.null`,
-      `callout.fold.none`, `callout.title.null`. Audit item B5 settles the
-      callout model this item publishes. Requires `S2`.
+- [ ] **M3 — `Callout` replaces `BlockQuote`.** Rename the kind everywhere, add
+      `CalloutFold`, expose `variant`, `fold`, and `title` on every surface, and
+      give every `>` container `variant=null`, `fold=none`, and `title=null`
+      with unchanged content and scope; no alias or wrapper survives. The C node
+      type, facade accessor, dump, bindings, walkers, and every fixture
+      containing a quote regenerate. The Obsidian `universal-callout-container`
+      delta stays as the general projection of mdast `blockquote`. Manifest
+      states: `callout.variant.null`, `callout.fold.none`, `callout.title.null`.
+      Audit item B5 settles the callout model this item publishes. Requires
+      `S2`.
 - [ ] **M4 — Citation and footnote model.** Replace `FootnoteReference` and
       `FootnoteDefinition` with inline `Cite(citations)`, the scoped
       `Citation(referent, prefix, suffix)` value, the complete
@@ -476,70 +486,69 @@ CLI, and conformance plumbing.
 - [ ] **O1 — Wikilinks and embeds.** Create the parser-owned OFM inline
       extension, its bit, and its reviewed attach-table position (before
       `table`; the extension must see `[` and `!` before inherited bracket
-      handling), enabled by the `obsidian` switch this item introduces as
-      internal test plumbing: an engine-level switch reached by the CLI
-      `--profile obsidian` composition, the fixture runners, and the conformance
-      runners' internal option path, with the facade field and public binding
-      option arriving in `O10`. One scanner recognizes `[[...]]` and `![[...]]`,
-      splits path, optional anchor, and label while scanning, removes the `#`
-      and `#^` punctuation, and builds one `CrossLink(embedded, dest=cross(path,
-      anchor), label)` whose `label` is null only when no `|` was authored. Add
-      the `CrossLink` kind on every surface as the first producer of
-      `Destination.cross`, fixtures for the module's seven table rows, every
-      malformed boundary, opaque contexts, scopes, allocation failure, and
-      size-doubling `!`, `[`, `]`, `#`, `^`, and `|` runs, and a canonical case;
-      remove the four `wikilink-*` gaps and keep the label-nullability and
-      destination projections as general deltas with canaries. The heading-text
-      projection of `CrossLink` in generated anchors is a cross-item case owned
-      by whichever of `O1` and `P3` merges later. An attribute container
-      following a complete `CrossLink` staying text under `bracketedSpans`
-      (audit finding OW-4) is a cross-item case owned by whichever of `O1` and
-      `P5` merges later. Requires `X0`, `M7`, `S2`.
+      handling), enabled by its own `wikilinks` option, registered, exposed on
+      the CLI, the facade, and every binding, and public from this item. One
+      scanner recognizes `[[...]]` and `![[...]]`, splits path, optional anchor,
+      and label while scanning, removes the `#` and `#^` punctuation, and builds
+      one `CrossLink(embedded, dest=cross(path, anchor), label)` whose `label`
+      is null only when no `|` was authored. Add the `CrossLink` kind on every
+      surface as the first producer of `Destination.cross`, fixtures for the
+      module's seven table rows, every malformed boundary, opaque contexts,
+      scopes, allocation failure, and size-doubling `!`, `[`, `]`, `#`, `^`, and
+      `|` runs, and a canonical case; remove the four `wikilink-*` gaps and keep
+      the label-nullability and destination projections as general deltas with
+      canaries. The heading-text projection of `CrossLink` in generated anchors
+      is a cross-item case owned by whichever of `O1` and `P3` merges later. An
+      attribute container following a complete `CrossLink` staying text under
+      `bracketedSpans` (audit finding OW-4) is a cross-item case owned by
+      whichever of `O1` and `P5` merges later. Requires `X0`, `M7`, `S2`.
 - [ ] **O2 — Highlights.** Add `==` to the shared delimiter stack under
-      `obsidian` with the exact-two-run and non-empty rules, local pairing, and
-      opaque code, formula, comment, HTML-token, and wikilink bytes (audit seam
-      S-7); add the `Mark(content)` kind, fixtures for formatted, adjacent,
+      `highlights` with the exact-two-run and non-empty rules, local pairing,
+      and opaque code, formula, comment, HTML-token, and wikilink bytes (audit
+      seam S-7); add the `Mark(content)` kind, fixtures for formatted, adjacent,
       escaped, unmatched, triple, table-cell, and footnote-content bodies plus
       size-doubling equals runs, and a canonical case; remove the `highlight`
       gap and keep the content-model projection. Callout-title cases join in
       `O8`. The heading-text projection of `Mark` in generated anchors is a
       cross-item case owned by whichever of `O2` and `P3` merges later. Requires
       `O1`.
-- [ ] **O3 — Comments.** Scan `%%...%%` from the shared cursor with a linear
-      closer search, classify block placement when both delimiters occupy their
-      own lines and inline placement otherwise, keep the body opaque, and emit
-      `Comment(literal)` when `stripObsidianComments` (internal until `O10`) is
-      off or omit the node without changing surrounding delimiter binding when
-      it is on. Add the kind, fixtures in both modes covering inline,
-      standalone, multiline, empty, adjacent, escaped, unmatched, and
-      Markdown-looking bodies, the syntax of every already merged extension
-      inside a comment body under the opacity rule, and size-doubling percent
-      runs, and a canonical case; remove the two `comment-*` gaps. The
-      heading-text projection of `Comment` in generated anchors is a cross-item
-      case owned by whichever of `O3` and `P3` merges later. Requires `O1`.
-- [ ] **O4 — Inline footnotes.** Recognize `^[content]` inside the shared
-      bracket algorithm, ahead of superscript, producing one one-item `Cite`
-      with a `footnote` referent and one document-owned `Footnote` whose content
-      is the parsed inline body stored directly, with no synthesized `Paragraph`
-      (audit finding OF-4); assign `inline-N` IDs after every authored ID,
-      de-collide with `-K`, and merge referenced and inline values in source
-      order inside the one document footnote operation. The oracle is silent
-      here, so product fixtures own escaped brackets, empty and unclosed forms,
-      unresolved calls, nested citations, semantic cycles, deterministic IDs and
-      visitation order, allocation failure, and adversarial `^`, `[`, and `]`
-      runs. Requires `O1`.
-- [ ] **O5 — Task markers.** Generalize the task-list scanner under `obsidian`
-      from `[ xX]` to exactly one Unicode scalar followed by a structural
-      separator, decoding at most the candidate marker; the GFM profiles keep
-      the inherited rule. Fixtures cover the module's marker table, ordered and
-      nested lists, tabs and newlines as separators, empty and multi-scalar
-      markers, missing separators, scopes, and long malformed bracket runs;
-      remove the `custom-task-character` gap. Requires `O1`.
-- [ ] **O6 — Properties.** Recognize at most one exact `---` envelope at the
-      beginning of the decoded document after an optional BOM, scan it
-      transactionally, decode the payload once as a YAML 1.2.2 document with
-      JSON scalar resolution and a plain-string fallback, and project one root
-      mapping into ordered `Metadata` records with textual key names, exact
+- [ ] **O3 — Comments.** Under `obsidianComments`, scan `%%...%%` from the
+      shared cursor with a linear closer search, classify block placement when
+      both delimiters occupy their own lines and inline placement otherwise,
+      keep the body opaque, and emit `Comment(literal)` when
+      `stripObsidianComments` is off or omit the node without changing
+      surrounding delimiter binding when it is on. Add the kind, fixtures in
+      both modes covering inline, standalone, multiline, empty, adjacent,
+      escaped, unmatched, and Markdown-looking bodies, the syntax of every
+      already merged extension inside a comment body under the opacity rule, and
+      size-doubling percent runs, and a canonical case; remove the two
+      `comment-*` gaps. The heading-text projection of `Comment` in generated
+      anchors is a cross-item case owned by whichever of `O3` and `P3` merges
+      later. Requires `O1`.
+- [ ] **O4 — Inline footnotes.** Under `inlineFootnotes`, which requires
+      `footnotes`, recognize `^[content]` inside the shared bracket algorithm,
+      ahead of superscript, producing one one-item `Cite` with a `footnote`
+      referent and one document-owned `Footnote` whose content is the parsed
+      inline body stored directly, with no synthesized `Paragraph` (audit
+      finding OF-4); assign `inline-N` IDs after every authored ID, de-collide
+      with `-K`, and merge referenced and inline values in source order inside
+      the one document footnote operation. The oracle is silent here, so product
+      fixtures own escaped brackets, empty and unclosed forms, unresolved calls,
+      nested citations, semantic cycles, deterministic IDs and visitation order,
+      allocation failure, and adversarial `^`, `[`, and `]` runs. Requires `O1`.
+- [ ] **O5 — Task markers.** Generalize the task-list scanner under
+      `taskMarkers`, which requires `taskLists`, from `[ xX]` to exactly one
+      Unicode scalar followed by a structural separator, decoding at most the
+      candidate marker; with the option off the inherited rule stands byte for
+      byte. Fixtures cover the module's marker table, ordered and nested lists,
+      tabs and newlines as separators, empty and multi-scalar markers, missing
+      separators, scopes, and long malformed bracket runs; remove the
+      `custom-task-character` gap. Requires `O1`.
+- [ ] **O6 — Properties.** Under `properties`, recognize at most one exact `---`
+      envelope at the beginning of the decoded document after an optional BOM,
+      scan it transactionally, decode the payload once as a YAML 1.2.2 document
+      with JSON scalar resolution and a plain-string fallback, and project one
+      root mapping into ordered `Metadata` records with textual key names, exact
       number lexemes, text and number lists, aliases resolved acyclically within
       budget, the allowed standard tags, and JSON root objects. Reject nested
       values, duplicates after decoding, stream indicators including `...`, and
@@ -548,71 +557,73 @@ CLI, and conformance plumbing.
       the closing fence. This is the largest C component of the track and still
       lands as one item, because the envelope scan, the YAML decoding, and the
       projection are one decoding operation; no partial decoder merges. Fixtures
-      own the module's profile cases and the shared metadata cases; remove the
-      eight `properties-*` gaps, whose oracle projection now reads the real
-      field. Requires `O1`.
-- [ ] **O7 — Block identifiers.** Attach `^block-id` during block finalization
-      through one operation for paragraph suffixes, structured-block follower
-      lines with the required blank-line boundaries, and list-item suffixes,
-      writing the identifier into the owner's inherited `anchor` and removing it
-      from visible content with no repair pass or offset side table; a second
-      candidate on one owner is ordinary content, and the owner's scope still
-      covers the identifier while child scopes end before it. Fixtures cover
-      every placement, metadata-free callouts, nested lists, invalid characters,
-      missing separation, duplicates, end of document, scopes, allocation
-      failure, and long candidate sequences. Identifier-like bytes inside a
-      crosslink source form belong to this item because it requires `O1`. These
-      cross-item cases are owned by whichever item merges later: the
-      cross-profile reservation case of the anchor contract with `P3`, an
-      identifier attached to a metadata-bearing callout with `O8`, an identifier
-      caret removed before superscript parsing with `P6`, and an identifier line
-      after a table's caption attaching to the `Table`, once per table form,
-      with `P11a`, `P11b`, `P11c`, and `P11d`. Requires `O1`.
-- [ ] **O8 — Callout metadata.** Evaluate `[!type]`, the optional `+` or `-`
-      fold marker, and the inline title on the first content line of every `>`
-      container inside the existing block algorithm, store the type as written
-      in `variant` with matching left to consumers (audit decision D-7), remove
-      the metadata line from content before body blocks finalize, keep unknown
-      and custom types, leave invalid or misplaced markers as content, and nest
-      through the inherited container recursion. Populate the `variant`, `fold`,
-      and `title` fields that `M3` declared on every surface, changing no
-      accessor or dump form; add fixtures for the module's table plus formatted
-      titles, every built-in alias, nested combinations, lazy continuation,
-      scopes, allocation failure, and adversarial depth, and canonical cases for
-      `callout.variant.value`, `callout.fold.expanded`,
-      `callout.fold.collapsed`, and `callout.title.populated`. An identifier
-      attached to a metadata-bearing callout is a cross-item case owned by
-      whichever of `O8` and `O7` merges later. Requires `O1`, `O2`.
-- [ ] **O9 — Image dimensions and table integration.** Under `obsidian`, parse
-      the complete `W`, `WxH`, `alt|W`, and `alt|WxH` alt-label suffixes in the
-      shared image construction path into `width` and `height`, keep the whole
-      label as alt content on any malformed suffix, and leave `CrossLink.label`
-      raw. Teach the table boundary scanner the `\|` escape so a wikilink alias
-      or embed size stays inside one cell while the inline scanner receives the
-      logical pipe, and apply the module's delimiter-cell rule under `obsidian`
-      only; the GFM profiles keep their current tables and task items byte for
-      byte. Fixtures cover every valid and invalid dimension form, escaped
-      pipes, aligned and pipe-optional tables, and formatted cells. An escaped
-      wikilink pipe inside a grid-table cell is a cross-item case owned by
-      whichever of `O9` and `P11d` merges later. Requires `O1`.
+      own the module's own cases and the shared metadata cases; remove the eight
+      `properties-*` gaps, whose oracle projection now reads the real field.
+      Requires `O1`.
+- [ ] **O7 — Block identifiers.** Under `blockIdentifiers`, attach `^block-id`
+      during block finalization through one operation for paragraph suffixes,
+      structured-block follower lines with the required blank-line boundaries,
+      and list-item suffixes, writing the identifier into the owner's inherited
+      `anchor` and removing it from visible content with no repair pass or
+      offset side table; a second candidate on one owner is ordinary content,
+      and the owner's scope still covers the identifier while child scopes end
+      before it. Fixtures cover every placement, metadata-free callouts, nested
+      lists, invalid characters, missing separation, duplicates, end of
+      document, scopes, allocation failure, and long candidate sequences.
+      Identifier-like bytes inside a crosslink source form belong to this item
+      because it requires `O1`. These cross-item cases are owned by whichever
+      item merges later: the cross-extension reservation case of the anchor
+      contract with `P3`, an identifier attached to a metadata-bearing callout
+      with `O8`, an identifier caret removed before superscript parsing with
+      `P6`, and an identifier line after a table's caption attaching to the
+      `Table`, once per table form, with `P11a`, `P11b`, `P11c`, and `P11d`.
+      Requires `O1`.
+- [ ] **O8 — Callout metadata.** Under `callouts`, evaluate `[!type]`, the
+      optional `+` or `-` fold marker, and the inline title on the first content
+      line of every `>` container inside the existing block algorithm, store the
+      type as written in `variant` with matching left to consumers (audit
+      decision D-7), remove the metadata line from content before body blocks
+      finalize, keep unknown and custom types, leave invalid or misplaced
+      markers as content, and nest through the inherited container recursion.
+      Populate the `variant`, `fold`, and `title` fields that `M3` declared on
+      every surface, changing no accessor or dump form; add fixtures for the
+      module's table plus formatted titles, every built-in alias, nested
+      combinations, lazy continuation, scopes, allocation failure, and
+      adversarial depth, and canonical cases for `callout.variant.value`,
+      `callout.fold.expanded`, `callout.fold.collapsed`, and
+      `callout.title.populated`. An identifier attached to a metadata-bearing
+      callout is a cross-item case owned by whichever of `O8` and `O7` merges
+      later. Requires `O1`, `O2`.
+- [ ] **O9 — Image dimensions and table integration.** Under `imageDimensions`,
+      parse the complete `W`, `WxH`, `alt|W`, and `alt|WxH` alt-label suffixes
+      in the shared image construction path into `width` and `height`, keep the
+      whole label as alt content on any malformed suffix, and leave
+      `CrossLink.label` raw. Teach the table boundary scanner the `\|` escape so
+      a wikilink alias or embed size stays inside one cell while the inline
+      scanner receives the logical pipe, with the escape active only while
+      `tables` and `wikilinks` are both on; the inherited delimiter-row grammar
+      is unchanged (audit finding OI-3), and with every Obsidian option off
+      tables and task items are byte-for-byte inherited. Fixtures cover every
+      valid and invalid dimension form, escaped pipes, aligned and pipe-optional
+      tables, and formatted cells. An escaped wikilink pipe inside a grid-table
+      cell is a cross-item case owned by whichever of `O9` and `P11d` merges
+      later. Requires `O1`.
 - [ ] **O10 — Obsidian evidence closure.** Add the integration fixtures for
       every pairwise opaque-context interaction, OFM and CommonMark constructs
       between paired inline HTML tags, the five-step precedence order, task
-      items carrying block identifiers, `mermaid` and `query` blocks, and
-      inline and display math; add canonical cases until every OFM kind,
-      state, and order is covered; add deterministic fuzz seeds and
-      pathological cases for delimiter runs, nested callouts, inline-HTML
-      boundaries, escaped table pipes, long paths and headings, and repeated
-      identifiers with structural bounds; audit every inline extension caller
-      and delete obsolete skip tables and repair paths; empty `baselineGaps`;
-      mark every support-audit row present; publish `obsidian` and
-      `stripObsidianComments` in every binding's `ParseOptions`, the facade,
-      and the CLI help, and document them in the README and the binding
+      items carrying block identifiers, `mermaid` and `query` blocks, and inline
+      and display math; add canonical cases until every OFM kind, state, and
+      order is covered; add deterministic fuzz seeds and pathological cases for
+      delimiter runs, nested callouts, inline-HTML boundaries, escaped table
+      pipes, long paths and headings, and repeated identifiers with structural
+      bounds; audit every inline extension caller and delete obsolete skip
+      tables and repair paths; empty `baselineGaps`; mark every support-audit
+      row present; document every Obsidian option in the README and the binding
       READMEs. Requires `O1` through `O9`.
 - **Obsidian track exit criterion**, verified in the `O10` pull request: the
   plan exit criterion of the Obsidian implementation plan holds on every public
-  surface, with the profile enabled by one composed switch and comment retention
-  as its only independent option.
+  surface, with every Obsidian module independently switchable and no composed
+  switch.
 
 ## Stage 3 — inserted-text track
 
@@ -674,7 +685,7 @@ CLI, and conformance plumbing.
       reserved before heading synthesis is a cross-item case owned by whichever
       of `P2d` and `P3` merges later. Requires `P0`, `M7`.
 - [ ] **P3 — `auto_anchors`.** Build one document anchor registry that reserves
-      every explicit anchor from every enabled profile before synthesis, then
+      every explicit anchor from every enabled extension before synthesis, then
       generates GFM anchors in heading order from visible text (retaining link
       labels and code, dropping footnotes), Unicode lowercasing, whitespace to
       `-` without collapsing, and the permitted-scalar filter, falling back to

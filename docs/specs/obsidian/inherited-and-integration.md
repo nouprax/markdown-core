@@ -70,11 +70,11 @@ valid in cells.
 A pipe belonging to a wikilink label or an embed size must be authored as
 `\|` inside a table. Table boundary scanning recognizes that escape before
 splitting cells, while the inline scanner receives the logical pipe and parses
-one `CrossLink`. There is no table-specific wikilink parser.
+one `CrossLink`. There is no table-specific wikilink parser; the escape rule applies while `tables` and `wikilinks` are both on.
 
-Ordinary GFM tables keep the same algorithm and AST under every profile. The
-two-hyphen Obsidian delimiter rule is a general table rule in the `obsidian`
-profile, not a cardinality special case.
+Ordinary GFM tables keep the same algorithm and AST under every option set. The
+inherited delimiter-row grammar is unchanged; a two-hyphen delimiter cell is a
+positive example of it, not a separate rule.
 
 ## External image dimensions
 
@@ -85,7 +85,7 @@ width: Int?
 height: Int?
 ```
 
-Under the `obsidian` profile, the following complete alt-label suffixes are
+Under `imageDimensions`, the following complete alt-label suffixes are
 recognized, using positive decimal pixel values and lowercase `x` with no
 surrounding spaces:
 
@@ -119,7 +119,7 @@ block bodies remain opaque to every OFM extension.
 
 ## Inherited HTML behavior
 
-The `obsidian` profile does not change CommonMark HTML recognition. An HTML
+No Obsidian option changes CommonMark HTML recognition. An HTML
 block remains an opaque `HTMLBlock`, and each inline HTML token remains an
 `HTML` leaf. Paired inline opening and closing tags do not establish an element
 region in the Markdown AST, so intervening source is parsed normally. For

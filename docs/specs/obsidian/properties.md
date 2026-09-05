@@ -161,9 +161,8 @@ thematic break only when the complete Properties block succeeds. There is no
 post-parse deletion of already constructed Markdown blocks and no regular
 expression rescan of a finished AST.
 
-The `obsidian` preset enables this rule. Other profiles retain their existing
-source grammar and always leave `Document.metadata` null unless they explicitly
-enable this same extension in the future. This module does not introduce an
+The `properties` option enables this rule. With it off the source grammar is
+inherited and `Document.metadata` is always null. This module does not introduce an
 Obsidian dialect parser or Pandoc metadata behavior.
 
 ## Oracle and product evidence

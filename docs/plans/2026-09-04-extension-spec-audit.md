@@ -56,13 +56,15 @@ The structural gaps, each of which many findings reduce to:
   two authorities that disagree on single-tilde strikethrough.
 - **X-4 The option set is not closed.** `canonical-ast.md` says `ParseOptions`
   "contains exactly these booleans" while the modules add twenty-two; the
-  profiles `default`, `commonmark`, `gfm`, `gfm-extended`, and `obsidian` are
-  named but never defined, and the CLI has two more; module options are spelled
-  in two conventions; `four_space_rule` is referenced but does not exist; what
-  the `obsidian` switch composes with the inherited gates is unstated.
+  modules name profiles `default`, `commonmark`, `gfm`, `gfm-extended`, and
+  `obsidian` although the product has none, and the Obsidian index composes its
+  modules under one `obsidian` switch although every extension syntax is its own
+  switch; module options are spelled in two conventions; `four_space_rule` is
+  referenced but does not exist; which inherited gate each Obsidian module
+  composes with is unstated.
 - **X-5 Current and target contracts are not labeled.** `canonical-ast.json` is
   the contract for the implementation as it stands, while the shared contracts
-  and profile modules describe the target the landing plan sequences. Their
+  and extension modules describe the target the landing plan sequences. Their
   status lines ("normative target contract") do not say which is in force, so a
   reader finds two attribute models, two link models, three footnote models, and
   three `Document` shapes with no statement of which is current. These are
@@ -118,9 +120,10 @@ The ground rules applied are the ones the landing plan records: `VERSION` stays
 `3.0.0` and nothing is frozen before release; the dump prints every field as it
 is; scope records original source, so written things have scopes and synthesized
 things do not; `TableCell.content` is `[Markup]` with no `Paragraph`
-normalization; `obsidian` off is the inherited behavior byte for byte;
-fenced-code info, language, and attributes are stored as written; there is no
-emoji support; the reference expansion bound is an invariant.
+normalization; there are no profiles and no umbrella switch, every extension
+syntax is its own option, and an option off is the inherited behavior byte for
+byte; fenced-code info, language, and attributes are stored as written; there is
+no emoji support; the reference expansion bound is an invariant.
 
 ## The closed extension set
 
@@ -138,60 +141,64 @@ by another.
 
 ### Options
 
-| Option                     | Default | Family    | Defining text                          | Off means                                          | Open findings              |
-| -------------------------- | ------- | --------- | -------------------------------------- | -------------------------------------------------- | -------------------------- |
-| `smartPunctuation`         | `true`  | inherited | `canonical-ast.md`                     | no quote, dash, or ellipsis replacement            | CA-22                      |
-| `footnotes`                | `true`  | inherited | `canonical-ast.md`, `obsidian/footnotes.md` | `[^x]` and `[^x]:` are text                   | CA-14, S-1, OF-1           |
-| `stripHTMLComments`        | `true`  | inherited | `canonical-ast.md`                     | HTML comments retained as `HTML` or `HTMLBlock`    | CA-22, S-10                |
-| `tables`                   | `true`  | inherited | `canonical-ast.md`, `pandoc/tables.md` | no pipe tables                                     | CA-11, S-5                 |
-| `strikethrough`            | `true`  | inherited | `canonical-ast.md`                     | `~` runs are text                                  | S-7 (single tilde)         |
-| `autolinks`                | `true`  | inherited | `canonical-ast.md`                     | no bare autolinks                                  | PA-7, ON-5                 |
-| `taskLists`                | `true`  | inherited | `canonical-ast.md`, `obsidian/tasks.md` | `[ ]` prefixes are text                           | S-6, OT-1                  |
-| `formulas`                 | `true`  | inherited | none                                   | every formula delimiter is text                    | CA-21 (grammar missing)    |
-| `directives`               | `true`  | Remark    | `remark/attributes.md`                 | `:name` is text                                    | RM-2 (envelope missing), S-8 |
-| `obsidian`                 | `false` | Obsidian  | `obsidian-flavored-markdown.md`        | inherited behavior byte for byte                   | OI-2, S-10                 |
-| `stripObsidianComments`    | `true`  | Obsidian  | `obsidian/comments.md`                 | `Comment` nodes retained; no effect while `obsidian` is off | OC-5, OC-9        |
-| `insertedText`             | `false` | inserted  | `inserted-text.md`                     | `+` runs are text                                  | IT-5, IT-6                 |
-| `inlineCodeAttributes`     | `false` | Pandoc    | `pandoc/attributes.md`                 | the suffix is inline text                          | PA-2                       |
-| `headerAttributes`         | `false` | Pandoc    | `pandoc/attributes.md`                 | the list remains heading text                      | PA-6, S-10                 |
-| `fencedCodeAttributes`     | `false` | Pandoc    | `pandoc/attributes.md`                 | inherited info contract                            | PA-3, PA-4, PA-5           |
-| `linkAttributes`           | `false` | Pandoc    | `pandoc/attributes.md`                 | the suffix is text                                 | PA-7, PA-8                 |
-| `autoAnchors`              | `false` | Pandoc    | `pandoc/headings-and-anchors.md`       | `anchor` stays null unless explicit                | PH-1, PH-2, S-3            |
-| `implicitHeaderReferences` | `false` | Pandoc    | `pandoc/headings-and-anchors.md`       | no virtual definitions                             | PH-7                       |
-| `bracketedSpans`           | `false` | Pandoc    | `pandoc/bracketed-spans.md`            | `[x]{.a}` follows inherited bracket rules          | PS-1                       |
-| `superscript`              | `false` | Pandoc    | `pandoc/superscript-and-subscript.md`  | `^` is text                                        | PU-1, S-7                  |
-| `subscript`                | `false` | Pandoc    | `pandoc/superscript-and-subscript.md`  | `~` is text; inherited strikethrough applies       | PU-4, S-7                  |
-| `citations`                | `false` | Pandoc    | `pandoc/citations.md`                  | `@` is text; footnote `Cite` nodes unaffected      | PC-1, PC-5, S-1            |
-| `fencedDivs`               | `false` | Pandoc    | `pandoc/fenced-divs.md`                | `:::` lines are paragraph text or directives       | PF-1, S-8                  |
-| `fancyLists`               | `false` | Pandoc    | `pandoc/lists.md`                      | inherited `N.` and `N)` only                       | PL-2, PL-7                 |
-| `startnum`                 | `false` | Pandoc    | `pandoc/lists.md`                      | decision D-3                                       | PL-3                       |
-| `exampleLists`             | `false` | Pandoc    | `pandoc/lists.md`                      | `(@)` is text                                      | PL-9, PC-12                |
-| `definitionLists`          | `false` | Pandoc    | `pandoc/definition-lists.md`           | paragraphs                                         | PD-1, PD-2, S-8            |
-| `tableCaptions`            | `false` | Pandoc    | `pandoc/tables.md`                     | caption paragraphs are not claimed                 | PT-5, S-5                  |
-| `simpleTables`             | `false` | Pandoc    | `pandoc/tables.md`                     | inherited fallback                                 | PT-8 through PT-11         |
-| `multilineTables`          | `false` | Pandoc    | `pandoc/tables.md`                     | inherited fallback                                 | PT-12, PT-13               |
-| `gridTables`               | `false` | Pandoc    | `pandoc/tables.md`                     | inherited fallback                                 | PT-15 through PT-19        |
+| Option                     | Default | Family    | Defining text                               | Off means                                                           | Open findings                |
+| -------------------------- | ------- | --------- | ------------------------------------------- | ------------------------------------------------------------------- | ---------------------------- |
+| `smartPunctuation`         | `true`  | inherited | `canonical-ast.md`                          | no quote, dash, or ellipsis replacement                             | CA-22                        |
+| `footnotes`                | `true`  | inherited | `canonical-ast.md`, `obsidian/footnotes.md` | `[^x]` and `[^x]:` are text                                         | CA-14, S-1, OF-1             |
+| `stripHTMLComments`        | `true`  | inherited | `canonical-ast.md`                          | HTML comments retained as `HTML` or `HTMLBlock`                     | CA-22, S-10                  |
+| `tables`                   | `true`  | inherited | `canonical-ast.md`, `pandoc/tables.md`      | no pipe tables                                                      | CA-11, S-5                   |
+| `strikethrough`            | `true`  | inherited | `canonical-ast.md`                          | `~` runs are text                                                   | S-7 (single tilde)           |
+| `autolinks`                | `true`  | inherited | `canonical-ast.md`                          | no bare autolinks                                                   | PA-7, ON-5                   |
+| `taskLists`                | `true`  | inherited | `canonical-ast.md`, `obsidian/tasks.md`     | `[ ]` prefixes are text                                             | S-6, OT-1                    |
+| `formulas`                 | `true`  | inherited | none                                        | every formula delimiter is text                                     | CA-21 (grammar missing)      |
+| `directives`               | `true`  | Remark    | `remark/attributes.md`                      | `:name` is text                                                     | RM-2 (envelope missing), S-8 |
+| `wikilinks`                | `false` | Obsidian  | `obsidian/wikilinks-and-embeds.md`          | `[[` follows inherited bracket rules                                | OW-5                         |
+| `highlights`               | `false` | Obsidian  | `obsidian/highlights.md`                    | `=` runs are text                                                   | OH-4                         |
+| `obsidianComments`         | `false` | Obsidian  | `obsidian/comments.md`                      | `%%` is text                                                        | OC-9                         |
+| `stripObsidianComments`    | `true`  | Obsidian  | `obsidian/comments.md`                      | `Comment` nodes retained; no effect while `obsidianComments` is off | OC-5, OC-9                   |
+| `inlineFootnotes`          | `false` | Obsidian  | `obsidian/footnotes.md`                     | `^[` follows inherited bracket rules; requires `footnotes`          | OF-9, S-1                    |
+| `taskMarkers`              | `false` | Obsidian  | `obsidian/tasks.md`                         | inherited `[ xX]` markers only; requires `taskLists`                | OT-4, S-6                    |
+| `properties`               | `false` | Obsidian  | `obsidian/properties.md`                    | the envelope is inherited content; `metadata` is null               | OP-7, S-9                    |
+| `blockIdentifiers`         | `false` | Obsidian  | `obsidian/block-identifiers.md`             | `^id` is text                                                       | OB-5                         |
+| `callouts`                 | `false` | Obsidian  | `obsidian/callouts.md`                      | `[!type]` is content; `variant`, `fold`, and `title` stay default   | OK-8                         |
+| `imageDimensions`          | `false` | Obsidian  | `obsidian/inherited-and-integration.md`     | alt suffixes stay alt text                                          | ON-4                         |
+| `insertedText`             | `false` | inserted  | `inserted-text.md`                          | `+` runs are text                                                   | IT-5, IT-6                   |
+| `inlineCodeAttributes`     | `false` | Pandoc    | `pandoc/attributes.md`                      | the suffix is inline text                                           | PA-2                         |
+| `headerAttributes`         | `false` | Pandoc    | `pandoc/attributes.md`                      | the list remains heading text                                       | PA-6, S-10                   |
+| `fencedCodeAttributes`     | `false` | Pandoc    | `pandoc/attributes.md`                      | inherited info contract                                             | PA-3, PA-4, PA-5             |
+| `linkAttributes`           | `false` | Pandoc    | `pandoc/attributes.md`                      | the suffix is text                                                  | PA-7, PA-8                   |
+| `autoAnchors`              | `false` | Pandoc    | `pandoc/headings-and-anchors.md`            | `anchor` stays null unless explicit                                 | PH-1, PH-2, S-3              |
+| `implicitHeaderReferences` | `false` | Pandoc    | `pandoc/headings-and-anchors.md`            | no virtual definitions                                              | PH-7                         |
+| `bracketedSpans`           | `false` | Pandoc    | `pandoc/bracketed-spans.md`                 | `[x]{.a}` follows inherited bracket rules                           | PS-1                         |
+| `superscript`              | `false` | Pandoc    | `pandoc/superscript-and-subscript.md`       | `^` is text                                                         | PU-1, S-7                    |
+| `subscript`                | `false` | Pandoc    | `pandoc/superscript-and-subscript.md`       | `~` is text; inherited strikethrough applies                        | PU-4, S-7                    |
+| `citations`                | `false` | Pandoc    | `pandoc/citations.md`                       | `@` is text; footnote `Cite` nodes unaffected                       | PC-1, PC-5, S-1              |
+| `fencedDivs`               | `false` | Pandoc    | `pandoc/fenced-divs.md`                     | `:::` lines are paragraph text or directives                        | PF-1, S-8                    |
+| `fancyLists`               | `false` | Pandoc    | `pandoc/lists.md`                           | inherited `N.` and `N)` only                                        | PL-2, PL-7                   |
+| `startnum`                 | `false` | Pandoc    | `pandoc/lists.md`                           | decision D-3                                                        | PL-3                         |
+| `exampleLists`             | `false` | Pandoc    | `pandoc/lists.md`                           | `(@)` is text                                                       | PL-9, PC-12                  |
+| `definitionLists`          | `false` | Pandoc    | `pandoc/definition-lists.md`                | paragraphs                                                          | PD-1, PD-2, S-8              |
+| `tableCaptions`            | `false` | Pandoc    | `pandoc/tables.md`                          | caption paragraphs are not claimed                                  | PT-5, S-5                    |
+| `simpleTables`             | `false` | Pandoc    | `pandoc/tables.md`                          | inherited fallback                                                  | PT-8 through PT-11           |
+| `multilineTables`          | `false` | Pandoc    | `pandoc/tables.md`                          | inherited fallback                                                  | PT-12, PT-13                 |
+| `gridTables`               | `false` | Pandoc    | `pandoc/tables.md`                          | inherited fallback                                                  | PT-15 through PT-19          |
 
 Not options: `compactDefinitionLists` (two source forms of `definitionLists`),
 `four_space_rule` (referenced once, defined nowhere; deleted by PD-3), Pandoc
 `yaml_metadata_block` (excluded), and the CLI-only double-tilde strikethrough
 flag (S-7 decides whether it becomes an option or is removed).
 
-### Profiles
+### No profiles
 
-A profile is a named `ParseOptions` value. Today only the CLI defines them, in
-`packages/markdown-core/core/main.c`, and no specification does. The vectors as
-implemented, which the canonical contract should state:
-
-| Profile            | Extensions attached                                          | Options                                               |
-| ------------------ | ------------------------------------------------------------ | ----------------------------------------------------- |
-| `commonmark`       | none                                                         | none                                                  |
-| `commonmark-smart` | none                                                         | `smartPunctuation`                                    |
-| `gfm`              | table, strikethrough, autolink, task list                    | `footnotes`                                           |
-| `gfm-smart`        | table, strikethrough, autolink, task list                    | `footnotes`, `smartPunctuation`                       |
-| `gfm-extended`     | table, strikethrough, autolink, task list, formula, directive | `footnotes`                                           |
-| `default`          | table, strikethrough, autolink, task list, formula, directive | `footnotes`, `smartPunctuation`, `stripHTMLComments`  |
-| `obsidian`         | decision D-1                                                 | `obsidian`, `stripObsidianComments`, plus D-1         |
+There are no profiles. The product is one syntax set in which every extension
+syntax is its own `ParseOptions` switch, off by default, composed freely by the
+caller; a module that extends inherited syntax is additionally gated by that
+syntax's inherited option, and nothing composes several modules under one
+switch. The `--profile` names in `packages/markdown-core/core/main.c`
+(`commonmark`, `commonmark-smart`, `gfm`, `gfm-smart`, `gfm-extended`,
+`default`) are harness shorthands that select option sets for the cmark and
+cmark-gfm comparison oracles; they define no language, no specification refers
+to them, and no `obsidian` or `pandoc` shorthand is added.
 
 ### Common-case scope
 
@@ -219,54 +226,54 @@ opaque to every later class.
 
 ### Inline
 
-| Step | Construct                                              | Option                      | Class                          | Decided by |
-| ---- | ------------------------------------------------------ | --------------------------- | ------------------------------ | ---------- |
-| A1   | backslash escape                                       | inherited                   | scanner                        | CommonMark |
-| A2   | code span                                              | inherited                   | scanner, opaque                | CommonMark |
-| A3   | raw HTML token, `<autolink>`                           | inherited                   | scanner, opaque token bytes    | CommonMark |
-| A4   | formula `$`, `$$`, `` $`...`$ ``, `\(`, `\[`           | `formulas`                  | scanner, opaque                | CA-21, S-7 |
-| A5   | inline comment `%%...%%`                               | `obsidian`                  | scanner, opaque                | OC-1, S-7  |
-| A6   | wikilink `[[...]]`, `![[...]]`                         | `obsidian`                  | scanner, opaque                | OW-1, OW-4, S-4 |
-| A7   | inline footnote `^[...]`                               | `obsidian` and `footnotes`  | scanner, body parsed           | OF-2, S-1  |
-| A8   | citation key `@key`, `-@key`                           | `citations`                 | scanner                        | PC-5, PC-9 |
-| A9   | example reference `(@label)`                           | `exampleLists`              | scanner, document-wide         | PL-11, PC-12 |
-| A10  | text directive `:name[...]{...}`                       | `directives`                | scanner                        | RM-2       |
-| A11  | GFM bare autolink                                      | `autolinks`                 | post-pass over `Text` only     | ON-5, PA-7 |
-| A12  | character reference                                    | inherited                   | scanner                        | CommonMark |
-| B0   | defined footnote call `[^label]`                       | `footnotes`                 | bracket close, first           | S-1        |
-| B1   | link and image tails, then `{attrs}`                   | inherited, `linkAttributes` | bracket close                  | PS-1       |
-| B2   | `[...]{attrs}` span                                    | `bracketedSpans`            | bracket close                  | PS-1       |
-| B3   | `[@key...; ...]` cite group                            | `citations`                 | bracket close                  | PS-1, PC-6 |
-| B4   | shortcut reference                                     | inherited                   | bracket close, last            | PS-1       |
-| C1   | `*`, `_` emphasis and strong                           | inherited                   | delimiter stack                | CommonMark |
-| C2   | `~~` strikethrough                                     | `strikethrough`             | delimiter stack                | inherited  |
-| C3   | `~` subscript, or single-tilde strikethrough           | `subscript`, `strikethrough`| delimiter stack                | S-7        |
-| C4   | `^` superscript                                        | `superscript`               | delimiter stack                | S-7        |
-| C5   | `==` highlight                                         | `obsidian`                  | delimiter stack                | OH-1       |
-| C6   | `++` insert                                            | `insertedText`              | delimiter stack                | IT-5       |
-| D    | attribute suffix at registry sites                     | per option                  | immediately after its owner    | PA-7       |
-| E    | smart punctuation                                      | `smartPunctuation`          | remaining `Text`               | CA-22      |
+| Step | Construct                                    | Option                            | Class                       | Decided by      |
+| ---- | -------------------------------------------- | --------------------------------- | --------------------------- | --------------- |
+| A1   | backslash escape                             | inherited                         | scanner                     | CommonMark      |
+| A2   | code span                                    | inherited                         | scanner, opaque             | CommonMark      |
+| A3   | raw HTML token, `<autolink>`                 | inherited                         | scanner, opaque token bytes | CommonMark      |
+| A4   | formula `$`, `$$`, `` $`...`$ ``, `\(`, `\[` | `formulas`                        | scanner, opaque             | CA-21, S-7      |
+| A5   | inline comment `%%...%%`                     | `obsidianComments`                | scanner, opaque             | OC-1, S-7       |
+| A6   | wikilink `[[...]]`, `![[...]]`               | `wikilinks`                       | scanner, opaque             | OW-1, OW-4, S-4 |
+| A7   | inline footnote `^[...]`                     | `inlineFootnotes` and `footnotes` | scanner, body parsed        | OF-2, S-1       |
+| A8   | citation key `@key`, `-@key`                 | `citations`                       | scanner                     | PC-5, PC-9      |
+| A9   | example reference `(@label)`                 | `exampleLists`                    | scanner, document-wide      | PL-11, PC-12    |
+| A10  | text directive `:name[...]{...}`             | `directives`                      | scanner                     | RM-2            |
+| A11  | GFM bare autolink                            | `autolinks`                       | post-pass over `Text` only  | ON-5, PA-7      |
+| A12  | character reference                          | inherited                         | scanner                     | CommonMark      |
+| B0   | defined footnote call `[^label]`             | `footnotes`                       | bracket close, first        | S-1             |
+| B1   | link and image tails, then `{attrs}`         | inherited, `linkAttributes`       | bracket close               | PS-1            |
+| B2   | `[...]{attrs}` span                          | `bracketedSpans`                  | bracket close               | PS-1            |
+| B3   | `[@key...; ...]` cite group                  | `citations`                       | bracket close               | PS-1, PC-6      |
+| B4   | shortcut reference                           | inherited                         | bracket close, last         | PS-1            |
+| C1   | `*`, `_` emphasis and strong                 | inherited                         | delimiter stack             | CommonMark      |
+| C2   | `~~` strikethrough                           | `strikethrough`                   | delimiter stack             | inherited       |
+| C3   | `~` subscript, or single-tilde strikethrough | `subscript`, `strikethrough`      | delimiter stack             | S-7             |
+| C4   | `^` superscript                              | `superscript`                     | delimiter stack             | S-7             |
+| C5   | `==` highlight                               | `highlights`                      | delimiter stack             | OH-1            |
+| C6   | `++` insert                                  | `insertedText`                    | delimiter stack             | IT-5            |
+| D    | attribute suffix at registry sites           | per option                        | immediately after its owner | PA-7            |
+| E    | smart punctuation                            | `smartPunctuation`                | remaining `Text`            | CA-22           |
 
 ### Block starts
 
-| Step | Block start                                                   | Option                                 | Decided by      |
-| ---- | ------------------------------------------------------------- | -------------------------------------- | --------------- |
-| 0    | Properties envelope, first line only                          | `obsidian`                             | OP-1            |
-| 1    | container prefixes                                            | inherited                              | CommonMark      |
-| 2    | fenced and indented code, HTML block                          | inherited                              | CommonMark      |
-| 3    | block comment `%%` line                                       | `obsidian`                             | OC-2, S-8       |
-| 4    | block quote, becoming `Callout`, with metadata on line one    | inherited, `obsidian`                  | OK-1            |
-| 5    | list markers, including fancy and example markers             | inherited, `fancyLists`, `exampleLists`| PL-8, PL-15     |
-| 6    | container and leaf directive `:::name`, `::name`              | `directives`                           | RM-2, S-8       |
-| 7    | fenced div `::: {...}`, `::: word`                            | `fencedDivs`                           | PF-1, S-8       |
-| 8    | ATX heading, with `headerAttributes`                          | inherited                              | PA-6            |
-| 9    | Setext heading                                                | inherited                              | PT-11, S-8      |
-| 10   | tables: caption-prefixed, pipe, grid, multiline, simple       | `tables` and the Pandoc table options  | PT-5, PT-11, PT-14 |
-| 11   | thematic break                                                | inherited                              | PT-11           |
-| 12   | footnote definition, reference definition                     | `footnotes`, inherited                 | S-1, PC-14      |
-| 13   | definition list                                               | `definitionLists`                      | PD-2, PD-9, S-8 |
-| 14   | block identifier line `^id`                                   | `obsidian`                             | OB-2, S-5       |
-| 15   | paragraph, with the `^id` suffix at finalization              | inherited                              | OB-1, S-7       |
+| Step | Block start                                                | Option                                  | Decided by         |
+| ---- | ---------------------------------------------------------- | --------------------------------------- | ------------------ |
+| 0    | Properties envelope, first line only                       | `properties`                            | OP-1               |
+| 1    | container prefixes                                         | inherited                               | CommonMark         |
+| 2    | fenced and indented code, HTML block                       | inherited                               | CommonMark         |
+| 3    | block comment `%%` line                                    | `obsidianComments`                      | OC-2, S-8          |
+| 4    | block quote, becoming `Callout`, with metadata on line one | inherited, `callouts`                   | OK-1               |
+| 5    | list markers, including fancy and example markers          | inherited, `fancyLists`, `exampleLists` | PL-8, PL-15        |
+| 6    | container and leaf directive `:::name`, `::name`           | `directives`                            | RM-2, S-8          |
+| 7    | fenced div `::: {...}`, `::: word`                         | `fencedDivs`                            | PF-1, S-8          |
+| 8    | ATX heading, with `headerAttributes`                       | inherited                               | PA-6               |
+| 9    | Setext heading                                             | inherited                               | PT-11, S-8         |
+| 10   | tables: caption-prefixed, pipe, grid, multiline, simple    | `tables` and the Pandoc table options   | PT-5, PT-11, PT-14 |
+| 11   | thematic break                                             | inherited                               | PT-11              |
+| 12   | footnote definition, reference definition                  | `footnotes`, inherited                  | S-1, PC-14         |
+| 13   | definition list                                            | `definitionLists`                       | PD-2, PD-9, S-8    |
+| 14   | block identifier line `^id`                                | `blockIdentifiers`                      | OB-2, S-5          |
+| 15   | paragraph, with the `^id` suffix at finalization           | inherited                               | OB-1, S-7          |
 
 ## Findings by file
 
@@ -480,7 +487,7 @@ A transitional finding names the landing-plan item that resolves it.
   delegates the algorithm and gate; under rule 6 synthesis must be off with no
   Pandoc switch. Rule: automatic heading anchors are synthesized only when
   `autoAnchors` is true, by the algorithm in `pandoc/headings-and-anchors.md`;
-  with no profile switch on, `anchor` is `null` on every node.
+  with no anchor-producing option on, `anchor` is `null` on every node.
 - **AN-4** `:71-73` — T (`P2d`) — reference-occurrence inheritance presupposes
   copying definition metadata, which the current contract forbids. Rule: state
   that inheritance exists only for `linkAttributes` definitions once `P2d`
@@ -513,7 +520,7 @@ A transitional finding names the landing-plan item that resolves it.
   `character-reference`, `permitted-line-ending`, `line-ending`,
   `unicode-letter`, and `unicode-number` without defining them. Rule:
   `line-ending = LF / CR / CRLF`; `permitted-line-ending` is a line ending not
-  followed by a blank line and inside the extent the owning profile grants the
+  followed by a blank line and inside the extent the owning module grants the
   container; `escaped-punctuation` is a backslash followed by an ASCII
   punctuation character; `character-reference` is a CommonMark named or numeric
   reference decoded per CommonMark; `unicode-letter` is Lu, Ll, Lt, Lm, Lo;
@@ -717,22 +724,23 @@ A transitional finding names the landing-plan item that resolves it.
 - **OI-2** `:194-196` — B — the preset's option vector is never stated and the
   combination of `obsidian` with the inherited gates is undefined (`obsidian`
   with `tables`, `taskLists`, or `footnotes` off; `stripObsidianComments` with
-  `obsidian` off). Rule: decision D-1 fixes the vector; each Obsidian rule is
-  gated by `obsidian` and the inherited gate of the syntax it extends (task
-  markers by `taskLists`; `^[...]`, `[^label]` lowering, and
-  `Document.footnotes` by `footnotes`; the delimiter-row and `\|` rules by
-  `tables`; `$` by `formulas`); wikilinks, highlights, comments, callout
-  metadata, block identifiers, Properties, and image dimensions are gated by
-  `obsidian` alone; `stripObsidianComments` has no effect while `obsidian` is
-  off.
+  `obsidian` off). Rule (decision D-1, settled): there is no preset and no
+  `obsidian` switch; each module is its own option, gated additionally by the
+  inherited option of the syntax it extends: `wikilinks`, `highlights`,
+  `obsidianComments`, `properties`, `blockIdentifiers`, `callouts`, and
+  `imageDimensions` stand alone; `inlineFootnotes` requires `footnotes`, which
+  also gates `[^label]` lowering and `Document.footnotes`; `taskMarkers`
+  requires `taskLists`; the `\|` rule requires `tables` and `wikilinks`; `$` is
+  gated by `formulas`; `stripObsidianComments` has no effect while
+  `obsidianComments` is off.
 - **OI-3** `:136` versus `obsidian/inherited-and-integration.md:66,76-77` — D/A
   — the audit row says two-hyphen delimiter cells are already present under the
   inherited grammar while the integration module makes "at least two hyphens" a
-  profile rule (S-5). Rule: the inherited delimiter-row grammar applies
+  rule of its own (S-5). Rule: the inherited delimiter-row grammar applies
   unchanged; two hyphens is a positive example, not a minimum.
-- **OI-4** `:170-171` — B — the profile set is not closed (the CLI also has
-  `commonmark-smart` and `gfm-smart`). Rule: the profiles table above, stated in
-  `canonical-ast.md`.
+- **OI-4** `:170-171` — B — the index names a profile set although the product
+  has none. Rule: the index states that there are no profiles and lists each
+  module's option; the CLI shorthands stay harness-only (the closed set above).
 - **OI-5** `:174-175` — D — `MetadataListItem` is missing from the value set.
   Rule: add it.
 - **OI-6** `:163-165` — B — the output-affecting limits are unstated (ME-9).
@@ -774,7 +782,7 @@ A transitional finding names the landing-plan item that resolves it.
   handling; a recognized `CrossLink` is complete at its `]]` and a following
   `(`, `[`, or `{` is text; link content and image alt content may contain a
   `CrossLink`.
-- **OW-5** `:81-87` — B — no option-off sentence. Rule: with `obsidian` off,
+- **OW-5** `:81-87` — B — no option-off sentence. Rule: with `wikilinks` off,
   `[[`, `]]`, and `![[` follow inherited bracket handling.
 - **OW-6** `:63-64` — B — a `CrossLink` in a heading contributes nothing to an
   automatic anchor. Rule: it contributes `label` when non-null, otherwise `path`
@@ -796,8 +804,8 @@ A transitional finding names the landing-plan item that resolves it.
   a Setext underline; `http://x/?a==b== c`). Rule: block structure is decided
   first, so a Setext underline is never a closer; extended autolinks run after
   delimiter processing over `Text` only, so a URL ends at a `Mark` boundary.
-- **OH-4** `:39-42` — B — no option-off sentence. Rule: with `obsidian` off, `=`
-  runs are text.
+- **OH-4** `:39-42` — B — no option-off sentence. Rule: with `highlights` off,
+  `=` runs are text.
 
 #### `obsidian/comments.md`
 
@@ -838,8 +846,8 @@ A transitional finding names the landing-plan item that resolves it.
   table boundary scanning does not recognize comments; a `|` inside `%%...%%` in
   a table row splits the cell and the unmatched `%%` bytes are text; `\|` inside
   a comment in a table becomes `|` in the literal.
-- **OC-9** `:33-34` — B — `stripObsidianComments` with `obsidian` off. Rule: no
-  effect.
+- **OC-9** `:33-34` — B — `stripObsidianComments` with `obsidianComments` off.
+  Rule: no effect.
 
 #### `obsidian/footnotes.md`
 
@@ -884,8 +892,8 @@ A transitional finding names the landing-plan item that resolves it.
   `Footnote`.
 - **OF-8** `:34-38` — D — the `Document` field list disagrees with
   `metadata.md:20-25` (ME-1).
-- **OF-9** missing — B — `footnotes` off with `obsidian` on. Rule: `^[...]` and
-  `[^...]` are text.
+- **OF-9** missing — B — `footnotes` off with `inlineFootnotes` on. Rule:
+  `^[...]` and `[^...]` are text.
 - **OF-10** `:131-136` — A — "already recognized" is order-dependent wording.
   Rule: replaced by OF-2.
 - **OF-11** `:117-120` versus `citation-model.md:43` and
@@ -922,8 +930,8 @@ A transitional finding names the landing-plan item that resolves it.
 - **OB-4** missing — B — `> [!note] Title ^id`. Rule: callout metadata is
   extracted before block-identifier attachment; a candidate on a metadata line
   is title text.
-- **OB-5** `:66-69` — B — no option-off sentence. Rule: with `obsidian` off the
-  bytes are ordinary content.
+- **OB-5** `:66-69` — B — no option-off sentence. Rule: with `blockIdentifiers`
+  off the bytes are ordinary content.
 - **OB-6** `:53-55` — A — "a candidate that would assign a second anchor" cannot
   arise under the three rules. Rule: delete, or state the one applicable
   ordering: if another enabled rule already assigned the owner's anchor, the
@@ -961,7 +969,7 @@ A transitional finding names the landing-plan item that resolves it.
 - **OK-7** `:15-21` — B — the fold enum is unnamed and the traversal position of
   `title` is unstated. Rule: the enum is `CalloutFold`; `title` is visited
   before `content` and is not counted in `children`.
-- **OK-8** `:79-82` — B — no option-off sentence. Rule: with `obsidian` off,
+- **OK-8** `:79-82` — B — no option-off sentence. Rule: with `callouts` off,
   `[!type]` is paragraph text inside a metadata-free `Callout`.
 - **OK-9** `:46-49,55-56` — E — `variant` is "ASCII-lowercased" because Obsidian
   matches case-insensitively. Decision D-7: store as written and leave matching
@@ -979,7 +987,7 @@ A transitional finding names the landing-plan item that resolves it.
 - **OT-3** `:67-68` — D — "existing source-decoding contract" for invalid UTF-8
   versus the precondition. Rule: delete; a marker is one scalar of the
   caller-supplied UTF-8.
-- **OT-4** missing — B — `taskLists` off with `obsidian` on. Rule: no task
+- **OT-4** missing — B — `taskLists` off with `taskMarkers` on. Rule: no task
   recognition (OI-2).
 
 #### `obsidian/properties.md`
@@ -1005,7 +1013,7 @@ A transitional finding names the landing-plan item that resolves it.
   wording. Rule: invalidates the complete candidate.
 - **OP-7** `:164-167` — D — "unless they explicitly enable this same extension
   in the future" versus no per-module toggle. Rule: Properties recognition is
-  enabled iff `obsidian` is on.
+  enabled iff `properties`, the module's own option, is on.
 - **OP-8** `:171` — E — "The official help snapshot is normative". Rule: the
   snapshot is the source of requirements; this module and `metadata.md` are the
   normative statement and decide every case the snapshot does not.
@@ -1062,14 +1070,14 @@ A transitional finding names the landing-plan item that resolves it.
   `start=1`), `lists.md:67-69` (nested-start restriction), `lists.md:71-72`
   (denies inherited `1)`), and `tables.md:198-200` (a simple table may claim a
   thematic break). Rule: with every option in this index off, output is
-  byte-identical to the inherited profile; an enabled option may change the
+  byte-identical to the inherited grammar; an enabled option may change the
   parse of source the inherited grammar already accepts only where its module
   states the exact rule.
 - **PX-4** `pandoc.md:63` (also `bracketed-spans.md:44`, `citations.md:106`,
   `superscript-and-subscript.md:62`, `attributes.md:180`) — A — "comments" is
-  undefined outside the `obsidian` profile. Rule: in this directory "comment"
-  means a `Comment` recognized by the Obsidian comment rule; with
-  `obsidian=false` no byte is a comment; HTML comments are HTML tokens.
+  undefined outside the Obsidian comment module. Rule: in this directory
+  "comment" means a `Comment` recognized by the Obsidian comment rule; with
+  `obsidianComments` off no byte is a comment; HTML comments are HTML tokens.
 - **PX-5** `pandoc.md:66-68` — B — "without consuming a bracket ... required by
   a later construct" is not decidable. Rule: on recognition failure the cursor
   returns to the candidate's first byte and the next alternative in the module's
@@ -1556,7 +1564,7 @@ A transitional finding names the landing-plan item that resolves it.
   grammar, the duplicate rule, and the bracket rule that a defined `[^label]` is
   a `Cite` whatever follows and that the inline footnote wins regardless of
   following bytes; `pandoc/citations.md` owns the tail exclusion; `^[...]` is
-  recognized iff `obsidian` and `footnotes` are both on.
+  recognized iff `inlineFootnotes` and `footnotes` are both on.
 - **S-2 Attributes** — the current directive model versus the shared model
   (CA-6, T `M7`); fenced-code lowercasing and aliasing (PA-2 to PA-4); a bare
   autolink followed by `{.a}` (PA-7); dual ownership statements between
@@ -1565,11 +1573,12 @@ A transitional finding names the landing-plan item that resolves it.
   rows, and the recognition modules own recognition.
 - **S-3 Anchors** — whether an ID stored on an unreferenced definition is
   reserved (`anchors.md:76-78`, `pandoc/attributes.md:148-152`); `[[#Heading]]`
-  "addresses `Markup.anchor`" while headings have none under `obsidian`. Rules:
-  the registry reserves the final anchors of emitted nodes only, an inherited ID
-  is reserved by the occurrence, and an unreferenced definition reserves
-  nothing; the parser stores the spelled wikilink value and matching is consumer
-  policy. The registry order itself is consistent across files.
+  "addresses `Markup.anchor`" while headings have no anchor unless `autoAnchors`
+  or an explicit ID gives them one. Rules: the registry reserves the final
+  anchors of emitted nodes only, an inherited ID is reserved by the occurrence,
+  and an unreferenced definition reserves nothing; the parser stores the spelled
+  wikilink value and matching is consumer policy. The registry order itself is
+  consistent across files.
 - **S-4 Destinations and links** — `dest` versus the current strings (T `M1`);
   the reference kinds the modules remove (T `M2`); `[[...]]` against inherited
   bracket syntax (OW-4); two width representations on `Image` (PA-9). Rule: the
@@ -1590,8 +1599,8 @@ A transitional finding names the landing-plan item that resolves it.
   CommonMark `0.` (PL-1); the nested-start restriction on decimal markers
   (PL-8); `checked` versus `marker` (T `M5`); which option gates Obsidian task
   markers (OI-2, OT-4); the undefined `four_space_rule` (PD-3). Rule: Obsidian
-  markers require both `taskLists` and `obsidian`, and `taskLists` off disables
-  every task prefix.
+  markers require both `taskLists` and `taskMarkers`, and `taskLists` off
+  disables every task prefix.
 - **S-7 Inline delimiters** — two processing models, the forward "next eligible
   closer" of `pandoc/superscript-and-subscript.md:30-32` against the shared
   delimiter stack of `inserted-text.md`, `obsidian/highlights.md`, and the
@@ -1623,14 +1632,16 @@ A transitional finding names the landing-plan item that resolves it.
   start; the definition-list test runs after every other enabled block start and
   before the paragraph.
 - **S-9 Metadata** — `Document` has three shapes (ME-1, T `M4` and `M7`); no
-  option named for Properties (OP-7). Rule: gated by `obsidian` only.
-- **S-10 Options and profiles** — "exactly these booleans" (CA-20); camelCase
-  versus `snake_case` (`pandoc.md:41-51` and every Pandoc module); profiles
-  named but undefined (OI-4); what `obsidian` composes (OI-2); the example-label
-  rule stated twice in `pandoc/citations.md:111-115` and
+  option named for Properties (OP-7). Rule: gated by `properties`, the module's
+  own option.
+- **S-10 Options** — "exactly these booleans" (CA-20); camelCase versus
+  `snake_case` (`pandoc.md:41-51` and every Pandoc module); profiles named
+  although none exist (OI-4); one switch composing every Obsidian module (OI-2);
+  the example-label rule stated twice in `pandoc/citations.md:111-115` and
   `pandoc/lists.md:123-126`; `stripHTMLComments` against "pinned cmark behavior"
   in the integration module; `headerAttributes` off never stated. Rules:
-  `canonical-ast.md` owns camelCase binding names and the `pandoc.md` table
+  `canonical-ast.md` owns camelCase binding names, states that there are no
+  profiles, and lists one switch per extension syntax; the `pandoc.md` table
   gains a "ParseOptions field" column; `pandoc/lists.md` owns the example-label
   rule and `citations.md` points to it; the integration module adds "subject to
   `stripHTMLComments`"; `pandoc/attributes.md:94` adds the off case.
@@ -1660,11 +1671,13 @@ Every other finding has one obvious rule, stated beside it. These few are
 product choices; each has a recommended default that the resolution checklist
 assumes.
 
-- **D-1 The `obsidian` preset vector.** Recommended: the `default` profile's
-  extensions and options plus `obsidian=true` and `stripObsidianComments=true`,
-  with `directives` and `smartPunctuation` off because Obsidian has neither;
-  each Obsidian rule is additionally gated by the inherited option it extends
-  (OI-2).
+- **D-1 The `obsidian` preset.** Settled by ruling: there is no preset and no
+  profile. The product is one syntax set in which every extension syntax is its
+  own switch, so each Obsidian module gets its own option, off by default and
+  gated additionally by the inherited option of the syntax it extends:
+  `wikilinks`, `highlights`, `obsidianComments` with `stripObsidianComments`,
+  `inlineFootnotes`, `taskMarkers`, `properties`, `blockIdentifiers`,
+  `callouts`, and `imageDimensions` (OI-2).
 - **D-2 The own-line block identifier `text` then `^id` on the next line.**
   Recommended: accepted as the paragraph form (OB-1); the alternative is that
   the second line keeps `^id` as text.
@@ -1719,14 +1732,14 @@ need no item of their own.
 
 - [ ] **A1 — `canonical-ast.md` and `canonical-ast.json`:** the coordinate
       contract, the limits section, the recognition-order tables, the
-      `ParseOptions` registry with defaults and off rules, the profiles table,
-      the formulas grammar or a pointer to a new module, the `smartPunctuation`
-      and `stripHTMLComments` effects, `Text` merging, `CodeBlock.info` and
-      `closed`, table cell-count handling, destination unescaping, the
-      scoped-value rule, the walk-into-values rule, and the status sentences
-      that name which target file supersedes which section. Closes CA-1 through
-      CA-27 except the transitional ones, CJ-1, CJ-3, CJ-4, CJ-5, CJ-7, S-0,
-      X-1, and decisions D-4, D-5, D-6.
+      `ParseOptions` registry with defaults and off rules, the no-profiles
+      statement, the formulas grammar or a pointer to a new module, the
+      `smartPunctuation` and `stripHTMLComments` effects, `Text` merging,
+      `CodeBlock.info` and `closed`, table cell-count handling, destination
+      unescaping, the scoped-value rule, the walk-into-values rule, and the
+      status sentences that name which target file supersedes which section.
+      Closes CA-1 through CA-27 except the transitional ones, CJ-1, CJ-3, CJ-4,
+      CJ-5, CJ-7, S-0, X-1, and decisions D-4, D-5, D-6.
 - [ ] **A2 — `canonical-ast-dump.md`:** token separation, the `children` table,
       the string escaping form, enum elements in arrays, the universal-field
       line, tagged-value and nested-value encodings, double formatting, the
@@ -1750,10 +1763,10 @@ need no item of their own.
       name-label-container order, line-crossing containers, invalid containers
       on opener lines, the option name, the `remark.md` status sentence. Closes
       RM-1 through RM-3, RA-2 through RA-5, CA-13.
-- [ ] **B1 — `obsidian-flavored-markdown.md`:** the footnote-grammar owner, the
-      preset vector and gate matrix, the profile list, `MetadataListItem`, the
-      limits pointer, extended autolinks, deletion of the per-module toggle
-      clause, one GFM authority. Closes OI-1 through OI-9 and decision D-1.
+- [ ] **B1 — `obsidian-flavored-markdown.md`:** the footnote-grammar owner, one
+      option per module and its inherited gate in place of the preset and the
+      profile list, `MetadataListItem`, the limits pointer, extended autolinks,
+      one GFM authority. Closes OI-1 through OI-9 and decision D-1.
 - [ ] **B2 — `obsidian/wikilinks-and-embeds.md` and `obsidian/highlights.md`:**
       character sets, single brackets, `#` edge cases, escapes, no trimming,
       bracket precedence, option-off, the anchor projection; highlight
@@ -1763,8 +1776,8 @@ need no item of their own.
 - [ ] **B3 — `obsidian/comments.md`:** the opener and closer rule, the block
       start and commit procedure, block-versus-inline classification, both
       content categories, the stripped shape, all recognition suppressed, the
-      literal, table cells, `stripObsidianComments` with `obsidian` off. Closes
-      OC-1 through OC-9.
+      literal, table cells, `stripObsidianComments` with `obsidianComments` off.
+      Closes OC-1 through OC-9.
 - [ ] **B4 — `obsidian/footnotes.md`:** the referenced grammar and duplicate
       rule, the bracket-stack rule for `^[`, whitespace-only bodies, no
       synthesized paragraph, the `inline-N` set, the pinned fold version,

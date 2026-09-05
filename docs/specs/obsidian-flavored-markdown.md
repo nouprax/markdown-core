@@ -1,7 +1,8 @@
-# Obsidian syntax-extension profile contract
+# Obsidian syntax-extension module contracts
 
-Status: normative target contract for the planned canonical vNext AST and
-`obsidian` extension preset. The current implementation does not yet satisfy
+Status: normative target contract for the planned canonical vNext AST and the
+Obsidian syntax extensions, each behind its own parse option. The current
+implementation does not yet satisfy
 every module. The implementation sequence is specified in
 [`docs/plans/2026-09-02-obsidian-flavored-markdown.md`](../plans/2026-09-02-obsidian-flavored-markdown.md).
 
@@ -47,11 +48,12 @@ base task-list recognition remain owned by GFM 0.29 and cmark-gfm. The linked
 MathJax, LaTeX, Mermaid, and search-language documents define downstream body
 languages, not additional Markdown parsers.
 
-The `obsidian` profile is an extension preset, not a request to reproduce every
-Obsidian parser or renderer dialect difference. It adds the source constructs
-owned by the modules below while preserving inherited CommonMark/GFM behavior.
-In particular, it does not adopt Obsidian's rule that suppresses Markdown
-between paired inline HTML tags.
+The Obsidian modules are independent syntax extensions, each behind its own
+parse option; there is no preset, and this is not a request to reproduce every
+Obsidian parser or renderer dialect difference. Each module adds the source
+constructs it owns while preserving inherited CommonMark/GFM behavior. In
+particular, no module adopts Obsidian's rule that suppresses Markdown between
+paired inline HTML tags.
 
 `@quartz-community/remark-obsidian@0.2.4` and the separately pinned Properties
 oracle are supplementary implementation evidence, not language authorities.
@@ -74,8 +76,7 @@ extension syntax absent from either oracle remains required.
 | [Inherited syntax and integration](obsidian/inherited-and-integration.md) | resolved reference links/images, tables, image sizes, math, code containers, inherited HTML behavior, and cross-feature precedence |
 
 The module owning a construct defines its grammar, AST fields, source scopes,
-fallback, and conformance cases. This index owns profile enablement and rules
-that apply to the complete profile. If two modules interact, the integration
+fallback, and conformance cases. This index owns each module's option and the rules that apply across modules. If two modules interact, the integration
 module owns the composition rule while each feature module retains its local
 semantics.
 
@@ -149,7 +150,7 @@ and references as structured data; the unified
 `Cite`/`Citation`/`CitationReferent`/`Footnote` model and inline source form,
 comments, highlights, non-space task markers, the universal `Callout` model
 and optional marker fields, and image dimensions. Existing inherited syntax keeps one
-shared implementation; the Obsidian profile must not fork those algorithms.
+shared implementation; the Obsidian modules must not fork those algorithms.
 
 ## Shared architecture and failure contract
 
@@ -167,51 +168,51 @@ Parsing is deterministic, linear in source bytes plus AST output, stack-safe
 under adversarial nesting, and allocation-failure strict under the existing
 parser contract.
 
-## Profiles and canonical migration
+## Options and canonical migration
 
-The canonical vNext AST replaces `BlockQuote` with `Callout` for every profile,
-without an alias or compatibility node. Existing `default`, `commonmark`, `gfm`,
-and `gfm-extended` profiles retain their source grammar and produce
-metadata-free `Callout` values for ordinary `>` containers.
+The canonical vNext AST replaces `BlockQuote` with `Callout` for every option
+set, without an alias or compatibility node. With `callouts` off, the source
+grammar is inherited and every `>` container is a metadata-free `Callout`.
 
 Canonical vNext adds optional `Document.metadata` and the shared `Metadata`,
-`MetadataRecord`, `MetadataScalar`, and `MetadataValue` values. Only the
-`obsidian` profile populates that field in this contract. Existing profiles
-retain their source grammar and produce `metadata=null`; Pandoc
-`yaml_metadata_block` is not enabled or specified.
+`MetadataRecord`, `MetadataScalar`, and `MetadataValue` values. Only the `properties` option populates that field in this contract; with it off
+the source grammar is inherited and the document produces `metadata=null`.
+Pandoc `yaml_metadata_block` is not enabled or specified.
 
-For every profile with footnotes enabled, canonical vNext also replaces
+Whenever `footnotes` is enabled, canonical vNext also replaces
 `FootnoteReference` and `FootnoteDefinition` with inline `Cite`, its owned
 `Citation` carrying a `CitationReferent.footnote`, document-owned `Footnote`,
-and `Document.footnotes`. This is one universal consumer model; only the
-`obsidian` profile adds the `^[...]` source form.
+and `Document.footnotes`. This is one universal consumer model; only `inlineFootnotes` adds the `^[...]` source form.
 
 Canonical vNext resolves every successful direct, full, collapsed, shortcut,
 and autolink form to `Link(dest=Destination.url(...))`, and every successful
 direct or reference image to `Image(dest=Destination.url(...))`.
 `LinkReference`, `ImageReference`, `ReferenceDefinition`, and `ReferenceForm`
-are removed from every profile without aliases. Their labels, forms,
+are removed without aliases. Their labels, forms,
 definitions, and lookup map remain parser-internal source machinery; they
 never become `Citation` or a document-owned link registry.
 
-The new `obsidian` profile composes the inherited GFM, footnote, formula, and
-code behavior with all modules in this contract. It enables
-`stripObsidianComments` by default. The universal reference-link/image
+Each module in this contract is one parse option that the caller composes with
+the inherited GFM, footnote, formula, and code behavior; no switch composes
+several modules. `stripObsidianComments` defaults to `true` and acts only while
+`obsidianComments` is on. The universal reference-link/image
 normalization, `BlockQuote` to `Callout`, source-shaped footnote to
 `Cite`/`Citation`/`CitationReferent`/`Footnote`, and `checked` to `marker`
 migrations are intentional canonical vNext changes and receive no duplicate
 compatibility state.
 
-Pandoc `@key` citation syntax is not part of OFM and is not enabled by the
-`obsidian` profile. A separate `citations` parse extension recognizes it while
+Pandoc `@key` citation syntax is not part of OFM, and no Obsidian option enables it. A separate `citations` parse extension recognizes it while
 reusing the same `Cite`, `Citation`, and `CitationReferent` model; disabling
 that extension does not disable footnote syntax or its `Cite` nodes carrying
 `CitationReferent.footnote`.
 
-OFM syntax recognition is enabled as one profile composition and disabled in
-the existing profiles; this contract does not require a public toggle for every
-individual module. Comment retention is the one independent semantic option
-because it changes lossless output after the same recognition.
+Every module has its own public option, off by default and gated additionally by
+the inherited option of the syntax it extends: `wikilinks`, `highlights`,
+`obsidianComments`, `inlineFootnotes` (with `footnotes`), `taskMarkers` (with
+`taskLists`), `properties`, `blockIdentifiers`, `callouts`, and
+`imageDimensions`. Comment retention, `stripObsidianComments`, is the one option
+that is not a syntax switch, because it changes lossless output after the same
+recognition.
 
 ## Conformance obligations
 

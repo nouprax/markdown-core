@@ -11,8 +11,7 @@ mergeable pull requests is
 
 ## Outcome
 
-Add one coherent Obsidian profile to the C parser and all three bindings. The
-profile reuses the current CommonMark/GFM block and inline algorithms, adds the
+Add the Obsidian syntax extensions to the C parser and all three bindings, one parse option per module. They reuse the current CommonMark/GFM block and inline algorithms, adds the
 documented OFM syntax as composable extensions, exposes every new semantic fact
 through the immutable canonical AST, and keeps vault resolution and rendering
 out of the parser. Every `>` container becomes `Callout`; a plain quoted block
@@ -26,11 +25,9 @@ One valid beginning-of-file Properties block populates optional
 open string domain; vault conventions such as `aliases` do not become parser
 keywords or link-resolution results.
 
-The profile is an extension preset, not a full Obsidian parser dialect. It
-preserves inherited cmark/CommonMark behavior, including Markdown recognition
+The modules are independent extensions, each behind its own option, not a preset and not a full Obsidian parser dialect. They preserve inherited cmark/CommonMark behavior, including Markdown recognition
 between paired inline HTML tags, and adds no HTML element-region suppression.
-Block identifiers populate the same universal `Markup.anchor` string used by
-other profiles; they do not introduce a block-specific target type.
+Block identifiers populate the same universal `Markup.anchor` string used by other extensions; they do not introduce a block-specific target type.
 Outgoing references use the shared tagged `Destination`: ordinary Markdown
 `Link` and `Image` values own `Destination.url`, while `CrossLink` values own
 the `Destination.cross(path, anchor)` branch. Heading and block source
@@ -46,7 +43,7 @@ module's grammar, AST invariants, fallback, scopes, or required conformance
 cases are unmet.
 The shared [`Cite`, `Citation`, and `CitationReferent`
 contract](../specs/citation-model.md) owns their reusable semantics; this plan does
-not enable Pandoc `@key` syntax in the Obsidian profile.
+not enable Pandoc `@key` syntax through any Obsidian option.
 
 - [ ] **Plan exit criterion:** the in-scope official extension examples, negative
       boundaries, cross-extension interactions, oracle comparison, allocation
@@ -99,10 +96,11 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       projection audit atomically. While 3.0.0 is unreleased, identifiers, wire
       layouts, and manifest order may be renumbered by any later item; nothing
       is reserved in advance.
-- [ ] Add an `obsidian` preset in each binding and a CLI `--profile obsidian`.
-      Keep existing profile grammar and option composition stable, but make the
-      canonical `BlockQuote` to `Callout` rename universal. Add only the option
-      bits needed to compose the preset; do not add a second parser.
+- [ ] Add one parse option per module to the registry, the CLI, and each
+      binding; there is no preset and no CLI `--profile obsidian`. Keep the
+      inherited grammar stable, but make the canonical `BlockQuote` to `Callout`
+      rename universal. Add only the option bit each module needs; do not add a
+      second parser.
 
 - [ ] **Exit criterion:** all public surfaces compile with exhaustive handling, the
       canonical schema audit proves kind/field parity, and fixtures can express every
@@ -203,8 +201,8 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
 - [ ] Move wiki alias-pipe awareness into the shared table/inline boundary so
       `[[target\|label]]` and `![[image\|100]]` stay inside one cell. Do not add a
       table-only wikilink parser.
-- [ ] Preserve current GFM semantics for ordinary tables and task items under the
-      existing profiles.
+- [ ] Preserve current GFM semantics for ordinary tables and task items while
+      every Obsidian option is off.
 
 - [ ] **Exit criterion:** task markers round-trip through every public AST, two-hyphen
       tables retain current behavior, escaped wiki pipes never create extra cells,
@@ -228,7 +226,7 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
       universal reference-link/image normalization. Those authorities continue to
       own recognition, precedence, and fallback, but their source-shaped
       definition/reference nodes do not override the consumer AST contract.
-- [x] Extend the Obsidian parity gate with the exact profile-owned envelope
+- [x] Extend the Obsidian parity gate with the exact module-owned envelope
       scanner and exact-pinned `yaml@2.9.0` Document/node parsing with CST source
       tokens. Project mapping pairs without a JavaScript object intermediary so
       empty/comment-only documents, key shape, decoded-name uniqueness, source
@@ -252,14 +250,14 @@ not enable Pandoc `@key` syntax in the Obsidian profile.
 ## Delivery sequence
 
 The durable review sequence is model, inline engine, block ownership, existing
-extension integration, and evidence. Each change must leave all existing
-profiles green. No phase may ship the `obsidian` preset publicly until its AST
-exists on every platform and the full target fixture is enabled; before that
-point the preset remains internal test plumbing.
+extension integration, and evidence. Each change must leave every existing
+option set green. No phase may publish a module's option until its AST exists on
+every platform and the module's target fixture is enabled; before that point the
+option remains internal test plumbing.
 
 - [ ] Publish release notes listing the documented OFM subset, parser-only
       boundary, `Document.metadata` addition, reference-link/image normalization,
       the `BlockQuote` to `Callout`, source-shaped footnote to
       `Cite`/`Citation`/`CitationReferent`/`Footnote`, and `checked` to `marker`
-      migrations, the unchanged legacy-profile source grammar, and the exact
+      migrations, the unchanged inherited source grammar, and the exact
       official help snapshot used for conformance.

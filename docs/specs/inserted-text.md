@@ -13,7 +13,7 @@ cases own delimiter behavior that the README describes by reference to
 CommonMark emphasis.
 
 This is an independent syntax extension. It is not Obsidian Flavored Markdown,
-and enabling the `obsidian` profile does not enable `insertedText`. A caller may
+and no Obsidian option enables `insertedText`. A caller may
 compose both extensions explicitly.
 
 ## Consumer semantics
