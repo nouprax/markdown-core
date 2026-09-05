@@ -74,7 +74,7 @@ over the definition's anchor. No operation concatenates anchors or silently
 stores a second value.
 
 Before automatic synthesis, the document registry reserves every explicit
-anchor recognized by every enabled profile, including attribute IDs and
+anchor recognized by every enabled option, including attribute IDs and
 Obsidian block identifiers. Automatic heading anchors are then generated in
 heading source order and uniquified against all reserved explicit values and
 all earlier generated values. Thus synthesis never creates a collision merely
@@ -112,6 +112,6 @@ automatic heading anchors; Obsidian block identifiers; removal of source
 punctuation; identical values produced by different source rules; last-ID and
 explicit-over-generated precedence; reference inheritance without definition
 range inheritance; explicit and generated duplicates; exact occurrence scopes;
-cross-profile explicit anchors reserved before synthesis; unresolved incoming
+explicit anchors from every enabled option reserved before synthesis; unresolved incoming
 references not mutating targets; allocation failure; and size-doubling anchor
 candidates.

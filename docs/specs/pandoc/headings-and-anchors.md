@@ -40,7 +40,7 @@ receives `anchor="my-header"`.
 
 Generated and explicit anchors share one document registry. Before generating
 any heading anchor, reserve every explicit anchor recognized anywhere in the
-document by every enabled profile, including heading/other attribute IDs and
+document by every enabled option, including heading/other attribute IDs and
 Obsidian block identifiers. If a base already exists, append `-N` using the
 smallest positive decimal `N` not yet registered. An explicit duplicate remains
 as authored and may produce a diagnostic, but it still occupies the registry;

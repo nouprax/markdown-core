@@ -235,7 +235,7 @@ opaque to every later class.
 | A1   | backslash escape                                            | inherited                         | scanner                                                                                                                                                              | CommonMark        |
 | A2   | code span                                                   | inherited                         | scanner, opaque                                                                                                                                                      | CommonMark        |
 | A3   | raw HTML token (an HTML comment is `Comment`), `<autolink>` | inherited                         | scanner, opaque token bytes                                                                                                                                          | CommonMark, CA-22 |
-| A4   | formula `$`, `$$`, `` $`...`$ ``, `\(`, `\[`                | `formulas`                        | scanner, opaque                                                                                                                                                      | CA-21, S-7        |
+| A4   | formula `$`, `$$`, `` $`...`$ ``, `\\(`, `\\[`              | `formulas`                        | scanner, opaque                                                                                                                                                      | CA-21, S-7        |
 | A5   | inline comment `%%...%%`                                    | `comments`                        | scanner, opaque                                                                                                                                                      | OC-1, S-7         |
 | A6   | wikilink `[[...]]`, `![[...]]`                              | `crossLinks`                      | scanner, opaque                                                                                                                                                      | OW-1, OW-4, S-4   |
 | A7   | inline footnote `^[...]`                                    | `inlineFootnotes` and `footnotes` | scanner, body parsed                                                                                                                                                 | OF-2, S-1         |
@@ -383,15 +383,18 @@ A transitional finding names the landing-plan item that resolves it.
   `Formula(embedded)`, `Formula(standalone)`, or `FormulaBlock`, nor flanking,
   escaping, opacity, or the block fence rule. Rule: add a formulas module
   stating: `$...$` gives `Formula(mode=embedded)`; `$$...$$` inside inline
-  content gives `Formula(mode=standalone)`; a block whose first line begins with
-  `$$` at indentation 0 to 3 and ends at the first later line ending with `$$`
-  gives `FormulaBlock`; `\(...\)` gives embedded and `\[...\]` standalone; ``
-  $`...`$ `` gives embedded with the code span's body; an opening `$` must be
-  followed by a non-whitespace code point and a closing `$` must be preceded by
-  non-whitespace and not followed by an ASCII digit; bodies are opaque and are
-  recognized at their opening delimiter during the scan, before the delimiter
-  pass; `\$` is literal. Derive the exact rules from `extensions/formula.c` and
-  cite them as implemented behavior.
+  content gives `Formula(mode=standalone)`; a block that opens on a line holding
+  only `$$` or `\\[` plus trailing spaces or tabs and closes at the first later
+  line holding only the matching `$$` or `\\]` gives `FormulaBlock`; inline
+  `\\(...\\)`, two authored backslashes, gives embedded and `\\[...\\]`
+  standalone, while single-backslash `\(` and `\[` stay ordinary escapes as
+  `extensions-formula-latex.txt` fixes; `` $`...`$ `` gives embedded with the
+  code span's body; an opening `$` must be followed by a non-whitespace code
+  point and a closing `$` must be preceded by non-whitespace and not followed by
+  an ASCII digit; bodies are opaque and are recognized at their opening
+  delimiter during the scan, before the delimiter pass; `\$` is literal. Derive
+  the exact rules from `extensions/formula.c` and cite them as implemented
+  behavior.
 - **CA-22** `:194,197` — B — the effect of `smartPunctuation` and
   `stripHTMLComments` on the AST is stated nowhere. Rule: `smartPunctuation`
   replaces, in `Text` literals only, `"` and `'` by the cmark flanking rule,
@@ -1585,8 +1588,9 @@ A transitional finding names the landing-plan item that resolves it.
   reserved (`anchors.md:76-78`, `pandoc/attributes.md:148-152`); `[[#Heading]]`
   "addresses `Markup.anchor`" while headings have no anchor unless `autoAnchors`
   or an explicit ID gives them one. Rules: the registry reserves the final
-  anchors of emitted nodes only, an inherited ID is reserved by the occurrence,
-  and an unreferenced definition reserves nothing; the parser stores the spelled
+  anchors of emitted nodes only, produced by every enabled option and never
+  gated by a profile, an inherited ID is reserved by the occurrence, and an
+  unreferenced definition reserves nothing; the parser stores the spelled
   wikilink value and matching is consumer policy. The registry order itself is
   consistent across files.
 - **S-4 Destinations and links** — `dest` versus the current strings (T `M1`);
@@ -1770,7 +1774,8 @@ need no item of their own.
       timing, no diagnostics, one allocation-failure rule, the anchor
       derivation, the footnote id without caret, the two scope rules, the
       metadata key and tagged-scalar rules, record scopes, the inserted-text
-      unit rules and version pins, and one status sentence per file. Closes
+      unit rules and version pins, reservation from every enabled option in
+      place of every enabled profile, and one status sentence per file. Closes
       AN-1, AN-3, AN-5 through AN-8, AT-3 through AT-8, AT-10, AT-11, DE-4
       through DE-7, CI-2 through CI-5, ME-2 through ME-10, IT-3 through IT-8.
 - [ ] **A5 — `remark/directives.md` (new) and `remark/attributes.md`:** the
@@ -1837,13 +1842,14 @@ need no item of their own.
       clause, interruption allowed, unclosed scope, the directive rule, eligible
       closers. Closes PD-1 through PD-10, PF-1 through PF-7.
 - [ ] **C4 — `pandoc/headings-and-anchors.md` and `pandoc/lists.md`:** the
-      projection table with a required conformance case per projected kind, the
-      lowercase mapping, categories, `base-N`, no diagnostics, footnote bodies,
-      virtual definitions; `start >= 0`, inherited markers off, `startnum`
-      scope, `@` only in parentheses, the Roman grammar, padding, committed
-      style, nesting, `(N@)`, labels, `(@label)` placement, repeated labels,
-      continuation columns, no overflow sentence, interruption, `#)` and `(#)`.
-      Closes PH-1 through PH-7, PL-1 through PL-16, decision D-3.
+      projection table with a required conformance case per projected kind,
+      reservation from every enabled option, the lowercase mapping, categories,
+      `base-N`, no diagnostics, footnote bodies, virtual definitions; `start >=
+      0`, inherited markers off, `startnum` scope, `@` only in parentheses, the
+      Roman grammar, padding, committed style, nesting, `(N@)`, labels,
+      `(@label)` placement, repeated labels, continuation columns, no overflow
+      sentence, interruption, `#)` and `(#)`. Closes PH-1 through PH-7, PL-1
+      through PL-16, decision D-3.
 - [ ] **C5 — `pandoc/superscript-and-subscript.md`:** the delimiter-stack model,
       whitespace, the `\ ` scope, single tildes, the footnote rule pointer,
       block identifiers and autolinks, no oracle justification. Closes PU-1
